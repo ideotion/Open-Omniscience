@@ -29,8 +29,14 @@ their findings are folded in, and the ones that change a requirement are marked 
   nonce = prefix(7) | counter(4) | final(1), 4 MiB frames, key from scrypt over the passphrase
   with the salt in the header. Its reader refuses any scrypt parameters other than the writer's.
 - Panic wipe (`src/safety/panic.py` → `crypto_erase.quick_crypto_erase`) overwrites the first
-  4 KiB (the salt page) of each SQLCipher file and its sidecars, so the corpus key can never be
-  derived again, then fully overwrites and unlinks every other file under the data directory.
+  4 KiB (the salt page) of the main, custody and lane databases and their sidecars, so the
+  corpus key can never be derived again, then fully overwrites and unlinks every other file
+  under the data directory.
+- Backup and restore stage **plaintext** copies of the corpus by design: `.restore-*` holds the
+  decrypted volumes and corpus, `.oo-backup-*` and a killed backup's `.bak-build-*` hold full
+  plaintext snapshots (`src/backup/stream_backup.py`), and merge-restore attaches its staged
+  members as plaintext (`src/backup/merge.py`). `.bak-build-*` sits at the backup destination,
+  often outside the data directory.
 - There is no passphrase-change (`PRAGMA rekey`) path in `src/`.
 - There is no blob store, pack file or sqlite3mc use anywhere in `src/`.
 
@@ -47,7 +53,8 @@ to its place in a pack. `packs(id, name, epoch, frame, n_frames, plain_len, ct_l
 each pack, including the exact ciphertext length it must have. `blob_staging(id, addr UNIQUE,
 body)` holds bodies not yet sealed. `blob_keys` holds the master keys per epoch and the one
 address key (§3). `pack_intents(name)` records a pack about to be written (§6). The address →
-place map exists ONLY inside the encrypted file. `blobs/` lives beside the database file, not
+place map exists ONLY inside the encrypted file. `pack_pins(name, snapshot)` keeps the packs a retained rollback snapshot references (§8).
+`blobs/` lives beside the database file, not
 at an assumed `<data dir>`, because `main_db_path()` honours `DATABASE_URL`; panic wipe resolves
 it the same way.
 
@@ -58,7 +65,7 @@ rewritten or removed by GC (when deletions happened, roughly how much); and, whe
 records it, access time (which packs were read recently); the shard directories' mtime and ctime,
 which change on every pack added; and the growth of the database file and its WAL as bodies are
 staged. Mitigations the build must apply: packs are created `0600` in `0700` directories; pack
-and shard-directory mtimes are reset to a constant after each seal; reads open with `O_NOATIME`
+and shard-directory mtimes are reset to a constant after each seal and each GC unlink; reads open with `O_NOATIME`
 where the platform has it; **the packer seals only at fixed timer ticks** (it seals every full
 pack it has at a tick, and a padded partial one only once the oldest staged body reaches the
 maximum age), never when a pack happens to fill, so pack times record the timer and not the
@@ -109,7 +116,11 @@ btrfs), the per-tick pack count, and database/WAL growth between two views of th
   not created at all, open question Q-W9). Never AEAD packs under a plaintext key.
 - The BMKs and their derived keys exist in process memory only while the store is unlocked and
   are dropped at lock. They are never written outside the encrypted file, never logged, never
-  put in argv. The memory caveat is the existing one, stated rather than improved: SQLCipher's
+  put in argv. **This conflicts with today's plaintext staging** *(review)*: a plaintext staging
+  copy of a database that holds `blob_keys` would hold every epoch key and the address key in
+  clear. So once this store exists, every staging conversion leaves `blob_keys` out (keys are
+  read through an encrypted connection to the source instead), or the staging copies stay
+  SQLCipher-encrypted; Q-W17 asks which. The memory caveat is the existing one, stated rather than improved: SQLCipher's
   `cipher_memory_security` is OFF by default (measured 2026-09-07), Python cannot reliably zero
   a `bytes` object, and decompressed bodies sit in Python memory outside any mlock. A compromised
   running session can read these keys and bodies, exactly as it can read the SQL key today. The
@@ -141,6 +152,9 @@ btrfs), the per-tick pack count, and database/WAL growth between two views of th
   length would vary with the number of bodies. A body larger than one pack is split across
   fixed-size packs rather than given a larger size class, because a size class would announce
   "a body over 8 MiB exists", the rare large document a confirmation attack looks for (Q-W10).
+  A split body needs a segment table (`blob_segments(addr, seq, pack_id, off, len)`) and segment
+  entries in the trailers; all its segments are sealed in one commit, and the address check runs
+  on the reassembled body *(review)*.
 - **Every read checks the body against its address** *(review)*: `HMAC(k_addr, body) == addr`,
   a few µs, so a wrong offset, a snapshot paired with the wrong pack set or a rebuilt index can
   never return the wrong text silently.
@@ -179,12 +193,15 @@ never a dangling reference:
 1. **Ingest** writes the article row, its FTS row and the body into `blob_staging`, in ONE SQL
    transaction (R707, Q-W4). Readers find a staged body there. Nothing touches the filesystem at
    ingest, so ingest atomicity is exactly today's.
-2. **The packer** (a background `is_writer` job, under the writer gate) first commits a
-   `pack_intents(name)` row for a freshly drawn random name, then writes the pack to
-   `<name>.tmp` (`0600`), fsyncs it, renames it, fsyncs its directory and **every directory it
-   created on the way** *(review)*, and only THEN commits one SQL transaction that inserts the
-   `packs` and `blobs` rows, deletes the staging rows and deletes the intent. A retry after a crash
-   always draws a NEW name, never one read back from an intent row, so a nonce key is never reused.
+2. **The packer** (a background `is_writer` job that holds the writer gate from its first commit
+   to its last) first commits a `pack_intents(name)` row for a freshly drawn random name, with
+   `synchronous=FULL` so the intent cannot be lost while its pack survives *(review)*, then writes
+   the pack to `<name>.tmp` (`0600`), fsyncs it, renames it **without replacing** (link then
+   unlink, or `RENAME_NOREPLACE`), so a name collision with a quarantined pack fails loudly,
+   fsyncs its directory and **every directory it created on the way** *(review)*, and only THEN
+   commits one SQL transaction that inserts the `packs` and `blobs` rows, deletes the staging rows
+   and deletes the intent. A retry after a crash always draws a NEW name, never one read back
+   from an intent row, so a nonce key is never reused.
 
 **The staging window** (R707's condition): between ingest and sealing, a body sits in
 `blob_staging` as a row of the SQLCipher file, and after sealing its old pages sit on the
@@ -201,7 +218,11 @@ plaintext on disk. With fixed-size packs and a maximum age, the window is bounde
 
 **The orphan sweep deletes only what an intent names** *(review)*: `.tmp` files, and packs whose
 name sits in `pack_intents` with no `packs` row. Any OTHER pack the database does not reference
-is reported and quarantined, never deleted automatically, because that state also arises from a
+is reported and quarantined, never deleted automatically. Even an intent-named pack is read
+through its trailer first and quarantined instead if any address in it is referenced by
+`articles.blob_addr` but present in neither `blobs` nor `blob_staging` (a salvaged database can
+keep the intent and lose the rows) *(review)*. All of this matters because an unreferenced pack
+also arises from a
 database opened at an older state, a repair or salvage output that lost rows, or a lost commit
 (§7), and in each of those the "unreferenced" packs are live data, exactly what the trailer
 rebuild exists to recover. The sweep runs **under the writer gate** *(review)*, so it never sees
@@ -216,8 +237,8 @@ points the bodies at the new pack, and its file unlinked only after that commit 
 *(review)*. The app runs WAL with `synchronous=NORMAL`, under which a committed transaction can
 be lost to a power cut; losing the packer's commit only leaves an orphan pack and staged bodies,
 but losing a GC commit after the unlink would leave rows pointing at a deleted pack, the bodies
-gone for good. So every commit that precedes an unlink (GC rewrite, purge, the restore swap) runs
-with `synchronous=FULL` or is followed by a durable checkpoint before the unlink, and a
+gone for good. So every commit that precedes an unlink (GC rewrite, purge) runs with
+`synchronous=FULL` or is followed by a durable checkpoint before the unlink, and a
 fault-injection test drops the un-fsynced WAL tail after the commit and checks nothing is lost.
 GC is an `is_writer` job, so R659's restore refusal covers it.
 
@@ -235,7 +256,7 @@ resurrects (§4).
 
 ## 8. Backup, restore, panic wipe
 
-Lane B read this section (R707, Q-W5 pending their read) and asked for the gaps below.
+Lane B read this section for Q-W5 (R707) and asked for the gaps below; they are folded in.
 
 - **Packs travel inside the encrypted backup volumes**, as their own member category in the
   volume manifest with size and checksum, never copied raw beside it *(review)*: raw copies with
@@ -257,16 +278,24 @@ Lane B read this section (R707, Q-W5 pending their read) and asked for the gaps 
   tied to its job, so a dead backup cannot block GC for ever; a live backup renews it by
   heartbeat, since a multi-TB backup can outlast any fixed expiry, and before finalising it checks
   that every pack its snapshot references is in the volumes, refusing by name if one is not.
-- **Replace-restore**: packs are written and verified (size, checksum, header) BEFORE the database
-  swap, so a crash leaves only orphan packs. Packs count in the restore's preflight and in its
-  declared-size bound. A referenced pack that is missing, the wrong length (`packs.ct_len`) or
-  fails authentication makes the restore refuse and name it; a full-authenticate pass is
-  offered. The packs the pre-restore rollback snapshot references are treated as live, so the
-  orphan sweep cannot delete them *(Lane B must-fix)*.
+- **Replace-restore**: the restore first records the names of the packs it will write as intents
+  in the live database (durably), writes and verifies them (size, checksum, header) BEFORE the
+  database swap, and makes the swap durable (the new database file, its WAL and the parent
+  directory fsynced) before anything else changes. A crash before the swap leaves intent-named
+  packs the sweep may remove; a restore removes no pack itself. Packs count in the restore's
+  preflight and in its declared-size bound. A referenced pack that is missing, the wrong length
+  (`packs.ct_len`) or fails authentication makes the restore refuse and name it; a
+  full-authenticate pass is offered.
+- **Rollback pins** *(Lane B must-fix, completed by review)*: at the swap, the names of every pack
+  the retained `pre-restore-<ts>.db` snapshot references are written into `pack_pins` in the new
+  database and kept until that snapshot is pruned. GC, purge and the orphan sweep all skip pinned
+  packs, so rolling back to the snapshot never finds rows pointing at a deleted pack, even for
+  bodies the restored database considers dead. A test covers it.
 - **At open**, the same missing-pack check runs and names the pack and how many articles it
   affects, in the UI rather than the plaintext log, rather than failing on the first read.
 - **Merge-restore (row-level)**: the source corpus has its own BMKs, so its addresses and packs
-  mean nothing in the target. The merge reads each body through the source's keys, in memory only,
+  mean nothing in the target. The merge reads each body through the source's keys (held in
+  memory, read through an encrypted connection, never from a plaintext staged copy: §3),
   and re-ingests it into the target's staging (new address, new pack). Its preflight counts the
   staging growth and the new packs. Cost scales with the merged text.
 - **Panic wipe**: the guarantee is the destroyed salt, and it holds only if EVERY keyed copy of
@@ -276,14 +305,18 @@ Lane B read this section (R707, Q-W5 pending their read) and asked for the gaps 
   custody and lane databases; the snapshots are reached only by step 6's full overwrite, which is
   slow and can be cut short, and each one would hold every BMK of its time. **Required change:**
   step 1 head-shreds every SQLCipher file under the data directory, by registry or pattern,
-  before `blobs/` is touched. The current quick pass also FULLY OVERWRITES
+  before `blobs/` is touched. **Plaintext staging copies are not SQLCipher files**, so a head
+  overwrite destroys nothing in them: if any survive (`.restore-*`, `.oo-backup-*`,
+  `.bak-build-*`, including at destinations outside the data directory recorded in
+  `backup-temp-dests.json`), the wipe fully overwrites them first, and §3's rule keeps `blob_keys`
+  out of them in the first place. The current quick pass also FULLY OVERWRITES
   every remaining file under the data directory, on the premise that those are small side files;
   a multi-TB `blobs/` would turn the instant erase into hours. **Required change** *(review)*:
   after the salt is gone, `blobs/` is only unlinked, never overwritten, and a test proves the
   erase stays fast with a large pack tree; the optional free-space scrub covers the freed blocks
   as it does today. **A test also proves that after the quick pass no pack can be decrypted**
-  (R707's condition), with a pre-restore snapshot, a staging copy and a WAL holding a deep page-1
-  frame all seeded first. Honest limits: a backup copy elsewhere still holds its own keys; the
+  (R707's condition), with a pre-restore snapshot, a plaintext staging copy (inside and outside
+  the data directory) and a WAL holding a deep page-1 frame all seeded first. Honest limits: a backup copy elsewhere still holds its own keys; the
   inherited `-wal` issue (the sidecar is overwritten only in its first 4 KiB, while later copies
   of page 1 with the salt can sit deeper in it) is reported separately and must be fixed before
   this store relies on the wipe; and the whole guarantee rests on one 4 KiB byte overwrite, which
@@ -346,7 +379,14 @@ Open, not yet ruled, raised by the reviews:
 - **Q-W14 — Epoch rotation cadence.** A database copy plus the passphrase reaches every pack of
   its epochs, including later ones (§3). Rotate the epoch at every backup, on a schedule, or only
   on a passphrase change. Recommend at every backup: it bounds what any one backup's keys can
-  open to the packs that existed when it was taken, and costs one new key.
+  open to the packs that existed when it was taken, and costs one new key. That holds only with
+  this order: the snapshot is taken under the writer gate, THEN the new epoch is committed before
+  the next seal (a key inserted before the snapshot would reach forward again); and a GC rewrite
+  always seals into the current epoch, never the source pack's. The address key stays fixed: the
+  addresses live only inside the database, so an old copy gains nothing from it.
+- **Q-W17 — Keys and plaintext staging.** Staging conversions leave `blob_keys` out and read
+  source keys through an encrypted connection (recommended: it keeps today's plaintext staging
+  design), or staging copies become SQLCipher-encrypted once this store exists.
 - **Q-W15 — Purge strength.** Rewrite affected packs plus `secure_delete` and an FTS merge, with
   the old-block limit stated (recommended for a first build), or a per-pack random key in the
   `packs` row so deleting the row crypto-shreds the pack, at the cost of a trailer rebuild that
