@@ -16,13 +16,15 @@ exception) proves nothing unless the code under test reaches that stub. Three te
   callback per line of the suite. ``Mock`` and ``AsyncMock`` with an exception ``side_effect`` are tracked by wrapping their call
   path: the site is the first test-file frame that created the mock or set the side effect.
 
-A test is FLAGGED when it ran (its call phase executed), installed at least one non-guard device, and none of them fired in any of its
+A test is FLAGGED when it passed (its call phase ran to the end; a failing or skipped test is not judged), installed at least one non-guard device, and none of them fired in any of its
 runs (parametrized cases fold onto their function). ``scripts/fault_reach_audit.py`` runs it, compares against the reviewed baseline
 ``tests/fault_reach_baseline.txt`` and writes the report; the weekly ``.github/workflows/fault-reach.yml`` runs that. It never gates a PR.
 
-Stated limits: stubs installed by a FIXTURE rather than the test body are not attributed (the test does not name them); a stub reached
-only from a thread that outlives its test is attributed to whichever test runs next; ``side_effect`` given as an iterable of exceptions is
-not tracked.
+Stated limits: stubs installed by a FIXTURE rather than the test body are not attributed (the test does not name them), nor are
+mocks a ``@mock.patch(..., side_effect=...)`` DECORATOR creates (no test-file frame is on the stack then; none exist today); a stub
+reached only from a thread that outlives its test is attributed to whichever test runs next; ``side_effect`` given as an iterable of
+exceptions is not tracked; two throwing lambdas that START on the same line are one device; a fake class counts only through a method
+whose body is a raise.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import FrameType
 
 GUARD_EXCEPTIONS = frozenset({"AssertionError", "NotImplementedError"})
 TESTS_DIR = Path(__file__).resolve().parent
@@ -50,6 +53,8 @@ class Stub:
     lines: frozenset[int]  # every line a raise (or a .throw call) of it spans
     exceptions: frozenset[str]
     calls_fail: bool = False
+    code_line: int = 0  # the co_firstlineno of its code object (a def's first decorator or its def line; a lambda's line)
+    is_lambda: bool = False
 
     @property
     def guard(self) -> bool:
@@ -63,8 +68,17 @@ class FileStubs:
     path: str
     installs: dict[str, list[Stub]] = field(default_factory=dict)
 
-    def target_lines(self) -> set[int]:
-        return {ln for stubs in self.installs.values() for s in stubs for ln in s.lines}
+    def targets(self) -> tuple[dict[int, set[int]], set[int]]:
+        """What the plugin watches: {a def's code_line: its raise lines}, and the code_lines of throwing lambdas."""
+        defs: dict[int, set[int]] = {}
+        lambdas: set[int] = set()
+        for stubs in self.installs.values():
+            for st in stubs:
+                if st.is_lambda:
+                    lambdas.add(st.code_line)
+                else:
+                    defs.setdefault(st.code_line, set()).update(st.lines)
+        return defs, lambdas
 
 
 def _exc_name(node: ast.expr | None) -> str:
@@ -89,6 +103,11 @@ def _own_nodes(fn: ast.AST):
         stack.extend(ast.iter_child_nodes(n))
 
 
+def _is_pytest_fail(n: ast.AST) -> bool:
+    return (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "fail"
+            and isinstance(n.func.value, ast.Name) and n.func.value.id == "pytest")
+
+
 def _is_throw(n: ast.AST) -> bool:
     return isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "throw" and isinstance(n.func.value, ast.GeneratorExp)
 
@@ -104,14 +123,17 @@ def _stub_of(fn: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda, name: str)
         elif _is_throw(n):
             lines.update(range(n.lineno, (n.end_lineno or n.lineno) + 1))
             excs.add(_exc_name(n.args[0]) if n.args else "?")
-        elif isinstance(n, ast.Call) and _exc_name(n.func) == "fail" and isinstance(n.func, ast.Attribute):
+        elif _is_pytest_fail(n):
             fail = True
             lines.update(range(n.lineno, (n.end_lineno or n.lineno) + 1))
     if not lines:
         return None
     if isinstance(fn, ast.Lambda):
-        lines.add(fn.lineno)  # a lambda shows up at run time as a code object starting here (no LINE event fires inside a one-line lambda)
-    return Stub(name, frozenset(lines), frozenset(excs), fail)
+        # a lambda is seen ENTERING (PY_START on a code object starting at its line): no LINE event fires inside a one-line lambda,
+        # and a LINE event on its line may be the enclosing statement that only builds it
+        return Stub(name, frozenset({fn.lineno}), frozenset(excs), fail, fn.lineno, True)
+    first = min([fn.lineno, *(d.lineno for d in fn.decorator_list)])
+    return Stub(name, frozenset(lines), frozenset(excs), fail, first, False)
 
 
 def _value_names(fn: ast.AST) -> tuple[set[str], set[str]]:
@@ -158,7 +180,7 @@ def _scope_stubs(body: list[ast.stmt]) -> dict[str, list[Stub]]:
             if s:
                 for t in st.targets:
                     if isinstance(t, ast.Name):
-                        out.setdefault(t.id, []).append(Stub(t.id, s.lines, s.exceptions, s.calls_fail))
+                        out.setdefault(t.id, []).append(Stub(t.id, s.lines, s.exceptions, s.calls_fail, s.code_line, True))
     return out
 
 
@@ -177,26 +199,43 @@ def _nested_scope(fn: ast.AST) -> dict[str, list[Stub]]:
     return out
 
 
-def _tests(tree: ast.Module):
-    for st in tree.body:
+def _tests(body: list[ast.stmt], prefix: str = ""):
+    """Test functions, with their class path in the key (``TestOuter::TestInner::test_x``), at any class depth."""
+    for st in body:
         if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)) and st.name.startswith("test"):
-            yield st.name, st
+            yield prefix + st.name, st
         elif isinstance(st, ast.ClassDef) and st.name.startswith("Test"):
-            for m in st.body:
-                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and m.name.startswith("test"):
-                    yield f"{st.name}::{m.name}", m
+            yield from _tests(st.body, f"{prefix}{st.name}::")
+
+
+def _bound_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Names the test binds itself (parameters, assignments, loop and with targets, imports): such a name is never the module's stub."""
+    out = {a.arg for a in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs]}
+    if fn.args.vararg:
+        out.add(fn.args.vararg.arg)
+    if fn.args.kwarg:
+        out.add(fn.args.kwarg.arg)
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            out.add(n.id)
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n is not fn:
+            out.add(n.name)
+        elif isinstance(n, ast.alias):
+            out.add((n.asname or n.name).split(".")[0])
+    return out
 
 
 def analyse_source(source: str, path: str = "<test>") -> FileStubs:
     tree = ast.parse(source)
     module = _scope_stubs(tree.body)
     result = FileStubs(path)
-    for qual, fn in _tests(tree):
+    for qual, fn in _tests(tree.body):
         local = _nested_scope(fn)
+        bound = _bound_names(fn)  # type: ignore[arg-type]
         values, called = _value_names(fn)
         stubs: list[Stub] = []
         for name in sorted((values | called) - {fn.name}):
-            found = local.get(name) or module.get(name) or []
+            found = local.get(name) or ([] if name in bound else module.get(name)) or []
             if name not in values:  # only called: counts for a stub class (its instance is the device), never for a function it calls itself
                 found = [s for s in found if "." in s.name]
             stubs.extend(found)
@@ -204,7 +243,7 @@ def analyse_source(source: str, path: str = "<test>") -> FileStubs:
         for n in ast.walk(fn):
             if isinstance(n, ast.Lambda):
                 s = _stub_of(n, f"lambda@{n.lineno}")
-                if s and not any(s.lines <= x.lines for x in stubs):
+                if s and not any(x.is_lambda and x.code_line == s.code_line for x in stubs):
                     stubs.append(s)
         if stubs:
             result.installs[qual] = stubs
@@ -224,9 +263,10 @@ _TOOL_NAME = "oo-fault-reach"
 class _Recorder:
     def __init__(self) -> None:
         self.current: str | None = None  # the running test's nodeid
-        self.targets: dict[str, set[int]] = {}  # absolute test file path -> raise lines
-        self.hits: set[tuple[str, str, int]] = set()  # (nodeid, file, line)
-        self.ran: set[str] = set()  # nodeids whose call phase ran and did not skip
+        self.defs: dict[str, dict[int, set[int]]] = {}  # absolute test file -> {a stub def's co_firstlineno: its raise lines}
+        self.lambdas: dict[str, set[int]] = {}  # absolute test file -> co_firstlineno of its throwing lambdas
+        self.hits: set[tuple[str, str, int, int]] = set()  # (nodeid, file, code_line, line): the line ran IN that stub's own code object
+        self.ran: set[str] = set()  # nodeids whose call phase passed
         self.mock_sites: dict[tuple[str, str, int], set[str]] = {}  # (nodeid, file, line) -> exception names set there
         self.mock_hits: set[tuple[str, str, int]] = set()
         self.lock = threading.Lock()
@@ -245,24 +285,24 @@ class _Recorder:
         disable = mon.DISABLE
 
         def on_line(code, line):
-            lines = self.targets.get(code.co_filename)
+            # keyed on the code object, not the file and line alone: the statement that BUILDS a stub can share a line with it
+            lines = self.defs.get(code.co_filename, {}).get(code.co_firstlineno)
             if lines is None or line not in lines:
                 return disable
             cur = self.current
             if cur is not None:
-                self.hits.add((cur, code.co_filename, line))
+                self.hits.add((cur, code.co_filename, code.co_firstlineno, line))
             return None
 
         def on_start(code, offset):
             # a one-line lambda runs without a single LINE event of its own (measured on 3.13), so a throwing lambda is seen entering
             if code.co_name != "<lambda>":
                 return disable
-            lines = self.targets.get(code.co_filename)
-            if lines is None or code.co_firstlineno not in lines:
+            if code.co_firstlineno not in self.lambdas.get(code.co_filename, ()):
                 return disable
             cur = self.current
             if cur is not None:
-                self.hits.add((cur, code.co_filename, code.co_firstlineno))
+                self.hits.add((cur, code.co_filename, code.co_firstlineno, code.co_firstlineno))
             return None
 
         mon.register_callback(self.tool, mon.events.LINE, on_line)
@@ -280,11 +320,12 @@ class _Recorder:
 
     # ---- Mock side effects ---------------------------------------------- #
     def _test_frame_site(self) -> tuple[str, int] | None:
-        roots = tuple(r for r in (str(TESTS_DIR), os.environ.get("FAULT_REACH_EXTRA_ROOT")) if r)
-        f = sys._getframe(2)
+        roots = tuple(r.rstrip(os.sep) + os.sep for r in (str(TESTS_DIR), os.environ.get("FAULT_REACH_EXTRA_ROOT")) if r)
+        f: FrameType | None = sys._getframe(2)
         while f is not None:
             fn = f.f_code.co_filename
-            if fn.startswith(roots) and fn != __file__:
+            # a conftest fixture's mock is not the test's own device (fixture-installed stubs are a stated limit)
+            if fn.startswith(roots) and fn != __file__ and os.path.basename(fn) != "conftest.py":
                 return fn, f.f_lineno
             f = f.f_back
         return None
@@ -389,11 +430,13 @@ def pytest_collection_modifyitems(session, config, items) -> None:
             continue
         seen.add(p)
         try:
-            lines = analyse(Path(p)).target_lines()
+            defs, lambdas = analyse(Path(p)).targets()
         except (OSError, SyntaxError, UnicodeDecodeError):
             continue
-        if lines:
-            _REC.targets[p] = lines
+        if defs:
+            _REC.defs[p] = defs
+        if lambdas:
+            _REC.lambdas[p] = lambdas
     sys.monitoring.restart_events()  # lines in these files that fired during collection were disabled before their targets were known
 
 
@@ -408,8 +451,9 @@ def pytest_runtest_call(item) -> None:
 
 
 def pytest_runtest_logreport(report) -> None:
-    """A test RAN when its call phase finished without skipping: a ``pytest.skip`` inside the body never reached its fault either."""
-    if _REC is not None and report.when == "call" and not report.skipped:
+    """A test is judged only when its call phase PASSED: a ``pytest.skip`` inside the body never reached its fault, and a failing
+    test may have stopped before it (a full disk made 8 repair tests fail early and read as vacuous), and is red anyway."""
+    if _REC is not None and report.when == "call" and report.passed:
         _REC.ran.add(report.nodeid)
 
 

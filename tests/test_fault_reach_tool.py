@@ -67,9 +67,12 @@ def test_a_nested_stub_shadows_a_module_one_and_a_plain_local_name_is_not_a_stub
         def test_local_value_named_like_a_stub():
             fail = 3
             run(fail)
+
+        def test_a_parameter_named_like_a_stub(fail):
+            run(fail)
         """
     )
-    assert got["test_nested"] == [("fail", False)]
+    assert got == {"test_nested": [("fail", False)]}
     r = analyse_source(textwrap.dedent("def fail(*a):\n    raise OSError(5, 'x')\n\ndef test_nested():\n    def fail(*a):\n        raise ValueError('l')\n    run(fail)\n"))
     assert r.installs["test_nested"][0].exceptions == frozenset({"ValueError"})
 
@@ -91,11 +94,15 @@ def test_guards_are_classified_as_guards() -> None:
         def real(*a):
             raise OSError(28, "full")
 
+        def tracked(*a):
+            tracker.fail()
+            raise OSError(5, "io")
+
         def test_mix():
-            run(never, todo, refuse, real)
+            run(never, todo, refuse, real, tracked)
         """
     )
-    assert sorted(got["test_mix"]) == [("never", True), ("real", False), ("refuse", True), ("todo", True)]
+    assert sorted(got["test_mix"]) == [("never", True), ("real", False), ("refuse", True), ("todo", True), ("tracked", False)]
 
 
 def test_class_stubs_and_throw_lambdas_are_seen() -> None:
@@ -122,7 +129,7 @@ def test_class_stubs_and_throw_lambdas_are_seen() -> None:
     assert got["test_assigned_lambda"] == [("thrower", False)]
     assert [g for _, g in got["test_inline_lambda"]] == [False]
     r = analyse_source(textwrap.dedent("def test_inline_lambda():\n    run(lambda *a: (_ for _ in ()).throw(\n        KeyboardInterrupt()))\n"))
-    assert r.installs["test_inline_lambda"][0].lines == frozenset({2, 3})
+    assert r.installs["test_inline_lambda"][0].code_line == 2 and r.installs["test_inline_lambda"][0].is_lambda
 
 
 def test_methods_of_test_classes_are_tests_with_their_class_in_the_key() -> None:
@@ -177,6 +184,28 @@ def test_one_case_reaching_is_enough(use):
 def test_a_one_line_lambda_fault_is_seen(fn):
     assert guarded_call(fn, True) == "handled"
 
+class Holder:
+    f = None
+
+def test_an_inline_lambda_built_on_the_setattr_line_but_never_called(monkeypatch):
+    monkeypatch.setattr(Holder, "f", lambda *a: (_ for _ in ()).throw(RuntimeError("x")))
+    assert guarded_call(Holder.f, False) == "ok"
+
+def test_an_inline_lambda_on_a_continuation_line_never_called():
+    assert guarded_call(
+        lambda: (_ for _ in ()).throw(RuntimeError("x")),
+        False,
+    ) == "ok"
+
+def test_a_one_line_nested_def_never_called():
+    def boom2(*a): raise RuntimeError("x")
+    assert guarded_call(boom2, False) == "ok"
+
+class TestOuter:
+    class TestInner:
+        def test_nested_class_never_reaches(self):
+            assert guarded_call(boom, False) == "ok"
+
 def test_mock_fired():
     m = mock.Mock(side_effect=RuntimeError("x"))
     assert guarded_call(m, True) == "handled"
@@ -193,6 +222,9 @@ def test_skipped():
 def test_skips_inside_its_body():
     pytest.skip("an optional library is absent")
     guarded_call(boom, True)
+
+def test_fails_before_its_fault():
+    assert guarded_call(boom, False) == "not ok"
 '''
 
 
@@ -207,18 +239,26 @@ def test_the_plugin_flags_exactly_the_tests_whose_fault_never_fired(tmp_path) ->
          "--rootdir", str(tmp_path), "--basetemp", str(tmp_path / "bt"), "tests/test_scratch.py"],
         cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
     )
-    assert p.returncode == 0, p.stdout + p.stderr
+    assert p.returncode == 1 and "1 failed" in p.stdout, p.stdout + p.stderr  # test_fails_before_its_fault, on purpose
     v = audit.judge(audit.load_results(out), root=tmp_path)
-    assert sorted(v.flagged) == ["tests/test_scratch.py::test_mock_never_called", "tests/test_scratch.py::test_never_reaches_its_fault"]
+    assert sorted(v.flagged) == [
+        "tests/test_scratch.py::TestOuter::TestInner::test_nested_class_never_reaches",
+        "tests/test_scratch.py::test_a_one_line_nested_def_never_called",
+        "tests/test_scratch.py::test_an_inline_lambda_built_on_the_setattr_line_but_never_called",
+        "tests/test_scratch.py::test_an_inline_lambda_on_a_continuation_line_never_called",
+        "tests/test_scratch.py::test_mock_never_called",
+        "tests/test_scratch.py::test_never_reaches_its_fault",
+    ]
     assert "tests/test_scratch.py::test_skipped" not in v.ran
     assert "tests/test_scratch.py::test_skips_inside_its_body" not in v.ran
+    assert "tests/test_scratch.py::test_fails_before_its_fault" not in v.ran  # red already; it may have stopped before its fault
     assert "tests/test_scratch.py::test_a_guard_at_zero_is_fine" not in v.installed
 
     baseline = {"tests/test_scratch.py::test_never_reaches_its_fault": "zero is right here",
                 "tests/test_scratch.py::test_reaches_its_fault": "an old entry",
                 "tests/test_scratch.py::test_gone": "deleted"}
-    new, stale = audit.compare(v, baseline, scope_all=True, root=tmp_path)
-    assert list(new) == ["tests/test_scratch.py::test_mock_never_called"]
+    new, stale = audit.compare(v, baseline, root=tmp_path)
+    assert "tests/test_scratch.py::test_never_reaches_its_fault" not in new and "tests/test_scratch.py::test_mock_never_called" in new
     assert stale == {"tests/test_scratch.py::test_reaches_its_fault": "it ran and fired its fault",
                      "tests/test_scratch.py::test_gone": "no such test any more"}
 

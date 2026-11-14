@@ -100,26 +100,28 @@ class Verdict:
 
 def judge(results: list[dict], root: Path = ROOT) -> Verdict:
     """Fold the plugin's per-worker results into one verdict per test function."""
-    hits: set[tuple[str, str, int]] = set()
+    hits: set[tuple[str, str, int, int]] = set()
     ran: set[str] = set()
     mock_sites: dict[tuple[str, str, int], set[str]] = defaultdict(set)
     mock_hits: set[tuple[str, str, int]] = set()
     for r in results:
-        hits.update((a, b, c) for a, b, c in r["hits"])
+        hits.update((a, b, c, d) for a, b, c, d in r["hits"])
         ran.update(r["ran"])
         for nodeid, f, ln, excs in r["mock_sites"]:
             mock_sites[(nodeid, f, ln)].update(excs)
         mock_hits.update((a, b, c) for a, b, c in r["mock_hits"])
 
-    fired_lines: dict[str, set[tuple[str, int]]] = defaultdict(set)
-    for nodeid, f, ln in hits:
-        fired_lines[function_key(nodeid)].add((f, ln))
+    fired_lines: dict[str, set[tuple[str, int, int]]] = defaultdict(set)
+    for nodeid, f, code_line, ln in hits:
+        fired_lines[function_key(nodeid)].add((f, code_line, ln))
     v = Verdict(ran={function_key(n) for n in ran})
 
     devices: dict[str, list[tuple[Device, bool]]] = defaultdict(list)
     static_cache: dict[str, dict] = {}
     for key in v.ran:
         rel, _, qual = key.partition("::")
+        if not rel.endswith(".py"):
+            raise ValueError(f"fault-reach: the nodeid {key!r} names no test file: run from the repository root (its rootdir), not through a link")
         if rel not in static_cache:
             p = (root / rel).resolve()
             try:
@@ -130,7 +132,7 @@ def judge(results: list[dict], root: Path = ROOT) -> Verdict:
         for s in info["installs"].get(qual, []):
             if s.guard:
                 continue
-            fired = any((info["abs"], ln) in fired_lines[key] for ln in s.lines)
+            fired = any((info["abs"], s.code_line, ln) in fired_lines[key] for ln in s.lines)
             span = f"{min(s.lines)}" if len(s.lines) == 1 else f"{min(s.lines)}-{max(s.lines)}"
             devices[key].append((Device("stub", s.name, f"{rel}:{span}", sorted(s.exceptions)), fired))
     for (nodeid, f, ln), excs in mock_sites.items():
@@ -183,17 +185,20 @@ def existing_tests(keys: set[str], root: Path = ROOT) -> set[str]:
         if not p.exists():
             continue
         tree = ast.parse(p.read_text(encoding="utf-8"))
-        names = set()
-        for st in tree.body:
-            if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                names.add(st.name)
-            elif isinstance(st, ast.ClassDef):
-                names.update(f"{st.name}::{m.name}" for m in st.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)))
+        names: set[str] = set()
+        stack: list[tuple[list, str]] = [(tree.body, "")]
+        while stack:
+            body, prefix = stack.pop()
+            for st in body:
+                if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    names.add(prefix + st.name)
+                elif isinstance(st, ast.ClassDef):
+                    stack.append((st.body, f"{prefix}{st.name}::"))
         out.update(f"{rel}::{q}" for q in quals if q in names)
     return out
 
 
-def compare(v: Verdict, baseline: dict[str, str], scope_all: bool, root: Path = ROOT) -> tuple[dict[str, list[Device]], dict[str, str]]:
+def compare(v: Verdict, baseline: dict[str, str], root: Path = ROOT) -> tuple[dict[str, list[Device]], dict[str, str]]:
     new = {k: d for k, d in v.flagged.items() if k not in baseline}
     alive = existing_tests(set(baseline), root)
     stale = {}
@@ -202,15 +207,14 @@ def compare(v: Verdict, baseline: dict[str, str], scope_all: bool, root: Path = 
             stale[k] = "no such test any more"
         elif k in v.ran and k not in v.flagged:
             stale[k] = "it ran and fired its fault" if k in v.installed else "it ran and no longer installs a non-guard fault"
-        elif scope_all and k not in v.ran:
-            pass  # skipped in this environment: neither stale nor confirmed
+        # a line whose test did not pass here (skipped in this environment, or failing) is neither stale nor confirmed
     return new, stale
 
 
 def report(v: Verdict, new: dict[str, list[Device]], stale: dict[str, str], baseline: dict[str, str]) -> str:
     out = ["# Fault-reach audit", ""]
     out.append(
-        f"{len(v.ran)} test functions ran; {len(v.installed)} installed a non-guard fault; {len(v.flagged)} never fired one "
+        f"{len(v.ran)} test functions passed (a failing or skipped test is not judged); {len(v.installed)} installed a non-guard fault; {len(v.flagged)} never fired one "
         f"({len(v.flagged) - len(new)} of them reviewed in the baseline, {len(new)} new). Stale baseline lines: {len(stale)}."
     )
     out.append("")
@@ -227,7 +231,7 @@ def report(v: Verdict, new: dict[str, list[Device]], stale: dict[str, str], base
         out += [f"- `{k}`: {why}" for k, why in sorted(stale.items())]
     not_run = sorted(k for k in baseline if k not in v.ran and k not in stale)
     if not_run:
-        out += ["", f"## Baseline lines not checked here ({len(not_run)}: skipped or not collected in this environment)", ""]
+        out += ["", f"## Baseline lines not checked here ({len(not_run)}: skipped, failing or not collected in this environment)", ""]
         out += [f"- `{k}`" for k in not_run]
     return "\n".join(out) + "\n"
 
@@ -243,7 +247,10 @@ def _gh(args: list[str]) -> tuple[int, str]:
 def sync_issue(actionable: bool, body: str) -> None:
     """One rolling issue: open or edit it while something needs reading, close it when nothing does. A gh failure is printed, never fatal."""
     rc, out = _gh(["issue", "list", "--label", _LABEL, "--state", "open", "--json", "number", "--jq", ".[0].number"])
-    number = out if rc == 0 and out.isdigit() else None
+    if rc != 0:  # without the list, a create would open a second issue every week
+        print(f"fault-reach: cannot list the rolling issue ({rc}): {out}", file=sys.stderr)
+        return
+    number = out if out.isdigit() else None
     if actionable:
         if number:
             rc, out = _gh(["issue", "edit", number, "--body", body])
@@ -286,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.files:  # a partial run cannot call a baseline line for another file stale
         rels = {str(f.relative_to(ROOT)) for f in files}
         baseline = {k: r for k, r in baseline.items() if k.partition("::")[0] in rels}
-    new, stale = compare(v, baseline, scope_all=not a.files)
+    new, stale = compare(v, baseline)
     text = report(v, new, stale, baseline)
     Path(a.report).write_text(text, encoding="utf-8")
     print(text)
