@@ -504,6 +504,42 @@ def llm_throughput_selftest() -> dict:
     return run_throughput_selftest()
 
 
+def _bulletin_layer_a_payload(db: Session, cadence: str, omit_sections: dict[str, str] | None = None) -> dict:
+    """Layer A for one cadence, or the gate's refusal: the body of ``bulletin_preview``, shared with the bundle."""
+    from src.bulletin.facts import layer_a
+    from src.bulletin.gate import bulletin_available
+    from src.bulletin.period import resolve_period
+
+    gate = bulletin_available()
+    if not gate["available"]:
+        return {"available": False, "gate": gate}
+    try:
+        period = resolve_period(cadence)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    payload = layer_a(db, period, omit_sections=omit_sections)
+    payload["available"] = True
+    payload["gate"] = gate
+    return payload
+
+
+#: Why the all-diagnostics copy of the weekly bulletin has no cards section. Said in the file (the section's
+#: ``skipped`` field and ``bundle_note``) and in the manifest entry (``bundle_note``).
+BULLETIN_BUNDLE_CARDS_OMITTED = (
+    "Not built in the all-diagnostics bundle: the cards section runs every card producer again, which this bundle "
+    "already does in card-audit.json, and it was most of this member's time. The other sections are complete. The "
+    "full edition, cards included, is /api/diagnostics/bulletin-preview?cadence=weekly."
+)
+
+
+def bulletin_weekly_for_bundle(db: Session) -> dict:
+    """The all-diagnostics member ``bulletin-weekly.json``: the weekly Layer A without its cards section."""
+    payload = _bulletin_layer_a_payload(db, "weekly", omit_sections={"cards": BULLETIN_BUNDLE_CARDS_OMITTED})
+    if payload.get("available"):
+        payload["bundle_note"] = BULLETIN_BUNDLE_CARDS_OMITTED
+    return payload
+
+
 @router.get("/bulletin-preview")
 def bulletin_preview(
     cadence: str = Query("weekly", description="daily | weekly | monthly | trimester | semester | yearly"),
@@ -533,22 +569,7 @@ def bulletin_preview(
     reader of the preview should be able to see what this machine could add to it.
     See src/bulletin/.
     """
-    from src.bulletin.facts import layer_a
-    from src.bulletin.gate import bulletin_available
-    from src.bulletin.period import resolve_period
-
-    gate = bulletin_available()
-    if not gate["available"]:
-        payload: dict = {"available": False, "gate": gate}
-    else:
-        try:
-            period = resolve_period(cadence)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
-        payload = layer_a(db, period)
-        payload["available"] = True
-        payload["gate"] = gate
-
+    payload = _bulletin_layer_a_payload(db, cadence)
     headers = {}
     if download:
         fname = f"oo-bulletin-{cadence}-{datetime.now().strftime('%Y%m%d')}.json"

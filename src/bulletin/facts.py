@@ -407,8 +407,12 @@ def layer_a(
     *,
     rising_limit: int = 20,
     target_lang: str | None = None,
+    omit_sections: dict[str, str] | None = None,
 ) -> dict:
     """Assemble the whole deterministic record for one period.
+
+    ``omit_sections`` ({section key: reason in plain words}) leaves those sections unbuilt and
+    reports each in place as skipped with that reason (see ``build_sections``).
 
     This is the document when narration is off, and narration's only ground truth
     when it is on. No model, no network.
@@ -431,7 +435,8 @@ def layer_a(
     # two could differ, and its docstring would be claiming otherwise.)
     head = masthead(session, period)
     sections = build_sections(
-        session, period, rising_limit=rising_limit, target_lang=target_lang, masthead=head
+        session, period, rising_limit=rising_limit, target_lang=target_lang, masthead=head,
+        omit_sections=omit_sections or {},
     )
 
     return {
