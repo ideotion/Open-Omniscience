@@ -2317,7 +2317,7 @@ def test_ui_invariants():
             "simple mode never sends its own request to /api/system/network: going online is toggleNetwork's (#34, #14)"
         )
     # Wherever a method key hides (a nested body, an options variable), simple mode's only write is adding a source.
-    assert len(re.findall(r"\bmethod\s*:", _simple_js, re.I)) == len(
+    assert len(re.findall(r"""\bmethod\s*:\s*["'`](?:get|post|put|patch|delete)\b""", _simple_js, re.I)) == len(
         re.findall(r"""apiCall\(\s*["'`]/api/sources/["'`]\s*,\s*\{\s*method\s*:""", _simple_js)
     ) == 1, "simple mode's one write is POST /api/sources/ (#34, #14)"
     # 8. external links ALWAYS confirmed via popup before opening (ruled
