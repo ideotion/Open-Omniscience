@@ -1454,9 +1454,11 @@ Verify a bundle anywhere, without this app. The checker fails closed: it refuses
 entries, one cut mid-record, one signed by more than one key, one whose entries do not match the signed head its
 export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
-A verified bundle proves it is consistent and signed by ONE key; to know that key is the real signer's (and so
-that nobody cut the log and re-signed it), run with `--pin` and compare the printed signer key with one you
-already know.
+A verified bundle proves it is consistent and signed by ONE key. To know that key is the real signer's (and so
+that nobody cut the log and re-signed it whole), compare the printed signer key with one you already know: that
+comparison, not the tool, is what catches it. If your own log's key was re-created partway (after a restore onto a
+new machine, for example), its bundle is refused as signed by more than one key; the in-app chain check still passes
+it, and a key-rotation record that lets the checker follow such a change is coming.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]
