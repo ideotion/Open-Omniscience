@@ -47,7 +47,10 @@ the per-signal samples (titles and addresses only; a title opens the local reade
 the routes above, makes no request outside this computer, and offers no way to write: applying a result stays a
 deliberate API or CLI act until the maintainer has read counts and samples from their own corpus and ruled
 (R196). "Stored on a different site" and "site could not be read" are separate rows, and a signal the run did not
-ask for reads "not measured", never zero. Pinned by `tests/test_maintenance_panel.py`.
+ask for reads "not measured", never zero. A host-mismatch sample also carries a "Confirm site" button that records
+the pair through `POST /api/quarantine/host-pairs` (R193), and "Sites you confirmed" lists every pair with a
+"Withdraw" button: a confirmation changes only how the next dry run counts that pair (as "confirmed by you"), and
+marks or removes nothing. Pinned by `tests/test_maintenance_panel.py`.
 
 ## What these numbers are not
 A `reason:*_stub` count is a CANDIDATE count under rules fitted to few specimens, not a measured error

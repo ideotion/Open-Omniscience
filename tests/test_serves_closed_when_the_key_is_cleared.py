@@ -207,9 +207,9 @@ def test_the_crypto_erase_closes_the_serves_before_a_byte_is_touched(serves, mon
     (tmp_path / "open_omniscience.db").write_bytes(b"S" * 8192)
     real_shred = crypto_erase._shred
 
-    def shred(path, *, head_bytes=None):
+    def shred(path, *, head_bytes=None, zeros=False):
         events.append("shred")
-        return real_shred(path, head_bytes=head_bytes)
+        return real_shred(path, head_bytes=head_bytes, zeros=zeros)
 
     monkeypatch.setattr(crypto_erase, "_shred", shred)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)

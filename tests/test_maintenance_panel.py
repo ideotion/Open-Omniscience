@@ -33,6 +33,7 @@ _ROUTES = {
     "/api/quarantine/samples",
     "/api/quarantine/raw-id-sources",
     "/api/quarantine/source-furniture",
+    "/api/quarantine/host-pairs",
 }
 
 
@@ -128,3 +129,21 @@ def test_every_meaning_key_the_server_sends_has_a_sentence_in_the_page_r665():
     known = set(re.findall(r'case "(maintenance\.[a-z_]+\.v\d+)":', page))
     assert len(sent) == 5, sent
     assert sent == known, (sent - known, known - sent)
+
+
+def test_a_host_pair_is_confirmed_or_withdrawn_from_the_panel_and_nothing_else_is_written():
+    """R684 (Lane M): the three host-pair routes (R193) had no button. The panel confirms a pair from a
+    host-mismatch sample, lists every confirmed pair and withdraws one; the confirm and the withdraw are
+    the only writes besides the dry run, the verb is allow-listed, and the list keeps its caveat visible."""
+    from tests.js_source_helper import function_body
+
+    act = function_body(_JS, "maintPairAct")
+    assert '["confirm", "withdraw"].indexOf(act) < 0' in act
+    assert '"/api/quarantine/host-pairs", { method: "POST"' in act
+    assert '{ method: "DELETE" }' in act and "encodeURIComponent(site)" in act
+    methods = set(re.findall(r'method:\s*"([A-Z]+)"', _JS))
+    assert methods <= {"POST", "DELETE"}, methods
+    assert 'id="maint-pairs"' in _HTML and 'id="maint-pair-msg"' in _HTML
+    assert 'class="card-caveat"' in function_body(_JS, "maintPairsHtml")
+    # one delegated listener, never an inline handler per row
+    assert 'closest("button[data-maint-pair]")' in _JS and "data-on-click" not in function_body(_JS, "maintPairButtonHtml")

@@ -901,8 +901,8 @@ def test_the_ping_is_not_made_when_robots_disallows_the_homepage(tmp_path):
 @pytest.mark.parametrize(
     ("answer", "robots", "verdict"),
     [
-        (403, "blocked", "robots_denied"),
-        (401, "blocked", "robots_denied"),
+        (403, "blocked", "robots_refused"),  # a refusal to us, not a policy (OPEN_QUEUE C1)
+        (401, "blocked", "robots_refused"),
         (500, "http_500", "unreachable"),
         (503, "http_503", "unreachable"),
         (204, "http_204", "unreachable"),
@@ -970,16 +970,17 @@ def test_the_pings_hop_to_a_disallowed_path_on_its_host_is_not_followed(tmp_path
     ("answer", "words", "verdict"),
     [
         (_DISALLOW_ALL, _HOP_DISALLOWED, "robots_denied"),
-        (403, _HOP_UNREADABLE, "unreachable"),
-        (401, _HOP_UNREADABLE, "unreachable"),
+        (403, _HOP_UNREADABLE, "robots_refused"),  # the cause "refused" is its own verdict (OPEN_QUEUE C1)
+        (401, _HOP_UNREADABLE, "robots_refused"),
         (500, _HOP_UNREADABLE, "unreachable"),
         ("raise", _HOP_UNREADABLE, "unreachable"),
     ],
     ids=["disallow", "403", "401", "500", "raise"],
 )
 def test_the_pings_hop_to_another_host_is_robots_checked(tmp_path, answer, words, verdict):
-    """A hop RobotsDisallowed refuses is "robots_denied"; one RobotsUnavailable refuses (its robots.txt answered 401/403 or 5xx, or
-    nothing) is "unreachable", as the fetcher files a 401/403 robots.txt as "refused", never as a policy (steward 3's low 1). The
+    """A hop RobotsDisallowed refuses is "robots_denied"; one RobotsUnavailable refuses because its robots.txt answered 401/403
+    (cause "refused") is "robots_refused" (OPEN_QUEUE C1), and one whose robots.txt answered 5xx or nothing is "unreachable": a
+    401/403 robots.txt is filed as "refused", never as a policy (steward 3's low 1). The
     homepage's own robots.txt (none, here) stays the record's ``robots``."""
     s = _Session()
     s.redirect(f"{A}/", f"{B}/")

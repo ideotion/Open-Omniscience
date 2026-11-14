@@ -23,7 +23,7 @@ against the REAL docs/USER_MANUAL.md:
     spaces both survive as hyphens (never collapsed to one) -- verified
     against four independent hand-written anchors in the doc that all show
     the same double-hyphen shape for a deleted "&" or em dash;
-  * a solid majority (>=80%) of the doc's own 51 in-page TOC links now
+  * a solid majority (>=80%) of the doc's own 58 in-page TOC links (51 until 2026-11-13) now
     resolve to a real heading id. The remainder are pre-existing, genuine
     authoring inconsistencies in the markdown itself (a shortened link that
     drops half the heading text, or a link hand-typed assuming the OTHER,
@@ -146,7 +146,7 @@ def test_most_of_the_docs_own_toc_links_now_resolve():
     result = _run(_USER_MANUAL)
     ids = set(result["ids"])
     links = result["links"]
-    assert len(links) == 51, f"USER_MANUAL.md's own in-page link count changed ({len(links)}); re-verify this test's numbers"
+    assert len(links) == 58, f"USER_MANUAL.md's own in-page link count changed ({len(links)}); re-verify this test's numbers"
     resolved = [link for link in links if link in ids]
     unresolved = sorted({link for link in links if link not in ids})
     # WAS A PINNED SET OF NINE (2026-09-09). This test used to assert that exactly nine
@@ -189,3 +189,23 @@ console.log(oldMdToHtmlHeading("1. Install & first run"));
     # and the FIXED extraction, on the same heading, DOES carry the id:
     result = _run(_USER_MANUAL)
     assert "1-install--first-run" in result["ids"]
+
+
+def test_a_drafts_leading_banner_comment_is_not_drawn(tmp_path):
+    """A translated draft must open with an HTML comment (test_help_docs_translated.py); the reader draws its
+    own banner, so the comment is dropped before rendering instead of showing as a raw "<!-- ... -->" paragraph
+    above the title (R677). Only the LEADING comment goes: the body below renders as before."""
+    doc = tmp_path / "draft.md"
+    doc.write_text("<!-- xx: AI-drafted translation, two\nlines -->\n\n# Titre\n\nTexte.\n", encoding="utf-8")
+    harness = f"""
+{_extract_esc()}
+{_extract_settings_slice()}
+const html = mdToHtml(require('fs').readFileSync({json.dumps(str(doc))}, 'utf8'));
+console.log(JSON.stringify(html));
+"""
+    r = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"node failed:\n{r.stdout}\n{r.stderr}"
+    html = json.loads(r.stdout.strip().splitlines()[-1])
+    assert "&lt;!--" not in html and "AI-drafted" not in html, html
+    assert html.startswith('<h1 id="titre">Titre</h1>'), html
+    assert "<p>Texte.</p>" in html, html

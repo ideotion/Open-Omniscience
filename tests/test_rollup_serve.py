@@ -79,8 +79,14 @@ def _reset_serve_state():
                 pass
         rollup_serve._STATE.update(
             {"con": None, "built_at": 0.0, "rows": 0, "bind": None, "persisted": False,
-             "token": None, "pending": False, "checked_at": 0.0}
+             "token": None, "pending": False, "checked_at": 0.0,
+             # A real build an earlier test kicked can DECLINE on this machine's live memory reading (a loaded runner reads
+             # little RAM available). That decline stays on record, and for _DECLINE_GAP_S every serve read skips its build
+             # kick, so test_a_baseline_read_with_the_serve_on_starts_a_build saw no build asked for (open-on-main row 55).
+             # The decline record is serve state like the rest, so it is cleared with it.
+             "last_skip": None, "last_decline": None}
         )
+        rollup_serve._DECLINED_AT["t"] = None
 
     _drain_and_clear()
     yield
@@ -105,10 +111,30 @@ def test_forced_off_uses_the_live_path_unchanged(session, monkeypatch):
 def test_auto_mode_is_on_by_default_when_duckdb_available(session, monkeypatch):
     # Field ask 2026-07-02: automatic, not a manual env var. With duckdb present (this
     # module is skipped otherwise) and no env override, the serve enables itself.
+    # Auto mode is also off by default below the RAM floor (S1.1), and the budget that says so is resolved once per process
+    # from the machine's memory. Left to the machine, this test passed or failed by where it ran (open-on-main row 55), so the
+    # machine is pinned here, on each side of the floor.
+    from src.config import memory_budget as mb
+
     monkeypatch.delenv("OO_COLUMNAR_SERVE", raising=False)
+    monkeypatch.delenv("OO_COLUMNAR", raising=False)
+    monkeypatch.setattr(mb, "_CACHE", mb.resolve_for(16384.0))
     assert rollup_serve.serve_mode() == "auto"
     assert rollup_serve.serve_enabled() is True
     assert rollup_serve.status()["mode"] == "auto"
+
+
+def test_auto_mode_is_off_by_default_below_the_ram_floor(session, monkeypatch):
+    from src.config import memory_budget as mb
+
+    monkeypatch.delenv("OO_COLUMNAR_SERVE", raising=False)
+    monkeypatch.delenv("OO_COLUMNAR", raising=False)
+    monkeypatch.setattr(mb, "_CACHE", mb.resolve_for(3000.0))
+    assert mb.budget()["tier"] == "small"
+    assert rollup_serve.serve_mode() == "auto"
+    assert rollup_serve.serve_enabled() is False, "below the floor the in-memory rollup is off unless forced on"
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    assert rollup_serve.serve_enabled() is True, "the explicit override still turns it on"
 
 
 def test_opted_in_but_not_built_falls_back_to_live(session, monkeypatch):

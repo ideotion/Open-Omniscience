@@ -74,7 +74,7 @@ def test_api_dump_endpoints_reject_traversal_with_400():
 
     c = TestClient(app)
     # probe rejects BEFORE any network probe; page rejects BEFORE any disk read.
-    assert c.get("/api/wiki/dumps/probe", params={"wiki": "../../etc"}).status_code == 400
+    assert c.post("/api/wiki/dumps/probe", params={"wiki": "../../etc"}).status_code == 400
     assert c.get("/api/wiki/dumps/page", params={"wiki": "../x", "title": "Foo"}).status_code == 400
     assert c.post("/api/wiki/dumps/start", json={"wiki": "../../x",
                   "kind": "pages-articles-multistream"}).status_code == 400

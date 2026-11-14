@@ -17,9 +17,12 @@ so most of a multi-GB corpus survived, forensically recoverable. These tests pro
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -122,6 +125,8 @@ def test_quick_crypto_erase_requires_confirm(tmp_path):
 
 @sqlcipher_only
 def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
+    tmp_path = tmp_path / "OOS data"  # a folder the app chose (R711), so a file it does not know goes with it
+    tmp_path.mkdir()
     for name in ("open_omniscience.db", "custody_log.db"):
         con = connect(tmp_path / name, key=_PW)
         con.execute("CREATE TABLE t(x)")
@@ -149,6 +154,125 @@ def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
     assert report["passphrase_cleared"] is False
 
 
+def _salt_hits(data: bytes, salt: bytes) -> list[int]:
+    hits, i = [], data.find(salt)
+    while i != -1:
+        hits.append(i)
+        i = data.find(salt, i + 1)
+    return hits
+
+
+@sqlcipher_only
+@pytest.mark.skipif(sys.platform == "win32", reason="reads an open, unlinked WAL through a hard link (POSIX semantics)")
+def test_quick_crypto_erase_destroys_every_copy_of_the_salt_in_the_write_ahead_log(tmp_path):
+    """R708. SQLCipher keeps the salt in plaintext at the start of page 1, and every commit that touches page 1 leaves a
+    copy of that page in a WAL frame, far past the WAL's first 4 KiB. The old erase overwrote only those 4 KiB, so the
+    salt stayed readable in the frames behind them. The connection stays OPEN (as the running app's does: closing it
+    would checkpoint and delete the WAL), and a hard link outside the data dir keeps the WAL's inode readable after the
+    erase unlinks it, so what is read back is exactly the bytes a seized disk would hold."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    db = data / "open_omniscience.db"
+    con = connect(db, key=_PW)
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        for _ in range(20):
+            con.execute("CREATE TABLE IF NOT EXISTS u(x)")  # schema churn rewrites page 1 on every commit
+            con.execute("INSERT INTO t VALUES (randomblob(3000))")
+            con.commit()
+        salt = db.read_bytes()[:16]
+        wal = db.with_name(db.name + "-wal")
+        kept = tmp_path / "kept-wal"
+        os.link(wal, kept)
+        before = _salt_hits(kept.read_bytes(), salt)
+        assert [h for h in before if h >= crypto_erase._SQLCIPHER_PAGE1], "the setup must put the salt past the head"
+
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    finally:
+        con.close()
+
+    assert report["overwrite_failures"] == []
+    assert _salt_hits(kept.read_bytes(), salt) == [], "a copy of the salt survived in the write-ahead log"
+
+
+@sqlcipher_only
+@pytest.mark.skipif(os.name != "posix", reason="the kept descriptors are POSIX only")
+@pytest.mark.parametrize("mode", ["DELETE", "WAL"])
+def test_a_transaction_that_commits_after_the_erase_is_rewritten_through_the_kept_descriptors(tmp_path, mode):
+    """A transaction already under way when the erase runs commits into the unlinked file and puts page 1, salt
+    included, back on the disk (measured by the security read: 0 copies before the COMMIT, 1 after). The panic wipe
+    keeps a descriptor on every unlinked main file, -wal and -journal, and rewrites them again once the pool is closed."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    db = data / "custody_log.db"
+    con = connect(db, key=_PW)
+    kept: list = []
+    try:
+        con.execute(f"PRAGMA journal_mode={mode}")
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        salt = db.read_bytes()[:16]
+        os.link(db, tmp_path / "kept-db")
+        con.execute("BEGIN")
+        con.execute("CREATE TABLE u(x)")  # a schema change rewrites page 1
+        con.execute("INSERT INTO t VALUES (randomblob(3000))")
+        for suffix in ("-wal", "-journal"):
+            side = db.with_name(db.name + suffix)
+            if side.exists():
+                os.link(side, tmp_path / ("kept" + suffix))
+        crypto_erase.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=True)
+        with contextlib.suppress(Exception):
+            con.commit()
+    finally:
+        with contextlib.suppress(Exception):
+            con.close()
+    kept = sorted(tmp_path.glob("kept*"))
+    late = [k.name for k in kept if _salt_hits(k.read_bytes(), salt)]
+    assert late, "the setup must reproduce the late commit putting the salt back"
+    assert crypto_erase.rescrub_held(close=True) >= 1
+    assert [k.name for k in kept if _salt_hits(k.read_bytes(), salt)] == [], (
+        f"a late commit's salt survived the rescrub (before it: {late})"
+    )
+
+
+def test_the_log_index_head_is_zeroed_never_randomised(tmp_path):
+    """A connection that rolls back after the erase reads its frame count from the -shm header and grows the mapped file
+    toward it: random bytes there grew it toward 32 GiB in the security read (the disk filled). The header holds no page
+    data, so the erase writes zeros over it, which read as "rebuild the index from the log"."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    shm = data / "open_omniscience.db-shm"
+    shm.write_bytes(b"\xff" * 32768)
+    kept = tmp_path / "kept-shm"
+    os.link(shm, kept)
+
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    assert kept.read_bytes()[: crypto_erase._SQLCIPHER_PAGE1] == bytes(crypto_erase._SQLCIPHER_PAGE1)
+    assert str(shm) not in report["overwrite_failures"]
+
+
+def test_quick_crypto_erase_overwrites_the_whole_rollback_journal(tmp_path):
+    """R708, the rollback-mode twin: a hot -journal holds the original page 1, salt included, at an offset past the
+    head. The erase rewrites it whole."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"\x00" * 8192)
+    salt = b"SALT-SALT-SALT-!"
+    journal = data / "open_omniscience.db-journal"
+    journal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
+    kept = tmp_path / "kept-journal"
+    os.link(journal, kept)
+
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    assert salt not in kept.read_bytes()
+
+
 def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_lives(tmp_path, monkeypatch):
     """The cache's key is stretched from the passphrase AND the salt in ``analytics.duckdb.kdf``, so the erase destroys the
     sidecar with the cache's header: with the salt gone the key is not derivable even from the right passphrase. What is
@@ -166,8 +290,8 @@ def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_l
     real_overwrite = crypto_erase._overwrite
     seen: dict[str, object] = {}
 
-    def spy(path, *, head_bytes=None):
-        done = real_overwrite(path, head_bytes=head_bytes)
+    def spy(path, *, head_bytes=None, zeros=False):
+        done = real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
         if path.name == sidecar.name:
             seen.update(done=done, head_bytes=head_bytes, after=path.read_bytes())
         return done
@@ -187,7 +311,7 @@ def test_quick_crypto_erase_takes_every_file_of_a_cache_directory_outside_the_da
     remove, so nothing else in it is touched). An unclean end leaves ``analytics.duckdb.wal`` beside the cache: ciphertext
     under the same key, and with the sidecar destroyed the key is not derivable, but it is the store's own file, so the
     list that is walked names it too. The unrelated file in that directory is left alone."""
-    data = tmp_path / "data"
+    data = tmp_path / "OOS data"
     data.mkdir()
     cache = tmp_path / "columnar-cache"
     cache.mkdir()
@@ -269,7 +393,7 @@ def test_uninstall_watcher_embedded_crypto_erase(tmp_path):
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
 
-    data = tmp_path / "data"
+    data = tmp_path / "OOS data"
     data.mkdir()
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)  # 'encrypted' corpus
     (data / "settings.json").write_text("{}", encoding="utf-8")
@@ -291,3 +415,594 @@ def test_uninstall_watcher_embedded_crypto_erase(tmp_path):
     assert not data.exists(), "the watcher must wipe the data dir"
     log_text = audit.read_text(encoding="utf-8")
     assert "crypto-erase" in log_text  # the new (non-4-MiB-cap) code path ran
+
+
+def test_uninstall_watcher_overwrites_the_whole_write_ahead_log(tmp_path):
+    """R708 in the watcher's embedded copy: a server that died without a clean close leaves a -wal whose frames hold
+    copies of page 1, salt included, past the first 4 KiB. The watcher rewrites it whole (and the -shm stays head-only)."""
+    from src.safety.uninstall import _WATCHER_SRC
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    salt = b"SALT-SALT-SALT-!"
+    wal = data / "open_omniscience.db-wal"
+    wal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
+    kept = tmp_path / "kept-wal"
+    os.link(wal, kept)
+    plan = {"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(data), "audit_log": str(tmp_path / "a.log")}
+
+    subprocess.run([sys.executable, "-c", _WATCHER_SRC, str(dead.pid), json.dumps(plan)], check=True, timeout=60)
+
+    assert salt not in kept.read_bytes()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the kept descriptors are POSIX only")
+def test_a_closing_pass_closes_each_descriptor_once_and_keeps_later_ones(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.write_bytes(b"A" * 100)
+    b.write_bytes(b"B" * 100)
+    crypto_erase._hold(a, whole=True)
+    assert crypto_erase.rescrub_held(close=False) >= 1
+    first = crypto_erase.held_count()
+    crypto_erase._hold(b, whole=True)
+    assert crypto_erase.rescrub_held(close=True) == first + 1
+    assert crypto_erase.held_count() == 0
+    assert a.read_bytes() != b"A" * 100 and b.read_bytes() != b"B" * 100
+
+
+@sqlcipher_only
+def test_an_erase_stopped_before_step_six_leaves_no_readable_salt_anywhere_under_the_data_dir(tmp_path, monkeypatch):
+    """Encrypted copies of the corpus live under the data dir under names no list keeps up with (pre-restore snapshots,
+    salvage copies, anything copied byte for byte), each with the salt in its first page. Step 5b destroys every file's
+    head before the slow step 6, so an erase stopped right before step 6 leaves no salt to read anywhere."""
+    import shutil
+
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    db = data / "open_omniscience.db"
+    con = connect(db, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.execute("INSERT INTO t VALUES (randomblob(9000))")
+    con.commit()
+    con.close()
+    salt = db.read_bytes()[:16]
+    copies = [
+        data / "pre-restore-20261114T090000Z.db",
+        data / ".restore-ab12" / "open_omniscience.db",
+        data / ".bak-build-cd34" / "corpus.db",
+        data / "open_omniscience.salvage-20261114T090000Z.db",
+        data / "snapshots" / "deep" / "anything.bin",
+    ]
+    for c in copies:
+        c.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(db, c)
+    (data / "pre-restore-20261114T090000Z.db-wal").write_bytes(b"\x00" * 9000 + salt + b"\x00" * 100)
+
+    def stopped(*_a, **_k):
+        raise KeyboardInterrupt("the machine was switched off here")
+
+    import src.safety.data_volume as data_volume
+
+    monkeypatch.setattr(data_volume, "configured_folder", stopped)  # the first thing step 6 does
+    with pytest.raises(KeyboardInterrupt):
+        crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    left = [p for p in data.rglob("*") if p.is_file() and salt in p.read_bytes()]
+    assert left == [], f"a salt is still readable before step 6: {left}"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlinks and FIFOs need POSIX here")
+@pytest.mark.parametrize("stop_before_step_six", [True, False])
+def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, monkeypatch, stop_before_step_six):
+    """Steps 5b and 6 touch every file under the data dir, and no step may leave it. A symlinked folder is not entered, a
+    symlinked file is removed and never written through, a FIFO never blocks the walk, and the targets outside are intact."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    precious = outside / "precious.txt"
+    precious.write_bytes(b"KEEP" * 2048)
+    (outside / "inner.db-wal").write_bytes(b"KEEP" * 2048)
+    (data / "linked-folder").symlink_to(outside, target_is_directory=True)
+    (data / "linked-file.db").symlink_to(precious)
+    (data / "loop").symlink_to(data, target_is_directory=True)
+    os.mkfifo(data / "a-fifo")
+    # The app's own names too: a sidecar, a key file and anchors.db that are links outside are never written through.
+    for name, target in (("open_omniscience.db-wal", "w"), ("anchors.db", "a"), ("keys/custody_ed25519.pem", "k")):
+        (outside / target).write_bytes(b"KEEP" * 2048)
+        (data / name).parent.mkdir(exist_ok=True)
+        (data / name).symlink_to(outside / target)
+    if stop_before_step_six:
+
+        def stopped(*_a, **_k):
+            raise KeyboardInterrupt("stopped before step 6")
+
+        import src.safety.data_volume as data_volume
+
+        monkeypatch.setattr(data_volume, "configured_folder", stopped)
+        with pytest.raises(KeyboardInterrupt):
+            crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    else:
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+        assert report["removed"] is True
+    assert precious.read_bytes() == b"KEEP" * 2048
+    assert (outside / "inner.db-wal").read_bytes() == b"KEEP" * 2048
+    for target in ("w", "a", "k"):
+        assert (outside / target).read_bytes() == b"KEEP" * 2048, target
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlinks need POSIX here")
+def test_a_corpus_linked_into_place_is_still_erased_where_it_really_is(tmp_path):
+    """The app's own databases are the one place a link is followed: a corpus kept on another drive and linked into the
+    data dir loses its salt page at its real location."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    real = tmp_path / "other-drive" / "corpus.db"
+    real.parent.mkdir()
+    real.write_bytes(b"SALT-SALT-SALT-!" + b"S" * 8176)
+    (data / "open_omniscience.db").symlink_to(real)
+
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    assert b"SALT-SALT-SALT-!" not in (real.read_bytes() if real.exists() else b"")
+    assert report["overwrite_failures"] == []
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a folder this user cannot list")
+def test_a_folder_the_erase_cannot_list_is_named_as_a_failure(tmp_path):
+    data = tmp_path / "OOS data"
+    locked = data / "locked"
+    locked.mkdir(parents=True)
+    (locked / "pre-restore-1.db").write_bytes(b"S" * 8192)
+    locked.chmod(0)
+    try:
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    finally:
+        locked.chmod(0o700)
+    assert str(locked) in report["overwrite_failures"]
+    assert report["overwrite_failures"].count(str(locked)) == 1
+
+
+def test_a_keys_subfolder_the_erase_cannot_list_is_named_as_a_failure(tmp_path, monkeypatch):
+    """Runs as any user, root included: the listing itself is made to fail."""
+    data = tmp_path / "OOS data"
+    sub = data / "keys" / "sub"
+    sub.mkdir(parents=True)
+    (sub / "evidence.key").write_bytes(b"K" * 100)
+
+    def walk(top, *a, onerror=None, **k):  # the listing of keys/sub fails, as an unreadable folder's does
+        for root, dirs, names in os.walk(top, *a, onerror=onerror, **k):
+            if "sub" in dirs and Path(root, "sub") == sub:
+                dirs.remove("sub")
+                if onerror is not None:
+                    onerror(PermissionError(13, "Permission denied", str(sub)))
+            yield root, dirs, names
+
+    scope_os(monkeypatch, crypto_erase, walk=walk)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["overwrite_failures"].count(str(sub)) == 1
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the kept descriptors are POSIX only")
+def test_a_wipe_s_late_pass_closes_only_its_own_descriptors(tmp_path):
+    """Row 36: a second wipe within the late delay keeps its own descriptors until its own late pass."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.write_bytes(b"A" * 100)
+    b.write_bytes(b"B" * 100)
+    first, second = crypto_erase.new_hold_generation(), crypto_erase.new_hold_generation()
+    crypto_erase._hold(a, whole=True, generation=first)
+    crypto_erase._hold(b, whole=True, generation=second)
+    assert crypto_erase.rescrub_held(close=True, generation=first) == 1
+    assert crypto_erase.held_count(first) == 0
+    assert crypto_erase.held_count(second) == 1
+    b.write_bytes(b"B" * 100)
+    assert crypto_erase.rescrub_held(close=True, generation=second) == 1
+    assert b.read_bytes() != b"B" * 100
+    assert crypto_erase.held_count() == 0
+
+
+def _plain_sqlite(path):
+    import sqlite3
+
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE t(x)")
+    con.execute("INSERT INTO t VALUES ('plaintext-row')")
+    con.commit()
+    con.close()
+
+
+def test_copies_beside_a_corpus_kept_outside_the_data_folder_are_destroyed(tmp_path, monkeypatch):
+    """Row 29: salvage, damaged and pre-encrypt copies sit beside the database, wherever DATABASE_URL keeps it."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    elsewhere = tmp_path / "corpus"
+    elsewhere.mkdir()
+    main = elsewhere / "open_omniscience.db"
+    con = connect(main, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    salvage = elsewhere / "open_omniscience.salvage-20261114T101010Z.db"
+    damaged = elsewhere / "open_omniscience.damaged-20261114T101010Z-2.db"
+    for p in (salvage, damaged):
+        p.write_bytes(main.read_bytes())
+    sidecar = elsewhere / "open_omniscience.salvage-20261114T101010Z.db.json"
+    sidecar.write_text('{"finished": "x"}', encoding="utf-8")
+    plain = elsewhere / "pre-encrypt-20261114T101010Z-open_omniscience.db"
+    _plain_sqlite(plain)
+    mine = elsewhere / "my-notes.db"
+    mine.write_bytes(b"not the app's" * 10)
+    salt_heads = {p: p.read_bytes()[:16] for p in (salvage, damaged)}
+    kept = {p: tmp_path / f"kept-{p.name}" for p in (salvage, damaged, plain)}
+    for p, k in kept.items():
+        os.link(p, k)
+
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": main})
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    for p in (salvage, damaged, sidecar, plain):
+        assert not p.exists(), p
+    for p in (salvage, damaged):
+        assert salt_heads[p] not in kept[p].read_bytes()[:4096]
+    assert b"plaintext-row" not in kept[plain].read_bytes()
+    assert mine.exists() and mine.read_bytes() == b"not the app's" * 10
+    assert {salvage.name, damaged.name, sidecar.name, plain.name} <= set(report["copies_destroyed"])
+
+
+def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritten_whole(tmp_path, monkeypatch):
+    """Row 29: an encrypted pre-restore snapshot loses its head and is unlinked before step 6, which would rewrite it whole."""
+    snap = tmp_path / "pre-restore-20261114T101010Z.db"
+    con = connect(snap, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    (tmp_path / "open_omniscience.db").write_bytes(snap.read_bytes())
+    whole = []
+    real_track = crypto_erase._shred
+
+    def spy(path, *, head_bytes=None, zeros=False):
+        if path.name == snap.name and head_bytes is None:
+            whole.append(path)
+        return real_track(path, head_bytes=head_bytes, zeros=zeros)
+
+    monkeypatch.setattr(crypto_erase, "_shred", spy)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+    assert snap.name in report["copies_destroyed"]
+    assert whole == []
+
+
+def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(tmp_path, monkeypatch):
+    """R711: the home folder (here a stand-in) keeps the operator's own files, the app's common names and the folder itself; the
+    app's own go, its keys from a keys folder that also holds the operator's."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    for name in ("open_omniscience.db", "custody_log.db"):
+        con = connect(home / name, key=_PW)
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        con.close()
+    keys = home / "keys"
+    keys.mkdir()
+    (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE" * 10)
+    (keys / "evidence_ed25519.pem").write_bytes(b"EVIDENCE" * 10)
+    (keys / ".pending").mkdir()
+    (keys / ".pending" / "staged.pem").write_bytes(b"STAGED" * 10)
+    (keys / "id_ed25519").write_bytes(b"the operator's own ssh key")
+    (keys / "annotations_ed25519.pem").write_bytes(b"ANNOTATION SIGNER" * 10)
+    (home / "annotations").mkdir()
+    (home / "annotations" / "mine.json").write_text('{"note": "the source lives at"}', encoding="utf-8")
+    (home / "app_settings.json").write_text("{}", encoding="utf-8")
+    (home / "app_settings.json.tmp.123.456").write_text("{}", encoding="utf-8")
+    (home / "session_history.jsonl.lock").write_bytes(b"")
+    (home / "calendar_feed_imports.json").write_text("[]", encoding="utf-8")
+    (home / "wiki_dumps").mkdir()
+    (home / "wiki_dumps" / "enwiki.xml.bz2").write_bytes(b"dump" * 10)
+    (home / "models").mkdir()
+    (home / "models" / "my_own_llm.bin").write_bytes(b"weights")
+    (home / "Documents").mkdir()
+    (home / "Documents" / "thesis.odt").write_bytes(b"years of work")
+    (home / ".bashrc").write_text("export X=1", encoding="utf-8")
+    link_target = tmp_path / "outside.txt"
+    link_target.write_bytes(b"outside")
+    (home / "notes.txt").symlink_to(link_target)
+
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=home)
+
+    assert report["scope"] == "app-only" and report["scope_reason"] == "home"
+    assert home.is_dir() and report["removed"] is False
+    for gone in ("open_omniscience.db", "custody_log.db", "app_settings.json", "app_settings.json.tmp.123.456",
+                 "session_history.jsonl.lock", "calendar_feed_imports.json", "wiki_dumps", "annotations"):
+        assert not (home / gone).exists(), gone
+    assert sorted(p.name for p in keys.iterdir()) == ["id_ed25519"]
+    assert (keys / "id_ed25519").read_bytes() == b"the operator's own ssh key"
+    assert (home / "models" / "my_own_llm.bin").read_bytes() == b"weights"
+    assert (home / "Documents" / "thesis.odt").read_bytes() == b"years of work"
+    assert (home / ".bashrc").read_text(encoding="utf-8") == "export X=1"
+    assert (home / "notes.txt").is_symlink() and link_target.read_bytes() == b"outside"
+    assert report["left_untouched"] == [".bashrc", "Documents", "notes.txt"]
+    assert report["left_common_names"] == ["keys", "models"]
+    assert report["not_removed"] == []
+    assert "open_omniscience.db" in report["headers_destroyed"]
+    assert set(report["keys_destroyed"]) == {"custody_ed25519.pem"}
+
+
+def test_a_folder_the_app_did_not_choose_stays_shared_after_the_app_wrote_into_it(tmp_path, monkeypatch):
+    """The security reads' finding: the app writes session_state.json at every start, so a file of the app's must never make a
+    folder the app's. Ownership is where the app put the folder."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    (tmp_path / "holiday.jpg").write_bytes(b"jpeg")
+    (tmp_path / "session_state.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "open_omniscience.db").write_bytes(b"S" * 8192)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+    assert report["scope"] == "app-only" and report["scope_reason"] == "shared_folder"
+    assert (tmp_path / "holiday.jpg").read_bytes() == b"jpeg"
+    assert not (tmp_path / "session_state.json").exists() and not (tmp_path / "open_omniscience.db").exists()
+
+
+def test_an_app_folder_is_still_removed_whole(tmp_path):
+    """R711: in a folder the app chose the behaviour is unchanged, a file the app does not know included."""
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    (folder / "open_omniscience.db").write_bytes(b"S" * 8192)
+    (folder / "something-new.bin").write_bytes(b"x" * 10)
+    (folder / "models").mkdir()
+    (folder / "models" / "w.bin").write_bytes(b"w")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert report["scope"] == "data-folder" and report["scope_reason"] is None
+    assert not folder.exists() and report["left_untouched"] == []
+
+
+def test_a_damaged_copy_of_a_plaintext_store_is_rewritten_whole(tmp_path):
+    """Row 29: a copy of a store that is not known encrypted is never head-only, even when its page 1 no longer reads as SQLite."""
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    _plain_sqlite(folder / "open_omniscience.db")
+    damaged = folder / "open_omniscience.damaged-20261114T101010Z.db"
+    _plain_sqlite(damaged)
+    with open(damaged, "r+b") as f:
+        f.write(b"\x00" * 100)  # page 1 damaged: no longer the SQLite magic
+    kept = tmp_path / "kept"
+    os.link(damaged, kept)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert report["encrypted_corpus"] is False
+    assert b"plaintext-row" not in kept.read_bytes()
+
+
+def test_the_lane_pools_close_after_the_salt_pages_and_before_the_passphrase(tmp_path, monkeypatch):
+    """Row 28: closed first, a lane's last connection would write its log back while the salt is still on the disk."""
+    import src.versioned.store as store
+
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    (folder / "wiki.db").write_bytes(b"S" * 8192)
+    order = []
+    real = crypto_erase._shred
+
+    def shred(path, *, head_bytes=None, zeros=False):
+        if path.name == "wiki.db":
+            order.append("salt")
+        return real(path, head_bytes=head_bytes, zeros=zeros)
+
+    monkeypatch.setattr(crypto_erase, "_shred", shred)
+    monkeypatch.setattr(store, "dispose_all", lambda: order.append("dispose"))
+    real_keys = crypto_erase._destroy_keys_folder
+    monkeypatch.setattr(crypto_erase, "_destroy_keys_folder", lambda *a, **k: (order.append("keys"), real_keys(*a, **k))[1])
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert order[:3] == ["salt", "dispose", "keys"]
+
+
+def _run_watcher(plan):
+    from src.safety.uninstall import _WATCHER_SRC
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    subprocess.run([sys.executable, "-c", _WATCHER_SRC, str(dead.pid), json.dumps(plan)], check=True, timeout=60)
+
+
+def test_the_watcher_keeps_a_lane_database_header_only(tmp_path):
+    """Row 30: a lane file is an encrypted database with its own salt page; its body is never rewritten whole."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    lane = data / "wiki.db"
+    lane.write_bytes(b"H" * 4096 + b"BODY" * 4096)
+    kept = tmp_path / "kept-lane"
+    os.link(lane, kept)
+    _run_watcher({"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(data), "audit_log": str(tmp_path / "a.log"),
+                  "enc_names": ["wiki.db"]})
+    assert not data.exists()
+    body = kept.read_bytes()
+    assert body[:4096] != b"H" * 4096 and body[4096:] == b"BODY" * 4096
+
+
+def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files(tmp_path):
+    """R711: the plan's names decide, the folder, the operator's files and the app's common names stay, and the audit log gives a
+    count, never the operator's file names (one of them not even UTF-8)."""
+    from src.safety.uninstall import _app_only
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "open_omniscience.db").write_bytes(b"S" * 8192)
+    (home / "app_settings.json.tmp").write_text("{}", encoding="utf-8")
+    (home / "keys").mkdir()
+    (home / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE")
+    (home / "session_state.json").write_text("{}", encoding="utf-8")
+    (home / "thesis.odt").write_bytes(b"years of work")
+    (home / "models").mkdir()
+    (home / "models" / "mine.bin").write_bytes(b"weights")
+    if os.name == "posix":
+        (home / os.fsdecode(b"caf\xe9.txt")).write_bytes(b"latin-1 name")
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside")
+    (home / "wiki_dumps").symlink_to(tmp_path)  # an app name that is a link: removed, never followed
+    audit = tmp_path / "a.log"
+    _run_watcher({"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(home), "audit_log": str(audit),
+                  "app_only": _app_only({"broad": True, "reason": "home"})})
+    assert home.is_dir()
+    left = sorted(os.listdir(home))
+    assert "models" in left and "thesis.odt" in left and "keys" not in left
+    assert not {"open_omniscience.db", "app_settings.json.tmp", "session_state.json", "wiki_dumps"} & set(left)
+    assert (home / "thesis.odt").read_bytes() == b"years of work"
+    assert (home / "models" / "mine.bin").read_bytes() == b"weights"
+    assert outside.read_bytes() == b"outside"
+    log = audit.read_text(encoding="utf-8")
+    assert "a folder it does not own (home)" in log and "thesis.odt" not in log
+
+
+def test_the_uninstall_plan_reads_the_scope_and_hands_the_watcher_the_app_s_names(tmp_path, monkeypatch):
+    from src.safety import uninstall
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    plan = uninstall.plan_uninstall(tmp_path / "src", wipe_data=True)
+    assert plan["data_scope"]["broad"] is True and plan["data_scope"]["reason"] == "home"
+    spawned = {}
+    monkeypatch.setattr(uninstall.subprocess, "Popen", lambda argv, **_k: spawned.setdefault("payload", json.loads(argv[-1])))
+    uninstall._default_spawn({**plan, "venv": None}, 1)
+    assert "open_omniscience.db" in spawned["payload"]["app_only"]["names"]
+    assert set(spawned["payload"]["enc_names"]) >= {"wiki.db", "law.db", "osm.db"}
+
+
+def test_a_plaintext_database_step_one_could_not_unlink_is_rewritten_whole(tmp_path, monkeypatch):
+    """Only an ENCRYPTED store's database skips step 6's whole rewrite when its unlink failed (Windows, an open pool)."""
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    main = folder / "open_omniscience.db"
+    _plain_sqlite(main)
+    kept = tmp_path / "kept"
+    os.link(main, kept)
+    real_unlink = Path.unlink
+    calls = []
+
+    def unlink(self, *a, **k):
+        if self.name == "open_omniscience.db" and not calls:
+            calls.append(self)
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert calls and b"plaintext-row" not in kept.read_bytes()
+
+
+def test_an_encrypted_database_step_one_could_not_unlink_loses_its_head_again_and_is_not_rewritten_whole(tmp_path, monkeypatch):
+    """Step 6 (Windows, an open pool): an encrypted store's database whose salt step 1 destroyed is overwritten at the head once
+    more and unlinked, never rewritten whole (hours at corpus size)."""
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    main = folder / "open_omniscience.db"
+    con = connect(main, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.executemany("INSERT INTO t VALUES (?)", [("row" * 50,)] * 200)
+    con.commit()
+    con.close()
+    body = main.read_bytes()[4096:]
+    kept = tmp_path / "kept"
+    os.link(main, kept)
+    real_unlink = Path.unlink
+    calls = []
+
+    def unlink(self, *a, **k):
+        if self.name == "open_omniscience.db" and not calls:
+            calls.append(self)
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    heads = []
+    real_overwrite = crypto_erase._overwrite
+
+    def overwrite(path, *, head_bytes=None, zeros=False):
+        if path.name == "open_omniscience.db":
+            heads.append(head_bytes)
+        return real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
+
+    monkeypatch.setattr(crypto_erase, "_overwrite", overwrite)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert report["encrypted_corpus"] is True and calls
+    assert not main.exists()
+    assert None not in heads and heads.count(4096) >= 3, "head passes only, the last one in step 6"
+    assert kept.read_bytes()[4096:] == body
+
+
+def test_a_shared_keys_folder_without_pending_is_removed_once_empty(tmp_path):
+    shared = tmp_path / "projects"
+    shared.mkdir()
+    (shared / "thesis.docx").write_bytes(b"x")
+    (shared / "keys").mkdir()
+    (shared / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
+    assert report["scope"] == "app-only" and not (shared / "keys").exists()
+    assert report["left_common_names"] == []
+
+
+@sqlcipher_only
+@pytest.mark.skipif(sys.platform == "win32", reason="reads an open, unlinked WAL through a hard link (POSIX semantics)")
+def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is_destroyed(tmp_path, monkeypatch):
+    """R715 condition 2: keeping to the app's names in a shared folder never keeps what opens the corpus. The database, its
+    write-ahead log, a salvage copy beside it and the app's key files are all destroyed, read back through hard links."""
+    shared = tmp_path / "projects"
+    shared.mkdir()
+    monkeypatch.setenv("OO_DATA_DIR", str(shared))
+    (shared / "thesis.docx").write_bytes(b"years of work")
+    db = shared / "open_omniscience.db"
+    con = connect(db, key=_PW)
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        for _ in range(10):
+            con.execute("CREATE TABLE IF NOT EXISTS u(x)")
+            con.execute("INSERT INTO t VALUES (randomblob(3000))")
+            con.commit()
+        salt = db.read_bytes()[:16]
+        salvage = shared / "open_omniscience.salvage-20261114T101010Z.db"
+        salvage.write_bytes(db.read_bytes())
+        (shared / "keys").mkdir()
+        key = shared / "keys" / "custody_ed25519.pem"
+        key.write_bytes(b"PRIVATE KEY " * 20)
+        kept = {}
+        for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal")), ("salvage", salvage), ("key", key)):
+            kept[name] = tmp_path / f"kept-{name}"
+            os.link(p, kept[name])
+        assert _salt_hits(kept["wal"].read_bytes(), salt), "the setup must put the salt in the log"
+
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
+    finally:
+        con.close()
+
+    assert report["scope"] == "app-only" and report["scope_reason"] == "shared_folder"
+    assert report["overwrite_failures"] == []
+    for name in ("main", "wal", "salvage"):
+        assert _salt_hits(kept[name].read_bytes(), salt) == [], f"a copy of the salt survived in the {name} file"
+    assert b"PRIVATE KEY" not in kept["key"].read_bytes()
+    assert not db.exists() and not salvage.exists() and not key.exists()
+    assert (shared / "thesis.docx").read_bytes() == b"years of work"
+
+
+def test_an_unlistable_oos_data_folder_is_erased_app_only(tmp_path, monkeypatch):
+    """R715 end to end: a folder the app chose that the scope question cannot list keeps everything but the app's own files."""
+    from src.safety import data_scope
+
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    (folder / "open_omniscience.db").write_bytes(b"S" * 8192)
+    (folder / "app_settings.json").write_text("{}", encoding="utf-8")
+    (folder / "thesis.docx").write_bytes(b"years of work")
+
+    def refuse(path):
+        raise PermissionError(13, "denied", str(path))
+
+    scope_os(monkeypatch, data_scope, scandir=refuse)  # only the scope question fails; the erase still walks the folder
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert report["scope"] == "app-only" and report["scope_reason"] == "unlistable"
+    assert folder.is_dir() and report["removed"] is False
+    assert not (folder / "open_omniscience.db").exists() and not (folder / "app_settings.json").exists()
+    assert (folder / "thesis.docx").read_bytes() == b"years of work"
+    assert report["left_untouched"] == ["thesis.docx"]

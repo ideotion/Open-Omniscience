@@ -58,9 +58,9 @@ it. Grep the tree before building anything — the sheet's anchors were verified
 ### S1 — The tranche plan, from the tree
 - **What:** three tranches, most-visited first (the *proposed* staging): tranche 1 = `user-manual` (opened
   by default — the most-visited by construction) + `quickstart` (one `fr` draft exists); tranches 2–3 = the
-  remaining eight, owed by 0.8. Each document ×11 (English is the original), AI-drafted on the LOCAL model
-  only (the loopback-only non-negotiable — never an external translation service), each draft flagged for
-  native review in its banner. The plan and the per-document character counts written into the gate's §3.
+  remaining eight, owed by 0.8. Each document ×11 (English is the original), AI-drafted (AMENDED 2026-11-13, R677: by
+  workers in a build session, not only a local model; the loopback-only non-negotiable governs the app at
+  run time, not how its public documentation is written), each draft flagged for native review in its banner. The plan and the per-document character counts written into the gate's §3.
 - **Why (ruling):** Q1122 = b; the placement note; invariant #30's precedent.
 - **Acceptance:** the tranche list in the gate's §3 with measured sizes; the PR body names which documents
   shipped and which remain.
@@ -116,7 +116,7 @@ Help measured once (CJK and Arabic bodies differ in length — record, do not fi
   not a ruling — and the gate's «eight» is corrected to the tree's ten in this slice's PR.
 - **Whether `changes` (the changelog) counts as Help body** to translate: the ruling says «the body»; the
   tree serves ten documents — state the decision in the PR, do not silently drop one.
-- **The translation engine and its quality bar** — local LLM only (ruled by the non-negotiables); no bar
+- **The translation engine and its quality bar** — AI-drafted in a build session (R677, 2026-11-13; this line said «local LLM only», a reading, not a ruling); no bar
   is ruled; the native-review flag is the honesty layer.
 - **The Help renderer's cost** (audit F1) and the omnibar's indexing of translated drafts — separate slices.
 

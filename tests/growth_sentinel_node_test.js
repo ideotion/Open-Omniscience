@@ -83,6 +83,9 @@ const SRC = [
   // ...and the row's label is drawn by THE one helper (M7), loaded as real source too.
   functionSource(APP, "kwLabelHtml"),
   functionSource(APP, "termBarsHtml"),
+  // The keyed rate line, whose arrow must follow the number (2026-11-13: "↑0.44×").
+  functionSource(APP, "trendArrow"),
+  functionSource(APP, "trendRateText"),
 ].join("\n");
 
 // eslint-disable-next-line no-eval
@@ -203,6 +206,23 @@ check("the unrelated mentions chart is untouched by any of this", () => {
     (t) => t.mentions, (t) => `${t.mentions} mentions`);
   const widths = [...html.matchAll(/width:(\d+)%/g)].map((m) => m[1]);
   assert.deepStrictEqual(widths, ["100", "50"]);
+});
+
+// --- trendRateText: the arrow says which way the rate went -------------------------- //
+// The defect: a super-group whose rate fell to 0.44 of its usual pace printed "↑0.44×",
+// an up arrow on a decline. Rising stays byte-identical (the negative-space twin).
+
+check("a falling rate reads with a down arrow, in every frame", () => {
+  const row = {growth: 0.44, recent: 3, prior: 29, window_days: 7, baseline_days: 30};
+  assert.strictEqual(trendRateText(row, {window: true}),
+    "↓0.44× (3 recent · 29 prior, 7 days vs 30 days)");
+  assert.strictEqual(trendRateText(row), "↓0.44× (3 recent · 29 prior)");
+  assert.strictEqual(trendRateText(row, {short: true}), "↓0.44× · 3 recent");
+});
+
+check("a rising rate still renders exactly as before, and a flat one says flat", () => {
+  assert.strictEqual(trendRateText({growth: 2.1, recent: 9, prior: 3}), "↑2.1× (9 recent · 3 prior)");
+  assert.strictEqual(trendRateText({growth: 1, recent: 4, prior: 16}, {short: true}), "→1× · 4 recent");
 });
 
 console.log(`growth sentinel: ${passed} checks passed`);

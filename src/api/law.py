@@ -729,26 +729,34 @@ def law_provision_timeline(document_id: int, db: Session = Depends(get_db)) -> d
     no ordering of its own: ordering by the lane's own row timestamps would order by when
     this app wrote the rows, which is not when the versions happened.
     """
-    doc = db.query(LawDocument).filter_by(id=document_id).first()
-    if doc is None:
-        raise HTTPException(status_code=404, detail="Document not found.")
+    return _provision_timeline_payload(db, _document_or_404(db, document_id))
+
+
+#: The two refusals the timeline can give, worded for the reader page as well as the JSON (both are locale keys).
+_TIMELINE_NO_ROW = (
+    "this document has no law-model row yet; it is recorded on the next "
+    "tracking pass, and until then there are no provisions to compare"
+)
+_TIMELINE_LANE_UNREADABLE = "the law lane could not be read on this install"
+
+
+def _provision_timeline_payload(db: Session, doc: LawDocument) -> dict:
+    """Analytic 1's payload for one document, shared by the JSON route and the reader page.
+
+    ``versions`` (oldest first) dates every stored version that has a law-model row (whether or not it held provisions to compare) from ``law_revisions`` -- the capture
+    time this instance recorded, which is when the version was SEEN here, not when it was enacted
+    -- and names the stored revision it is, so every event can link to the version's own text.
+    """
     lane_key = getattr(doc, "lane_key", None)
     if not lane_key:
-        return {
-            "available": False,
-            "reason": (
-                "this document has no law-model row yet; it is recorded on the next "
-                "tracking pass, and until then there are no provisions to compare"
-            ),
-        }
-    order = [
-        key
-        for (key,) in db.query(LawRevision.lane_key)
+        return {"available": False, "reason": _TIMELINE_NO_ROW}
+    rows = (
+        db.query(LawRevision.lane_key, LawRevision.id, LawRevision.observed_at)
         .filter(LawRevision.document_id == doc.id, LawRevision.lane_key.isnot(None))
         .order_by(LawRevision.observed_at.asc(), LawRevision.id.asc())
         .all()
-        if key is not None  # excluded by the filter; narrows the Optional column
-    ]
+    )
+    order = [key for key, _id, _at in rows if key is not None]  # the filter excludes None; this narrows the type
     try:
         from src.law.analytics import provision_timeline
         from src.versioned.store import lane_session
@@ -756,10 +764,67 @@ def law_provision_timeline(document_id: int, db: Session = Depends(get_db)) -> d
         with lane_session("law") as lane:
             payload = provision_timeline(lane, lane_key, revision_order=order)
     except Exception as exc:  # noqa: BLE001 - the lane is an addition; a GET must not 500 on it
-        log_failure(_LOG, f"law provision timeline unavailable for {document_id}", exc, level=logging.DEBUG)
-        return {"available": False, "reason": "the law lane could not be read on this install"}
+        log_failure(_LOG, f"law provision timeline unavailable for {doc.id}", exc, level=logging.DEBUG)
+        return {"available": False, "reason": _TIMELINE_LANE_UNREADABLE}
     payload["available"] = True
+    payload["versions"] = [
+        {"version": key, "revision_id": rid, "observed_at": at.isoformat() if at else None}
+        for key, rid, at in rows
+        if key is not None
+    ]
     return payload
+
+
+def _provision_timeline_html(payload: dict, esc) -> str:
+    """The reader's "Provisions that changed" fold: the finding in the summary, the per-version list,
+    method and caveat inside the fold (one click away). Words and data are separate elements, because
+    the i18n walker translates a text node only when it matches a key exactly."""
+    from src.law.analytics import CAVEAT_SHORT_TIMELINE
+
+    # The short caveat sits IN the summary, beside the count, so it is visible with the fold closed.
+    # The count is DISTINCT provisions (one changed in five versions counts once), matching the label.
+    def head(count: str) -> str:
+        return (
+            f"<summary><span>Provisions that changed</span> <span class='count'>{count}</span> "
+            f"<span class='caveat'>{esc(CAVEAT_SHORT_TIMELINE)}</span></summary>"
+        )
+
+    if not payload.get("available"):
+        return (
+            "<details class='versions provisions'>" + head("—")
+            + f"<p class='muted'>{esc(payload.get('reason') or '')}</p></details>"
+        )
+    dated = {v["version"]: v for v in payload.get("versions") or []}
+    by_version: dict[str, list[dict]] = {}
+    for e in payload.get("events") or []:
+        by_version.setdefault(e["version"], []).append(e)
+    items = []
+    for key, events in by_version.items():
+        v = dated.get(key) or {}
+        when = (v.get("observed_at") or "")[:16].replace("T", " ") or "—"
+        rid = v.get("revision_id")
+        stamp = f"<a href='?version={int(rid)}'>{esc(when)}</a>" if rid is not None else f"<span>{esc(when)}</span>"
+        rows = "".join(
+            f"<li><code>{esc(e['address'])}</code> <span>{esc(e['change'])}</span></li>" for e in events
+        )
+        items.append(f"<li>{stamp}<ul>{rows}</ul></li>")
+    body = (
+        f"<ol>{''.join(items)}</ol>"
+        if items
+        else "<p class='muted'>No provision changed between the stored versions.</p>"
+    )
+    unplaced = payload.get("versions_without_a_known_position") or []
+    extra = (
+        f"<p class='muted'><span>Versions that could not be placed in order</span> <b>{len(unplaced)}</b></p>"
+        if unplaced
+        else ""
+    )
+    return (
+        "<details class='versions provisions'>" + head(str(len(payload.get("changes_per_provision") or {})))
+        + body + extra
+        + f"<p class='muted'>{esc(payload.get('method') or '')}</p>"
+        + f"<p class='muted'>{esc(payload.get('caveat') or '')}</p></details>"
+    )
 
 
 @router.get("/amendment-velocity")
@@ -1028,6 +1093,7 @@ def view_law_document(
             "its own history. They are the same law, aligned by identity.</p></section>"
         )
 
+    provisions_html = _provision_timeline_html(_provision_timeline_payload(db, doc), _html.escape)
     revs_html = (
         ("<section class='history'><h2>Amendment history</h2>" + "".join(rev_items) + "</section>")
         if rev_items
@@ -1175,6 +1241,9 @@ def view_law_document(
   a.vsel.on {{ font-weight:700; }}
   .now {{ font:11px system-ui,sans-serif; color:var(--mut); }}
   .vnote {{ font:12px/1.6 system-ui,sans-serif; margin:8px 0 0; }}
+  .provisions summary {{ font:14px/1.6 system-ui,sans-serif; cursor:pointer; }}
+  .provisions .count {{ font-weight:700; }} .provisions .caveat {{ display:block; font-size:12px; color:var(--mut); }}
+  .provisions ul {{ list-style:none; margin:0; padding:0 0 0 14px; }} .provisions p {{ font:12px/1.6 system-ui,sans-serif; }}
   .basis {{ font:12px/1.5 system-ui,sans-serif; color:var(--mut); padding:2px 12px 6px; }}
   .history h2, .versions h2, .src-h {{ font:600 14px system-ui,sans-serif; color:var(--mut); text-transform:uppercase;
     letter-spacing:.04em; margin:0 0 10px; }}
@@ -1210,6 +1279,7 @@ def view_law_document(
   {version_picker}
   {compare_html}
   {siblings_html}
+  {provisions_html}
   {revs_html}
   <footer>
     {footer_line}

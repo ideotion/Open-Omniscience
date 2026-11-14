@@ -70,6 +70,12 @@ from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
+#: R101: a quarantined article's mentions are left out of every day this table holds and every stale day read live, as they are out of
+#: the keyword counters, the rollup and the live windows (``src/analytics/quarantine_scope.py``). A stamp bumps the corpus epoch, so a
+#: table built before it is no longer ``current`` and is rebuilt without the article. Answered from ``idx_article_quarantined``; the day's
+#: rows are still found through ``ix_mention_date_keyword``, which no longer covers the read (it has no ``article_id``).
+_NOT_QUARANTINED = " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+
 TABLE = "keyword_day_counts"
 DIRTY = "keyword_day_dirty"
 STATE = "keyword_day_state"
@@ -323,7 +329,8 @@ def _rebuild_day(conn: Connection, day: str, *, after: str | None = None) -> Non
         conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 - constants
         conn.exec_driver_sql(
             f"INSERT INTO {TABLE} (observed_on, keyword_id, mentions) "  # nosec B608 - a constant
-            "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ? GROUP BY keyword_id",
+            "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ?"
+            + _NOT_QUARANTINED + " GROUP BY keyword_id",
             (day,),
         )
         conn.exec_driver_sql(f"UPDATE {STATE} SET cursor = ? WHERE id = 1", (day,))  # nosec B608 - a constant
@@ -336,7 +343,8 @@ def _fold_day(conn: Connection, day: str) -> None:
         conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE observed_on = ?", (day,))  # nosec B608 - a constant
         conn.exec_driver_sql(
             f"INSERT INTO {TABLE} (observed_on, keyword_id, mentions) "  # nosec B608 - a constant
-            "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ? GROUP BY keyword_id",
+            "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ?"
+            + _NOT_QUARANTINED + " GROUP BY keyword_id",
             (day,),
         )
 
@@ -597,7 +605,8 @@ def windowed_counts(session: Session, *, lo: date, hi: date, deadline: float | N
                 live = {
                     int(k): int(v)
                     for k, v in conn.exec_driver_sql(
-                        "SELECT keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ? AND id <= ? GROUP BY keyword_id",
+                        "SELECT keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ? AND id <= ?"  # nosec B608 - constants
+                        + _NOT_QUARANTINED + " GROUP BY keyword_id",
                         (day, m),
                     ).fetchall()
                 }

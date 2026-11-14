@@ -192,3 +192,99 @@ def test_a_bug_on_valid_data_surfaces_as_a_bug_never_as_not_measured(tmp_path, m
     monkeypatch.setattr(tt, "measure", broken)
     with pytest.raises(TypeError):
         tsm.run(path, SAMPLE)
+
+
+# --- R690: combining marks belong to their word -------------------------------------------------------------------------
+
+
+def test_a_hindi_vowel_sign_or_virama_never_splits_a_word():
+    """मनुष्य ("human") once folded to मन + ुष + ्य, so the label मन ("mind") matched inside it as EXACT."""
+    assert tt.fold("मनुष्य अधिकार") == ("मनुष्य", "अधिकार")
+    idx = tt.Index([_art(mind=({"hi": "मन"}, {}))])
+    assert tt.tag_text("मनुष्य अधिकार अधिनियम", "hi", idx) == []
+    assert [(t.concept, t.tier) for t in tt.tag_text("मन की शांति", "hi", idx)] == [("mind", "exact")]
+
+
+def test_a_bengali_vowel_sign_never_splits_a_word():
+    assert tt.fold("মনোবিজ্ঞান আইন") == ("মনোবিজ্ঞান", "আইন")
+    idx = tt.Index([_art(mind=({"bn": "মন"}, {}))])
+    assert tt.tag_text("মনোবিজ্ঞান আইন", "bn", idx) == []
+    assert [t.concept for t in tt.tag_text("মন ও শরীর", "bn", idx)] == ["mind"]
+
+
+def test_arabic_vowelling_neither_splits_a_word_nor_hides_it():
+    """A haraka once split قَانُون into ق + ان + ون, and the label ان ("that") matched a fragment."""
+    assert tt.fold("قَانُون") == tt.fold("قانون") == ("قانون",)
+    idx = tt.Index([_art(that=({"ar": "ان"}, {}), law=({"ar": "قانون"}, {}))])
+    assert [t.concept for t in tt.tag_text("قَانُون العَمَل", "ar", idx)] == ["law"]
+
+
+def test_thai_marks_stay_in_the_run_and_one_letter_with_marks_is_still_one_character(zh_index):
+    env = tt.Index([_art(env=({"th": "สิ่งแวดล้อม"}, {}), that=({"th": "ที่"}, {}))])
+    tags = tt.tag_text("การคุ้มครองสิ่งแวดล้อมที่ดี", "th", env)
+    assert [(t.concept, t.tier) for t in tags] == [("env", "approx")], "a marked label is found, and only as ≈"
+    assert env.short_labels == {"th": 1}, "ที่ is one letter and two marks: never matched (R680)"
+
+
+def test_khmer_lao_and_burmese_labels_are_found_in_running_text_and_always_approximate():
+    """Real words: ច្បាប់ / ກົດໝາຍ / ဥပဒေ ("law") inside a title written without spaces."""
+    idx = tt.Index([_art(law=({"km": "ច្បាប់", "lo": "ກົດໝາຍ", "my": "ဥပဒေ"}, {}))])
+    for lang, text in (("km", "ច្បាប់ស្តីពីការងារ"), ("lo", "ກົດໝາຍແຮງງານ"), ("my", "အလုပ်သမားဥပဒေ")):
+        assert [(t.concept, t.tier, t.approx_reason) for t in tt.tag_text(text, lang, idx)] == [
+            ("law", "approx", "unsegmented_substring")
+        ], lang
+    sample = [
+        {"id": "k", "lang": "km", "text": "ច្បាប់ស្តីពីការងារ", "expected": ["law"]},
+        {"id": "l", "lang": "lo", "text": "ກົດໝາຍແຮງງານ", "expected": ["law"]},
+        {"id": "m", "lang": "my", "text": "အလုပ်သမားဥပဒေ", "expected": ["law"]},
+    ]
+    m = tt.measure(sample, idx)
+    assert m["unsupported_languages"] == {} and m["n_items"] == 3
+    assert m["precision"]["value"] == 1.0 and m["approx_share"]["value"] == 1.0
+
+
+def test_a_substring_hit_never_cuts_a_syllable():
+    """Each label below is a real substring of the text, and each would cut a syllable in two."""
+    cases = [
+        ("km", "តីពី", "ស្តីពី"),  # starts on a consonant stacked under the one before it (coeng)
+        ("my", "လုပ", "အလုပ်"),  # ends right before the asat that closes the syllable
+        ("my", "ပဒ", "ဥပဒေ"),  # ends right before the vowel sign ေ of the syllable it cuts
+        ("lo", "ຮງ", "ແຮງງານ"),  # starts right after a vowel written before its consonant
+        ("th", "นแ", "แรงงานแห่งชาติ"),  # ends on a vowel that belongs to the next syllable
+        ("th", "แรงง", "แรงงาน"),  # ends right before า, a vowel written after its consonant as a letter
+        ("th", "กฎหม", "กฎหมาย"),
+        ("lo", "ກົດໝ", "ກົດໝາຍ"),  # the same with Lao າ
+        ("my", "အလု", "အလုပ်သမား"),  # ends right before ပ, the final the asat closes
+        ("my", "အပြ", "အပြည့်"),  # the same when a dot below stands between the final and its asat
+    ]
+    for lang, label, text in cases:
+        assert label in text
+        idx = tt.Index([_art(c=({lang: label}, {}))])
+        assert tt.tag_text(text, lang, idx) == [], (lang, label, text)
+    # An asat after a vowel sign closes the vowel of the next syllable, not a final: these labels end on a syllable edge.
+    for label, text in (("နိုင်ငံ", "နိုင်ငံတော်"), ("ပြည်", "ပြည်ပေါ်")):
+        idx = tt.Index([_art(c=({"my": label}, {}))])
+        assert [t.tier for t in tt.tag_text(text, "my", idx)] == ["approx"], (label, text)
+    # The stated limit: a final consonant written as a plain letter is not a mark, so a label that stops
+    # before it (ច្បា inside ច្បាប់) still matches. Syllable edges are checked, word edges are not: ≈.
+    idx = tt.Index([_art(c=({"km": "ច្បា"}, {}))])
+    assert [t.tier for t in tt.tag_text("ច្បាប់", "km", idx)] == ["approx"]
+    # A variation selector picks a glyph, not a syllable: 法律 followed by one still matches.
+    idx = tt.Index([_art(c=({"zh": "法律"}, {}))])
+    assert [t.concept for t in tt.tag_text("法律\ufe00法", "zh", idx)] == ["c"]
+
+def test_optional_points_and_joiners_and_stray_marks_never_hide_a_word():
+    assert tt.fold("می\u200cخواهم") == tt.fold("میخواهم"), "a ZWNJ is written or omitted for the same word"
+    assert tt.fold("शिक्\u200dषा") == tt.fold("शिक्षा")
+    assert tt.fold("שָׁלוֹם") == tt.fold("שלום") == ("שלום",), "Hebrew points are optional"
+    assert tt.fold("\u0301abc") == ("abc",), "a mark with no letter before it starts no word"
+
+
+def test_an_unsegmented_label_with_inner_punctuation_matches_written_joined_and_is_counted():
+    idx = tt.Index([_art(ict=({"ja": "情報・通信"}, {}), ir=({"ko": "국제 관계"}, {}))])
+    assert idx.split_labels == {"ja": 1, "ko": 1}
+    assert [t.concept for t in tt.tag_text("情報通信法", "ja", idx)] == ["ict"]
+    assert [t.concept for t in tt.tag_text("국제관계법", "ko", idx)] == ["ir"]
+    assert tt.tag_text("情報・通信法", "ja", idx) == [], "a match never crosses punctuation"
+    m = tt.measure([{"id": "x", "lang": "ja", "text": "情報・通信法", "expected": ["ict"]}], idx)
+    assert m["labels_matched_only_when_written_joined"] == {"ja": 1, "ko": 1}

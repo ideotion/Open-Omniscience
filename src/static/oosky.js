@@ -434,6 +434,21 @@
    * magnitude looks (the reject-list rationale that 3D foreshortening fabricates
    * area). Static when idle — this is called on interaction, never on a loop.
    */
+  /** Greedy word wrap of `text` to lines no wider than `room` px (measured on `ctx`).
+   *  A text that fits, or a room that is not a positive number, comes back as one line;
+   *  a single word wider than the room stays whole (it is cut by the canvas, never split). */
+  function wrapLabel(ctx, text, room) {
+    if (!(room > 0) || !isFinite(room) || ctx.measureText(text).width <= room) return [text];
+    var words = String(text).split(/\s+/), lines = [], cur = "";
+    for (var i = 0; i < words.length; i++) {
+      var next = cur ? cur + " " + words[i] : words[i];
+      if (cur && ctx.measureText(next).width > room) { lines.push(cur); cur = words[i]; }
+      else cur = next;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
   function drawSky(ctx, layout, theme, view) {
     var w = view.w;
     var h = view.h;
@@ -496,13 +511,35 @@
     // after an oo:langchange event; this function itself never listens for one,
     // which is what keeps the sky static when idle (#31).
     var _t = (root.OOI18N && root.OOI18N.t) ? root.OOI18N.t : function (s) { return s; };
+    // A label that would run off the canvas WRAPS onto more lines instead of being cut
+    // (the 2026-11-13 walk at 320 px: "structure", "ance", "Cult" -- half-names that name
+    // nothing). The width it may use is the room between its anchor and the canvas edge
+    // on the side it grows towards; a label that fits is drawn exactly as before.
+    var cw = (view && view.w) || Infinity;
+    var lh = Math.round((parseFloat(theme.tickFont) || 11) * 1.2);
     for (var dl = 0; dl < layout.domains.length; dl++) {
       var da = layout.domains[dl];
       var lx = g1x + Math.cos(da.mid) * lr;
       var ly = g1y + Math.sin(da.mid) * lr;
       var cosm = Math.cos(da.mid);
-      ctx.textAlign = cosm > 0.25 ? "left" : cosm < -0.25 ? "right" : "center";
-      ctx.fillText(_t(da.domain), lx, ly);
+      var align = cosm > 0.25 ? "left" : cosm < -0.25 ? "right" : "center";
+      ctx.textAlign = align;
+      var text = _t(da.domain);
+      var room = align === "left" ? cw - lx - 4 : align === "right" ? lx - 4
+        : 2 * Math.min(lx, cw - lx) - 8;
+      var lines = wrapLabel(ctx, text, room);
+      // One word still wider than the room (a long single-word domain) is drawn a little
+      // smaller, down to 8 px, rather than cut; the font goes back for the next label.
+      var widest = 0;
+      for (var lw = 0; lw < lines.length; lw++) widest = Math.max(widest, ctx.measureText(lines[lw]).width);
+      var shrunk = room > 0 && isFinite(room) && widest > room;
+      if (shrunk) {
+        var px = Math.max(8, Math.floor((parseFloat(theme.tickFont) || 11) * room / widest));
+        ctx.font = String(theme.tickFont).replace(/^[\d.]+px/, px + "px");
+      }
+      var y0 = ly - (lines.length - 1) * lh / 2;
+      for (var li = 0; li < lines.length; li++) ctx.fillText(lines[li], lx, y0 + li * lh);
+      if (shrunk) ctx.font = theme.tickFont;
     }
     ctx.textAlign = "center";
     // Orbit gridlines. Every one is LABELLED with the value it stands for —
@@ -624,6 +661,7 @@
     skyLayout: skyLayout,
     rankedGalaxies: rankedGalaxies,
     drawSky: drawSky,
+    wrapLabel: wrapLabel,
     hitTest: hitTest,
   };
   root.ooSky = API;

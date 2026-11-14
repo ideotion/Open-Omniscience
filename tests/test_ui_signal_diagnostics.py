@@ -27,7 +27,7 @@ _JS = app_js()
 
 
 def test_get_signal_buttons_present():
-    assert "ooOpenUrl('/api/signals/fdr-selftest?download=1')" in _HTML
+    assert "ooPostSave('/api/signals/fdr-selftest?download=1')" in _HTML  # a POST since R694
     assert "ooOpenUrl('/api/signals/flood')" in _HTML
     assert "ooOpenUrl('/api/signals/bury')" in _HTML
     assert "ooOpenUrl('/api/insights/lunar-correlation')" in _HTML
