@@ -236,7 +236,7 @@ def test_a_record_naming_another_previous_ml_dsa_key_than_the_entry_before_is_re
         md["previous_ml_dsa_pub"] = _signer(tmp_path, "x").public_identity().ml_dsa_pub
 
     ok, issues = verify_export(_forge(bundle, 2, other_previous, new, new), accept_unendorsed_rotation=True)
-    assert not ok and "names a previous ML-DSA key the entry before it was not signed with" in issues[0]
+    assert not ok and "names a previous ML-DSA key the entries before it were not signed with" in issues[0]
 
 
 # --- row 44: a stripped post-quantum half under --pin ---------------------------------------------------------------
@@ -265,9 +265,12 @@ def test_an_entry_stripped_to_ed25519_after_a_full_record_is_refused_under_the_p
     assert verify_export(bundle, require_signer=True) == (True, [])
     forged = copy.deepcopy(bundle)
     forged["entries"][4]["signature"] = _ed_only(forged["entries"][4]["signature"])
-    assert verify_export(forged)[0]  # the Ed25519 half still verifies on its own
-    ok, issues = verify_export(forged, require_signer=True)
-    assert not ok and issues[0].startswith("signature invalid at seq 5") and "post-quantum half was removed" in issues[0]
+    # The Ed25519 half still verifies on its own, but the identity in use had shown its ML-DSA key: refused in every
+    # mode, by the key lineage (the pin's own refusal of a stripped entry stays beneath it).
+    for pin in (False, True):
+        for accept in (False, True):  # after a 0.5.1 record nothing honest changes it unrecorded: no flag accepts it
+            ok, issues = verify_export(forged, require_signer=pin, accept_unendorsed_rotation=accept)
+            assert not ok and "post-quantum (ML-DSA) key changes at seq 5 with no key-rotation record" in issues[0]
     # The entries before the record were signed with Ed25519 only, honestly: they stay accepted.
     assert all(e["signature"]["algorithm"] == "ed25519" for e in bundle["entries"][:2])
 
@@ -285,8 +288,9 @@ def test_a_stretch_after_a_full_record_naming_no_ml_dsa_key_is_held_to_none(tmp_
     assert verify_export(bundle, require_signer=True) == (True, [])
     forged = copy.deepcopy(bundle)
     _resign(forged["entries"][3], on)
-    ok, issues = verify_export(forged, require_signer=True)
-    assert not ok and any("ml-dsa public key does not match" in i for i in issues)
+    for pin in (False, True):
+        ok, issues = verify_export(forged, require_signer=pin)
+        assert not ok and "post-quantum (ML-DSA) key changes at seq 4 with no key-rotation record" in issues[0]
 
 
 @pqc
@@ -305,9 +309,15 @@ def test_a_middle_stretch_whose_full_record_names_no_ml_dsa_key_is_pinned_too(tm
     assert verify_export(bundle, require_signer=True) == (True, [])
     forged = copy.deepcopy(bundle)
     _resign(forged["entries"][3], on)  # seq 4, in the middle stretch, given an ML-DSA half
-    assert verify_export(forged)[0]
-    ok, issues = verify_export(forged, require_signer=True)
-    assert not ok and any("seq 4" in i and "ml-dsa public key does not match" in i for i in issues)
+    for pin in (False, True):
+        ok, issues = verify_export(forged, require_signer=pin)
+        assert not ok and "post-quantum (ML-DSA) key changes at seq 4 with no key-rotation record" in issues[0]
+    # And beneath the lineage, the pin alone holds that stretch to no ML-DSA key.
+    from src.custody.log import CustodyEntry, PublicIdentity, _segment_pins
+
+    pins = _segment_pins([CustodyEntry.from_dict(d) for d in bundle["entries"]],
+                         PublicIdentity(**bundle["signer"]))
+    assert pins[4] is not None and pins[4].ml_dsa_pub is None
 
 
 def test_an_old_style_record_after_a_full_one_is_refused(tmp_path):
@@ -356,7 +366,8 @@ def test_each_full_record_leaves_the_identity_the_one_before_introduced(tmp_path
         md["previous_ml_dsa_pub"] = _signer(tmp_path, "x").public_identity().ml_dsa_pub
 
     at = [e["seq"] for e in item["entries"]].index(5)
-    ok, issues = verify_export(_forge(item, at, claims_another_previous, off, _signer(tmp_path, "k")),
+    on = _signer(tmp_path, "k")
+    ok, issues = verify_export(_forge(item, at, claims_another_previous, on, on),
                                accept_unendorsed_rotation=True)
     assert not ok and "other than the one the record at seq 3 introduced" in issues[0]
 
@@ -440,7 +451,7 @@ def test_an_old_style_record_endorsed_by_the_ed25519_half_alone_is_refused(tmp_p
         bundle = log.export()
     for pin in (False, True):
         ok, issues = verify_export(bundle, require_signer=pin)
-        assert not ok and "carries an endorsement not made by the previous key" in issues[0]
+        assert not ok and "is endorsed without the post-quantum (ML-DSA) key the entries before it" in issues[0]
 
 
 @pqc
@@ -467,7 +478,7 @@ def test_a_one_item_bundle_refuses_a_record_contradicting_its_earlier_entries(tm
         for pin in (False, True):
             ok, issues = verify_export(b, require_signer=pin)
             assert not ok and "names a previous ML-DSA key" in issues[0], (b["item_id"], pin, issues)
-    assert "nearest earlier entry in this one-item bundle" in verify_export(item)[1][0]
+    assert "earlier entries in this one-item bundle" in verify_export(item)[1][0]
 
 
 @pqc
@@ -480,7 +491,7 @@ def test_a_record_with_nothing_before_it_in_the_bundle_says_its_previous_key_is_
         item = log.export(item_id="a:1")
     assert item["entries"][0]["item_id"] == ROTATION_ITEM
     report = verify_export_report(item, require_signer=True)
-    assert report["verified"] and any("is its own word" in n for n in report["notes"])
+    assert report["verified"] and any("record's own word" in n for n in report["notes"])
 
 
 @pqc
@@ -551,3 +562,118 @@ def test_ingest_without_the_library_keeps_the_batch_log_owes_each_entry_and_logs
     lines = [r for r in caplog.records if "custody" in r.getMessage()]
     assert len(lines) == 1 and "post-quantum library is not installed" in lines[0].getMessage()
     s.close()
+
+
+
+def _real_entry_after_tail(db: str, signer: HybridSigner, item: str = "article:0") -> None:
+    """Append an ordinary entry signed by ``signer`` straight after the tail, with no rotation record in between: what a
+    forger holding the real Ed25519 key alone (``use_pqc=False``) can add to a copied database."""
+    from src.custody.log import _APPEND_LOCK
+
+    with CustodyLog(db_path=db, signer=signer) as log, _APPEND_LOCK:
+        log._insert(log._last(), item, "e" * 64, CustodyAction.INGEST.value, "x", {}, None, local_only=True)
+
+
+@pqc
+@pytest.mark.parametrize("attack", ["W", "Z"])
+def test_one_stripped_entry_before_a_forged_record_does_not_launder_it(tmp_path, attack):
+    """The delta read's W (a forged "turned on" record with the forger's ML-DSA key) and Z (an old-style rotation to the
+    forger's key endorsed by the Ed25519 half alone), each after one entry signed with the real Ed25519 key alone."""
+    from src.custody.log import rotation_payload
+
+    db, _real = _hybrid_log(tmp_path)
+    ed_only_real = _signer(tmp_path, "real", use_pqc=False)
+    _real_entry_after_tail(db, ed_only_real)
+    forger = _signer(tmp_path, "real", ml="evil") if attack == "W" else _signer(tmp_path, "forger", use_pqc=False)
+    with CustodyLog(db_path=db, signer=forger) as log:
+        prev = log._last()
+    ident = forger.public_identity().to_dict()
+    if attack == "W":
+        md = {**ident, "previous_ml_dsa_variant": None, "previous_ml_dsa_pub": None, "endorsement": None, "note": "x"}
+    else:
+        md = {**ident, "endorsement": ed_only_real.sign(canonical_bytes(rotation_payload(
+            prev.signature["ed25519"]["pub"], ident, prev.entry_hash))), "note": "x"}
+    _append_forged_record(db, md, forger)
+    with CustodyLog(db_path=db, signer=forger) as log:
+        _record(log, 1, 4)
+        bundle, item, in_app = log.export(), log.export(item_id="article:0"), log.verify_report()
+    for b in (bundle, item):
+        for pin in (False, True):
+            ok, issues = verify_export(b, require_signer=pin)
+            assert not ok and "post-quantum (ML-DSA) key changes at seq 4 with no key-rotation record" in issues[0]
+    # The operator's own store names it rather than hiding it.
+    assert any("seq 4: the post-quantum (ML-DSA) key changed with no key-rotation record" in n for n in in_app["notes"])
+
+
+@pqc
+def test_an_old_style_record_with_nothing_before_it_says_its_previous_key_is_its_word(tmp_path):
+    """The delta read's Y: a one-item bundle cut to start at a record names what nothing in it can show."""
+    from tests.test_custody_key_rotation import _forge
+
+    db = str(tmp_path / "c.db")
+    old, new = _signer(tmp_path, "old"), _signer(tmp_path, "new")
+    with CustodyLog(db_path=db, signer=old) as log:
+        log.record("other:1", "a" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=new) as log:
+        log.rotate_signing_key(old)
+        log.record("a:1", "b" * 64, CustodyAction.INGEST)
+        item = log.export(item_id="a:1")
+
+    def old_style(md: dict) -> None:
+        md.pop("previous_ml_dsa_variant"), md.pop("previous_ml_dsa_pub")
+        md["endorsement"] = None
+
+    report = verify_export_report(_forge(item, 0, old_style, new, new), accept_unendorsed_rotation=True)
+    assert any("record's own word" in n for n in report["notes"]), report
+
+
+@pqc
+def test_a_legacy_log_whose_post_quantum_signing_was_turned_off_unrecorded(tmp_path):
+    """Before 0.5.1, turning post-quantum signing off wrote no record. That log needs the unendorsed flag in a bundle
+    (an entry stripped by a forger reads the same) and is named, not refused, in the in-app check; a later endorsed
+    rotation made then (Ed25519-only, the previous signer was off too) reads as unendorsed, pointing to the flag."""
+    from src.custody.log import _APPEND_LOCK
+
+    db = str(tmp_path / "c.db")
+    real = _signer(tmp_path, "real")
+    with CustodyLog(db_path=db, signer=real) as log:
+        _record(log, 2)
+    off = _signer(tmp_path, "real", use_pqc=False)
+    _real_entry_after_tail(db, off, "article:0")  # what the pre-0.5.1 log wrote: no record
+    new = _signer(tmp_path, "new", use_pqc=False)
+    with CustodyLog(db_path=db, signer=new) as log, _APPEND_LOCK:
+        # Pre-0.5.1 rotate_signing_key(off): an old-style record, endorsed by the Ed25519-only signer.
+        from src.custody.log import rotation_payload
+
+        prev = log._last()
+        ident = new.public_identity().to_dict()
+        md = {"previous_ed25519_pub": prev.signature["ed25519"]["pub"], **ident,
+              "endorsement": off.sign(canonical_bytes(rotation_payload(prev.signature["ed25519"]["pub"], ident,
+                                                                       prev.entry_hash))), "note": "x"}
+        log._insert(prev, ROTATION_ITEM, "f" * 64, CustodyAction.KEY_ROTATION.value, "custody", md, None,
+                    local_only=True)
+    with CustodyLog(db_path=db, signer=new) as log:
+        log.record("article:0", "c" * 64, CustodyAction.INGEST)
+        bundle, item, in_app = log.export(), log.export(item_id="article:0"), log.verify_report()
+    assert in_app["verified"] and any("changed with no key-rotation record" in n for n in in_app["notes"])
+    for b in (bundle, item):
+        assert not verify_export(b)[0]
+        report = verify_export_report(b, accept_unendorsed_rotation=True)
+        assert report["verified"], report["issues"]
+
+
+@pqc
+def test_a_full_record_must_be_signed_with_the_ml_dsa_key_it_introduces(tmp_path):
+    from tests.test_custody_key_rotation import _forge
+
+    db = str(tmp_path / "c.db")
+    old, new = _signer(tmp_path, "old"), _signer(tmp_path, "new")
+    with CustodyLog(db_path=db, signer=old) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=new) as log:
+        log.rotate_signing_key(old)
+        _record(log, 1, 2)
+        bundle = log.export()
+    other = _signer(tmp_path, "new", ml="other")
+    ok, issues = verify_export(_forge(bundle, 2, lambda md: None, other, new))
+    assert not ok and "the key-rotation record at seq 3 is not signed by the key it introduces" in issues[0]

@@ -28,8 +28,9 @@ endorsement (both halves), or it is unendorsed.
 With --pin, the head and every entry must be signed by the signer identity embedded in the
 bundle (internal-consistency pinning); across a key rotation, each stretch of the chain is
 held to the identity its rotation record introduced instead; where a 0.5.1 record introduced it, or for the head, a
-signature stripped to its Ed25519 half under an identity that names an ML-DSA key is refused (elsewhere a stripped entry
-signature is accepted; a format-2 head commits to every entry hash). To prove the bundle came from a *known*
+signature stripped to its Ed25519 half under an identity that names an ML-DSA key is refused. In every mode, an entry
+that drops or replaces the ML-DSA key its identity had shown, with no record, is refused (before any 0.5.1 record it
+passes with --accept-unendorsed-rotation, named). To prove the bundle came from a *known*
 signer, compare the printed signer public keys to that signer's known keys.
 """
 

@@ -346,9 +346,11 @@ def test_a_pinned_bundle_refuses_a_middle_entry_with_another_ml_dsa_half(tmp_pat
     forged = copy.deepcopy(bundle)
     e = forged["entries"][3]
     e["signature"] = other_ml.sign(canonical_bytes({k: v for k, v in e.items() if k not in ("entry_hash", "signature")}))
-    assert verify_export(forged)[0]  # every signature is valid on its own
-    ok, issues = verify_export(forged, require_signer=True)
-    assert not ok and any("ml-dsa public key does not match" in i for i in issues)
+    # Every signature is valid on its own; the key lineage sees the ML-DSA key change with no record, and the pin
+    # beneath it holds the stretch to its identity.
+    for pin in (False, True):
+        ok, issues = verify_export(forged, require_signer=pin)
+        assert not ok and "post-quantum (ML-DSA) key changes at seq 4 with no key-rotation record" in issues[0]
 
 
 # --- found by the delta read of the fixes ----------------------------------------------------------------------------

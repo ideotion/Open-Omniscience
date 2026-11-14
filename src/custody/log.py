@@ -778,6 +778,9 @@ def _entry_shape_problem(d: object) -> str | None:
     return _signature_shape_problem(d["signature"])
 
 
+_UNSEEN = object()  # no entry has shown the identity's ML-DSA half yet (see ``_key_lineage``)
+
+
 def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed: bool,
                  one_item: bool = False, *, accept_unrecorded: bool = False) -> tuple[str | None, list[str]]:
     """Walk the signing key through the entries. Returns ``(problem or None, notes)``; the key must end as
@@ -799,7 +802,11 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
     else:
         start = _identity_line(current, _sig_ml_dsa(first.signature)[1])
     last_full: CustodyEntry | None = None  # the latest record that names the whole identity
-    for i, e in enumerate(entries):
+    # The ML-DSA key the identity in use has SHOWN since its last record (``None``: none; ``_UNSEEN``: nothing shows it
+    # yet). Sticky, so one entry stripped of its post-quantum half -- signed with the Ed25519 key alone -- cannot pass as
+    # the previous identity a forged record then names (rows 42-44, the final read's W/Z).
+    cur_ml: object = _UNSEEN
+    for e in entries:
         k = _sig_ed25519_pub(e.signature)
         if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM:
             md = e.metadata
@@ -824,24 +831,24 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
             if prev_k != current:
                 return (f"the key-rotation record at seq {e.seq} names a previous key that did not sign the entries "
                         "before it"), notes
-            if k != new_k:
+            if k != new_k or (full and _sig_ml_dsa(e.signature)[1] != new_ml):
                 return f"the key-rotation record at seq {e.seq} is not signed by the key it introduces", notes
             if full and last_full is not None and (last_full.metadata.get("ml_dsa_pub") or None) != prev_ml:
                 # Any change of identity since a full record has its own record, so the identity one record leaves
                 # must be the one the record before it introduced -- a one-item bundle holds every record.
                 return (f"the key-rotation record at seq {e.seq} names a previous ML-DSA key other than the one the "
                         f"record at seq {last_full.seq} introduced"), notes
-            # The bundle's own evidence of the previous identity's ML-DSA half: the entry before the record (in a
-            # one-item bundle, the nearest earlier entry it holds). The record is written from the entry before it.
-            evidence_ml = _sig_ml_dsa(entries[i - 1].signature)[1] if i > 0 else None
-            if full and i > 0 and evidence_ml != prev_ml:
+            # The bundle's own evidence of the previous identity's ML-DSA half: what the entries signed under it since
+            # its last record showed (sticky, see ``cur_ml``). The record is written from the entry before it.
+            evidence_ml = cur_ml
+            if full and evidence_ml is not _UNSEEN and evidence_ml != prev_ml:
                 # Or the record could name any post-quantum key -- or none, to pass as post-quantum turned on -- as
                 # the previous one.
                 if one_item:
-                    return (f"the key-rotation record at seq {e.seq} names a previous ML-DSA key the nearest earlier "
-                            "entry in this one-item bundle was not signed with (if that key changed before 0.5.1 with "
-                            "no record, verify the whole-log export instead)"), notes
-                return (f"the key-rotation record at seq {e.seq} names a previous ML-DSA key the entry before it was "
+                    return (f"the key-rotation record at seq {e.seq} names a previous ML-DSA key the earlier entries in "
+                            "this one-item bundle were not signed with (if that key changed before 0.5.1 with no "
+                            "record, verify the whole-log export instead)"), notes
+                return (f"the key-rotation record at seq {e.seq} names a previous ML-DSA key the entries before it were "
                         "not signed with"), notes
             # A record that names both halves is printed with both, so a reader who knows either can compare it.
             was, now = (_identity_line(prev_k, prev_ml), _identity_line(new_k, new_ml)) if full else (prev_k, new_k)
@@ -870,13 +877,22 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
             else:
                 problem = _signature_shape_problem(endorsement)
                 if (problem or _sig_ed25519_pub(endorsement) != prev_k
-                        or (full and _sig_ml_dsa(endorsement)[1] != prev_ml)
-                        or (not full and evidence_ml is not None and _sig_ml_dsa(endorsement)[1] != evidence_ml)):
+                        or (full and _sig_ml_dsa(endorsement)[1] != prev_ml)):
                     # Both halves, for a record that names both (row 43): an endorsement whose ML-DSA half is some other
-                    # key, or was stripped off, is not the previous identity's. An older record names no ML-DSA key, but
-                    # the entry before it shows one when it was signed with both halves, and so was an honest
-                    # endorsement (the previous signer signed both).
+                    # key, or was stripped off, is not the previous identity's.
                     return f"the key-rotation record at seq {e.seq} carries an endorsement not made by the previous key", notes
+                # An older record names no ML-DSA key, but the entries before it show one when they were signed with both
+                # halves: an endorsement without that half is the Ed25519 key's word alone -- what someone able to forge
+                # that key would write -- so it counts as unendorsed (an honest one: the old key on a machine without
+                # the post-quantum library, before 0.5.1).
+                half_vouched = (not full and isinstance(evidence_ml, str)
+                                and _sig_ml_dsa(endorsement)[1] != evidence_ml)
+                if half_vouched and not accept_unendorsed:
+                    return (f"the key-rotation record at seq {e.seq} is endorsed without the post-quantum (ML-DSA) key "
+                            "the entries before it were signed with, so only the Ed25519 key vouches for it, as someone "
+                            "able to forge that key alone could. Verify again accepting an unendorsed rotation only if "
+                            "you know the key was rotated on a machine without the post-quantum library"
+                            + (" (or verify the whole-log export)" if one_item else "")), notes
                 identity = {"ed25519_pub": new_k, "ml_dsa_variant": md.get("ml_dsa_variant"),
                             "ml_dsa_pub": md.get("ml_dsa_pub")}
                 previous_ml = (md.get("previous_ml_dsa_variant"), md.get("previous_ml_dsa_pub")) if full else None
@@ -885,13 +901,19 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                                                                                           previous_ml)))
                 if not ok:
                     return f"the key-rotation record at seq {e.seq} has an invalid endorsement: {reason}", notes
-                notes.append(f"seq {e.seq}: the signing key changed from {was} to {now}, endorsed by the previous key")
-            if full and i == 0:
-                # Nothing before the record in this bundle shows the previous identity: it is the record's own word.
-                notes.append(f"seq {e.seq}: this bundle holds no entry before this record, so the previous key it names "
-                             "(both halves) is its own word; the whole-log check ties it to the entry before the record")
+                if half_vouched:
+                    notes.append(f"seq {e.seq}: the signing key changed from {was} to {now}, accepted on the record's "
+                                 "word: its endorsement carries the Ed25519 half of the previous key only")
+                else:
+                    notes.append(f"seq {e.seq}: the signing key changed from {was} to {now}, endorsed by the previous key")
+            if evidence_ml is _UNSEEN:
+                # Nothing before the record in this bundle shows the previous identity's post-quantum half.
+                notes.append(f"seq {e.seq}: nothing before this record in the bundle shows which post-quantum (ML-DSA) "
+                             "key the previous identity had, so that is the record's own word"
+                             + ("; the whole-log check ties it to the entries before the record" if one_item else ""))
             if full:
                 last_full = e
+            cur_ml = new_ml if full else _UNSEEN
             current = new_k
         elif k != current:
             if not accept_unrecorded:
@@ -899,6 +921,29 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                         "forged tail read the same here, so neither is verified"), notes
             notes.append(f"seq {e.seq}: {UNRECORDED_KEY_CHANGE_NOTE} (from {current} to {k})")
             current = k
+            cur_ml = _sig_ml_dsa(e.signature)[1]
+        else:
+            sig_ml = _sig_ml_dsa(e.signature)[1]
+            if cur_ml is _UNSEEN or sig_ml == cur_ml or (cur_ml is None and last_full is None):
+                # The first showing, the same key, or post-quantum signing turned on before 0.5.1 (no record then, and
+                # it weakens nothing).
+                cur_ml = sig_ml
+            else:
+                # The post-quantum half dropped or replaced with no record: a signature stripped by someone holding the
+                # Ed25519 key alone reads the same. Since a 0.5.1 record nothing honest does it (every change is
+                # recorded, and nothing is signed without the library); before, post-quantum signing turned off did.
+                was_ml = cur_ml if isinstance(cur_ml, str) else None
+                change = f"from {_identity_line(current, was_ml)} to {_identity_line(k, sig_ml)}"
+                if not (accept_unrecorded or (accept_unendorsed and last_full is None)):
+                    return (f"the post-quantum (ML-DSA) key changes at seq {e.seq} with no key-rotation record ({change}):"
+                            " an entry signed with the Ed25519 key alone, stripped of its post-quantum half or signed with "
+                            "another, reads the same."
+                            + (" Verify again accepting an unendorsed rotation only if you know post-quantum signing was "
+                               "changed before 0.5.1" if last_full is None else "")), notes
+                notes.append(f"seq {e.seq}: the post-quantum (ML-DSA) key changed with no key-rotation record ({change}); "
+                             "post-quantum signing turned off or its key re-created before 0.5.1 leaves this mark, and so "
+                             "does an entry stripped of its post-quantum half")
+                cur_ml = sig_ml
     if current != signer_key:
         return "the entries end on a different key from the bundle's signer key", notes
     if notes:
@@ -1014,12 +1059,14 @@ def _verify_export(
     An ENDORSED rotation (the previous key signed the new key and this place in the chain) passes and is named in the
     notes. An UNENDORSED one (the previous key was gone) is what a forged tail would also write, so it is refused unless
     the caller passes ``accept_unendorsed_rotation`` -- then it passes on that record's word, said in the notes. Any
-    other key change is refused and its seq named. A record since 0.5.1 that changes only the ML-DSA half (same Ed25519
-    key, rows 42-43) passes and is named: the Ed25519 key that signed the entries before signs it. A record since 0.5.1
-    names the previous ML-DSA key too: an endorsement must carry it, and in a whole-log bundle the entry before the
-    record must be signed with it. Otherwise only the Ed25519 half is followed here (the pin below holds the ML-DSA
-    half), so a log whose signer gained the post-quantum half before 0.5.1 still verifies; each signature is still
-    verified in full. THIS PROVES CONSISTENCY, NOT
+    other key change is refused and its seq named. The ML-DSA half is followed too (rows 42-44), by the key each
+    identity has SHOWN: dropping or replacing it needs a record. A record since 0.5.1 that only ADDS an ML-DSA half
+    passes on the Ed25519 key's word; one that drops or replaces it needs the previous identity's endorsement, both
+    halves, or is unendorsed. Such a record names the previous ML-DSA key: an endorsement must carry it and the entries
+    before the record must have shown it. An entry that drops or replaces the shown key with no record is refused (before
+    any 0.5.1 record, accepted by name with ``accept_unendorsed_rotation``: post-quantum signing turned off before 0.5.1
+    left exactly that). Gaining the post-quantum half before 0.5.1 with no record still verifies; each signature is
+    still verified in full. THIS PROVES CONSISTENCY, NOT
     PROVENANCE: anyone can build a whole bundle, head included, with a key of their own. A cut at the end is caught
     only when the signer key is compared with one the reader already knows to be the real signer's.
 
@@ -1029,12 +1076,11 @@ def _verify_export(
     If ``require_signer`` is true, pin verification to the signer identity embedded in the bundle -- i.e. require that
     the head and all entries were signed by that identity: its Ed25519 key, and its ML-DSA key wherever a signature
     carries an ML-DSA half. A head stripped to its Ed25519 half under a signer that names an ML-DSA key is refused
-    (row 44). An Ed25519-only ENTRY signature is accepted where no record since 0.5.1 says the identity in use had an
-    ML-DSA half, so a log whose signer gained the post-quantum half before then still verifies. Across a key rotation
-    each stretch of the chain is pinned to the identity that introduced it instead (see the end of this function): a
-    record written since 0.5.1 names the whole identity and pins its stretch to exactly that, an Ed25519-only signature
-    refused where it names an ML-DSA key; an older record that names no ML-DSA key, and the stretch before the first
-    rotation, hold their stretch to its Ed25519 key only. (Pinning to a *bundle-embedded* key only proves internal
+    (row 44); an entry that drops the ML-DSA key its identity had shown is refused by the key lineage in every mode.
+    Across a key rotation each stretch of the chain is pinned to the identity that introduced it instead (see the end of
+    this function): a record written since 0.5.1 names the whole identity and pins its stretch to exactly that; an
+    older record that names no ML-DSA key, and the stretch before the first rotation, hold their stretch to its Ed25519
+    key only. (Pinning to a *bundle-embedded* key only proves internal
     consistency; to prove provenance against a *known* signer, compare ``bundle['signer']`` to the signer's
     independently-known public identity first.)
     """
@@ -1126,15 +1172,7 @@ def _verify_export(
         # held to, not a post-quantum key no rotation record introduced.
         return False, [f"the bundle's signer names an ML-DSA key other than the one the key-rotation record at seq "
                        f"{last_rot.seq} introduced, and no record says it changed"]
+    # An Ed25519-only entry in a stretch a record since 0.5.1 introduced with an ML-DSA key never reaches here: the key
+    # lineage has refused it as a change of the post-quantum key with no record (row 44).
     pins = _segment_pins(entries, pinned)
-    full_stretch = False
-    for e in entries:
-        if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM:
-            full_stretch = _records_previous_ml_dsa(e.metadata)
-        pin = pins.get(e.seq)
-        if full_stretch and pin is not None and pin.ml_dsa_pub and e.signature.get("algorithm") != "hybrid":
-            # Row 44: in a stretch a record since 0.5.1 introduced, the identity has an ML-DSA half and any change of it
-            # is recorded, so an Ed25519-only signature there had its post-quantum half stripped.
-            return False, [f"signature invalid at seq {e.seq}: the identity in use there names an ML-DSA key but the "
-                           "entry carries the Ed25519 half only, so its post-quantum half was removed"]
     return verify_entries(entries, pinned_by_seq=pins, chained=not item_id)
