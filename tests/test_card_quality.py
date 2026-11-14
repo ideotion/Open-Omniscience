@@ -346,12 +346,12 @@ def test_the_instance_tag_is_random_kept_and_says_nothing_about_the_folder(tmp_p
     a, b = tmp_path / "home" / "alice" / "oo", tmp_path / "home" / "alice" / "oo2"
     monkeypatch.setenv("OO_DATA_DIR", str(a))
     first = paths.instance_tag()
-    assert first == paths.instance_tag() and (a / ".oo-instance-id").read_text().strip() == first   # made once, kept
+    assert first == paths.instance_tag() and (a / ".oo-instance-id").read_text(encoding="utf-8").strip() == first   # made once, kept
     assert first != hashlib.sha256(str(a.resolve()).encode()).hexdigest()[:8]   # not derived from the path
     monkeypatch.setenv("OO_DATA_DIR", str(b))
     assert paths.instance_tag() != first   # another folder, another tag
-    (b / ".oo-instance-id").write_text("../../etc\n")
-    assert len(paths.instance_tag()) == 8 and (b / ".oo-instance-id").read_text().strip() != "../../etc"
+    (b / ".oo-instance-id").write_text("../../etc\n", encoding="utf-8")
+    assert len(paths.instance_tag()) == 8 and (b / ".oo-instance-id").read_text(encoding="utf-8").strip() != "../../etc"
     import os
 
     c = tmp_path / "fifo"
