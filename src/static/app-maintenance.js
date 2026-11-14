@@ -139,7 +139,40 @@
       if (r.state === "confirmed") bits.push(esc(t("confirmed by you")));
       return `<li><a href="/api/articles/${encodeURIComponent(r.id)}/view" target="_blank" rel="noopener" dir="auto">${esc(title)}</a>`
         + (bits.length ? ` <span class="hint">— ${bits.join(" · ")}</span>` : "")
+        + maintPairButtonHtml(r, t)
         + `<div class="hint" dir="ltr">${esc(r.url || "")}</div></li>`;
+    }
+
+    // One small button beside a host-mismatch sample (R193): "this source really publishes on that
+    // site", or its withdrawal once confirmed. The pair travels in data attributes and is read back
+    // by one delegated listener; a row without a source number or a readable site gets no button.
+    function maintPairButtonHtml(r, t) {
+      if (!(r && r.source_id >= 1 && r.article_site)) return "";
+      const confirmed = r.state === "confirmed";
+      // A confirm needs the two sites known and different; a withdraw needs only the pair itself.
+      if (!confirmed && !(r.source_site && r.article_site !== r.source_site)) return "";
+      const act = confirmed ? "withdraw" : "confirm";
+      const label = confirmed ? t("Withdraw") : t("Confirm site");
+      const tip = confirmed
+        ? t("Count this site as different again in the next dry run.")
+        : t("This source really publishes on that site: count it as “confirmed by you” in the next dry run. Nothing is marked or removed.");
+      return ` <button type="button" class="secondary" data-maint-pair="${act}" data-source="${esc(String(r.source_id))}"`
+        + ` data-site="${esc(r.article_site)}" title="${esc(tip)}">${esc(label)}</button>`;
+    }
+
+    // Every pair you confirmed, with when and the note as typed, each withdrawable. The caveat line is
+    // visible (R685): a confirmation changes how the next dry run counts the pair, and nothing else.
+    function maintPairsHtml(d, t, tf) {
+      const rows = (d && d.rows) || [];
+      const cav = `<div class="card-caveat">${esc(t("A confirmed site is counted as “confirmed by you” in the next dry run instead of as a different site. Nothing is marked or removed."))}</div>`;
+      if (!rows.length) return `<div class="hint">${esc(t("No site confirmed yet. Confirm one from a host-mismatch sample above."))}</div>` + cav;
+      const body = rows.map((r) =>
+        `<tr><td class="num">${esc(String(r.source_id))}</td><td dir="ltr">${esc(r.article_site)}</td>`
+        + `<td>${esc(ooIsoDate(r.confirmed_at || "?"))}</td><td dir="auto">${esc(r.note || "")}</td>`
+        + `<td>${maintPairButtonHtml({ source_id: r.source_id, article_site: r.article_site, state: "confirmed" }, t)}</td></tr>`).join("");
+      return `<div>${esc(tf(t("{n} confirmed"), { n: fmtNum(d.confirmed != null ? d.confirmed : rows.length) }))}</div>`
+        + `<table class="maint-tally"><thead><tr><th>${esc(t("Source number"))}</th><th>${esc(t("Site"))}</th><th>${esc(t("Confirmed"))}</th><th>${esc(t("Note"))}</th><th></th></tr></thead>`
+        + `<tbody>${body}</tbody></table>` + cav;
     }
 
     function maintSamplesHtml(data, t, tf) {
@@ -270,14 +303,58 @@
       catch (e) { el.textContent = e && e.status === 404 ? t("No such source.") : ((e && e.message) || String(e)); }
     }
 
+    async function maintLoadPairs() {
+      const t = _maintT(), tf = _maintTf();
+      const el = $("maint-pairs"); if (!el) return;
+      try { el.innerHTML = maintPairsHtml(await api("/api/quarantine/host-pairs"), t, tf); }
+      catch (e) { el.textContent = (e && e.message) || String(e); }
+    }
+
+    // Confirm or withdraw one pair. Local only: the route stores or deletes one row on this machine.
+    // A 409 is the server saying the pair is no longer a mismatch, shown as its own sentence, labelled.
+    async function maintPairAct(btn) {
+      const t = _maintT();
+      const act = btn.getAttribute("data-maint-pair");
+      const sid = parseInt(btn.getAttribute("data-source"), 10);
+      const site = btn.getAttribute("data-site") || "";
+      if (["confirm", "withdraw"].indexOf(act) < 0 || !(sid >= 1) || !site) return;
+      const out = $("maint-pair-msg"); if (out) out.textContent = "";
+      btn.disabled = true;
+      try {
+        if (act === "confirm") {
+          await api("/api/quarantine/host-pairs", { method: "POST",
+            body: JSON.stringify({ source_id: sid, article_site: site }) });
+        } else {
+          await api("/api/quarantine/host-pairs?source_id=" + sid + "&article_site=" + encodeURIComponent(site), { method: "DELETE" });
+        }
+        if (out) out.textContent = act === "confirm" ? t("Confirmed.") : t("Withdrawn.");
+      } catch (e) {
+        if (out) out.innerHTML = e && e.status === 409
+          ? esc(t("Nothing to confirm: no stored article of this source lives on that site any more."))
+          : _maintServerTextHtml((e && e.message) || String(e), t);
+      } finally { btn.disabled = false; }
+      maintLoadPairs(); maintLoadSamples();
+    }
+
+    function _maintWirePairs() {
+      for (const id of ["maint-samples", "maint-pairs"]) {
+        const el = $(id);
+        if (el) el.addEventListener("click", (ev) => {
+          const b = ev.target && ev.target.closest ? ev.target.closest("button[data-maint-pair]") : null;
+          if (b) maintPairAct(b);
+        });
+      }
+    }
+
     // The Advanced loader runs once per page, so reopening the section after a fold would show the
     // state it was folded in. Re-read when it opens, and wire that once.
     let _maintWired = false;
     function loadMaintenance() {
       if (!_maintWired) {
         const sec = document.querySelector('details[data-adv="maintenance"]');
-        if (sec) sec.addEventListener("toggle", () => { if (sec.open) maintRefresh(); });
+        if (sec) sec.addEventListener("toggle", () => { if (sec.open) { maintRefresh(); maintLoadPairs(); } });
+        _maintWirePairs();
         _maintWired = true;
       }
-      maintRefresh(); maintLoadRawIds();
+      maintRefresh(); maintLoadRawIds(); maintLoadPairs();
     }

@@ -100,7 +100,10 @@ def _sample_row(article_id: int, rows: dict, host_signal: bool, confirmed: dict 
     row = {"id": article_id, "title": r[1], "url": r[2], "already_marked": bool(r[3])}
     if host_signal:
         pair = check_host(r[2], r[4])
-        row |= {"source_domain": r[4], "source_site": pair.source_site, "article_site": pair.article_site}
+        row |= {
+            "source_id": int(r[5]) if r[5] is not None else None,  # what a confirm (POST /host-pairs) is keyed on
+            "source_domain": r[4], "source_site": pair.source_site, "article_site": pair.article_site,
+        }
         hit = (confirmed or {}).get((int(r[5]), pair.article_site))
         if hit is not None:
             row |= {"state": "confirmed", "confirmed_at": hit[0], "note": hit[1]}
