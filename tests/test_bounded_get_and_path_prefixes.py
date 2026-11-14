@@ -168,6 +168,24 @@ def test_an_endless_body_is_abandoned_at_the_bound_not_read_to_the_end():
     assert raw.pulled <= 4000 + 65536, "reading stopped within one chunk of the bound"
 
 
+def test_stop_ends_a_download_already_under_way(monkeypatch):
+    """Review row 19: the kill switch is read between chunks, so a large file stops arriving after Stop (as the mail pull, R640)."""
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
+
+    state = {"n": 0}
+
+    def engaged_after_two_chunks():
+        state["n"] += 1
+        return state["n"] > 2
+
+    monkeypatch.setattr(fetch, "kill_switch_active", engaged_after_two_chunks)
+    raw = _Raw(None, endless=b"x" * 65536)
+    with pytest.raises(RuntimeError) as exc:
+        _get(_session(raw), 10_000_000)
+    assert str(exc.value) == NETWORK_REFUSED, "the refusal names airplane mode"
+    assert raw.pulled <= 3 * 65536, "reading stopped at the next chunk"
+
+
 def test_a_declared_content_length_over_the_bound_refuses_before_reading():
     raw = _Raw(b"x" * 10)
     with pytest.raises(fetch.BodyTooLarge):

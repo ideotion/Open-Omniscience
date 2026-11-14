@@ -34,6 +34,12 @@
          P1 css-tokens fix) override it below. */
       --accent-text:var(--accent);
       --ok:#4caf7d; --warn:#d9a441; --err:#d96c6c;
+      /* --ok-text / --err-text: text-safe variants of --ok / --err (the --accent-text and
+         --warn-fg pattern). The tone words "positive 0.30" / "negative -0.44" in Explore were
+         painted in the raw --ok/--err and measured 2.81-4.42:1 on dawn, light, mint, paper and
+         solar (lane N contrast sweep, 2026-11-13); those themes mix toward their own --fg below.
+         --ok/--err themselves stay untouched for dots, borders and fills. */
+      --ok-text:var(--ok); --err-text:var(--err);
       /* pillwarn-severe-contrast (P1): --warn used directly as .pill.warn's TEXT
          colour measured 1.87-3.5:1 across several themes (Dawn/Paper/Solar worst).
          --warn-fg is a DEDICATED text-safe colour (mirrors the --caveat pattern);
@@ -184,6 +190,28 @@
          fix, same reason: re-derived via color-mix toward --fg. */
       --muted:color-mix(in srgb, var(--fg) 20%, #5f7466 80%);
       --accent-text:color-mix(in srgb, var(--fg) 20%, var(--accent) 80%); }
+    /* --ok-text / --err-text overrides (see :root). Mixed toward each theme's OWN --fg, never a
+       hardcoded hue, and re-measured against panel and panel2 by the lane N sweep. */
+    :root[data-theme="light"], :root[data-theme="paper"], :root[data-theme="dawn"], :root[data-theme="mint"] {
+      --ok-text:color-mix(in srgb, var(--fg) 40%, var(--ok) 60%);
+      --err-text:color-mix(in srgb, var(--fg) 30%, var(--err) 70%); }
+    :root[data-theme="solar"] {
+      --ok-text:color-mix(in srgb, var(--fg) 40%, var(--ok) 60%);
+      --err-text:color-mix(in srgb, var(--fg) 50%, var(--err) 50%); }
+    /* The world map (journalist walk 2026-09-30, findings 1b/1c). A country under the pointer
+       is outlined, so the hover bubble and the shape it describes are visibly the same thing;
+       the stroke is in screen pixels whatever the zoom. The scale bar sits inside the map,
+       bottom RIGHT (bottom left is the Country/layers group above 600 px, which covered it),
+       on the panel colour so it reads over land and sea alike. */
+    #oo-choro [data-iso]:hover { stroke:var(--fg); stroke-width:1.5px; vector-effect:non-scaling-stroke; }
+    .oomap-scale { position:absolute; right:8px; left:auto; bottom:8px; z-index:6; display:flex; align-items:center; gap:6px;
+      padding:2px 6px; font-size:11px; line-height:1.2; color:var(--fg); border-radius:4px;
+      background:color-mix(in srgb, var(--panel) 82%, transparent); pointer-events:auto; }
+    .oomap-scale[hidden] { display:none; }
+    /* Above 600 px the Country/layers group shares the bottom edge: it wraps before the bar's
+       corner, so neither covers the other in any language. */
+    @media (min-width: 601px) { .oomap-wrap .oomap-gran { max-width:calc(100% - 210px); } }
+    .oomap-scale-bar { display:inline-block; height:6px; border:1.5px solid var(--fg); border-top:none; }
     /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
     #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background:var(--line); }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
@@ -397,6 +425,17 @@
     #net-toggle.egress-open { border-color:var(--caveat); color:var(--caveat); }
     /* the relocated nav.tabs fills the strip; drop its own margin/under-border (the strip has one) */
     .subtab-strip > nav.tabs { margin:0 !important; border-bottom:0 !important; width:100%; }
+    /* PHONE WIDTH (lane N, 2026-11-13; the journalist walk's section 6). A subtab strip that
+       wraps takes four or five rows (about 180 px of a 800 px phone screen) before any content;
+       below 600 px it stays ONE row that scrolls sideways, every tab still in it and reachable
+       by keyboard (a focused tab scrolls into view by itself). And the Explore filters stack
+       instead of squeezing Source and Language to 25 px slivers with their labels run together. */
+    @media (max-width: 600px) {
+      .subtab-strip > nav.tabs { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
+      .subtab-strip > nav.tabs > button { flex:0 0 auto; white-space:nowrap; }
+      .explore-filters > div { flex:1 1 100% !important; min-width:0 !important; }
+      .explore-filters input { width:100%; }
+    }
     .icon-btn { background:transparent; border:1px solid transparent; color:var(--muted);
       border-radius:9px; padding:7px; margin:0; cursor:pointer; display:inline-flex; }
     .icon-btn:hover { color:var(--fg); background:var(--panel); border-color:var(--border); }
@@ -592,9 +631,9 @@
     .small { font-size:12.5px; }
     .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px;
       background:var(--panel2); border:1px solid var(--border); }
-    .pill.ok{ color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
+    .pill.ok{ color:var(--ok-text); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
     .pill.warn{ color:var(--warn-fg); border-color:color-mix(in srgb,var(--warn) 40%,var(--border)); }
-    .pill.err{ color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,var(--border)); }
+    .pill.err{ color:var(--err-text); border-color:color-mix(in srgb,var(--err) 40%,var(--border)); }
     /* Election date-confidence "window" tier (src/civic/elections.py) — its own hue,
        distinct from ok/warn/err, so a legally-bounded window never reads as either a
        confirmed date or an uncertain projection (audit P1-04). */
@@ -2091,6 +2130,9 @@
     #guide-wizard .gw-dot.on { background: var(--accent); }
     #guide-wizard .gw-dot.cur { transform: scale(1.35); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent); }
     #guide-wizard .gw-step { animation: gwFade .18s ease; }
+    #guide-wizard .gw-intro { margin:0 0 14px; padding-block:10px; padding-inline:28px 12px; border-radius:10px;
+      background:var(--panel2); border:1px solid var(--border); display:flex; flex-direction:column; gap:4px; }
+    #guide-wizard .gw-intro:focus { outline:none; }
     @keyframes gwFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     #guide-wizard .gw-langs { display: grid; grid-template-columns: repeat(2, 1fr);
       gap: 8px; margin-top: 10px; }

@@ -650,6 +650,11 @@ finding things, or it finds so much that every answer is the same answer).
    bar. Preact 10 + hooks + htm vendored in `src/static/simple/vendor/`, sha256-pinned, licences shipped, no eval, no
    request off this origin. Exemptions, simple mode only: the sidebar list (#2) and #rate-toggle/#tm-open (#4) step aside;
    #health keeps its slot (#3) and shows when not healthy. Enforced in test_ui_invariants (#34) + tests/test_simple_mode.py.
+35. **EVERY SERVER FEATURE HAS A BUTTON OR A LISTED REASON (R684, Lane M, PR #1954):** a route no UI file calls is
+   listed in `configs/routes_without_ui.tsv` as `internal`, `superseded`, `feature` or `unseen`, with a reason
+   (`scripts/route_callers.py` finds them from source). The `feature` count has a zero-slack ceiling that only goes
+   down; a superseded route is removed only in a separate PR after its owning lane confirms. Enforced by
+   tests/test_routes_have_a_caller.py + test_ui_invariants (#35).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

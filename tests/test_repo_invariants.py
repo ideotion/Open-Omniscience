@@ -2314,6 +2314,15 @@ def test_ui_invariants():
     assert "window.toggleNetwork()" in _simple_js and not re.search(r"method\s*:\s*[\"']POST", _simple_js), (
         "simple mode goes online through the full app's ONE consent path, never its own POST (#34, #14)"
     )
+    # 35. R684: every route no UI calls is listed with a reason, and the count of reader features
+    #     without a button only goes down. Behaviour: tests/test_routes_have_a_caller.py.
+    _ratchet = _ROOT / "tests" / "test_routes_have_a_caller.py"
+    assert _ratchet.exists() and "FEATURE_CEILING" in _ratchet.read_text(encoding="utf-8"), (
+        "the route-caller ratchet exists and holds a feature ceiling (CLAUDE.md #35, R684)"
+    )
+    assert (_ROOT / "configs" / "routes_without_ui.tsv").exists(), (
+        "routes no UI calls are listed with their reason (CLAUDE.md #35, R684)"
+    )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
     assert "_externalLinkGuard" in html, (
@@ -8346,7 +8355,9 @@ def test_docs_index_covers_live_docs():
 #: amendment is the growth the clause above calls normal.
 #: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
 #: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
-_CLAUDE_MD_LINE_CEILING = 812
+#: RAISED 2026-11-13/14: 802 -> 817, UI invariants #34 (simple mode, R682, ten lines) and #35 (every route has
+#: a button or a listed reason, R684, five lines).
+_CLAUDE_MD_LINE_CEILING = 817
 
 
 def _claude_md_lines() -> int:

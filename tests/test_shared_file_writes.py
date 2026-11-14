@@ -71,7 +71,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/database/repair.py": (6, "WAL"),
     "src/entities/gazetteer_build.py": (1, "Plan J"),
     "src/events/feeds.py": (4, "Plan J"),  # the third and fourth: R397 (b) moves a damaged store to .damaged (where a drive has no hard links) and gives back a file that replaced it
-    "src/geo/osm_downloads.py": (2, "OSM"),
+    "src/geo/osm_downloads.py": (1, "OSM"),
     "src/hazards/store.py": (1, "Plan J"),
     "src/ingest/__init__.py": (3, "export"),  # the third: R621's load-time scrub of a credentialed key, the same two files and in-process locks as the two writers, so it converts with them
     "src/ingest/archive_backfill.py": (2, "export"),
@@ -98,8 +98,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/safety/data_location.py": (1, "Q"),
     "src/safety/data_volume.py": (4, "Q"),
     "src/scheduler/runlog.py": (2, "rc2"),
-    "src/weather/openmeteo.py": (1, "Plan J"),
-    "src/wiki/dumps.py": (2, "export"),
+    "src/wiki/dumps.py": (1, "export"),
 }
 
 

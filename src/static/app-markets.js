@@ -965,6 +965,15 @@
     }
     // The same rule for an epoch-ms axis (ooChart): granularity from the span
     // being labelled, so an hourly window stops printing the same day repeatedly.
+    // A ROW of a chart's data table names ONE point, so it is labelled as finely as the points are spaced, not as coarsely as the
+    // axis ticks (which follow the whole span): two daily points in one month read «2025-01» twice in the table before
+    // (the 2026-11-13 Chromium walk of the OSM trends), two rows a screen reader could not tell apart.
+    function _msRowLabel(ms, gapMs, spanMs) {
+      const iso = new Date(ms).toISOString();
+      if (isFinite(gapMs) && gapMs < 864e5) return iso.slice(0, 16).replace("T", " ");   // YYYY-MM-DD HH:MM
+      if (isFinite(gapMs) && gapMs < 32 * 864e5) return iso.slice(0, 10);                 // YYYY-MM-DD: two points under a month apart can share one
+      return _msLabel(ms, spanMs);
+    }
     function _msLabel(ms, spanMs) {
       const iso = new Date(ms).toISOString();
       const days = spanMs / 864e5;
@@ -1934,8 +1943,11 @@
         fmtV(Math.min(...allV)), fmtV(Math.max(...allV))));
       const srWrap = document.createElement("div");
       srWrap.className = "sr-only";
+      const ts = [...new Set(all.flatMap(s => s.pts.map(p => p.t)))].sort((a, b) => a - b);
+      let gap = Infinity;
+      for (let i = 1; i < ts.length; i++) gap = Math.min(gap, ts[i] - ts[i - 1]);
       srWrap.innerHTML = all.map(
-        s => _chartSrTable(s.pts.map(p => ({date: fmtT(p.t), value: fmtV(p.v)})), s.label)).join("");
+        s => _chartSrTable(s.pts.map(p => ({date: _msRowLabel(p.t, gap, Math.max(tMax - tMin, 1)), value: fmtV(p.v)})), s.label)).join("");
       wrap.appendChild(srWrap);
       const plotW = W - padL - padR, plotH = H - padT - padB;
       const Xof = (ms) => padL + plotW * ((ms - t0) / Math.max(t1 - t0, 1));
@@ -2101,7 +2113,8 @@
           emptyState = true;
           return;
         }
-        const dataLo = (stacked || (opts.zeroBase && !logOk)) ? Math.min(0, ...ys) : Math.min(...ys);
+        const zeroAnchored = stacked || (opts.zeroBase && !logOk);
+        const dataLo = zeroAnchored ? Math.min(0, ...ys) : Math.min(...ys);
         const dataHi = Math.max(...ys);
         // A FLAT series is centred instead of fabricating a span: the old
         // `(yMax-yMin)||1` fallback drew 23 / 23.33 / 23.67 / 24 for a constant
@@ -2237,7 +2250,11 @@
             //
             // A SINGLE series is byte-identical to before: one slot, centred on its
             // true x, no offset. So no existing single-series chart moves.
-            const baseY = Yof(yMin);
+            // A flat zero-anchored series is centred on its value (yMin sits half a unit BELOW it), so the bars rise from
+            // its own value, never from that padding: an all-zero count is a row of 2px caps on the zero line, not half a
+            // plot of bar reading as a figure (found in the 2026-11-13 Chromium walk of the OSM trends, where an all-zero
+            // "Opening hours · Gained" drew as tall as a real 1).
+            const baseY = Yof(flatY && zeroAnchored ? dataLo : yMin);
             const nS = vs.length, slot = Math.max(2, Math.min(plotW / (n * 1.5), 26));
             const bw = nS > 1 ? Math.max(2, slot / nS) : slot;
             const si = vs.indexOf(s);
@@ -2624,6 +2641,14 @@
           b.tabIndex = on ? 0 : -1;
           if (on) hit = b;
         });
+        // A strip that scrolls sideways (phone width, app.css) brings the active tab into
+        // view inside the strip only: a physical delta on the strip's own scrollLeft, so the
+        // page never moves and right-to-left needs no special case.
+        if (hit && nav.scrollWidth > nav.clientWidth + 1 && typeof hit.getBoundingClientRect === "function") {
+          const nr = nav.getBoundingClientRect(), br = hit.getBoundingClientRect();
+          if (br.left < nr.left) nav.scrollLeft -= (nr.left - br.left) + 8;
+          else if (br.right > nr.right) nav.scrollLeft += (br.right - nr.right) + 8;
+        }
         return hit;
       }
       function select(key, focus) {    // the canonical switch: paint + callback

@@ -48,7 +48,7 @@ const CLIMATE = [
 ];
 const src =
   extractConst("esc") + "\n" + extractConst("_LTR_ISOLATE") + "\n" + extract("_ltrIsolate") + "\n" +
-  extract("fmtNum") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" + extract("ooLtrIsolate") + "\n" +
+  extract("fmtNum") + "\n" + extract("ooRoundPlace") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" + extract("ooLtrIsolate") + "\n" +
   "var window = {};\nvar document = { documentElement: { dir: \"ltr\" } };\n" +
   CLIMATE.map(extract).join("\n") + "\n" +
   "module.exports = {" + CLIMATE.join(", ") + "};";
@@ -91,6 +91,9 @@ const unit = (over) => Object.assign({
   const link = /<a\b[^>]*>([\s\S]*?)<\/a>/.exec(h);
   assert.ok(link, "the source page is a link");
   assert.strictEqual(visible(link[1]), unit().source_page, "the link's visible text is the full URL (#6)");
+  // #6 extended: the local preview opens first; the link is never a bare shortcut out.
+  assert.ok(/data-on-click="ooPrevent\(event\);openLinkPreview\(/.test(link[0]), link[0]);
+  assert.ok(!/target="_blank"/.test(link[0]), "no bare outbound link: " + link[0]);
   assert.ok(visible(h).includes("NASA GISS, public domain"), "the licence is named");
   noJunk(h, "never fetched");
 }
@@ -172,6 +175,10 @@ assert.strictEqual(R.climateParamLabel("nsidc", "S", t), "Antarctic");
 assert.strictEqual(R.climatePlaceRound("48.85661"), 48.9);
 assert.strictEqual(R.climatePlaceRound(2.35222), 2.4);
 assert.ok(Object.is(R.climatePlaceRound(-0.04), 0), "no -0 in the popup");
+// A tie goes UP, as the server's round_place does (tests/test_weather_context_r683.py pins the same values).
+assert.strictEqual(R.climatePlaceRound(0.25), 0.3);
+assert.strictEqual(R.climatePlaceRound(-0.25), -0.2);
+assert.strictEqual(R.climatePlaceRound(7.75), 7.8);
 // The window ends a week ago and spans 30 days, from today's UTC date.
 assert.deepStrictEqual(R.climatePlaceDefaults(new Date(Date.UTC(2026, 10, 13, 23, 0))), {start: "2026-10-08", end: "2026-11-06"});
 // Every query the server would refuse is refused here in words, before any popup.

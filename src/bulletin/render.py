@@ -236,7 +236,7 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     disclosure = T.disclosure()
     if disclosure:
         out[lang_at:lang_at] = [f"*{disclosure}*", ""]
-    return "\n".join(out)
+    return _md_safe_links("\n".join(out))
 
 
 def _md_attribution(edition: dict, T: Translator) -> list[str]:
@@ -816,6 +816,42 @@ def _link_target(url: object) -> str | None:
     if not sep or scheme.lower() not in _LINK_SCHEMES:
         return None
     return url
+
+
+# The three ways a Markdown reader makes a link out of text, matched where the link's TARGET sits rather
+# than by its label: a label may hold escaped or nested brackets (``[a [b] c](...)``), which a label
+# pattern misses, while a target always follows ``](``, ``]:`` or ``<``. Each is checked against
+# ``_LINK_SCHEMES`` and, when it fails, broken with ONE backslash, so the reader shows the text as written.
+# The target is read by LOOKAHEAD, never consumed: a safe-looking target can contain a second link
+# (``[a](https://x[b](javascript:y)``, whose outer link a reader rejects for its unbalanced bracket and
+# whose inner one it follows), so every ``](`` and ``]:`` is checked on its own (security read of #1968).
+_MD_INLINE_TARGET = re.compile(r"\]\((?=\s*(<[^>\n]*>|[^\s)]*))")
+_MD_DEFINITION_TARGET = re.compile(r"\]:(?=[ \t]*\n?[ \t]*(<[^>\n]*>|\S*))")
+# An autolink (``<javascript:x>``) or raw HTML (``<a href=...>``, ``<img onerror=...>``): a ``<`` that
+# opens a tag-like run and is not already escaped (an even run of backslashes before it). A safe
+# autolink stays; everything else loses its ``<``, which no source title needs to stay markup.
+_MD_ANGLE = re.compile(r"(?<!\\)((?:\\\\)*)<(?=[A-Za-z/!?])(?!(?i:https?|mailto):[^\s<>]*>)")
+
+
+def _md_safe_links(text: str) -> str:
+    """The Markdown export with every link a reader could follow limited to ``_LINK_SCHEMES``.
+
+    The HTML export checks its one ``href`` writer (``_html_link``); the Markdown file has no writer to
+    check, because the reader's own renderer makes the links, and a title is source text: before this,
+    ``[click](javascript:...)`` in a title reached the ``.md`` file as a live link. So the WHOLE text is
+    read once at the end, by target, and an unsafe target is escaped rather than removed: nothing the
+    source wrote disappears, it only stops being a link. Code spans are not skipped, on purpose: telling
+    them apart is a parser's job, and an extra backslash inside one costs less than a link let through."""
+
+    def escaped(mark: str):
+        def one(m: re.Match[str]) -> str:
+            return m.group(0) if _link_target(m.group(1).strip("<>")) is not None else "]\\" + mark
+
+        return one
+
+    text = _MD_INLINE_TARGET.sub(escaped("("), text)
+    text = _MD_DEFINITION_TARGET.sub(escaped(":"), text)
+    return _MD_ANGLE.sub(lambda m: m.group(1) + "\\<", text)
 
 
 def _article_lines(row: dict, T: Translator) -> list[str]:

@@ -118,6 +118,41 @@ def test_a_period_the_publisher_stopped_serving_is_counted_never_deleted(db):
     assert _rows(db) == 6
 
 
+def _fig(area: str, period: str, value: float, stamp: str):
+    from src.stats.sdmx import StatFigure
+
+    return StatFigure(agency="owid", series_id="owid.co2", ref_area=area, time_period=period, value=value, unit="Mt",
+                      methodology_ref=None, adjustment=None, base_year=None, extracted_at=stamp)
+
+
+def test_an_area_the_source_dropped_entirely_is_counted_as_withdrawn(db):
+    """Lane F review row 21: a whole-file dataset that no longer carries an area withdrew it (R662), counted, never deleted."""
+    first = [_fig("FRA", "2020", 1.0, "2026-11-01T00:00:00+00:00"), _fig("XKX", "2020", 2.0, "2026-11-01T00:00:00+00:00")]
+    climate.store_new_or_revised(db, first, all_areas=True)
+    again = [_fig("FRA", "2020", 1.0, "2026-11-02T00:00:00+00:00")]
+    tally = climate.store_new_or_revised(db, again, all_areas=True)
+    assert tally["withdrawn"] == 1 and tally["withdrawn_sample"] == ["owid.co2 XKX 2020"]
+    assert _rows(db) == 2, "kept, never deleted"
+    # A file that covers one area (a GHCN station) compares only the areas it carries.
+    assert climate.store_new_or_revised(db, again, all_areas=False)["withdrawn"] == 0
+
+
+def test_only_an_owid_column_counts_a_dropped_area_and_a_regional_file_never_accuses_another_region(db):
+    """GISTEMP and NSIDC share one series id across regions, one file per region: fetching NH after GLB
+    must not call GLB's rows withdrawn (second security read, 2026-11-13)."""
+    import inspect
+
+    from src.stats.sdmx import StatFigure
+
+    def g(area, period, stamp):
+        return StatFigure(agency="gistemp", series_id="gistemp.monthly", ref_area=area, time_period=period, value=0.5,
+                          unit="degC", methodology_ref=None, adjustment=None, base_year=None, extracted_at=stamp)
+
+    climate.store_new_or_revised(db, [g("GLB", "2020-01", "s1"), g("GLB", "2020-02", "s1")])
+    assert climate.store_new_or_revised(db, [g("NH", "2020-01", "s2")])["withdrawn"] == 0
+    assert 'all_areas=dataset == "owid"' in inspect.getsource(climate.fetch_and_store)
+
+
 def test_a_period_repeated_inside_one_file_is_counted_and_never_breaks_the_fetch(db):
     twice = ONI_V1 + "JFM  1950 25.17 -1.34\n"
     record = climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(twice, "2026-11-01T00:00:00+00:00"))

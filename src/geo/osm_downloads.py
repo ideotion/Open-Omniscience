@@ -546,7 +546,11 @@ class OsmDownloadManager:
         if data is None:
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
+        # Atomic (audit P15): through the one owner of atomic writes (a unique temp beside the name, flushed, moved over it, the temp removed on
+        # a failure), so a crash mid-write leaves no file at the name a later start would resume from, and no half extract under its real name.
+        from src.safety.file_lock import atomic_replace
+
+        atomic_replace(dest, data)
         entry.total_bytes = len(data)
         entry.downloaded_bytes = len(data)
         entry.status = "done"
