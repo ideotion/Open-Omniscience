@@ -2618,6 +2618,16 @@ def _wait_until_quiet(timeout: float, *, poll: float = 0.25) -> bool:
         time.sleep(poll)
 
 
+def _server_kind() -> str | None:
+    """``VllmClient.server_kind()`` for the status panel, or None when the server does not answer the identity reads."""
+    try:
+        from src.llm.vllm_client import VllmClient
+
+        return VllmClient(timeout=3.0).server_kind()
+    except Exception:  # noqa: BLE001 - an advisory read for a caveat; the status view must not break on it
+        return None
+
+
 def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
     """A full status snapshot for the Settings -> AI tab and the diagnostics
     member (B7) -- installed/running/GPU/platform facts, never a fabricated
@@ -2645,6 +2655,7 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
 
     gpu = detect_gpu()
     hist = install_history()
+    running = is_running()
     return {
         "installed": is_installed(),
         "install_info": install_info(),
@@ -2656,7 +2667,11 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # the exported bundle able to tell the two apart. `None` = unrecognised
         # layout, i.e. not measurable -- never collapsed into False.
         "package_present": _package_present(venv_dir(), "vllm"),
-        "running": is_running(),
+        "running": running,
+        # WHAT the server at the vLLM address says it is (R688): "vllm", "ollama", "relay", "other", or None when
+        # nothing answers. "other" (llama.cpp, LM Studio and the like) is used, with a caveat in Settings, because the
+        # app cannot see whether it sends text elsewhere; "relay" is refused at every generation.
+        "server_kind": _server_kind() if running else None,
         # WHO is on the port, not merely whether vLLM answered. "running: false"
         # alone sent a field report down the wrong path entirely (2026-08-02):
         # the port was the app's own, so "not running" was true and useless --

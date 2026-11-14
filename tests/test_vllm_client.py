@@ -22,6 +22,19 @@ def _client_with(handler, *, base_url: str = "http://testvllm") -> VllmClient:
     return VllmClient(client=http, base_url=base_url)
 
 
+def _vllm_serving(handler, *names: str):
+    """Wrap a handler as a real vLLM server answers the R688 identity reads: no Ollama /api/tags, and its own model card."""
+
+    def wrapped(request):
+        if request.url.path == "/api/tags":
+            return httpx.Response(404, json={"detail": "Not Found"})
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"object": "list", "data": [{"id": n, "owned_by": "vllm"} for n in names]})
+        return handler(request)
+
+    return wrapped
+
+
 def test_unavailable_when_vllm_down():
     def handler(request):
         raise httpx.ConnectError("connection refused")
@@ -71,7 +84,7 @@ def test_generate_maps_chat_completions_and_usage():
             },
         )
 
-    client = _client_with(handler)
+    client = _client_with(_vllm_serving(handler, "my-model"))
     out = client.generate("hi", model="my-model", system="be terse")
     assert out.text == "a summary."
     assert out.model == "my-model"
@@ -97,7 +110,7 @@ def test_generate_without_system_omits_the_system_message():
             200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}}
         )
 
-    client = _client_with(handler)
+    client = _client_with(_vllm_serving(handler, "my-model"))
     client.generate("hi", model="my-model")
 
 
@@ -118,7 +131,7 @@ def test_keep_alive_and_options_are_accepted_but_have_no_effect():
     def handler(request):
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
-    client = _client_with(handler)
+    client = _client_with(_vllm_serving(handler, "m"))
     out = client.generate("hi", model="m", keep_alive="30m", options={"temperature": 0})
     assert out.text == "ok"
 
