@@ -66,7 +66,10 @@ def test_a_failed_move_into_place_leaves_no_plaintext_temp_behind(tmp_path, monk
     def _boom(*_a, **_k):
         raise OSError("cannot move")
 
-    monkeypatch.setattr("src.bulletin.evidence.os.replace", _boom)
+    from src.bulletin import evidence as evidence_mod
+    from tests.os_scope import scope_os
+
+    scope_os(monkeypatch, evidence_mod, replace=_boom)
     with pytest.raises(OSError):
         build_evidence_archive(_corpus(1), {"layer": "A"}, _P, tmp_path)
     assert list(tmp_path.iterdir()) == []
