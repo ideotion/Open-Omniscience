@@ -17,10 +17,10 @@ from pydantic import BaseModel
 from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import (
-    ITEM_SCOPE_NOTE,
-    WHOLE_LOG_SCOPE,
+    ROTATION_ITEM,
     CustodyAction,
     CustodyLog,
+    scope_note,
     verify_export_report,
 )
 from src.custody.settings import (
@@ -56,8 +56,12 @@ def log_action(req: LogRequest) -> dict:
     try:
         action = CustodyAction(req.action)
     except ValueError as exc:
-        valid = ", ".join(a.value for a in CustodyAction)
+        valid = ", ".join(a.value for a in CustodyAction if a is not CustodyAction.KEY_ROTATION)
         raise HTTPException(status_code=400, detail=f"unknown action; use one of: {valid}") from exc
+    if action == CustodyAction.KEY_ROTATION or req.item_id == ROTATION_ITEM:
+        # The log writes its own key-rotation records; one posted here would name keys of the caller's choosing and
+        # leave every later export of the log refused.
+        raise HTTPException(status_code=400, detail="key-rotation records are written by the custody log itself")
     log = _log()
     try:
         entry = log.record(
@@ -261,7 +265,7 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
     ok = report["verified"]
     # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
     # every key rotation crossed is named in the notes.
-    scope = (ITEM_SCOPE_NOTE if req.bundle.get("item_id") else WHOLE_LOG_SCOPE) if ok else None
+    scope = scope_note(req.bundle, report["notes"]) if ok else None
     return {"verified": ok, "issues": report["issues"], "notes": report["notes"], "scope": scope}
 
 

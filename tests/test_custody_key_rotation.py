@@ -199,3 +199,144 @@ def test_the_route_and_the_cli_name_the_rotation(tmp_path):
     assert subprocess.run(cli, capture_output=True, text=True).returncode == 1
     out = subprocess.run([*cli, "--accept-unendorsed-rotation"], capture_output=True, text=True)
     assert out.returncode == 0 and "key rotation   : seq 3" in out.stdout
+
+
+# --- found by the two security reads of the first version ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("endorsed", [True, False])
+def test_an_item_first_recorded_after_a_rotation_verifies(tmp_path, endorsed):
+    """Its bundle starts with the rotation record, whose previous key signed nothing in the bundle."""
+    db = str(tmp_path / "c.db")
+    old, new = _signer(tmp_path, "old"), _signer(tmp_path, "new")
+    with CustodyLog(db_path=db, signer=old) as log:
+        log.record("a:1", "a" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=new) as log:
+        if endorsed:
+            log.rotate_signing_key(old)
+        log.record("a:2", "b" * 64, CustodyAction.INGEST)
+        bundle = log.export(item_id="a:2")
+    assert [e["item_id"] for e in bundle["entries"]] == [ROTATION_ITEM, "a:2"]
+    report = verify_export_report(bundle, require_signer=True, accept_unendorsed_rotation=not endorsed)
+    assert report["verified"], report["issues"]
+    if not endorsed:
+        assert not verify_export(bundle)[0]  # still refused unless accepted on the record's word
+
+
+def test_rotation_records_cannot_be_written_from_outside(tmp_path):
+    """One posted through record() or the log route would name keys of the caller's choosing and break every later
+    export for good, the log being append-only."""
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        log.record("a:1", "a" * 64, CustodyAction.INGEST)
+        with pytest.raises(ValueError):
+            log.record(ROTATION_ITEM, "a" * 64, CustodyAction.KEY_ROTATION, metadata={"previous_ed25519_pub": "x"})
+        with pytest.raises(ValueError):
+            log.record(ROTATION_ITEM, "a" * 64, CustodyAction.INGEST)
+        with pytest.raises(ValueError):
+            log.record("a:2", "a" * 64, "key_rotation")
+        assert len(log.all_entries()) == 1
+
+
+def test_the_log_route_refuses_rotation_records(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    with TestClient(app) as c:
+        for body in ({"item_id": ROTATION_ITEM, "item_hash": "a" * 64, "action": "key_rotation"},
+                     {"item_id": "a:1", "item_hash": "a" * 64, "action": "key_rotation"},
+                     {"item_id": ROTATION_ITEM, "item_hash": "a" * 64, "action": "ingest"}):
+            r = c.post("/api/custody/log", json=body)
+            assert r.status_code == 400, r.text
+        r = c.post("/api/custody/log", json={"item_id": "a:1", "item_hash": "a" * 64, "action": "nonsense"})
+        assert r.status_code == 400 and "key_rotation" not in r.json()["detail"]
+
+
+def test_entries_that_end_on_another_key_than_the_signer_are_refused(tmp_path):
+    """A whole bundle signed by key A, given a head and a signer of key B: no entry carries B."""
+    db = str(tmp_path / "c.db")
+    a, b = _signer(tmp_path, "a"), _signer(tmp_path, "b")
+    with CustodyLog(db_path=db, signer=a) as log:
+        _record(log, 3)
+        bundle = log.export()
+    forged = copy.deepcopy(bundle)
+    forged["signer"] = b.public_identity().to_dict()
+    forged["head_signature"] = b.sign(canonical_bytes(forged["head"]))
+    ok, issues = verify_export(forged, accept_unendorsed_rotation=True)
+    assert not ok and issues == ["the entries end on a different key from the bundle's signer key"]
+
+
+def test_the_scope_line_says_when_the_key_changed(tmp_path):
+    from src.custody.log import ITEM_SCOPE_NOTE, WHOLE_LOG_SCOPE, scope_note
+
+    db = str(tmp_path / "c.db")
+    old = _signer(tmp_path, "old")
+    with CustodyLog(db_path=db, signer=old) as log:
+        _record(log, 2)
+        plain = log.export()
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
+        log.rotate_signing_key(old)
+        _record(log, 2, 2)
+        rotated, rotated_item = log.export(), log.export(item_id="article:0")
+    assert scope_note(plain, verify_export_report(plain)["notes"]) == WHOLE_LOG_SCOPE
+    for b, unrotated in ((rotated, WHOLE_LOG_SCOPE), (rotated_item, ITEM_SCOPE_NOTE)):
+        report = verify_export_report(b)
+        assert report["verified"] and report["notes"]
+        note = scope_note(b, report["notes"])
+        assert note != unrotated and "rotation" in note
+
+
+def test_exporting_the_rotation_item_lists_each_record_once(tmp_path):
+    db = str(tmp_path / "c.db")
+    old = _signer(tmp_path, "old")
+    with CustodyLog(db_path=db, signer=old) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
+        log.rotate_signing_key(old)
+        _record(log, 1, 2)
+        bundle = log.export(item_id=ROTATION_ITEM)
+    assert [e["seq"] for e in bundle["entries"]] == [3]
+
+
+def test_segment_pins_follow_each_rotation():
+    from src.custody.log import CustodyEntry, _segment_pins
+    from src.custody.signing import PublicIdentity
+
+    def entry(seq, action="ingest", md=None):
+        return CustodyEntry.from_dict({"seq": seq, "item_id": ROTATION_ITEM if action == "key_rotation" else "a:1",
+                                       "item_hash": "a", "action": action, "actor": None, "metadata": md or {},
+                                       "prev_entry_hash": "p", "entry_hash": "h",
+                                       "signature": {"ed25519": {"pub": "k"}}, "timestamp": {}})
+
+    signer = PublicIdentity(ed25519_pub="K3", ml_dsa_variant="v", ml_dsa_pub="M3")
+    rot2 = {"ed25519_pub": "K2", "ml_dsa_variant": "v", "ml_dsa_pub": "M2"}
+    rot3 = {"ed25519_pub": "K3", "ml_dsa_variant": None, "ml_dsa_pub": None}
+    pins = _segment_pins([entry(1), entry(2, "key_rotation", rot2), entry(3), entry(4, "key_rotation", rot3), entry(5)],
+                         signer)
+    assert pins[1] is None  # before the first rotation: its Ed25519 key only, held by the lineage
+    assert pins[2] == pins[3] == PublicIdentity(ed25519_pub="K2", ml_dsa_variant="v", ml_dsa_pub="M2")
+    assert pins[4] is signer and pins[5] is signer
+
+
+@pytest.mark.skipif(not __import__("src.custody.signing", fromlist=["x"]).PQC_AVAILABLE,
+                    reason="pqcrypto/ML-DSA not installed")
+def test_a_pinned_bundle_refuses_a_middle_entry_with_another_ml_dsa_half(tmp_path):
+    """Same Ed25519 key, another ML-DSA key: the lineage cannot see it, the stretch's pin can."""
+    db = str(tmp_path / "c.db")
+    old, new, newer = _signer(tmp_path, "old"), _signer(tmp_path, "new"), _signer(tmp_path, "newer")
+    new_other_ml = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "other.key")
+    with CustodyLog(db_path=db, signer=old) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=new) as log:
+        log.rotate_signing_key(old)
+    with CustodyLog(db_path=db, signer=new_other_ml) as log:
+        _record(log, 1, 2)
+    with CustodyLog(db_path=db, signer=newer) as log:
+        log.rotate_signing_key(new)
+        _record(log, 1, 3)
+        bundle = log.export()
+    assert verify_export(bundle)[0]
+    ok, issues = verify_export(bundle, require_signer=True)
+    assert not ok and any("ml-dsa public key does not match" in i for i in issues)

@@ -1371,7 +1371,7 @@ it; the entries stay owed. A gap check alone still answers, and its `drained` bl
 reports `refused_offline`.
 
 Verify a bundle anywhere, without this app. The checker fails closed: it refuses by name a bundle with no
-entries, one cut mid-record, one signed by more than one key, one whose entries do not match the signed head its
+entries, one cut mid-record, one whose signing key changes with no key-rotation record, one whose entries do not match the signed head its
 export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
 A verified bundle proves it is consistent and signed by one key, or by a line of keys each handed on to the next by
@@ -1384,7 +1384,11 @@ that the previous key was not available, so nothing but the record links the two
 read the same: the checker refuses it unless you pass `--accept-unendorsed-rotation` (or `accept_unendorsed_rotation`
 to the route), and then it names the rotation it accepted. A rotation made while the old key is still at hand
 (`CustodyLog.rotate_signing_key`) is endorsed: the old key signs the new key and that place in the chain, and the
-checker follows it without being asked. A key change with no record is refused.
+checker follows it without being asked. A key change with no record is refused. An unendorsed rotation stays
+unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
+call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
+held to the key that introduced it (the stretch before the first rotation to its Ed25519 key, the only one the bundle
+names for it). The log's own key-rotation records cannot be written through `POST /api/custody/log`.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]

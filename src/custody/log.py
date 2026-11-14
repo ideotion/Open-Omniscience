@@ -255,6 +255,10 @@ class CustodyLog:
         digest. Pass an OpenTimestamps proof to anchor the entry independently.
         """
         action_val = action.value if isinstance(action, CustodyAction) else str(action)
+        if action_val == CustodyAction.KEY_ROTATION.value or item_id == ROTATION_ITEM:
+            # Only this log writes its key-rotation records (``_insert_rotation``): one written from outside would name
+            # keys of the caller's choosing, and every later export of the log would be refused for good.
+            raise ValueError("key-rotation records are written by the custody log itself, never through record()")
         meta = metadata or {}
         # Serialise the whole READ-CHAIN-INSERT so concurrent ingest workers can never
         # read the same tail, compute the same seq, and collide / fork the chain.
@@ -438,7 +442,7 @@ class CustodyLog:
     def export(self, item_id: str | None = None) -> dict:
         """Produce an offline-verifiable bundle of entries + the signer identity."""
         entries = self.entries_for(item_id) if item_id else self.all_entries()
-        if item_id and entries:
+        if item_id and item_id != ROTATION_ITEM and entries:
             # The key-rotation records up to the item's last entry, so its key changes can be followed.
             rotations = [e for e in self.entries_for(ROTATION_ITEM) if e.seq < entries[-1].seq]
             entries = sorted(entries + rotations, key=lambda e: e.seq)
@@ -493,6 +497,7 @@ def verify_entries(
     pinned: PublicIdentity | None = None,
     max_issues: int | None = None,
     chained: bool = True,
+    pinned_by_seq: dict[int, PublicIdentity | None] | None = None,
 ) -> tuple[bool, list[str]]:
     """Re-validate custody entries: hashes, chain links, and signatures.
 
@@ -509,6 +514,9 @@ def verify_entries(
     ``chained=False`` is for a ONE-ITEM export: its entries are a selection from the whole log, so their seqs skip and
     their ``prev_entry_hash`` points at entries of other items. Each entry's hash, signature and timestamp proof are
     still checked, and the seqs must rise; the links between them cannot be, and the caller says so.
+
+    ``pinned_by_seq`` pins each entry to its own identity (``None`` = unpinned) in place of ``pinned``: a bundle that
+    crosses a key rotation has one identity per stretch of the chain.
     """
     issues: list[str] = []
     dropped = 0
@@ -540,7 +548,8 @@ def verify_entries(
             _issue(f"entry_hash mismatch at seq {e.seq} (entry contents altered)")
         # Signature covers the full core (including the entry's timestamp proof).
         ok, reason = signing.verify(
-            e.signature, canonical_bytes({**e.signable_core()}), pinned=pinned
+            e.signature, canonical_bytes({**e.signable_core()}),
+            pinned=pinned_by_seq.get(e.seq) if pinned_by_seq is not None else pinned,
         )
         if not ok:
             _issue(f"signature invalid at seq {e.seq}: {reason}")
@@ -565,6 +574,24 @@ WHOLE_LOG_SCOPE = (
     "the whole log, from its first entry to the last entry its signed head names, all signed by the bundle's signer "
     "key; compare that key with the real signer's to know who signed it"
 )
+#: The same two, for a bundle whose signing key changed: then not every entry carries the signer key.
+ITEM_SCOPE_NOTE_ROTATED = (
+    "one item's entries: each entry's hash, signature and timestamp were checked, and their order, but not the links "
+    "between them, which run through other items' entries. The signing key changed at the key rotations named below; "
+    "each entry carries the key in use at its place in the chain, and the last of those keys is the bundle's signer key"
+)
+WHOLE_LOG_SCOPE_ROTATED = (
+    "the whole log, from its first entry to the last entry its signed head names. The signing key changed at the key "
+    "rotations named below and ends on the bundle's signer key; compare that key with the real signer's to know who "
+    "signed the entries after the last rotation, and read each rotation's note for how the keys before it are linked"
+)
+
+
+def scope_note(bundle: dict, notes: list[str]) -> str:
+    """What a "verified" covers for ``bundle``, given the rotation ``notes`` its verification returned."""
+    if bundle.get("item_id"):
+        return ITEM_SCOPE_NOTE_ROTATED if notes else ITEM_SCOPE_NOTE
+    return WHOLE_LOG_SCOPE_ROTATED if notes else WHOLE_LOG_SCOPE
 
 
 def _signature_shape_problem(sig: object) -> str | None:
@@ -603,7 +630,14 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
     """Walk the signing key through the entries. Returns ``(problem or None, notes)``; the key must end as
     ``signer_key``. See :func:`verify_export`'s WHICH KEY."""
     notes: list[str] = []
-    current = _sig_ed25519_pub(entries[0].signature)
+    first = entries[0]
+    current = _sig_ed25519_pub(first.signature)
+    if first.action == CustodyAction.KEY_ROTATION.value and first.item_id == ROTATION_ITEM:
+        # A one-item bundle starts at the earliest rotation before its item's first entry, so no entry in it was signed
+        # by the key that rotation replaces: the record's own word names that key. Its endorsement, when there is one,
+        # is still checked against it below, and the walk must still end on the signer key.
+        named = first.metadata.get("previous_ed25519_pub")
+        current = named if isinstance(named, str) else current
     for e in entries:
         k = _sig_ed25519_pub(e.signature)
         if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM:
@@ -641,6 +675,26 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
     if current != signer_key:
         return "the entries end on a different key from the bundle's signer key", notes
     return None, notes
+
+
+def _segment_pins(entries: list[CustodyEntry], signer: PublicIdentity) -> dict[int, PublicIdentity | None]:
+    """The identity each entry is pinned to when a bundle crosses key rotations (see ``_verify_export``)."""
+    rotations = [i for i, e in enumerate(entries)
+                 if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM]
+    last = rotations[-1] if rotations else len(entries)
+    pins: dict[int, PublicIdentity | None] = {}
+    current: PublicIdentity | None = None
+    for i, e in enumerate(entries):
+        if i >= last:
+            pins[e.seq] = signer
+            continue
+        if i in rotations:
+            md = e.metadata
+            ml = md.get("ml_dsa_pub")
+            current = PublicIdentity(ed25519_pub=str(md.get("ed25519_pub")), ml_dsa_variant=md.get("ml_dsa_variant"),
+                                     ml_dsa_pub=ml) if isinstance(ml, str) and ml else None
+        pins[e.seq] = current
+    return pins
 
 
 def _sig_ed25519_pub(sig: dict) -> str:
@@ -692,7 +746,9 @@ def _verify_export(
     once held) -- the full log's chain shows a cut at its start or middle, and a one-item export shows neither.
 
     If ``require_signer`` is true, pin verification to the signer identity embedded in the bundle -- i.e. require that
-    all entries and the head were signed by that identity. (Pinning to a *bundle-embedded* key only proves internal
+    the head and all entries were signed by that identity, ML-DSA half included. Across a key rotation each stretch of
+    the chain is pinned to the identity that introduced it instead (see the end of this function); the stretch before
+    the first rotation is held to its Ed25519 key only, the one identity the bundle names for it. (Pinning to a *bundle-embedded* key only proves internal
     consistency; to prove provenance against a *known* signer, compare ``bundle['signer']`` to the signer's
     independently-known public identity first.)
     """
@@ -749,7 +805,11 @@ def _verify_export(
         return False, ["the bundle's entries do not match its signed head (a different last entry, scope or version)"]
     if item_id and any(e.item_id not in (item_id, ROTATION_ITEM) for e in entries):
         return False, [f"the bundle is for {item_id!r} but holds entries of other items"]
-    # Each entry's signature is checked against the key it carries, which ``_key_lineage`` has already held to the
-    # signer key or to a key the lineage hands on to it; pinning every entry to the LAST key would refuse the entries
-    # signed before a rotation.
-    return verify_entries(entries, pinned=None if rotation_notes else pinned, chained=not item_id)
+    if pinned is None or not rotation_notes:
+        return verify_entries(entries, pinned=pinned, chained=not item_id)
+    # Across a rotation one pin cannot hold every entry: pinning them all to the LAST key would refuse those signed
+    # before it. ``_key_lineage`` has held every entry's Ed25519 key to its stretch of the chain; here each stretch is
+    # also pinned in full (its ML-DSA half too) to the identity that introduced it -- the stretch after the last rotation
+    # to the bundle's signer, a middle stretch to its rotation record's identity when that names an ML-DSA key. The
+    # stretch before the first rotation has no identity in the bundle beyond its Ed25519 key, which the lineage checked.
+    return verify_entries(entries, pinned_by_seq=_segment_pins(entries, pinned), chained=not item_id)

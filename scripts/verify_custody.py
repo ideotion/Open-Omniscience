@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.custody.log import ITEM_SCOPE_NOTE, WHOLE_LOG_SCOPE, verify_export_report  # noqa: E402
+from src.custody.log import scope_note, verify_export_report  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -53,14 +53,15 @@ def main(argv: list[str]) -> int:
     )
     ok, issues = report["verified"], report["issues"]
 
-    signer = bundle.get("signer") if isinstance(bundle.get("signer"), dict) else {}
+    raw_signer = bundle.get("signer")
+    signer: dict = raw_signer if isinstance(raw_signer, dict) else {}
     print(f"log_version    : {bundle.get('log_version')}")
     print(f"item_id        : {bundle.get('item_id')}")
     print(f"entry_count    : {bundle.get('entry_count')}")
     print(f"signer ed25519 : {signer.get('ed25519_pub')}")
     print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
     if ok:  # what a "verified" covers, said only beside one
-        print(f"scope          : {ITEM_SCOPE_NOTE if bundle.get('item_id') else WHOLE_LOG_SCOPE}")
+        print(f"scope          : {scope_note(bundle, report['notes'])}")
         for n in report["notes"]:
             print(f"key rotation   : {n}")
     print(f"VERIFIED       : {ok}")
