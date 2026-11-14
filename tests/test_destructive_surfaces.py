@@ -271,11 +271,16 @@ _NOT_SCANNED = {"i18n.js", "sw.js", "oo-on.js"}
 #: not on that table, so an entry cannot outlive the reason for it.
 _REQUEST_EXEMPT = {
     "_dismissCardNow": "files a dismissed card with its reason; the briefing's Restore puts it back (/api/briefing/restore)",
+    "maintPairAct": "confirms or withdraws ONE host pair (/api/quarantine/host-pairs): each undoes the other, only the next "
+    "dry run's count changes, and no article or source is marked or removed",
     "_leadDismissWith": "records the reason a lead was dismissed; additive, nothing is removed",
     "_stopServerRun": "the bulk/extractor Cancel's helper: the task manager's own Stop of a detached AI run (job control; finished "
     "articles stay stored, the run is started again from the same panel)",
     "_pruneCore": "garbage-collects keywords with ZERO mentions: derived rows nothing references, rebuilt by the next index",
     "dismissRetiredMode": "clears one informational 'retired mode' notice flag in the scheduler config",
+    "ooKeywordUndoButton": "the UNDO of a hidden keyword (R685): it shows the keyword again (/api/insights/include); Hide hides it again",
+    "ooPaintBriefDismissed": "brings every dismissed Lead BACK (R685, /api/briefing/dismissed/clear): it removes nothing, it un-hides",
+    "ooRestoreCard": "brings one dismissed Lead BACK from the Undo left in its place (R685, /api/briefing/restore); Dismiss hides it again",
     "overlayMerge": "posts the picked export files and reads back a merged REPORT; it writes no corpus row",
     "runLangDetect": "no caller in src/static (dead code); its cancel half would stop a running detection pass (job control)",
     "stopWikiLane": "switches the wiki lane off in the scheduler config (job control; the toggle switches it on again)",

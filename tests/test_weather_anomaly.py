@@ -32,6 +32,19 @@ def _base(fn=lambda v, d: 10.0 if v.startswith("temp") else 2.0):
     return _slice(anomaly.BASELINE_START, anomaly.BASELINE_END, fn)
 
 
+class _Mem:
+    """An in-memory stand-in for the encrypted held-slice store."""
+
+    def __init__(self):
+        self.d = {}
+
+    def get(self, url):
+        return self.d.get(url)
+
+    def put(self, url, payload):
+        self.d[url] = payload
+
+
 def _res(out, var):
     return next(r for r in out["results"] if r["variable"] == var)
 
@@ -122,7 +135,7 @@ def test_fetch_stops_on_a_failed_baseline_and_reports_the_stage(monkeypatch):
         calls.append((s, e))
         return {"ok": False, "verdict": "network-refused"}
     monkeypatch.setattr(anomaly, "fetch_daily_slice", fake)
-    out = fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3))
+    out = fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3), store=_Mem())
     assert out["ok"] is False and out["stage"] == "baseline" and len(calls) == 1
 
 
@@ -132,7 +145,7 @@ def test_fetch_composes_baseline_and_window(monkeypatch):
         p["provenance"] = {"requested_url": "u"}
         return p
     monkeypatch.setattr(anomaly, "fetch_daily_slice", fake)
-    out = fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3), ["temperature_2m_max"])
+    out = fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3), ["temperature_2m_max"], store=_Mem())
     assert out["ok"] and _res(out, "temperature_2m_max")["value"] == 0.0 and "provenance" in out
 
 
@@ -186,7 +199,7 @@ def test_baseline_is_fetched_once_for_all_variables_and_window_checked(monkeypat
         seen.append((s, tuple(vs)))
         return _slice(s, e, lambda v, d: 1.0, variables=vs)
     monkeypatch.setattr(anomaly, "fetch_daily_slice", fake)
-    fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3), ["precipitation_sum"])
+    fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3), ["precipitation_sum"], store=_Mem())
     assert seen[0] == (anomaly.BASELINE_START, tuple(sorted(anomaly.SUPPORTED)))
 
 

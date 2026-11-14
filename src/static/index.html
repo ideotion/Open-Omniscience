@@ -407,7 +407,8 @@
 
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
-          <span id="brief-generated" class="hint" style="margin:0"></span></div>
+          <span id="brief-generated" class="hint" style="margin:0"></span>
+          <span id="brief-dismissed" style="margin-left:6px"></span></div>
         <div class="brief-toolbar">
           <!-- "Show method" toggle retired (field test 2026-06-19 P2-2): each Lead's
                method + "why" now live behind a per-card "?" affordance (bottom-right);
@@ -448,7 +449,7 @@
       <h2>Search the corpus</h2>
       <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
       <input id="q" placeholder='e.g.  (climate OR energy) AND policy NOT opinion' autocomplete="off">
-      <div class="row">
+      <div class="row explore-filters">
         <div><label for="f-source">Source</label><input id="f-source" placeholder="exact name (optional)"></div>
         <div><label for="f-lang">Language</label><input id="f-lang" placeholder="en (optional)"></div>
         <div style="flex:1;min-width:240px"><label>Time range</label>
@@ -918,6 +919,16 @@
       </div>
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
+
+      <hr>
+      <!-- Lane M (R684): check a file on this machine. A bundle (.json) is verified; an image's
+           metadata is read. Loopback only, nothing stored (app-evidence.js custodyCheckFile). -->
+      <div class="row" style="align-items:center">
+        <button type="button" class="secondary" id="cust-check-btn" title="An evidence bundle (.json) is checked against its signature; an image shows its metadata. The file stays on this machine and nothing is stored.">Check a file…</button>
+        <input type="file" id="cust-check-file" accept=".json,application/json,image/*" hidden aria-label="Choose an evidence bundle or an image to check">
+        <input id="cust-check-key" style="flex:1;min-width:12em" placeholder="Signer's public key (optional)" title="Paste the key the sender gave you to prove who signed a bundle. Without it, a valid signature proves only that the file was not changed.">
+      </div>
+      <div id="cust-check-result" class="hint" role="status" style="margin-top:6px"></div>
     </section>
     </div>
 
@@ -1227,8 +1238,8 @@
         <span>Summit/meeting dates move each year — follow the official source for the exact date.</span>
         <span>Nothing here is fabricated.</span></p>
       <div class="row" style="margin-top:6px">
-        <div><label>View</label>
-          <nav class="tabs ag-views" id="agenda-views" style="position:static;padding:0;border:0;margin:0">
+        <div>
+          <nav class="tabs ag-views" id="agenda-views" aria-label="View" style="position:static;padding:0;border:0;margin:0">
             <button class="active" data-tab="month">Month</button>
             <button data-tab="week">Week</button>
             <button data-tab="trimester">Trimester</button>
@@ -1276,6 +1287,7 @@
         <button type="button" data-tab="usgs">Earthquakes</button>
         <button type="button" data-tab="owid">Emissions &amp; energy</button>
         <button type="button" data-tab="ghcnd">Weather station</button>
+        <button type="button" data-tab="place">Your place</button>
       </nav>
       <div class="card-caveat" id="climate-caveat">Each series is its publisher's own figures, shown with its source, its method and when this machine last fetched it. Nothing here is a forecast, a score or a risk rating. A new fetch stores only values that are new or that the publisher revised: earlier values stay readable, and periods the publisher stopped serving are counted, never deleted.</div>
       <div id="climate-status" class="hint" role="status" aria-live="polite"></div>
@@ -1337,7 +1349,7 @@
       </div>
       <nav class="tabs" id="commodities-cats" style="margin-top:12px"></nav>
       <div id="mkt-viewtoggle" class="mkt-viewrow" style="margin-top:6px"></div>
-      <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
+      <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:12px;margin-top:12px"></div>
       <div id="mkt-chart" style="margin-top:12px"></div>
       <!-- S5.1: USGS minerals SUPPLY (production / reserves / net-import-reliance) — the
            honest home for rare earths, which have no free spot-price source. Supply data,
@@ -1425,6 +1437,8 @@
         <button data-tab="convergence">Convergence</button>
         <button data-tab="watches">Watches</button>
         <button data-tab="lunar">Lunar</button>
+        <button data-tab="patterns">Patterns</button>
+        <button data-tab="who">Who</button>
       </nav>
     </section>
 
@@ -1460,7 +1474,7 @@
           <button class="active" data-view="map" data-on-click="mmView('map')">Mind-map</button>
           <button data-view="cloud" data-on-click="mmView('cloud')">Word cloud</button>
         </div>
-        <div><label for="mm-window">Period</label><select id="mm-window" data-on-change="mmWindowChange()">
+        <div style="min-width:8.5em"><label for="mm-window">Period</label><select id="mm-window" data-on-change="mmWindowChange()">
           <option value="">all time</option><option value="7">last week</option>
           <option value="30">last month</option><option value="365">last year</option>
           <option value="custom">custom…</option></select></div>
@@ -1657,6 +1671,27 @@
       </div>
       <div id="lunar-single" class="hint" style="margin-top:8px"></div>
     </section>
+    <!-- R685: the full lists behind the eight pattern Leads (app-patterns.js). Each row opens its
+         list in #pattern-list; the count line there says how many and when, and "How this was
+         measured" sits beside it. -->
+    <section class="panel ins-view" id="ins-patterns" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Patterns across your sources</h2>
+      <div id="ins-patterns-body"><div class="muted">Loading…</div></div>
+    </section>
+
+    <!-- R685: people and organisations named across the whole corpus, with counts (GET /api/insights/who). -->
+    <section class="panel ins-view" id="ins-who" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">People and organisations</h2>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
+        <div><label for="who-class">Show</label>
+          <select id="who-class">
+            <option value="">People and organisations</option>
+            <option value="person">People</option>
+            <option value="organization">Organisations</option>
+          </select></div>
+      </div>
+      <div id="ins-who-body" style="margin-top:8px"><div class="muted">Loading…</div></div>
+    </section>
     </div>
 
     <!-- ========================= OBSERVATORY ========================= -->
@@ -1798,6 +1833,7 @@
         <div id="law-amend-vintage" class="hint"></div>
         <div id="law-amend-map"></div>
         <div id="law-amend-off"></div>
+        <div id="law-velocity"></div>
       </div>
 
       <div id="living-osm" style="display:none">
@@ -3072,6 +3108,11 @@
       <p class="hint" style="margin-top:0">A spot-check of what the rules picked: titles and addresses only, the same articles every time for the same library. A title opens the local copy.</p>
       <div id="maint-samples" class="hint"></div>
 
+      <h3 style="margin-top:18px">Sites you confirmed</h3>
+      <p class="hint" style="margin-top:0">Pairs where you said a source really publishes on another site (a syndication partner, a second domain). Confirm one with the button beside a host-mismatch sample.</p>
+      <div id="maint-pairs" class="hint"></div>
+      <span id="maint-pair-msg" class="hint" role="status"></span>
+
       <h3 style="margin-top:18px">Sources named by a bare identifier</h3>
       <p class="hint" style="margin-top:0">Sources whose whole name is a Wikidata number. Nothing is renamed or marked here.</p>
       <div id="maint-rawids" class="hint">Loading…</div>
@@ -3987,6 +4028,15 @@
        evidence links): before any external link is followed, show what THIS
        database already knows about it; the outbound anchor's visible text IS
        the full URL, and clicking it still passes the external-link confirm. -->
+  <!-- R685: one pattern list (app-patterns.js openPatternList), from a Lead's back or Insights > Patterns. -->
+  <dialog id="pattern-list" aria-labelledby="pl-title" style="width:min(760px,94vw);max-height:90vh;padding:18px">
+    <h3 id="pl-title" style="margin:0 0 8px"></h3>
+    <div id="pl-body"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" data-on-click="ooCloseDialog('pattern-list')">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="link-preview" style="max-width:520px;padding:18px">
     <h3 style="margin:0 0 8px">Before you leave — what this app knows</h3>
     <div id="lp-body" style="display:flex;flex-direction:column;gap:5px"></div>
@@ -4257,6 +4307,16 @@
            guide closed or skipped here leaves Standard; Essentials only by a real choice.
            Local only (oo.ui); nothing is sent. -->
       <section class="gw-step" data-step="depth" hidden>
+        <!-- WHAT THIS APP DOES, before the first question (lane N, 2026-11-13): a person who
+             just installed was asked about "pinned tabs" before being told what the app is,
+             what stays on their computer and what needs the network. Three lines, no new
+             step, so the depth question still opens the guide (Q1121) and _GW_STEPS is
+             unchanged. Each line is a fact the app enforces, never a promise it cannot keep. -->
+        <ul class="gw-intro" tabindex="-1" aria-label="What this app does">
+          <li>It gathers public news, Wikipedia pages and laws, and keeps a copy on this computer.</li>
+          <li>It goes online only when you say so, to read public websites. No account, no cloud, no tracking.</li>
+          <li>Then you search and compare who reports what, where and when. The app shows counts and how it got them; you draw the conclusions.</li>
+        </ul>
         <h3 style="margin:0 0 6px">How much should the app show at once?</h3>
         <p class="muted" style="margin-top:0">This changes what is pinned, never what you can reach. You can change it anytime in Settings → General.</p>
         <div role="radiogroup" aria-label="Interface depth" class="depth-pick">
@@ -4357,6 +4417,7 @@
   <script src="/static/app-sources.js"></script>
   <script src="/static/app-markets.js"></script>
   <script src="/static/app-insights.js"></script>
+  <script src="/static/app-patterns.js"></script>
   <script src="/static/app-ipcc.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "0d5117e42ab1fb50fc7d92d8b12de37c13b41ef55a87fa7059fa1160224f8aeb",
+  "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
   "log": [
     {
       "version": 1,
@@ -37,6 +37,12 @@
       "digest": "0d5117e42ab1fb50fc7d92d8b12de37c13b41ef55a87fa7059fa1160224f8aeb",
       "kind": "same",
       "note": "R689: backfill_corpus only looks at a stop before each article and before its closing counts; index_article and the rows it writes are unchanged"
+    },
+    {
+      "version": 1,
+      "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
+      "kind": "same",
+      "note": "PR #1949 (audit P2/P8) replaced the quadratic comment, tag, style/script and e-mail regexes in extract.py, text_processor.py and markup_blocks.py with linear scans that are byte-identical to the old regexes (differential on every shipped HTML page, 300k seeded random documents incl. Unicode case folds, tests/test_html_strips_linear.py), so no row index_article writes can change"
     }
   ]
 }
