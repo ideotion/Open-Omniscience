@@ -44,6 +44,7 @@ allow-list every one of those copies goes through.
 from __future__ import annotations
 
 import logging
+import shutil
 import sys
 import time
 from contextlib import suppress
@@ -133,6 +134,7 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
             if not mod._LOCK.acquire(blocking=wait):
                 out.setdefault("busy", []).append(name)
                 continue
+            spill = None
             try:
                 con = mod._STATE.get("con")
                 if con is not None:
@@ -140,9 +142,12 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
                         con.close()
                     mod._STATE["con"] = None
                     mod._STATE["built_at"] = 0.0
+                    spill, mod._STATE["spill"] = mod._STATE.get("spill"), None
                     out["closed"].append(name)
             finally:
                 mod._LOCK.release()
+            if spill:  # the closed connection's offload folder (after the close: DuckDB holds its files open until then)
+                shutil.rmtree(spill, ignore_errors=True)
         except Exception as exc:  # noqa: BLE001
             out.setdefault("errors", {})[name] = type(exc).__name__
     out["ok"] = "errors" not in out
@@ -158,6 +163,17 @@ def close_serves_for_cleared_key() -> dict[str, Any]:
     (``src/safety/crypto_erase.py``, before a byte is touched, as the lane engines are disposed there). It never waits and
     never raises (``wait=False``: an erase is not held up behind a refresh), so a serve that is in use at that moment is
     left open and named in ``busy``, which the callers log.
+    """
+    return _close_serves(wait=False)
+
+
+def close_serves_after_encryption() -> dict[str, Any]:
+    """Close the columnar serve connections because the library was just encrypted in place.
+
+    A serve built while the library was plaintext may hold a DuckDB offload folder of derived data under the data directory
+    (``rollup_serve._spill_setting``); left serving, that plaintext folder would outlive the encryption until the next rebuild.
+    Closing the serves removes their folders, and the next build sees the passphrase and offloads nothing. Never waits and never
+    raises, like the cleared-key close: a serve in use at that moment is left open and named in ``busy``.
     """
     return _close_serves(wait=False)
 
