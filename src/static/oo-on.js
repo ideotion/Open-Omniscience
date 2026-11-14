@@ -266,7 +266,7 @@
     "bulkJobCancel", "bulkJobClearDone", "bulkLlm", "bulkLlmRun", "bulkLlmStop", "bulkPanelHide", "bulkQueueResume",
     "bulletinDelete", "bulletinDownloadBundle", "bulletinGenerate",
     "bulletinNarrate", "bulletinOpen", "bulletinOpenFile", "bulletinPublish", "bulletinReview",
-    "bulletinToggleSection", "bulletinToggleStory", "cancelP0Validation", "cancelPull",
+    "bulletinToggleFullText", "bulletinToggleSection", "bulletinToggleStory", "cancelP0Validation", "cancelPull",
     "candidateAct", "cardCollapse", "cardResetTunable", "cardSetEnabled", "cardWeatherFetch",
     "carouselGo", "carouselStep", "carouselToggle", "chartSymbol", "cleanupKeywords", "clearDraft",
     "clearIdxCompare", "clearSrcFilters", "closeDraft", "closePalette", "collapseAction",
@@ -360,7 +360,7 @@
   const EVENT_ACTION_NAMES = {
     change: [
       "_anSortChanged", "_synthCount", "anRelUpdateSel", "anTrendPick", "applySrcFilters", "batchToggle",
-      "bulletinToggleSection", "bulletinToggleStory", "cardSetEnabled", "conjScope", "importAnnotations",
+      "bulletinToggleFullText", "bulletinToggleSection", "bulletinToggleStory", "cardSetEnabled", "conjScope", "importAnnotations",
       "loadAlternates", "loadCitedSources", "loadFamilies", "loadGovAggregate", "loadGovCountry", "loadGovMap",
       "loadHomeLatest", "loadHomeRecentList", "loadLawChanges", "loadWikiChanges", "loadWikiTC", "lunarSyncDirection",
       "mmReload", "mmWindowChange", "onFetchModeChange", "onUninstallMode", "ooClearValue", "qualSaveScope",

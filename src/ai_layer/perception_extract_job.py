@@ -173,8 +173,10 @@ def run_progressive_perception_extract_job(
         from src.ai_layer.perception_job import last_perception_eval_live_report
 
         gate_report = last_perception_eval_live_report()
+    # R704: the measurement must be of THIS model, or every language reads unmeasured.
     gate = PE.apply_operator_off(
-        PE.gate_languages_from_report(gate_report), PE.operator_off_languages()
+        PE.bind_gate_to_model(PE.gate_languages_from_report(gate_report), gate_report, model),
+        PE.operator_off_languages(),
     )
 
     # REFUSE TO START WHEN THE GATE CLEARS NOTHING (2026-09-05, field defect 1's
@@ -197,6 +199,13 @@ def run_progressive_perception_extract_job(
             "/api/diagnostics/perception-eval-live). Nothing was swept and no progress "
             "was lost."
         )
+        measured_model = gate_report.get("model")
+        if gate and measured_model and not any(g.get("model_matches") for g in gate.values()):
+            reason = (
+                f"the last perception eval measured {measured_model}, not {model}, so no "
+                f"language is cleared for {model} -- run the live perception eval with it "
+                "first (Settings -> AI). Nothing was swept and no progress was lost."
+            )
         ctx.set_progress(detail=reason)
         _LOG.info("progressive perception-extract refused to start: %s", reason)
         return {
@@ -504,8 +513,15 @@ def current_language_gate() -> dict[str, dict]:
     ruling: the toggle UI shows which strata are active and why)."""
     from src.ai_layer.perception_job import last_perception_eval_live_report
 
+    report = last_perception_eval_live_report()
+    try:
+        from src.api.llm import active_model
+
+        model: str | None = active_model()
+    except Exception:  # noqa: BLE001 - an unreadable choice of model clears nothing (R704)
+        model = None
     return PE.apply_operator_off(
-        PE.gate_languages_from_report(last_perception_eval_live_report()),
+        PE.bind_gate_to_model(PE.gate_languages_from_report(report), report, model),
         PE.operator_off_languages(),
     )
 

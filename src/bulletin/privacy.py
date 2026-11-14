@@ -141,7 +141,7 @@ def export_privacy(
     *,
     kind: str,
     article_ids: list[int] | None = None,
-    full_text: bool = True,
+    full_text: bool = False,
 ) -> dict[str, Any]:
     """The §18 enumeration for one export of one edition.
 

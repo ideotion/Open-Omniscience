@@ -529,8 +529,34 @@ def test_current_language_gate_reads_the_last_saved_live_eval_report(monkeypatch
         "src.ai_layer.perception_job.last_perception_eval_live_report",
         lambda: _CLEAR_EN_REPORT,
     )
+    monkeypatch.setattr("src.api.llm.active_model", lambda *a, **k: "stub:test")
     gate = J.current_language_gate()
     assert gate["en"]["active"] is True
+    assert gate["en"]["measured_model"] == "stub:test"
+
+
+def test_a_report_measured_on_another_model_licenses_nothing_for_this_one(db, tmp_path, monkeypatch):
+    """R704. The gate reads the LAST eval report, whichever model it measured; a sweep
+    on a different model must not borrow its verdict. Mistral-7B scored 94.7% "who"
+    hallucination in the field (OPEN_QUEUE, HARDWARE DIAGNOSTICS COMPARISON 2026-07-26),
+    so a clean report from another model must not let it store a single who."""
+    _seed(db, n=2)
+    res = J.run_progressive_perception_extract_job(
+        FakeCtx(), model="mistral:7b", batch_size=2, session_factory=_session_factory(db),
+        client=FakeClient(), state_path=tmp_path / "state.json", gate_report=_CLEAR_EN_REPORT,
+    )
+    assert res["refused"] is True
+    assert "measured stub:test, not mistral:7b" in res["reason"]
+    assert db.query(AiKeyword).count() == 0
+
+    monkeypatch.setattr(
+        "src.ai_layer.perception_job.last_perception_eval_live_report", lambda: _CLEAR_EN_REPORT
+    )
+    monkeypatch.setattr("src.api.llm.active_model", lambda *a, **k: "mistral:7b")
+    gate = J.current_language_gate()
+    assert gate["en"]["active"] is None and gate["en"]["model_matches"] is False
+    assert all(f["active"] is None for f in gate["en"]["fields"].values())
+    assert "measured on stub:test" in gate["en"]["reason"]
 
 
 def test_run_header_separates_failed_from_unmeasured_languages(db, tmp_path):
@@ -540,6 +566,7 @@ def test_run_header_separates_failed_from_unmeasured_languages(db, tmp_path):
     _seed(db, n=1)
     report = {
         "status": "ok",
+        "model": "stub:test",
         "report": {
             "by_language": {
                 "en": {
@@ -562,3 +589,21 @@ def test_run_header_separates_failed_from_unmeasured_languages(db, tmp_path):
     assert header["active_languages"] == ["en"]
     assert set(header["disabled_languages"]) == {"ar"}
     assert set(header["unmeasured_languages"]) == {"zh"}
+
+
+def test_the_model_binding_matches_one_model_only_and_never_licenses():
+    """R704's binding, as a pure function: ``mistral`` is ``mistral:latest``; a namespace
+    is part of the name; a report naming no model clears nothing; nothing turns True."""
+    from src.ai_layer import perception_extract as PE
+
+    gate = PE.gate_languages_from_report(_CLEAR_EN_REPORT)
+    report = dict(_CLEAR_EN_REPORT, model="Mistral")
+    assert PE.bind_gate_to_model(gate, report, "mistral:latest")["en"]["active"] is True
+    assert PE.bind_gate_to_model(gate, report, "hf.co/x/mistral")["en"]["active"] is None
+    nameless = PE.bind_gate_to_model(gate, dict(_CLEAR_EN_REPORT, model=None), "stub:test")
+    assert nameless["en"]["active"] is None
+    assert "does not name the model" in nameless["en"]["reason"]
+    failed = {"en": {"active": False, "reason": "x", "fields": {"who": {"active": False}}}}
+    bound = PE.bind_gate_to_model(failed, _CLEAR_EN_REPORT, "stub:test")
+    assert bound["en"]["active"] is False, "a matching model keeps the harness's own verdict"
+    assert gate["en"].get("measured_model") is None, "the input is not mutated"
