@@ -46,13 +46,21 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     """
     # A repair's stand-in article is a place-holder for a lost row, never evidence: it is left out of every selection, by id or by query.
     if req.article_ids:
-        articles = db.query(Article).filter(Article.id.in_(req.article_ids), not_a_stand_in_article()).all()
+        articles = (
+            db.query(Article)
+            .filter(Article.id.in_(req.article_ids), not_a_stand_in_article())
+            .all()
+        )
     elif req.query:
         try:
             ids = search_ids(db, req.query, exclude_quarantined=True)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
-        articles = db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
+            raise HTTPException(
+                status_code=400, detail=http_detail(exc, "Invalid query: ")
+            ) from exc
+        articles = (
+            db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
+        )
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
@@ -64,7 +72,9 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     except (ValueError, OSError) as exc:
         # a key file that is there but unusable: say so, instead of a bare 500 (the review
         # screen names this state before the person gets here)
-        raise HTTPException(status_code=409, detail=http_detail(exc, "The evidence signing key cannot be used: ")) from exc
+        raise HTTPException(
+            status_code=409, detail=http_detail(exc, "The evidence signing key cannot be used: ")
+        ) from exc
     return build_signed_bundle(articles, key, case_name=req.case_name)
 
 
@@ -109,7 +119,12 @@ def verify_evidence(req: VerifyRequest) -> dict:
     Pass ``trusted_public_key`` (the signer's known key) to prove provenance, not
     just integrity -- otherwise a valid signature only proves "signed by some key".
     """
-    ok, reason = verify_bundle(req.bundle, trusted_public_key=req.trusted_public_key)
+    try:
+        ok, reason = verify_bundle(req.bundle, trusted_public_key=req.trusted_public_key)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        # a JSON file of another shape (a manifest that is a string, items that are not
+        # objects) is "not a bundle", never a bare 500
+        return {"verified": False, "reason": "malformed bundle: not the shape this app exports"}
     return {"verified": ok, "reason": reason}
 
 
@@ -129,19 +144,27 @@ def _selected_ids(req, db) -> list[int]:
         try:
             return list(search_ids(db, req.query, exclude_quarantined=True) or [])
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
+            raise HTTPException(
+                status_code=400, detail=http_detail(exc, "Invalid query: ")
+            ) from exc
     raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
 
 def _select_articles(req, db) -> list:
     """Shared selection: explicit ids, or a Boolean FTS query (same as evidence)."""
     if req.article_ids:
-        return db.query(Article).filter(Article.id.in_(req.article_ids), not_a_stand_in_article()).all()
+        return (
+            db.query(Article)
+            .filter(Article.id.in_(req.article_ids), not_a_stand_in_article())
+            .all()
+        )
     if req.query:
         try:
             ids = search_ids(db, req.query, exclude_quarantined=True)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
+            raise HTTPException(
+                status_code=400, detail=http_detail(exc, "Invalid query: ")
+            ) from exc
         return db.query(Article).filter(Article.id.in_(ids or []), not_a_stand_in_article()).all()
     raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
@@ -161,7 +184,9 @@ def export_methods(req: MethodsRequest, db: Session = Depends(get_db)) -> dict:
     if not articles:
         raise HTTPException(status_code=404, detail="No matching articles.")
 
-    corpus_total = db.query(func.count(Article.id)).filter(not_a_stand_in_article()).scalar() or 0  # a stand-in is no article of the corpus
+    corpus_total = (
+        db.query(func.count(Article.id)).filter(not_a_stand_in_article()).scalar() or 0
+    )  # a stand-in is no article of the corpus
     row = db.query(func.min(Article.published_at), func.max(Article.published_at)).first()
     lo, hi = row if row is not None else (None, None)
     markdown = build_methods_markdown(
