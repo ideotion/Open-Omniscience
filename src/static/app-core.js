@@ -887,9 +887,18 @@
       const curEmph = (cfg && cfg.language_equilibrium) || {};
       const covTags = (cov && cov.tags) || [];
       const byTotal = {}; covTags.forEach((x) => { byTotal[x.tag] = x.total || 0; });
-      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)");
+      // A `via:<origin>` tag records WHICH LIST a source came from (src/catalog/
+      // provenance_scope.py), not what it writes about, so it is no theme: "via:curated" was
+      // the first "theme" a new reader was offered. The seed plan drops them from its theme
+      // view for the same reason (src/ingest/seed_plan.py). One exception: a via: tag an
+      // earlier config ALREADY filters on is shown, checked, like any other pick, so the
+      // filter stays visible and the reader can untick it; it is never kept out of sight.
+      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)"
+        && (x.indexOf("via:") !== 0 || curTags.indexOf(x) >= 0));
       tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
-      tags = tags.slice(0, 16);
+      // The top 16, plus every tag the config already filters on even if it ranks lower: a
+      // chosen tag that is not drawn is missing from the picks and would be dropped on save.
+      tags = tags.slice(0, 16).concat(tags.slice(16).filter((x) => curTags.indexOf(x) >= 0));
       if (!tags.length) {
         box.innerHTML = `<div class="muted">${esc(_gwT("Themes will appear once your sources are set up. Your app collects from every source by default."))}</div>`;
       } else {
@@ -984,6 +993,11 @@
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       else dlg.setAttribute("open", "");
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
+      // A modal focuses its first focusable control, which here is the ✕: its "Close" bubble
+      // then opened over the guide's first line on every first run (lane N walk, 2026-11-13).
+      // Focus goes to the "what this app does" lines instead (tabindex -1), so a screen reader
+      // starts there and Tab then reaches the depth choice before Next.
+      { const intro = dlg.querySelector(".gw-intro"); if (intro && typeof intro.focus === "function") intro.focus(); }
       // Product feedback 2026-07-17: the network-status poll that decides whether to
       // show the airplane-mode coachmark runs independently of (and typically resolves
       // before) this wizard opening, so the coach could already be showing when the
@@ -1042,7 +1056,10 @@
           return;   // let the user retry or choose "Stay offline" instead of closing on failure
         }
         if (typeof _flashNet === "function") _flashNet(true);
-        toast(t("Back online — network requests allowed again."), "ok");
+        // The first-run reader is told WHERE the first result will appear (lane N): the
+        // collector starts by itself, so without this the guide closed on an empty Home
+        // with nothing saying what to do next. No time is promised: it depends on the network.
+        toast(t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
         // Once online the background collector runs continuously on its own (only
         // airplane mode stops it) — no manual seed/ingest step or progress card needed.
         closeGuide(true);

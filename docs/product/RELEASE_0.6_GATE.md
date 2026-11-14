@@ -106,6 +106,17 @@ diff (the diff's timestamp as the artifact), the re-baseline path is exercised o
 is canonical beside every choropleth (Chromium-verified + click-through), and the measured daily diff cost for
 one country is recorded. **Operator:** the daily apply on a real selection. Brief `S06-01`.
 
+**Session evidence, 2026-11-13 (Lane L, on fixtures; the row stays OPEN for the operator's two items).** Built on main by PRs #1712, #1718,
+#1720, #1725, #1728, #1730, #1735, #1736, #1738. A Chromium walk at 1400 px and 375 px on a fixture lane (the synthetic extract re-keyed to
+LU, three daily files and one re-baseline; seed and walk scripts in the project's shared folder, `osm-lane/walk-2026-11-13/`) showed:
+the day-over-day change from the file dated 2025-01-12 (one place marked closed, one `disused:*` key added, one website gained) on the
+trends surface; the re-baseline as a named stretch «not observed between 2025-01-12 and 2025-07-29»; the ranked table under the
+choropleth for every measure and both levels; Luxembourg filled on Equal Earth; no request leaving the loopback. The walk found four
+defects, fixed in the same PR: an all-zero count drew as tall sparse bars (`ooChart`); the screen-reader table under a chart labelled two
+days of one month alike; the four OSM panels carried no © OpenStreetMap contributors · ODbL 1.0 line; the «changed» map measure did not
+say when its window starts. **Still open (operator):** a real day-over-day change on a real selection, and the measured daily diff cost
+for one country.
+
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 
 **What it must demonstrate.** Floor = every country in `language_countries.yml` (official / de-facto / regional

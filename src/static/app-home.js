@@ -832,7 +832,13 @@
       if (!panel || !sel) return;
       try {
         const f = await api("/api/sources/facets");
-        const tags = (f.tags || []).filter(x => x && x.key).slice(0, 20);
+        // Subject tags first: a `via:<origin>` tag names the LIST a source came from, not what
+        // it covers, and "via:curated" was what a new reader saw selected here (lane N walk,
+        // 2026-11-13). The via: tags stay in the list, after the others (ordering, never
+        // exclusion), and a reader's own pick of one is kept below.
+        const _isVia = (k) => String(k).indexOf("via:") === 0;
+        const tags = (f.tags || []).filter(x => x && x.key)
+          .slice(0, 20).sort((a, b) => (_isVia(a.key) ? 1 : 0) - (_isVia(b.key) ? 1 : 0));
         if (!tags.length) { panel.hidden = true; return; }
         const cur = sel.value;
         sel.innerHTML = tags.map(x => `<option value="${esc(x.key)}">${esc(x.key)} (${x.n})</option>`).join("");
@@ -926,14 +932,25 @@
         const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam(), {polled: true});
         homeTrendsNoteResult(!d.partial, Date.now(), "partial");
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
-        const terms = (wk && wk.terms) || [];
+        // "Trending" means RISING. The server ranks by growth but does not cut at 1, so on a
+        // flat or young corpus a falling term was listed under this title as "↑0.6×" (found by
+        // the other-tabs lane, 2026-11-13). A row whose growth IS a ratio is shown only above
+        // 1; a row with no baseline to divide by (growth_is_ratio false, worded by
+        // growthFallback) is new, which is rising, and stays.
+        const terms = ((wk && wk.terms) || []).filter(x =>
+          !(typeof growthIsRatio === "function" && growthIsRatio(x) === true && !(Number(x.growth) > 1)));
         if (!terms.length) {
+          _homeTrendTerms = []; _homeTrendCaveat = "";
           if (d.partial && d.caveat) {
             // Not computed is not "nothing is trending": say so where the strip would be (the server's own words).
-            _homeTrendTerms = []; _homeTrendCaveat = d.caveat;
+            _homeTrendCaveat = d.caveat;
             if (panel) panel.hidden = false;
             box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`;
           } else { if (panel) panel.hidden = true; box.innerHTML = ""; }
+          _homeTrendLang = lang;
+          // The compact Overview row reads the same stash: without this it kept the previous
+          // poll's chips once every term was filtered out (now common, as falling ones are).
+          _renderOverviewTrends(); _syncHomeSubtabs();
           return;
         }
         if (panel) panel.hidden = false;
@@ -957,7 +974,7 @@
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
               <a href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
-              <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
+              <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
@@ -1644,7 +1661,7 @@
       const chips = terms.slice(0, 6).map(x =>
         `<a class="chip tiny" href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}`
-        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>${kwQidHtml(x)}`).join("");
+        + ` <span class="muted">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span></a>${kwQidHtml(x)}`).join("");
       // The label takes the locale's own separator ("Tendances :", "热门："), not a welded
       // English colon (click-through B16, V13); the chips are the value that follows it.
       host.innerHTML = `<div class="ov-trend"><span class="muted">${ooLabelHtml(esc(t("Trending now")), "").trimEnd()}</span>${chips}`
