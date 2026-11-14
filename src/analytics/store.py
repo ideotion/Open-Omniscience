@@ -125,7 +125,9 @@ def _self_name_forms(source) -> set[str]:
 _KEYWORD_PREFETCH_CHUNK = 500
 
 
-def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str, Keyword]:
+def _prefetch_keywords(
+    session: Session, normalized: Iterable[str], *, language: str | None = None
+) -> dict[str, Keyword]:
     """Resolve many normalized terms to their ``Keyword`` rows in ONE query.
 
     THE COST THIS REMOVES IS MEASURED, not read: a warm apply (the field shape --
@@ -169,10 +171,36 @@ def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str,
     for i in range(0, len(uniq), _KEYWORD_PREFETCH_CHUNK):
         chunk = uniq[i : i + _KEYWORD_PREFETCH_CHUNK]
         for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
+            if not _keyword_takes_language(kw, language):
+                continue
             held = out.get(kw.normalized_term)
             if held is None or kw.id < held.id:
                 out[kw.normalized_term] = kw
     return out
+
+
+def _keyword_takes_language(kw: Keyword, language: str | None) -> bool:
+    """May a mention in ``language`` be filed under ``kw``? (R698 = RN2 (a), M11.)
+
+    Keys are spelled language-agnostically, so English «errors» and Spanish «errores» both
+    reduce to «error»; filing both under one row made the Q414 majority vote label English
+    counts Spanish. A row whose recorded language is a DIFFERENT language therefore does not
+    take the mention: the lowest-id row of the term in the mention's own language, or one
+    with no language yet, does, and when there is none a new row is created in that
+    language -- the term-and-language keying the restore merge already uses
+    (``map_keywords``). An article whose language is unknown keeps the plain lowest-id rule:
+    no language, no evidence of a mismatch. Old rows converge only after a re-index.
+    """
+    return keyword_language_takes(kw.language, language)
+
+
+def keyword_language_takes(row_language: str | None, language: str | None) -> bool:
+    """:func:`_keyword_takes_language` on plain values, so the restore carry
+    (``src.backup.merge``) resolves a carried mention by the very same rule."""
+    if not language:
+        return True
+    have = normalize_lang(row_language)
+    return not have or have == normalize_lang(language)
 
 
 # --------------------------------------------------------------------------- #
@@ -313,11 +341,15 @@ def _get_or_create_keyword(
         # an accident of the plan rather than a promise. The plan is unchanged: the
         # equality on ``idx_keyword_normalized_term`` already yields rowid order, so
         # SQLite answers it from the index with no sort (EXPLAIN QUERY PLAN, checked).
-        kw = (
-            session.query(Keyword)
-            .filter_by(normalized_term=t.normalized)
-            .order_by(Keyword.id)
-            .first()
+        kw = next(
+            (
+                row
+                for row in session.query(Keyword)
+                .filter_by(normalized_term=t.normalized)
+                .order_by(Keyword.id)
+                if _keyword_takes_language(row, language)
+            ),
+            None,
         )
     else:
         kw = prefetched.get(t.normalized)
@@ -926,6 +958,7 @@ def index_article(
     prefetched = _prefetch_keywords(
         session,
         (t.normalized for t in terms if t.normalized.casefold() not in self_forms),
+        language=known_lang,
     )
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
