@@ -295,6 +295,25 @@ class ConnectTargetRefused(requests.exceptions.RequestException):
     """
 
 
+def _proxy_used(url: str, proxies: object) -> dict[str, str] | None:
+    """The one proxy ``requests`` sends a request for ``url`` through, as a mapping for ``connect_scope``, or ``None`` when it goes direct.
+
+    ``requests.utils.select_proxy`` is what the adapter itself calls to choose it, so the guard allows exactly the endpoint the socket
+    is meant to reach. The whole mapping was the first version (the two security reads of 2026-11-14): with ``trust_env`` on, it holds
+    every ``*_proxy`` variable of the environment, so an unrelated ``ftp_proxy`` or ``npm_config_proxy`` naming a host, or an
+    ``HTTPS_PROXY`` naming one while the request was plain ``http`` and went direct, stood the guard down for a request no proxy
+    carried; and a loopback proxy for the OTHER scheme let a direct request reach that proxy's port. Never raises: a mapping it cannot
+    read gives ``None``, which allows no endpoint (fail-closed: a proxied request refused, never a direct one let through).
+    """
+    if not isinstance(proxies, dict) or not proxies:
+        return None
+    try:
+        chosen = requests.utils.select_proxy(url, proxies)
+    except Exception:  # noqa: BLE001 - an unreadable URL or mapping allows nothing
+        return None
+    return {"selected": chosen} if chosen else None
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -384,14 +403,14 @@ class GuardedSession(requests.Session):
         # ``request``: ``requests`` calls ``send`` for the first request AND for every redirect hop (``resolve_redirects``), each hop
         # in its own scope, and ``kwargs["proxies"]`` is the mapping that request is actually sent through (the environment already
         # merged in, and rebuilt per hop), so a loopback proxy is allowed by its exact address and port and nothing else on the
-        # machine is. ``OO_SSRF_CONNECT_GUARD=0`` stands it down, the EthicalFetcher's flag. Installed on every request, as
+        # machine is; only the ONE proxy this request goes through counts (``_proxy_used``). ``OO_SSRF_CONNECT_GUARD=0`` stands it down, the EthicalFetcher's flag. Installed on every request, as
         # ``_guarded_redirect_get`` does it (an ``if installed: return``), so a test that restored the real socket calls cannot
         # leave the guard silently absent.
         from src.ingest.airplane import ensure_connect_guard_installed
 
         ensure_connect_guard_installed()
         try:
-            with connect_scope(enabled=True, proxies=kwargs.get("proxies"), prechecked=False):
+            with connect_scope(enabled=True, proxies=_proxy_used(request.url or "", kwargs.get("proxies")), prechecked=False):
                 return super().send(request, **kwargs)
         except BlockedConnectTarget as exc:
             raise ConnectTargetRefused(record_text(exc, typed=False)) from None

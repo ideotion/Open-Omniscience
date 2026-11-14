@@ -15,6 +15,7 @@ through, and a refusal is a ``ConnectTargetRefused``: a ``RequestException`` (ev
 from __future__ import annotations
 
 import http.server
+import os
 import socket
 import threading
 from collections.abc import Iterator
@@ -180,3 +181,60 @@ def test_every_redirect_hop_is_sent_inside_a_live_scope(monkeypatch):
     for scope in adapter.scopes:
         assert scope is not None and getattr(scope, "stood_down", "x") == "", scope
     assert current_scope() is None
+
+
+# --------------------------------------------------------------------------- #
+# the two security reads of 2026-11-14: only the proxy the request uses counts
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("variable", ["ftp_proxy", "npm_config_proxy", "yarn_https_proxy", "HTTPS_PROXY"])
+def test_a_hostname_proxy_this_request_does_not_use_cannot_stand_the_guard_down(
+    loopback_server: int, internal_dns: list, monkeypatch, variable: str
+):
+    """With ``trust_env`` on (``guarded_session``'s default), the merged mapping holds every ``*_proxy`` variable. One naming a HOST
+    stood the whole check down, though this plain-http request goes direct: the loopback body came back as a 200 (both reads)."""
+    monkeypatch.delenv("OO_SSRF_CONNECT_GUARD", raising=False)
+    for name in [n for n in os.environ if n.lower().endswith("_proxy")]:  # the machine's own, which would win over the one set here
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(variable, "http://proxy.invalid:3128")
+    s = GuardedSession()
+    assert s.trust_env
+    with pytest.raises(ConnectTargetRefused):
+        s.get(f"http://internal.test:{loopback_server}/", timeout=5)
+    assert _SEEN == []
+
+
+def test_a_loopback_proxy_for_the_other_scheme_does_not_open_its_port_to_a_direct_request(loopback_server: int, monkeypatch):
+    """The proxy's exact address and port are allowed only for a request that goes THROUGH it."""
+    monkeypatch.delenv("OO_SSRF_CONNECT_GUARD", raising=False)
+    clear_kill_switch()
+    proxy = f"http://127.0.0.1:{loopback_server}"
+    with pytest.raises(ConnectTargetRefused):
+        _session().get(f"http://127.0.0.1:{loopback_server}/", proxies={"https": proxy}, timeout=5)
+    assert _SEEN == []
+
+
+def test_gethostbyname_answers_are_checked_inside_a_scope(monkeypatch):
+    """PySocks resolves a ``socks4://`` destination with ``socket.gethostbyname`` and hands the ADDRESS to the proxy, so the only
+    socket opened is the allowed one to the proxy: that lookup is the one place the destination is visible (read A, SHOULD-FIX 2)."""
+    from src.ingest.ssrf_guard import BlockedConnectTarget, connect_scope
+
+    monkeypatch.delenv("OO_SSRF_CONNECT_GUARD", raising=False)
+    was_installed = ap.is_installed()
+    saved, saved_ex = ap._orig_gethostbyname, ap._orig_gethostbyname_ex
+    ap._orig_gethostbyname = lambda host: "127.0.0.1" if host == "internal.test" else "93.184.216.34"  # type: ignore[assignment]
+    ap._orig_gethostbyname_ex = lambda host: (host, [], ["127.0.0.1"] if host == "internal.test" else ["93.184.216.34"])  # type: ignore[assignment]
+    ap.ensure_connect_guard_installed()
+    try:
+        with connect_scope(enabled=True, prechecked=False):
+            with pytest.raises(BlockedConnectTarget):
+                socket.gethostbyname("internal.test")
+            with pytest.raises(BlockedConnectTarget):
+                socket.gethostbyname_ex("internal.test")
+            assert socket.gethostbyname("public.test") == "93.184.216.34"
+        assert socket.gethostbyname("internal.test") == "127.0.0.1"  # outside a scope nothing is checked
+    finally:
+        ap._orig_gethostbyname, ap._orig_gethostbyname_ex = saved, saved_ex  # type: ignore[assignment]
+        if not was_installed:
+            ap.uninstall_airplane_socket_guard()
