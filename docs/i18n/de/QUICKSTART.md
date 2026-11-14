@@ -480,7 +480,7 @@ Vollständiges Modell, Bedrohungsmodell und Datenschutz-Vorbehalte: [USER_MANUAL
   bestätigen (Netzwerkfehler, Zeitüberschreitung, 5xx oder ein einschränkendes 401/403), wird die URL
   **nicht** abgerufen.
 - Ein Mindestabstand pro Host wird durchgesetzt (unter Beachtung von `Crawl-delay`).
-- Ein einziger Abrufpfad, ein identifizierender User-Agent, für Artikel nur HTML — keine rohe Umgehung.
+- Ein einziger Abrufpfad, ein identifizierender User-Agent (im geschützten Modus ein generischer, außer bei API- und Dump-Anfragen an die Server von Wikimedia), für Artikel nur HTML — keine rohe Umgehung.
 - Die Extraktion verwendet trafilatura; wird kein echter Artikeltext gefunden, wird nichts gespeichert
   (keine erfundenen Zeilen „No Title / No Content“).
 - Jeder gespeicherte Artikel trägt einen Herkunftsnachweis: Quelle, ursprüngliche URL, kanonische URL,

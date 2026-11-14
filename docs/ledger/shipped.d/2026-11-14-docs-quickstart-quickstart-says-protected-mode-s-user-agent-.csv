@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,docs/quickstart,Quickstart says protected mode's User-Agent exactly (R657 follow-up),SHIPPED,PR pending,docs/QUICKSTART.md; docs/i18n/*/QUICKSTART.md,"Queue item 69 was closed by #1923 (Settings note x12, manuals x12, SECURITY.md). The Quickstart in all 12 languages still said the app always sends an identifying User-Agent; it now says protected mode sends a generic one except in API and dump requests to Wikimedia's servers."
