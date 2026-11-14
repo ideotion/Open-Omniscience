@@ -421,6 +421,7 @@ class _CustodyBatch:
         self._opened_under: tuple | None = None
         self.opened = 0  # logs this batch has opened (a reading, for the tests)
         self.refused_offline = 0  # entries the kill switch refused (R618): owed, and logged ONCE when the block ends
+        self.settings_unreadable = 0  # entries owed because the custody settings could not be read: logged ONCE too
 
     @staticmethod
     def _under(prefs) -> tuple:
@@ -459,6 +460,11 @@ class _CustodyBatch:
             logging.getLogger(__name__).info(
                 "custody: %d ingest entr(ies) of this flush were refused by the network kill switch (OpenTimestamps); "
                 "they are owed and written later, marked late", self.refused_offline,
+            )
+        if self.settings_unreadable:
+            logging.getLogger(__name__).warning(
+                "custody: %d ingest entr(ies) of this flush are owed because the custody settings could not be read; "
+                "they are written, marked late, once the settings read as auto-log ON again", self.settings_unreadable,
             )
 
 
@@ -524,9 +530,16 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
         else:
             batch.log(prefs).record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
+        from src.custody.settings import CustodySettingsUnreadable as _Unreadable
         from src.custody.timestamp import TimestampRefusedOffline
 
-        if isinstance(exc, TimestampRefusedOffline):
+        if isinstance(exc, _Unreadable):
+            # Not a failure of the log: one line per flush (or one plain line unbatched), never a traceback per article.
+            if batch is not None:
+                batch.settings_unreadable += 1
+            else:
+                logging.getLogger(__name__).warning("custody entry on ingest owed: the custody settings could not be read")
+        elif isinstance(exc, TimestampRefusedOffline):
             # R618: the switch's refusal, raised before the insert: the connection is clean, so the batch keeps its log (a
             # fresh one costs a key derivation) and the flush logs once; an unbatched entry logs its own line, at INFO.
             if batch is not None:

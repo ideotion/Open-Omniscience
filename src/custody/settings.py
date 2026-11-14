@@ -63,8 +63,8 @@ class CustodySettings:
     anchoring_mode: str = "local"
     auto_log_on_ingest: bool = True
     default_actor: str | None = None
-    #: The stored preferences are there and could not be read (a damaged row, or the database refused the read -- an
-    #: exhausted pool, say). Never stored. Then auto-log reads as OFF and the ingest path queues the entry as owed
+    #: The stored preferences are there and could not be read (a damaged row, a locked file, or a store keyed to
+    #: another passphrase). Never stored. Then auto-log reads as OFF and the ingest path queues the entry as owed
     #: instead of writing it under guessed preferences: an operator who switched auto-log off is not logged, and one
     #: who left it on loses nothing (queue:1255).
     store_unreadable: bool = False
@@ -117,6 +117,12 @@ def _read_raw() -> dict | None:
     """Preferences source of truth: the encrypted ``app_state`` row (D1), falling back to
     (and one-time migrating) the legacy ``custody_settings.json`` file."""
     return _store().read_raw()
+
+
+def _read_raw_checked() -> dict | None:
+    """``_read_raw`` that raises CustodySettingsError on a stored row it could not read, instead of reading it as unset.
+    The reader's own open (read-only, a failed read held 2 s), never a save's."""
+    return _store().read_raw_checked()
 
 
 def _read_raw_strict() -> dict | None:
@@ -175,7 +181,7 @@ def load_settings(*, strict: bool = False) -> CustodySettings:
     """Load custody preferences, falling back to honest defaults.
 
     A missing file yields defaults (with ``auto_log_on_ingest`` seeded from the
-    legacy config flag). A stored row that cannot be read (damaged, or the database refused the read) is NOT read as
+    legacy config flag). A stored row that cannot be read (damaged, locked, keyed otherwise) is NOT read as
     unset: it yields the defaults with ``store_unreadable`` set and auto-log OFF, so nothing is logged under preferences
     the operator may have changed; the ingest path queues that entry as owed. ``strict`` raises instead (a save).
     """
@@ -183,7 +189,7 @@ def load_settings(*, strict: bool = False) -> CustodySettings:
         raw = _read_raw_strict()  # a save that rewrites what it read: an unreadable store refuses
     else:
         try:
-            raw = _read_raw_strict()
+            raw = _read_raw_checked()
         except CustodySettingsError as exc:
             # Unreadable is not unset: the legacy default (ON) would log an operator who switched auto-log off.
             # DEBUG: in a pool storm this is every ingest; each one's owed entry is logged by the ingest path already.
