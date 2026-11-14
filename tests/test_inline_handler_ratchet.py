@@ -139,7 +139,7 @@ import subprocess  # noqa: E402
 
 STATIC = ROOT / "src" / "static"
 _HELPERS = {"ooPrevent", "ooStop", "ooPreventStop", "ooCloseDialog",
-            "ooClearValue", "ooBodyClass", "ooOpenUrl"}
+            "ooClearValue", "ooBodyClass", "ooOpenUrl", "ooPostSave"}
 
 
 def _binding_bodies(text: str):
