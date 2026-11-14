@@ -1305,3 +1305,55 @@ def test_a_leftover_www_stamp_on_a_reused_id_cannot_certify_a_new_article(backup
         "the fixture did not reuse the id, so this proves nothing"
     )
     assert _scalar(working, "SELECT COUNT(*) FROM article_www_stamps WHERE article_id = ?", gone_id) == 0, "a leftover www stamp survived onto a new article"
+
+
+def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monkeypatch):
+    """R111 step T3, the fuller fix (OPEN_QUEUE: the merge carry): the carry plan computes each carried article's top
+    keyword WITHOUT the shipped stoplist's words, as ``keyword_fold`` and the stoplist pass do. The backup here carries a
+    mention of a hidden word ('the') that outnumbers every other word of one article; the article must arrive with its top
+    taken from the words that remain, and the hidden word's mention row is still carried as it came."""
+    from src.analytics.extract import global_stopwords
+
+    assert "the" in global_stopwords(), "the scenario needs a word the shipped list hides"
+    planted = tmp_path / "planted.db"
+    shutil.copyfile(backup, planted)
+    con = sqlite3.connect(planted)
+    try:
+        aid = con.execute("SELECT id FROM articles WHERE hash = 'h0001'").fetchone()[0]
+        top = con.execute(
+            "SELECT MAX(count) FROM keyword_mentions WHERE article_id = ? AND count > 0", (aid,)
+        ).fetchone()[0]
+        assert top, "the article must have keywords of its own"
+        tied = con.execute(
+            "SELECT COUNT(*) FROM keyword_mentions WHERE article_id = ? AND count = ?", (aid, top)
+        ).fetchone()[0]
+        con.execute(
+            "INSERT INTO keywords (term, normalized_term, language, frequency, is_ngram,"
+            " ngram_size, is_entity, mention_count, article_count)"
+            " VALUES ('the', 'the', 'en', 0, 0, 1, 0, 0, 0)"
+        )
+        kid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+        con.execute(
+            "INSERT INTO keyword_mentions (keyword_id, article_id, count, first_offset) VALUES (?, ?, ?, 0)",
+            (kid, aid, top + 5),
+        )
+        con.commit()
+    finally:
+        con.close()
+    counts, _batch, working = _merge_only(planted, tmp_path, monkeypatch)
+    assert counts["_derived_carry"]["carried"]["articles"] == _N, counts["_derived_carry"]
+    con = sqlite3.connect(working)
+    try:
+        hidden_id = con.execute("SELECT id FROM keywords WHERE normalized_term = 'the'").fetchone()[0]
+        row = con.execute(
+            "SELECT top_keyword_id, top_keyword_count, top_keyword_tied_n FROM articles WHERE hash = 'h0001'"
+        ).fetchone()
+        carried_hidden = con.execute(
+            "SELECT m.count FROM keyword_mentions m JOIN articles a ON a.id = m.article_id"
+            " WHERE a.hash = 'h0001' AND m.keyword_id = ?", (hidden_id,)
+        ).fetchone()
+    finally:
+        con.close()
+    assert row[0] != hidden_id, "the hidden word became the carried article's top keyword"
+    assert (row[1], row[2]) == (top, tied), row
+    assert carried_hidden == (top + 5,), "the mention row itself is carried unchanged"

@@ -4249,6 +4249,30 @@ def _ensure_carry_tables(con: sqlite3.Connection) -> None:
     )
 
 
+#: How many words one INSERT of :func:`_fill_carry_hidden` binds (well under SQLite's variable limit).
+_HIDDEN_CHUNK = 500
+
+
+def _fill_carry_hidden(con: sqlite3.Connection) -> None:
+    """``temp.carry_hidden``: the LOCAL ids of the keywords whose normalized term is on the shipped
+    stoplist (``src.analytics.extract.global_stopwords``), the set
+    ``stoplist_recompute.hidden_keyword_ids`` reads through the ORM, read here on the merge's own
+    connection. Runs after the ``keywords`` step, so a word the backup brought is already here."""
+    from src.analytics.extract import global_stopwords
+
+    con.execute("DROP TABLE IF EXISTS temp.carry_hidden")
+    con.execute("CREATE TEMP TABLE carry_hidden (new INTEGER PRIMARY KEY)")
+    words = sorted(global_stopwords())
+    for i in range(0, len(words), _HIDDEN_CHUNK):
+        batch = words[i : i + _HIDDEN_CHUNK]
+        marks = ",".join("?" * len(batch))
+        con.execute(
+            "INSERT OR IGNORE INTO temp.carry_hidden (new)"
+            f" SELECT id FROM main.keywords WHERE normalized_term IN ({marks})",  # noqa: S608  # nosec B608 - only ? marks are interpolated
+            batch,
+        )
+
+
 def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
     return bool(
         con.execute(
@@ -4598,18 +4622,31 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     # computes it from the rows a pass writes: positive counts only; the highest count;
     # how many keywords reach it; the LOWEST LOCAL id among them as the representative.
     # Local ids, because the tie-break is over this corpus's ids, not the exporter's.
+    #
+    # And WITHOUT the shipped stoplist's words, as every local writer of these columns computes them
+    # (R111 step T3: ``keyword_fold``, the stoplist pass, ``index_article``): a carried article whose
+    # most frequent word is one this corpus hides would otherwise arrive with that word as its top.
+    # Every planned mention has a ``carry_kw`` row (the ``keyword_unmapped`` refusal above), so the
+    # join drops nothing but the hidden words. An article whose every word is hidden gets no top,
+    # which is what ``top_keyword_of`` answers for an empty map.
+    _fill_carry_hidden(con)
     con.execute(
         "UPDATE temp.carry_plan SET top_keyword_count = ("
         " SELECT MAX(im.count) FROM inc.keyword_mentions im"
-        " WHERE im.article_id = carry_plan.old AND im.count > 0) WHERE kw = 1"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " WHERE im.article_id = carry_plan.old AND im.count > 0"
+        " AND ck.new NOT IN (SELECT new FROM temp.carry_hidden)) WHERE kw = 1"
     )
     con.execute(
         "UPDATE temp.carry_plan SET"
         " top_keyword_tied_n = (SELECT COUNT(*) FROM inc.keyword_mentions im"
-        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count),"
+        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count"
+        "  AND ck.new NOT IN (SELECT new FROM temp.carry_hidden)),"
         " top_keyword_id = (SELECT MIN(ck.new) FROM inc.keyword_mentions im"
         "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
-        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count)"
+        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count"
+        "  AND ck.new NOT IN (SELECT new FROM temp.carry_hidden))"
         " WHERE kw = 1 AND top_keyword_count IS NOT NULL"
     )
     plan["planned"] = _count(con, "SELECT COUNT(*) FROM temp.carry_plan WHERE kw = 1")
@@ -4663,12 +4700,11 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
     )
     ids = [int(r[0]) for r in _q(con, "SELECT old FROM temp.carry_ids ORDER BY old")]
     if ids:
-        # R111 step T3 (src/analytics/stoplist_recompute.py): a carried article's top keyword was
-        # computed from the incoming mention rows with NO stoplist filter, so it can hold a word this
-        # corpus hides. Forget the finished stoplist run: the next maintenance window then walks every
-        # hidden word, once, and takes each one out of the tops. The working copy
-        # becomes the live corpus at the swap, so this is atomic with the tops it answers for. (The
-        # carry plan's own filter would be the fuller fix; it is recorded in OPEN_QUEUE.md.)
+        # R111 step T3 (src/analytics/stoplist_recompute.py): the carry plan computes each carried
+        # article's top keyword without the hidden words (``_fill_carry_hidden``). Forgetting the
+        # finished stoplist run stays as the second net, at the cost of one walk of the hidden words
+        # in the next maintenance window after a merge that carried articles. The working copy
+        # becomes the live corpus at the swap, so this is atomic with the tops it answers for.
         from src.analytics.stoplist_recompute import CURSOR_KEY, DONE_KEY
 
         # Both keys: a cursor left in the working copy would resume a pass in flight past the carried
