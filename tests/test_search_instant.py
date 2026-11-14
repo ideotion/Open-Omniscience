@@ -65,6 +65,16 @@ def test_blank_query_is_empty_not_an_error(client, seeded):
 
 
 def test_coverage_is_reported_honestly_until_the_backfill_ran(client, seeded):
+    from src.api.search_instant import _BUILD_JOB
+    from src.database import fts_title
+    from src.database.session import session_scope
+
+    # The completion mark is kept in the database the module's tests share: a build test that ran first (random order, seed 1111)
+    # left the index complete, so the "until the backfill ran" state is set here rather than assumed from file order. A build still
+    # running from an earlier test is waited out first, or it would mark the index complete again after the reset.
+    assert _BUILD_JOB.join(30), "a build from an earlier test was still running after 30 s"
+    with session_scope() as s:
+        fts_title.reset(s.connection())
     assert client.get("/api/search/instant", params={"q": "z"}).json()["index_complete"] is False
     st = client.get("/api/search/instant/status").json()
     assert st["present"] is True and st["articles"] >= 15
