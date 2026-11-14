@@ -1387,8 +1387,10 @@ to the route), and then it names the rotation it accepted. A rotation made while
 checker follows it without being asked. A key change with no record is refused. An unendorsed rotation stays
 unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
 call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
-held to the key that introduced it (the stretch before the first rotation to its Ed25519 key, the only one the bundle
-names for it). The log's own key-rotation records cannot be written through `POST /api/custody/log`.
+held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one (a
+stretch whose key-rotation record names no post-quantum key, like the stretch before the first rotation, is held to its
+Ed25519 key only). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
+verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]

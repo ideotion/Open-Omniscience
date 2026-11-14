@@ -16,8 +16,9 @@ Exit code 0 = verified, 1 = failed, 2 = bad arguments.
 A change of signing key is followed through its key-rotation record: endorsed by the previous key, it passes and is
 named; unendorsed (the previous key was gone), it is refused unless --accept-unendorsed-rotation is given.
 
-With --pin, every entry must be signed by the signer identity embedded in the
-bundle (internal-consistency pinning). To prove the bundle came from a *known*
+With --pin, the head and every entry must be signed by the signer identity embedded in the
+bundle (internal-consistency pinning); across a key rotation, each stretch of the chain is
+held to the identity its rotation record introduced instead. To prove the bundle came from a *known*
 signer, compare the printed signer public keys to that signer's known keys.
 """
 

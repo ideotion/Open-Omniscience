@@ -340,3 +340,39 @@ def test_a_pinned_bundle_refuses_a_middle_entry_with_another_ml_dsa_half(tmp_pat
     assert verify_export(bundle)[0]
     ok, issues = verify_export(bundle, require_signer=True)
     assert not ok and any("ml-dsa public key does not match" in i for i in issues)
+
+
+# --- found by the delta read of the fixes ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("endorsed", [True, False])
+def test_an_item_untouched_since_a_rotation_verifies(tmp_path, endorsed):
+    """Its entries all carry the old key; the bundle carries the later rotations, so they lead to the signer key."""
+    db = str(tmp_path / "c.db")
+    old, new = _signer(tmp_path, "old"), _signer(tmp_path, "new")
+    with CustodyLog(db_path=db, signer=old) as log:
+        log.record("a:1", "a" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=new) as log:
+        if endorsed:
+            log.rotate_signing_key(old)
+        log.record("a:2", "b" * 64, CustodyAction.INGEST)
+        bundle = log.export(item_id="a:1")
+    assert [e["item_id"] for e in bundle["entries"]] == ["a:1", ROTATION_ITEM]
+    report = verify_export_report(bundle, require_signer=True, accept_unendorsed_rotation=not endorsed)
+    assert report["verified"], report["issues"]
+
+
+def test_a_whole_log_cannot_open_with_a_rotation_record(tmp_path):
+    """A real log never does; one that did could name the real signer's key as 'previous' and hand on to any key."""
+    db = str(tmp_path / "c.db")
+    real, atk = _signer(tmp_path, "real"), _signer(tmp_path, "atk")
+    with CustodyLog(db_path=db, signer=atk) as log:
+        _record(log, 1)
+        rot = log._insert_rotation(log._last(), previous_signer=None)
+    from src.custody.log import CustodyEntry, _key_lineage
+
+    e = CustodyEntry.from_dict(rot.to_dict())
+    e.metadata = {**e.metadata, "previous_ed25519_pub": real.public_identity().ed25519_pub}
+    e.seq = 1
+    problem, _ = _key_lineage([e], atk.public_identity().ed25519_pub, True)
+    assert problem and "opens the log" in problem

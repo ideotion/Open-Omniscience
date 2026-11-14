@@ -443,8 +443,9 @@ class CustodyLog:
         """Produce an offline-verifiable bundle of entries + the signer identity."""
         entries = self.entries_for(item_id) if item_id else self.all_entries()
         if item_id and item_id != ROTATION_ITEM and entries:
-            # The key-rotation records up to the item's last entry, so its key changes can be followed.
-            rotations = [e for e in self.entries_for(ROTATION_ITEM) if e.seq < entries[-1].seq]
+            # Every key-rotation record, so the item's entries can be followed to the key that signs the head now --
+            # including the rotations after its last entry, or an item untouched since a rotation could never verify.
+            rotations = self.entries_for(ROTATION_ITEM)
             entries = sorted(entries + rotations, key=lambda e: e.seq)
         ident = self.signer.public_identity()
         head = _bundle_head(item_id, entries)
@@ -626,13 +627,14 @@ def _entry_shape_problem(d: object) -> str | None:
     return _signature_shape_problem(d["signature"])
 
 
-def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed: bool) -> tuple[str | None, list[str]]:
+def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed: bool,
+                 one_item: bool = False) -> tuple[str | None, list[str]]:
     """Walk the signing key through the entries. Returns ``(problem or None, notes)``; the key must end as
     ``signer_key``. See :func:`verify_export`'s WHICH KEY."""
     notes: list[str] = []
     first = entries[0]
     current = _sig_ed25519_pub(first.signature)
-    if first.action == CustodyAction.KEY_ROTATION.value and first.item_id == ROTATION_ITEM:
+    if one_item and first.action == CustodyAction.KEY_ROTATION.value and first.item_id == ROTATION_ITEM:
         # A one-item bundle starts at the earliest rotation before its item's first entry, so no entry in it was signed
         # by the key that rotation replaces: the record's own word names that key. Its endorsement, when there is one,
         # is still checked against it below, and the walk must still end on the signer key.
@@ -643,6 +645,9 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
         if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM:
             md = e.metadata
             prev_k, new_k = md.get("previous_ed25519_pub"), md.get("ed25519_pub")
+            if e.seq <= 1 or e.prev_entry_hash == GENESIS_PREV:
+                # A log never starts with a rotation: there is no previous key to rotate from.
+                return f"the key-rotation record at seq {e.seq} opens the log, where no previous key exists", notes
             if not isinstance(prev_k, str) or not isinstance(new_k, str) or not new_k or prev_k == new_k:
                 return f"the key-rotation record at seq {e.seq} does not name two different keys", notes
             if prev_k != current:
@@ -746,9 +751,11 @@ def _verify_export(
     once held) -- the full log's chain shows a cut at its start or middle, and a one-item export shows neither.
 
     If ``require_signer`` is true, pin verification to the signer identity embedded in the bundle -- i.e. require that
-    the head and all entries were signed by that identity, ML-DSA half included. Across a key rotation each stretch of
-    the chain is pinned to the identity that introduced it instead (see the end of this function); the stretch before
-    the first rotation is held to its Ed25519 key only, the one identity the bundle names for it. (Pinning to a *bundle-embedded* key only proves internal
+    the head and all entries were signed by that identity: its Ed25519 key, and its ML-DSA key wherever a signature
+    carries an ML-DSA half (an Ed25519-only signature is accepted, so a log whose signer gained the post-quantum half
+    later still verifies). Across a key rotation each stretch of the chain is pinned to the identity that introduced it
+    instead (see the end of this function); a stretch whose identity names no ML-DSA key -- the one before the first
+    rotation, or after a rotation that named none -- is held to its Ed25519 key only. (Pinning to a *bundle-embedded* key only proves internal
     consistency; to prove provenance against a *known* signer, compare ``bundle['signer']`` to the signer's
     independently-known public identity first.)
     """
@@ -789,7 +796,7 @@ def _verify_export(
         return False, ["no signer identity in the bundle: there is no key to hold its entries and head to"]
     if _sig_ed25519_pub(head_sig) != key:
         return False, ["head signature invalid: it was not made with the bundle's signer key"]
-    problem, rotation_notes = _key_lineage(entries, key, accept_unendorsed_rotation)
+    problem, rotation_notes = _key_lineage(entries, key, accept_unendorsed_rotation, one_item=bool(item_id))
     notes.extend(rotation_notes)
     if problem:
         return False, [problem]
