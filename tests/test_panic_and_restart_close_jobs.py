@@ -240,3 +240,4 @@ def test_a_failed_execve_shuts_down_even_when_recording_it_fails(restart_steps, 
     monkeypatch.setattr(data_volume.MONITOR, "phase", "restarting")
     _run_restart_thread()
     assert closed == [True] and data_volume.MONITOR.phase == "closing"
+    assert calls == ["restart_failed", "shutdown"]

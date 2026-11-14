@@ -562,3 +562,21 @@ def test_a_folder_the_erase_cannot_list_is_named_as_a_failure(tmp_path):
         locked.chmod(0o700)
     assert str(locked) in report["overwrite_failures"]
     assert report["overwrite_failures"].count(str(locked)) == 1
+
+
+def test_a_keys_subfolder_the_erase_cannot_list_is_named_as_a_failure(tmp_path, monkeypatch):
+    """Runs as any user, root included: the listing itself is made to fail."""
+    data = tmp_path / "data"
+    sub = data / "keys" / "sub"
+    sub.mkdir(parents=True)
+    (sub / "evidence.key").write_bytes(b"K" * 100)
+    real_scandir = os.scandir
+
+    def scandir(path="."):
+        if not isinstance(path, int) and os.fspath(path) == str(sub):
+            raise PermissionError(13, "Permission denied", str(sub))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["overwrite_failures"].count(str(sub)) == 1
