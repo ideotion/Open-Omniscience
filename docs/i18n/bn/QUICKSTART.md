@@ -432,7 +432,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Correlation scipy (Pearson/Spearman) থেকে একটি প্রকৃত coefficient + p-value + n ফেরত দেয়,
 একটি "সহসম্পর্ক ≠ কার্যকারণ" সতর্কতাসহ; যথেষ্ট overlap না থাকলে → `insufficient_data`।
 
-**পর্যবেক্ষণ (Monitoring)।** `GET /api/monitoring/health` প্রকৃত পৌঁছানো-যোগ্যতা
+**পর্যবেক্ষণ (Monitoring)।** `POST /api/monitoring/health` প্রকৃত পৌঁছানো-যোগ্যতা
 পরীক্ষা করে (নৈতিক fetcher-এর মাধ্যমে); `GET /api/monitoring/anomalies`
 z-score অনুযায়ী নিবন্ধ-সংখ্যার আকস্মিক বৃদ্ধি চিহ্নিত করে। **ইমেইল:** `POST /api/sources/{id}/ingest-email`
 (IMAP) বার্তাগুলোকে একই অনুসন্ধানযোগ্য corpus-এ যোগ করে।
@@ -476,7 +476,7 @@ python scripts/verify_custody.py custody-bundle.json                   # exit 0 
   গেলে (নেটওয়ার্ক ত্রুটি, timeout, 5xx, অথবা একটি সীমাবদ্ধ 401/403), URL-টি
   **আনা হয় না**।
 - প্রতি host-এ একটি ন্যূনতম বিরতি প্রয়োগ করা হয় (`Crawl-delay` মেনে)।
-- একটিমাত্র fetch পথ, একটি পরিচয়-প্রকাশক User-Agent, নিবন্ধের জন্য শুধু HTML — কোনো কাঁচা bypass নেই।
+- একটিমাত্র fetch পথ, একটি পরিচয়-প্রকাশক User-Agent (সুরক্ষিত মোডে একটি সাধারণ User-Agent, কেবল Wikimedia-র সার্ভারে API ও ডাম্প অনুরোধ ছাড়া), নিবন্ধের জন্য শুধু HTML — কোনো কাঁচা bypass নেই।
 - নিষ্কাশনে (extraction) trafilatura ব্যবহৃত হয়; কোনো প্রকৃত নিবন্ধ-অংশ পাওয়া না গেলে কিছুই সংরক্ষণ করা হয় না
   (কোনো বানোয়াট "No Title / No Content" সারি নয়)।
 - প্রতিটি সংরক্ষিত নিবন্ধ উৎস-তথ্য বহন করে: উৎস, মূল URL, canonical URL,

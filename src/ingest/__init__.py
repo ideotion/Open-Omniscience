@@ -866,6 +866,30 @@ _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 #: allowlists (see ``EthicalFetcher._request_proxy_endpoints``).
 _SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
 
+
+def _prepared_url(url: str) -> str | None:
+    """``url`` as the adapter will see it: ``PreparedRequest.prepare_url`` IDNA-encodes a non-ASCII host, and both the
+    adapter's ``select_proxy`` and the session's ``NO_PROXY`` merge read the PREPARED url. Selecting on the raw one let a
+    Unicode host (``bücher.test``) miss a Punycode ``NO_PROXY`` entry or per-host key, so our side stood the connect check
+    down for a hostname proxy while requests went direct (PR #2001 security read). ``None`` when it cannot be prepared:
+    requests refuses that URL before any socket opens."""
+    try:
+        prepared = requests.models.PreparedRequest()
+        prepared.prepare_url(url, None)
+    except Exception:  # noqa: BLE001 - an unpreparable URL is refused by requests itself, before connecting
+        return None
+    return prepared.url
+
+
+def _proxy_used_by(url: str, proxies: dict[str, str]) -> dict[str, str] | None:
+    """The one proxy ``requests`` sends a request for ``url`` through (``requests.utils.select_proxy``, the adapter's own choice), as a
+    mapping for ``connect_scope``, or ``None`` when it goes direct. Never raises: an unreadable URL or mapping allows no endpoint."""
+    try:
+        chosen = requests.utils.select_proxy(url, proxies)
+    except Exception:  # noqa: BLE001 - allows nothing: a proxied request refused, never a direct one let through
+        return None
+    return {"selected": chosen} if chosen else None
+
 #: The characters Python's ``urlsplit`` deletes wherever they stand (``urllib.parse._UNSAFE_URL_BYTES_TO_REMOVE``), mapped to a space, so a
 #: redirect's Location can be read with them still visible (R622). ``urljoin`` drops them on a same-scheme hop before anything else sees them.
 _URLSPLIT_DELETES_AS_SPACE = {ord("\t"): " ", ord("\r"): " ", ord("\n"): " "}
@@ -1873,8 +1897,10 @@ class EthicalFetcher:
         Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
         per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
         for this host. The page fetch and its robots.txt both route through this,
-        so a host's traffic shares one circuit and is unlinkable to other hosts'
-        circuits. ``None`` ONLY when there is no proxy at all.
+        so a host's traffic shares one circuit, separate from other hosts'
+        circuits. Separate circuits do not make the hosts' requests unlinkable:
+        the User-Agent and the timing still tie them together (R656). ``None``
+        ONLY when there is no proxy at all.
 
         WHENEVER A PROXY IS CONFIGURED THE MAPPING IS EXPLICIT, isolated or not
         (isolation disabled, or an HTTP proxy that cannot isolate, get the bare
@@ -2007,7 +2033,22 @@ class EthicalFetcher:
                     if stream and self._real_session:
                         kwargs["stream"] = True
                     self._refuse_parser_mismatch(current)
-                    resp = self.session.get(current, **kwargs)
+                    # The ONE proxy this request goes through, in a scope of its own (follow-up to PR #1979): the scope above holds
+                    # every proxy the chain could use, so a proxy named by a hostname for ANOTHER scheme stood the check down for a
+                    # request that went direct, reopening the rebinding window this guard closes. ``select_proxy`` on this hop's
+                    # own merged mapping is what the adapter itself reads, and both the environment merge (``NO_PROXY``) and the
+                    # selection read the PREPARED url, as requests does: on the raw url an IDN host selected differently from the
+                    # IDNA-encoded one the adapter sees. Unpreparable: no endpoint allowed (requests refuses it before connecting).
+                    selection_url = _prepared_url(current)
+                    with connect_scope(
+                        enabled=self._real_session,
+                        proxies=(
+                            _proxy_used_by(selection_url, self._request_proxy_endpoints(selection_url, proxies))
+                            if selection_url is not None
+                            else None
+                        ),
+                    ):
+                        resp = self.session.get(current, **kwargs)
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
@@ -2236,7 +2277,7 @@ class EthicalFetcher:
         merged: dict[str, str] = dict(getattr(self.session, "proxies", None) or {})
         if getattr(self.session, "trust_env", False):
             try:
-                merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
+                merged.update(requests.utils.get_environ_proxies(url, no_proxy=(explicit or {}).get("no_proxy")))
             except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
                 log_failure(
                     _LOG,
@@ -2246,7 +2287,8 @@ class EthicalFetcher:
                     level=logging.DEBUG,
                 )
         merged.update(explicit or {})
-        return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
+        # A ``None`` value is deleted by requests' ``merge_setting`` before it selects, so ``select_proxy`` falls through to the next key.
+        return {k: v for k, v in merged.items() if v is not None and (k in _SELECTABLE_PROXY_KEYS or "://" in k)}
 
     def _read_body(
         self, response, url: str, *, token: int | None = None, keep_bytes: bool = False
@@ -2292,24 +2334,16 @@ class EthicalFetcher:
             # Pick a text encoding WITHOUT touching response.apparent_encoding: on a
             # streamed response the body is already consumed, so apparent_encoding
             # re-reads it and raises "content already consumed" (crashing the scrape).
-            # Detect from the bytes we just collected instead. requests also defaults
-            # unlabelled text/* to ISO-8859-1, which is usually wrong for modern pages,
-            # so detect in that case too.
-            encoding = getattr(response, "encoding", None)
-            if not encoding or str(encoding).lower() in ("iso-8859-1", "latin-1"):
-                try:
-                    from charset_normalizer import from_bytes
+            # Decide from the bytes we just collected instead (R699 cause 2: a UTF-8
+            # page with one stray byte used to come back as ptcp154 mojibake; the
+            # order of evidence is in src/ingest/charset.py).
+            from src.ingest.charset import choose_encoding
 
-                    best = from_bytes(raw).best()
-                    if best and best.encoding:
-                        encoding = best.encoding
-                except Exception:  # noqa: BLE001 - detection is best-effort
-                    pass
-                encoding = encoding or "utf-8"
+            encoding = choose_encoding(raw, getattr(response, "encoding", None))
             kept = raw if keep_bytes else None
             try:
                 return raw.decode(encoding, errors="replace"), kept
-            except (LookupError, TypeError):
+            except (LookupError, TypeError, ValueError):  # UnicodeError is a ValueError
                 return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:

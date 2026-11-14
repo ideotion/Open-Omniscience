@@ -148,7 +148,7 @@ maintainer ruling in the ledger, never proposed as a "fix."
 ## The instruments this cycle uses (all shipped)
 
 `GET /api/diagnostics/all-diagnostics` (job) · `GET /api/diagnostics/kpi` (`src/monitoring/kpi.py`) ·
-`scripts/kpi_diff.py` · `GET /api/diagnostics/recursive-loop` (the meta-gate that proves the
+`scripts/kpi_diff.py` · `POST /api/diagnostics/recursive-loop` (the meta-gate that proves the
 instruments themselves are trustworthy — `src/monitoring/recursive_loop.py`) · `engine_report` ·
 `datediag` · `request-latency` · `source-audit` · the P0-validation job · the IR/perception
 gold-set builders · `scripts/generate_wikidata_rings.py` (`--refresh` for the cheap per-cycle

@@ -101,6 +101,10 @@ def test_diagnostics_split_is_route_neutral():
 
     Removing a route genuinely does need the snapshot edited, and that is the right
     friction: it is the only change that can make the split lossy after the fact.
+
+    One edit since: on 2026-11-14 (R694, R278's proposal adopted) the 21 heavy diagnostics
+    (the benchmarks, the self-tests, ``/all``, ``/debug-bundle``, ``recursive-loop``) changed
+    their METHOD from GET to POST in place; path, name, endpoint and position are unchanged.
     """
     expected = json.loads(_SNAPSHOT.read_text(encoding="utf-8"))
     live = _live_table()

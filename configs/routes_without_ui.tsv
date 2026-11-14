@@ -36,18 +36,18 @@ GET	/api/catalog/columns	internal		api	CSV column reference for programmatic cal
 POST	/api/commodities/{symbol}/prices/import-csv	feature	3	Markets (O)	import a commodity price series from CSV
 POST	/api/custody/log	internal		api	custody entries are appended by ingest; a manual append is programmatic
 GET	/api/custody/providers	feature	3	Settings > Custody (N)	list anchor providers and their availability beside the anchoring setting
-POST	/api/custody/verify	feature	3	Evidence (custody owner first)	check a custody log export; not wired yet because the verifier reports an empty log as verified, a log cut at its end as intact, and a per-item export (global seq numbers) as a broken chain
+POST	/api/custody/verify	feature	3	Evidence (custody owner first)	check a custody log export; the verifier now fails closed (empty, cut-short and headless bundles refused by name, one-item exports checked entry by entry), and no button calls it yet
 GET	/api/database/backup	superseded			plain SQLite snapshot download (A-008); the Backup tab exports through /api/backup/v2
 GET	/api/diagnostics/ai	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/ai-activity-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/ai-activity-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/ai-check/last	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/all	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/all	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/all-job/download	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/all-job/volumes/{name}	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/article-length	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/benchmark	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/benchmark	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/bulletin-language	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/bulletin-language-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/bulletin-language-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/bulletin-preview	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/card-audit	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 POST	/api/diagnostics/card-audit/cancel	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
@@ -60,21 +60,21 @@ GET	/api/diagnostics/country-code-duplicates	internal		diagnostics	maintainer di
 GET	/api/diagnostics/criteria-calibration	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/data-dir-persistence	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/dates	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/debug-bundle	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/debug-bundle	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 POST	/api/diagnostics/discover-world/cancel	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/freshness	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/frontend-errors	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/home-cards	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/integrity	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/ir-eval-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/ir-eval-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/keyword-engine	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/keyword-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
-GET	/api/diagnostics/keyword-triage-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/keyword-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/keyword-triage-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/keywords/parts/{set_id}/{name}	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/kpi	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/law-ingest	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/leads-quality	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/llm-throughput-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/llm-throughput-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/merge	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/model-bench/last	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/month-occupancy	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
@@ -82,27 +82,27 @@ GET	/api/diagnostics/network	internal		diagnostics	maintainer diagnostics read (
 GET	/api/diagnostics/non-article-scan	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/p0-validation/last	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/perception-eval-live/last	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/perception-eval-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
-GET	/api/diagnostics/performance	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/perception-eval-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/performance	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/power-profile	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/power-profile-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
-GET	/api/diagnostics/qualification-assist-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/power-profile-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/qualification-assist-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/qualification-assist/last	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/qualification-integrity	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/recursive-loop	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/recursive-loop	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/request-latency	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/run-journal	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/run-timeline	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/runs	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/schema-drift	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/search-timing	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/search-timing-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/search-timing-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/slow-queries	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/soak-window	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/source-audit	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/source-audit-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
-GET	/api/diagnostics/source-coverage-benchmark	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/source-tags-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/source-audit-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
+POST	/api/diagnostics/source-coverage-benchmark	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/source-tags-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/stall-forensics	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/storage-composition	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/vitals-history	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
@@ -118,7 +118,7 @@ GET	/api/events/astronomy/lunar-series	feature	3	Climate (H)	daily lunar-phase s
 GET	/api/events/climate	feature	2	Climate (H)	bundled El Nino episode list with verification status; the ONI subtab could show the episodes
 POST	/api/events/feeds/verify-batch	superseded			manual sweep retired by ruling (comment at app-agenda.js:953)
 POST	/api/geo/downloads/resume	superseded			the task manager resumes a paused region through /api/jobs/{id}/resume
-GET	/api/hazards	feature	2	Map or Climate (L/H)	live USGS + GDACS disaster feed: a network relay with no button and no consent; GDACS alerts are new (USGS quakes are already a Climate dataset)
+POST	/api/hazards	feature	2	Map or Climate (L/H)	live USGS + GDACS disaster feed: a network relay with no button and no consent; GDACS alerts are new (USGS quakes are already a Climate dataset)
 POST	/api/insights/keyword-fold-job/{action}	superseded			the task manager pauses, resumes and cancels the fold through /api/jobs/{job_id}/... (job 'keyword-fold')
 GET	/api/insights/leads-view	feature	2	Home (N)	the Leads with evidence chips (n, independent sources, freshness); browser-gated design, never wired
 GET	/api/insights/reading-diet-by-type	feature	2	Insights (O)	share of the corpus per content channel (news, wiki, law...)
@@ -140,8 +140,6 @@ GET	/api/keywords/process	superseded			legacy free-text keyword toolkit (/api/ke
 GET	/api/keywords/statistics	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/keywords/top	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/law/documents/{document_id}/provision-timeline	internal		api	the JSON form of the law reader's Provisions fold, which /api/law/documents/{document_id}/view renders server-side from the same payload (PR #1959); kept for API callers
-GET	/api/links/export.graphml	feature	2	Explore > Links (N)	download the citation graph (opens in Gephi)
-GET	/api/links/export.json	feature	2	Explore > Links (N)	download the citation graph as JSON
 GET	/api/links/stats	feature	3	Explore > Links (N)	corpus-wide link totals
 POST	/api/llm/bulk	superseded			the synchronous bulk summarize/translate; R600 PR2 (#1938) moved the UI to /api/llm/bulk/queue
 POST	/api/llm/generate	internal		api	single-shot generation for programmatic callers
@@ -153,7 +151,7 @@ POST	/api/llm/vllm/start	feature	3	Settings > Models (N)	start vLLM (stop and st
 GET	/api/markets/overview	superseded			Markets reads /api/markets/board
 PUT	/api/markets/rules/{rule_id}	feature	3	Markets (O)	edit an alert rule (create, run and delete exist)
 GET	/api/monitoring/anomalies	feature	3	Insights (O)	days whose article volume deviates from the mean
-GET	/api/monitoring/health	superseded			live reachability check; the source preflight and field data cover it
+POST	/api/monitoring/health	superseded			live reachability check; the source preflight and field data cover it
 GET	/api/newsletters/publisher-preview	feature	2	Settings > Import (N)	which publisher each newsletter would be filed under; the 2026-06-15 ruling pairs auto-attach with an import UI that announces it
 GET	/api/osm/objects/{osm_type}/{osm_id}	unseen			called by openOsmObjectCard (app-analysis.js) as "/api/osm/objects/" + a joined ref; two parameters joined at run time are past the source reader
 GET	/api/osm/search	feature	2	Map (L)	'Places' facet (Q817): named places in the countries read
@@ -213,7 +211,7 @@ GET	/api/stats/sources	feature	3	Statistics (O)	directory of registered statisti
 GET	/api/timemap/range	superseded			the timemap derives its range from its own payload
 GET	/api/watches/{watch_id}/history	feature	2	Insights > Watches (O)	a watch's past evaluations
 POST	/api/wiki/corpus/sync	feature	3	Living sources (I)	backfill watched pages into the corpus (local only)
-GET	/api/wiki/dumps/probe	superseded			single-edition size probe; the dump picker reads /api/wiki/dumps/sizes
+POST	/api/wiki/dumps/probe	superseded			single-edition size probe; the dump picker reads /api/wiki/dumps/sizes
 GET	/api/wiki/lane/analytics	feature	2	Living sources (I)	Q712 analytics 1-3 of the Wikipedia lane
 GET	/api/wiki/lane/counters	feature	3	Living sources (I)	the lane's 72 h run counters
 GET	/api/wiki/lane/sections	feature	2	Living sources (I)	which sections of a page changed between two versions

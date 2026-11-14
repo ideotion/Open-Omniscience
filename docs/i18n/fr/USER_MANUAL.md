@@ -2958,7 +2958,7 @@ Retirer sa confiance à un auteur exclut ses annotations ; supprimer un auteur l
 | Méthode et chemin | Rôle |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | les annotations que vous avez rédigées |
-| `GET /api/annotations/export` | un lot signé et portable de vos annotations |
+| `POST /api/annotations/export` | un lot signé et portable de vos annotations |
 | `POST /api/annotations/import` | vérifier + enregistrer un lot importé (refusé s'il est invalide) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | la toile de confiance |
 | `GET /api/annotations/for?target=` | agrégation transparente — qui a affirmé quoi |

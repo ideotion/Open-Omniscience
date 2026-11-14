@@ -44,6 +44,12 @@ def _corpus(*, created_at=True):
         "CREATE TABLE keyword_mentions (id INTEGER PRIMARY KEY, keyword_id INT, article_id INT, count INT, "
         "observed_on DATE, created_at TEXT)"
     ))
+    # The quarantine flag the build and the live side read (R101); no article is quarantined unless a test says so.
+    s.execute(text("CREATE TABLE articles (id INTEGER PRIMARY KEY, quarantined BOOLEAN)"))
+    s.execute(text("CREATE INDEX idx_article_quarantined ON articles (quarantined)"))
+    s.execute(text(
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100) INSERT INTO articles (id) SELECT i FROM n"
+    ))
     for k in range(1, 201):
         s.execute(text("INSERT INTO keywords VALUES (:i,:t,:t,0,NULL,'en',1)"), {"i": k, "t": f"kw{k}"})
     mid = 1
@@ -233,3 +239,33 @@ def test_the_over_count_fields_say_over_count_and_the_old_gap_names_are_gone():
     assert old["distinct_upper_bound_holds"] is False and old["distinct_below_keywords"] > 0
     assert old["distinct_over_count_keywords"] == 0 and old["distinct_over_count_total"] == 0
     assert "distinct_gap_keywords" not in old and "distinct_gap_total" not in old
+
+
+def test_a_quarantined_article_is_out_of_the_build_the_tail_and_both_live_sides():
+    """R101: the build, the incremental tail, the parity probe's live side and the benchmark's live side all leave a
+    quarantined article out, so the parity stays exact and the rollup agrees with the counters and the live windows."""
+    s, _ = _corpus()
+    s.execute(text("UPDATE articles SET quarantined = 1 WHERE id IN (1, 2, 3)"))
+    s.commit()
+    con, build = _build(s)
+    assert build["keyword_daily_rows"] > 0
+    rolled = columnar.windowed_term_counts(con, start_day=datetime.date.today()) or {}
+    live = {
+        int(k): int(m)
+        for k, m in s.execute(text(
+            "SELECT keyword_id, SUM(count) FROM keyword_mentions WHERE article_id NOT IN (1, 2, 3) GROUP BY keyword_id"
+        ))
+    }
+    assert {k: v[0] for k, v in rolled.items()} == live
+    assert sum(v[1] for v in rolled.values()) == 97 * 5, "97 unquarantined articles x 5 keywords, one article each per day"
+    assert columnar.keyword_daily_parity(con, s)["mentions_exact"]
+    bench = {int(r[0]): int(r[1]) for r in rollup_benchmark._live_windowed(s, None)}
+    assert bench == live
+
+    # A tail row of a quarantined article stays out of the incremental refresh too.
+    assert columnar.refresh_keyword_daily(con, s, corpus_epoch=7)["mode"] == "full"  # records the epoch it built at
+    _add_mention(s, 1, 2, created_at="2026-10-16 10:01:00")
+    s.commit()
+    res = columnar.refresh_keyword_daily(con, s, corpus_epoch=7)
+    assert res["mode"] == "incremental", res
+    assert (columnar.windowed_term_counts(con, start_day=datetime.date.today()) or {}).get(1, (0, 0))[0] == live.get(1, 0)

@@ -2489,7 +2489,20 @@
     }
     // The "Import bundle…" button opens the hidden file chooser: the one control this clicks is the annotation bundle input (A-004).
     function annoImportPick() { const input = $("anno-import"); if (input) input.click(); }
-    function exportAnnotations() { window.open("/api/annotations/export", "_blank"); }
+    // A POST (R694): the export signs the bundle, and the first one creates the annotation signing key, so it runs on this
+    // click and never from a GET another page could fire. The signed JSON is saved as a file.
+    async function exportAnnotations() {
+      try {
+        const bundle = await api("/api/annotations/export", {method: "POST"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"}));
+        a.download = "annotations-bundle.json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      } catch (e) { toast(_failMsg("Export: {error}", e), "err"); }
+    }
     async function importAnnotations(input) {
       const file = input.files && input.files[0]; if (!file) return;
       try {

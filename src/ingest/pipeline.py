@@ -421,6 +421,7 @@ class _CustodyBatch:
         self._opened_under: tuple | None = None
         self.opened = 0  # logs this batch has opened (a reading, for the tests)
         self.refused_offline = 0  # entries the kill switch refused (R618): owed, and logged ONCE when the block ends
+        self.settings_unreadable = 0  # entries owed because the custody settings could not be read: logged ONCE too
 
     @staticmethod
     def _under(prefs) -> tuple:
@@ -460,6 +461,11 @@ class _CustodyBatch:
                 "custody: %d ingest entr(ies) of this flush were refused by the network kill switch (OpenTimestamps); "
                 "they are owed and written later, marked late", self.refused_offline,
             )
+        if self.settings_unreadable:
+            logging.getLogger(__name__).warning(
+                "custody: %d ingest entr(ies) of this flush are owed because the custody settings could not be read; "
+                "they are written, marked late, once the settings read as auto-log ON again", self.settings_unreadable,
+            )
 
 
 def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = None) -> None:
@@ -483,10 +489,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
     article_id: int | None = None
     log_touched = False
     try:
-        from src.custody.settings import load_settings
+        from src.custody.settings import CustodySettingsUnreadable, load_settings
 
         prefs = load_settings()
-        if not prefs.auto_log_on_ingest:
+        if not prefs.auto_log_on_ingest and not prefs.store_unreadable:
             return
         # The id WITHOUT a database read (CUST-1): after the commit every column is
         # expired, and reading ``article.id`` reloads the row -- which is exactly the call
@@ -500,6 +506,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             article_id = int(ident[0]) if ident else None
         except Exception:  # noqa: BLE001 - not an ORM instance: no id to queue, the write still runs
             article_id = None
+        if prefs.store_unreadable:
+            # Whether the operator wants this entry cannot be read right now (queue:1255): it is owed, not written under a
+            # guessed setting, and paid at the end of a pass only once the setting reads as ON again.
+            raise CustodySettingsUnreadable("custody settings could not be read; the entry waits")
         from src.custody.log import CustodyAction, CustodyLog
 
         # Everything the entry carries is read BEFORE the log is touched: a read that fails (the pool is exhausted and the
@@ -520,9 +530,16 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
         else:
             batch.log(prefs).record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
+        from src.custody.settings import CustodySettingsUnreadable as _Unreadable
         from src.custody.timestamp import TimestampRefusedOffline
 
-        if isinstance(exc, TimestampRefusedOffline):
+        if isinstance(exc, _Unreadable):
+            # Not a failure of the log: one line per flush (or one plain line unbatched), never a traceback per article.
+            if batch is not None:
+                batch.settings_unreadable += 1
+            else:
+                logging.getLogger(__name__).warning("custody entry on ingest owed: the custody settings could not be read")
+        elif isinstance(exc, TimestampRefusedOffline):
             # R618: the switch's refusal, raised before the insert: the connection is clean, so the batch keeps its log (a
             # fresh one costs a key derivation) and the flush logs once; an unbatched entry logs its own line, at INFO.
             if batch is not None:

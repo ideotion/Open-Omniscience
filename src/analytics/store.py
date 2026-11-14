@@ -26,11 +26,13 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import Table, bindparam, delete, func, insert, select, text, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
+from src.analytics.quarantine_scope import not_quarantined
 from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 from src.database.stand_in import not_a_stand_in_article_id
@@ -461,6 +463,76 @@ def _apply_keyword_counter_deltas(
         kw.article_count = max(0, (kw.article_count or 0) + d_art)
 
 
+def _is_quarantined(session: Session, article: Article, inserted_in_this_transaction: bool) -> bool:
+    """Whether ``article`` is quarantined right now (R101), unless the caller just inserted it, in which case the
+    object's own value is the stored one. Answered from ``idx_article_quarantined`` alone: a primary-key read of
+    ``quarantined`` would walk the row's overflow pages, since the column was added by ALTER after ``content``."""
+    if inserted_in_this_transaction or article.id is None:
+        return bool(article.quarantined)
+    # INDEXED BY because the planner otherwise picks the primary key for ``id = ?`` (measured). A store still
+    # missing the index (it is a HOT_INDEXES self-heal) fails the prepare, which leaves the transaction alone, and
+    # takes the primary-key read instead.
+    try:
+        row = session.execute(
+            text("SELECT 1 FROM articles INDEXED BY idx_article_quarantined WHERE quarantined IS 1 AND id = :a"),
+            {"a": int(article.id)},
+        ).first()
+    except OperationalError:
+        return bool(session.execute(select(Article.quarantined).where(Article.id == article.id)).scalar())
+    return row is not None
+
+
+def shift_keyword_counters_for_quarantine(
+    session: Session, article_ids: Iterable[int], *, quarantined: bool
+) -> dict:
+    """Move ``Keyword.mention_count`` / ``article_count`` for articles whose quarantine stamp is changing (R101).
+
+    ``quarantined=True``: the articles are being stamped, so their mentions leave the counters. ``False``: they
+    are being un-stamped, so their mentions come back. Call it in the SAME transaction as the stamp, for the
+    articles whose stamp really changes (an already-quarantined article stamped again must not be subtracted
+    twice), after the write gate is held, and with the stamp not yet committed.
+
+    Each article holds at most one mention row per keyword (the unique ``(keyword_id, article_id)`` index), so a
+    keyword's ``article_count`` moves by the number of these articles that mention it and its ``mention_count`` by
+    their summed occurrences. The ``max(0, ...)`` floor matches :func:`_apply_keyword_counter_deltas`;
+    :func:`reconcile_keyword_counters` remains the authoritative repair. Returns a small tally."""
+    ids = sorted({int(i) for i in article_ids})
+    if not ids:
+        return {"articles": 0, "keywords": 0}
+    sign = -1 if quarantined else 1
+    deltas: dict[int, list[int]] = {}
+    for i in range(0, len(ids), _MENTION_ID_CHUNK):
+        chunk = ids[i : i + _MENTION_ID_CHUNK]
+        for kid, men, arts in session.execute(
+            select(
+                KeywordMentionRead.keyword_id,
+                func.sum(KeywordMentionRead.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
+            )
+            .where(KeywordMentionRead.article_id.in_(chunk))
+            .group_by(KeywordMentionRead.keyword_id)
+        ):
+            d = deltas.setdefault(int(kid), [0, 0])
+            d[0] += int(men or 0)
+            d[1] += int(arts or 0)
+    kids = sorted(deltas)
+    clamped = 0
+    for i in range(0, len(kids), _MENTION_ID_CHUNK):
+        for kw in session.query(Keyword).filter(Keyword.id.in_(kids[i : i + _MENTION_ID_CHUNK])).all():
+            d_men, d_art = deltas[kw.id]
+            men = (kw.mention_count or 0) + sign * d_men
+            art = (kw.article_count or 0) + sign * d_art
+            if men < 0 or art < 0:
+                clamped += 1
+            kw.mention_count = max(0, men)
+            kw.article_count = max(0, art)
+    if clamped:
+        # A counter that would go negative was already off before this shift: the floor keeps it sane and the
+        # budgeted reconcile repairs it. Said here so the drift is not silent.
+        _LOG.warning("quarantine counter shift floored %d keyword counter(s) at zero; reconcile will repair", clamped)
+    return {"articles": len(ids), "keywords": len(kids), "clamped": clamped}
+
+
 def _resolve_known_language(article: Article, content: str) -> str | None:
     """The known/deduced language driving extraction + sentiment for one article.
 
@@ -472,7 +544,29 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
     readers of that same object ask for its known language afterwards — e.g. a
     precompute step run BEFORE ``index_article`` itself (see
     :func:`reindex_articles`) sees and reuses the identical deduction, rather
-    than the two silently disagreeing on which language drove extraction."""
+    than the two silently disagreeing on which language drove extraction.
+
+    A REFUTED TAG IS DROPPED FIRST (R699, cause 1). When the article's own letters are
+    demonstrably not in the asserted language's script (Cyrillic text tagged ``en``, see
+    :mod:`src.analytics.script_check`), the tag is wrong as a matter of counting, not of
+    opinion, so it is cleared and the article goes through the same offline detection as
+    one that arrived untagged: it gets a deduced language or stays honestly unknown. The
+    cleared value is WRITTEN (not just ignored for this pass), because every reader that
+    skips the body -- ``article_lang_map``, the language series, the search filter --
+    reads the stored column and must agree with what extraction used. Runs at ingest and
+    on every re-index, so an old row converges only when a re-index reaches it."""
+    asserted = (article.language or "").strip()
+    if asserted:
+        from src.analytics.script_check import script_refutes
+
+        if script_refutes(asserted, content):
+            _LOG.info(
+                "article %s: language tag %r refuted by its own script; re-deducing",
+                getattr(article, "id", None),
+                asserted,
+            )
+            article.language = None
+            article.detected_language = None
     if not (article.language or "").strip() and not (
         getattr(article, "detected_language", None) or ""
     ).strip():
@@ -786,6 +880,13 @@ def index_article(
     _t_read = time.monotonic() if timings is not None else 0.0
     # ``{}`` and not ``None``: ``None`` is "two rows share a keyword", the legacy delete-then-insert shape.
     old_rows = {} if inserted_in_this_transaction else _read_mention_rows(session, article.id)
+    # R101: a quarantined article contributes NOTHING to the keyword counters, before or after this pass, so
+    # its re-index moves none of them (its mention rows are still written: quarantine is reversible, and
+    # un-quarantining adds them back through ``shift_keyword_counters_for_quarantine``). Read from the
+    # database inside the write window, not from the ORM object, so a stamp that landed after the caller
+    # loaded the article is seen; an article inserted in this transaction has no stamp to miss.
+    if maintain_counters and _is_quarantined(session, article, inserted_in_this_transaction):
+        maintain_counters = False
     old_contrib: dict[int, int] = {}
     if maintain_counters:
         if old_rows is None:  # two rows for one keyword: sum them, as the old read did
@@ -1642,6 +1743,11 @@ def _reindex_articles_impl(
                 art.country,
                 observed.date().isoformat() if observed else None,
                 None,  # `today`: the store's own default, never a worker's clock
+                # R697: the date language is the article's OWN column, the value the inline
+                # store and the ingest precompute pass; `lang or "en"` below is only the
+                # keyword stoplist pick. Read after _resolve_known_language, which clears a
+                # tag the script refutes.
+                art.language,
             )
             if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
@@ -2138,6 +2244,7 @@ def backfill_keyword_counters(session: Session) -> dict:
                     func.count(func.distinct(KeywordMention.article_id)),
                 )
                 .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
                 .group_by(KeywordMention.keyword_id)
             )
         }
@@ -2261,6 +2368,7 @@ def reconcile_keyword_counters(
                     func.count(func.distinct(KeywordMention.article_id)),
                 )
                 .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
                 .group_by(KeywordMention.keyword_id)
             )
         }
@@ -3039,6 +3147,23 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
                 + f"; MAINTENANCE DEFERRED since {deferred_since} for an exclusive "
                 "re-index -- these counters have not been updated since then and are "
                 "reconciled when it finishes"
+            ),
+            n=n,
+        )
+    # R101 on an upgraded store: until the start-up upkeep has recomputed the counters without quarantined
+    # articles, they still count them. Its own row, never the shared deferral marker (quarantine_transition.py).
+    from src.analytics.quarantine_transition import R101_PENDING_KEY
+    from src.database.models import DerivedMeta
+
+    r101_owed = session.get(DerivedMeta, R101_PENDING_KEY)
+    if r101_owed is not None:
+        return Envelope.estimated(
+            n,
+            as_of=str(r101_owed.value or now_iso()),
+            method=(
+                method
+                + f"; an upgrade recompute is owed since {r101_owed.value}: these counters may still count "
+                "quarantined articles until the app finishes starting up"
             ),
             n=n,
         )
