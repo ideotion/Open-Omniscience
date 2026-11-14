@@ -495,6 +495,8 @@
       let u;
       try { u = new URL(path, location.origin); } catch (e) { return; }
       if (u.origin !== location.origin) return;
+      // Only the report routes: never a bare POST to a route that changes state (the scheduler, the network, a wipe).
+      if (!u.pathname.startsWith("/api/diagnostics/") && !u.pathname.startsWith("/api/signals/")) return;
       const say = (m, kind) => { if (typeof window.toast === "function") window.toast(m, kind); };
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // A benchmark or model sweep runs for minutes with no tab to show it: say so, and never start the same run twice at once.
@@ -510,8 +512,10 @@
           return;
         }
         const cd = res.headers.get("Content-Disposition") || "";
-        const m = /filename="?([^";]+)"?/i.exec(cd);
-        const name = m ? m[1] : (u.pathname.split("/").filter(Boolean).pop() || "result") + ".json";
+        const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+        let fromHeader = "";
+        if (m) { try { fromHeader = decodeURIComponent(m[1]); } catch (e) { fromHeader = m[1]; } }
+        const name = fromHeader ? fromHeader : (u.pathname.split("/").filter(Boolean).pop() || "result") + ".json";
         const blob = await res.blob();
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
