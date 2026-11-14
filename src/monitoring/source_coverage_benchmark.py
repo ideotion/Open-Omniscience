@@ -23,6 +23,7 @@ import time
 
 from sqlalchemy.orm import Session
 
+from src.database.corpus_lease import corpus_lease
 from src.shared import median_ms
 
 
@@ -61,49 +62,52 @@ def run_source_coverage_benchmark(session: Session, *, repeats: int = 3) -> dict
     # folder under the data directory otherwise), never its plaintext default ``.tmp`` beside the working directory.
     from src.analytics import rollup_serve
 
-    spill = rollup_serve._spill_setting()
-    try:
-        con = columnar.connect(passphrase=None, spill=spill)
-    except BaseException:
-        rollup_serve._remove_spill(spill)
-        raise
-    if con is None:
-        rollup_serve._remove_spill(spill)
-        return {"available": False, "reason": "columnar engine unavailable"}
-    try:
-        epoch = get_corpus_epoch(session)
-        t0 = time.perf_counter()
-        build = columnar.refresh_source_coverage(con, session, corpus_epoch=epoch)
-        build_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+    # A lease for the life of the offload folder (open-on-main row 56): an encryption in place waits for it (or refuses, by
+    # name) instead of encrypting while this run's folder, chosen while the library was plaintext, still holds plaintext rows.
+    with corpus_lease("source-coverage-benchmark"):
+        spill = rollup_serve._spill_setting()
+        try:
+            con = columnar.connect(passphrase=None, spill=spill)
+        except BaseException:
+            rollup_serve._remove_spill(spill)
+            raise
+        if con is None:
+            rollup_serve._remove_spill(spill)
+            return {"available": False, "reason": "columnar engine unavailable"}
+        try:
+            epoch = get_corpus_epoch(session)
+            t0 = time.perf_counter()
+            build = columnar.refresh_source_coverage(con, session, corpus_epoch=epoch)
+            build_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
-        parity = columnar.source_coverage_parity(con, session)
+            parity = columnar.source_coverage_parity(con, session)
 
-        live_cold, live_med, live_n = median_ms(
-            lambda: source_country_counts(session)["by_country"], repeats
-        )
-        roll_cold, roll_med, roll_n = median_ms(
-            lambda: columnar.source_coverage_rows(con), repeats
-        )
-        speedup = round(live_med / roll_med, 1) if roll_med > 0 else None
+            live_cold, live_med, live_n = median_ms(
+                lambda: source_country_counts(session)["by_country"], repeats
+            )
+            roll_cold, roll_med, roll_n = median_ms(
+                lambda: columnar.source_coverage_rows(con), repeats
+            )
+            speedup = round(live_med / roll_med, 1) if roll_med > 0 else None
 
-        rows = columnar.source_coverage_rows(con)
-        located = [r for r in rows if r["country"]]
-        env = Envelope.estimated(
-            value=located,
-            as_of=build.get("as_of") or _now_iso(),
-            method=(
-                "Per-country coverage {sources, articles, keyword mentions, mean tone} "
-                "cached in the derived source_coverage rollup; rebuilt on a corpus-epoch "
-                "change (re-index/prune/restore) or when ingest advances the article/mention "
-                "watermark. Counts only, no score; mean tone is VADER English-lexicon only "
-                "(a country with no scored article reports null, never a fabricated zero)."
-            ),
-            n=corpus["located_sources"],
-        )
-    finally:
-        with contextlib.suppress(Exception):
-            con.close()
-        rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
+            rows = columnar.source_coverage_rows(con)
+            located = [r for r in rows if r["country"]]
+            env = Envelope.estimated(
+                value=located,
+                as_of=build.get("as_of") or _now_iso(),
+                method=(
+                    "Per-country coverage {sources, articles, keyword mentions, mean tone} "
+                    "cached in the derived source_coverage rollup; rebuilt on a corpus-epoch "
+                    "change (re-index/prune/restore) or when ingest advances the article/mention "
+                    "watermark. Counts only, no score; mean tone is VADER English-lexicon only "
+                    "(a country with no scored article reports null, never a fabricated zero)."
+                ),
+                n=corpus["located_sources"],
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                con.close()
+            rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
 
     return {
         "available": True,
