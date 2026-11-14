@@ -487,3 +487,35 @@ def test_an_erase_stopped_after_step_one_leaves_no_readable_salt_anywhere_under_
 
     left = [p for p in data.rglob("*") if p.is_file() and salt in p.read_bytes()]
     assert left == [], f"a salt is still readable after step 1: {left}"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlinks and FIFOs need POSIX here")
+@pytest.mark.parametrize("stop_after_step_one", [True, False])
+def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, monkeypatch, stop_after_step_one):
+    """Steps 1 and 6 touch every file under the data dir; neither may leave it. A symlinked folder is not entered, a
+    symlinked file is removed and never written through, a FIFO never blocks the walk, and the targets outside are intact."""
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    precious = outside / "precious.txt"
+    precious.write_bytes(b"KEEP" * 2048)
+    (outside / "inner.db-wal").write_bytes(b"KEEP" * 2048)
+    (data / "linked-folder").symlink_to(outside, target_is_directory=True)
+    (data / "linked-file.db").symlink_to(precious)
+    (data / "loop").symlink_to(data, target_is_directory=True)
+    os.mkfifo(data / "a-fifo")
+    if stop_after_step_one:
+
+        def stopped(*_a, **_k):
+            raise KeyboardInterrupt("stopped after step 1")
+
+        monkeypatch.setattr(crypto_erase, "_destroy_keys_folder", stopped)
+        with pytest.raises(KeyboardInterrupt):
+            crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    else:
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+        assert report["removed"] is True
+    assert precious.read_bytes() == b"KEEP" * 2048
+    assert (outside / "inner.db-wal").read_bytes() == b"KEEP" * 2048

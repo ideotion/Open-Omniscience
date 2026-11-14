@@ -485,9 +485,16 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
     if base.exists():
-        for root, _dirs, names in os.walk(base):
+        for root, _dirs, names in os.walk(base):  # never follows a symlinked folder (followlinks=False)
             for name in names:
-                _s, _overwritten, _w = _track(Path(root) / name)
+                p = Path(root, name)
+                if p.is_symlink() or not p.is_file():
+                    # A link is removed, never written through: its target may be anywhere, outside the data dir included.
+                    # A FIFO, socket or device is removed too: opening one to write would block or reach hardware.
+                    with contextlib.suppress(OSError):
+                        p.unlink()
+                    continue
+                _s, _overwritten, _w = _track(p)
                 seen += _s
                 wiped += _w
     with contextlib.suppress(OSError):
