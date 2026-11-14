@@ -89,6 +89,10 @@ def log_action(req: LogRequest) -> dict:
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except ValueError:
+        # The one ValueError left after the checks above: a lone surrogate, which no signature can cover (row 46).
+        raise HTTPException(status_code=400, detail="a text field holds a character with no UTF-8 form (a lone "
+                            "surrogate), so no signature can cover it") from None
     except CustodySettingsUnreadable:
         # The custody settings could not be read: nothing is signed under guessed preferences (PQC off, local anchoring).
         raise HTTPException(status_code=503, detail="the custody settings could not be read, so no entry was signed "

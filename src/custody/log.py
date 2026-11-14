@@ -331,6 +331,14 @@ class CustodyLog:
         digest. Pass an OpenTimestamps proof to anchor the entry independently.
         """
         action_val = action.value if isinstance(action, CustodyAction) else str(action)
+        try:
+            canonical_bytes({"item_id": item_id, "item_hash": item_hash, "action": action_val, "actor": actor,
+                             "metadata": metadata or {}})
+        except UnicodeEncodeError:
+            # A lone surrogate (JSON "\ud800") has no UTF-8 form, so no signature can cover it: refused by name before
+            # anything is read or written (row 46), never a 500 from inside the signing step.
+            raise ValueError("a text field holds a character with no UTF-8 form (a lone surrogate), so no signature "
+                             "can cover it") from None
         if action_val == CustodyAction.KEY_ROTATION.value or item_id == ROTATION_ITEM:
             # Only this log writes its key-rotation records (``_insert_rotation``): one written from outside would name
             # keys of the caller's choosing, and every later export of the log would be refused for good.
@@ -1168,21 +1176,27 @@ def _verify_export(
         return False, ["no signer identity in the bundle: there is no key to hold its entries and head to"]
     if _sig_ed25519_pub(head_sig) != key:
         return False, ["head signature invalid: it was not made with the bundle's signer key"]
+    if not isinstance(signer, dict) or (signer.get("ml_dsa_pub") or None) != _sig_ml_dsa(head_sig)[1]:
+        # The printed signer is what a reader compares with a key they know: both halves must be the head's, or the
+        # bundle could print a post-quantum key nothing in it was signed with (row 46). A head stripped of its
+        # post-quantum half under a signer that names one is refused here too, in every mode (row 44).
+        return False, ["head signature invalid: the bundle's signer names another post-quantum (ML-DSA) key than the "
+                       "one its head was signed with"]
     problem, rotation_notes = _key_lineage(entries, key, accept_unendorsed_rotation, one_item=bool(item_id))
     notes.extend(rotation_notes)
     if problem:
         return False, [problem]
-    if pinned is not None and pinned.ml_dsa_pub and head_sig.get("algorithm") != "hybrid":
-        # Row 44: a signer that names an ML-DSA key signs its head with both halves, so an Ed25519-only head has had its
-        # post-quantum half stripped -- and the head is what commits to every entry (R714).
-        return False, ["head signature invalid: the signer names an ML-DSA key but the head carries the Ed25519 half "
-                       "only, so its post-quantum half was removed"]
     ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=pinned)
     if not ok:
         return False, [f"head signature invalid: {reason}"]
     fmt = head.get("bundle_format", 1)
     if type(fmt) is not int or fmt not in (1, BUNDLE_FORMAT):
         return False, [f"unknown bundle format {fmt!r}: this checker reads formats 1 and {BUNDLE_FORMAT}"]
+    for field in ("log_version", "entry_count", "bundle_format"):
+        # The bundle's top-level copies are not signed (row 46): one that disagrees with the signed head is refused, so
+        # nothing printed or read from them can say other than what the signer committed to.
+        if field in bundle and bundle[field] != head.get(field, 1 if field == "bundle_format" else None):
+            return False, [f"the bundle's unsigned {field} ({bundle[field]!r}) disagrees with its signed head"]
     if fmt >= 2 and not isinstance(head.get("entries_digest"), str):
         return False, ["the signed head names bundle format 2 but carries no digest of its entries"]
     expected = _bundle_head(item_id, entries, bundle_format=fmt)

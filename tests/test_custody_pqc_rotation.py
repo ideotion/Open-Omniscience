@@ -250,8 +250,9 @@ def test_a_head_stripped_to_ed25519_is_refused_under_the_pin(tmp_path):
         bundle = log.export()
     forged = copy.deepcopy(bundle)
     forged["head_signature"] = _ed_only(forged["head_signature"])
-    ok, issues = verify_export(forged, require_signer=True)
-    assert not ok and "its post-quantum half was removed" in issues[0]
+    for pin in (False, True):
+        ok, issues = verify_export(forged, require_signer=pin)
+        assert not ok and "names another post-quantum (ML-DSA) key than the one its head was signed with" in issues[0]
 
 
 @pqc

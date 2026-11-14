@@ -86,9 +86,12 @@ def main(argv: list[str]) -> int:
 
     raw_signer = bundle.get("signer")
     signer: dict = raw_signer if isinstance(raw_signer, dict) else {}
-    print(f"log_version    : {bundle.get('log_version')}")
-    print(f"item_id        : {bundle.get('item_id')}")
-    print(f"entry_count    : {bundle.get('entry_count')}")
+    # From the signed head when there is one (row 46): the bundle's top-level copies are not signed.
+    raw_head = bundle.get("head")
+    shown: dict = raw_head if isinstance(raw_head, dict) else bundle
+    print(f"log_version    : {shown.get('log_version')}")
+    print(f"item_id        : {shown.get('item_id')}")
+    print(f"entry_count    : {shown.get('entry_count')}")
     print(f"signer ed25519 : {signer.get('ed25519_pub')}")
     print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
     if ok:  # what a "verified" covers, said only beside one
