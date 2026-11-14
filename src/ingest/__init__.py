@@ -2301,7 +2301,7 @@ class EthicalFetcher:
             kept = raw if keep_bytes else None
             try:
                 return raw.decode(encoding, errors="replace"), kept
-            except (LookupError, TypeError):
+            except (LookupError, TypeError, ValueError):  # UnicodeError is a ValueError
                 return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:

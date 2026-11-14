@@ -29,14 +29,16 @@ THE ORDER, strongest evidence first:
 6. ``charset_normalizer``'s guess;
 7. UTF-8.
 
-Every answer is a name ``codecs.lookup`` knows, so ``bytes.decode`` cannot raise
-``LookupError`` on it.
+Every answer is a codec that decodes any bytes with ``errors="replace"`` without raising,
+leaves ASCII as ASCII and never yields a lone surrogate (see :func:`_usable`).
 """
 
 from __future__ import annotations
 
 import codecs
 import re
+import warnings
+from functools import lru_cache
 
 #: How many valid non-ASCII characters the body must hold per invalid UTF-8 sequence for
 #: it to read as UTF-8. One broken byte in a long page (a truncated tail, a stray Latin-1
@@ -72,14 +74,49 @@ _META_CHARSET = re.compile(
 _UNRELIABLE_DECLARED = {"iso8859-1"}
 
 
-def _canonical(name: str | None) -> str | None:
-    """``codecs``' own name for an encoding label, or ``None`` when it knows none."""
+#: Printable ASCII, then the escape and shift sequences a codec might reinterpret (a
+#: backslash escape, a UTF-7 shift): an ASCII-compatible text codec leaves all of it alone.
+_ASCII_PROBE = bytes(range(0x20, 0x7F)) + b" \\x3c \\u003c \\N{LESS-THAN SIGN} +ADw- \\"
+_ALL_BYTES = bytes(range(256))
+
+
+@lru_cache(maxsize=256)
+def _usable(name: str) -> bool:
+    """Can a page safely be decoded with ``name``? Probed once per codec, then cached.
+
+    Two security reads of this module (2026-11-14) found labels ``codecs.lookup`` accepts
+    that must never decode a web page: ``idna`` and ``undefined`` make
+    ``bytes.decode(..., errors="replace")`` RAISE (a ``UnicodeError`` that escaped the
+    fetcher as a crash), and ``utf-7`` / ``unicode_escape`` turn plain ASCII such as
+    ``+ADw-script+AD4-`` into ``<script>`` and can emit lone surrogates that later fail to
+    store. The rule that excludes all of them, and the binary codecs, without a list to
+    keep current: the codec must decode every byte with ``errors="replace"`` without
+    raising, to a ``str`` with no surrogate, and must leave printable ASCII unchanged.
+    """
+    try:
+        with warnings.catch_warnings():  # unicode_escape warns on an unknown escape
+            warnings.simplefilter("ignore")
+            if _ASCII_PROBE.decode(name, errors="replace") != _ASCII_PROBE.decode("ascii"):
+                return False
+            decoded = _ALL_BYTES.decode(name, errors="replace")
+    except Exception:  # noqa: BLE001 - any failure to decode means "not usable"
+        return False
+    return isinstance(decoded, str) and not any(0xD800 <= ord(ch) <= 0xDFFF for ch in decoded)
+
+
+def _canonical(name: str | None, *, allow_wide: bool = False) -> str | None:
+    """``codecs``' own name for an encoding label, or ``None`` when it knows none or the
+    codec is not safe for a web page (see :func:`_usable`). UTF-16/32 are not ASCII-
+    compatible, so they pass only where the caller allows them (a declared header)."""
     if not name:
         return None
     try:
-        return codecs.lookup(name.strip().strip("\"'")).name
+        canonical = codecs.lookup(name.strip().strip("\"'")).name
     except (LookupError, TypeError, ValueError):
         return None
+    if _is_wide(canonical):
+        return canonical if allow_wide else None
+    return canonical if _usable(canonical) else None
 
 
 def _is_wide(name: str) -> bool:
@@ -115,7 +152,8 @@ def meta_charset(raw: bytes) -> str | None:
     m = _META_CHARSET.search(raw[:META_PRESCAN_BYTES])
     if not m:
         return None
-    name = _canonical(m.group(1).decode("ascii", errors="ignore"))
+    label = m.group(1).decode("ascii", errors="ignore")
+    name = _canonical(label, allow_wide=True)
     # A page cannot declare a wide encoding about itself in ASCII-compatible bytes; the
     # HTML standard reads such a declaration as UTF-8.
     if name and _is_wide(name):
@@ -128,7 +166,7 @@ def _sniffed(raw: bytes) -> str | None:
         from charset_normalizer import from_bytes
 
         best = from_bytes(raw).best()
-        return _canonical(best.encoding) if best else None
+        return _canonical(best.encoding, allow_wide=True) if best else None
     except Exception:  # noqa: BLE001 - detection is best-effort
         return None
 
@@ -138,7 +176,7 @@ def choose_encoding(raw: bytes, declared: str | None) -> str:
     for bom, name in _BOMS:
         if raw.startswith(bom):
             return name
-    header = _canonical(declared)
+    header = _canonical(declared, allow_wide=True)
     if header and _is_wide(header):
         return header
     if looks_like_utf8(raw):

@@ -126,3 +126,33 @@ def test_the_fetcher_decodes_a_latin1_defaulted_utf8_page_as_utf8():
 
 def test_the_fetcher_still_reads_a_declared_single_byte_page():
     assert "Правительство" in _read(RU_CP1251, "windows-1251")
+
+
+# --------------------------------------------------------------------------- #
+# the security reads (2026-11-14): labels a page must never be able to pick
+# --------------------------------------------------------------------------- #
+DANGEROUS_LABELS = ("idna", "undefined", "utf-7", "unicode_escape", "raw_unicode_escape",
+                    "punycode", "base64", "hex", "zlib", "rot13", "uu", "quopri")
+
+
+def test_a_meta_tag_cannot_pick_a_codec_that_raises_or_rewrites_ascii():
+    for label in DANGEROUS_LABELS:
+        page = f'<meta charset="{label}"><p>caf\xe9 +ADw-script+AD4- \\x3c</p>'.encode("latin-1")
+        assert meta_charset(page) is None, label
+        enc = choose_encoding(page, None)
+        out = page.decode(enc, errors="replace")
+        assert "<script>" not in out, (label, enc)
+        out.encode("utf-8")  # no lone surrogate
+
+
+def test_a_header_cannot_pick_one_either():
+    page = "<p>caf\xe9 +ADw-script+AD4-</p>".encode("latin-1")
+    for label in DANGEROUS_LABELS:
+        enc = choose_encoding(page, label)
+        assert "<script>" not in page.decode(enc, errors="replace"), (label, enc)
+
+
+def test_the_fetcher_survives_a_hostile_meta_or_header_label():
+    page = b'<meta charset="idna"><p>caf\xe9</p>'
+    for header in (None, "idna", "undefined", "utf-7"):
+        assert "caf" in _read(page, header)
