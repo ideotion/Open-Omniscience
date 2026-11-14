@@ -18,14 +18,18 @@ only guarantees how those bytes arrive:
 * a new file is written to a private file first (``O_EXCL``, 0600, flushed), then linked into place
   with ``os.link``, so no reader sees it half written and two creators end with ONE file;
 * a file is replaced in place only by ``os.replace`` of a finished private copy, only after the
-  caller's own check passed on the copy, and only if the file is still exactly the one that was
+  caller's own check passed on the sealed bytes (outside the lock: a key derivation) and the copy
+  read back byte for byte as those bytes, and only if the file is still exactly the one that was
   read (device, inode, size, modification time).
 * the key file's own name changes (the link of a creation, a replace and the alias removal after
   it, the restore taking back a key it placed) are flushed to their folder, so a power cut cannot
   bring back the NAME of what was replaced, and are made under :data:`KEY_FILES_LOCK`, which the
   erase holds too; the bytes a replace frees are overwritten where that can be done (not a promise
-  on an SSD or a copy-on-write filesystem). Not flushed and not under the lock: the creation and
-  removal of the empty ``keys/.pending`` folder, and the restore's creation of ``keys/`` itself.
+  on an SSD or a copy-on-write filesystem). The creation and removal of the empty
+  ``keys/.pending`` folder are under the lock too (a removal outside it could break another caller's
+  flush of it); the folder's own creation and removal are not flushed (an empty ``.pending`` coming back
+  after a power cut holds no name). Not under the lock: the creation of ``keys/`` itself (by the restore, and by a key load in
+  ``src/custody/signing.py`` and ``src/reporting/evidence.py``, which after an erase can only make a NEW key).
 
 Nothing here reads or logs a passphrase or key bytes.
 """
@@ -274,7 +278,7 @@ def replace_in_place(
     The caller decides what the new bytes are (the SAME key in its sealed form: a new key would
     orphan everything already signed, whose public half is in shipped evidence) and how to tell
     that they still hold that key (``check`` raises if not). The new bytes go to a private file of
-    this caller's, are read back and checked BEFORE they replace anything, so a failure at any step
+    this caller's, are checked (on the sealed bytes) and read back byte for byte BEFORE they replace anything, so a failure at any step
     leaves the original file exactly as it was. ``seen`` is the state of the file when the caller
     read the key from it (``fstat`` of the open file; ``None`` takes it now); the replacement lands
     only if the file is still exactly that, so a key erased, restored over or sealed by another
@@ -292,7 +296,11 @@ def replace_in_place(
         # A link is refused before the copy is paid for (``make`` derives a key from the passphrase), and
         # again below, since the name can change while the copy is made.
         _refuse_a_linked_name(path, os.lstat(path))
-        sealed = make()  # the slow part (a key derivation), and the only part outside the lock
+        sealed = make()  # a key derivation: slow, so outside the lock
+        # The check opens the sealed bytes, a second key derivation, so it runs here too, on the bytes ``make`` returned. Under the
+        # lock below, the private copy is only compared with them, byte for byte: an erase never waits on a key derivation, only on
+        # writes and flushes (the hardening lane's review, row 7).
+        check(sealed)
         # From the private copy to the folder flush, ONE step for every key-file change in this process, the
         # erase's among them (KEY_FILES_LOCK). An erase that ran while ``make`` did has removed the file, so the
         # ``lstat`` below fails and nothing is written at all: not the replacement, and not a private copy of the
@@ -306,7 +314,8 @@ def replace_in_place(
                 raise ReplaceRefused("the key file changed while the replacement was made")
             _refuse_a_linked_name(path, old)
             tmp = write_private(path, "rewrap", sealed)
-            check(tmp.read_bytes())
+            if tmp.read_bytes() != sealed:
+                raise OSError("the private copy of the wrapped key does not read back as written")
             replaced = _open_replaced(path, old)
             try:
                 os.replace(tmp, path)
@@ -338,7 +347,10 @@ def replace_in_place(
                 tmp.unlink(missing_ok=True)
         return False
     finally:
-        drop_pending(path)
+        # Under the lock (the review's row 6): outside it, this could remove ``keys/.pending`` between another caller's rename out of
+        # it and that caller's flush of it, so the flush failed and the replaced plaintext key's bytes were never overwritten.
+        with KEY_FILES_LOCK:
+            drop_pending(path)
 
 
 def create_new(path: Path, data: bytes) -> None:
@@ -373,6 +385,9 @@ def create_new(path: Path, data: bytes) -> None:
         finally:
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
+            # The private name was a second name for the key's bytes: flushed away, so a power cut cannot bring that alias back
+            # (the review's row 8). Best effort, like every flush here; the next wrap's alias sweep is the net beneath it.
+            flush_key_folder(path.parent / PENDING, path.name)
             drop_pending(path)
 
 
