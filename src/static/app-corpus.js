@@ -2111,8 +2111,9 @@
         // count as an SVG <title> (no words, so nothing to translate).
         const dt = (v) => {
           const sv = String(v == null ? "" : v);
-          const short = typeof ooIsoDate === "function" ? ooIsoDate(sv) : sv.slice(0, 10);
-          const same = real.length > 1 && String(real[0].date || "").slice(0, 10) === String(real[real.length - 1].date || "").slice(0, 10);
+          const day = (x) => String(x == null ? "" : x).split("T")[0];
+          const short = typeof ooIsoDate === "function" ? ooIsoDate(sv) : day(sv);
+          const same = real.length > 1 && day(real[0].date) === day(real[real.length - 1].date);
           return same && sv.includes("T") && typeof ooIsoDateTime === "function" ? ooIsoDateTime(sv) : short;
         };
         const tip = (pt) => `<title>${esc((pt.date != null ? dt(pt.date) + " · " : "") + fmtNum(pt.count))}</title>`;
