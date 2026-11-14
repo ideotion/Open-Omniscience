@@ -64,3 +64,50 @@ def test_a_request_through_its_own_loopback_proxy_still_works(loopback_server: i
     result = fetcher.fetch("http://rebind.test/page")
     assert "INTERNAL SERVICE SECRET" in str(getattr(result, "html", result))
     assert _REQUEST_LINES and _REQUEST_LINES[0].startswith("http://rebind.test")
+
+
+@pytest.fixture
+def idn_rebinding(rebinding_dns):  # noqa: F811 - wraps the resolver the rebinding fixture installed
+    """``bücher.test`` (IDNA ``xn--bcher-kva.test``) answers public once, then loopback."""
+    import socket
+
+    import src.ingest.airplane as ap
+    from tests.test_ssrf_connect_guard import _PUBLIC
+
+    inner = ap._orig_getaddrinfo
+    calls: list[str] = []
+
+    def _resolver(host, port, *args, **kwargs):  # type: ignore[no-untyped-def]
+        name = host.decode() if isinstance(host, bytes) else host
+        if name in ("bücher.test", "xn--bcher-kva.test"):
+            calls.append(name)
+            answer = _PUBLIC if len(calls) == 1 else "127.0.0.1"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (answer, port or 0))]
+        return inner(host, port, *args, **kwargs)
+
+    ap._orig_getaddrinfo = _resolver  # type: ignore[assignment]
+    try:
+        yield calls
+    finally:
+        ap._orig_getaddrinfo = inner  # type: ignore[assignment]
+
+
+@pytest.mark.parametrize(
+    "setup",
+    ["env-no-proxy", "per-host-key"],
+)
+def test_an_idn_host_selects_its_proxy_as_the_adapter_does(loopback_server: int, clean_proxy_env, idn_rebinding, setup: str):  # noqa: F811
+    """Before: the scope selected on the RAW url (``bücher.test``) while requests selects on the IDNA-encoded one, so a Punycode
+    ``NO_PROXY`` entry (or a Unicode per-host key) made our side expect the hostname proxy and stand down while requests went direct:
+    the rebinding name's loopback answer was fetched (security read C on PR #2001)."""
+    if setup == "env-no-proxy":
+        clean_proxy_env.setenv("HTTP_PROXY", "http://proxy.invalid:3128")
+        clean_proxy_env.setenv("NO_PROXY", "xn--bcher-kva.test")
+        fetcher = _fetcher()
+    else:
+        fetcher = _fetcher()
+        fetcher.session.proxies = {"http://bücher.test": "http://proxy.invalid:3128"}  # a key never matches the encoded host
+    with pytest.raises(BlockedTarget) as excinfo:
+        fetcher.fetch(f"http://bücher.test:{loopback_server}/")
+    assert "127.0.0.1" in str(excinfo.value)
+    assert _REQUEST_LINES == []

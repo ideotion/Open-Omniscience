@@ -867,6 +867,20 @@ _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 _SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
 
 
+def _prepared_url(url: str) -> str | None:
+    """``url`` as the adapter will see it: ``PreparedRequest.prepare_url`` IDNA-encodes a non-ASCII host, and both the
+    adapter's ``select_proxy`` and the session's ``NO_PROXY`` merge read the PREPARED url. Selecting on the raw one let a
+    Unicode host (``bücher.test``) miss a Punycode ``NO_PROXY`` entry or per-host key, so our side stood the connect check
+    down for a hostname proxy while requests went direct (PR #2001 security read). ``None`` when it cannot be prepared:
+    requests refuses that URL before any socket opens."""
+    try:
+        prepared = requests.models.PreparedRequest()
+        prepared.prepare_url(url, None)
+    except Exception:  # noqa: BLE001 - an unpreparable URL is refused by requests itself, before connecting
+        return None
+    return prepared.url
+
+
 def _proxy_used_by(url: str, proxies: dict[str, str]) -> dict[str, str] | None:
     """The one proxy ``requests`` sends a request for ``url`` through (``requests.utils.select_proxy``, the adapter's own choice), as a
     mapping for ``connect_scope``, or ``None`` when it goes direct. Never raises: an unreadable URL or mapping allows no endpoint."""
@@ -2022,10 +2036,17 @@ class EthicalFetcher:
                     # The ONE proxy this request goes through, in a scope of its own (follow-up to PR #1979): the scope above holds
                     # every proxy the chain could use, so a proxy named by a hostname for ANOTHER scheme stood the check down for a
                     # request that went direct, reopening the rebinding window this guard closes. ``select_proxy`` on this hop's
-                    # own merged mapping is what the adapter itself reads, so the two cannot disagree.
+                    # own merged mapping is what the adapter itself reads, and both the environment merge (``NO_PROXY``) and the
+                    # selection read the PREPARED url, as requests does: on the raw url an IDN host selected differently from the
+                    # IDNA-encoded one the adapter sees. Unpreparable: no endpoint allowed (requests refuses it before connecting).
+                    selection_url = _prepared_url(current)
                     with connect_scope(
                         enabled=self._real_session,
-                        proxies=_proxy_used_by(current, self._request_proxy_endpoints(current, proxies)),
+                        proxies=(
+                            _proxy_used_by(selection_url, self._request_proxy_endpoints(selection_url, proxies))
+                            if selection_url is not None
+                            else None
+                        ),
                     ):
                         resp = self.session.get(current, **kwargs)
                     status = resp.status_code
@@ -2256,7 +2277,7 @@ class EthicalFetcher:
         merged: dict[str, str] = dict(getattr(self.session, "proxies", None) or {})
         if getattr(self.session, "trust_env", False):
             try:
-                merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
+                merged.update(requests.utils.get_environ_proxies(url, no_proxy=(explicit or {}).get("no_proxy")))
             except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
                 log_failure(
                     _LOG,
