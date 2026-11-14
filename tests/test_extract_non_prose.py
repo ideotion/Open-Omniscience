@@ -97,3 +97,21 @@ def test_hostile_input_is_linear():
         strip_non_prose(big)
         t_big = time.perf_counter() - t0
         assert t_big < max(0.5, 8 * t_small), (chunk, t_small, t_big)
+
+
+def test_datelines_tags_citations_and_tickers_are_not_code():
+    # Each of these was blanked by the first draft (the Opus read of #1989).
+    for line in ("(AFP)", "(dpa)", "[속보]", '"EU"', "§ 3(1)(a); Art. 5(2)", "$5 (€4.6)",
+                 "$(NYSE: IBM)", "W(L) D(L) — Q(H)", "[Fe(CN)6]4−", "1) 2) 3)",
+                 'He climbed out of the window. "(We) [ran]," she said; "go".',
+                 'Paris => Lyon (TGV); "fast"'):
+        text = f"Intro paragraph here.\n{line}\nClosing paragraph here.\n"
+        assert _strip_code_lines(text) == text, line
+    for code in ("});", "}else{", "$('#a').attr('x');", "var a = 1;"):
+        assert _strip_code_lines(f"Prose.\n{code}\n").strip() == "Prose.", code
+
+
+def test_paths_and_a_single_macro_name_are_not_latex():
+    for text in ("C:\\endpoint\\right\\Users", "C:\\data\\text\\notes.txt and \\nWorld headline",
+                 "The \\rightarrow and \\ref here"):
+        assert _strip_latex(text) == text, text

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "digest": "05f05580a19bb240e39efa4c09873b7fd4f3d086bdd533ebf3756194c5ec89b1",
+  "digest": "6902cd86ddcba7cecaa03c58fbf202c5c44b99b88fd2bd6b074e42e028c70529",
   "log": [
     {
       "version": 1,
@@ -46,7 +46,7 @@
     },
     {
       "version": 2,
-      "digest": "05f05580a19bb240e39efa4c09873b7fd4f3d086bdd533ebf3756194c5ec89b1",
+      "digest": "6902cd86ddcba7cecaa03c58fbf202c5c44b99b88fd2bd6b074e42e028c70529",
       "kind": "bump",
       "note": "R699 causes 1, 3 and 4: an asserted language its text's own script refutes is cleared and re-deduced (keywords move to the right language and stoplist), and script-code lines and LaTeX command names are blanked before tokenising (no more addclass/mathcal keywords)"
     }

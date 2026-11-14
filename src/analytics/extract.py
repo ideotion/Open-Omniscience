@@ -307,7 +307,8 @@ def _strip_urls(text: str) -> str:
 #: A line carries script code when it has one of these idioms (jQuery/DOM calls,
 #: function literals, declarations) ...
 _CODE_IDIOM_RE = re.compile(
-    r"\$\(|\bfunction\s*\(|=>|\bdocument\.|\bwindow\.|\bvar\s+\w+\s*=|\b(?:let|const)\s+\w+\s*="
+    r"\$\(\s*(?:['\"]|this\b|document\b|window\b)|\bfunction\s*\(|\)\s*=>|=>\s*\{"
+    r"|\b(?:document|window)\.[A-Za-z_]|\bvar\s+\w+\s*=|\b(?:let|const)\s+\w+\s*="
     r"|\.(?:addClass|removeClass|toggleClass|attr|css|on|click|each|ready|append|html|val|find"
     r"|getElementById|getElementsByClassName|querySelector|querySelectorAll|addEventListener)\s*\("
 )
@@ -315,8 +316,10 @@ _CODE_IDIOM_RE = re.compile(
 _CODE_PUNCT = frozenset(";{}()=[]$<>'\"")
 #: The share of a line's non-space characters that must be code punctuation.
 CODE_LINE_MIN_PUNCT_SHARE = 0.12
-#: A line with no idiom at all still reads as code above this share (`});`, `}else{`).
-CODE_LINE_PURE_PUNCT_SHARE = 0.35
+#: A line with no idiom at all still reads as code above this share (`});`, `}else{`), but
+#: only with a curly brace in it: brackets, quotes and semicolons alone are also how a
+#: dateline (`(AFP)`), a tag (`[속보]`) or a legal citation (`§ 3(1)(a); Art. 5(2)`) looks.
+CODE_LINE_PURE_PUNCT_SHARE = 0.30
 
 
 def _is_code_line(line: str) -> bool:
@@ -325,7 +328,7 @@ def _is_code_line(line: str) -> bool:
         return False
     punct = sum(1 for ch in stripped if ch in _CODE_PUNCT)
     share = punct / len(stripped)
-    if share >= CODE_LINE_PURE_PUNCT_SHARE and len(stripped) >= 3:
+    if share >= CODE_LINE_PURE_PUNCT_SHARE and ("{" in stripped or "}" in stripped):
         return True
     return share >= CODE_LINE_MIN_PUNCT_SHARE and _CODE_IDIOM_RE.search(line) is not None
 
@@ -344,14 +347,19 @@ def _strip_code_lines(text: str) -> str:
     return "".join(lines) if changed else text
 
 
-#: Macros that only occur in LaTeX. One of them in a text is the evidence that its
+#: Macros that only occur in LaTeX. Two of them in a text are the evidence that its
 #: backslash commands are LaTeX and not, say, an escaped newline (`\nWorld` in a body
 #: that kept JSON escapes) or a Windows path, which must keep their words.
 _LATEX_EVIDENCE_RE = re.compile(
     r"\\(?:math[a-z]{2,6}|frac|dfrac|sqrt|begin|end|left|right|sum|prod|int|oint|lim|infty"
     r"|partial|nabla|alpha|beta|gamma|delta|epsilon|varepsilon|lambda|sigma|theta|omega|cdot"
-    r"|times|leq|geq|neq|approx|operatorname|text|textbf|textit|emph|label|ref|cite)(?![A-Za-z])"
+    r"|times|leq|geq|neq|approx|operatorname|text|textbf|textit|emph|label|ref|cite)"
+    # followed the way LaTeX follows a macro -- never by another backslash or a letter, so a
+    # path segment (C:\data\text\notes) is not evidence
+    r"(?=[\s{}_^\[(0-9$]|$)"
 )
+#: How many macros a text must carry before its backslash commands are treated as LaTeX.
+LATEX_MIN_EVIDENCE = 2
 #: An environment opener/closer: its name (`equation`, `align`) is not a word of the text.
 _LATEX_ENV_RE = re.compile(r"\\(?:begin|end)\{[A-Za-z*]{1,40}\}")
 #: Any other command name. Its braced arguments stay (``\text{mass}`` keeps ``mass``).
@@ -364,7 +372,12 @@ def _blank(match: re.Match) -> str:
 
 def _strip_latex(text: str) -> str:
     """Blank LaTeX command and environment names when the text carries LaTeX (cause 4)."""
-    if "\\" not in text or _LATEX_EVIDENCE_RE.search(text) is None:
+    if "\\" not in text:
+        return text
+    for evidence, _m in enumerate(_LATEX_EVIDENCE_RE.finditer(text), start=1):
+        if evidence >= LATEX_MIN_EVIDENCE:
+            break
+    else:
         return text
     return _LATEX_COMMAND_RE.sub(_blank, _LATEX_ENV_RE.sub(_blank, text))
 
