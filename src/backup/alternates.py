@@ -51,7 +51,7 @@ class AlternateError(Exception):
 def _columns(session: Any, table: str) -> set[str]:
     if table not in PRODUCER_COLUMNS:
         raise AlternateError(f"unknown table {table!r}", 400)
-    return {r[1] for r in session.execute(text(f"PRAGMA table_info({table})"))}  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS, checked above
+    return {r[1] for r in session.execute(text(f"PRAGMA table_info({table})"))}  # noqa: S608  table is a key of PRODUCER_COLUMNS, checked above
 
 
 def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
@@ -99,7 +99,7 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
     stamp = producer_extra_columns(table).get("produced_at")
     order = (f"COALESCE(t.{stamp}, '') DESC, " if stamp and stamp in _columns(session, table) else "") + "t.rowid DESC"
     rows = session.execute(
-        text(f"SELECT t.rowid, {'d.jurisdiction, d.id' if juris else 'NULL, NULL'} FROM {table} t{joins} WHERE " + " AND ".join(where) + f" ORDER BY {order}" + ("" if juris else " LIMIT 1")),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS or PRODUCER_COLUMNS; the identity values are bound
+        text(f"SELECT t.rowid, {'d.jurisdiction, d.id' if juris else 'NULL, NULL'} FROM {table} t{joins} WHERE " + " AND ".join(where) + f" ORDER BY {order}" + ("" if juris else " LIMIT 1")),  # noqa: S608  # nosec B608 # table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS or PRODUCER_COLUMNS; the identity values are bound
         params,
     ).fetchall()
     if juris:
@@ -124,7 +124,7 @@ def _local_values(session: Any, table: str, row_id: int | None, names: list[str]
     if not cols:
         return None
     row = session.execute(
-        text(f"SELECT {', '.join(cols)} FROM {table} WHERE rowid = :id"),  # noqa: S608  # nosec B608 - table is validated and the column names are intersected with the table's own columns above
+        text(f"SELECT {', '.join(cols)} FROM {table} WHERE rowid = :id"),  # noqa: S608  # nosec B608 # table is validated and the column names are intersected with the table's own columns above
         {"id": row_id},
     ).fetchone()
     return None if row is None else dict(zip(cols, row, strict=True))
@@ -265,7 +265,7 @@ def discard_batch(session: Any, batch_id: int) -> dict:
 def _notnull(session: Any, table: str) -> set[str]:
     if table not in PRODUCER_COLUMNS:
         raise AlternateError(f"unknown table {table!r}", 400)
-    return {r[1] for r in session.execute(text(f"PRAGMA table_info({table})")) if r[3]}  # noqa: S608  # nosec B608 - table is a key of PRODUCER_COLUMNS, checked above
+    return {r[1] for r in session.execute(text(f"PRAGMA table_info({table})")) if r[3]}  # noqa: S608  table is a key of PRODUCER_COLUMNS, checked above
 
 
 #: Rows a reader ranks TOGETHER with a given row, beyond the scope's own parent: the readers
@@ -290,14 +290,14 @@ def _refuse_if_a_newer_sibling_would_take_over(
     if not group or stamp_col is None or stamp_col not in sets or sets[stamp_col] is None:
         return
     cur = session.execute(
-        text(f"SELECT {stamp_col} FROM {table} WHERE rowid = :id"), {"id": local_id}  # noqa: S608  # nosec B608 - table is a validated key, stamp_col a module literal
+        text(f"SELECT {stamp_col} FROM {table} WHERE rowid = :id"), {"id": local_id}  # noqa: S608  # nosec B608 # table is a validated key, stamp_col a module literal
     ).scalar()
     if cur is None or str(sets[stamp_col]) >= str(cur):
         return
-    same = " AND ".join(f"{c} IS (SELECT {c} FROM {table} WHERE rowid = :id)" for c in group)  # nosec B608 - module literals
+    same = " AND ".join(f"{c} IS (SELECT {c} FROM {table} WHERE rowid = :id)" for c in group)  # nosec B608 # module literals
     n = session.execute(
         text(
-            f"SELECT COUNT(*) FROM {table} WHERE rowid != :id AND {same}"  # noqa: S608  # nosec B608 - table and columns are module literals; values are bound
+            f"SELECT COUNT(*) FROM {table} WHERE rowid != :id AND {same}"  # noqa: S608  # nosec B608 # table and columns are module literals; values are bound
             f" AND {stamp_col} > :new AND {stamp_col} <= :cur"
         ),
         {"id": local_id, "new": sets[stamp_col], "cur": cur},
@@ -354,7 +354,7 @@ def swap(session: Any, alt_id: int) -> dict:
     # what keeps a later restore of the same backup from recording this difference again.
     before_json = session.execute(
         text(
-            "SELECT json_object(" + ", ".join(f"'{c}', {c}" for c in names)  # noqa: S608  # nosec B608 - every name is a shown column of this table's own spec, intersected with its real columns
+            "SELECT json_object(" + ", ".join(f"'{c}', {c}" for c in names)  # noqa: S608  every name is a shown column of this table's own spec, intersected with its real columns
             + f") FROM {table} WHERE rowid = :id"
         ),
         {"id": local_id},
@@ -378,7 +378,7 @@ def swap(session: Any, alt_id: int) -> dict:
     _refuse_if_a_newer_sibling_would_take_over(session, table, local_id, stamp_col, sets)
     key_col = KEYED_TABLES.get(table)
     key_val = (
-        session.execute(text(f"SELECT {key_col} FROM {table} WHERE rowid = :id"), {"id": local_id}).scalar()  # noqa: S608  # nosec B608 - table is a validated key of ALTERNATE_SPECS and key_col a module literal from KEYED_TABLES
+        session.execute(text(f"SELECT {key_col} FROM {table} WHERE rowid = :id"), {"id": local_id}).scalar()  # noqa: S608  # nosec B608 # table is a validated key of ALTERNATE_SPECS and key_col a module literal from KEYED_TABLES
         if key_col else None
     )
     try:
@@ -389,7 +389,7 @@ def swap(session: Any, alt_id: int) -> dict:
     try:
         session.execute(
             text(
-                f"UPDATE {table} SET " + ", ".join(f"{c} = :v{i}" for i, c in enumerate(sets))  # noqa: S608  # nosec B608 - table is a validated key of ALTERNATE_SPECS; every column is a name from that table's own spec or PRODUCER_COLUMNS, intersected with its real columns; values are bound
+                f"UPDATE {table} SET " + ", ".join(f"{c} = :v{i}" for i, c in enumerate(sets))  # noqa: S608  # nosec B608 # table is a validated key of ALTERNATE_SPECS; every column is a name from that table's own spec or PRODUCER_COLUMNS, intersected with its real columns; values are bound
                 + " WHERE rowid = :id"
             ),
             {**{f"v{i}": v for i, v in enumerate(sets.values())}, "id": local_id},

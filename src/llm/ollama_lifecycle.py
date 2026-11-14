@@ -180,7 +180,7 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
             # signal -- a server the user launched should not die because they
             # later stopped the app.
             popen_kwargs["start_new_session"] = True
-        _proc = subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 - fixed argv, absolute path from shutil.which, no shell
+        _proc = subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 # fixed argv, absolute path from shutil.which, no shell
     except OSError as exc:
         log_failure(_LOG, "could not launch 'ollama serve'", exc, level=logging.WARNING)
         # A fixed phrase, not the exception's words: it reaches the HTTP 409 detail; the log keeps the detail.

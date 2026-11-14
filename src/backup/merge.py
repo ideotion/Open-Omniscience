@@ -954,7 +954,7 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
             for table in _ENCRYPTED_REP_BYTES_PER_ROW:
                 try:
                     out[table] = int(
-                        con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 - fixed table names from this module's own map
+                        con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 # fixed table names from this module's own map
                     )
                 except Exception as exc:  # noqa: BLE001 - only the one message that names THIS table is a zero
                     # the keys of _ENCRYPTED_REP_BYTES_PER_ROW are lowercase, so the table name needs
@@ -1084,7 +1084,7 @@ def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | No
         for table in _ENCRYPTED_REP_BYTES_PER_ROW:
             # a table the artifact does not carry is a measured zero, as in _incoming_group_rows
             out[table] = (
-                int(con.execute(f"SELECT COUNT(*) FROM {_ident(table)}").fetchone()[0])  # noqa: S608  # nosec B608 - fixed table names from this module's own map
+                int(con.execute(f"SELECT COUNT(*) FROM {_ident(table)}").fetchone()[0])  # noqa: S608  # nosec B608 # fixed table names from this module's own map
                 if table in present
                 else 0
             )
@@ -1485,13 +1485,13 @@ def _materialise_rep(con: sqlite3.Connection, name: str, group_sql: str) -> int:
     """
     if not _SAFE_KEY_NAME.fullmatch(name):
         raise ValueError(f"unsafe temp table name {name!r}")
-    con.execute(f"DROP TABLE IF EXISTS temp.{name}")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+    con.execute(f"DROP TABLE IF EXISTS temp.{name}")  # noqa: S608  name is regex-validated above and comes from a module literal
     if _scratch_attached(con):
         return _materialise_rep_in_scratch(con, name, group_sql)
-    con.execute(f"CREATE TEMP TABLE {name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
-    cur = con.execute(f"INSERT INTO temp.{name} (rep_id) {group_sql}")  # noqa: S608  # nosec B608 - name is regex-validated above; group_sql is a module literal, never input
+    con.execute(f"CREATE TEMP TABLE {name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  name is regex-validated above and comes from a module literal
+    cur = con.execute(f"INSERT INTO temp.{name} (rep_id) {group_sql}")  # noqa: S608  name is regex-validated above; group_sql is a module literal, never input
     n = cur.rowcount
-    return int(n) if n is not None and n >= 0 else _count(con, f"SELECT COUNT(*) FROM temp.{name}")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+    return int(n) if n is not None and n >= 0 else _count(con, f"SELECT COUNT(*) FROM temp.{name}")  # noqa: S608  # nosec B608 # name is regex-validated above and comes from a module literal
 
 
 #: THE LOW-MEMORY PATH FOR AN ENCRYPTED MERGE (field 2026-11-08, two Qubes VMs of about 3 GB).
@@ -1578,20 +1578,20 @@ def _materialise_rep_in_scratch(con: sqlite3.Connection, name: str, group_sql: s
     sel = ", ".join(f"({k}) IS NULL, ifnull(({k}), 0)" for k in keys)
     # every statement names the oo_scratch schema literally (tests/test_merge_writes_name_main.py
     # reads them): nothing here may fall through to main or to the attached backup
-    con.execute(f"DROP TABLE IF EXISTS oo_scratch.g_{name}")  # noqa: S608  # nosec B608 - name regex-validated by the caller
-    con.execute(f"DROP TABLE IF EXISTS oo_scratch.{name}")  # noqa: S608  # nosec B608 - as above
+    con.execute(f"DROP TABLE IF EXISTS oo_scratch.g_{name}")  # noqa: S608  name regex-validated by the caller
+    con.execute(f"DROP TABLE IF EXISTS oo_scratch.{name}")  # noqa: S608  as above
     con.execute(
-        f"CREATE TABLE oo_scratch.g_{name} ({cols}, rep_id INTEGER NOT NULL,"  # noqa: S608  # nosec B608 - as above
+        f"CREATE TABLE oo_scratch.g_{name} ({cols}, rep_id INTEGER NOT NULL,"  # noqa: S608  as above
         f" PRIMARY KEY ({cols})) WITHOUT ROWID"
     )
     con.execute(
-        f"INSERT INTO oo_scratch.g_{name} SELECT {sel}, id FROM inc.{_ident(src)} WHERE true"  # noqa: S608  # nosec B608 - src and keys come from the module-literal group_sql matched above, never input
+        f"INSERT INTO oo_scratch.g_{name} SELECT {sel}, id FROM inc.{_ident(src)} WHERE true"  # noqa: S608  # nosec B608 # src and keys come from the module-literal group_sql matched above, never input
         " ON CONFLICT DO UPDATE SET rep_id = min(rep_id, excluded.rep_id)"
     )
-    con.execute(f"CREATE TABLE oo_scratch.{name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  # nosec B608 - as above
-    con.execute(f"INSERT INTO oo_scratch.{name} (rep_id) SELECT rep_id FROM oo_scratch.g_{name}")  # noqa: S608  # nosec B608 - as above
-    con.execute(f"DROP TABLE oo_scratch.g_{name}")  # noqa: S608  # nosec B608 - as above
-    return _count(con, f"SELECT COUNT(*) FROM oo_scratch.{name}")  # noqa: S608  # nosec B608 - as above
+    con.execute(f"CREATE TABLE oo_scratch.{name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  # nosec B608 # as above
+    con.execute(f"INSERT INTO oo_scratch.{name} (rep_id) SELECT rep_id FROM oo_scratch.g_{name}")  # noqa: S608  # nosec B608 # as above
+    con.execute(f"DROP TABLE oo_scratch.g_{name}")  # noqa: S608  # nosec B608 # as above
+    return _count(con, f"SELECT COUNT(*) FROM oo_scratch.{name}")  # noqa: S608  # nosec B608 # as above
 
 
 # Headroom on top of the groupings' own bytes: the file's header, page rounding and the per-page
@@ -1680,7 +1680,7 @@ def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int, key: str
     is, and the result is clamped, so a badly non-uniform corpus makes the window
     a poor fit rather than making it unsafe.
     """
-    cols = [r[1] for r in _q(con, f'PRAGMA inc.table_info("{src}")')]  # noqa: S608  # nosec B608 - table name comes from the app's OWN fixed schema maps (design doc D3), never input
+    cols = [r[1] for r in _q(con, f'PRAGMA inc.table_info("{src}")')]  # noqa: S608  table name comes from the app's OWN fixed schema maps (design doc D3), never input
     if not cols:
         return 0.0
     # CAST to BLOB so LENGTH counts BYTES: on TEXT it would count characters, and
@@ -1694,7 +1694,7 @@ def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int, key: str
         start = lo + int(span * frac)
         row = _q(
             con,
-            f'SELECT SUM(n), COUNT(*) FROM (SELECT {expr} AS n FROM inc."{src}"'  # noqa: S608  # nosec B608 - table/column names come from the incoming schema, allowlist-validated upstream and quoted here; the sampled values are never interpolated
+            f'SELECT SUM(n), COUNT(*) FROM (SELECT {expr} AS n FROM inc."{src}"'  # noqa: S608  # nosec B608 # table/column names come from the incoming schema, allowlist-validated upstream and quoted here; the sampled values are never interpolated
             f' WHERE "{key}" > ? ORDER BY "{key}" LIMIT {per})',
             (start,),
         )[0]
@@ -1751,7 +1751,7 @@ def _new_row_samples(
         row[0]
         for row in _q(
             con,
-            f"SELECT {expr} FROM merged_rows r"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f"SELECT {expr} FROM merged_rows r"  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f' JOIN main."{table}" m ON m.rowid = r.row_id'
             " WHERE r.batch_id = ? AND r.table_name = ?"
             f" ORDER BY r.row_id LIMIT {_SAMPLE_LIMIT}",
@@ -1787,7 +1787,7 @@ def _insert_window(
     full text back through the SQLCipher codec for a number we already hold.
     The COUNT survives only as a fallback for a driver that declines to report.
     """
-    wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM main."{table}"').fetchone()[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+    wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM main."{table}"').fetchone()[0]  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     con.execute(insert_sql, params)
     keyed = key_column is not None and any(
         c[1] == "row_key" for c in con.execute("PRAGMA main.table_info(merged_rows)")
@@ -1796,19 +1796,19 @@ def _insert_window(
         if not _SAFE_KEY_NAME.fullmatch(key_column or ""):
             raise ValueError(f"unsafe key column {key_column!r}")
         cur = con.execute(
-            'INSERT INTO main.merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            'INSERT INTO main.merged_rows (batch_id, table_name, row_id, row_key) '  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f'SELECT ?, ?, rowid, "{key_column}" FROM main."{table}" WHERE rowid > ?',
             (batch_id, table, wm),
         )
     else:
         cur = con.execute(
-            f'INSERT INTO main.merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f'INSERT INTO main.merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f'SELECT ?, ?, rowid FROM main."{table}" WHERE rowid > ?',
             (batch_id, table, wm),
         )
     n = cur.rowcount
     if n is None or n < 0:  # a driver that does not report -- pay for the scan
-        return _count(con, f'SELECT COUNT(*) FROM main."{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        return _count(con, f'SELECT COUNT(*) FROM main."{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     return int(n)
 
 
@@ -1910,7 +1910,7 @@ def _insert_tracked(
     # MIN as well as MAX: SQLite rowids may be negative if a row was inserted
     # with an explicit id, and starting at 0 would silently skip every such row.
     # The floor is exclusive, hence -1.
-    row = _q(con, f'SELECT COALESCE(MIN("{src_key}"), 1) - 1, COALESCE(MAX("{src_key}"), 0) FROM inc."{src}"')[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input; src_key is regex-validated above
+    row = _q(con, f'SELECT COALESCE(MIN("{src_key}"), 1) - 1, COALESCE(MAX("{src_key}"), 0) FROM inc."{src}"')[0]  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input; src_key is regex-validated above
     lo_min, hi_max = int(row[0]), int(row[1])
     step = _window_ids_for(con, src, lo_min, hi_max, src_key)
     if hi_max - lo_min <= step:
@@ -2714,7 +2714,7 @@ def _unmerged_tables(con: sqlite3.Connection) -> tuple[dict[str, int], list[str]
             continue
         # The identifier is now allowlist-validated AND quoted -- two independent
         # defences against a hostile table name breaking out of the SQL string.
-        n = _count(con, f"SELECT COUNT(*) FROM inc.{_ident(name)}")  # noqa: S608  # nosec B608 - identifier is allowlist-validated (_SAFE_TABLE_NAME) AND quoted (_ident); see audit OO-01
+        n = _count(con, f"SELECT COUNT(*) FROM inc.{_ident(name)}")  # noqa: S608  # nosec B608 # identifier is allowlist-validated (_SAFE_TABLE_NAME) AND quoted (_ident); see audit OO-01
         if n:
             out[name] = n
     return out, rejected
@@ -2815,13 +2815,13 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         tbl = _ident(table)
         if table not in notnull:
             notnull[table] = {
-                c[1] for c in _q(con, f"PRAGMA main.table_info({tbl})") if c[3]  # nosec B608 - tbl is a key of ALTERNATE_SPECS
+                c[1] for c in _q(con, f"PRAGMA main.table_info({tbl})") if c[3]  # tbl is a key of ALTERNATE_SPECS
             }
         where, params = _alternate_local_match(con, spec, identity, notnull[table])
         if where is None:
             r.deferred += 1
             continue
-        rows = _q(con, f"SELECT MIN(rowid) FROM main.{tbl} WHERE {where}", tuple(params))  # nosec B608 - table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
+        rows = _q(con, f"SELECT MIN(rowid) FROM main.{tbl} WHERE {where}", tuple(params))  # nosec B608 # table is a key of ALTERNATE_SPECS, column names are module literals, values are bound
         local_id = rows[0][0] if rows else None
         if local_id is None:
             r.deferred += 1
@@ -2849,7 +2849,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         same = " AND ".join(f"{c} IS ?" for c in spec["differs"])
         if _count(
             con,
-            f"SELECT COUNT(*) FROM main.{tbl} WHERE {where} AND {same}",  # nosec B608 - as above
+            f"SELECT COUNT(*) FROM main.{tbl} WHERE {where} AND {same}",  # nosec B608 # as above
             tuple(params) + tuple(fields.get(c) for c in spec["differs"]),
         ):
             r.duplicate += 1  # this corpus already holds that value: no difference here
@@ -2995,7 +2995,7 @@ def _merge_fetch_history(con, batch_id, results) -> None:
     key = "t.source_id = ms.new"
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.feed_fetch_state i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.feed_fetch_state i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_sources ms ON ms.old = i.source_id"
         f" WHERE EXISTS (SELECT 1 FROM feed_fetch_state t WHERE {key})",
     )
@@ -3005,7 +3005,7 @@ def _merge_fetch_history(con, batch_id, results) -> None:
     # against the PRE-statement table) cannot see.
     r.new = _insert_tracked(
         con, batch_id, "feed_fetch_state",
-        f"INSERT OR IGNORE INTO main.feed_fetch_state (source_id, {cols})"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f"INSERT OR IGNORE INTO main.feed_fetch_state (source_id, {cols})"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" SELECT ms.new, {icols}"
         " FROM inc.feed_fetch_state i JOIN temp.map_sources ms ON ms.old = i.source_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM feed_fetch_state t WHERE {key})",
@@ -3141,7 +3141,7 @@ def _same_source(i: str = "i", m: str = "m") -> str:
     backup carrying two feeds of one domain yields two sources and a domain-keyed backup never duplicates an
     existing feed-keyed one."""
     return (
-        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_inc_feed_key({i}.id)"  # noqa: S608  # nosec B608 - only the caller's literal aliases (i, m) are interpolated
+        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_inc_feed_key({i}.id)"  # noqa: S608  # nosec B608 # only the caller's literal aliases (i, m) are interpolated
         f" OR ((SELECT COUNT(*) FROM inc.sources x WHERE x.domain = {i}.domain) = 1"
         f" AND (SELECT COUNT(*) FROM main.sources y WHERE y.domain = {i}.domain) = 1)))"
     )
@@ -3153,7 +3153,7 @@ def _refuse_feeds_a_legacy_store_cannot_hold(con) -> None:
     whole merge back as a raw integrity error. Refused here instead, in words, with the live store untouched."""
     legacy = False
     for name, unique in _q(con, "SELECT name, \"unique\" FROM pragma_index_list('sources')"):
-        if unique and [c[0] for c in _q(con, f"SELECT name FROM pragma_index_info('{name}')")] == ["domain"]:  # nosec B608 - an index name read from sqlite_master
+        if unique and [c[0] for c in _q(con, f"SELECT name FROM pragma_index_info('{name}')")] == ["domain"]:  # nosec B608 # an index name read from sqlite_master
             legacy = True
     if not legacy:
         return
@@ -3194,7 +3194,7 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult) -> list[int]:
         " (SELECT o.id FROM main.sources o WHERE o.domain = i.domain AND o.status = 'disqualified'"
         "   ORDER BY o.id LIMIT 1)"
         " FROM inc.sources i"
-        f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {same})"  # nosec B608 - constant-only text from the module's own predicate
+        f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {same})"  # nosec B608 # constant-only text from the module's own predicate
         "   AND EXISTS (SELECT 1 FROM main.sources o WHERE o.domain = i.domain)"
         " ORDER BY i.id",
     )
@@ -3434,13 +3434,13 @@ def _merge_sources(con, batch_id, results) -> None:
     _SAME = _same_source()
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.sources i WHERE EXISTS"  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
+        "SELECT COUNT(*) FROM inc.sources i WHERE EXISTS"  # noqa: S608  # nosec B608 # {_SAME} is built by _same_source from this module's literal aliases
         f" (SELECT 1 FROM sources m WHERE {_SAME})",
     )
     # Local wins entirely: differing incoming fields are REPORTED, never applied.
     for row in _q(
         con,
-        "SELECT i.domain, i.name, m.name FROM inc.sources i"  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases and {_SAMPLE_LIMIT} is a module integer, never input
+        "SELECT i.domain, i.name, m.name FROM inc.sources i"  # nosec B608 # {_SAME} is built by _same_source from this module's literal aliases and {_SAMPLE_LIMIT} is a module integer, never input
         f" JOIN sources m ON {_SAME}"
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')"
         f" LIMIT {_SAMPLE_LIMIT}",
@@ -3448,7 +3448,7 @@ def _merge_sources(con, batch_id, results) -> None:
         r.conflicts.append({"domain": row[0], "incoming_name": row[1], "local_name": row[2]})
     r.conflict = _count(
         con,
-        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
+        f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"  # noqa: S608  # nosec B608 # {_SAME} is built by _same_source from this module's literal aliases
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')",
     )
     # The QUALIFICATION STAMP (status / qualified_at / qualification_criteria_version)
@@ -3509,7 +3509,7 @@ def _merge_sources(con, batch_id, results) -> None:
     # counts as older than any local one.
     _judging = "'qualified', 'disqualified'"
     _local_newer_judging = (
-        "EXISTS (SELECT 1 FROM source_qualification_attempts la"  # nosec B608 - constant-only text
+        "EXISTS (SELECT 1 FROM source_qualification_attempts la"  # nosec B608 # constant-only text
         f"       WHERE la.source_id = m.id AND la.verdict IN ({_judging})"
         "          AND la.verdict <> i.status"
         # the local NEWEST judging attempt, ordered exactly as the integrity check orders it
@@ -3533,7 +3533,7 @@ def _merge_sources(con, batch_id, results) -> None:
         " (domain TEXT, verdict TEXT, engine TEXT, stamped_at TEXT, mode TEXT)"
     )
     con.execute(
-        "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
+        "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"  # noqa: S608  # nosec B608 # {_SAME} is built by _same_source from this module's literal aliases
         " SELECT i.domain, COALESCE(sv.status, i.status),"
         " CASE WHEN sv.old IS NULL THEN i.qualification_criteria_version ELSE sv.criteria END,"
         " CASE WHEN sv.old IS NULL THEN i.qualified_at ELSE sv.qualified_at END,"
@@ -3553,29 +3553,29 @@ def _merge_sources(con, batch_id, results) -> None:
         " CASE WHEN m.status = 'qualified' AND i.status = 'qualified'"
         "      THEN 'confirmed' ELSE 'adopted' END"
         f" FROM inc.sources i JOIN sources m ON {_SAME}"
-        f" WHERE {_adopts}"  # nosec B608 - constant-only predicate built above, no input
+        f" WHERE {_adopts}"  # nosec B608 # constant-only predicate built above, no input
     )
     _kept = _count(
         con,
         f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
-        f"   AND (NOT {_local_curated} OR {_local_newer_judging})",  # nosec B608 - constant-only predicate built above, no input
+        f"   AND (NOT {_local_curated} OR {_local_newer_judging})",  # nosec B608 # constant-only predicate built above, no input
     )
     _catalogue_kept = _count(
         con,
         f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE i.status <> 'unqualified' AND NOT {_adopts}"
-        f"   AND {_local_curated} AND NOT {_local_newer_judging}",  # nosec B608 - constant-only predicate built above, no input
+        f"   AND {_local_curated} AND NOT {_local_newer_judging}",  # nosec B608 # constant-only predicate built above, no input
     )
     _disagreed = _count(
         con,
         f"SELECT COUNT(*) FROM inc.sources i JOIN sources m ON {_SAME}"
         f" WHERE i.status <> 'unqualified' AND m.status <> 'unqualified' AND NOT {_adopts}"
-        f"   AND (NOT {_local_curated} OR {_local_newer_judging}) AND i.status <> m.status",  # nosec B608 - constant-only predicate built above, no input
+        f"   AND (NOT {_local_curated} OR {_local_newer_judging}) AND i.status <> m.status",  # nosec B608 # constant-only predicate built above, no input
     )
     r.new = _insert_tracked(
         con, batch_id, "sources",
-        "INSERT INTO main.sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"  # noqa: S608  # nosec B608 - only {_SAME}, built by _same_source from this module's literal aliases
+        "INSERT INTO main.sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"  # noqa: S608  # nosec B608 # only {_SAME}, built by _same_source from this module's literal aliases
         " reliability_score, language, region, country, source_type, update_frequency,"
         " cacheability, status, qualified_at, qualification_criteria_version,"
         " catalog_baseline, feed_key)"
@@ -3630,7 +3630,7 @@ def _merge_sources(con, batch_id, results) -> None:
         "                                    FROM inc.sources i"
         f"                                    WHERE {_inc_of_local})"
         " WHERE EXISTS (SELECT 1 FROM inc.sources i JOIN sources m ON m.id = sources.id"
-        f"               WHERE {_same_source('i', 'm')} AND {_adopts})"  # nosec B608 - constant-only predicate built above, no input
+        f"               WHERE {_same_source('i', 'm')} AND {_adopts})"  # nosec B608 # constant-only predicate built above, no input
     )
     results["_source_qualification"] = _qualification_tally(
         con, kept=_kept, disagreed=_disagreed, catalogue_kept=_catalogue_kept
@@ -3638,7 +3638,7 @@ def _merge_sources(con, batch_id, results) -> None:
 
     _build_map(
         con, "map_sources",
-        f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",  # noqa: S608  # nosec B608 - {_SAME} is built by _same_source from this module's literal aliases
+        f"SELECT i.id, m.id FROM inc.sources i JOIN sources m ON {_SAME}",  # noqa: S608  # nosec B608 # {_SAME} is built by _same_source from this module's literal aliases
     )
     _record_inherited_sibling_verdicts(con, batch_id, sibling_ids)
     con.execute("DROP TABLE IF EXISTS temp.sib_verdict")  # read by the INSERT and the tally above; nothing reads it later
@@ -3892,9 +3892,9 @@ def _adopt_article_metadata(con) -> dict:
         " FROM inc.articles i WHERE i.hash = m.hash"
         " AND i.id > ? AND i.id <= ? AND (" + " OR ".join(guards) + ")"
     )
-    update_sql = "UPDATE main.articles AS m SET " + ", ".join(sets) + where  # nosec B608 - every fragment is built from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
+    update_sql = "UPDATE main.articles AS m SET " + ", ".join(sets) + where  # nosec B608 # every fragment is built from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
     count_sql = (
-        "SELECT " + ", ".join(counts_sql)  # nosec B608 - column names come from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
+        "SELECT " + ", ".join(counts_sql)  # nosec B608 # column names come from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
         + " FROM articles m JOIN inc.articles i ON i.hash = m.hash"
         " WHERE i.id > ? AND i.id <= ?"
     )
@@ -3977,13 +3977,13 @@ def _merge_articles(con, batch_id, results) -> None:
     r.duplicate, r.conflict = int(row[0]), int(row[1])
     for row in _q(
         con,
-        "SELECT i.hash, i.title FROM inc.articles i JOIN articles m ON m.hash = i.hash"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT i.hash, i.title FROM inc.articles i JOIN articles m ON m.hash = i.hash"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" WHERE m.content <> i.content LIMIT {_SAMPLE_LIMIT}",
     ):
         r.conflicts.append({"hash": row[0], "incoming_title": row[1], "kept": "local"})
     r.new = _insert_tracked(
         con, batch_id, "articles",
-        "INSERT INTO main.articles (url, canonical_url, source_id, title, content,"  # nosec B608 - every fragment is a literal; _WINDOW_MARK is a module constant replaced by a bound-parameter clause, never input
+        "INSERT INTO main.articles (url, canonical_url, source_id, title, content,"  # nosec B608 # every fragment is a literal; _WINDOW_MARK is a module constant replaced by a bound-parameter clause, never input
         " compressed_content, published_at, language, hash, created_at, updated_at, region,"
         " country, author, word_count, reading_time, sentiment_score, sentiment_label,"
         # 2026-08-03 (the AST column diff): three groups added to the model AFTER this
@@ -4056,7 +4056,7 @@ def _merge_articles(con, batch_id, results) -> None:
     for stamps_table in ("article_index_stamps", "article_www_stamps"):
         if _local_has_table(con, stamps_table):  # else an unqualified name reaches the backup's
             con.execute(
-                f"DELETE FROM main.{stamps_table} WHERE article_id IN ("  # noqa: S608  # nosec B608 - two module-local literal table names
+                f"DELETE FROM main.{stamps_table} WHERE article_id IN ("  # noqa: S608  # nosec B608 # two module-local literal table names
                 " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
                 (batch_id,),
             )
@@ -4112,7 +4112,7 @@ def _merge_keywords(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "keywords",
-        "INSERT INTO main.keywords (term, normalized_term, language, frequency, category_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.keywords (term, normalized_term, language, frequency, category_id,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " is_ngram, ngram_size, is_entity, entity_type, relevance_score, extractor,"
         " created_at, updated_at)"
         " SELECT i.term, i.normalized_term, i.language, i.frequency, mc.new,"
@@ -4161,7 +4161,7 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
         # windowed shapes cannot disagree.
         r.new += _insert_tracked(
             con, batch_id, table,
-            f"INSERT OR IGNORE INTO main.{table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f"INSERT OR IGNORE INTO main.{table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f" SELECT ma.new, mk.new, {icols} FROM inc.{table} i"
             " JOIN temp.map_articles ma ON ma.old = i.article_id"
             " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
@@ -4260,7 +4260,7 @@ def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
 def _inc_has_leading_index(con: sqlite3.Connection, table: str, column: str) -> bool:
     """Does the INCOMING table have a full (non-partial) index whose first column is
     ``column``? ``table`` is always a module literal below, never input."""
-    for row in con.execute(f'PRAGMA inc.index_list("{table}")'):  # noqa: S608  # nosec B608 - module-local literal table names
+    for row in con.execute(f'PRAGMA inc.index_list("{table}")'):  # noqa: S608  module-local literal table names
         name, partial = row[1], row[4] if len(row) > 4 else 0
         if partial:
             continue
@@ -4299,7 +4299,7 @@ def _stamp_pages(con, table: str, engine: str) -> Iterator[tuple]:
     while True:
         rows = _q(
             con,
-            f"SELECT article_id, inputs FROM inc.{table} WHERE engine = ? AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 - module-local literal table names
+            f"SELECT article_id, inputs FROM inc.{table} WHERE engine = ? AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 # module-local literal table names
             (engine, last, _CARRY_PLAN_CHUNK),
         )
         yield from rows
@@ -4451,7 +4451,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             int(r[0]): r
             for r in _q(
                 con,
-                "SELECT id, source_id, title, content, compressed_content, language, detected_language,"  # noqa: S608  # nosec B608 - only placeholders are interpolated
+                "SELECT id, source_id, title, content, compressed_content, language, detected_language,"  # noqa: S608  # nosec B608 # only placeholders are interpolated
                 " published_at, created_at, country, hash FROM inc.articles"
                 f" WHERE id IN ({','.join('?' * len(ids))})",
                 ids,
@@ -4467,7 +4467,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             return
         marks = ",".join("?" * len(rows))
         present = {
-            r[0] for r in _q(con, f"SELECT hash FROM articles WHERE hash IN ({marks})",  # noqa: S608  # nosec B608 - only placeholders are interpolated
+            r[0] for r in _q(con, f"SELECT hash FROM articles WHERE hash IN ({marks})",  # noqa: S608  # nosec B608 # only placeholders are interpolated
                              tuple(r[12] for r in rows))
         }
         src_ids = tuple({int(r[3]) for r in rows if r[3] is not None})
@@ -4476,7 +4476,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             smarks = ",".join("?" * len(src_ids))
             for old, new, name, domain in _q(
                 con,
-                "SELECT ms.old, m.id, m.name, m.domain FROM temp.map_sources ms"  # noqa: S608  # nosec B608 - only placeholders are interpolated
+                "SELECT ms.old, m.id, m.name, m.domain FROM temp.map_sources ms"  # noqa: S608  # nosec B608 # only placeholders are interpolated
                 f" JOIN sources m ON m.id = ms.new WHERE ms.old IN ({smarks})",
                 src_ids,
             ):
@@ -4565,7 +4565,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         # The three guards below are about the KEYWORDS, so a refusal takes the keyword half of the article's plan and leaves its places and
         # entities (whose own stamp verified) where they are: they depend on no keyword row, and a re-index would write the same ones.
         cur = con.execute(
-            f"UPDATE temp.carry_plan SET kw = 0, inputs = NULL WHERE kw = 1 AND old IN ({sql})"  # noqa: S608  # nosec B608 - module-local literal subqueries only
+            f"UPDATE temp.carry_plan SET kw = 0, inputs = NULL WHERE kw = 1 AND old IN ({sql})"  # noqa: S608  # nosec B608 # module-local literal subqueries only
         )
         refused[key] += int(cur.rowcount or 0)
 
@@ -4848,7 +4848,7 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
     for table, key in (("article_mentioned_places", "places"), ("article_entities", "entities")):
         d = DomainResult()
         d.new = carried[key]
-        d.deferred = max(0, _count(con, f"SELECT COUNT(*) FROM inc.{table}") - carried[key])  # noqa: S608  # nosec B608 - module-local literal table names
+        d.deferred = max(0, _count(con, f"SELECT COUNT(*) FROM inc.{table}") - carried[key])  # noqa: S608  # nosec B608 # module-local literal table names
         if carried["www_articles"]:
             d.note = (
                 f"carried for {carried['www_articles']} article(s) whose places-and-entities stamp names this machine's engine for them "
@@ -4977,7 +4977,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     li.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.article_links i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.article_links i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM article_links t WHERE {link_key})",
     )
@@ -4999,7 +4999,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     li.new = _insert_tracked(
         con, batch_id, "article_links",
-        "INSERT INTO main.article_links (article_id, url, normalized_url, link_text, position,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.article_links (article_id, url, normalized_url, link_text, position,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " link_type, classification, external_source_id, source_article_id, is_followable,"
         " is_working, last_checked_at, redirect_url, http_status, created_at, updated_at)"
         " SELECT ma.new, i.url, i.normalized_url, i.link_text, i.position,"
@@ -5024,7 +5024,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     rel.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.article_source_relationships i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.article_source_relationships i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.source_id"
         f" WHERE EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})",
@@ -5039,7 +5039,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     rel.new = _insert_tracked(
         con, batch_id, "article_source_relationships",
-        "INSERT INTO main.article_source_relationships (article_id, source_id, source_article_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.article_source_relationships (article_id, source_id, source_article_id,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " link_id, relationship_type, time_delta_days, is_temporal_anomaly, confidence_score,"
         " notes, created_at, updated_at)"
         " SELECT ma.new, me.new, msa.new, NULL, i.relationship_type, i.time_delta_days,"
@@ -5097,11 +5097,11 @@ def _capture_alternates(
     # every run, so "some local row differs" would report the backup's value as foreign when
     # the corpus already holds it in a sibling row.
     where = (
-        f" FROM inc.{tbl} i {joins}"  # nosec B608 - joins/key/differs are module literals from this file's own callers and tbl is _ident-quoted; no request, user or file value reaches them
+        f" FROM inc.{tbl} i {joins}"  # nosec B608 # joins/key/differs are module literals from this file's own callers and tbl is _ident-quoted; no request, user or file value reaches them
         f" WHERE EXISTS (SELECT 1 FROM main.{tbl} t WHERE {key})"
         f" AND NOT EXISTS (SELECT 1 FROM main.{tbl} t WHERE {key} AND {same})"
     )
-    contradicting = int(_q(con, "SELECT COUNT(*)" + where)[0][0])  # nosec B608 - identifiers come from the app's OWN fixed schema maps, never input
+    contradicting = int(_q(con, "SELECT COUNT(*)" + where)[0][0])  # nosec B608 # identifiers come from the app's OWN fixed schema maps, never input
     if not contradicting:
         return 0
     # The same record is kept already when its identity text is the same one -- and, for a law item, when an alternate of this origin and
@@ -5122,14 +5122,14 @@ def _capture_alternates(
             )
             con.execute("CREATE INDEX temp.alt_kept_row ON alt_kept (local_row_id)")
             kept_for_row = (
-                " AND NOT EXISTS (SELECT 1 FROM temp.alt_kept k"  # nosec B608 - as above
+                " AND NOT EXISTS (SELECT 1 FROM temp.alt_kept k"  # nosec B608 # as above
                 f"  WHERE k.local_row_id = (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key})"
                 f"  AND k.origin = :origin AND k.fields = json_object({fields}))"
             )
         # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
         # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
         con.execute(
-            "INSERT INTO main.metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
+            "INSERT INTO main.metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps, never input
             " provenance, origin, status, created_at)"
             f" SELECT :batch, :table, json_object({ident}),"
             f" (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key}), json_object({fields}), {tag},"
@@ -5181,7 +5181,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     )
     an.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.article_analyses i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.article_analyses i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM article_analyses t WHERE {an_key})",
     )
@@ -5190,7 +5190,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         # `prompt_text` added 2026-08-03 (the AST column diff): the verbatim prompt is the
         # provenance of an AI output. `prompt_version` alone is a label -- it says which
         # revision, not what was actually asked -- so no AI text should be shown without it.
-        "INSERT INTO main.article_analyses (article_id, kind, result, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.article_analyses (article_id, kind, result, model, prompt_version,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " prompt_text, created_at)"
         " SELECT ma.new, i.kind, i.result, i.model, i.prompt_version, i.prompt_text,"
         " i.created_at"
@@ -5221,7 +5221,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     )
     md.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.article_mentioned_dates i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.article_mentioned_dates i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM article_mentioned_dates t WHERE {md_key})",
     )
@@ -5232,7 +5232,7 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     # actually landed (rowid watermark), so an ignored row is correctly not counted.
     md.new = _insert_tracked(
         con, batch_id, "article_mentioned_dates",
-        "INSERT OR IGNORE INTO main.article_mentioned_dates (article_id, mentioned_on, precision,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.article_mentioned_dates (article_id, mentioned_on, precision,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " snippet, confidence, extractor, status, created_at)"
         " SELECT ma.new, i.mentioned_on, i.precision, i.snippet, i.confidence, i.extractor,"
         " i.status, i.created_at"
@@ -5319,18 +5319,18 @@ def _key_law_documents(con, side: str, schema: str) -> None:
     from src.backup.country_codes import law_jurisdiction_key
 
     table = f"law_key_{side}"
-    con.execute(f"DROP TABLE IF EXISTS temp.{table}")  # noqa: S608  # nosec B608 - `side` is a module literal ("main" or "inc")
-    con.execute(f"CREATE TEMP TABLE {table} (id INTEGER PRIMARY KEY, jurisdiction TEXT, key TEXT, url TEXT, sib INTEGER NOT NULL DEFAULT 0)")  # noqa: S608  # nosec B608 - as above
-    cur = con.execute(f"SELECT id, jurisdiction, url FROM {schema}.law_documents")  # noqa: S608  # nosec B608 - `schema` is a module literal ("main" or "inc")
+    con.execute(f"DROP TABLE IF EXISTS temp.{table}")  # noqa: S608  `side` is a module literal ("main" or "inc")
+    con.execute(f"CREATE TEMP TABLE {table} (id INTEGER PRIMARY KEY, jurisdiction TEXT, key TEXT, url TEXT, sib INTEGER NOT NULL DEFAULT 0)")  # noqa: S608  as above
+    cur = con.execute(f"SELECT id, jurisdiction, url FROM {schema}.law_documents")  # noqa: S608  # nosec B608 # `schema` is a module literal ("main" or "inc")
     while True:
         rows = cur.fetchmany(_LAW_KEY_CHUNK)
         if not rows:
             break
         con.executemany(
-            f"INSERT INTO temp.{table} (id, jurisdiction, key, url) VALUES (?, ?, ?, ?)",  # noqa: S608  # nosec B608 - as above
+            f"INSERT INTO temp.{table} (id, jurisdiction, key, url) VALUES (?, ?, ?, ?)",  # noqa: S608  # nosec B608 # as above
             [(i, j, law_jurisdiction_key(j), u) for i, j, u in rows],
         )
-    con.execute(f"CREATE INDEX temp.{table}_key_url ON {table} (key, url)")  # noqa: S608  # nosec B608 - as above
+    con.execute(f"CREATE INDEX temp.{table}_key_url ON {table} (key, url)")  # noqa: S608  # nosec B608 # as above
     if side == "inc":
         # A SIBLING: a staged document whose identity another staged document shares (the backup itself holds one document under two
         # spellings). Such rows are matched as they always were, by the exact spelling, so that two staged rows are never mapped onto one
@@ -5357,11 +5357,11 @@ def _merge_law(con, batch_id, results) -> None:
     _key_law_documents(con, "inc", "inc")
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id WHERE " + _LAW_HELD,  # nosec B608 - _LAW_HELD is a module constant (a WHERE fragment of this file's own table names); no request, user or file value reaches the statement
+        "SELECT COUNT(*) FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id WHERE " + _LAW_HELD,  # nosec B608 # _LAW_HELD is a module constant (a WHERE fragment of this file's own table names); no request, user or file value reaches the statement
     )
     r.new = _insert_tracked(
         con, batch_id, "law_documents",
-        "INSERT INTO main.law_documents (jurisdiction, title, url, official_url, category,"  # nosec B608 - as above: _LAW_HELD is a module constant, the columns are this file's own
+        "INSERT INTO main.law_documents (jurisdiction, title, url, official_url, category,"  # nosec B608 # as above: _LAW_HELD is a module constant, the columns are this file's own
         " consolidated, watched, baseline_text, baseline_hash, last_hash, last_size,"
         " last_checked_at, last_status, created_at,"
         # 2026-08-03 (the AST column diff). `language` is the LANGUAGE OF THE LAW, which
@@ -5464,7 +5464,7 @@ def _merge_law(con, batch_id, results) -> None:
     # previous version, which is not in this corpus" rather than one of the other three
     # things a NULL pointer means under the other bases.
     con.execute(
-        # No `# nosec B608` here, deliberately: every neighbouring marker in this file sits
+        # No B608 nosec marker here, deliberately: every neighbouring marker in this file sits
         # on a statement built with an f-string, and this one is adjacent string LITERALS
         # that the parser folds into a single constant with nothing interpolated. A marker
         # bandit never reports is silently inert and prints "nosec encountered, but no
@@ -5496,13 +5496,13 @@ def _merge_law(con, batch_id, results) -> None:
     )
     summ.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.law_revision_summaries i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.law_revision_summaries i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_law_rev mr ON mr.old = i.revision_id"
         f" WHERE EXISTS (SELECT 1 FROM law_revision_summaries t WHERE {summ_key})",
     )
     summ.new = _insert_tracked(
         con, batch_id, "law_revision_summaries",
-        "INSERT INTO main.law_revision_summaries (revision_id, summary, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.law_revision_summaries (revision_id, summary, model, prompt_version,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " prompt_text, created_at)"
         " SELECT mr.new, i.summary, i.model, i.prompt_version, i.prompt_text, i.created_at"
         " FROM inc.law_revision_summaries i"
@@ -5538,7 +5538,7 @@ def _merge_watches(con, batch_id, results) -> None:
     # query/threshold/window. The incoming differences are reported rather than applied.
     for row in _q(
         con,
-        "SELECT i.name, i.query, m.query FROM inc.watches i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT i.name, i.query, m.query FROM inc.watches i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN watches m ON m.name = i.name"
         " WHERE COALESCE(i.query,'') <> COALESCE(m.query,'')"
         f" LIMIT {_SAMPLE_LIMIT}",
@@ -5572,13 +5572,13 @@ def _merge_watches(con, batch_id, results) -> None:
     wm_key = "t.watch_id = mw.new AND t.matched_at IS i.matched_at"
     wm.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.watch_matches i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.watch_matches i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_watches mw ON mw.old = i.watch_id"
         f" WHERE EXISTS (SELECT 1 FROM watch_matches t WHERE {wm_key})",
     )
     wm.new = _insert_tracked(
         con, batch_id, "watch_matches",
-        "INSERT INTO main.watch_matches (watch_id, matched_at, n_articles, new_articles, article_ids)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.watch_matches (watch_id, matched_at, n_articles, new_articles, article_ids)"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " SELECT mw.new, i.matched_at, i.n_articles, i.new_articles, i.article_ids"
         " FROM inc.watch_matches i JOIN temp.map_watches mw ON mw.old = i.watch_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM watch_matches t WHERE {wm_key})",
@@ -5630,12 +5630,12 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     p_key = "m.output_kind = i.output_kind AND m.prompt_text = i.prompt_text"
     p.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.ai_custom_prompt i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.ai_custom_prompt i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" WHERE EXISTS (SELECT 1 FROM ai_custom_prompt m WHERE {p_key})",
     )
     p.new = _insert_tracked(
         con, batch_id, "ai_custom_prompt",
-        "INSERT INTO main.ai_custom_prompt (label, output_kind, prompt_text, run_on_ingest,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.ai_custom_prompt (label, output_kind, prompt_text, run_on_ingest,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " enabled, created_at)"
         " SELECT i.label, i.output_kind, i.prompt_text, i.run_on_ingest, i.enabled,"
         " i.created_at FROM inc.ai_custom_prompt i"
@@ -5655,7 +5655,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     )
     k.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.ai_keyword i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.ai_keyword i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM ai_keyword t WHERE {k_key})",
     )
@@ -5665,7 +5665,7 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     # check against the pre-statement table) cannot see.
     k.new = _insert_tracked(
         con, batch_id, "ai_keyword",
-        "INSERT OR IGNORE INTO main.ai_keyword (article_id, term, kind, language, model,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.ai_keyword (article_id, term, kind, language, model,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " prompt_version, confirmed, evidence, created_at)"
         " SELECT ma.new, i.term, i.kind, i.language, i.model, i.prompt_version,"
         " i.confirmed, i.evidence, i.created_at"
@@ -5695,12 +5695,12 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     )
     tr.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.keyword_translations i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.keyword_translations i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" WHERE EXISTS (SELECT 1 FROM keyword_translations t WHERE {tr_key})",
     )
     tr.new = _insert_tracked(
         con, batch_id, "keyword_translations",
-        "INSERT OR IGNORE INTO main.keyword_translations (term, source_lang, target_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.keyword_translations (term, source_lang, target_lang,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " text, model, prompt_version, created_at)"
         " SELECT i.term, i.source_lang, i.target_lang, i.text, i.model, i.prompt_version,"
         " i.created_at FROM inc.keyword_translations i"
@@ -5731,12 +5731,12 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         )
         tt.duplicate = _count(
             con,
-            "SELECT COUNT(*) FROM inc.article_title_translations i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "SELECT COUNT(*) FROM inc.article_title_translations i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f"{tt_joins} WHERE EXISTS (SELECT 1 FROM article_title_translations t WHERE {tt_key})",
         )
         tt.new = _insert_tracked(
             con, batch_id, "article_title_translations",
-            "INSERT OR IGNORE INTO main.article_title_translations (article_id, source_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "INSERT OR IGNORE INTO main.article_title_translations (article_id, source_lang,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " target_lang, title, summary, model, prompt_version, created_at)"
             " SELECT ma.new, i.source_lang, i.target_lang, i.title, i.summary, i.model,"
             " i.prompt_version, i.created_at FROM inc.article_title_translations i"
@@ -5784,12 +5784,12 @@ def _merge_places(con, batch_id, results) -> None:
         )
         wd.duplicate = _count(
             con,
-            "SELECT COUNT(*) FROM inc.wikidata_items i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "SELECT COUNT(*) FROM inc.wikidata_items i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f" WHERE EXISTS (SELECT 1 FROM wikidata_items t WHERE {wd_key})",
         )
         wd.new = _insert_tracked(
             con, batch_id, "wikidata_items",
-            "INSERT OR IGNORE INTO main.wikidata_items (qid, status, resolved_qid, labels_json,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "INSERT OR IGNORE INTO main.wikidata_items (qid, status, resolved_qid, labels_json,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " descriptions_json, claims_json, lastrevid, fetched_at)"
             " SELECT i.qid, i.status, i.resolved_qid, i.labels_json, i.descriptions_json,"
             " i.claims_json, i.lastrevid, i.fetched_at FROM inc.wikidata_items i"
@@ -5809,12 +5809,12 @@ def _merge_places(con, batch_id, results) -> None:
         )
         pl.duplicate = _count(
             con,
-            "SELECT COUNT(*) FROM inc.places i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "SELECT COUNT(*) FROM inc.places i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f" WHERE EXISTS (SELECT 1 FROM places t WHERE {pl_key})",
         )
         pl.new = _insert_tracked(
             con, batch_id, "places",
-            "INSERT OR IGNORE INTO main.places (id, qid, kind, name, names_json, country,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            "INSERT OR IGNORE INTO main.places (id, qid, kind, name, names_json, country,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " country_alpha3, admin_path_json, geometry_ref, lat, lon, population,"
             " gazetteer_vintage, article_id, as_of)"
             " SELECT i.id, i.qid, i.kind, i.name, i.names_json, i.country, i.country_alpha3,"
@@ -5850,12 +5850,12 @@ def _merge_statistics(con, batch_id, results) -> None:
     )
     fig.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.stat_figures i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.stat_figures i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" WHERE EXISTS (SELECT 1 FROM stat_figures t WHERE {fig_key})",
     )
     fig.new = _insert_tracked(
         con, batch_id, "stat_figures",
-        "INSERT OR IGNORE INTO main.stat_figures (agency, series_id, ref_area, time_period,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.stat_figures (agency, series_id, ref_area, time_period,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " value, unit, methodology_ref, adjustment, base_year, extracted_at, created_at)"
         " SELECT i.agency, i.series_id, i.ref_area, i.time_period, i.value, i.unit,"
         " i.methodology_ref, i.adjustment, i.base_year, i.extracted_at, i.created_at"
@@ -5887,12 +5887,12 @@ def _merge_statistics(con, batch_id, results) -> None:
     )
     sub.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.stat_subscriptions i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.stat_subscriptions i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" WHERE EXISTS (SELECT 1 FROM stat_subscriptions t WHERE {sub_key})",
     )
     sub.new = _insert_tracked(
         con, batch_id, "stat_subscriptions",
-        "INSERT OR IGNORE INTO main.stat_subscriptions (source, indicator, country, dataset,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.stat_subscriptions (source, indicator, country, dataset,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " params_json, agency, interval_days, enabled, created_at, last_fetched_at, last_status)"
         " SELECT i.source, i.indicator, i.country, i.dataset, i.params_json, i.agency,"
         " i.interval_days, i.enabled, i.created_at, i.last_fetched_at, i.last_status"
@@ -5920,13 +5920,13 @@ def _merge_hazard_details(con, batch_id, results) -> None:
     )
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.hazard_event_details i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.hazard_event_details i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM hazard_event_details t WHERE {key})",
     )
     r.new = _insert_tracked(
         con, batch_id, "hazard_event_details",
-        "INSERT OR IGNORE INTO main.hazard_event_details (article_id, provider, event_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.hazard_event_details (article_id, provider, event_id,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " event_type, severity, magnitude, lat, lon, place, event_time, source_url,"
         " created_at, updated_at)"
         " SELECT ma.new, i.provider, i.event_id, i.event_type, i.severity, i.magnitude,"
@@ -5953,13 +5953,13 @@ def _merge_keyword_tags(con, batch_id, results) -> None:
     )
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.keyword_tags i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.keyword_tags i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
         f" WHERE EXISTS (SELECT 1 FROM keyword_tags t WHERE {key})",
     )
     r.new = _insert_tracked(
         con, batch_id, "keyword_tags",
-        "INSERT OR IGNORE INTO main.keyword_tags (keyword_id, axis, tag, source, created_at)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT OR IGNORE INTO main.keyword_tags (keyword_id, axis, tag, source, created_at)"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " SELECT mk.new, i.axis, i.tag, i.source, i.created_at"
         " FROM inc.keyword_tags i JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM keyword_tags t WHERE {key})",
@@ -5976,19 +5976,19 @@ def _merge_markets(con, batch_id, results) -> None:
     )
     r.duplicate = _count(
         con,
-        f"SELECT COUNT(*) FROM inc.commodity_prices i WHERE EXISTS"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f"SELECT COUNT(*) FROM inc.commodity_prices i WHERE EXISTS"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" (SELECT 1 FROM commodity_prices t WHERE {key} AND t.price = i.price)",
     )
     # Same observation key, different price: a DISAGREEMENT between corpora.
     # Local kept; both values surfaced -- never averaged, never silently replaced.
     r.conflict = _count(
         con,
-        f"SELECT COUNT(*) FROM inc.commodity_prices i WHERE EXISTS"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f"SELECT COUNT(*) FROM inc.commodity_prices i WHERE EXISTS"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" (SELECT 1 FROM commodity_prices t WHERE {key} AND t.price <> i.price)",
     )
     for row in _q(
         con,
-        f"SELECT i.symbol, i.observed_on, i.price,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f"SELECT i.symbol, i.observed_on, i.price,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f" (SELECT t.price FROM commodity_prices t WHERE {key} AND t.price <> i.price LIMIT 1)"
         f" FROM inc.commodity_prices i WHERE EXISTS"
         f" (SELECT 1 FROM commodity_prices t WHERE {key} AND t.price <> i.price)"
@@ -6009,7 +6009,7 @@ def _merge_markets(con, batch_id, results) -> None:
     # id per identity group, same tie-break convention as `_merge_keywords`.
     r.new = _insert_tracked(
         con, batch_id, "commodity_prices",
-        "INSERT INTO main.commodity_prices (symbol, market, observed_on, price, currency, unit,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.commodity_prices (symbol, market, observed_on, price, currency, unit,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " source, created_at)"
         " SELECT i.symbol, i.market, i.observed_on, i.price, i.currency, i.unit, i.source,"
         " i.created_at FROM inc.commodity_prices i"
@@ -6029,13 +6029,13 @@ def _merge_markets(con, batch_id, results) -> None:
     er_key = "t.source_id = ms.new AND t.symbol = i.symbol AND t.url = i.url"
     er.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.market_extraction_rules i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "SELECT COUNT(*) FROM inc.market_extraction_rules i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " JOIN temp.map_sources ms ON ms.old = i.source_id"
         f" WHERE EXISTS (SELECT 1 FROM market_extraction_rules t WHERE {er_key})",
     )
     er.new = _insert_tracked(
         con, batch_id, "market_extraction_rules",
-        "INSERT INTO main.market_extraction_rules (source_id, category, symbol, label, url,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        "INSERT INTO main.market_extraction_rules (source_id, category, symbol, label, url,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " selector, attribute, value_regex, currency, unit, market, enabled, last_run_at,"
         " last_status, created_at, updated_at)"
         " SELECT ms.new, i.category, i.symbol, i.label, i.url, i.selector, i.attribute,"
@@ -7474,7 +7474,7 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
             )
             sources.append((
                 their_chain,
-                f"SELECT {_CUSTODY_COLS} FROM custody_entries ORDER BY seq ASC",  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+                f"SELECT {_CUSTODY_COLS} FROM custody_entries ORDER BY seq ASC",  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
                 (),
             ))
         if "custody_imported_entries" in src_tables:
@@ -7483,7 +7483,7 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
             ).fetchall():
                 sources.append((
                     cid,
-                    f"SELECT {_CUSTODY_COLS} FROM custody_imported_entries"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+                    f"SELECT {_CUSTODY_COLS} FROM custody_imported_entries"  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
                     " WHERE chain_id = ? ORDER BY seq ASC",
                     (cid,),
                 ))
@@ -8021,7 +8021,7 @@ _BACKLOG_LOST_SQL = (
     " CROSS JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
     " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine = :engine"
     " LEFT JOIN article_www_stamps ws ON ws.article_id = st.article_id AND ws.engine = :www_engine"
-    " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND ws.article_id IS NULL"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
+    " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND ws.article_id IS NULL"  # noqa: S608  # nosec B608 # two constants of src/database/stand_in.py, never input
     " GROUP BY m.batch_id"
 )
 

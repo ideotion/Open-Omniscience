@@ -55,7 +55,7 @@ def source_identity_state(conn: Connection) -> str:
         name, unique = row[1], row[2]
         if not unique:
             continue
-        cols = tuple(r[2] for r in conn.exec_driver_sql(f'PRAGMA index_info("{name}")').fetchall())  # nosec B608 - an index name read from sqlite_master
+        cols = tuple(r[2] for r in conn.exec_driver_sql(f'PRAGMA index_info("{name}")').fetchall())  # an index name read from sqlite_master
         shapes.add(cols)
     if ("domain", "feed_key") in shapes and ("domain",) not in shapes:
         return "composite"
@@ -71,7 +71,7 @@ def composite_key_active(conn: Connection) -> bool:
 
 
 def _columns(conn: Connection, table: str) -> list[str]:
-    return [r[1] for r in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()]  # nosec B608 - a fixed table name
+    return [r[1] for r in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()]  # a fixed table name
 
 
 def add_feed_key_column(conn: Connection) -> bool:
@@ -215,11 +215,11 @@ def upgrade_sources_to_composite_key(conn: Connection, *, commit_open_transactio
         conn.exec_driver_sql(f"DROP TABLE IF EXISTS {_NEW}")
         conn.exec_driver_sql(str(CreateTable(new_table).compile(dialect=conn.dialect)))
         cols = ", ".join(f'"{c}"' for c in copy)
-        conn.exec_driver_sql(f'INSERT INTO {_NEW} ({cols}) SELECT {cols} FROM sources ORDER BY id')  # nosec B608 - column names come from the ORM table
+        conn.exec_driver_sql(f'INSERT INTO {_NEW} ({cols}) SELECT {cols} FROM sources ORDER BY id')  # nosec B608 # column names come from the ORM table
         before: int = conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one()
-        after: int = conn.exec_driver_sql(f"SELECT COUNT(*) FROM {_NEW}").scalar_one()  # nosec B608 - a fixed name
+        after: int = conn.exec_driver_sql(f"SELECT COUNT(*) FROM {_NEW}").scalar_one()  # nosec B608 # a fixed name
         lost: int = conn.exec_driver_sql(
-            f"SELECT COUNT(*) FROM sources o WHERE NOT EXISTS (SELECT 1 FROM {_NEW} n WHERE n.id = o.id)"  # nosec B608 - a fixed name
+            f"SELECT COUNT(*) FROM sources o WHERE NOT EXISTS (SELECT 1 FROM {_NEW} n WHERE n.id = o.id)"  # nosec B608 # a fixed name
         ).scalar_one()
         if before != after or lost:
             raise SourceIdentityRefused(f"the copy did not carry every row ({after} of {before}, {lost} ids missing)")
@@ -334,7 +334,7 @@ def install_source_outlet_id(conn: Connection) -> dict[str, Any]:
                 # a trigger of this name from an older build: ``IF NOT EXISTS`` can never replace it, so a changed body would reach new
                 # installs only (audit 0.5.0 item 14). Dropped and re-made inside the same transaction as the heal below, so no write
                 # sees the table with a missing trigger; the rows it wrote keep their values and the heal corrects any that are wrong.
-                conn.exec_driver_sql(f'DROP TRIGGER "{name}"')  # nosec B608 - a name from SOURCE_OUTLET_ID_TRIGGERS, not input
+                conn.exec_driver_sql(f'DROP TRIGGER "{name}"')  # a name from SOURCE_OUTLET_ID_TRIGGERS, not input
             conn.exec_driver_sql(sql)
             made += 1
         stale: int = conn.exec_driver_sql(_OUTLET_STALE_SQL).scalar_one()

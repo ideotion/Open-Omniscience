@@ -267,7 +267,7 @@ def _corpus_stats(corpus_snapshot: Path) -> dict:
         ]
         counts = {}
         for t in tables:
-            counts[t] = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608  # nosec B608 - identifier from the fixed member map, never input
+            counts[t] = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608  # nosec B608 # identifier from the fixed member map, never input
         leaves = [
             hashlib.sha256(canonical_bytes({"id": rid, "hash": h})).hexdigest()
             for rid, h in conn.execute("SELECT id, hash FROM articles ORDER BY id")
@@ -352,7 +352,7 @@ def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> Non
     for i in range(0, len(ids), 900):
         chunk = ids[i : i + 900]
         q = ",".join("?" * len(chunk))
-        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 - table/col validated against _SAFE_TABLE; values are bound params
+        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 # table/col validated against _SAFE_TABLE; values are bound params
 
 
 def _drop_newsletter_articles(db_path: Path) -> int:
@@ -396,7 +396,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     cur = con.cursor()
     marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
     src_ids = [r[0] for r in cur.execute(
-        f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
+        f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 # marks is only ?-placeholders; domains are bound params
     # SINCE THE WRITE-PATH AUTO-ATTACH (Q1151) THE BUCKET IS NO LONGER THE WHOLE SET, and
     # getting this wrong is a PRIVACY regression, not a counting one: a user who unticks
     # "include newsletters" would have every AUTO-ATTACHED newsletter body written into the
@@ -413,7 +413,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     if src_ids:
         sq = ",".join("?" * len(src_ids))
         art_ids += [r[0] for r in cur.execute(
-            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
+            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 # sq is only ?-placeholders; ids are bound params
     if has_col:
         art_ids += [r[0] for r in cur.execute(
             "SELECT id FROM articles WHERE newsletter_attached_via IS NOT NULL")]
@@ -424,7 +424,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     for t in tables:
         if t == "articles" or not _SAFE_TABLE.match(t):
             continue
-        cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 - t validated against _SAFE_TABLE (from the schema, not input)
+        cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 # t validated against _SAFE_TABLE (from the schema, not input)
         if "article_id" in cols:
             _delete_in(cur, t, "article_id", art_ids)
     _delete_in(cur, "articles", "id", art_ids)

@@ -71,13 +71,13 @@ def _ensure_table(conn) -> None:
     Matches the alembic migration + the ``EventImport`` model — the same self-heal belt
     :mod:`src.config.kv_store` uses for ``app_state``."""
     conn.execute(
-        f"CREATE TABLE IF NOT EXISTS {TABLE} ("  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant, never input
+        f"CREATE TABLE IF NOT EXISTS {TABLE} ("  # noqa: S608  {TABLE} is a fixed constant, never input
         "id INTEGER PRIMARY KEY, family_key TEXT NOT NULL, fingerprint TEXT NOT NULL, "
         "family_name TEXT, family_user INTEGER, imported_at TEXT, title TEXT, date TEXT, "
         "sources TEXT, uids TEXT, updated_at TEXT)"
     )
     conn.execute(
-        f"CREATE UNIQUE INDEX IF NOT EXISTS ix_event_imports_family_fp "  # noqa: S608  # nosec B608 - constant DDL, no input
+        f"CREATE UNIQUE INDEX IF NOT EXISTS ix_event_imports_family_fp "  # noqa: S608  constant DDL, no input
         f"ON {TABLE} (family_key, fingerprint)"
     )
 
@@ -137,10 +137,10 @@ def sync_imports(imports: dict) -> dict:
             conn = _open(path)
             try:
                 _ensure_table(conn)
-                conn.execute(f"DELETE FROM {TABLE}")  # noqa: S608  # nosec B608 - {TABLE} constant, no input
+                conn.execute(f"DELETE FROM {TABLE}")  # noqa: S608  # nosec B608 # {TABLE} constant, no input
                 if rows:
                     conn.executemany(
-                        f"INSERT INTO {TABLE} (family_key, fingerprint, family_name, "  # noqa: S608  # nosec B608 - {TABLE} constant; values are bound params
+                        f"INSERT INTO {TABLE} (family_key, fingerprint, family_name, "  # noqa: S608  # nosec B608 # {TABLE} constant; values are bound params
                         "family_user, imported_at, title, date, sources, uids, updated_at) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         rows,
@@ -164,7 +164,7 @@ def load_imports() -> dict:
         conn = _open(path)
         try:
             rows = conn.execute(
-                f"SELECT family_key, fingerprint, family_name, family_user, imported_at, "  # noqa: S608  # nosec B608 - {TABLE} constant, no input
+                f"SELECT family_key, fingerprint, family_name, family_user, imported_at, "  # noqa: S608  # nosec B608 # {TABLE} constant, no input
                 f"title, date, sources, uids FROM {TABLE}"
             ).fetchall()
         finally:
@@ -198,7 +198,7 @@ def count() -> int:
     try:
         conn = _open(path)
         try:
-            return int(conn.execute(f"SELECT COUNT(*) FROM {TABLE}").fetchone()[0])  # noqa: S608  # nosec B608 - {TABLE} constant, no input
+            return int(conn.execute(f"SELECT COUNT(*) FROM {TABLE}").fetchone()[0])  # noqa: S608  # nosec B608 # {TABLE} constant, no input
         finally:
             conn.close()
     except Exception:  # noqa: BLE001 - missing table / locked DB -> 0

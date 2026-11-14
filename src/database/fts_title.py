@@ -116,7 +116,7 @@ def _ddl() -> list[str]:
         CREATE TRIGGER IF NOT EXISTS {TABLE}_ad AFTER DELETE ON articles BEGIN
             DELETE FROM {TABLE} WHERE rowid = old.id;
         END
-        """,  # nosec B608 - module constants only
+        """,  # nosec B608 # module constants only
         # Column-scoped for the reason article_fts_au is (tests/test_fts_update_trigger_scope.py):
         # the re-index stamps other columns on every pass and must not re-index the title for it.
         f"""
@@ -125,7 +125,7 @@ def _ddl() -> list[str]:
             INSERT INTO {TABLE}(rowid, title)
             SELECT new.id, {_TITLE_EXPR.format(row="new")} WHERE new.title IS NOT NULL;
         END
-        """,  # nosec B608 - module constants only
+        """,  # nosec B608 # module constants only
     ]
 
 
@@ -142,7 +142,7 @@ def _present(conn) -> bool:
 
 
 def _state(conn) -> tuple[int, int, bool] | None:
-    row = conn.execute(text(f"SELECT cursor, frozen_max, done FROM {STATE_TABLE} WHERE id = 1")).fetchone()  # nosec B608 - module constant
+    row = conn.execute(text(f"SELECT cursor, frozen_max, done FROM {STATE_TABLE} WHERE id = 1")).fetchone()  # nosec B608 # module constant
     return None if row is None else (int(row[0]), int(row[1]), bool(row[2]))
 
 
@@ -157,7 +157,7 @@ def backfill_step(conn, *, budget_s: float = BACKFILL_STEP_BUDGET_S, batch: int 
     if st is None:
         top = conn.execute(text("SELECT COALESCE(max(id), 0) FROM articles")).scalar() or 0
         conn.execute(
-            text(f"INSERT INTO {STATE_TABLE}(id, cursor, frozen_max, done) VALUES (1, 0, :m, :d)"),  # nosec B608 - module constant
+            text(f"INSERT INTO {STATE_TABLE}(id, cursor, frozen_max, done) VALUES (1, 0, :m, :d)"),  # nosec B608 # module constant
             {"m": int(top), "d": 1 if int(top) == 0 else 0},
         )
         st = (0, int(top), int(top) == 0)
@@ -174,7 +174,7 @@ def backfill_step(conn, *, budget_s: float = BACKFILL_STEP_BUDGET_S, batch: int 
         upper = frozen_max if upper is None else int(upper)
         res = conn.execute(
             text(
-                f"INSERT OR REPLACE INTO {TABLE}(rowid, title) "  # nosec B608 - module constants only; the range is bound
+                f"INSERT OR REPLACE INTO {TABLE}(rowid, title) "  # nosec B608 # module constants only; the range is bound
                 f"SELECT a.id, {_TITLE_EXPR.format(row='a')} FROM articles a "
                 "WHERE a.id > :c AND a.id <= :u AND a.title IS NOT NULL"
             ),
@@ -184,7 +184,7 @@ def backfill_step(conn, *, budget_s: float = BACKFILL_STEP_BUDGET_S, batch: int 
         cursor = upper
         done = cursor >= frozen_max
         conn.execute(
-            text(f"UPDATE {STATE_TABLE} SET cursor = :c, done = :d WHERE id = 1"),  # nosec B608 - module constant
+            text(f"UPDATE {STATE_TABLE} SET cursor = :c, done = :d WHERE id = 1"),  # nosec B608 # module constant
             {"c": cursor, "d": 1 if done else 0},
         )
         if time.monotonic() >= deadline:
@@ -197,13 +197,13 @@ def mark_behind(con, prev_max_id: int) -> None:
     so the backfill must cover them. Raw DB-API connection (the merge's own, with the staged backup attached, so every name here says
     ``main.``), the caller's transaction.
     Does nothing when no backfill state exists: a never-built index is built from scratch anyway."""
-    row = con.execute(f"SELECT cursor, done FROM main.{STATE_TABLE} WHERE id = 1").fetchone()  # nosec B608 - module constant
+    row = con.execute(f"SELECT cursor, done FROM main.{STATE_TABLE} WHERE id = 1").fetchone()  # nosec B608 # module constant
     if row is None:
         return
     top = int(con.execute("SELECT COALESCE(max(id), 0) FROM main.articles").fetchone()[0])
     cursor = int(prev_max_id) if row[1] else min(int(row[0]), int(prev_max_id))
     con.execute(
-        f"UPDATE main.{STATE_TABLE} SET cursor = ?, frozen_max = ?, done = 0 WHERE id = 1",  # nosec B608 - module constant
+        f"UPDATE main.{STATE_TABLE} SET cursor = ?, frozen_max = ?, done = 0 WHERE id = 1",  # nosec B608 # module constant
         (cursor, top),
     )
 
@@ -211,8 +211,8 @@ def mark_behind(con, prev_max_id: int) -> None:
 def reset(conn) -> None:
     """Forget the whole title index and start its backfill over (the repair path: a damaged or doubtful index is
     rebuilt from the articles, which are never touched). The caller owns the transaction."""
-    conn.execute(text(f"INSERT INTO {TABLE}({TABLE}) VALUES('delete-all')"))  # nosec B608 - module constant
-    conn.execute(text(f"DELETE FROM {STATE_TABLE}"))  # nosec B608 - module constant
+    conn.execute(text(f"INSERT INTO {TABLE}({TABLE}) VALUES('delete-all')"))  # nosec B608 # module constant
+    conn.execute(text(f"DELETE FROM {STATE_TABLE}"))  # nosec B608 # module constant
 
 
 def status(conn) -> dict[str, Any]:
@@ -226,7 +226,7 @@ def status(conn) -> dict[str, Any]:
         return {"present": False, "complete": False, "covered": 0, "articles": 0}
     # Only titled articles can be indexed, so only they are the denominator.
     articles = int(conn.execute(text("SELECT count(*) FROM articles WHERE title IS NOT NULL")).scalar() or 0)
-    covered = int(conn.execute(text(f"SELECT count(*) FROM {TABLE}_docsize")).scalar() or 0)  # nosec B608 - module constant
+    covered = int(conn.execute(text(f"SELECT count(*) FROM {TABLE}_docsize")).scalar() or 0)  # nosec B608 # module constant
     st = _state(conn)
     return {
         "present": True,
@@ -249,7 +249,7 @@ def _completions(conn, word: str) -> list[str] | None:
     lo, hi = folded, folded[:-1] + chr(ord(folded[-1]) + 1)
     try:
         rows = conn.execute(
-            text(f"SELECT term FROM {TABLE}_vocab WHERE term >= :lo AND term < :hi LIMIT :k"),  # nosec B608 - module constant
+            text(f"SELECT term FROM {TABLE}_vocab WHERE term >= :lo AND term < :hi LIMIT :k"),  # nosec B608 # module constant
             {"lo": lo, "hi": hi, "k": EXPAND_MAX_TERMS + 1},
         ).fetchall()
     except Exception:  # noqa: BLE001 - no vocab view (an old store mid-upgrade): the prefix path still works
@@ -293,11 +293,11 @@ def title_prefix_ids(conn, query: str, *, limit: int = 10, exclude_quarantined: 
         return []
     params: dict[str, Any] = {"q": match, "n": int(limit)}
     gate = (
-        f" AND EXISTS (SELECT 1 FROM articles a WHERE a.id = {TABLE}.rowid AND a.quarantined IS NOT 1)"  # nosec B608 - module constant
+        f" AND EXISTS (SELECT 1 FROM articles a WHERE a.id = {TABLE}.rowid AND a.quarantined IS NOT 1)"  # nosec B608 # module constant
         if exclude_quarantined
         else ""
     )
-    sql = f"SELECT rowid FROM {TABLE} WHERE {TABLE} MATCH :q{gate} {ORDER_SQL} LIMIT :n"  # nosec B608 - TABLE/ORDER_SQL/gate are module constants; the query and limit are bound parameters
+    sql = f"SELECT rowid FROM {TABLE} WHERE {TABLE} MATCH :q{gate} {ORDER_SQL} LIMIT :n"  # nosec B608 # TABLE/ORDER_SQL/gate are module constants; the query and limit are bound parameters
     try:
         rows = conn.execute(text(sql), params).fetchall()
     except Exception:  # noqa: BLE001 - a store whose index was never created answers nothing; any other failure is re-raised

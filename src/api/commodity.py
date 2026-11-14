@@ -219,7 +219,7 @@ def correlation(
             article_counts = {
                 date.fromisoformat(d): int(c)
                 for d, c in db.execute(
-                    text(  # nosec B608 - marks is a joined list of int()-cast ids from search_ids, never input
+                    text(  # nosec B608 # marks is a joined list of int()-cast ids from search_ids, never input
                         f"{base} AND id IN ({marks}) GROUP BY substr(published_at, 1, 10)"
                     )
                 )

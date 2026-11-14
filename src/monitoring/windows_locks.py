@@ -31,7 +31,7 @@ from __future__ import annotations
 import ctypes
 import os
 import platform
-import subprocess  # nosec B404 - fixed argv, no shell, Windows-only, read-only cmdlets
+import subprocess  # nosec B404 # fixed argv, no shell, Windows-only, read-only cmdlets
 import sys
 import time
 from pathlib import Path
@@ -241,7 +241,7 @@ def _powershell(script: str) -> tuple[bool, str]:
     """Run one read-only PowerShell expression. Fixed argv, no shell, bounded."""
     exe = "powershell.exe"
     try:
-        out = subprocess.run(  # nosec B603 - fixed argv, no shell, read-only cmdlet
+        out = subprocess.run(  # nosec B603 # fixed argv, no shell, read-only cmdlet
             [exe, "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,

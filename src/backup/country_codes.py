@@ -169,7 +169,7 @@ def law_jurisdiction_key(value: str | None) -> str | None:
 
 def _table_exists(con: sqlite3.Connection, schema: str, table: str) -> bool:
     row = con.execute(
-        f"SELECT 1 FROM {schema}.sqlite_master WHERE type='table' AND name=? LIMIT 1",  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias ("inc"/"main"), never input
+        f"SELECT 1 FROM {schema}.sqlite_master WHERE type='table' AND name=? LIMIT 1",  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias ("inc"/"main"), never input
         (table,),
     ).fetchone()
     return row is not None
@@ -178,7 +178,7 @@ def _table_exists(con: sqlite3.Connection, schema: str, table: str) -> bool:
 def _columns_of(con: sqlite3.Connection, schema: str, table: str) -> set[str]:
     return {
         r[1]
-        for r in con.execute(f'PRAGMA {schema}.table_info("{table}")').fetchall()  # noqa: S608  # nosec B608 - `schema` is a module-internal literal; `table` comes from COUNTRY_COLUMNS, a fixed map
+        for r in con.execute(f'PRAGMA {schema}.table_info("{table}")').fetchall()  # noqa: S608  # nosec B608 # `schema` is a module-internal literal; `table` comes from COUNTRY_COLUMNS, a fixed map
     }
 
 
@@ -205,7 +205,7 @@ def _live_corpus_in_target_form(con: sqlite3.Connection, form: Literal["alpha2",
             checked += 1
             try:
                 rows = con.execute(
-                    f'SELECT DISTINCT "{column}" FROM main."{table}" '  # noqa: S608  # nosec B608 - identifiers from the fixed COUNTRY_COLUMNS map
+                    f'SELECT DISTINCT "{column}" FROM main."{table}" '  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map
                     f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\''
                 ).fetchall()
             except Exception:  # noqa: BLE001 - a read-only measurement never fails a restore
@@ -253,7 +253,7 @@ def _convert_row_by_row(
     ids = [
         r[0]
         for r in con.execute(
-            f'SELECT rowid FROM {schema}."{table}" WHERE "{column}" = ?',  # noqa: S608  # nosec B608 - identifiers from the fixed COUNTRY_COLUMNS map; the VALUE is bound
+            f'SELECT rowid FROM {schema}."{table}" WHERE "{column}" = ?',  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map; the VALUE is bound
             (value,),
         ).fetchall()
     ]
@@ -263,7 +263,7 @@ def _convert_row_by_row(
         con.execute("SAVEPOINT oo_country_norm_row")
         try:
             con.execute(
-                f'UPDATE {schema}."{table}" SET "{column}" = ? WHERE rowid = ?',  # noqa: S608  # nosec B608 - identifiers from the fixed COUNTRY_COLUMNS map; the VALUES are bound
+                f'UPDATE {schema}."{table}" SET "{column}" = ? WHERE rowid = ?',  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map; the VALUES are bound
                 (target, rid),
             )
         except Exception as exc:  # noqa: BLE001 - one row's collision is not the restore's
@@ -301,7 +301,7 @@ def _law_document_holds(con: sqlite3.Connection, schema: str, jurisdiction: str,
         return False
     return (
         con.execute(
-            f"SELECT 1 FROM {schema}.law_documents WHERE jurisdiction = ? AND url = ? LIMIT 1",  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias; the values are bound
+            f"SELECT 1 FROM {schema}.law_documents WHERE jurisdiction = ? AND url = ? LIMIT 1",  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias; the values are bound
             (jurisdiction, url),
         ).fetchone()
         is not None
@@ -346,7 +346,7 @@ def convert_alternate_countries(
             for key in keys:
                 path = f"$.{key}"
                 rows = con.execute(
-                    f'SELECT id, "{column}" FROM {schema}.metadata_alternates '  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias; `column` is one of two literals
+                    f'SELECT id, "{column}" FROM {schema}.metadata_alternates '  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias; `column` is one of two literals
                     f'WHERE table_name = ? AND CASE WHEN json_valid("{column}") THEN json_type("{column}", ?) END = \'text\'',
                     (table, path),
                 ).fetchall()
@@ -374,12 +374,12 @@ def convert_alternate_countries(
                         kept += 1
                         continue  # its document kept this spelling (see above): the identity stays with it
                     con.execute(
-                        f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 - as above; the path, the value and the id are bound
+                        f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 # as above; the path, the value and the id are bound
                         (path, target, rid),
                     )
                     out["converted"] += 1
     bad = con.execute(
-        f"SELECT COUNT(*) FROM {schema}.metadata_alternates WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias
+        f"SELECT COUNT(*) FROM {schema}.metadata_alternates WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias
     ).fetchone()[0]
     out["left_unreadable"] += int(bad)
     if kept:
@@ -425,7 +425,7 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
             # at most a couple of hundred distinct country codes. The work is bounded
             # by the CODE SET, never by the corpus.
             rows = con.execute(
-                f'SELECT DISTINCT "{column}" FROM {schema}."{table}" '  # noqa: S608  # nosec B608 - both identifiers come from COUNTRY_COLUMNS, a fixed module-level map, and `schema` is a module-internal literal
+                f'SELECT DISTINCT "{column}" FROM {schema}."{table}" '  # noqa: S608  # nosec B608 # both identifiers come from COUNTRY_COLUMNS, a fixed module-level map, and `schema` is a module-internal literal
                 f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\''
             ).fetchall()
             for (value,) in rows:
@@ -442,7 +442,7 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                 con.execute("SAVEPOINT oo_country_norm")
                 try:
                     cur = con.execute(
-                        f'UPDATE {schema}."{table}" SET "{column}" = ? '  # noqa: S608  # nosec B608 - identifiers from the fixed COUNTRY_COLUMNS map; the VALUES are bound
+                        f'UPDATE {schema}."{table}" SET "{column}" = ? '  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map; the VALUES are bound
                         f'WHERE "{column}" = ?',
                         (target, value),
                     )
@@ -566,7 +566,7 @@ def scan_country_code_duplicates(con: sqlite3.Connection, *, schema: str = "main
         if column not in _columns_of(con, schema, table):
             continue
         rows = con.execute(
-            f'SELECT "{column}" AS v, COUNT(*) AS n FROM {schema}."{table}" '  # noqa: S608  # nosec B608 - identifiers come from the fixed COUNTRY_COLUMNS / COUNTRY_COLUMNS_EXEMPT maps
+            f'SELECT "{column}" AS v, COUNT(*) AS n FROM {schema}."{table}" '  # noqa: S608  # nosec B608 # identifiers come from the fixed COUNTRY_COLUMNS / COUNTRY_COLUMNS_EXEMPT maps
             f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\' GROUP BY "{column}"'
         ).fetchall()
         by_canonical: dict[str, list[tuple[str, int]]] = {}

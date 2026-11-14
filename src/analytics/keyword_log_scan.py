@@ -1101,7 +1101,7 @@ def scan_keywords(db, maps: ArticleMaps, src_articles: dict[int, int], ranker: R
     for n, (kid, aid, cnt, obs) in enumerate(
         db.execute(
             text(
-                f"SELECT keyword_id, article_id, count, observed_on FROM {MENTIONS_TABLE}"  # nosec B608 - constant table name
+                f"SELECT keyword_id, article_id, count, observed_on FROM {MENTIONS_TABLE}"  # nosec B608 # constant table name
                 " ORDER BY keyword_id"
             )
         ),

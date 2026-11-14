@@ -1034,7 +1034,7 @@ def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> 
             f"unnest(from_json(?::JSON, '[\"{t}\"]'))" for t in types
         )
         con.execute(
-            f"INSERT INTO {table} SELECT {selects}",  # nosec B608 - table and types are constants chosen by the callers in this module; every value is a bound parameter
+            f"INSERT INTO {table} SELECT {selects}",  # table and types are constants chosen by the callers in this module; every value is a bound parameter
             [json.dumps(c) for c in columns],
         )
     except Exception as exc:  # noqa: BLE001 - a JSON-path refusal -> the slow path for this batch only
@@ -1045,7 +1045,7 @@ def _bulk_insert(con, table: str, types: tuple[str, ...], rows: list[tuple]) -> 
         if type(exc).__name__ in _NEVER_RETRIED:
             raise  # an interrupt: the slow path would only reach it hours later
         marks = ", ".join("?" for _ in types)
-        con.executemany(f"INSERT INTO {table} VALUES ({marks})", rows)  # nosec B608 - constants, as above
+        con.executemany(f"INSERT INTO {table} VALUES ({marks})", rows)  # nosec B608 # constants, as above
     return len(rows)
 
 
@@ -1139,7 +1139,7 @@ def _aggregate_stage(con, stage: str, shards: int, parts: int, residue: int) -> 
         con.execute(
             "INSERT INTO keyword_daily_building "
             "SELECT keyword_id, day, SUM(cnt) AS mentions, COUNT(DISTINCT article_id) AS articles_on_day "
-            f"FROM {stage}{where} GROUP BY keyword_id, day"  # nosec B608 - the stage name is built from an int in this module
+            f"FROM {stage}{where} GROUP BY keyword_id, day"  # nosec B608 # the stage name is built from an int in this module
         )
         return 0
     except Exception as exc:  # noqa: BLE001 - only the engine's own limit is retried
@@ -1296,7 +1296,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     # One MAX per column on purpose: SQLite answers a lone MAX from an index, three in one SELECT scan the table.
     # ``created_at`` is read FIRST: it is the boundary, and the sizing reads that follow are of rows that exist at it.
     maxima = {
-        (fn, col): session.execute(_sql(f"SELECT {fn}({col}) FROM keyword_mentions")).scalar()  # nosec B608 - fn and col are constants
+        (fn, col): session.execute(_sql(f"SELECT {fn}({col}) FROM keyword_mentions")).scalar()  # nosec B608 # fn and col are constants
         for fn, col in (("MAX", "created_at"), ("MAX", "id"), ("MAX", "keyword_id"), ("MAX", "article_id"),
                         ("MIN", "keyword_id"), ("MIN", "article_id"))
     }
@@ -1327,7 +1327,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             leftover = []
         for name in (*dict.fromkeys([*stage_names, *leftover]), "keyword_daily_building"):
             try:
-                con.execute(f"DROP TABLE IF EXISTS {name}")  # nosec B608 - names are built in this function
+                con.execute(f"DROP TABLE IF EXISTS {name}")  # nosec B608 # names are built in this function
             except Exception:  # noqa: BLE001 - cleanup must not hide the error that got us here
                 pass
 
@@ -1335,7 +1335,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         _drop_build_tables()  # orphans of a build that was killed mid-way (nothing else owns these names)
         # -- stream mentions -> DuckDB staging (dates parsed to DATE on the way in) ---- #
         for name in stage_names:
-            con.execute(f"CREATE OR REPLACE TABLE {name} "  # nosec B608 - constants and ints from this function
+            con.execute(f"CREATE OR REPLACE TABLE {name} "  # nosec B608 # constants and ints from this function
                         f"(keyword_id {id_type} NOT NULL, day DATE NOT NULL, cnt BIGINT NOT NULL, "
                         f"article_id {id_type} NOT NULL)")
         streamed = 0
@@ -1479,7 +1479,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                 if type(exc).__name__ != _PLAIN_OOM_CLASS:
                     raise
                 raise _wall_stop("aggregate", _PLAIN_OOM_CLASS, shard=j, split=_BUILD_MAX_SPLIT) from None
-            con.execute(f"DROP TABLE {name}")  # nosec B608
+            con.execute(f"DROP TABLE {name}")
             aggregated += in_stage
             observed_mib = max(observed_mib, _observe_mib())
             if on_batch is not None:
@@ -1604,7 +1604,7 @@ def windowed_term_counts(
     kw = " WHERE " + " AND ".join(where) if where else ""
     try:
         rows = con.execute(
-            "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "  # nosec B608 - only the constant WHERE fragments (d.day >= ?/<= ?) are concatenated; every value is a bound ? param
+            "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "  # nosec B608 # only the constant WHERE fragments (d.day >= ?/<= ?) are concatenated; every value is a bound ? param
             "FROM keyword_daily d" + kw + " GROUP BY keyword_id", params
         ).fetchall()
     except Exception as exc:  # noqa: BLE001 - missing/cold rollup -> empty; the engine's memory wall -> live (R194)
@@ -1631,7 +1631,7 @@ def _top_terms_query(start_day, end_day, kind, limit: int) -> tuple[str, list]:
     # not one per keyword and day: measured at 1,004 MB (one run per size, generated corpora), the one-step form failed with the engine's memory error at 20, 24 and 28 M mentions and this form answered at all three in a standalone bench (the built serve path was re-run at 20 and 24 M; its 28 M cell was not obtained).
     # Keywords that share their four text columns still add, as they did when they were grouped by those columns alone.
     sql = (
-        "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 - only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
+        "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 # only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
         "SUM(s.mentions) AS mentions, SUM(s.articles) AS articles "
         "FROM (SELECT d.keyword_id, SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
         "FROM keyword_daily d" + where_sql + " GROUP BY d.keyword_id) s "
@@ -1891,7 +1891,7 @@ def keyword_daily_parity(
         clauses.append("observed_on <= :e")
         p["e"] = end_day
     live_rows = session.execute(_sql(
-        "SELECT keyword_id, SUM(count), COUNT(DISTINCT article_id) FROM keyword_mentions "  # nosec B608 - clauses are constant SQL fragments; every value is a bound :param
+        "SELECT keyword_id, SUM(count), COUNT(DISTINCT article_id) FROM keyword_mentions "  # nosec B608 # clauses are constant SQL fragments; every value is a bound :param
         "WHERE " + " AND ".join(clauses) + " GROUP BY keyword_id"
     ), p).fetchall()
     live = {int(r[0]): (int(r[1]), int(r[2])) for r in live_rows}

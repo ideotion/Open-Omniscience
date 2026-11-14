@@ -857,7 +857,7 @@ def keyword_log(
                 src_names = {
                     sid: name
                     for sid, name in db.execute(
-                        text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
+                        text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 # interpolant is a joined list of int()-cast ids built in this function, never input
                     ).fetchall()
                 }
             per_source_concentration = [
