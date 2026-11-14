@@ -4643,6 +4643,8 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 # (R699) and an untagged article is detected. Either changes which keyword
                 # row a mention takes (R698), and the article's own columns, so the carry
                 # cannot reproduce it from the stored values: the keyword half re-indexes.
+                # The www half may still carry: places and entities never read the
+                # language (src/timemap/whostore.py), which is why its digest has none.
                 refused["language_unresolved"] += 1
                 kw_ok = False
             if not kw_ok and not www_ok:
