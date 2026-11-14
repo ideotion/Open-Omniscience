@@ -11,7 +11,8 @@ watch it never evaluated.
 What these tests pin, through the real refresh, a real SQLite store and the real ``statement_deadline``: the pass is stopped at the
 bound and the producers still run; Home names the missing kind ("A watch matched"); the watches the pass did not reach are left
 unstamped and the NEXT refresh evaluates them and fires (the ruling's addition); a pass that ran past the bound without raising is
-named too; a watch's own error is still one bad watch.
+named, and the loop stops between watches once the bound is spent; a watch's own error is still one bad watch; a stop inside the
+ring lookup is never taken for a missing disclosure; no write runs while the deadline is armed.
 """
 
 from __future__ import annotations
@@ -140,9 +141,10 @@ def test_the_next_refresh_evaluates_the_watches_the_stopped_pass_did_not_reach(d
     assert set(fired) == {"Slow", "Later"} and fired["Slow"]["n_articles"] == 3
 
 
-def test_a_pass_that_ran_past_the_bound_without_raising_is_named_and_its_writes_are_kept(db, home, monkeypatch):
-    """Python between statements is not interruptible: the pass finishes, its firings and stamps are written (they are true),
-    and the refresh still names the kind as stopped, as R666 does for a producer."""
+def test_a_pass_that_ran_past_the_bound_without_raising_is_named_and_stops_between_watches(db, home, monkeypatch):
+    """Python between statements is not interruptible, so the slow watch finishes: its firing and stamp are written (they are
+    true). The loop then asks the deadline before the next watch (the progress handler fires only inside a long statement), so
+    the watch after the bound is not run and not stamped; the refresh names the kind as stopped, as R666 does for a producer."""
     ids = _articles(db, 3)
     slow_id, later_id = _watches(db)
 
@@ -155,8 +157,31 @@ def test_a_pass_that_ran_past_the_bound_without_raising_is_named_and_its_writes_
     payload = service.refresh_briefing(db)
     db.commit()
     assert payload["stopped_producers"] == ["watch_matches"]
-    assert _stamped(db, slow_id) is not None and _stamped(db, later_id) is not None
-    assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow", "Later"}
+    assert _stamped(db, slow_id) is not None and _stamped(db, later_id) is None
+    assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow"}
+
+
+def test_a_stop_inside_the_concept_lookup_is_not_taken_for_a_missing_disclosure(monkeypatch):
+    """The ring lookup swallows its own errors (a disclosure must not break a pass), but not the deadline's interrupt: swallowed,
+    the watch would be searched on the literal word only, stamped, and remember that narrower set (the Opus read of R695)."""
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    import src.analytics.queries as Q
+
+    def _interrupted(_session):
+        raise OperationalError("SELECT ...", {}, sqlite3.OperationalError("interrupted"))
+
+    monkeypatch.setattr(Q, "keyword_frequency", _interrupted)
+    with pytest.raises(OperationalError):
+        W.watch_concept(object(), "flood")
+
+    def _broken(_session):
+        raise ValueError("no frequency table")
+
+    monkeypatch.setattr(Q, "keyword_frequency", _broken)
+    assert W.watch_concept(object(), "flood") is None  # any other failure is still a missing disclosure
 
 
 def test_one_bad_watch_is_still_one_bad_watch(db, home, monkeypatch):
@@ -177,18 +202,22 @@ def test_one_bad_watch_is_still_one_bad_watch(db, home, monkeypatch):
 
 
 def test_the_watch_pass_flushes_its_writes_outside_the_deadline(db, home, monkeypatch):
-    """The pass's loop runs with autoflush off and the refresh flushes after the deadline has exited, so an interrupted write can
-    never roll the session back; the API's direct call (flush=True, the default) still flushes itself."""
-    seen: dict[str, object] = {}
-    real = W.evaluate_watches
-
-    def _spy(session, **kw):
-        seen.update(kw)
-        return real(session, **kw)
-
-    monkeypatch.setattr(W, "evaluate_watches", _spy)
-    service.refresh_briefing(db)
-    assert seen.get("flush") is False
+    """No write of the pass runs while its deadline is armed (an interrupted write would roll the session back): every flush during
+    the refresh happens with no deadline on the session, and the pass's writes do land. The API's direct call (flush=True, the
+    default) still flushes itself."""
     import inspect
 
-    assert inspect.signature(real).parameters["flush"].default is True
+    from sqlalchemy import event
+
+    from src.database.maintenance import deadline_left_s
+
+    ids = _articles(db, 3)
+    _watches(db)
+    monkeypatch.setattr(W, "_fts_matcher", lambda _s, _q: list(ids))
+    flushes: list[float | None] = []
+    event.listen(db, "before_flush", lambda session, _ctx, _inst: flushes.append(deadline_left_s(session)))
+    service.refresh_briefing(db)
+    assert flushes and all(left is None for left in flushes), flushes
+    db.commit()
+    assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow", "Later"}
+    assert inspect.signature(W.evaluate_watches).parameters["flush"].default is True

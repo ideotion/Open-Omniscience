@@ -470,15 +470,15 @@ def _evaluate_watches_bounded(session) -> bool:
     took = time.monotonic() - began
     if finished or timed_out:
         # Outside the deadline, so no write is interrupted: the firings and stamps the pass made are written whole. A pass that
-        # failed for any other reason flushes nothing here, as before R695 (its own flush was never reached).
+        # failed for any other reason (a memory stop among them) is not flushed here; what it left pending is written by the
+        # producer loop's opening commit, as before R695.
         try:
             session.flush()
         except Exception as exc:  # noqa: BLE001 - see above
             log_failure(_LOG, "watch evaluation could not be written; briefing continues", exc, level=logging.WARNING)
-            try:
-                session.rollback()  # a failed flush leaves the session unusable for the producers that follow
-            except Exception:  # noqa: BLE001 - nothing more to do; the producers report their own failures
-                pass
+            # A failed flush leaves the session unusable for the producers that follow; if the rollback fails too, they report it.
+            with contextlib.suppress(Exception):
+                session.rollback()
     if armed and (timed_out or took >= PRODUCER_DEADLINE_S):
         _LOG.warning(
             "watch evaluation stopped after %.0f s (bound %.0f s); the watches it did not reach are evaluated next refresh",

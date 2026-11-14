@@ -33,6 +33,7 @@ from typing import Any, Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.database.maintenance import StatementTimeout
 from src.database.models import Article, Watch, WatchMatch
 from src.monitoring.secret_scrub import record_text
 
@@ -69,7 +70,12 @@ def watch_concept(session: Session, query: str):
         from src.analytics.queries import keyword_frequency
 
         return resolve_concept(query, expand=True, frequency=keyword_frequency(session))
-    except Exception:  # noqa: BLE001 - a disclosure must never break an evaluation pass
+    except Exception as exc:  # noqa: BLE001 - a disclosure must never break an evaluation pass
+        if _deadline_stopped(exc):
+            # R695: a bounded pass's stop, not a disclosure failure. Swallowed, the matcher would search the literal word only and
+            # the watch would be stamped and remember that narrower set, so the next full pass would fire on the ring's other
+            # languages as if they were new.
+            raise
         return None
 
 
@@ -350,8 +356,6 @@ def evaluate_watches(
     not reach keep their ``last_evaluated_at``, so none is recorded as checked when it was not. A firing recorded before the stop
     stays: it is true.
     """
-    from src.database.maintenance import StatementTimeout
-
     now = now or datetime.now(UTC)
     now_naive = now.replace(tzinfo=None)
     matcher = matcher or _fts_matcher
@@ -363,19 +367,24 @@ def evaluate_watches(
     return fired
 
 
-def _deadline_stopped(session: Session, exc: BaseException) -> bool:
+def _deadline_stopped(exc: BaseException) -> bool:
     """Whether ``exc`` is an enclosing statement deadline's stop rather than one watch's error (R695). Inside the deadline's block
-    its stop arrives as the driver's own interrupt (``OperationalError: interrupted``, from the progress handler that only the
-    deadline arms): the deadline has expired, or the memory guard on the same handler cut the read. Never raises."""
-    try:
-        from src.database.maintenance import deadline_expired
-
-        if deadline_expired(session):
-            return True
-    except Exception:  # noqa: BLE001 - no DB layer: no deadline
-        return False
+    its stop arrives as the driver's own interrupt, ``OperationalError`` whose text is exactly ``interrupted`` (sqlite3 and
+    sqlcipher3 alike), from the progress handler that only the deadline arms on the app's sessions: the deadline expired, or the
+    memory guard on the same handler cut the read. Any other error, even one raised after the deadline expired, is the watch's own;
+    the loop asks the deadline itself between watches. Never raises."""
     orig = getattr(exc, "orig", exc)
-    return str(orig).strip().lower() == "interrupted"
+    return isinstance(exc, StatementTimeout) or str(orig).strip().lower() == "interrupted"
+
+
+def _stop_if_spent(session: Session) -> None:
+    """Raise ``StatementTimeout`` when an enclosing deadline has already expired (R695). The progress handler fires only inside a
+    long statement, so a loop of short ones must ask between items, as ``deadline_expired`` says; without this, every watch after
+    the bound would still run and be stamped."""
+    from src.database.maintenance import deadline_expired
+
+    if deadline_expired(session):
+        raise StatementTimeout("the watch pass reached its deadline between watches")
 
 
 def _evaluate_each(session: Session, now_naive: datetime, matcher: Matcher, stop: type[BaseException]) -> list[dict]:
@@ -386,6 +395,7 @@ def _evaluate_each(session: Session, now_naive: datetime, matcher: Matcher, stop
         select(Watch).where(Watch.enabled.is_(True), Watch.threshold > 0)
     ).scalars().all()
     for w in watches:
+        _stop_if_spent(session)
         try:
             adv = watch_filters(w)
             if adv.is_default:
@@ -398,7 +408,7 @@ def _evaluate_each(session: Session, now_naive: datetime, matcher: Matcher, stop
         except stop:
             raise  # the pass's deadline, not this watch's fault: this watch stays unstamped (R695)
         except Exception as exc:  # noqa: BLE001 - one bad watch query must never break the pass
-            if _deadline_stopped(session, exc):
+            if _deadline_stopped(exc):
                 raise  # the deadline surfaces here as the driver's interrupt; statement_deadline names it on the way out (R695)
             w.last_evaluated_at = now_naive
             continue
