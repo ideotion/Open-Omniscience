@@ -520,3 +520,34 @@ def test_the_repair_stops_before_its_swap_once_the_database_closed(monkeypatch, 
     go.set()
     t.join(10)
     assert seen == {"outcome": "stopped"} and disposed == [], (seen, disposed)
+
+
+def test_the_repair_is_stopped_by_its_own_flag_before_the_stop_all_and_waited_for_by_it(registry, monkeypatch):
+    """R689 follow-up (2): the repair is a registry job the stop-all cannot cancel (``cancellable=False``: its switch is never cut
+    halfway), so it is stopped by its own flag. The lifespan raises that flag (``_stop_database_check``) BEFORE the stop-all, and the
+    stop-all then waits for the repair within its one deadline, like any job."""
+    from src.database import repair
+
+    assert repair.REPAIR_JOB.cancellable is False
+    main = (ROOT / "src/api/main.py").read_text(encoding="utf-8")
+    assert "repair.stop()" in main[main.index("def _stop_database_check"):main.index("def _ends_the_check_wait")]
+    assert main.index("    _stop_database_check()") < main.index("jobs_left = stop_all_jobs(")
+
+    # A writer that cannot be cancelled and ends only on the repair's own flag, as the copy does at its next batch.
+    monkeypatch.setattr(repair, "_CANCEL", threading.Event())
+    monkeypatch.setattr(repair, "_ARMED", False)
+    started = threading.Event()
+
+    def worker(ctx):
+        started.set()
+        while not repair._CANCEL.wait(0.02):
+            pass
+        return {"outcome": "stopped"}
+
+    job = bg.register_job(bg.BackgroundJob("repair-like", "repair-like", worker, is_writer=True, cancellable=False))
+    registry.append(job)
+    job.start()
+    assert started.wait(5)
+    assert bg.stop_all_jobs(0.3) == ["repair-like"], "without its own flag, nothing ends it"
+    repair.stop()
+    assert bg.stop_all_jobs(5.0) == []

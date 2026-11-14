@@ -98,8 +98,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/safety/data_location.py": (1, "Q"),
     "src/safety/data_volume.py": (4, "Q"),
     "src/scheduler/runlog.py": (2, "rc2"),
-    "src/weather/openmeteo.py": (1, "Plan J"),
-    "src/wiki/dumps.py": (2, "export"),
+    "src/wiki/dumps.py": (1, "export"),
 }
 
 

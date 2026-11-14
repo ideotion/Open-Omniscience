@@ -47,7 +47,10 @@
       el.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const b = await api("/api/markets/board?category=index");
-        $("idx-note").textContent = b.note || "";
+        // The board's note (b.note) repeats the tab intro above it sentence for sentence
+        // (end-of-day, official sources, as-of date and source per card, not real-time),
+        // so it is not printed a second time, and #idx-note keeps the failure list that
+        // loadIndicesData writes there just before it reloads this board.
         _idxCards = b.cards || [];
         renderIndicesBoard();
       } catch (e) { el.innerHTML = `<div class="muted">Could not load indices: ${esc(e.message)}</div>`; }
@@ -2641,6 +2644,14 @@
           b.tabIndex = on ? 0 : -1;
           if (on) hit = b;
         });
+        // A strip that scrolls sideways (phone width, app.css) brings the active tab into
+        // view inside the strip only: a physical delta on the strip's own scrollLeft, so the
+        // page never moves and right-to-left needs no special case.
+        if (hit && nav.scrollWidth > nav.clientWidth + 1 && typeof hit.getBoundingClientRect === "function") {
+          const nr = nav.getBoundingClientRect(), br = hit.getBoundingClientRect();
+          if (br.left < nr.left) nav.scrollLeft -= (nr.left - br.left) + 8;
+          else if (br.right > nr.right) nav.scrollLeft += (br.right - nr.right) + 8;
+        }
         return hit;
       }
       function select(key, focus) {    // the canonical switch: paint + callback
