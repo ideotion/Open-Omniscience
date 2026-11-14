@@ -453,7 +453,7 @@ def test_a_closing_pass_closes_each_descriptor_once_and_keeps_later_ones(tmp_pat
 @sqlcipher_only
 def test_an_erase_stopped_before_step_six_leaves_no_readable_salt_anywhere_under_the_data_dir(tmp_path, monkeypatch):
     """Encrypted copies of the corpus live under the data dir under names no list keeps up with (pre-restore snapshots,
-    salvage copies, anything copied byte for byte), each with the salt in its first page. Step 4b destroys every file's
+    salvage copies, anything copied byte for byte), each with the salt in its first page. Step 5b destroys every file's
     head before the slow step 6, so an erase stopped right before step 6 leaves no salt to read anywhere."""
     import shutil
 
@@ -492,9 +492,9 @@ def test_an_erase_stopped_before_step_six_leaves_no_readable_salt_anywhere_under
 
 
 @pytest.mark.skipif(os.name != "posix", reason="symlinks and FIFOs need POSIX here")
-@pytest.mark.parametrize("stop_after_step_one", [True, False])
-def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, monkeypatch, stop_after_step_one):
-    """Steps 1 and 6 touch every file under the data dir; neither may leave it. A symlinked folder is not entered, a
+@pytest.mark.parametrize("stop_before_step_six", [True, False])
+def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, monkeypatch, stop_before_step_six):
+    """Steps 5b and 6 touch every file under the data dir, and no step may leave it. A symlinked folder is not entered, a
     symlinked file is removed and never written through, a FIFO never blocks the walk, and the targets outside are intact."""
     data = tmp_path / "data"
     data.mkdir()
@@ -513,10 +513,10 @@ def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, mo
         (outside / target).write_bytes(b"KEEP" * 2048)
         (data / name).parent.mkdir(exist_ok=True)
         (data / name).symlink_to(outside / target)
-    if stop_after_step_one:
+    if stop_before_step_six:
 
         def stopped(*_a, **_k):
-            raise KeyboardInterrupt("stopped after step 1")
+            raise KeyboardInterrupt("stopped before step 6")
 
         import src.safety.data_volume as data_volume
 

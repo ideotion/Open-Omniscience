@@ -66,7 +66,6 @@ _ANCHORS_DB = "anchors.db"
 # the store's own file) and the gate's probe.
 _DUCK_FILES = ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb")
 _KEY_FILES = ("custody_ed25519.pem", "custody_ml_dsa_65.key")
-_DB_SIDECARS = ("-wal", "-shm", "-journal")
 
 _LIMIT_NOTE = (
     "The guarantee here is crypto-erase: the SQLCipher salt is destroyed, so the "
@@ -136,8 +135,15 @@ def _hold(path: Path, *, whole: bool) -> None:
     if os.name != "posix":
         return
     try:
-        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
     except OSError:
+        return
+    try:
+        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        regular = False
+    if not regular:  # a FIFO, socket or device is never kept to write to
+        os.close(fd)
         return
     # No lock: the erase waits on nothing, and a rescrub of an earlier wipe may hold it for a long rewrite. A list append
     # is atomic, and a pass takes only the entries present when it starts, removing them from the front.
@@ -317,11 +323,11 @@ def _resolve(data_dir: Path | None) -> dict:
 def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
-    Order: destroy the SQLCipher salt page of each encrypted DB, then overwrite its
-    WAL and journal whole (they hold copies of page 1) and its -shm head, destroy the on-disk signing keys, overwrite the DuckDB cache
-    header, fully overwrite the plaintext ``anchors.db``, clear the in-memory
-    passphrase, then overwrite-and-unlink anything else under the data dir and
-    ``rmtree`` it. Fast at any corpus size (the encrypted body is never rewritten —
+    Order: (1) in three passes, the salt page of each encrypted DB (main, custody, lanes) with its -shm head zeroed,
+    then its WAL and journal whole (they hold copies of page 1), then the salt pages again, unlinked; (2) the on-disk
+    keys; (3) the DuckDB cache header and key sidecar; (4) ``anchors.db`` whole; (5) the in-memory passphrase;
+    (5b) the head of every other file under the data dir (encrypted snapshots and copies); (6) a full overwrite and
+    unlink of everything left, then ``rmtree``. No link is written through except the app's own databases. Fast at any corpus size (the encrypted body is never rewritten —
     its key is gone). ``data_dir`` overrides the target (tests/tools).
 
     ``hold_for_rescrub`` (the panic wipe, POSIX only) keeps a descriptor on every main file, -wal and -journal before
@@ -396,7 +402,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     # journal_size_limit (session.py) caps only the size the WAL is cut back to after a checkpoint, never its growth, so
     # this pass costs one sequential write of the WAL's size (usually a few MiB, at worst the hundreds of MiB a long
     # un-checkpointed write leaves) -- and it waits on nothing else. The -shm index
-    # holds frame numbers and checksums, never page data, so its head pass stays as it was.
+    # holds frame numbers and checksums, never page data, so its head is only zeroed (see pass 1).
     # THREE PASSES, so no checkpoint can carry the salt back into a file this step has already left. Pass 1 overwrites
     # the head of every -shm (its header gone, no connection trusts the log index again, so none checkpoints) and of
     # every main file, unlinking nothing. Pass 2 rewrites the -wal and -journal whole. Pass 3 overwrites the main and
@@ -465,31 +471,6 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     seen += anchors_seen
     wiped += anchors_wiped
 
-    # 4b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before the slow step 6.
-    #    Encrypted copies of the corpus live there under names no list here can keep up with (the retained
-    #    pre-restore-<ts>.db snapshots, salvage and damaged copies), each with the corpus's salt in its first page, and
-    #    step 6 alone (a full overwrite, hours at corpus size) would leave them readable if the erase were stopped before
-    #    it got there. Fail toward shredding more: no file is told apart by its contents (an encrypted page is
-    #    indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten whole and a
-    #    -shm head is zeroed. It runs AFTER the keys, the cache and the anchors (a large folder costs one write and sync
-    #    per file, and nothing may delay the keys). NOT covered by it, stated: PLAINTEXT staging (backup members, an
-    #    extracted restore, a reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past
-    #    its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a failure.
-    heads_elsewhere = 0
-    if base.exists():
-        keys_root = paths["keys_dir"]
-        for root, dirs, names in os.walk(base, onerror=_unlisted):
-            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not _is_link(Path(root, d))]
-            for name in names:
-                p = Path(root, name)
-                if p.is_symlink() or not p.is_file():
-                    continue
-                whole = name.endswith(("-wal", "-journal"))
-                if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
-                    heads_elsewhere += 1
-                else:
-                    overwrite_failures.append(str(p))
-
     # 5) Clear the in-memory passphrase (never persisted) so the app holds no key. Only
     #    for the real default store — an explicit override dir must not mutate process
     #    state that belongs to a different (the live) corpus.
@@ -508,6 +489,31 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
             except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
                 pass
         passphrase_cleared = True
+
+    # 5b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before the slow step 6.
+    #    Encrypted copies of the corpus live there under names no list here can keep up with (the retained
+    #    pre-restore-<ts>.db snapshots, salvage and damaged copies), each with the corpus's salt in its first page, and
+    #    step 6 alone (a full overwrite, hours at corpus size) would leave them readable if the erase were stopped before
+    #    it got there. Fail toward shredding more: no file is told apart by its contents (an encrypted page is
+    #    indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten whole and a
+    #    -shm head is zeroed. It runs AFTER the keys, the cache, the anchors and the passphrase (a large folder costs one
+    #    write and sync per file, and nothing may delay those). NOT covered by it, stated: PLAINTEXT staging (backup members, an
+    #    extracted restore, a reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past
+    #    its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a failure.
+    heads_elsewhere = 0
+    if base.exists():
+        keys_root = paths["keys_dir"]
+        for root, dirs, names in os.walk(base, onerror=_unlisted):
+            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not _is_link(Path(root, d))]
+            for name in names:
+                p = Path(root, name)
+                if p.is_symlink() or not p.is_file():
+                    continue
+                whole = name.endswith(("-wal", "-journal"))
+                if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
+                    heads_elsewhere += 1
+                else:
+                    overwrite_failures.append(str(p))
 
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The
     #    encrypted DBs/keys/anchors are already gone; remaining files are small side

@@ -642,7 +642,7 @@ imply a protection we cannot deliver.
   lose their salt page first (crypto-erase; the corpus body is never rewritten, so the erase stays fast at any size),
   then their write-ahead log and rollback journal are overwritten WHOLE, because each commit that touched page 1 left a
   copy of the salt in them past their first 4 KiB (R708), and the main heads are overwritten again after that, so a
-  checkpoint running meanwhile cannot carry the salt home. After the keys and before the slow full rewrite, every other file under the data dir loses
+  checkpoint running meanwhile cannot carry the salt home. After the keys, the anchors and the passphrase and before the slow full rewrite, every other file under the data dir loses
   its head the same way (a -wal or -journal whole), because encrypted copies of the corpus with its salt in their first
   page live there under names no list keeps up with (pre-restore snapshots, salvage copies), so a wipe stopped before
   the full rewrite leaves none of those readable. Plaintext staging (backup members, an extracted restore, a
