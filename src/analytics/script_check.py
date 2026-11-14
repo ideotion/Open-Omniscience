@@ -20,7 +20,8 @@ allowed to fill an absent one. It then hands the article to that detector, which
 the language or leaves it honestly unknown -- this module never names one itself.
 
 WHAT IT REFUSES TO JUDGE. A language written in more than one script (Serbian, Bosnian,
-Azerbaijani, Kazakh, Uzbek, Mongolian, Punjabi ...) and a code it does not know: no
+Azerbaijani, Kazakh, Uzbek, Mongolian, Punjabi, Malay with Jawi, Hausa with Ajami, Sindhi,
+Sorani ...) and a code it does not know: no
 contradiction can be shown, so none is claimed. A text with fewer than
 :data:`MIN_LETTERS` letters: too little to count. Japanese and Korean list Han among
 their own scripts, so a Chinese text tagged ``ja`` is NOT refuted (the scripts overlap and
@@ -43,26 +44,29 @@ MIN_LETTERS = 100
 #: check runs on every indexed article, so a bounded prefix is enough.
 SAMPLE_CHARS = 5000
 
+#: How much of the raw body is stripped of markup before :data:`SAMPLE_CHARS` of visible
+#: text are read (a style block or SVG at the top can be long).
+MARKUP_PREFIX_CHARS = 100_000
+
 _LATIN = ("LATIN",)
 _CYRILLIC = ("CYRILLIC",)
 _ARABIC = ("ARABIC",)
 _DEVANAGARI = ("DEVANAGARI",)
-_HAN = ("CJK",)
 
 #: Languages written in ONE script (or a fixed set that always occurs together), keyed by
 #: the primary subtag. The script names are the first word of ``unicodedata.name``.
 _OWN_SCRIPTS: dict[str, tuple[str, ...]] = {
     **dict.fromkeys(
         (
-            "en", "fr", "de", "es", "it", "pt", "nl", "hu", "id", "ms", "sv", "da", "nb",
+            "en", "fr", "de", "es", "it", "pt", "nl", "hu", "id", "sv", "da", "nb",
             "nn", "no", "pl", "sl", "hr", "ro", "cs", "sk", "ca", "sw", "et", "lv", "lt",
             "tr", "fi", "is", "ga", "cy", "eu", "gl", "mt", "sq", "tl", "fil", "af", "vi",
-            "lb", "fo", "br", "oc", "eo", "la", "so", "ha", "yo", "ig", "zu", "xh",
+            "lb", "fo", "br", "oc", "eo", "la", "so", "yo", "ig", "zu", "xh",
         ),
         _LATIN,
     ),
     **dict.fromkeys(("ru", "uk", "bg", "be", "mk"), _CYRILLIC),
-    **dict.fromkeys(("ar", "fa", "ur", "ps", "ckb", "sd"), _ARABIC),
+    **dict.fromkeys(("ar", "fa", "ur", "ps"), _ARABIC),
     **dict.fromkeys(("hi", "mr", "ne"), _DEVANAGARI),
     "el": ("GREEK",),
     "he": ("HEBREW",),
@@ -81,9 +85,9 @@ _OWN_SCRIPTS: dict[str, tuple[str, ...]] = {
     "hy": ("ARMENIAN",),
     "am": ("ETHIOPIC",),
     "si": ("SINHALA",),
-    "zh": _HAN,
-    "ja": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA"),
-    "ko": ("HANGUL", "CJK"),
+    "zh": ("CJK", "IDEOGRAPHIC"),
+    "ja": ("CJK", "HIRAGANA", "KATAKANA", "KATAKANA-HIRAGANA", "HALFWIDTH", "IDEOGRAPHIC"),
+    "ko": ("HANGUL", "CJK", "HALFWIDTH"),
 }
 
 
@@ -103,6 +107,22 @@ def _script_of(ch: str) -> str:
     return name.split(" ", 1)[0] if name else ""
 
 
+def _visible_text(text: str | None) -> str:
+    """The text a reader sees: markup removed the way extraction removes it.
+
+    A stored body can still carry HTML (a newsletter import, a page whose extraction kept
+    tags), and tag names, attributes and CSS are Latin letters: a Russian body in ordinary
+    ``<div class=...>`` markup measured under half Cyrillic before stripping and all
+    Cyrillic after. Counting the raw body would refute a correct ``ru`` tag. Only a
+    bounded prefix is stripped, so a megabyte page costs no more than a long article.
+    """
+    if not text:
+        return ""
+    from src.analytics.extract import strip_markup
+
+    return strip_markup(text[:MARKUP_PREFIX_CHARS])
+
+
 def own_script_share(language: str | None, text: str | None) -> tuple[float, int] | None:
     """``(share of letters in the language's own script, letters counted)``, or ``None``
     when the language has no fixed script. Only the first :data:`SAMPLE_CHARS` are read."""
@@ -110,7 +130,7 @@ def own_script_share(language: str | None, text: str | None) -> tuple[float, int
     if allowed is None:
         return None
     letters = own = 0
-    for ch in (text or "")[:SAMPLE_CHARS]:
+    for ch in _visible_text(text)[:SAMPLE_CHARS]:
         if not ch.isalpha():
             continue
         letters += 1

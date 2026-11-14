@@ -80,7 +80,7 @@ INDEXER_VERSION = 2
 #: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
 #: the www modules below bumps THIS number and leaves the keyword stamp where it is, so a restore still carries the keyword rows and
 #: re-extracts only the places and entities.
-WWW_INDEXER_VERSION = 2
+WWW_INDEXER_VERSION = 1
 
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
@@ -158,7 +158,6 @@ WWW_ONLY_MODULES: tuple[str, ...] = (
 WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/__init__.py",
     "src/analytics/reindex_parallel.py",
-    "src/analytics/script_check.py",
     "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/timemap/__init__.py",

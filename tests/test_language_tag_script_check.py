@@ -144,3 +144,24 @@ def test_an_unrefuted_tag_is_left_as_asserted(db):
     index_article(db, a, extractor=BaselineExtractor())
     assert a.language == "en"
     assert a.detected_language is None
+
+
+def test_markup_letters_do_not_count_against_a_correct_tag():
+    # Tag names, attributes and CSS are Latin letters; a Russian body in ordinary markup
+    # must still read as Russian (measured under half Cyrillic before stripping).
+    wrapped = (
+        '<html><head><style>.article-body{font-family:Georgia,serif;margin:0 auto;'
+        "max-width:720px;line-height:1.6;color:#222;background:#fff}</style></head><body>"
+        + "".join(
+            f'<div class="article-paragraph-wrapper"><p style="margin-bottom:12px">{s}.</p></div>'
+            for s in RU.split(". ")
+        )
+        + "</body></html>"
+    )
+    assert not script_refutes("ru", wrapped)
+    assert script_refutes("en", wrapped)
+
+
+def test_a_malay_page_in_jawi_is_never_judged():
+    # Malay is also written in Arabic script (Jawi), so an `ms` tag is not one fixed answer.
+    assert own_scripts("ms") is None
