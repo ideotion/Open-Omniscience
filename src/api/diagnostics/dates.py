@@ -204,6 +204,10 @@ def date_extraction_log(
             "local, never transmitted."
         ),
     }
+    # K7's record (R706): written where the scan is made, never by the KPI GET; only the standard run (scan 1500, unfiltered).
+    from src.monitoring.kpi import record_date_coverage
+
+    record_date_coverage(payload, {"scan": scan, "days": days, "lang": lang})
     body = envelope(
         kind="date-diagnostics",
         query={"scan": scan, "sample": sample, "days": days, "lang": lang},

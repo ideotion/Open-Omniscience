@@ -1226,7 +1226,7 @@
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
       const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
-        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:false})">${esc(t("Map"))}</button>`
+        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:false})">${esc(t("Mind-map"))}</button>`
         + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" data-on-click="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
         // Offered only when the term IS in a ring the corpus carries more than one form
         // of: a Concept view over a single language is a straight line drawn as though
