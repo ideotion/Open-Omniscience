@@ -22,7 +22,6 @@ from src.api.cross_site import refuse_cross_site_get
 # (module, full path of the GET route in that module's own router)
 GUARDED = [
     ("src.api.diagnostics.scan_estimate", "/api/diagnostics/all-job/estimate"),
-    ("src.api.custody", "/api/custody/export"),
     # served_file_response appends to diagnostics/runs.jsonl (+ .lock); the volume route also makes a directory, the parts route touches its set
     ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/download"),
     ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/volumes/{name}"),
@@ -39,6 +38,7 @@ MOVED_TO_POST = [
     ("src.api.wiki", "/api/wiki/dumps/sizes"),  # up to 12 HEADs to the dump host
     ("src.api.geo", "/api/geo/downloads/size"),  # one HEAD to the OSM mirror
     ("src.api.annotations", "/api/annotations/export"),  # signs the bundle; the first export creates the annotation signing key
+    ("src.api.custody", "/api/custody/export"),  # signs its head; the first export creates the custody signing key and log (R278 F2)
     # the heavy diagnostics: minutes of CPU, memory or local-model time, or a fixture self-test run on demand (R278 F1/P2)
     ("src.api.diagnostics.performance", "/api/diagnostics/performance"),
     ("src.api.diagnostics.performance", "/api/diagnostics/benchmark"),
@@ -63,6 +63,13 @@ MOVED_TO_POST = [
     ("src.api.diagnostics.source_tags", "/api/diagnostics/source-tags-selftest"),
     ("src.api.signals", "/api/signals/fdr-selftest"),
 ]
+
+# A moved path whose GET is matched by another GET route instead of answering 405: that route is a read that makes nothing.
+_GET_FALLS_THROUGH = {
+    # GET /api/custody/export is the item read /api/custody/{item_id} for the id "export": no entries, 404, and since R694 an item read
+    # never creates the log or a key (tests/test_custody_reads_mint_nothing.py).
+    "/api/custody/export",
+}
 
 
 def _request(headers: dict[str, str]) -> Request:
@@ -109,7 +116,10 @@ def test_a_get_of_a_moved_route_is_refused_and_a_foreign_post_too(module: str, p
         got = client.get(path)
         foreign = client.post(path, headers={"Origin": "https://evil.example"})
         null = client.post(path, headers={"Origin": "null"})
-    assert got.status_code == 405, (path, got.status_code)
+    if path in _GET_FALLS_THROUGH:
+        assert got.status_code == 404, (path, got.status_code)  # the read it falls to, which makes nothing (its own test pins that)
+    else:
+        assert got.status_code == 405, (path, got.status_code)
     assert foreign.status_code == 403 and null.status_code == 403
     assert "Cross-origin state-changing request refused" in foreign.json()["detail"]
 
