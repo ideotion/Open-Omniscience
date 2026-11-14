@@ -36,7 +36,7 @@ GET	/api/catalog/columns	internal		api	CSV column reference for programmatic cal
 POST	/api/commodities/{symbol}/prices/import-csv	feature	3	Markets (O)	import a commodity price series from CSV
 POST	/api/custody/log	internal		api	custody entries are appended by ingest; a manual append is programmatic
 GET	/api/custody/providers	feature	3	Settings > Custody (N)	list anchor providers and their availability beside the anchoring setting
-POST	/api/custody/verify	feature	3	Evidence (custody owner first)	check a custody log export; not wired yet because the verifier reports an empty log as verified, a log cut at its end as intact, and a per-item export (global seq numbers) as a broken chain
+POST	/api/custody/verify	feature	3	Evidence (custody owner first)	check a custody log export; the verifier now fails closed (empty, cut-short and headless bundles refused by name, one-item exports checked entry by entry), and no button calls it yet
 GET	/api/database/backup	superseded			plain SQLite snapshot download (A-008); the Backup tab exports through /api/backup/v2
 GET	/api/diagnostics/ai	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 POST	/api/diagnostics/ai-activity-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool

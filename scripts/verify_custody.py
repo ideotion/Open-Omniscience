@@ -24,10 +24,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.custody.log import verify_export  # noqa: E402
+from src.custody.log import ITEM_SCOPE_NOTE, WHOLE_LOG_SCOPE, verify_export  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
+    # A bundle's own text is printed back; a lone surrogate in it has no UTF-8 form and must not crash the report.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = {a for a in argv[1:] if a.startswith("--")}
     if len(args) != 1:
@@ -36,15 +40,26 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    bundle = json.loads(Path(args[0]).read_text())
+    try:
+        bundle = json.loads(Path(args[0]).read_text())
+    except (OSError, ValueError, RecursionError) as exc:  # ValueError: JSONDecodeError, UnicodeDecodeError, >4300-digit ints
+        # A file cut mid-record is not JSON at all: refused by name, never a traceback.
+        print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
+              "a file cut mid-record reads like this")
+        return 1
+    if not isinstance(bundle, dict):
+        bundle = {"entries": bundle}
     ok, issues = verify_export(bundle, require_signer="--pin" in flags)
 
-    signer = bundle.get("signer", {})
+    raw_signer = bundle.get("signer")
+    signer: dict = raw_signer if isinstance(raw_signer, dict) else {}
     print(f"log_version    : {bundle.get('log_version')}")
     print(f"item_id        : {bundle.get('item_id')}")
     print(f"entry_count    : {bundle.get('entry_count')}")
     print(f"signer ed25519 : {signer.get('ed25519_pub')}")
     print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
+    if ok:  # what a "verified" covers, said only beside one
+        print(f"scope          : {ITEM_SCOPE_NOTE if bundle.get('item_id') else WHOLE_LOG_SCOPE}")
     print(f"VERIFIED       : {ok}")
     if issues:
         print("ISSUES:")
