@@ -653,7 +653,23 @@ imply a protection we cannot deliver.
   is refused before it can overwrite the corpus.
 - **Panic wipe** (`src/safety/panic.py`, under **Advanced → Uninstall & wipe** — kept in a
   section of its own, apart from the tools above, because it cannot be undone):
-  best-effort overwrite-then-delete of the whole data dir, requiring an explicit confirmation. **Honest limit:** overwrite-in-place does *not*
+  best-effort overwrite-then-delete of the whole data dir, requiring an explicit confirmation. The encrypted databases
+  lose their salt page first (crypto-erase; the corpus body is never rewritten, so the erase stays fast at any size),
+  then their write-ahead log and rollback journal are overwritten WHOLE, because each commit that touched page 1 left a
+  copy of the salt in them past their first 4 KiB (R708), and the main heads are overwritten again after that, so a
+  checkpoint running meanwhile cannot carry the salt home. After the keys, the anchors and the passphrase and before the slow full rewrite, every other file under the data dir loses
+  its head the same way (a -wal or -journal whole), because encrypted copies of the corpus with its salt in their first
+  page live there under names no list keeps up with (pre-restore snapshots, salvage copies), so a wipe stopped before
+  the full rewrite leaves none of those readable. Plaintext staging (backup members, an extracted restore, a
+  reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past its head: both are
+  destroyed only by the full rewrite. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
+  junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
+  data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
+  sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked
+  file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
+  unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
+  a commit later than that is the window left; every file under the data dir the earlier steps did not
+  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).

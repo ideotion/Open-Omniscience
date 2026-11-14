@@ -37,6 +37,8 @@ import contextlib
 import logging
 import os
 import shutil
+import stat
+import threading
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
@@ -64,7 +66,6 @@ _ANCHORS_DB = "anchors.db"
 # the store's own file) and the gate's probe.
 _DUCK_FILES = ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb")
 _KEY_FILES = ("custody_ed25519.pem", "custody_ml_dsa_65.key")
-_DB_SIDECARS = ("-wal", "-shm", "-journal")
 
 _LIMIT_NOTE = (
     "The guarantee here is crypto-erase: the SQLCipher salt is destroyed, so the "
@@ -76,7 +77,7 @@ _LIMIT_NOTE = (
 )
 
 
-def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
+def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> bool:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
     otherwise the whole file is overwritten in bounded chunks (small files only —
@@ -84,18 +85,34 @@ def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
     whether every byte was actually written and fsynced -- callers must NOT report
     a destructive overwrite as done just because no exception reached them; a
     silent False here with the outcome still reported as success is exactly the
-    false-confidence bug audit OO-02 exists to eliminate."""
+    false-confidence bug audit OO-02 exists to eliminate.
+
+    Writes ONLY a regular file at ``path`` itself: a symlink is never written through (its target may be anywhere,
+    outside the data dir included) and a FIFO, socket or device is never opened to write (it would block or reach
+    hardware); either is reported as not overwritten. ``O_NOFOLLOW`` where the platform has it, so a name swapped for
+    a link between a check and the open is refused too; elsewhere the link check right before the open."""
     try:
-        size = path.stat().st_size
+        if path.is_symlink():
+            raise OSError("a link is never written through")
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0))
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError("not a regular file")
+        except OSError:
+            os.close(fd)
+            raise
+        size = st.st_size
         limit = size if head_bytes is None else min(size, head_bytes)
-        with open(path, "r+b", buffering=0) as f:
+        with os.fdopen(fd, "r+b", buffering=0) as f:
             written = 0
             # ``while True: if not <wanted>: break``, not ``while <wanted>:``: the back-edge of the second sits outside the ``with``'s exception table
             # on CPython 3.13 (src/utils/interrupts.py; R161/R163)
             while True:
                 if written >= limit:
                     break
-                chunk = os.urandom(min(_CHUNK, limit - written))
+                n = min(_CHUNK, limit - written)
+                chunk = bytes(n) if zeros else os.urandom(n)
                 f.write(chunk)
                 written += len(chunk)
             f.flush()
@@ -104,6 +121,91 @@ def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
     except OSError:
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", path)
         return False
+
+
+# Descriptors the panic wipe keeps on the files it unlinked, as (fd, whole): a transaction already under way when the
+# erase ran still holds the unlinked file and, on commit, writes page 1 -- salt included -- into it.
+_HELD: list[tuple[int, bool]] = []
+_HELD_LOCK = threading.Lock()
+
+
+def _hold(path: Path, *, whole: bool) -> None:
+    """Keep a descriptor on ``path`` for :func:`rescrub_held`. POSIX only: on Windows an open descriptor would make the
+    unlink fail. Never raises."""
+    if os.name != "posix":
+        return
+    try:
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+    except OSError:
+        return
+    try:
+        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        regular = False
+    if not regular:  # a FIFO, socket or device is never kept to write to
+        os.close(fd)
+        return
+    # No lock: the erase waits on nothing, and a rescrub of an earlier wipe may hold it for a long rewrite. A list append
+    # is atomic, and a pass takes only the entries present when it starts, removing them from the front.
+    _HELD.append((fd, whole))
+
+
+def rescrub_held(*, close: bool) -> int:
+    """Overwrite again, through the kept descriptors, the head of every unlinked main file and the whole of every
+    unlinked -wal and -journal; with ``close`` the descriptors are then let go. Returns how many were rewritten. Never
+    raises: the wipe is done, this closes the window a late commit leaves."""
+    done = 0
+    # The lock is held for the whole rewrite, so a closing pass can never close a descriptor another pass is still writing
+    # through (its number could already belong to an unrelated file). Never on a latency path: the wipe has returned.
+    with _HELD_LOCK:
+        held = list(_HELD)
+        if close:
+            del _HELD[: len(held)]
+        done = _rewrite_held(held, close=close)
+    return done
+
+
+def held_count() -> int:
+    """How many descriptors :func:`rescrub_held` still holds."""
+    return len(_HELD)
+
+
+def _rewrite_held(held: list[tuple[int, bool]], *, close: bool) -> int:
+    done = 0
+    for fd, whole in held:
+        try:
+            size = os.fstat(fd).st_size
+            limit = size if whole else min(size, _SQLCIPHER_PAGE1)
+            os.lseek(fd, 0, os.SEEK_SET)
+            written = 0
+            while True:
+                if written >= limit:
+                    break
+                written += os.write(fd, os.urandom(min(_CHUNK, limit - written)))
+            os.fsync(fd)
+            done += 1
+        except OSError:
+            _LOG.warning("crypto-erase: a held file could not be rewritten again")
+        finally:
+            if close:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+    return done
+
+
+def _is_link(p: Path) -> bool:
+    """A symlink, or a Windows junction (which ``os.walk(followlinks=False)`` still enters)."""
+    try:
+        return p.is_symlink() or bool(getattr(p, "is_junction", lambda: False)())
+    except OSError:
+        return True  # unknown: treated as a link, never entered
+
+
+def _real(db: Path) -> Path:
+    try:
+        return db.resolve() if db.is_symlink() else db
+    except OSError:
+        return db
 
 
 def _key_files_lock() -> contextlib.AbstractContextManager:
@@ -117,7 +219,7 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
     return KEY_FILES_LOCK
 
 
-def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tuple[int, int]:
+def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None) -> tuple[int, int]:
     """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
     (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
     before the caller lets the key-file lock go. A function of its own with no handler, called inside the caller's
@@ -131,7 +233,8 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tu
         if s and overwritten:
             keys_destroyed.append(name)
     if keys_dir.is_dir():
-        for root, _dirs, names in os.walk(keys_dir):
+        for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
+            dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]  # a junction too, never entered
             for name in names:
                 s, _overwritten, w = track(Path(root) / name)
                 seen += s
@@ -140,7 +243,7 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tu
     return seen, wiped
 
 
-def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
+def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> tuple[bool, bool, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
     write actually completed, ``unlinked`` whether the directory entry was removed.
@@ -152,7 +255,7 @@ def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bo
             return (False, False, False)
     except OSError:
         return (False, False, False)
-    overwritten = _overwrite(path, head_bytes=head_bytes)
+    overwritten = _overwrite(path, head_bytes=head_bytes, zeros=zeros)
     try:
         path.unlink()
         return (True, overwritten, True)
@@ -217,15 +320,19 @@ def _resolve(data_dir: Path | None) -> dict:
     }
 
 
-def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -> dict:
+def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
-    Order: destroy the SQLCipher salt page of each encrypted DB (+ its WAL/SHM/
-    journal sidecars), destroy the on-disk signing keys, overwrite the DuckDB cache
-    header, fully overwrite the plaintext ``anchors.db``, clear the in-memory
-    passphrase, then overwrite-and-unlink anything else under the data dir and
-    ``rmtree`` it. Fast at any corpus size (the encrypted body is never rewritten —
-    its key is gone). ``data_dir`` overrides the target (tests/tools)."""
+    Order: (1) in three passes, the salt page of each encrypted DB (main, custody, lanes) with its -shm head zeroed,
+    then its WAL and journal whole (they hold copies of page 1), then the salt pages again, unlinked; (2) the on-disk
+    keys; (3) the DuckDB cache header and key sidecar; (4) ``anchors.db`` whole; (5) the in-memory passphrase;
+    (5b) the head of every other file under the data dir (encrypted snapshots and copies); (6) a full overwrite and
+    unlink of everything left, then ``rmtree``. No link is written through except the app's own databases. Fast at any corpus size (the encrypted body is never rewritten —
+    its key is gone). ``data_dir`` overrides the target (tests/tools).
+
+    ``hold_for_rescrub`` (the panic wipe, POSIX only) keeps a descriptor on every main file, -wal and -journal before
+    it is unlinked, so :func:`rescrub_held` can destroy what a transaction already under way writes into the unlinked
+    file after this returns (its commit puts page 1, salt included, back on the disk)."""
     if not confirm:
         raise PermissionError("quick_crypto_erase requires confirm=True (this is irreversible)")
 
@@ -241,6 +348,9 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # not destruction. Reported honestly rather than folded into "headers_destroyed" /
     # "keys_destroyed", which must only ever mean the overwrite actually completed.
     overwrite_failures: list[str] = []
+
+    def _unlisted(failed_listing) -> None:  # a folder a walk cannot list is named (its path only), never skipped in silence
+        overwrite_failures.append(str(getattr(failed_listing, "filename", None) or "an unlistable folder"))
 
     def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
         s, overwritten, w = _shred(p, head_bytes=head_bytes)
@@ -278,22 +388,57 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
 
-    # 1) Destroy the salt/header page of each encrypted DB and its sidecars. Head-only
-    #    overwrite = instant even for a 100 GB corpus; the salt is what matters.
+    # 1) Destroy the salt/header page of each encrypted DB, then its sidecars. Head-only
+    #    on the main file = instant even for a 100 GB corpus; the salt is what matters.
     # The lane files join this loop rather than falling through to step 6: each is an
     # encrypted SQLCipher database with its OWN salt page, and head-only is what keeps
     # the erase instant at 100 GB (see ``_lane_dbs``).
-    for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())):
-        if db is None:
-            continue
-        for suffix in ("", *_DB_SIDECARS):
-            p = db if suffix == "" else db.with_name(db.name + suffix)
-            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1)
+    # R708. Every main file's salt page goes first, so no long WAL write delays them.
+    # The sidecars follow, and the write-ahead log and the rollback journal are overwritten WHOLE: SQLCipher keeps the
+    # 16-byte salt in plaintext at the start of page 1, and every committed change to page 1 leaves a copy of that page
+    # in a WAL frame (or, in rollback mode, in the journal) at an offset far past this file's first 4 KiB. Measured on a
+    # 20-commit WAL with checkpoints off: the salt sat in 21 places in the -wal, 20 of them beyond the 4 KiB the old
+    # head-only pass destroyed, so the old erase left the salt readable for as long as the WAL's blocks survived. The
+    # journal_size_limit (session.py) caps only the size the WAL is cut back to after a checkpoint, never its growth, so
+    # this pass costs one sequential write of the WAL's size (usually a few MiB, at worst the hundreds of MiB a long
+    # un-checkpointed write leaves) -- and it waits on nothing else. The -shm index
+    # holds frame numbers and checksums, never page data, so its head is only zeroed (see pass 1).
+    # THREE PASSES, so no checkpoint can carry the salt back into a file this step has already left. Pass 1 overwrites
+    # the head of every -shm (its header gone, no connection trusts the log index again, so none checkpoints) and of
+    # every main file, unlinking nothing. Pass 2 rewrites the -wal and -journal whole. Pass 3 overwrites the main and
+    # -shm heads once more and unlinks them, catching a checkpoint that was already copying page 1 home during pass 2.
+    # A database reached through a link (a corpus kept on another drive and linked into place) is erased where it really
+    # is: these are the app's own files, the one place a link is followed. Every other file is never written through one.
+    dbs = [_real(db) for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
+    head_ok: dict[Path, bool] = {}
+    # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
+    # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
+    # it toward 32 GiB in the security read; a zeroed header reads as "rebuild from the log", which is already noise.
+    for db in dbs:
+        for p in (db.with_name(db.name + "-shm"), db):
+            if p.exists():
+                head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
+    for db in dbs:
+        for suffix in ("-wal", "-journal"):
+            p = db.with_name(db.name + suffix)
+            if hold_for_rescrub:
+                _hold(p, whole=True)
+            s, overwritten, w = _shred(p)
             seen += s
             wiped += w
             if s and not overwritten:
                 overwrite_failures.append(str(p))
-            if s and overwritten and suffix == "":
+    for db in dbs:
+        for p in (db, db.with_name(db.name + "-shm")):
+            if hold_for_rescrub and p == db:
+                _hold(p, whole=False)
+            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
+            overwritten = overwritten and head_ok.get(p, True)
+            seen += s
+            wiped += w
+            if s and not overwritten:
+                overwrite_failures.append(str(p))
+            if s and overwritten and p == db:
                 headers.append(db.name)
 
     # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
@@ -304,7 +449,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
     with _key_files_lock():
-        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed)
+        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted)
     seen += _s
     wiped += _w
 
@@ -345,9 +490,37 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
                 pass
         passphrase_cleared = True
 
+    # 5b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before the slow step 6.
+    #    Encrypted copies of the corpus live there under names no list here can keep up with (the retained
+    #    pre-restore-<ts>.db snapshots, salvage and damaged copies), each with the corpus's salt in its first page, and
+    #    step 6 alone (a full overwrite, hours at corpus size) would leave them readable if the erase were stopped before
+    #    it got there. Fail toward shredding more: no file is told apart by its contents (an encrypted page is
+    #    indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten whole and a
+    #    -shm head is zeroed. It runs AFTER the keys, the cache, the anchors and the passphrase (a large folder costs one
+    #    write and sync per file, and nothing may delay those). NOT covered by it, stated: PLAINTEXT staging (backup members, an
+    #    extracted restore, a reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past
+    #    its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a failure.
+    heads_elsewhere = 0
+    if base.exists():
+        keys_root = paths["keys_dir"]
+        for root, dirs, names in os.walk(base, onerror=_unlisted):
+            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not _is_link(Path(root, d))]
+            for name in names:
+                p = Path(root, name)
+                if p.is_symlink() or not p.is_file():
+                    continue
+                whole = name.endswith(("-wal", "-journal"))
+                if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
+                    heads_elsewhere += 1
+                else:
+                    overwrite_failures.append(str(p))
+
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The
     #    encrypted DBs/keys/anchors are already gone; remaining files are small side
     #    files, so a full overwrite here is cheap and complete (no 4 MiB cap — OO-02).
+    #    THIS STEP REWRITES EVERY BYTE OF EVERY FILE IT FINDS. A future LARGE file under the data dir (a blob
+    #    store, a dump kept inside it) must not fall through to here: give it its own step above that destroys what
+    #    keys it and then only unlinks it, or the erase -- whose point is an imminent seizure -- runs for hours.
     # A folder the first-launch step marked on a drive (R86): forget its id first, or the
     # next start would wait for a drive that was erased on purpose, and the watchdog would
     # read the folder vanishing below as a disconnection.
@@ -358,14 +531,23 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
     if base.exists():
-        for root, _dirs, names in os.walk(base):
+        for root, dirs, names in os.walk(base, onerror=_unlisted):  # never follows a symlinked folder (followlinks=False) or a junction
+            dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]
             for name in names:
-                _s, _overwritten, _w = _track(Path(root) / name)
+                p = Path(root, name)
+                if p.is_symlink() or not p.is_file():
+                    # A link is removed, never written through: its target may be anywhere, outside the data dir included.
+                    # A FIFO, socket or device is removed too: opening one to write would block or reach hardware.
+                    with contextlib.suppress(OSError):
+                        p.unlink()
+                    continue
+                _s, _overwritten, _w = _track(p)
                 seen += _s
                 wiped += _w
     with contextlib.suppress(OSError):
         shutil.rmtree(base, ignore_errors=True)
 
+    overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
@@ -389,6 +571,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         "files_seen": seen,
         "files_wiped": wiped,
         "headers_destroyed": headers,
+        "other_heads_destroyed": heads_elsewhere,
         "keys_destroyed": keys_destroyed,
         "overwrite_failures": overwrite_failures,
         "passphrase_cleared": passphrase_cleared,
