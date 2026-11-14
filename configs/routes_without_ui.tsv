@@ -209,7 +209,6 @@ PUT	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of 
 GET	/api/stats/figures/vintages	feature	2	Statistics (O)	every revision of one published figure
 GET	/api/stats/sources	feature	3	Statistics (O)	directory of registered statistics sources
 GET	/api/timemap/range	superseded			the timemap derives its range from its own payload
-GET	/api/watches/{watch_id}/history	feature	2	Insights > Watches (O)	a watch's past evaluations
 POST	/api/wiki/corpus/sync	feature	3	Living sources (I)	backfill watched pages into the corpus (local only)
 GET	/api/wiki/dumps/probe	superseded			single-edition size probe; the dump picker reads /api/wiki/dumps/sizes
 GET	/api/wiki/lane/analytics	feature	2	Living sources (I)	Q712 analytics 1-3 of the Wikipedia lane

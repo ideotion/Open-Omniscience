@@ -1497,16 +1497,48 @@
       const box = $("wt-list"); if (!box || _wtOpenWired) return;
       _wtOpenWired = true;
       box.addEventListener("click", (e) => {
+        const hb = e.target.closest("button[data-wt-hist]");
+        if (hb) { _wtLoadFull(hb); return; }
         const b = e.target.closest("[data-wt-open]"); if (!b) return;
         const w = ((_wtLast && _wtLast.watches) || []).find((x) => String(x.id) === b.dataset.wtOpen);
         if (w) openAnalysisFor(w.query || "", {adv: _advFromWatchFilters(w.filters || {})});
       });
+    }
+    // The list endpoint carries this many firings per watch (list_watches history_limit);
+    // a watch showing fewer has no earlier firing, so it gets no button.
+    const WT_LIST_HISTORY = 5;
+    const WT_FULL_LIMIT = 500;
+    // watch id -> its whole history once read (cleared by loadWatches, kept by a repaint).
+    let _wtFull = {};
+    function wtHistMoreHtml(w, full, t, tf) {
+      if (full) {
+        return `<div class="hint muted" style="margin:4px 0 0 16px">${esc(full.length >= WT_FULL_LIMIT
+          ? tf("The latest {n} firings, newest first. Earlier ones are kept but not shown here.", {n: full.length})
+          : tf("All {n} firings, newest first.", {n: full.length}))}</div>`;
+      }
+      if (w.saved_search || (w.history || []).length < WT_LIST_HISTORY) return "";
+      return `<button type="button" class="ghost tiny" style="margin:4px 0 0 16px" data-wt-hist="${esc(String(w.id))}">${esc(t("Show every firing"))}</button>`;
+    }
+    async function _wtLoadFull(btn) {
+      const id = parseInt(btn.getAttribute("data-wt-hist"), 10);
+      if (!(id >= 1)) return;
+      const tf = _wtf();
+      btn.disabled = true;
+      try {
+        const d = await api("/api/watches/" + id + "/history?limit=" + WT_FULL_LIMIT);
+        _wtFull[id] = Array.isArray(d && d.history) ? d.history : [];
+        _renderWatches();
+      } catch (e) {
+        btn.disabled = false;
+        toast(tf("Could not load the watch history: {error}", {error: e.message}), "err");
+      }
     }
     async function loadWatches() {
       const box = $("wt-list"); if (!box) return;
       _wtWireOpen();
       const t = _wt(), tf = _wtf();
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _wtFull = {};
       try {
         _wtLast = await api("/api/watches");
         _renderWatches();
@@ -1528,12 +1560,13 @@
       }
       box.innerHTML = ws.map(w => {
         const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : t("never");
-        const hist = (w.history || []).map(h =>
-          `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
-          + (h.article_ids && h.article_ids.length
-              ? ` · <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(h.article_ids))}, ${esc(JSON.stringify(tf("Watch: {name}", {name: w.name})))});return false">${esc(t("open set ↗"))}</a>`
-              : "")
-          + `</li>`).join("");
+        // The list carries the last WT_LIST_HISTORY firings; "Show every firing" reads the
+        // watch's whole history (GET /api/watches/{id}/history, R684) and keeps it for a
+        // language repaint.
+        const full = _wtFull[w.id];
+        const histRows = full ? full : (w.history || []);
+        const hist = histRows.map(h => wtHistRowHtml(h, w, t, tf)).join("");
+        const more = wtHistMoreHtml(w, full, t, tf);
         // The watch's NAME and QUERY are the reader's own words, never chrome, so both
         // opt out of the i18n walker (`data-i18n-dyn`). The walker translates any text
         // node that equals a locale key, and a watch named "Climate" was drawn as
@@ -1561,6 +1594,7 @@
               {n: w.threshold, d: w.window_days, when: last}))}</div>`}
           ${_watchRingNote(w.cross_language)}
           ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
+          ${more}
         </div>`;
       }).join("")
         // Server prose, so it goes through t() -- the same defect class the analysis
@@ -1573,6 +1607,16 @@
               + `${esc(t(ws.find((w) => w.cross_language && w.cross_language.caveat)
                   .cross_language.caveat))}</div>`
             : "");
+    }
+    // One watch firing as a list row (shared by the recent list and the full history).
+    // It sits between loadWatches and createWatch, where test_ui_invariants reads the
+    // watch view for its openAnalysisForIds link.
+    function wtHistRowHtml(h, w, t, tf) {
+      return `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
+        + (h.article_ids && h.article_ids.length
+            ? ` · <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(h.article_ids))}, ${esc(JSON.stringify(tf("Watch: {name}", {name: w.name})))});return false">${esc(t("open set ↗"))}</a>`
+            : "")
+        + `</li>`;
     }
     async function createWatch() {
       const t = _wt(), tf = _wtf();
