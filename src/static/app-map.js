@@ -4516,6 +4516,8 @@
     // oo:langchange listener) rather than leaving the numbers-bearing lines in the
     // language they were drawn in, and without a second request.
     let _statFigLast = null, _statRevLast = null;
+    // The one figure whose revision trail is open under the table (null: none).
+    let _statVint = null;
     // A number inside a sentence, isolated so an RTL page cannot reorder it (R7).
     function _statIso(x) { return "\u2068" + String(x) + "\u2069"; }
     async function loadStatFigures(fromCache) {
@@ -4523,6 +4525,7 @@
       const box = $("statfig-table"); if (!box) return;
       if (!(fromCache === true && _statFigLast)) {
         const series = ($("statfig-view-series").value || "").trim();
+        _statVint = null;
         box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
         try {
           const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
@@ -4542,22 +4545,91 @@
       // alpha-3 on screen, the localised name or "published aggregate" in the hover, the
       // non-ISO disclosure for XKX -- from the classification the server sends beside
       // each code. It printed the producer's code bare, with no hover at all.
-      const rows = figs.map(f => `<tr>
+      // Each row opens its own revision trail (GET /api/stats/figures/vintages): the table
+      // shows the LATEST vintage only, so an earlier published value was stored and
+      // unreachable. One delegated listener on the box, wired once.
+      const th = (k, right) => `<th${right ? ' style="text-align:right"' : ""}>${esc(t(k))}</th>`;
+      const vk = (f) => [f.agency, f.series_id, f.ref_area, f.time_period].join("\u0001");
+      const vBtnTitle = t("Every stored version of this figure, oldest first");
+      const rows = figs.map((f, i) => {
+        const open = !!(_statVint && _statVint.key === vk(f));
+        return `<tr>
           <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${ooAreaCell(f.ref_area, f.area_kind, f.area_name)}</td>
           <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
           <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
-        </tr>`).join("");
+          <td><button type="button" class="ghost tiny" data-statvint="${i}" aria-expanded="${open}" title="${esc(vBtnTitle)}">${esc(t("Show"))}</button></td>
+        </tr>`;
+      }).join("");
+      if (!box._statVintWired) {
+        box._statVintWired = true;
+        box.addEventListener("click", (ev) => {
+          const b = ev.target && ev.target.closest ? ev.target.closest("button[data-statvint]") : null;
+          if (b) _statLoadVintages(Number(b.dataset.statvint));
+        });
+      }
+      // The open trail, drawn from what it last fetched so a language switch redraws it
+      // too. Each version's change is shown against the one before it only when both
+      // share unit, adjustment and base year; across a basis change it is "—", never a
+      // difference between two different quantities.
+      let vint = "";
+      const vf = _statVint ? figs.find((f) => vk(f) === _statVint.key) : null;
+      if (vf && _statVint.loading) {
+        vint = `<div class="muted" style="margin-top:10px">${esc(t("Loading…"))}</div>`;
+      } else if (vf && _statVint.error != null) {
+        vint = `<div class="muted" style="margin-top:10px">${esc(_mapTf("Could not load the versions: {error}", { error: _statVint.error }))}</div>`;
+      } else if (vf && _statVint.d) {
+        const vd = _statVint.d, vs = vd.vintages || [];
+        const same = (a, b) => a && b && (a.unit || "") === (b.unit || "")
+          && (a.adjustment || "") === (b.adjustment || "") && (a.base_year || "") === (b.base_year || "");
+        const vrows = vs.map((v, j) => {
+          const prev = j > 0 ? vs[j - 1] : null;
+          const num = (x) => x !== null && x !== undefined && isFinite(Number(x));
+          const ch = (prev && same(prev, v) && num(prev.value) && num(v.value))
+            ? _statfigFmt(Number(v.value) - Number(prev.value)) : "—";
+          return `<tr><td>${esc(fmtDateTime(v.extracted_at) || String(v.extracted_at || ""))}</td>`
+            + `<td style="text-align:right">${_statfigFmt(v.value)}</td><td style="text-align:right">${ch}</td>`
+            + `<td>${esc(v.unit || "")}</td><td>${esc(v.adjustment || "")}</td><td>${esc(v.base_year || "")}</td></tr>`;
+        }).join("");
+        const vhint = _mapTf("{n} stored versions of {series} · {area} · {period}, oldest first", {
+          n: _statIso(fmtNum(vd.count != null ? vd.count : vs.length, 0)), series: vf.series_id,
+          area: vf.ref_area, period: vf.time_period });
+        vint = `<div class="statfig-vint" style="margin-top:12px"><div class="hint">${esc(vhint)}</div>`
+          + `<table><tr>${th("Stored on")}${th("Value", true)}${th("Change in value", true)}`
+          + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}</tr>${vrows}</table>`
+          // The store's fixed caveat, visible beside the numbers it qualifies (R685).
+          + `<p class="card-caveat" style="margin-top:6px">${esc(t(vd.caveat || "Revisions are preserved as evidence; no vintage is treated as the single truth."))}</p></div>`;
+      }
       // ONE keyed frame, its numbers grouped and isolated (R7): the English hint had its
       // two numbers reordered around "of" on an Arabic page.
       const hint = _mapTf("Showing {shown} of {total} · latest vintage", {
         shown: _statIso(fmtNum(d.shown || figs.length, 0)), total: _statIso(fmtNum(d.count || figs.length, 0)) });
-      const th = (k, right) => `<th${right ? ' style="text-align:right"' : ""}>${esc(t(k))}</th>`;
       box.innerHTML = `<div class="hint">${esc(hint)}</div>
         <table><tr>${th("Agency")}${th("Series")}${th("Area")}${th("Period")}${th("Value", true)}`
-        + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}</tr>${rows}</table>`
+        + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}${th("Versions")}</tr>${rows}</table>`
         // The store's fixed caveat, keyed x12 like the headers above (L-4's class: it
         // said "A None value" and stayed English under translated headers).
-        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "");
+        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
+        + vint;
+    }
+    // Open (or close, on a second click) one figure's revision trail. Keyed by the
+    // observation, not the row number, so a reload that reorders rows cannot show one
+    // figure's history under another.
+    async function _statLoadVintages(i) {
+      const figs = (_statFigLast && _statFigLast.d && _statFigLast.d.figures) || [];
+      const f = figs[i]; if (!f) return;
+      const key = [f.agency, f.series_id, f.ref_area, f.time_period].join("\u0001");
+      if (_statVint && _statVint.key === key && !_statVint.loading) { _statVint = null; loadStatFigures(true); return; }
+      _statVint = { key, loading: true };
+      loadStatFigures(true);
+      let next;
+      try {
+        const qs = "?agency=" + encodeURIComponent(f.agency) + "&series_id=" + encodeURIComponent(f.series_id)
+          + "&ref_area=" + encodeURIComponent(f.ref_area) + "&time_period=" + encodeURIComponent(f.time_period);
+        next = { key, d: await api("/api/stats/figures/vintages" + qs) };
+      } catch (e) {
+        next = { key, error: e.message };
+      }
+      if (_statVint && _statVint.key === key) { _statVint = next; loadStatFigures(true); }
     }
     // Redraw the two statistics tables from what they last drew, in the language now
     // current. Only what is on screen: a table never loaded stays unloaded.

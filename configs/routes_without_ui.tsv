@@ -206,7 +206,6 @@ DELETE	/api/sources/{source_id}/metadata	superseded			source-group/metadata API 
 GET	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 POST	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 PUT	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
-GET	/api/stats/figures/vintages	feature	2	Statistics (O)	every revision of one published figure
 GET	/api/stats/sources	feature	3	Statistics (O)	directory of registered statistics sources
 GET	/api/timemap/range	superseded			the timemap derives its range from its own payload
 POST	/api/wiki/corpus/sync	feature	3	Living sources (I)	backfill watched pages into the corpus (local only)
