@@ -123,18 +123,32 @@ def _hold(path: Path, *, whole: bool) -> None:
         fd = os.open(path, os.O_RDWR)
     except OSError:
         return
-    with _HELD_LOCK:
-        _HELD.append((fd, whole))
+    # No lock: the erase waits on nothing, and a rescrub of an earlier wipe may hold it for a long rewrite. A list append
+    # is atomic, and a pass takes only the entries present when it starts, removing them from the front.
+    _HELD.append((fd, whole))
 
 
 def rescrub_held(*, close: bool) -> int:
     """Overwrite again, through the kept descriptors, the head of every unlinked main file and the whole of every
     unlinked -wal and -journal; with ``close`` the descriptors are then let go. Returns how many were rewritten. Never
     raises: the wipe is done, this closes the window a late commit leaves."""
+    done = 0
+    # The lock is held for the whole rewrite, so a closing pass can never close a descriptor another pass is still writing
+    # through (its number could already belong to an unrelated file). Never on a latency path: the wipe has returned.
     with _HELD_LOCK:
         held = list(_HELD)
         if close:
-            _HELD.clear()
+            del _HELD[: len(held)]
+        done = _rewrite_held(held, close=close)
+    return done
+
+
+def held_count() -> int:
+    """How many descriptors :func:`rescrub_held` still holds."""
+    return len(_HELD)
+
+
+def _rewrite_held(held: list[tuple[int, bool]], *, close: bool) -> int:
     done = 0
     for fd, whole in held:
         try:
@@ -338,7 +352,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     # The lane files join this loop rather than falling through to step 6: each is an
     # encrypted SQLCipher database with its OWN salt page, and head-only is what keeps
     # the erase instant at 100 GB (see ``_lane_dbs``).
-    # TWO PASSES (R708). Every main file's salt page goes first, so no long WAL write delays them.
+    # R708. Every main file's salt page goes first, so no long WAL write delays them.
     # The sidecars follow, and the write-ahead log and the rollback journal are overwritten WHOLE: SQLCipher keeps the
     # 16-byte salt in plaintext at the start of page 1, and every committed change to page 1 leaves a copy of that page
     # in a WAL frame (or, in rollback mode, in the journal) at an offset far past this file's first 4 KiB. Measured on a
@@ -383,6 +397,28 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
                 overwrite_failures.append(str(p))
             if s and overwritten and p == db:
                 headers.append(db.name)
+
+    # 1b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before any key or any slow
+    #    step: copies of the corpus live there under names no list here can keep up with (the retained pre-restore-<ts>.db
+    #    snapshots, .restore-* and .bak-build-* staging, salvage and damaged copies), each with the corpus's salt in its
+    #    first page, and step 6 alone (a full overwrite, hours at corpus size) would leave them readable if the erase were
+    #    stopped before it got there. Fail toward shredding more: no file is told apart by its contents (an encrypted page
+    #    is indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten whole and a
+    #    -shm head is zeroed. The keys folder is left to step 2, which owns it under its lock. Counted in step 6.
+    heads_elsewhere = 0
+    if base.exists():
+        keys_root = paths["keys_dir"]
+        for root, dirs, names in os.walk(base):
+            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not Path(root, d).is_symlink()]
+            for name in names:
+                p = Path(root, name)
+                if p.is_symlink() or not p.is_file():
+                    continue
+                whole = name.endswith(("-wal", "-journal"))
+                if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
+                    heads_elsewhere += 1
+                else:
+                    overwrite_failures.append(str(p))
 
     # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
     # Under the lock every key-file change of THIS process takes (src/custody/keyfile.py KEY_FILES_LOCK), held
@@ -480,6 +516,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
         "files_seen": seen,
         "files_wiped": wiped,
         "headers_destroyed": headers,
+        "other_heads_destroyed": heads_elsewhere,
         "keys_destroyed": keys_destroyed,
         "overwrite_failures": overwrite_failures,
         "passphrase_cleared": passphrase_cleared,

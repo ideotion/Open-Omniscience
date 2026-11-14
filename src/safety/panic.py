@@ -47,14 +47,16 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
         try:
             activate_kill_switch()
         finally:
-            invalidate_header_cache()
-            from src.config.kv_store import kv_invalidate
+            try:
+                invalidate_header_cache()
+                from src.config.kv_store import kv_invalidate
 
-            kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
-            from src.api import served_cache
+                kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
+                from src.api import served_cache
 
-            served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
-            _dispose_after_erase()
+                served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
+            finally:
+                _dispose_after_erase()  # whatever the tidying above did: the late-commit rewrite must still run
 
 
 def _close_database_now() -> None:
@@ -75,9 +77,10 @@ def _close_database_now() -> None:
 
         # The hold blocks "Run now"; the loop is signalled, never joined. It is never released, on purpose (R383's counted hold): the
         # corpus is gone and the app must be restarted, so nothing may start collection on this process again.
-        pause_for_exclusive_operation(timeout=0.0)
+        claim: list[bool] = []
+        pause_for_exclusive_operation(timeout=0.0, claim=claim)
         global _HOLDS_TAKEN
-        _HOLDS_TAKEN += 1  # counted, so the test suite can give back exactly the holds a wipe took and no others
+        _HOLDS_TAKEN += sum(claim)  # the holds really taken, so the test suite gives back exactly those and no others
     except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
         pass
     try:
@@ -112,9 +115,10 @@ def _dispose_after_erase() -> None:
     except Exception:  # noqa: BLE001 - the wipe is done; this is tidying  # nosec B110
         pass
     try:
-        from src.safety.crypto_erase import rescrub_held
+        from src.safety.crypto_erase import held_count, rescrub_held
 
-        if rescrub_held(close=False):
+        rescrub_held(close=False)
+        if held_count():  # even when that pass rewrote nothing: the late pass is also the one that lets the descriptors go
             late = threading.Timer(_LATE_RESCRUB_S, rescrub_held, kwargs={"close": True})
             late.name = "oo-panic-rescrub"
             late.daemon = True

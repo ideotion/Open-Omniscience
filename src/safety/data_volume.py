@@ -562,8 +562,10 @@ class VolumeMonitor:
 
     def _close(self, why: str) -> None:
         self.phase, self.deadline = "closing", None
-        record_incident("shutdown", why=why)
-        self._exit()
+        try:
+            record_incident("shutdown", why=why)
+        finally:
+            self._exit()  # a broken incident log never keeps a half-alive app running
 
 
 def _activity() -> dict[str, Any]:
@@ -638,10 +640,12 @@ def _restart_after_reconnect() -> None:
             _restart_process()
         except Exception as exc:  # noqa: BLE001 - a failed execve must not leave a half-alive app behind a page that never ends
             # The jobs are refused and the engine disposed by now: say so loudly and shut down instead of running on like that.
-            log_failure(_LOG, "data drive: the restart failed; shutting down instead", exc, level=logging.ERROR)
-            record_incident("restart_failed", error=type(exc).__name__)
-            with MONITOR._lock:
-                MONITOR._close("the restart after the drive came back failed")
+            try:
+                log_failure(_LOG, "data drive: the restart failed; shutting down instead", exc, level=logging.ERROR)
+                record_incident("restart_failed", error=type(exc).__name__)
+            finally:
+                with MONITOR._lock:
+                    MONITOR._close("the restart after the drive came back failed")
 
     threading.Thread(target=_go, name="oo-data-volume-restart", daemon=True).start()
 

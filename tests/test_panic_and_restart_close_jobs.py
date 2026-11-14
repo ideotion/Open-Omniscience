@@ -194,7 +194,45 @@ def test_the_wipe_rewrites_the_kept_files_after_the_dispose_and_once_more_later(
         return 1
 
     monkeypatch.setattr(crypto_erase, "rescrub_held", rescrub)
+    monkeypatch.setattr(crypto_erase, "held_count", lambda: 1)
     monkeypatch.setattr(panic, "_LATE_RESCRUB_S", 0.01)
     panic_wipe(confirm=True)
     assert done.wait(10)
     assert panic_steps[-3:] == [("dispose",), ("rescrub", False), ("rescrub", True)]
+
+
+def test_the_late_pass_runs_even_when_the_first_rewrote_nothing(panic_steps, monkeypatch):
+    """The late pass is also the one that lets the descriptors go: a first pass whose every rewrite failed must not leave
+    them (one pins the unlinked corpus inode) held for the life of the process."""
+    import src.safety.crypto_erase as crypto_erase
+    from src.safety import panic, panic_wipe
+
+    done = threading.Event()
+
+    def rescrub(*, close):
+        panic_steps.append(("rescrub", close))
+        if close:
+            done.set()
+        return 0
+
+    monkeypatch.setattr(crypto_erase, "rescrub_held", rescrub)
+    monkeypatch.setattr(crypto_erase, "held_count", lambda: 2)
+    monkeypatch.setattr(panic, "_LATE_RESCRUB_S", 0.01)
+    panic_wipe(confirm=True)
+    assert done.wait(10)
+
+
+def test_a_failed_execve_shuts_down_even_when_recording_it_fails(restart_steps, monkeypatch):
+    def boom():
+        raise OSError("exec format error")
+
+    def broken(*_a, **_k):
+        raise RuntimeError("incident log broken")
+
+    closed = []
+    monkeypatch.setattr(data_volume, "_restart_process", boom)
+    monkeypatch.setattr(data_volume, "record_incident", broken)
+    monkeypatch.setattr(data_volume.MONITOR, "_exit", lambda: closed.append(True))
+    monkeypatch.setattr(data_volume.MONITOR, "phase", "restarting")
+    _run_restart_thread()
+    assert closed == [True] and data_volume.MONITOR.phase == "closing"

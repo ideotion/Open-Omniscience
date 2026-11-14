@@ -642,7 +642,9 @@ imply a protection we cannot deliver.
   lose their salt page first (crypto-erase; the corpus body is never rewritten, so the erase stays fast at any size),
   then their write-ahead log and rollback journal are overwritten WHOLE, because each commit that touched page 1 left a
   copy of the salt in them past their first 4 KiB (R708), and the main heads are overwritten again after that, so a
-  checkpoint running meanwhile cannot carry the salt home. A transaction already under way can still commit into the
+  checkpoint running meanwhile cannot carry the salt home. Before any key or slow step, every other file under the data dir loses its head the same
+  way (a -wal or -journal whole), because copies of the corpus with its salt live there under names no list keeps up
+  with (pre-restore snapshots, restore and backup staging, salvage copies), so a wipe stopped early leaves none readable. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
   a commit later than that is the window left; every file under the data dir the earlier steps did not
   handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*

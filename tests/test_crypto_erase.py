@@ -434,3 +434,56 @@ def test_uninstall_watcher_overwrites_the_whole_write_ahead_log(tmp_path):
     subprocess.run([sys.executable, "-c", _WATCHER_SRC, str(dead.pid), json.dumps(plan)], check=True, timeout=60)
 
     assert salt not in kept.read_bytes()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the kept descriptors are POSIX only")
+def test_a_closing_pass_closes_each_descriptor_once_and_keeps_later_ones(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.write_bytes(b"A" * 100)
+    b.write_bytes(b"B" * 100)
+    crypto_erase._hold(a, whole=True)
+    assert crypto_erase.rescrub_held(close=False) >= 1
+    first = crypto_erase.held_count()
+    crypto_erase._hold(b, whole=True)
+    assert crypto_erase.rescrub_held(close=True) == first + 1
+    assert crypto_erase.held_count() == 0
+    assert a.read_bytes() != b"A" * 100 and b.read_bytes() != b"B" * 100
+
+
+@sqlcipher_only
+def test_an_erase_stopped_after_step_one_leaves_no_readable_salt_anywhere_under_the_data_dir(tmp_path, monkeypatch):
+    """Copies of the corpus live under the data dir under names no list keeps up with (pre-restore snapshots, .restore-*
+    and .bak-build-* staging, salvage copies), each with the salt in its first page. Step 1 destroys every file's head
+    before any key or slow step, so an erase stopped right after it leaves no salt to read anywhere."""
+    import shutil
+
+    data = tmp_path / "data"
+    data.mkdir()
+    db = data / "open_omniscience.db"
+    con = connect(db, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.execute("INSERT INTO t VALUES (randomblob(9000))")
+    con.commit()
+    con.close()
+    salt = db.read_bytes()[:16]
+    copies = [
+        data / "pre-restore-20261114T090000Z.db",
+        data / ".restore-ab12" / "open_omniscience.db",
+        data / ".bak-build-cd34" / "corpus.db",
+        data / "open_omniscience.salvage-20261114T090000Z.db",
+        data / "snapshots" / "deep" / "anything.bin",
+    ]
+    for c in copies:
+        c.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(db, c)
+    (data / "pre-restore-20261114T090000Z.db-wal").write_bytes(b"\x00" * 9000 + salt + b"\x00" * 100)
+
+    def stopped(*_a, **_k):
+        raise KeyboardInterrupt("the machine was switched off here")
+
+    monkeypatch.setattr(crypto_erase, "_destroy_keys_folder", stopped)
+    with pytest.raises(KeyboardInterrupt):
+        crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    left = [p for p in data.rglob("*") if p.is_file() and salt in p.read_bytes()]
+    assert left == [], f"a salt is still readable after step 1: {left}"
