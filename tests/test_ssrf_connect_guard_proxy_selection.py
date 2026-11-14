@@ -63,7 +63,7 @@ def test_a_request_through_its_own_loopback_proxy_still_works(loopback_server: i
     fetcher.session.proxies = {"http": proxy}
     result = fetcher.fetch("http://rebind.test/page")
     assert "INTERNAL SERVICE SECRET" in str(getattr(result, "html", result))
-    assert _REQUEST_LINES and _REQUEST_LINES[0].startswith("http://rebind.test")
+    assert _REQUEST_LINES == ["http://rebind.test/page"]  # the absolute-form target a proxy receives
 
 
 @pytest.fixture
