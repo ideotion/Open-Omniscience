@@ -28,8 +28,6 @@ GET	/api/backup/reindex-backlog	feature	1	Settings > Backup (B)	imports merged b
 POST	/api/backup/reindex-backlog/resume	feature	1	Settings > Backup (B)	finish the pending re-index as a visible job
 POST	/api/backup/reindex-backlog/resume/cancel	feature	1	Settings > Backup (B)	stop that job at the next batch
 GET	/api/backup/v2/batches	feature	2	Settings > Backup (B)	import history with counts and verification (ruled: history lives in Settings > Backup, Q222 = b)
-POST	/api/briefing/dismissed/clear	feature	1	Home (N)	a dismissed Home card can never be brought back: no undo, no 'show dismissed'
-POST	/api/briefing/restore	feature	1	Home (N)	un-dismiss one card
 GET	/api/bulletin/editions/{filename}/ai-plan	feature	3	Agenda > Bulletin (O)	phase 2 plan of a bulletin edition (what a local model would do)
 POST	/api/bulletin/evidence/build	feature	2	Agenda > Bulletin (O)	write a period's evidence archive to a folder
 POST	/api/bulletin/evidence/plan	feature	2	Agenda > Bulletin (O)	size and contents of that archive before writing it
@@ -121,23 +119,15 @@ GET	/api/events/climate	feature	2	Climate (H)	bundled El Nino episode list with 
 POST	/api/events/feeds/verify-batch	superseded			manual sweep retired by ruling (comment at app-agenda.js:953)
 POST	/api/geo/downloads/resume	superseded			the task manager resumes a paused region through /api/jobs/{id}/resume
 GET	/api/hazards	feature	2	Map or Climate (L/H)	live USGS + GDACS disaster feed: a network relay with no button and no consent; GDACS alerts are new (USGS quakes are already a Climate dataset)
-GET	/api/insights/copypasta	feature	1	Insights (O)	the full list behind the 'copied wording' Home card
-GET	/api/insights/flooded-topics	feature	1	Insights (O)	the full list behind the 'flooded topic' card
-GET	/api/insights/headline-body-mismatch	feature	1	Insights (O)	headlines the body does not support
-POST	/api/insights/include	feature	1	Insights (O)	an excluded keyword can never be re-included: no undo
 POST	/api/insights/keyword-fold-job/{action}	superseded			the task manager pauses, resumes and cancels the fold through /api/jobs/{job_id}/... (job 'keyword-fold')
 GET	/api/insights/leads-view	feature	2	Home (N)	the Leads with evidence chips (n, independent sources, freshness); browser-gated design, never wired
-GET	/api/insights/manufactured-emergence	feature	1	Insights (O)	terms that appeared wide and sudden with no datable anchor
 GET	/api/insights/reading-diet-by-type	feature	2	Insights (O)	share of the corpus per content channel (news, wiki, law...)
 POST	/api/insights/reconcile-article-language	internal		maintenance	backfill job; belongs with the maintenance actions if ever surfaced
 POST	/api/insights/reconcile-keyword-language	internal		maintenance	backfill job; belongs with the maintenance actions if ever surfaced
-GET	/api/insights/recycled-claims	feature	1	Insights (O)	old claims resurfacing after dormancy
 POST	/api/insights/reindex	superseded			the browser-driven Insights drain; R600 PR2 (#1938) moved it to a server job the UI starts through /api/insights/backlog
 POST	/api/insights/reindex-job/{action}	superseded			the task manager pauses and resumes the re-index through /api/jobs/{job_id}/... (job 'reindex')
 GET	/api/insights/ring-stats	feature	3	Insights (O)	statistics for one cross-language group
-GET	/api/insights/source-laundering	feature	1	Insights (O)	origins cited by many sources that are not independent
 GET	/api/insights/supergroups/redundant-members	feature	3	Insights (O)	clean-up proposals for group members
-GET	/api/insights/who	feature	1	Explore or Insights (N/O)	corpus-wide people and organisations with counts
 POST	/api/integrity/collapse/apply_all	feature	3	Home actors (N)	'collapse all' beside the existing 'revert all'
 GET	/api/integrity/prominence	feature	2	Insights (O)	story prominence raw vs actor-collapsed
 GET	/api/keywords/categories	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
@@ -176,9 +166,7 @@ GET	/api/search/instant/status	internal		diagnostics	title-index coverage counts
 GET	/api/search/spell-index	feature	3	Settings > Maintenance (N)	state of the 'did you mean' index
 POST	/api/search/spell-index/build	feature	3	Settings > Maintenance (N)	rebuild it
 GET	/api/signals/dismiss-reasons	internal		diagnostics	counts of dismissal reasons, for tuning
-GET	/api/signals/disputed-chronology	feature	1	Insights (O)	the same story dated differently across sources
 POST	/api/signals/hazards/snapshot	internal		api	population path of the local hazard snapshot
-GET	/api/signals/story-propagation	feature	1	Insights (O)	how a topic spread across sources, in order, with day gaps
 GET	/api/signals/supply-chain-ripple	feature	2	Markets (O)	commodity vs topic coverage co-movement (correlation, never causation)
 GET	/api/signals/weather-signals	internal		api	derived signal keywords read by producers
 POST	/api/signals/weather-signals/refresh	internal		api	derives those keywords

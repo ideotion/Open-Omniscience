@@ -281,14 +281,15 @@ def signals_disputed_chronology(
     a timeline piece, an update date) ride the caveat; dates are deduced, never confirmed.
     No score."""
     from src.analytics.disputed_chronology import find_disputed_chronology
+    from src.api.insights import _computed  # R685: the list says when it was computed
 
     key = f"disputed-chronology|lb={lookback_days}|ms={min_sources}|tol={tolerance_days}"
     return guarded_read(
         db,
         key,
-        lambda: find_disputed_chronology(
+        lambda: _computed(find_disputed_chronology(
             db, lookback_days=lookback_days, min_sources=min_sources, tolerance_days=tolerance_days
-        ),
+        )),
     )
 
 
@@ -306,14 +307,15 @@ def signals_story_propagation(
     independent coverage look identical). Reads the denormalised keyword_mentions only. No
     score."""
     from src.analytics.story_propagation import find_story_propagation
+    from src.api.insights import _computed  # R685: the list says when it was computed
 
     key = f"story-propagation|lb={lookback_days}|ms={min_sources}|span={min_span_days}"
     return guarded_read(
         db,
         key,
-        lambda: find_story_propagation(
+        lambda: _computed(find_story_propagation(
             db, lookback_days=lookback_days, min_sources=min_sources, min_span_days=min_span_days
-        ),
+        )),
     )
 
 

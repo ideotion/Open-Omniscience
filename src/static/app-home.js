@@ -1285,6 +1285,8 @@
       const feed = $("briefing-feed");
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
+      // R685: dismissed Leads can all come back from here (POST /api/briefing/dismissed/clear).
+      if (typeof ooPaintBriefDismissed === "function") ooPaintBriefDismissed(data.dismissed_count);
       // Recompute now runs OFF the request thread (field test 2026-06-24: Home froze on
       // "Loading the briefing…" at 60K). While a background refresh runs we show a real
       // progress bar and re-poll until cards land; if we already have (stale) cards we
@@ -2048,6 +2050,7 @@
             ${weatherBox}
             <div class="acts">
               ${openBtn}
+              ${typeof ooPatternListButton === "function" ? ooPatternListButton(c) : ""}
               ${recipeBtn}
               ${weatherBtn}
               <button class="secondary tiny" data-on-click="addToDraft(${esc(JSON.stringify(c.id))})">+ Add to draft</button>
@@ -2135,7 +2138,8 @@
       try {
         await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
         const el = document.querySelector(`.card[data-card="${id}"]`);
-        if (el) el.remove();
+        // R685: the card's place keeps a one-line note with an Undo button (POST /api/briefing/restore).
+        if (el && typeof ooCardDismissedUndo === "function") ooCardDismissedUndo(el, id); else if (el) el.remove();
       } catch (e) { toast(_failMsg("Could not dismiss: {error}", e), "err"); }
     }
 
