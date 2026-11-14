@@ -1,5 +1,8 @@
 """S06-05 S2: the Help coverage banner states the served language and a measured figure.
 
+R721 (2026-11-14): every banner, English included, opens with the note that the Help text was
+written by AI; native review of Help is dropped.
+
 The behaviour is driven in node (``help_banner_node_test.js``) against the functions
 EXTRACTED from the shipped module. This side is the driver, the check that the
 browser's heading count agrees with the Python skeleton the translated-documents test
@@ -19,14 +22,17 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
 _BANNER_STRINGS = [
+    # R721 (2026-11-14): every reader, English included, is told the Help text was written by AI.
+    "This help text was written by AI and may contain mistakes.",
     "This document has no draft in this language yet ({language}), so the English original is shown.",
-    "Machine-drafted translation ({language}). How much of this document is translated could "
-    "not be measured here. The English original is authoritative. Found a better wording? "
-    "Improve it on the project page.",
-    "Machine-drafted translation ({language}): this draft has {done} of the {total} headings of "
-    "the English original; that counts headings, not translated words. The English original is "
-    "authoritative. Found a better wording? Improve it on the project page.",
+    "Translation ({language}): how much of this document is translated could not be measured here. "
+    "The English original is authoritative.",
+    "Translation ({language}): {done} of the {total} headings of the English original; that counts "
+    "headings, not translated words. The English original is authoritative.",
 ]
+
+# The wording R721 retired: it must not come back beside the new note.
+_RETIRED_PREFIX = "Machine-drafted translation ({language})"
 
 
 def _run_node() -> str:
@@ -75,3 +81,11 @@ def test_banner_strings_are_keyed_in_all_twelve_locales() -> None:
                     if ph in s and ph not in data[s]:
                         problems.append(f"{path.name}: lost {ph} in {s[:30]!r}")
     assert not problems, problems
+
+
+def test_retired_review_wording_is_gone() -> None:
+    for path in sorted(_LOCALES.glob("*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert not [k for k in data if k.startswith(_RETIRED_PREFIX)], path.name
+    js = (_ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
+    assert "Machine-drafted translation" not in js
