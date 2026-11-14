@@ -133,7 +133,8 @@ def instance_tag() -> str:
     and kept in the data folder's ``.oo-instance-id`` file: a hash of the folder's path would be reversible by guessing
     (``/home/<a common name>/...`` has few candidates and eight hex characters are 32 bits), a random value carries no
     information at all. A copied data folder keeps its tag, which is right: it is the same corpus. A folder that cannot
-    be written answers ``"no-id"`` rather than fail an export."""
+    be written answers ``"no-id"`` rather than fail an export, and so does a ``.oo-instance-id`` that is not a regular
+    file (a symlink, a folder, a FIFO): it is never followed or replaced, and its exports cannot be told apart by tag."""
     import re
     import secrets
     import stat

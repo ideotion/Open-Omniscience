@@ -30,7 +30,7 @@ import ipaddress
 import re
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -45,7 +45,17 @@ def _iso(value: datetime | None) -> str | None:
     return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
 
 
-_ENTROPIC = re.compile(r"(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9_\-]{16,}")
+def _token_like(segment: str) -> bool:
+    """A path segment that carries an ``@`` (decoded, so ``%40`` counts) or a run of 16+ characters between ``-_.~`` that
+    looks like a key: hex, or letters and digits mixed. A slug such as ``how-to-learn-python-3-in-2026`` is kept."""
+    seg = unquote(unquote(segment))
+    if "@" in seg:
+        return True
+    for run in re.split(r"[-_.~]", seg):
+        if len(run) >= 16 and (re.fullmatch(r"[0-9a-fA-F]+", run)
+                               or (re.search(r"\d", run) and re.search(r"[A-Za-z]", run))):
+            return True
+    return False
 
 
 def _public_host(host: str) -> bool:
@@ -54,6 +64,8 @@ def _public_host(host: str) -> bool:
         ip = ipaddress.ip_address(host)
     except ValueError:
         name = host.lower().rstrip(".")
+        if re.fullmatch(r"[0-9a-fx.]+", name) and re.search(r"\d", name):
+            return False   # a numeric address in a form ipaddress does not read (0x7f.1, 127.1): never a catalogue host
         return "." in name and not name.endswith((".local", ".localhost", ".internal", ".lan", ".home", ".arpa"))
     return ip.is_global
 
@@ -79,7 +91,7 @@ def clean_feed_address(url: str | None) -> str | None:
     except ValueError:
         return "[address withheld]"
     segs = [seg.split(";", 1)[0] for seg in parts.path.split("/")]
-    path = "/".join("[withheld]" if ("@" in seg or _ENTROPIC.fullmatch(seg)) else seg for seg in segs)
+    path = "/".join("[withheld]" if _token_like(seg) else seg for seg in segs)
     return urlunsplit((parts.scheme.lower(), netloc, path, "", ""))
 
 
