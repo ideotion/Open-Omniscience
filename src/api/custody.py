@@ -301,16 +301,12 @@ def _local_identity():
     """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
     be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
     ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
-    key file already exists (``use_pqc`` would otherwise create one). Loading the signer re-seals a
-    legacy plaintext key file in place, as every load of it does."""
-    from src.paths import data_dir
-
-    keys = data_dir() / "keys"
+    key file already exists. It is opened as a reader (``create=False``, R694): nothing is made, the keys
+    folder included, and a legacy plaintext key file is left as it is."""
     try:
-        if not (keys / "custody_ed25519.pem").exists():
-            return None
-        has_pqc_key = (keys / "custody_ml_dsa_65.key").exists()
-        return HybridSigner(use_pqc=has_pqc_key).public_identity()
+        return HybridSigner(use_pqc=True, create=False).public_identity()
+    except FileNotFoundError:
+        return None
     except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
         return None
 
