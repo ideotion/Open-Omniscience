@@ -659,7 +659,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/custody/anchor.py": 2,
     "src/law/adapters/clml.py": 3,
     "src/llm/ollama.py": 11,  # +1 R671: _require_local_model wraps an unreadable /api/tags exactly as list_installed does (record_text)
-    "src/llm/vllm_client.py": 5,
+    "src/llm/vllm_client.py": 7,  # +2 R688: server_kind chains the connection error when the server does not answer its /api/tags or /v1/models read
     "src/llm/vllm_lifecycle.py": 1,
     "src/safety/crypto.py": 4,
     "src/safety/settings.py": 1,

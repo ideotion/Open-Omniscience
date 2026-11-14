@@ -272,3 +272,183 @@ def test_the_vllm_client_refuses_a_cloud_name_with_no_request():
     with pytest.raises(RemoteModelRefused):
         client.generate("corpus text", model="gpt-oss:120b-cloud")
     assert seen == []
+
+
+# -- R688: the vLLM path and the pull queue ---------------------------------------------------------------------------------------- #
+
+
+def _server(routes: dict, seen: list[str]):
+    """A fake OpenAI-compatible server on loopback: ``routes`` maps a path to a response; every path asked is recorded."""
+    from src.llm.vllm_client import VllmClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/v1/chat/completions":
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        r = routes.get(request.url.path)
+        return r if r is not None else httpx.Response(404)
+
+    base = "http://127.0.0.1:11434"
+    return VllmClient(client=httpx.Client(transport=httpx.MockTransport(handler), base_url=base), base_url=base)
+
+
+def test_the_vllm_url_pointed_at_ollama_refuses_a_local_alias_of_a_cloud_model():
+    seen: list[str] = []
+    tags = {"models": [{"name": "my-model:latest", "remote_host": "https://ollama.com:443", "remote_model": "gpt-oss:120b"}]}
+    client = _server({"/api/tags": httpx.Response(200, json=tags)}, seen)
+    with pytest.raises(RemoteModelRefused):
+        client.generate("corpus text", model="my-model")
+    assert seen == ["/api/tags"]
+
+
+def test_the_vllm_url_pointed_at_ollama_runs_a_listed_local_model_and_refuses_an_unlisted_one():
+    seen: list[str] = []
+    client = _server({"/api/tags": httpx.Response(200, json={"models": [{"name": "llama3.2:3b"}]})}, seen)
+    assert client.generate("hi", model="llama3.2:3b").text == "ok"
+    assert seen == ["/api/tags", "/v1/chat/completions"]
+    seen.clear()
+    with pytest.raises(LLMUnavailable):
+        client.generate("hi", model="nope:1b")
+    assert "/v1/chat/completions" not in seen
+
+
+@pytest.mark.parametrize("cards", [
+    [{"id": "m", "owned_by": "openai"}],                                    # LiteLLM and OpenAI proxies say this
+    [{"id": "m", "owned_by": "LiteLLM"}],
+    [{"id": "m", "owned_by": " openai "}],
+    [{"id": "m", "owned_by": "vllm"}, {"id": "x", "owned_by": "openai"}],  # a proxy is a proxy whichever model is asked
+])
+def test_a_server_that_says_it_is_a_proxy_gets_no_text(cards):
+    from src.llm.vllm_client import RELAY_REFUSAL
+
+    seen: list[str] = []
+    client = _server({"/v1/models": httpx.Response(200, json={"data": cards})}, seen)
+    with pytest.raises(RemoteModelRefused) as exc:
+        client.generate("corpus text", model="m")
+    assert str(exc.value) == RELAY_REFUSAL  # the exact string, so the UI translates it
+    assert "/v1/chat/completions" not in seen
+
+
+@pytest.mark.parametrize("routes", [
+    {"/v1/models": httpx.Response(200, json={"data": [{"id": "m", "owned_by": "llamacpp"}]})},
+    {"/v1/models": httpx.Response(200, json={"data": [{"id": "m"}]})},                       # says nothing
+    {"/v1/models": httpx.Response(200, json={"data": [{"id": "other", "owned_by": "vllm"}]})},
+    {"/v1/models": httpx.Response(200, json={"data": []})},
+    {"/api/tags": httpx.Response(200, content=b"<html>not json</html>")},                    # a catch-all page
+    {},                                                                                       # 404 on both lists
+])
+def test_another_local_server_runs_as_before_and_is_named_other(routes):
+    """R688 as amended: a server that is neither vLLM nor a known relay keeps working; Settings carries the caveat."""
+    seen: list[str] = []
+    client = _server(routes, seen)
+    assert client.server_kind("m") == "other"
+    assert client.generate("hi", model="m").text == "ok"
+    assert seen[-1] == "/v1/chat/completions"
+
+
+@pytest.mark.parametrize("tags", [
+    httpx.Response(500),                                                       # an Ollama daemon mid-restart
+    httpx.Response(200, json=[{"name": "m", "remote_host": "https://ollama.com:443"}]),  # JSON, not Ollama's shape
+    httpx.Response(200, json={"models": {"m": {}}}),
+])
+def test_a_failing_or_odd_model_list_fails_closed(tags):
+    seen: list[str] = []
+    client = _server({"/api/tags": tags, "/v1/models": httpx.Response(200, json={"data": [{"id": "m", "owned_by": "library"}]})}, seen)
+    with pytest.raises(LLMUnavailable):
+        client.generate("corpus text", model="m")
+    assert "/v1/chat/completions" not in seen
+
+
+@pytest.mark.parametrize("models", [httpx.Response(500), httpx.Response(503), "timeout"])
+def test_a_failing_v1_model_list_fails_closed(models):
+    """A proxy whose upstream is down can fail its model list while its chat route still works: no text then."""
+    from src.llm.vllm_client import VllmClient
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/v1/models":
+            if models == "timeout":
+                raise httpx.ReadTimeout("slow", request=request)
+            return models
+        if request.url.path == "/v1/chat/completions":
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        return httpx.Response(404)
+
+    base = "http://127.0.0.1:8000"
+    client = VllmClient(client=httpx.Client(transport=httpx.MockTransport(handler), base_url=base), base_url=base)
+    with pytest.raises(LLMUnavailable):
+        client.generate("SECRET", model="gpt-4o")
+    assert "/v1/chat/completions" not in seen
+
+
+def test_a_v1_model_list_behind_a_key_is_other_not_refused():
+    seen: list[str] = []  # vLLM started with --api-key answers 401 there
+    assert _server({"/v1/models": httpx.Response(401)}, seen).server_kind("m") == "other"
+
+
+def test_a_relay_is_refused_whatever_model_is_asked_and_an_unanswering_server_sends_nothing():
+    seen: list[str] = []
+    client = _server({"/v1/models": httpx.Response(200, json={"data": [{"id": "x", "owned_by": "openai"}]})}, seen)
+    with pytest.raises(RemoteModelRefused):
+        client.generate("corpus text", model="")
+    from src.llm.vllm_client import VllmClient
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    base = "http://127.0.0.1:8000"
+    dead = VllmClient(client=httpx.Client(transport=httpx.MockTransport(down), base_url=base), base_url=base)
+    with pytest.raises(LLMUnavailable):
+        dead.generate("corpus text", model="m")
+
+
+def test_the_kinds_are_named():
+    seen: list[str] = []
+    assert _server({"/api/tags": httpx.Response(200, json={"models": []})}, seen).server_kind() == "ollama"
+    assert _server({"/v1/models": httpx.Response(200, json={"data": [{"id": "m", "owned_by": "vllm"}]})}, seen).server_kind() == "vllm"
+    assert _server({"/v1/models": httpx.Response(200, json={"data": [{"id": "m", "owned_by": "openai"}]})}, seen).server_kind("x") == "relay"
+
+
+def test_settings_says_what_it_cannot_see_only_for_another_server(monkeypatch):
+    from src.llm import vllm_lifecycle
+
+    js = (_ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    caveat = "The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer."
+    assert 's.server_kind === "other"' in js and caveat in js
+    assert 's.server_kind === "relay"' in js
+    from src.llm.vllm_client import RELAY_REFUSAL
+
+    for loc in sorted((_ROOT / "src/static/locales").glob("*.json")):
+        d = json.loads(loc.read_text(encoding="utf-8"))
+        assert d.get(caveat) and d.get(RELAY_REFUSAL), loc.name
+    import src.llm.vllm_client as vc
+
+    monkeypatch.setattr(vc, "VllmClient", lambda **kw: (_ for _ in ()).throw(OSError("down")))
+    assert vllm_lifecycle._server_kind() is None  # an unreadable kind shows no caveat rather than a wrong one
+    monkeypatch.setattr(vllm_lifecycle, "is_running", lambda *a, **k: True)
+    monkeypatch.setattr(vllm_lifecycle, "_server_kind", lambda: "other")
+    assert vllm_lifecycle.status()["server_kind"] == "other"
+    monkeypatch.setattr(vllm_lifecycle, "is_running", lambda *a, **k: False)
+    assert vllm_lifecycle.status()["server_kind"] is None  # nothing is asked of a server that is not running
+
+
+def test_a_real_vllm_server_runs():
+    seen: list[str] = []
+    client = _server({"/v1/models": httpx.Response(200, json={"data": [{"id": "m", "owned_by": "vllm"}]})}, seen)
+    assert client.generate("hi", model="m").text == "ok"
+    assert seen == ["/api/tags", "/v1/models", "/v1/chat/completions"]
+
+
+def test_the_pull_queue_refuses_a_cloud_name_when_it_is_submitted():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.llm.pull_queue import get_pull_manager
+
+    with TestClient(app) as c:
+        r = c.post("/api/llm/pull/queue", json={"model": "gpt-oss:120b-cloud"})
+    assert r.status_code == 400 and REFUSAL in r.text
+    status = get_pull_manager().status()
+    assert "gpt-oss:120b-cloud" not in json.dumps(status)
