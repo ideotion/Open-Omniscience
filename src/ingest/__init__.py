@@ -2292,20 +2292,12 @@ class EthicalFetcher:
             # Pick a text encoding WITHOUT touching response.apparent_encoding: on a
             # streamed response the body is already consumed, so apparent_encoding
             # re-reads it and raises "content already consumed" (crashing the scrape).
-            # Detect from the bytes we just collected instead. requests also defaults
-            # unlabelled text/* to ISO-8859-1, which is usually wrong for modern pages,
-            # so detect in that case too.
-            encoding = getattr(response, "encoding", None)
-            if not encoding or str(encoding).lower() in ("iso-8859-1", "latin-1"):
-                try:
-                    from charset_normalizer import from_bytes
+            # Decide from the bytes we just collected instead (R699 cause 2: a UTF-8
+            # page with one stray byte used to come back as ptcp154 mojibake; the
+            # order of evidence is in src/ingest/charset.py).
+            from src.ingest.charset import choose_encoding
 
-                    best = from_bytes(raw).best()
-                    if best and best.encoding:
-                        encoding = best.encoding
-                except Exception:  # noqa: BLE001 - detection is best-effort
-                    pass
-                encoding = encoding or "utf-8"
+            encoding = choose_encoding(raw, getattr(response, "encoding", None))
             kept = raw if keep_bytes else None
             try:
                 return raw.decode(encoding, errors="replace"), kept
