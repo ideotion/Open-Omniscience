@@ -336,3 +336,16 @@ def test_the_claim_workspace_reads_held_state_for_the_shown_offers_only():
 
     src = inspect.getsource(claim_workspace)
     assert "for offer in shown:" in src and '"cached": read_cached_slice' not in src
+
+
+def test_query_scrub_is_linear_on_a_run_of_separators():
+    """CodeQL py/polynomial-redos on #1967: a run of ';' made the one-pattern scrub quadratic. The two-step scrub stays linear."""
+    import time
+
+    from src.ingest.fetch_verdict import without_private_query
+
+    text = ";" * 200_000 + "x"
+    started = time.perf_counter()
+    assert without_private_query(text) == text
+    assert without_private_query("GET /v1/archive;a=1;LATITUDE%3D48.9 failed") == "GET /v1/archive?… failed"
+    assert time.perf_counter() - started < 2.0

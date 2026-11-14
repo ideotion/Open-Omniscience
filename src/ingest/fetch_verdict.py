@@ -196,13 +196,28 @@ def _userinfo_span(url: str) -> tuple[int, int] | None:
 PRIVATE_QUERY_HOSTS = frozenset({"archive-api.open-meteo.com"})
 #: The query of a request to one of :data:`PRIVATE_QUERY_HOSTS`, wherever a library quoted it (``url: /v1/archive?latitude=...``).
 #: Case-insensitive, and the key may be percent-encoded (``%6Catitude``) or follow ``;`` as well as ``?``.
-_PRIVATE_QUERY_RE = re.compile(r"[?;][^\s'\"<>]*(?:latitude|longitude|%6catitude|%6congitude)(?:=|%3d)[^\s'\"<>]*", re.I)
+#: Matched in two linear steps rather than one pattern: a single ``[?;][^...]*key`` pattern backtracks quadratically on a long run of
+#: ``;`` (CodeQL py/polynomial-redos), and this text comes from a server's error message.
+_URL_TOKEN_RE = re.compile(r"[^\s'\"<>]+")
+_PRIVATE_KEY_RE = re.compile(r"(?:latitude|longitude|%6catitude|%6congitude)(?:=|%3d)", re.I)
+
+
+def _withhold_token(match: re.Match[str]) -> str:
+    """One whitespace-free token, cut at its first ``?`` or ``;`` that comes before a coordinate key, the rest written ``?…``."""
+    token = match.group()
+    last_key = -1
+    for key in _PRIVATE_KEY_RE.finditer(token):
+        last_key = key.start()
+    if last_key <= 0:
+        return token
+    cuts = [at for at in (token.find("?", 0, last_key), token.find(";", 0, last_key)) if at >= 0]
+    return token[: min(cuts)] + "?…" if cuts else token
 
 
 def without_private_query(text: str) -> str:
     """``text`` with the query of a request to a :data:`PRIVATE_QUERY_HOSTS` host withheld. NEVER raises."""
     try:
-        return _PRIVATE_QUERY_RE.sub("?…", text)
+        return _URL_TOKEN_RE.sub(_withhold_token, text)
     except Exception:  # noqa: BLE001 - written from inside a failure
         return UNREADABLE_URL
 
