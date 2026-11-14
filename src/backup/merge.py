@@ -4225,6 +4225,16 @@ _CARRY_PLAN_CHUNK = 500
 #: mention rows -- committed between windows, like every other windowed step.
 _CARRY_WRITE_WINDOW = 2000
 
+#: ``src.analytics.managed.normalize_lang`` in SQL, for the carry's keyword resolution
+#: (R698): lowercased, ``_`` read as ``-``, region and script dropped (``en-GB`` -> ``en``).
+#: A module-local literal; ``col`` is only ever a column name written in this file.
+_SQL_PRIMARY_SUBTAG = (
+    "(CASE WHEN instr(lower(trim(replace({col}, '_', '-'))), '-') > 0"
+    " THEN substr(lower(trim(replace({col}, '_', '-'))), 1,"
+    " instr(lower(trim(replace({col}, '_', '-'))), '-') - 1)"
+    " ELSE lower(trim(replace({col}, '_', '-'))) END)"
+)
+
 
 def _carry_enabled() -> bool:
     return os.getenv("OO_CARRY_DERIVED", "1") != "0"
@@ -4245,7 +4255,8 @@ def _ensure_carry_tables(con: sqlite3.Connection) -> None:
     )
     con.execute(
         "CREATE TEMP TABLE IF NOT EXISTS carry_kw ("
-        " old INTEGER PRIMARY KEY, new INTEGER, inc_entity INTEGER)"
+        " old INTEGER NOT NULL, lang TEXT NOT NULL, new INTEGER, inc_entity INTEGER,"
+        " PRIMARY KEY (old, lang))"
     )
 
 
@@ -4549,16 +4560,24 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         return
 
     # Resolve each incoming keyword the carried mentions name, the way index_article
-    # resolves a term: by normalized_term alone, lowest id (_prefetch_keywords).
-    # Only the articles whose KEYWORDS are carried (kw = 1): an article carried for its places and entities alone names no keyword.
+    # resolves a term (_prefetch_keywords): by normalized_term, lowest id, among the rows
+    # that may take a mention in the article's language (R698 = RN2 (a),
+    # store._keyword_takes_language) -- a row with no language, or the same primary
+    # subtag; an article of unknown language takes the plain lowest id. So the
+    # resolution is per (incoming keyword, article language), and every join below
+    # matches on both. Only the articles whose KEYWORDS are carried (kw = 1): an article
+    # carried for its places and entities alone names no keyword.
     con.execute(
-        "INSERT INTO temp.carry_kw (old, new, inc_entity)"
-        " SELECT ik.id,"
-        "  (SELECT MIN(k.id) FROM keywords k WHERE k.normalized_term = ik.normalized_term),"
+        "INSERT INTO temp.carry_kw (old, lang, new, inc_entity)"
+        " SELECT ik.id, p.lang,"
+        "  (SELECT MIN(k.id) FROM keywords k WHERE k.normalized_term = ik.normalized_term"
+        "   AND (p.lang = '' OR COALESCE(TRIM(k.language), '') = ''"
+        f"   OR {_SQL_PRIMARY_SUBTAG.format(col='k.language')} = p.lang)),"
         "  COALESCE(ik.is_entity, 0)"
-        " FROM inc.keywords ik WHERE ik.id IN ("
-        "  SELECT DISTINCT im.keyword_id FROM temp.carry_plan cp"
-        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1)"
+        " FROM (SELECT DISTINCT im.keyword_id AS kid, COALESCE(cp.language, '') AS lang"
+        "  FROM temp.carry_plan cp"
+        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1) p"
+        " JOIN inc.keywords ik ON ik.id = p.kid"
     )
 
     def _refuse(key: str, sql: str) -> None:
@@ -4574,13 +4593,13 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_unmapped",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE cp.kw = 1 AND ck.new IS NULL",
+        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(cp.language, '') WHERE cp.kw = 1 AND ck.new IS NULL",
     )
     _refuse(
         "entity_upgrade",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(cp.language, '')"
         " JOIN keywords k ON k.id = ck.new"
         " WHERE cp.kw = 1 AND ck.inc_entity = 1 AND COALESCE(k.is_entity, 0) = 0",
     )
@@ -4588,7 +4607,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_collision",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(cp.language, '')"
         " WHERE cp.kw = 1"
         " GROUP BY im.article_id, ck.new HAVING COUNT(*) > 1",
     )
@@ -4608,7 +4627,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         " top_keyword_tied_n = (SELECT COUNT(*) FROM inc.keyword_mentions im"
         "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count),"
         " top_keyword_id = (SELECT MIN(ck.new) FROM inc.keyword_mentions im"
-        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(carry_plan.language, '')"
         "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count)"
         " WHERE kw = 1 AND top_keyword_count IS NOT NULL"
     )
@@ -4715,7 +4734,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " SELECT ck.new, w.new, im.count, im.first_offset, w.observed_on, w.country,"
             " NULL, w.language, w.source_id, 'baseline', ?"
             " FROM temp.carry_win w CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(w.language, '')"
             " WHERE w.kw = 1"
             " ORDER BY ck.new, w.new",
             (now,),
@@ -4751,7 +4770,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             "INSERT INTO temp.carry_delta (kid, m, a) SELECT ck.new, SUM(im.count), COUNT(*)"
             " FROM temp.carry_win w"
             " CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE w.kw = 1 GROUP BY ck.new"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(w.language, '') WHERE w.kw = 1 GROUP BY ck.new"
         )
         con.execute(
             "UPDATE main.keywords SET"
