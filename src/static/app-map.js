@@ -2953,7 +2953,7 @@
       if (!await ensureOnline(t("Read the exact current size of the selected Wikipedia dumps"))) return;
       if (out) out.textContent = t("Reading exact sizes…");
       try {
-        const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`);
+        const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`, {method: "POST"});
         const rows = d.sizes || [];
         const ok = [], bad = [];
         rows.forEach(r => {
@@ -4349,7 +4349,7 @@
       if (!await ensureOnline(t("Read the size of the full-history planet"))) return;
       if (btn) { btn.disabled = true; btn.textContent = t("Reading…"); }
       const code = ((_osmHistory || {}).download || {}).code || "planet-history";
-      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code) + "&consent=true"); }
+      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code) + "&consent=true", {method: "POST"}); }
       catch (e) { toast(_failMsg("Size check failed: {error}", e), "err"); }
       _renderOsmHistory();
     }

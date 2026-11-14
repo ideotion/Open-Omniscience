@@ -27,7 +27,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.cross_site import refuse_cross_site_get
 from src.api.heavy import guarded_read
 from src.database.session import get_db
 from src.monitoring.secret_scrub import record_text
@@ -35,7 +34,7 @@ from src.monitoring.secret_scrub import record_text
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
 
-@router.get("/fdr-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/fdr-selftest")
 def signals_fdr_selftest(download: bool = Query(False)) -> JSONResponse:
     """Prove the Benjamini-Hochberg FDR mechanism on hand-computed fixtures.
 
@@ -170,7 +169,7 @@ def signals_alerts(
 
 
 class HazardSnapshotBody(BaseModel):
-    """Records to cache locally (as returned by ``GET /api/hazards``), and/or a refresh flag."""
+    """Records to cache locally (as returned by ``POST /api/hazards``), and/or a refresh flag."""
 
     records: list[dict] = []
 
@@ -189,7 +188,7 @@ def signals_hazards_snapshot(
     """Update the LOCAL hazard snapshot the alert layer reads (NO producer ever fetches).
 
     Two population paths, both honest: post the ``records`` the app already fetched via
-    ``GET /api/hazards`` (a pure local write, zero network here), and/or pass ``refresh=1``
+    ``POST /api/hazards`` (a pure local write, zero network here), and/or pass ``refresh=1``
     to pull the open feeds through the SAME guarded fetcher the hazards relay uses (the
     kill switch refuses it while airplane mode is engaged). A refresh that returns nothing
     (offline / all feeds failed) never overwrites a good snapshot with an empty one —

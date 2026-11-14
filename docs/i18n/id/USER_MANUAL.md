@@ -2861,7 +2861,7 @@ Mencabut kepercayaan dari seorang penulis mengecualikan anotasinya; menghapus pe
 | Metode & jalur | Tujuan |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | anotasi yang Anda tulis |
-| `GET /api/annotations/export` | bundel anotasi Anda yang bertanda tangan dan portabel |
+| `POST /api/annotations/export` | bundel anotasi Anda yang bertanda tangan dan portabel |
 | `POST /api/annotations/import` | verifikasi + simpan bundel yang diimpor (ditolak jika tidak sah) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | jaringan kepercayaan |
 | `GET /api/annotations/for?target=` | agregasi transparan — siapa menyatakan apa |

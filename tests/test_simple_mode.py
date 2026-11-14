@@ -145,9 +145,11 @@ def test_never_hidden_surfaces_stay_visible_in_simple_mode():
 def test_going_online_uses_the_one_consent_path():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     assert "window.toggleNetwork()" in code
-    assert not re.search(r"method\s*:\s*[\"']POST", code), (
-        "simple mode never writes the network state itself (#14)"
-    )
+    # Simple mode never writes the network state itself (#14). Its one write is adding a source,
+    # a local row: nothing is fetched until the reader is online.
+    writes = re.findall(r"""apiCall\(\s*["'`]([^"'`]+)["'`]\s*,\s*\{\s*method\s*:\s*["'](POST|PUT|PATCH|DELETE)""", code)
+    assert writes == [("/api/sources/?", "POST")], writes
+    assert len(re.findall(r"method\s*:\s*[\"'][a-z]", code, re.I)) == 1, "every write must be the one listed above"
     # Outbound originals open the local preview first (invariant #6), never the site.
     assert "openLinkPreview" in code
     assert not re.search(r"href=\$\{a\.url\}", code), "an article's original URL is never a bare link"
@@ -240,3 +242,33 @@ def test_the_hidden_ai_pill_is_not_a_consent_surface():
     assert "consent" not in pill.group(0).lower() and "egress" not in pill.group(0).lower()
     assert 'id="ai-egress-consent"' in html
     assert "#ai-egress-consent" not in " ".join(_hidden_selectors(_css("simple.css")))
+
+
+def test_world_and_numbers_read_local_aggregates_only():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    world = function_body(code, "World")
+    assert '"/api/insights/map-coverage"' in world and "countries: [c.country]" in world
+    # Q302: the code is what shows; the country's name rides in the hover and for screen readers.
+    assert "title=${c.name" in world and '<b class="s-code">${c.country}</b>' in world
+    # A country scope reaches both the list and the summary.
+    assert 'p.set("countries"' in code and 'g.set("countries"' in code
+    nums = function_body(code, "Markets") + function_body(code, "Climate")
+    # Fetching a climate record or a price is an egress: Numbers only reads, and sends the
+    # reader to the full view, where the consent gate lives (#14, #33).
+    assert "fetch(" not in nums and "/fetch" not in nums and "ensureOnline" not in nums
+    assert 'peekFull("climate")' in nums and 'peekFull("markets")' in nums
+
+
+def test_a_known_site_with_a_new_feed_is_still_added():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    add = function_body(code, "AddSource")
+    # The server keeps a second feed of a known domain as a sibling source, so the duplicate check
+    # must compare the feed too, never the domain alone.
+    assert 'String(x.rss_url || "") === feed' in add
+    # The server matches feeds more loosely and returns the existing row: a known id is not "Added".
+    assert "x.id === r.id" in add
+    # A stored country scope keeps only bare codes, so a reload cannot carry a hidden scope.
+    assert "/^[a-z]{2,3}$/i.test(c)" in function_body(code, "loadState")
+    # An article set (ids) outranks a country scope, which never narrows a lead's own articles.
+    sp = function_body(code, "searchParams")
+    assert '!(s.ids && s.ids.length)' in sp

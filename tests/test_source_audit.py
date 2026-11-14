@@ -406,7 +406,8 @@ def test_source_audit_endpoint_wired_to_the_settings_button():
     assert prefix == "/api/diagnostics"
     for path in ("/source-audit", "/source-audit-selftest"):
         # a route may carry decorator arguments (the cross-site dependency on the selftest), so the path ends at "," or ")"
-        assert re.search(rf'@router\.get\("{re.escape(path)}"[,)]', diag), f"route {path} not registered"
+        # the self-test is a POST since R694 (an on-demand run another site's page must not fire)
+        assert re.search(rf'@router\.(get|post)\("{re.escape(path)}"[,)]', diag), f"route {path} not registered"
         # the standalone per-report download button is gone (bundle carries it instead)
         assert f"{prefix}{path}?download=1" not in html, (
             f"a removed per-report download button survived for {prefix}{path}"

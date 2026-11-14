@@ -642,7 +642,7 @@ finding things, or it finds so much that every answer is the same answer).
    tests/test_climate_api.py + tests/climate_node_test.js.
 34. **SIMPLE MODE IS AN OPT-IN SECOND INTERFACE OVER THE SAME PAGE (R682, maintainer-asked 2026-11-13):** one
    top-bar switch (`#ui-simple-toggle`, `role="switch"`, remembered per device as `oo.ui.simple`) swaps the sidebar list
-   and tab pages for task views (Today, Read, Search, More tools), same routes, same chrome, full mode unchanged when off.
+   and tab pages for task views (Today, Read, Search, World, Numbers, More tools), same routes, full mode unchanged when off.
    AMENDS the visible-caveat non-negotiable FOR THIS MODE ONLY: caveat, method, n, source and date sit one click away
    behind an ⓘ (keyboard, touch, screen reader), and an approximate, partial or stale figure keeps a visible mark (~ ◐ ◷).
    NEVER hidden in either mode: the consent popup (going online calls the full app's `toggleNetwork`), airplane and
