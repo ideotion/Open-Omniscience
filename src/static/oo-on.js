@@ -460,6 +460,8 @@
   const EVENT_ACTIONS = Object.create(null);
   for (const [type, names] of Object.entries(EVENT_ACTION_NAMES)) EVENT_ACTIONS[type] = new Set(names);
 
+  // The ooPostSave runs in flight, by URL.
+  const POST_SAVE_BUSY = new Set();
   // Small helpers for what inline handlers used to say in-line.
   const HELPERS = {
     ooPrevent(ev) { if (ev) ev.preventDefault(); },
@@ -495,20 +497,34 @@
       if (u.origin !== location.origin) return;
       const say = (m, kind) => { if (typeof window.toast === "function") window.toast(m, kind); };
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      let res;
-      try { res = await fetch(u.href, {method: "POST"}); } catch (e) { say(t("Failed") + ": " + String((e && e.message) || e), "err"); return; }
-      if (!res.ok) { say(t("Failed") + " (" + res.status + ")", "err"); return; }
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = /filename="?([^";]+)"?/i.exec(cd);
-      const name = m ? m[1] : (u.pathname.split("/").filter(Boolean).pop() || "result") + ".json";
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      // A benchmark or model sweep runs for minutes with no tab to show it: say so, and never start the same run twice at once.
+      if (POST_SAVE_BUSY.has(u.href)) { say(t("Running…"), "ok"); return; }
+      POST_SAVE_BUSY.add(u.href);
+      say(t("Running…"), "ok");
+      try {
+        const res = await fetch(u.href, {method: "POST"});
+        if (!res.ok) {
+          let why = "";
+          try { const body = await res.json(); why = body && body.detail ? ": " + String(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : ""; } catch (e) { why = ""; }
+          say(t("Failed") + " (" + res.status + ")" + why, "err");
+          return;
+        }
+        const cd = res.headers.get("Content-Disposition") || "";
+        const m = /filename="?([^";]+)"?/i.exec(cd);
+        const name = m ? m[1] : (u.pathname.split("/").filter(Boolean).pop() || "result") + ".json";
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      } catch (e) {
+        say(t("Failed") + ": " + String((e && e.message) || e), "err");
+      } finally {
+        POST_SAVE_BUSY.delete(u.href);
+      }
     },
   };
   for (const [k, f] of Object.entries(HELPERS)) ACTIONS[k] = f;
