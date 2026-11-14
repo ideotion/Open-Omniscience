@@ -69,9 +69,10 @@ def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "
 # corpus survived (audit OO-02).
 PAGE1 = 4096; CHUNK = 8 * 1024 * 1024
 _ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb")
-_SIDE = ("-wal", "-shm", "-journal")
+# The -wal and the -journal are overwritten WHOLE (R708): every commit that touched page 1 left a copy of it, salt
+# included, in a WAL frame or the journal far past their first 4 KiB. Only the -shm index (no page data) is head-only.
 def header_only(name):
-    return name in _ENC or any(name == b + s for b in _ENC for s in _SIDE)
+    return name in _ENC or any(name == b + "-shm" for b in _ENC)
 def overwrite(p, head_only):
     try:
         n = os.path.getsize(p)

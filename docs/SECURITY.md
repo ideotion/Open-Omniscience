@@ -503,10 +503,13 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   signer's key to prove *provenance*, not just integrity. Verification needs nothing
   but the bundle + key (no DB, no trust in this tool).
 - An append-only, hash-chained, **signed custody log** (`src/custody/`) records
-  ongoing actions on an item; verify offline with `scripts/verify_custody.py`, which fails closed on an empty bundle, a record cut short, a bundle signed by more than one key, and a bundle whose entries do not match the head its export signs (count and last entry). A tail re-signed with a second key is refused as a key change. A bundle re-signed whole by someone else passes the tool: compare the printed signer key with one you already know, since that comparison, not the tool, is what catches it. A genuine log whose key was re-created partway (after a restore, say) is refused too; the in-app chain check still passes it, and a signed key-rotation record that lets the checker follow such a change is coming. It cannot see a cut made before export.
+  ongoing actions on an item; verify offline with `scripts/verify_custody.py`, which fails closed on an empty bundle, a record cut short, a change of signing key with no key-rotation record, and a bundle whose entries do not match the head its export signs (count and last entry). A tail re-signed with a second key is refused as a key change. A bundle re-signed whole by someone else passes the tool: compare the printed signer key with one you already know, since that comparison, not the tool, is what catches it. A change of signing key is followed only through a key-rotation record: endorsed by the old key, it passes; unendorsed (the old key was gone), it is refused unless accepted on the record's word, by name. With `--pin` across a rotation, each stretch of the chain is pinned to the identity that introduced it: its Ed25519 key, and its ML-DSA key where a signature carries one (an Ed25519-only signature is accepted under a pin, so the ML-DSA half adds no protection there; a stretch whose identity names no ML-DSA key, such as the one before the first rotation, is held to its Ed25519 key only). Key-rotation records are written only by the log itself, never through `POST /api/custody/log`; an export made after a key change and before anything new was logged writes the record first. A verified bundle that crosses a rotation lists its line of keys, first to last: an endorsement proves only that the old key's holder approved the change (anyone who took the old key can endorse a key of their own), and only to a reader who already knows one of those keys, and with `--accept-unendorsed-rotation` even `--pin` proves nothing unless the LAST key is already known, since a cut log re-signed by someone else carries exactly such a record. The in-app chain check follows the key through the same records; on the operator's own store it accepts an unendorsed rotation on its word and a key change with no record (all a log written before 0.5.1 can show, and it can never gain the record), naming each, while an exported bundle with such a change stays refused. A change of the ML-DSA key alone writes no record, and a pinned check then refuses the honest log, including a signer whose ML-DSA key differs from the one the last rotation introduced (open item). It cannot see a cut made before export.
   Signatures are **hybrid Ed25519 + post-quantum ML-DSA** when the `pqc` extra is
-  installed (honestly labelled `ed25519` otherwise; hybrid verification requires
-  *both* components — never a silent downgrade). Independent time comes from
+  installed (honestly labelled `ed25519` otherwise; a signature labelled hybrid
+  must verify in *both* components). A signature carrying only its Ed25519 half is
+  still accepted, even under `--pin` against a hybrid signer, so that a log whose
+  signer gained the post-quantum half later verifies: today the ML-DSA half adds
+  protection only where it is present, and stripping it is not refused (open item). Independent time comes from
   **OpenTimestamps** (Bitcoin-anchored); a self-asserted local time is the offline
   default. See `docs/USER_MANUAL.md` for the full model and its limits.
 - **Configurable from the UI:** post-quantum signing, anchoring mode
@@ -650,7 +653,23 @@ imply a protection we cannot deliver.
   is refused before it can overwrite the corpus.
 - **Panic wipe** (`src/safety/panic.py`, under **Advanced → Uninstall & wipe** — kept in a
   section of its own, apart from the tools above, because it cannot be undone):
-  best-effort overwrite-then-delete of the whole data dir, requiring an explicit confirmation. **Honest limit:** overwrite-in-place does *not*
+  best-effort overwrite-then-delete of the whole data dir, requiring an explicit confirmation. The encrypted databases
+  lose their salt page first (crypto-erase; the corpus body is never rewritten, so the erase stays fast at any size),
+  then their write-ahead log and rollback journal are overwritten WHOLE, because each commit that touched page 1 left a
+  copy of the salt in them past their first 4 KiB (R708), and the main heads are overwritten again after that, so a
+  checkpoint running meanwhile cannot carry the salt home. After the keys, the anchors and the passphrase and before the slow full rewrite, every other file under the data dir loses
+  its head the same way (a -wal or -journal whole), because encrypted copies of the corpus with its salt in their first
+  page live there under names no list keeps up with (pre-restore snapshots, salvage copies), so a wipe stopped before
+  the full rewrite leaves none of those readable. Plaintext staging (backup members, an extracted restore, a
+  reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past its head: both are
+  destroyed only by the full rewrite. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
+  junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
+  data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
+  sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked
+  file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
+  unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
+  a commit later than that is the window left; every file under the data dir the earlier steps did not
+  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).

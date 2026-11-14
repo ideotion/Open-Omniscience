@@ -177,15 +177,17 @@ def test_quarantined_articles_are_removed_and_counted(db):
     assert set(out["article_ids"]).isdisjoint(quarantined)
 
 
-def test_the_mention_total_still_includes_quarantined_so_it_matches_the_bar(db):
-    """Deliberate asymmetry, and the reason it is right: the bar was drawn from an
-    unfiltered aggregate, so silently changing the mention total here would make the
-    readout disagree with the chart above it. The difference is disclosed instead."""
+def test_the_mention_total_leaves_quarantined_out_so_it_matches_the_bar(db):
+    """The mention total must match the bars it describes. Since R101 ``trend`` draws its bars
+    without quarantined articles, so the total leaves them out too (it included them while the
+    bars did); the articles the selection drops are still counted in ``quarantined_excluded``."""
     _seed(db, days=10, per_day=2, quarantine_every=4)
     out = trend_range_article_ids(
         db, "flooding", start=date(2026, 4, 1), end=date(2026, 4, 10)
     )
-    assert out["mentions"] == 40, "all 20 articles x count 2, quarantined included"
+    assert out["mentions"] == 30, "15 openable articles x count 2: the 5 quarantined ones are left out, as the bars leave them out"
+    bars = trend(db, "flooding", bucket="day")
+    assert out["mentions"] == sum(p["count"] for p in bars["points"] if "2026-04-01" <= p["date"] <= "2026-04-10")
     assert out["articles"] == 15
     assert out["quarantined_excluded"] == 5
 

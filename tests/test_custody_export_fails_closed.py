@@ -158,7 +158,7 @@ def test_a_one_item_bundle_with_a_middle_entry_re_signed_by_another_key_is_refus
     e.signature = atk.sign(canonical_bytes(e.signable_core()))
     b["entries"][1] = e.to_dict()
     ok, issues = verify_export(b)
-    assert not ok and "more than one key" in issues[0]
+    assert not ok and issues[0].startswith("the signing key changes at seq")
 
 
 @pytest.mark.parametrize("mutate", [
@@ -229,7 +229,7 @@ def test_a_cut_log_with_a_tail_re_signed_by_another_key_is_refused_even_unpinned
     # and with the signer relabelled to B, the key change is named
     b["signer"] = {**b["signer"], "ed25519_pub": b["head_signature"]["ed25519"]["pub"]}
     ok, issues = verify_export(b)
-    assert not ok and issues[0].startswith("the signing key changes at seq 1")
+    assert not ok and issues[0].startswith("the signing key changes at seq 3 with no key-rotation record")
 
 
 def test_an_item_bundle_carrying_another_items_entry_is_refused(tmp_path):

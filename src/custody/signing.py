@@ -432,8 +432,41 @@ class HybridSigner:
         # what a key file still holds when a passphrase IS held but the file was not (or could not be) wrapped:
         self._legacy_plain = False  # a key readable in the clear
         self._ed_pkcs8 = False  # the Ed25519 key under PKCS8's cheap KDF (see parse_ed25519_key)
+        before = self._file_states(both=True)
         self._ed_key = self._load_or_create_ed25519()
         self._mldsa_pk, self._mldsa_sk = self._load_or_create_mldsa()
+        after = self._file_states(both=True)
+        # A file that changed while it was being loaded (replaced by another process, or wrapped in place by this one)
+        # may not hold what was loaded: recorded as unknown, so the first check reloads and settles it.
+        seen = tuple(a if a == b else (0, 0, 0, 0) for a, b in zip(after, before, strict=True))
+        self._files_seen = seen if self._mldsa_sk is not None else seen[:1]
+
+    def _file_states(self, *, both: bool = False) -> tuple[tuple[int, int, int, int] | None, ...]:
+        """Which key files this signer reads, and which state of each: the Ed25519 file, and the ML-DSA file when the
+        post-quantum half is in use, or ``both`` (``None`` for a file that is not there)."""
+        paths = [self._ed_path] + ([self._mldsa_path] if both or self._mldsa_sk is not None else [])
+        states: list[tuple[int, int, int, int] | None] = []
+        for p in paths:
+            try:
+                states.append(keyfile.identity(os.stat(p)))
+            except OSError:
+                states.append(None)
+        return tuple(states)
+
+    def key_file_changed(self) -> bool:
+        """Whether a key file now holds another file than the one this signer loaded (re-created or replaced).
+
+        A long-lived signer would otherwise go on signing with a key the folder no longer holds while a fresh one signs
+        with the new key, and a custody log written by both would change key back and forth. A file that is not there
+        reads as NOT changed: reloading would create a new key, and a folder moved aside for a moment and put back would
+        leave two rotation records and an orphan key behind. A wrap in place of the same key reads as changed; reloading
+        it then finds the same key."""
+        now = self._file_states()
+        return None not in now and now != self._files_seen
+
+    def reloaded(self) -> HybridSigner:
+        """A signer loaded afresh from the same key files, with the same post-quantum preference."""
+        return HybridSigner(self._ed_path, self._mldsa_path, use_pqc=self._use_pqc, create=self._create)
 
     # -- properties -------------------------------------------------------- #
     @property
