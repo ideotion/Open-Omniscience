@@ -156,11 +156,22 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/briefing": (frozenset(), frozenset({"oo-briefing-refresh"}), "starts the briefing refresh in a daemon thread: derived data, de-duplicated by its slot"),
     "/api/scheduler/activity": (frozenset(), frozenset({"oo-plan-preview"}), "computes the plan preview in a daemon thread: derived, cached by its key"),
     "/api/diagnostics/all": (
-        frozenset({"keyword-coverage.json"}), _LLM_POOL_THREADS,
+        frozenset({"keyword-coverage.json", "keyword-generic-terms.json", "date-extraction-coverage.json",
+                   "source-audit-status.json"}), _LLM_POOL_THREADS,
         "FINDING F1 (routed to RC2, R278): collector threads and diagnostics files from one GET; #1526's cross-site guard now stops another site triggering it; a same-origin call still does",
     ),
     "/api/diagnostics/debug-bundle": (frozenset(), _DIAG_THREADS, "FINDING F1 (routed): the bundle's collectors, one thread each"),
-    "/api/diagnostics/keyword-engine": (frozenset({"keyword-coverage.json"}), frozenset(), "writes the keyword coverage record it reports"),
+    "/api/diagnostics/keyword-engine": (
+        frozenset({"keyword-coverage.json", "keyword-generic-terms.json"}), frozenset(),
+        "writes the keyword coverage record it reports, and K5's generic-term list date and size (R706)",
+    ),
+    "/api/diagnostics/dates": (
+        frozenset({"date-extraction-coverage.json"}), frozenset(),
+        "writes K7's whole-corpus date coverage record (R706); a filtered run writes nothing",
+    ),
+    "/api/diagnostics/source-audit": (
+        frozenset({"source-audit-status.json"}), frozenset(), "writes K8's status-count record (R706)",
+    ),
     "/api/diagnostics/llm-throughput-selftest": (
         frozenset(), _LLM_POOL_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
     ),

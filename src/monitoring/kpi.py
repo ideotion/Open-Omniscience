@@ -62,7 +62,8 @@ def _now() -> str:
 
 # The K1–K14 board (V1_PATHWAY §2.3). ``nm`` is the honest reason a metric is not measurable
 # in-process on a dev machine (most are: live-corpus / graded-gold-set / operator-run / CI /
-# expensive-crunch gated). K2 + K11 have live resolvers below.
+# expensive-crunch gated). K2 + K11 have live resolvers below; K5, K6, K7 and K8 read the last persisted
+# measurement of their instrument, with its date, or say none was recorded (R706 for K5/K7/K8).
 _SPECS: tuple[dict, ...] = (
     {"id": "K1", "name": "Warm unlock at 100 GB+", "direction": "down", "target": "< 2 s",
      "source_endpoint": "/api/system/startup-status",
@@ -79,20 +80,24 @@ _SPECS: tuple[dict, ...] = (
     {"id": "K5", "name": "Keyword noise (generic-term-candidate share of top terms)",
      "direction": "down", "target": "pending-ruling-V1-6",
      "source_endpoint": "/api/diagnostics/keyword-engine",
-     "nm": "engine_report is an expensive corpus scan — not run on this GET (run the "
-           "keyword-engine diagnostic on the live corpus); no persisted value here"},
+     "nm": "no keyword-engine run has recorded its generic-term list on this machine yet (run the "
+           "keyword-engine diagnostic, or take an all-diagnostics bundle, on the live corpus); the "
+           "scan is never run on this GET"},
     {"id": "K6", "name": "Cross-language translation coverage", "direction": "up",
      "target": "pending-ruling-V1-6", "source_endpoint": "/api/diagnostics/keyword-engine",
      "nm": "engine_report.translation_coverage is an expensive corpus scan — never run on this "
            "GET; no run has recorded one yet (run the keyword-engine diagnostic, or take an "
            "all-diagnostics bundle, on the live corpus)"},
     {"id": "K7", "name": "Date-extraction recall", "direction": "up",
-     "target": "pending-ruling-V1-6", "source_endpoint": "/api/diagnostics/datediag",
-     "nm": "datediag coverage is an expensive article scan — not run on this GET"},
+     "target": "pending-ruling-V1-6", "source_endpoint": "/api/diagnostics/dates",
+     "nm": "no whole-corpus date diagnostic (no language or day filter) has recorded its coverage on "
+           "this machine yet (run the date diagnostics, or take an all-diagnostics bundle); the article "
+           "scan is never run on this GET"},
     {"id": "K8", "name": "Source health + diversity", "direction": "up",
      "target": "pending-ruling-V1-6 (per-region flag distribution inspected, not scored)",
      "source_endpoint": "/api/diagnostics/source-audit",
-     "nm": "source-audit reads per-source extraction validity (expensive) — not run on this GET"},
+     "nm": "no source audit has recorded its status counts on this machine yet (run the source "
+           "audit, or take an all-diagnostics bundle); the audit is never run on this GET"},
     {"id": "K9", "name": "Retrieval quality (nDCG/MRR/Recall per language)", "direction": "up",
      "target": "no regression vs frozen baseline (floors at first grading)",
      "source_endpoint": "/api/diagnostics/ir-eval",
@@ -495,7 +500,174 @@ def _k11_i18n(spec: dict) -> dict:
     )
 
 
-_RESOLVERS = {"K2": _k2_latency, "K6": _k6_coverage, "K11": _k11_i18n}
+# --------------------------------------------------------------------------- R706: K5, K7, K8
+# The same channel PR #1019 built for K6, for the three V1-6 metrics that had none: each instrument writes down what it
+# MEASURED, where it measures (never this GET), one file per writer so each keeps its own date; each resolver reads that file
+# and reports the figure WITH its date and how it was measured. Where the instrument measures no such figure, or never ran,
+# the metric is "not measured" (``not-measurable-here``, no value, no as_of): never a figure computed here, never a default.
+_NOISE_FILE, _NOISE_SCHEMA = "keyword-generic-terms.json", "oo-keyword-generic-terms-1"
+_DATES_FILE, _DATES_SCHEMA = "date-extraction-coverage.json", "oo-date-extraction-coverage-1"
+_SOURCES_FILE, _SOURCES_SCHEMA = "source-audit-status.json", "oo-source-audit-status-1"
+
+
+def _write_record(name: str, schema: str, fields: dict) -> dict | None:
+    """Persist one instrument's measurement beside K6's record. Best-effort: a failed write records nothing (the KPI then says
+    no run recorded one) and never breaks the diagnostic that measured it."""
+    record = {"schema": schema, "measured_at": _now(), **fields}
+    try:
+        from src.safety.file_lock import atomic_replace
+
+        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001 - a diagnostic side-record never breaks the diagnostic
+        return None
+    return record
+
+
+def _read_record(name: str, schema: str) -> dict | None:
+    """The last record ``name`` holds, or None when none was written, the file is unreadable, or it is another schema's."""
+    try:
+        path = _coverage_path().with_name(name)
+        if not path.exists():
+            return None
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return rec if isinstance(rec, dict) and rec.get("schema") == schema else None
+
+
+def _int_or_none(v) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+
+def record_keyword_generic_terms(report: dict) -> dict | None:
+    """Write down the generic-term review list a keyword-engine run produced (K5). Called by the endpoint that runs the scan."""
+    block = (report or {}).get("generic_terms")
+    if not isinstance(block, dict):
+        return None
+    by_lang = block.get("by_language")
+    return _write_record(_NOISE_FILE, _NOISE_SCHEMA, {
+        "candidate_terms": _int_or_none(block.get("candidate_terms")),
+        "top_per_language": _int_or_none(block.get("top_per_language")),
+        "languages": len(by_lang) if isinstance(by_lang, dict) else None,
+    })
+
+
+def read_keyword_generic_terms() -> dict | None:
+    return _read_record(_NOISE_FILE, _NOISE_SCHEMA)
+
+
+def record_date_coverage(payload: dict, query: dict) -> dict | None:
+    """Write down a WHOLE-CORPUS date-diagnostics run's coverage (K7). A run filtered to one language or to recent days measures
+    a slice, not the corpus the board names, so it records nothing (the last whole-corpus figure stays, with its own date)."""
+    if (query or {}).get("lang") or (query or {}).get("days"):
+        return None
+    corpus = (payload or {}).get("corpus")
+    if not isinstance(corpus, dict):
+        return None
+    return _write_record(_DATES_FILE, _DATES_SCHEMA, {
+        "scanned": _int_or_none(corpus.get("scanned")),
+        "articles_total": _int_or_none(corpus.get("articles_total")),
+        "with_extracted": _int_or_none(corpus.get("articles_with_extracted_dates")),
+        "coverage_pct": corpus.get("coverage_pct") if corpus.get("scanned") else None,  # the diagnostic's own share; none on 0
+        "datelike_no_extract": _int_or_none(corpus.get("articles_with_datelike_text_but_no_extraction")),
+        "scan_cap": _int_or_none((query or {}).get("scan")),
+    })
+
+
+def read_date_coverage() -> dict | None:
+    return _read_record(_DATES_FILE, _DATES_SCHEMA)
+
+
+def record_source_audit_status(report: dict) -> dict | None:
+    """Write down a source audit's status counts and its per-region failing share (K8). Called by the endpoint that audits."""
+    if not isinstance(report, dict) or "status_counts" not in report:
+        return None
+    counts = [{"status": str(c.get("status")), "n": _int_or_none(c.get("n"))}
+              for c in report.get("status_counts") or [] if isinstance(c, dict)]
+    audited = _int_or_none(report.get("sources_audited"))
+    healthy = next((_int_or_none(c["n"]) for c in counts if c["status"] == "healthy"), None)
+    regions = ((report.get("region_self_audit") or {}).get("by_region") or {})
+    by_region = [{"region": str(r), "total": _int_or_none(v.get("total")), "pct_failing": v.get("pct_failing")}
+                 for r, v in sorted(regions.items()) if isinstance(v, dict)]
+    return _write_record(_SOURCES_FILE, _SOURCES_SCHEMA, {
+        "sources_audited": audited,
+        # Taken where the audit is made, so the board shows what was recorded and computes nothing (R706); none on 0 audited.
+        "healthy_pct": round(100.0 * healthy / audited, 1) if audited and healthy is not None else None,
+        "min_articles": _int_or_none(report.get("min_articles")),
+        "status_counts": counts,
+        "by_region": by_region,
+    })
+
+
+def read_source_audit_status() -> dict | None:
+    return _read_record(_SOURCES_FILE, _SOURCES_SCHEMA)
+
+
+def _ago(measured_at) -> str:
+    age = _age_days(measured_at)
+    return f", {age} day(s) ago" if age is not None else ""
+
+
+def _k5_noise(spec: dict) -> dict:
+    """K5: the keyword-engine run lists generic-term REVIEW candidates; it measures no share of the top terms, so there is no
+    figure to show. The last run's date and list size are stated in the reason; the value stays empty (R706)."""
+    rec = read_keyword_generic_terms()
+    if rec is None:
+        return _entry(spec)
+    return _entry(spec, method=(
+        f"not measured: the keyword-engine run of {rec.get('measured_at')}{_ago(rec.get('measured_at'))} listed "
+        f"{rec.get('candidate_terms')} generic-term review candidates (up to {rec.get('top_per_language')} per language, "
+        f"{rec.get('languages')} languages), a list for a person to review, not a share of the top terms. No share is "
+        "measured anywhere, so none is shown or computed here; it needs the term set ruling V1-6 will define."
+    ))
+
+
+def _k7_dates(spec: dict) -> dict:
+    """K7: the share of scanned articles in which the extractor found at least one date, from the last whole-corpus run."""
+    rec = read_date_coverage()
+    if rec is None:
+        return _entry(spec)
+    scanned, found, at, pct = rec.get("scanned"), rec.get("with_extracted"), rec.get("measured_at"), rec.get("coverage_pct")
+    if not scanned or found is None or not isinstance(pct, (int, float)):
+        return _entry(spec, method=(
+            f"not measured: the date diagnostics run of {at} scanned no articles (an empty corpus), so no share exists; "
+            "that is a different fact from a coverage of 0"
+        ))
+    return _entry(spec, value=pct, n=scanned, as_of=at, verdict=_NO_BAR, method=(
+        f"{found} of the {scanned} most recent articles scanned (of {rec.get('articles_total')}) carry at least one date the "
+        f"extractor found ({pct}%), recorded by the whole-corpus date diagnostics{_ago(at)}; "
+        f"{rec.get('datelike_no_extract')} more hold date-like text it did not turn into a date. A share of ARTICLES, not a "
+        "recall over every date in the text (the recall probe over-matches, so it is no denominator). A persisted "
+        "measurement, never re-run here; counts only. The bar is ruling V1-6, so no verdict is given."
+    ))
+
+
+def _k8_sources(spec: dict) -> dict:
+    """K8: the share of audited sources whose extraction the last source audit rated healthy, with the per-region failing
+    shares beside it (inspected, never folded into the figure)."""
+    rec = read_source_audit_status()
+    if rec is None:
+        return _entry(spec)
+    audited, at = rec.get("sources_audited"), rec.get("measured_at")
+    counts = {c.get("status"): c.get("n") for c in rec.get("status_counts") or [] if isinstance(c, dict)}
+    healthy, pct = counts.get("healthy"), rec.get("healthy_pct")
+    if not audited or healthy is None or not isinstance(pct, (int, float)):
+        return _entry(spec, method=(
+            f"not measured: the source audit of {at} audited no source (none had {rec.get('min_articles')} articles), so "
+            "no share exists"
+        ))
+    tally = ", ".join(f"{n} {s}" for s, n in counts.items())
+    entry = _entry(spec, value=pct, n=audited, as_of=at, verdict=_NO_BAR, method=(
+        f"{healthy} of the {audited} audited sources read as healthy ({pct}%; {tally}), recorded by the source "
+        f"audit{_ago(at)}. Extraction validity, never editorial merit; each status is its own count, never blended. The "
+        "per-region failing shares ride beside it to be inspected, not scored. A persisted measurement, never re-run here. "
+        "The bar is ruling V1-6, so no verdict is given."
+    ))
+    entry["by_region"] = rec.get("by_region") or []
+    return entry
+
+
+_RESOLVERS = {"K2": _k2_latency, "K5": _k5_noise, "K6": _k6_coverage, "K7": _k7_dates, "K8": _k8_sources, "K11": _k11_i18n}
 
 
 def kpi_snapshot(session=None) -> dict:  # noqa: ARG001 - session accepted for the endpoint contract

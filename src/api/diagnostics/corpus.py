@@ -124,7 +124,7 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     diff two of these over time to see whether an optimization landed. With
     ``download=1`` it returns as a dated attachment."""
     from src.analytics.engine_report import keyword_engine_report
-    from src.monitoring.kpi import record_translation_coverage
+    from src.monitoring.kpi import record_keyword_generic_terms, record_translation_coverage
 
     report = keyword_engine_report(db)
     # Write the ring-coverage figure down where the scan is MADE. Until 2026-09-07 this
@@ -133,6 +133,7 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     # board and structurally unwatchable. Best-effort by construction: a failed write
     # records nothing and K6 then says so, rather than breaking this diagnostic.
     record_translation_coverage(report)
+    record_keyword_generic_terms(report)  # K5's record (R706): the generic-term list's date and size, never a share
     headers = {}
     if download:
         fname = f"oo-keyword-engine-{datetime.now().strftime('%Y%m%d')}.json"

@@ -110,6 +110,12 @@ def source_audit(
 
     allow = {d.strip() for d in os.getenv("OO_SOURCE_AUDIT_ALLOWLIST", "").split(",") if d.strip()}
     report = audit_sources(db, allowlist=allow, with_furniture=with_furniture)
+    # K8's record (R706): the status counts and per-region failing shares, written where the audit is made. Only the full audit
+    # (furniture check included) is recorded: without it a failing source can read as healthy, and the board would keep that.
+    if with_furniture:
+        from src.monitoring.kpi import record_source_audit_status
+
+        record_source_audit_status(report)
     if recency_window:
         # RC06 = a (2026-09-15): BESIDE, never replacing. It is its own key, carrying its own
         # window, its own n per source and its own caveat -- merging it into the rows above
