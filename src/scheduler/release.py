@@ -46,6 +46,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+import threading
 import time
 from contextlib import suppress
 from typing import Any
@@ -173,9 +174,51 @@ def close_serves_after_encryption() -> dict[str, Any]:
     A serve built while the library was plaintext may hold a DuckDB offload folder of derived data under the data directory
     (``rollup_serve._spill_setting``); left serving, that plaintext folder would outlive the encryption until the next rebuild.
     Closing the serves removes their folders, and the next build sees the passphrase and offloads nothing. Never waits and never
-    raises, like the cleared-key close: a serve in use at that moment is left open and named in ``busy``.
+    raises, like the cleared-key close. A serve in use at that moment (named in ``busy``) is closed as soon as it is free, by a
+    thread that waits for its lock (named in ``deferred``): left to its next rebuild, its plaintext folder stayed on disk for as
+    long as nothing changed (open-on-main row 50). That close applies only to the connection that was serving at the encryption:
+    one a build swapped in meanwhile is the replacer's, and the replacer already removed the retired folder.
     """
-    return _close_serves(wait=False)
+    serving: dict[str, Any] = {}
+    for name in ("rollup_serve", "map_serve"):
+        mod = sys.modules.get(f"src.analytics.{name}")
+        if mod is not None:
+            serving[name] = mod._STATE.get("con")
+    out = _close_serves(wait=False)
+    for name in out.get("busy", []):
+        target = serving.get(name)
+        if target is None:
+            continue
+        try:
+            threading.Thread(
+                target=_close_when_free, args=(name, target), name=f"close-{name}-after-encryption", daemon=True
+            ).start()
+            out.setdefault("deferred", []).append(name)
+        except Exception as exc:  # noqa: BLE001 - never raises: the encryption itself has succeeded
+            out.setdefault("errors", {})[name] = type(exc).__name__
+    return out
+
+
+def _close_when_free(name: str, target: Any) -> None:
+    """Wait for ``name``'s serve lock, then close ``target`` with its offload folder if it is still the one serving."""
+    try:
+        mod = sys.modules.get(f"src.analytics.{name}")
+        if mod is None:
+            return
+        spill = None
+        with mod._LOCK:  # the query or refresh that held it has finished
+            if mod._STATE.get("con") is not target:
+                return
+            with suppress(Exception):
+                target.close()
+            mod._STATE["con"] = None
+            mod._STATE["built_at"] = 0.0
+            spill, mod._STATE["spill"] = mod._STATE.get("spill"), None
+        if spill:  # after the close: DuckDB holds its files open until then
+            shutil.rmtree(spill, ignore_errors=True)
+        _LOG.info("encrypt in place: the %s serve that was in use is now closed with its offload folder", name)
+    except Exception as exc:  # noqa: BLE001 - a background cleanup must never crash the app
+        _LOG.warning("encrypt in place: could not close the %s serve once free (%s)", name, type(exc).__name__)
 
 
 def _collect_garbage(swapping: bool | None) -> dict[str, Any]:

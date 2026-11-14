@@ -1097,9 +1097,28 @@ _OWN_SPILL_SWEPT = False
 _SPILL_LOCK = threading.Lock()
 
 
+#: A folder is made after its process started; it counts as ORPHANED (its pid reused by a later process) only when it is older than
+#: that process's start by more than this, so clock resolution (psutil reads a start time in 1/100 s ticks on Linux) never
+#: makes a live process's own folder look older than the process.
+_SPILL_START_SLACK_S = 2.0
+
+
+def _folder_time(path) -> float:
+    """When ``path`` was made, as well as the filesystem can say: its birth time where there is one, else the EARLIER of its
+    change and modification times (entries added later only move those forward, which can only keep a folder, never drop one)."""
+    st = path.stat()
+    birth = getattr(st, "st_birthtime", None)
+    return float(birth) if birth else min(st.st_mtime, st.st_ctime)
+
+
 def _sweep_spill_folders(root) -> None:
     """Remove the offload folders of processes that are gone (and nothing else): the folders are named
-    ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any."""
+    ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any.
+
+    A pid that is alive is not proof the folder is its own: the pid may have been reused by a later process (open-on-main
+    row 51), which would keep a plaintext folder a crashed build left behind for as long as that process lives. So a live
+    pid keeps its folder only while the folder is not older than the process; a folder made BEFORE the process started is
+    orphaned and goes. When the start time cannot be read the folder is KEPT (a live process may be using it) and reported."""
     import shutil
 
     global _OWN_SPILL_SWEPT
@@ -1116,8 +1135,22 @@ def _sweep_spill_folders(root) -> None:
         if pid == mine:
             if not _OWN_SPILL_SWEPT:
                 shutil.rmtree(child, ignore_errors=True)
-        elif not psutil.pid_exists(pid):
+            continue
+        if not psutil.pid_exists(pid):
             shutil.rmtree(child, ignore_errors=True)
+            continue
+        try:
+            started = psutil.Process(pid).create_time()
+            made = _folder_time(child)
+        except psutil.NoSuchProcess:
+            shutil.rmtree(child, ignore_errors=True)  # it ended between the two reads
+            continue
+        except Exception as exc:  # noqa: BLE001 - unreadable start time (access denied, a zombie): keep it, say so
+            _LOG.warning("rollup serve: kept offload folder %s: cannot tell whether process %s owns it (%s)",
+                         child.name, pid, type(exc).__name__)
+            continue
+        if made < started - _SPILL_START_SLACK_S:
+            shutil.rmtree(child, ignore_errors=True)  # older than the process holding its pid: a reused pid's orphan
     _OWN_SPILL_SWEPT = True
 
 
@@ -1147,6 +1180,11 @@ def _spill_folder(*, make: bool) -> str:
         if not make:
             return ""
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name == "posix":
+            # mkdir's mode applies only to a folder it creates: one an older version made with the default mask is tightened
+            # here (open-on-main row 52). A failure is not fatal: each connection's own folder below is 0700 regardless.
+            with contextlib.suppress(OSError):
+                os.chmod(root, 0o700)
         mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
         mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
         return str(mine)
