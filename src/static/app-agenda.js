@@ -1039,6 +1039,9 @@
     // same fabrication risk one layer up.
     function agElectionTier(e) {
       if (e.date_confidence == null) return null;
+      // A STATED date that has gone by (a 2026 election read in 2027): kept as the source gave
+      // it, marked passed, never moved forward to a later year.
+      if (e.passed === true) return "gone";
       if (e.date_confidence === "projected" && e.projection && e.projection.status === "passed")
         return "passed";
       return e.date_confidence;                      // "scheduled" | "window" | "projected"
@@ -1052,6 +1055,7 @@
       window:    { pillCls: "tier-window",  chipCls: "tier-window", label: "window" },
       projected: { pillCls: "warn",         chipCls: "approx",    label: "projected" },
       passed:    { pillCls: "err",          chipCls: "leadpassed", label: "projected · passed" },
+      gone:      { pillCls: "",             chipCls: "",          label: "passed" },
     };
     // The confidence pill for one full row (agRow / the day-detail lists): tier-aware
     // for elections, byte-identical to the pre-existing markup for everything else.
@@ -1172,7 +1176,8 @@
         span = ` <span class="pill${e.span.active ? " ok" : ""}" title="${catalogNote}">${esc(text)}</span>`;
       }
       const years = [
-        e.origin_year != null ? tfa("since {year}", {year: e.origin_year}) : null,
+        // A one-off entry (origin = until: one election) has no "since"; its until note says it all.
+        e.origin_year != null && e.origin_year !== e.until_year ? tfa("since {year}", {year: e.origin_year}) : null,
         e.until_year != null ? tfa("nothing listed after {year}", {year: e.until_year}) : null,
       ].filter(Boolean).join(" · ");
       const yearNote = years
@@ -1294,6 +1299,7 @@
       const box = $("agenda-year"), loc = agLocale(), y = AGV.y;
       const byMonth = {}; for (let m = 1; m <= 12; m++) byMonth[m] = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month) byMonth[e.month].push(e);
         else if (e.next_occurrence && +e.next_occurrence.slice(0, 4) === y) byMonth[+e.next_occurrence.slice(5, 7)].push(e);
       }
@@ -1311,6 +1317,16 @@
       }
       box.innerHTML = `<div class="ag-ygrid">${cards}</div>`;
     }
+    // An entry bounded to a range of years (origin_year..until_year: an observance "since 1950",
+    // or ONE election, whose range is its own year) is placed only inside that range, so a
+    // one-off election never reappears on the same day of every other year's grid.
+    function agInYear(e, y) {
+      // An election entry bounded by until_year IS that one election, so it starts that year too.
+      const from = e.origin_year != null ? e.origin_year : (e.calendar === "elections" ? e.until_year : null);
+      if (from != null && y < from) return false;
+      if (e.until_year != null && y > e.until_year) return false;
+      return true;
+    }
     function agOpenMonth(m) { AGV.m = m; AGV.day = null; agendaSetView("month"); }
     function agOpenMonthYear(y, m) { AGV.y = y; AGV.m = m; AGV.day = null; agendaSetView("month"); }
     function agOpenYear(y) { AGV.y = y; AGV.day = null; agendaSetView("year"); }
@@ -1320,6 +1336,7 @@
     function agEventsInMonth(rows, y, m) {
       const ym = `${y}-${String(m).padStart(2, "0")}`, out = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month === m) out.push(e);
         else if (e.next_occurrence && e.next_occurrence.slice(0, 7) === ym && !out.includes(e)) out.push(e);
       }
@@ -1367,6 +1384,7 @@
       const yearCount = (y) => {
         let n = 0;
         for (const e of rows) {
+          if (!agInYear(e, y)) continue;
           if (e.month) n++;
           else if (e.next_occurrence && +e.next_occurrence.slice(0, 4) === y) n++;
         }
@@ -1394,6 +1412,7 @@
       ["scheduled", "scheduled", "ok"],
       ["window", "window", "tier-window"],
       ["projected_upcoming", "projected", "warn"],
+      ["passed", "passed", "err"],
       ["projected_passed", "projected · passed", "err"],
       ["dateless", "dateless", ""],
       ["missing", "missing", ""],
@@ -1465,11 +1484,24 @@
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(floor.caveat || ""))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.caveat || ""))}</p>`
         + `<p class="hint" style="margin:0 0 8px"><b>${esc(T("Method"))}</b> ${esc(T(rep.method || ""))}</p>`
+        + `<p class="hint" style="margin:0 0 8px">${esc(agSnapshotLine(floor.snapshot, T, TF))}</p>`
         + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
         + (rows.length
           ? `<div style="overflow-x:auto;max-width:100%"><table class="data"><thead><tr><th>${esc(T("Country"))}</th><th>${esc(T("State"))}</th>`
             + `<th>${esc(T("Calendar entries"))}</th><th>${esc(T("Why no date"))}</th></tr></thead><tbody>${body}</tbody></table></div>`
           : `<div class="muted">${esc(T("No floor country is in this state."))}</div>`);
+    }
+    // Where the election dates come from: the hand-curated list, and the Wikidata snapshot only
+    // when the operator's networked run has written one. An absent snapshot is said, never read
+    // as "no elections"; counts only.
+    function agSnapshotLine(sn, T, TF) {
+      const st = sn && sn.state;
+      if (st === "present") {
+        return TF("Wikidata election snapshot as of {date}: {added} entries added, {shadowed} already in the hand-curated list, {refused} refused.",
+          {date: ooIsoDate(sn.as_of), added: sn.added || 0, shadowed: sn.shadowed || 0, refused: (sn.refused || 0) + (sn.generator_refused || 0)});
+      }
+      if (st === "unreadable") return T("The Wikidata election snapshot on this install could not be read; only the hand-curated list is shown.");
+      return T("No Wikidata election snapshot on this install yet: these dates come from the hand-curated list only.");
     }
     function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;
@@ -1586,6 +1618,7 @@
       const ym = `${y}-${String(m).padStart(2, "0")}`;
       const byDay = {}, monthOnly = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month === m && e.day) (byDay[e.day] = byDay[e.day] || []).push(e);
         // FLOATING rule (e.g. 3rd Tuesday of March): compute the day for THIS browsed
         // year so it places correctly every year, not only the one next_occurrence holds.
@@ -1651,6 +1684,7 @@
       const iso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const out = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month === m && e.day === d) out.push(e);
         else if (e.next_occurrence === iso && !out.includes(e)) out.push(e);
       }
@@ -1691,7 +1725,8 @@
         return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" data-on-click="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
           <div class="ag-wd">${esc(wd)} <span class="ag-wd-d">${esc(dn)}</span>${moonHtml}</div>${chips}${more}</div>`;
       }).join("") + `</div>`;
-      const monthOnly = rows.filter(e => e.month && !e.day && !e.next_occurrence && monthsInWeek.has(e.month));
+      const monthOnly = rows.filter(e => e.month && !e.day && !e.next_occurrence && monthsInWeek.has(e.month)
+        && days.some(d => d.getMonth() + 1 === e.month && agInYear(e, d.getFullYear())));
       if (monthOnly.length)
         html += `<div class="hint" style="margin-top:8px"><span>${esc(t9("This week — no fixed day:"))}</span> ` +
           monthOnly.map(e => `<span class="ag-tag" title="${esc(e.title)}">${esc(e.title)}</span>`).join(" ") + `</div>`;
@@ -1736,7 +1771,13 @@
       }
       if (isCov) { renderAgendaCoverage(); return; }
       const rows = agFiltered();
-      $("agenda-monthhint").textContent = AG.caveat || "";
+      // The caveat already stands, whole and visible, in the tab's intro right above
+      // (same sentences, keyed one by one there). Printing it again beside the month
+      // name said it twice on one screen (the 2026-09-30 journalist walk, item 7), so
+      // this slot stays for a caveat that says something the intro does not.
+      const _agIntro = "A forward-looking agenda of major recurring events.";
+      $("agenda-monthhint").textContent =
+        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? AG.caveat : "";
       if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
       if (isMonth) {
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));

@@ -55,16 +55,18 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
+  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingLocatedFact", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
+  "lawVelocityHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
 const src =
   "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}" + "\n" +
-    extractConst("esc") + "\n" +
+  "function ooIsoDate(s){return String(s==null?'':s).slice(0,10);}" + "\n" +
+      extractConst("esc") + "\n" +
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
   extractConst("_isDownloadKind") + "\n" +
@@ -675,6 +677,22 @@ const WIKI = {
   assert.ok(!visible(settled).includes("drafted from memory"), "a settled list still carried the unsettled caveat");
 }
 {
+  // R679: within a state the SERVER's order holds (population reached from the operator's dated table), never a re-sort by
+  // code in the browser, and the note names the table's source and date instead of saying the order is waiting.
+  const POP = {
+    state: "checked", reason: null, as_of: "2026-09-07", verification_status: "verified 2026-12-01", countries: 3,
+    by_state: { tracked: [], "verified-not-yet-tracked": ["in", "bd", "aa"], unverified: [], "no-eligible-source": [] },
+    order: { by: "population", source: "UN WPP 2024", as_of: "2024-07-11", reason: null, missing: ["aa"] },
+    languages: [{ language: "bn", official: ["aa", "bd", "in"], states: { tracked: 0, "verified-not-yet-tracked": 3, unverified: 0, "no-eligible-source": 0 }, documents: 0 }],
+    zh_beyond_floor: {}, many_country_sources: {}, unplaced_documents: {},
+  };
+  const text = visible(R.livingLawFloorHtml({ floor: POP }, t, tf));
+  assert.ok(text.indexOf("CC(in)") < text.indexOf("CC(bd)") && text.indexOf("CC(bd)") < text.indexOf("CC(aa)"),
+    `the browser re-sorted the server's population order: ${text}`);
+  assert.ok(text.includes("listed by population reached (UN WPP 2024, 2024-07-11); any the table lacks follow by code"), text);
+  assert.ok(!text.includes("waits for a dated population table"), "a placed table still read as waiting");
+}
+{
   // The catalogue could not be read: tracked is still true, the rest is "Not looked up", never "No eligible source".
   const UNCHECKED = {
     state: "unchecked", reason: "LawCatalogUnreadable: boom", as_of: "2026-09-07", verification_status: "drafted-x", countries: 2,
@@ -766,10 +784,50 @@ const WIKI = {
   const nowalk = group(R.livingWikiGroups({ ...WIKI, coverage: NOWALK }, t, tf), "Edition coverage");
   assert.ok(visible(nowalk).includes("All editions Not measured yet") && !/\b0 pages seen/.test(visible(nowalk)), visible(nowalk));
   assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
+  // R17 step 4 (R678): the located counters, summed over editions, as "n of m"; the reasons are counts in the hover; the scan's progress is said.
+  const LOC = { ...COV, located: { measured: true, complete: false, texts_read: { hot: 30, warm: 10 }, texts_held: { hot: 30, warm: 70 },
+    per_edition: { en: { found: 7, located: 2, ambiguous: 1, no_house_number: 1, pending: 2, lookup_failed: 1, skipped_about_a_person: 3, skipped_a_home: 1 }, fr: { found: 1, outside_your_osm_countries: 1 } } } };
+  const lg = group(R.livingWikiGroups({ ...WIKI, coverage: LOC }, t, tf), "Edition coverage");
+  noJunk(lg, "the located counters"); noVerdict(lg, "the located counters");
+  assert.ok(visible(lg).includes("Addresses located 2 of 8 addresses located"), visible(lg));
+  const lh = hovers(lg);
+  assert.ok(lh.includes("1 ambiguous, 0 not located, 1 outside your OpenStreetMap countries, 1 without a house number."), lh);
+  assert.ok(lh.includes("4 pages about a person or a home were not read.") && lh.includes("Read 40 of 100 stored pages so far."), lh);
+  assert.ok(lh.includes("2 addresses are still being looked up.") && lh.includes("1 addresses could not be looked up"), lh);
+  assert.ok(lh.includes("Addresses outside your OpenStreetMap countries are not located."), "the Q820 scope sentence is missing: " + lh);
+  const empty = group(R.livingWikiGroups({ ...WIKI, coverage: { ...COV, located: { measured: true, complete: true, per_edition: {} } } }, t, tf), "Edition coverage");
+  assert.ok(visible(empty).includes("Addresses located No address found yet") && !/Read \d/.test(hovers(empty)), visible(empty));
   const never = group(R.livingWikiGroups({ ...WIKI, coverage: { measured: false, reason: "lane-never-run" } }, t, tf), "Edition coverage");
   assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
   const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
   assert.ok(visible(none).includes("Could not be read"), "a payload without a coverage block threw or drew figures");
+}
+
+// Amendment velocity: the short caveat sits inside the fold BEFORE the counts, every
+// period is listed, nothing is divided, and every word goes through the translator.
+{
+  const V = {
+    method: "M-long", caveat: "C-long", caveat_short: "C-short", excluded_baseline_captures: 3, n: 2,
+    series: [{ jurisdiction: "zzz", tracked_documents: 4, n: 2, sparse: true,
+      points: [{ period: "2026-01", count: 2 }, { period: "2026-03", count: 1 }] }],
+  };
+  const marked = (s) => "T[" + s + "]";
+  const mtf = (s, v) => "T[" + tf(s, v) + "]";
+  const html = R.lawVelocityHtml(V, marked, mtf);
+  noJunk(html, "the velocity fold");
+  assert.ok(html.startsWith("<details"), "the block is a fold");
+  const cav = html.indexOf('<p class="card-caveat">T[C-short]</p>');
+  assert.ok(cav > 0 && cav < html.indexOf("CC(zzz)"), "the short caveat comes before the counts: " + html);
+  assert.ok(html.indexOf("T[M-long]") > html.indexOf("CC(zzz)") && /<details><summary[^>]*>T\[Method\]/.test(html), "method one click further");
+  assert.ok(html.includes("2026-01: <b>2</b>") && html.includes("2026-03: <b>1</b>"), html);
+  assert.ok(html.includes("<b>3</b></summary>"), "the total is the sum of counts, in the summary");
+  assert.ok(html.includes("T[First captures left out: 3]"));
+  assert.ok(html.includes("T[3 versions captured · 4 documents tracked]"), "the per-jurisdiction line sums its own points: " + html);
+  assert.ok(!/%|rate|per document/i.test(visible(html).replace("C-long", "")), "nothing divided: " + visible(html));
+  const empty = R.lawVelocityHtml({ ...V, series: [], excluded_baseline_captures: 0 }, marked, mtf);
+  assert.ok(empty.includes("T[No version has been captured after a first capture yet.]") && empty.includes("T[C-short]"), empty);
+  assert.ok(!/First captures/.test(empty));
+  assert.strictEqual(R.lawVelocityHtml(null, marked, mtf), "");
 }
 
 console.log("living_sources_node_test: all checks passed");

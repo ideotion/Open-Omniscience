@@ -41,7 +41,13 @@ import math
 from datetime import date
 from typing import Any
 
-from src.weather.openmeteo import LICENSE_NOTE, fetch_daily_slice
+from src.weather.openmeteo import (
+    LICENSE_NOTE,
+    PLACE_DECIMALS,
+    build_archive_url,
+    fetch_daily_slice,
+    round_place,
+)
 
 BASELINE_START = date(1991, 1, 1)
 BASELINE_END = date(2020, 12, 31)
@@ -220,34 +226,98 @@ def compute_anomalies(baseline: dict, window: dict, variables: list[str] | None 
     }
 
 
+#: R675: the place is ROUNDED before it leaves the machine (:data:`src.weather.openmeteo.PLACE_DECIMALS`,
+#: one decimal of a degree, the ERA5-Land spacing; ``build_archive_url`` applies it for every caller).
+PLACE_NOTE = (
+    "Coordinates are rounded to 0.1 degree (about 11 km) before they are sent: that is the spacing of "
+    "ERA5-Land, the finest grid behind these values. Open-Meteo also adjusts temperature for the terrain "
+    "height at the point it receives, so a reading can differ slightly from the exact spot."
+)
+
+
+def place(lat: float, lon: float) -> tuple[float, float]:
+    """The rounded place actually sent and stored (R675). ``-0.0`` reads as ``0.0``."""
+    return round_place(lat, lon)
+
+
+def _all_vars() -> list[str]:
+    # Both slices always carry every supported variable, so one held slice answers any subset.
+    return sorted(SUPPORTED)
+
+
+def _place_store(store):
+    # The person's own place, kept apart from corroboration slices (src/weather/held.py PLACE_KEY_PREFIX).
+    if store is not None:
+        return store
+    from src.weather.held import PLACE_KEY_PREFIX, HeldSlices
+
+    return HeldSlices(PLACE_KEY_PREFIX)
+
+
+def _place_block(lat: float, lon: float) -> dict:
+    return {"lat": lat, "lon": lon, "decimals": PLACE_DECIMALS, "note": PLACE_NOTE}
+
+
+def held_anomalies(lat: float, lon: float, start: date, end: date,
+                   variables: list[str] | None = None, *, store=None) -> dict:
+    """The anomalies from slices ALREADY held on this machine. Never fetches: a slice not held is
+    named in ``missing`` and no number is computed (R675's re-view, readable in airplane mode)."""
+    lat, lon = place(lat, lon)
+    st = _place_store(store)
+    base = st.get(build_archive_url(lat, lon, BASELINE_START, BASELINE_END, _all_vars()))
+    win = st.get(build_archive_url(lat, lon, start, end, _all_vars()))
+    missing = [name for name, p in (("baseline", base), ("window", win)) if p is None]
+    if missing:
+        return {"ok": True, "held": False, "missing": missing, "place": _place_block(lat, lon)}
+    out = compute_anomalies(base, win, variables, expect=(start, end))
+    out.update(held=True, place=_place_block(lat, lon),
+               provenance={"baseline": base.get("provenance"), "window": win.get("provenance")})
+    return out
+
+
 def fetch_anomalies(lat: float, lon: float, start: date, end: date,
                     variables: list[str] | None = None, *, force: bool = False,
-                    fetcher=None) -> dict:
-    """Fetch (cache-aware) the 1991-2020 baseline and the window, then compute anomalies.
+                    fetcher=None, store=None) -> dict:
+    """Fetch what is not held yet (the 1991-2020 baseline and the window), keep it, compute.
 
-    Two consented fetches through the single ethical path. The baseline is a ~30-year slice
-    (about 11,000 days, deliberately beyond the 366-day window bound, which applies to the window
-    only); it is cached on disk after the first fetch per place, so re-viewing is offline, and
-    ``force`` re-downloads both. A failed fetch returns that slice's honest transport
-    verdict instead of numbers.
+    Two consented fetches at most, through the single ethical path, for the ROUNDED place
+    (:func:`place`). The baseline is a ~30-year slice (about 11,000 days, deliberately beyond the
+    366-day window bound, which applies to the window only), fetched once per place. Slices are
+    kept in the encrypted store (:mod:`src.weather.held`), never in a loose file; ``force``
+    re-downloads both. A failed fetch returns that slice's honest transport verdict instead of
+    numbers.
     """
     variables = list(dict.fromkeys(variables)) if variables else list(SUPPORTED)
     unknown = sorted(set(variables) - set(SUPPORTED))
     if unknown:
         raise ValueError(f"no anomaly definition for {unknown}; supported: {sorted(SUPPORTED)}")
-    # The baseline is always fetched for ALL supported variables so its cache key is the same
-    # whichever subset is asked for: one 30-year download per place, not one per variable set.
-    base = fetch_daily_slice(lat, lon, BASELINE_START, BASELINE_END, sorted(SUPPORTED),
-                             force=force, fetcher=fetcher)
-    if not base.get("ok"):
-        return {**base, "stage": "baseline"}
-    win = fetch_daily_slice(lat, lon, start, end, variables, force=force, fetcher=fetcher)
-    if not win.get("ok"):
-        return {**win, "stage": "window"}
-    out = compute_anomalies(base, win, variables, expect=(start, end))
-    out["provenance"] = {"baseline": base.get("provenance"), "window": win.get("provenance"),
-                         "baseline_cached": base.get("cached"), "window_cached": win.get("cached")}
+    lat, lon = place(lat, lon)
+    st = _place_store(store)
+    got: dict[str, dict] = {}
+    held: dict[str, bool] = {}
+    kept = True
+    for stage, (s, e) in (("baseline", (BASELINE_START, BASELINE_END)), ("window", (start, end))):
+        url = build_archive_url(lat, lon, s, e, _all_vars())
+        payload = None if force else st.get(url)
+        held[stage] = payload is not None
+        if payload is None:
+            payload = fetch_daily_slice(lat, lon, s, e, _all_vars(), force=True, fetcher=fetcher,
+                                        keep=False)
+            if not payload.get("ok"):
+                return {**payload, "stage": stage, "place": _place_block(lat, lon)}
+            payload = {k: v for k, v in payload.items() if k not in ("label", "cached")}
+            try:
+                st.put(url, payload)
+            except Exception:  # noqa: BLE001 - the numbers are still shown; that they were not kept is said
+                kept = False
+        got[stage] = payload
+    out = compute_anomalies(got["baseline"], got["window"], variables, expect=(start, end))
+    out["place"] = _place_block(lat, lon)
+    out["kept"] = kept
+    out["provenance"] = {"baseline": got["baseline"].get("provenance"), "window": got["window"].get("provenance"),
+                         "baseline_cached": held["baseline"], "window_cached": held["window"]}
     return out
 
 
-__all__ = ["BASELINE_END", "BASELINE_START", "SUPPORTED", "compute_anomalies", "fetch_anomalies"]
+__all__ = ["BASELINE_END", "BASELINE_START", "PLACE_DECIMALS", "SUPPORTED", "compute_anomalies", "fetch_anomalies",
+           "held_anomalies", "place"]

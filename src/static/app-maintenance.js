@@ -52,14 +52,47 @@
       return Object.prototype.hasOwnProperty.call(known, state) ? known[state] : String(state);
     }
 
-    // A "method" sentence the server wrote. It arrives in English whatever the page's language, so it
-    // is shown as sent, in its own left-to-right span, behind a small visible label saying so. The
-    // real fix, the API returning a method key the client translates, is a proposal (R289).
+    // A sentence the server wrote. It arrives in English whatever the page's language, so it is
+    // shown as sent, in its own left-to-right span, behind a small visible label saying so (R289).
     function _maintServerTextHtml(text, t) {
       return ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(text)}</span>`);
     }
-    function _maintMethodHtml(text, t) {
-      return `<div class="hint">${_maintServerTextHtml(text, t)}</div>`;
+
+    // The server names WHAT its method and note sentences mean with a stable key beside the English
+    // (R289's proposal, built under R665): the page says that meaning in the reader's language, in
+    // plain words. A key is bumped (.v2) only when the meaning changes, so a key this page does not
+    // know (a newer server) falls back to the English as sent, labelled. Never a match on the English
+    // text itself: that would break silently the day the server's wording moves.
+    function _maintKeyedText(key, d, t, tf) {
+      switch (key) {
+        case "maintenance.samples.v1":
+          return t("These are a few of the articles the rules picked in the last run, always the same ones for the same corpus. They let you check what the rules catch; they do not say how often the rules are wrong, and they judge no article. Only titles and addresses are shown.");
+        case "maintenance.raw_ids.v1":
+          return t("A source is listed when its whole name is a Wikidata code (such as Q11858063). This only reads what is on your computer: nothing is downloaded, renamed or marked. The lowest source numbers come first (not the largest sources), and each article count includes quarantined articles.");
+        case "maintenance.furniture.v1":
+          if (typeof (d && d.sampled) !== "number" || typeof (d && d.min_share) !== "number") return null;
+          return tf(t("Read from the {n} newest articles of this source, not a random choice, so a recent change of page layout weighs more than an old one. A line is listed when it has 12 words or fewer and appears in at least {percent}% of the non-empty articles read, and in 3 of them or more. Lines marked “already stripped by the rules” are taken out of the articles already. This only reads what is on your computer: nothing is marked or removed."),
+            { n: fmtNum(d.sampled), percent: fmtNum(Math.round(d.min_share * 1000) / 10) });  // one decimal: 0.335 reads 33.5, never rounded up to 34
+        case "maintenance.host_not_measured.v1":
+          return t("This run did not compare sites (tick “Also compare each article's site with its source's site” before you start it). These counts were not measured, which is not the same as zero.");
+        case "maintenance.host_fact.v1":
+          return t("An article stored on another site than its source's own is a fact about where it lives, not a judgement: it may be a shared story, a redirect or a news-agency feed. Nothing is marked for it, even with writing on. Articles whose site could not be read are counted apart, never as a different site.");
+        default:
+          return null;
+      }
+    }
+    // The method line under a report: the keyed sentence when this page knows the key, else the
+    // server's English, labelled. Nothing when the server sent neither.
+    function _maintMethodHtml(d, t, tf) {
+      const said = _maintKeyedText(d && d.method_key, d, t, tf);
+      if (said) return `<div class="hint">${esc(said)}</div>`;
+      return (d && d.method) ? `<div class="hint">${_maintServerTextHtml(String(d.method), t)}</div>` : "";
+    }
+    // A signal's note, the same way (it used to print the English unlabelled).
+    function _maintNoteHtml(s, t, tf) {
+      const said = _maintKeyedText(s && s.note_key, s, t, tf);
+      if (said) return `<div class="hint">${esc(said)}</div>`;
+      return (s && s.note) ? `<div class="hint">${_maintServerTextHtml(String(s.note), t)}</div>` : "";
     }
 
     function maintRunHtml(st, t, tf) {
@@ -106,7 +139,40 @@
       if (r.state === "confirmed") bits.push(esc(t("confirmed by you")));
       return `<li><a href="/api/articles/${encodeURIComponent(r.id)}/view" target="_blank" rel="noopener" dir="auto">${esc(title)}</a>`
         + (bits.length ? ` <span class="hint">— ${bits.join(" · ")}</span>` : "")
+        + maintPairButtonHtml(r, t)
         + `<div class="hint" dir="ltr">${esc(r.url || "")}</div></li>`;
+    }
+
+    // One small button beside a host-mismatch sample (R193): "this source really publishes on that
+    // site", or its withdrawal once confirmed. The pair travels in data attributes and is read back
+    // by one delegated listener; a row without a source number or a readable site gets no button.
+    function maintPairButtonHtml(r, t) {
+      if (!(r && r.source_id >= 1 && r.article_site)) return "";
+      const confirmed = r.state === "confirmed";
+      // A confirm needs the two sites known and different; a withdraw needs only the pair itself.
+      if (!confirmed && !(r.source_site && r.article_site !== r.source_site)) return "";
+      const act = confirmed ? "withdraw" : "confirm";
+      const label = confirmed ? t("Withdraw") : t("Confirm site");
+      const tip = confirmed
+        ? t("Count this site as different again in the next dry run.")
+        : t("This source really publishes on that site: count it as “confirmed by you” in the next dry run. Nothing is marked or removed.");
+      return ` <button type="button" class="secondary" data-maint-pair="${act}" data-source="${esc(String(r.source_id))}"`
+        + ` data-site="${esc(r.article_site)}" title="${esc(tip)}">${esc(label)}</button>`;
+    }
+
+    // Every pair you confirmed, with when and the note as typed, each withdrawable. The caveat line is
+    // visible (R685): a confirmation changes how the next dry run counts the pair, and nothing else.
+    function maintPairsHtml(d, t, tf) {
+      const rows = (d && d.rows) || [];
+      const cav = `<div class="card-caveat">${esc(t("A confirmed site is counted as “confirmed by you” in the next dry run instead of as a different site. Nothing is marked or removed."))}</div>`;
+      if (!rows.length) return `<div class="hint">${esc(t("No site confirmed yet. Confirm one from a host-mismatch sample above."))}</div>` + cav;
+      const body = rows.map((r) =>
+        `<tr><td class="num">${esc(String(r.source_id))}</td><td dir="ltr">${esc(r.article_site)}</td>`
+        + `<td>${esc(ooIsoDate(r.confirmed_at || "?"))}</td><td dir="auto">${esc(r.note || "")}</td>`
+        + `<td>${maintPairButtonHtml({ source_id: r.source_id, article_site: r.article_site, state: "confirmed" }, t)}</td></tr>`).join("");
+      return `<div>${esc(tf(t("{n} confirmed"), { n: fmtNum(d.confirmed != null ? d.confirmed : rows.length) }))}</div>`
+        + `<table class="maint-tally"><thead><tr><th>${esc(t("Source number"))}</th><th>${esc(t("Site"))}</th><th>${esc(t("Confirmed"))}</th><th>${esc(t("Note"))}</th><th></th></tr></thead>`
+        + `<tbody>${body}</tbody></table>` + cav;
     }
 
     function maintSamplesHtml(data, t, tf) {
@@ -118,11 +184,11 @@
         const head = (s.candidates == null)
           ? esc(t("not measured in this run"))
           : esc(tf(t("{shown} shown of {n} candidates"), { shown: fmtNum(s.shown || 0), n: fmtNum(s.candidates) }));
-        const note = s.note ? `<div class="hint">${esc(s.note)}</div>` : "";
+        const note = _maintNoteHtml(s, t, tf);
         const rows = (s.rows || []).map((r) => maintSampleRowHtml(r, t, tf)).join("");
         return `<h4 class="lib-sub"><span dir="ltr">${esc(sig)}</span> — ${head}</h4>${note}<ul class="maint-sample">${rows}</ul>`;
       });
-      return parts.join("") + (data.method ? _maintMethodHtml(data.method, t) : "");
+      return parts.join("") + _maintMethodHtml(data, t, tf);
     }
 
     function maintRawIdsHtml(d, t, tf) {
@@ -133,7 +199,7 @@
         + `<td class="num">${esc(String(r.source_id))}</td></tr>`).join("");
       return `<div>${esc(tf(t("{n} sources, {m} articles in the ones shown"), { n: fmtNum(d.raw_id_sources), m: fmtNum(d.articles_in_shown || 0) }))}</div>`
         + `<table class="maint-tally"><thead><tr><th>${esc(t("Name"))}</th><th>${esc(t("Domain"))}</th><th>${esc(t("Articles"))}</th><th>${esc(t("Source number"))}</th></tr></thead>`
-        + `<tbody>${rows}</tbody></table>` + (d.method ? _maintMethodHtml(d.method, t) : "");
+        + `<tbody>${rows}</tbody></table>` + _maintMethodHtml(d, t, tf);
     }
 
     function maintFurnitureHtml(d, t, tf) {
@@ -146,7 +212,7 @@
         `<tr><td dir="auto">${esc(r.line)}</td><td class="num">${esc(fmtNum(r.articles))}</td>`
         + `<td>${r.known ? esc(t("already stripped by the rules")) : ""}</td></tr>`).join("");
       return head + `<table class="maint-tally"><thead><tr><th>${esc(t("Line"))}</th><th>${esc(t("Articles"))}</th><th></th></tr></thead>`
-        + `<tbody>${rows}</tbody></table>` + (d.method ? _maintMethodHtml(d.method, t) : "");
+        + `<tbody>${rows}</tbody></table>` + _maintMethodHtml(d, t, tf);
     }
 
     // ---- DOM + network (loopback) -------------------------------------------------
@@ -237,14 +303,62 @@
       catch (e) { el.textContent = e && e.status === 404 ? t("No such source.") : ((e && e.message) || String(e)); }
     }
 
+    async function maintLoadPairs() {
+      const t = _maintT(), tf = _maintTf();
+      const el = $("maint-pairs"); if (!el) return;
+      try { el.innerHTML = maintPairsHtml(await api("/api/quarantine/host-pairs"), t, tf); }
+      catch (e) { el.textContent = (e && e.message) || String(e); }
+    }
+
+    // Confirm or withdraw one pair. Local only: the route stores or deletes one row on this machine.
+    // A 409 is the server saying the pair is no longer a mismatch, shown as its own sentence, labelled.
+    async function maintPairAct(btn) {
+      const t = _maintT();
+      const act = btn.getAttribute("data-maint-pair");
+      const sid = parseInt(btn.getAttribute("data-source"), 10);
+      const site = btn.getAttribute("data-site") || "";
+      if (["confirm", "withdraw"].indexOf(act) < 0 || !(sid >= 1) || !site) return;
+      const out = $("maint-pair-msg"); if (out) out.textContent = "";
+      btn.disabled = true;
+      try {
+        if (act === "confirm") {
+          await api("/api/quarantine/host-pairs", { method: "POST",
+            body: JSON.stringify({ source_id: sid, article_site: site }) });
+        } else {
+          await api("/api/quarantine/host-pairs?source_id=" + sid + "&article_site=" + encodeURIComponent(site), { method: "DELETE" });
+        }
+        if (out) out.textContent = act === "confirm" ? t("Confirmed.") : t("Withdrawn.");
+      } catch (e) {
+        if (out) out.innerHTML = e && e.status === 409
+          ? esc(t("Nothing to confirm: no stored article of this source lives on that site any more."))
+          : e && e.status === 404 ? esc(t("No such source."))
+          : _maintServerTextHtml((e && e.message) || String(e), t);
+      } finally { btn.disabled = false; }
+      maintLoadPairs();
+      // The samples only exist once a run has happened; reloading them before that would replace
+      // an empty panel with the server's "no sample is held" note.
+      if (_maintStatus && _maintStatus.state && _maintStatus.state !== "idle") maintLoadSamples();
+    }
+
+    function _maintWirePairs() {
+      for (const id of ["maint-samples", "maint-pairs"]) {
+        const el = $(id);
+        if (el) el.addEventListener("click", (ev) => {
+          const b = ev.target && ev.target.closest ? ev.target.closest("button[data-maint-pair]") : null;
+          if (b) maintPairAct(b);
+        });
+      }
+    }
+
     // The Advanced loader runs once per page, so reopening the section after a fold would show the
     // state it was folded in. Re-read when it opens, and wire that once.
     let _maintWired = false;
     function loadMaintenance() {
       if (!_maintWired) {
         const sec = document.querySelector('details[data-adv="maintenance"]');
-        if (sec) sec.addEventListener("toggle", () => { if (sec.open) maintRefresh(); });
+        if (sec) sec.addEventListener("toggle", () => { if (sec.open) { maintRefresh(); maintLoadPairs(); } });
+        _maintWirePairs();
         _maintWired = true;
       }
-      maintRefresh(); maintLoadRawIds();
+      maintRefresh(); maintLoadRawIds(); maintLoadPairs();
     }

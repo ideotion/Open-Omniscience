@@ -1014,6 +1014,47 @@ artifacts:
     # Same LIMIT: a code-level diff review, not an advisory-database clearance.
     last_verified: "2026-11-08"
 
+  # Simple mode (CLAUDE.md invariant #34, R682): Preact 10 + hooks + htm, vendored unmodified
+  # from the npm tarballs (npm pack preact@10.29.8 htm@3.1.1), served locally, never a CDN.
+  # Digests measured 2026-11-13; the same values sit in src/static/simple/vendor/SHA256SUMS and in
+  # tests/test_simple_mode.py::_PINS, which fails on any drift. Upgrade steps: simple/vendor/README.md.
+  # Checked 2026-11-13 against the npm registry: the three files are byte-identical to the ones in
+  # the published tarballs, whose registry integrity values are
+  #   preact-10.29.8.tgz  sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==
+  #   htm-3.1.1.tgz       sha512-983Vyg8NwUE7JkZ6NmOqpCZ+sh1bKv2iYTlUkzlWmA5JD2acKoxd4KVxbMmxX/85mtfdnDmTFoNKcg5DGAvxNQ==
+  - id: vendored-preact
+    title: Preact (vendored, simple mode)
+    kind: vendored-binary
+    description: Preact v10.29.8 UMD build vendored for simple mode (no CDN, no eval, sha256-pinned).
+    upstream: https://github.com/preactjs/preact (npm tarball)
+    check_upstream: "watch preact releases on the 10.x line for security fixes"
+    license: MIT
+    pin: {path: src/static/simple/vendor/preact.min.umd.js,
+          sha256: "aa558e32247d4ccea18c5addbb0311bc1771bf39734185be01dc0c3c4cf3fd6d"}
+    refresh: "re-vendor the pinned version; update SHA256SUMS, this pin and tests/test_simple_mode.py::_PINS"
+    freshness: {policy: on-security}
+  - id: vendored-preact-hooks
+    title: Preact hooks (vendored, simple mode)
+    kind: vendored-binary
+    description: preact/hooks v10.29.8 UMD build, shipped with Preact (same package, same licence).
+    upstream: https://github.com/preactjs/preact (npm tarball, hooks/dist)
+    check_upstream: "moves with vendored-preact"
+    license: MIT
+    pin: {path: src/static/simple/vendor/hooks.umd.js,
+          sha256: "5c29238e5dc99df306d7f7fff038591a397cfcfabb59f81fbdef43d670aa0566"}
+    refresh: "re-vendor together with vendored-preact"
+    freshness: {policy: on-security}
+  - id: vendored-htm
+    title: htm (vendored, simple mode)
+    kind: vendored-binary
+    description: htm v3.1.1 UMD build, tagged-template JSX for Preact without a build step or eval.
+    upstream: https://github.com/developit/htm (npm tarball)
+    check_upstream: "watch htm releases for security fixes"
+    license: Apache-2.0
+    pin: {path: src/static/simple/vendor/htm.umd.js,
+          sha256: "7a31776e04bd4afde0d4308177d26f377716fcf7e4bd70be590746d6aa594f08"}
+    refresh: "re-vendor the pinned version; update SHA256SUMS, this pin and tests/test_simple_mode.py::_PINS"
+    freshness: {policy: on-security}
   - id: vendored-axe-core
     title: axe-core (vendored, browser-harness a11y engine)
     kind: vendored-binary

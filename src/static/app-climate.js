@@ -25,7 +25,7 @@
     let _climateDrawGen = 0;
     const _climatePick = { gistemp: "GLB", nsidc: "N", owid: "co2", ghcnd: "" };
     const _climateOwid = { area: "World", column: "" };
-    const _CLIMATE_IDS = ["gistemp", "nsidc", "oni", "usgs", "owid", "ghcnd"];
+    const _CLIMATE_IDS = ["gistemp", "nsidc", "oni", "usgs", "owid", "ghcnd", "place"];
 
     function _climateT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
     function _climateTf() {
@@ -143,8 +143,9 @@
       if (!unit) return "";
       const txt = climateText(unit.dataset, t);
       const facts = [];
+      // Invariant #6 (extended): the local preview first, never a bare shortcut out; the visible text is the full URL.
       facts.push(_climateFact(t("Source"),
-        `<a href="${esc(unit.source_page)}" target="_blank" rel="noopener noreferrer">${esc(unit.source_page)}</a>`, txt.method));
+        `<a href="${esc(unit.source_page)}" data-on-click="ooPrevent(event);openLinkPreview(${esc(JSON.stringify(unit.source_page))})">${esc(unit.source_page)}</a>`, txt.method));
       facts.push(_climateFact(t("Licence"), esc(unit.licence), ""));
       const rec = unit.last_fetch, st = unit.stored || {};
       if (rec && rec.fetched_at) {
@@ -215,6 +216,7 @@
     function showClimateView(id) {
       if (_CLIMATE_IDS.indexOf(id) < 0) id = "gistemp";
       _climateView = id;
+      if (id === "place") { renderClimatePlace(); return; }
       loadClimateUnits();
     }
 
@@ -332,6 +334,8 @@
     }
 
     function _climateClick(ev) {
+      const ab = ev.target.closest("[data-climate-place]");
+      if (ab) { climatePlaceShow(ab.getAttribute("data-climate-place") === "again"); return; }
       const pb = ev.target.closest("[data-climate-param]");
       if (pb) {
         _climatePick[_climateView] = pb.getAttribute("data-climate-param");
@@ -348,6 +352,146 @@
         climateFetch("ghcnd", _climatePick.ghcnd);
       } else {
         climateFetch(_climateView, _climateView === "oni" || _climateView === "usgs" ? null : _climatePick[_climateView]);
+      }
+    }
+
+    // ---- "Your place" (R675): temperature and precipitation against 1991-2020, Open-Meteo ----
+
+    const _PLACE_KEY = "oo.climate.place";
+    const _PLACE_HOST = "archive-api.open-meteo.com";
+
+    function climatePlaceDefaults(today) {
+      // Reanalysis reaches the archive about five days late: the window ends a week ago.
+      const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const end = new Date(d.getTime() - 7 * 86400000), start = new Date(end.getTime() - 29 * 86400000);
+      const iso = (x) => x.toISOString().split("T")[0];
+      return {start: iso(start), end: iso(end)};
+    }
+
+    // The same rounding the server applies before anything is sent (R675): one decimal.
+    function climatePlaceRound(v) { return ooRoundPlace(v); }
+
+    // A plain sentence for a query the server would refuse, or "" when it is acceptable.
+    function climatePlaceProblem(q, today, t) {
+      const lat = Number(q.lat), lon = Number(q.lon);
+      if (q.lat === "" || q.lon === "" || !isFinite(lat) || !isFinite(lon)) return t("Type a latitude and a longitude in decimal degrees, for example 48.85 and 2.35.");
+      if (lat < -90 || lat > 90) return t("Latitude goes from -90 to 90.");
+      if (lon < -180 || lon > 180) return t("Longitude goes from -180 to 180.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(q.start || "") || !/^\d{4}-\d{2}-\d{2}$/.test(q.end || "")) return t("Choose a first and a last day.");
+      if (q.end < q.start) return t("The last day comes before the first day.");
+      const days = (Date.parse(q.end) - Date.parse(q.start)) / 86400000;
+      if (days > 366) return t("A window is at most 366 days.");
+      if (q.start < "1940-01-01") return t("The archive starts on 1 January 1940.");
+      if (q.end > today.toISOString().split("T")[0]) return t("The archive holds past days only.");
+      return "";
+    }
+
+    function _climatePlaceSaved() {
+      try { const v = JSON.parse(localStorage.getItem(_PLACE_KEY) || "null"); return v && typeof v === "object" ? v : null; } catch (_e) { return null; }
+    }
+    function _climatePlaceSave(q) {
+      // Browser storage is not encrypted, so only the ROUNDED place is remembered (the precision
+      // that is sent anyway), never the coordinates as typed (R675).
+      const keep = {lat: q.lat === "" ? "" : climatePlaceRound(q.lat), lon: q.lon === "" ? "" : climatePlaceRound(q.lon),
+                    start: q.start, end: q.end};
+      try { localStorage.setItem(_PLACE_KEY, JSON.stringify(keep)); } catch (_e) { /* a convenience only */ }
+    }
+
+    function climatePlaceVarLabel(v, t) {
+      switch (v) {
+        case "temperature_2m_max": return t("Daily highest temperature");
+        case "temperature_2m_min": return t("Daily lowest temperature");
+        case "precipitation_sum": return t("Precipitation");
+        default: return String(v || "");
+      }
+    }
+
+    // The result table: every number with its unit, a missing one with its reason, never a verdict.
+    function climatePlaceResultHtml(d, t, tf) {
+      if (!d || !Array.isArray(d.results)) return "";
+      const sign = (x) => (x > 0 ? ooLtrIsolate("+" + fmtNum(x, 1)) : ooLtrIsolate(fmtNum(x, 1)));   // a signed number reads left to right in RTL too
+      const rows = d.results.map((r) => {
+        const name = esc(climatePlaceVarLabel(r.variable, t));
+        if (r.value == null) {
+          return `<tr><td>${name}</td><td colspan="3" class="muted">${esc(ooLabelText(t("Not computed"), r.reason || ""))}</td></tr>`;
+        }
+        const unit = r.unit === "°C" ? " °C" : " mm";
+        const diff = r.kind === "mean" ? sign(r.value) + " °C" : tf("{pct}% of the average", {pct: fmtNum(r.value, 0)});
+        const years = tf("{used} of 30 years used", {used: fmtNum(r.years_used, 0)}) +
+          (r.years_excluded ? " · " + tf("{n} excluded for a missing day", {n: fmtNum(r.years_excluded, 0)}) : "");
+        return `<tr><td>${name}</td><td>${esc(fmtNum(r.window_value, 1) + unit)}</td><td>${esc(fmtNum(r.baseline_value, 1) + unit)}</td><td><strong>${esc(diff)}</strong><div class="hint">${esc(years)}</div></td></tr>`;
+      }).join("");
+      let html = `<table class="climate-place-table"><thead><tr><th>${esc(t("Measure"))}</th><th>${esc(t("These days"))}</th><th>${esc(t("Same days, 1991-2020 average"))}</th><th>${esc(t("Difference"))}</th></tr></thead><tbody>${rows}</tbody></table>`;
+      if (d.results.some((r) => r.window_in_baseline_period)) {
+        html += `<div class="hint">${esc(t("These days fall inside 1991-2020, so they are part of the average they are compared with."))}</div>`;
+      }
+      const prov = d.provenance || {}, w = prov.window || {}, b = prov.baseline || {};
+      const when = (p) => (p && p.fetched_at ? _climateWhen(p.fetched_at, t) : t("not recorded"));
+      html += `<div class="climate-facts">` +
+        _climateFact(t("Fetched"), esc(tf("these days {w}; the 1991-2020 values {b}", {w: when(w), b: when(b)})), "") +
+        _climateFact(t("Licence"), esc(d.license || ""), "") + `</div>`;
+      if (d.kept === false) html += `<div class="card-caveat">${esc(t("These values could not be kept on this machine; they are shown once and not stored."))}</div>`;
+      return html;
+    }
+
+    function renderClimatePlace() {
+      const t = _climateT(), tf = _climateTf();
+      const body = $("climate-body");
+      if (!body) return;
+      const saved = _climatePlaceSaved() || {};
+      const dflt = climatePlaceDefaults(new Date());
+      const q = {lat: saved.lat ?? "", lon: saved.lon ?? "", start: saved.start || dflt.start, end: saved.end || dflt.end};
+      body.innerHTML = `<h3 class="lib-sub">${esc(t("Your place: temperature and precipitation against 1991-2020"))}</h3>
+        <p class="hint" title="${esc(t("For each day of the window, the same calendar day in each year from 1991 to 2020 is averaged. Temperatures compare the mean of the window with the mean of those days; precipitation compares the window's total with the average total. A baseline year with a missing day is left out and counted."))}">${esc(t("Type a place and a window of up to a year. The difference from the 1991-2020 average of the same calendar days is shown for the daily highest and lowest temperature and for precipitation."))}</p>
+        <div class="card-caveat">${esc(t("Reanalysis is a weather model's reconstruction for an area of about 11 km, not a station's measurement. A difference is a fact about these days, not a forecast, a trend or a verdict."))}</div>
+        <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0">
+          <label class="muted" for="climate-place-lat">${esc(t("Latitude"))}</label><input id="climate-place-lat" type="number" step="0.01" min="-90" max="90" style="max-width:8em" value="${esc(q.lat)}">
+          <label class="muted" for="climate-place-lon">${esc(t("Longitude"))}</label><input id="climate-place-lon" type="number" step="0.01" min="-180" max="180" style="max-width:8em" value="${esc(q.lon)}">
+          <label class="muted" for="climate-place-start">${esc(t("First day"))}</label><input id="climate-place-start" type="date" min="1940-01-01" value="${esc(q.start)}">
+          <label class="muted" for="climate-place-end">${esc(t("Last day"))}</label><input id="climate-place-end" type="date" min="1940-01-01" value="${esc(q.end)}">
+        </div>
+        <div class="hint">${esc(tf("What leaves this machine: the place, rounded to 0.1 degree (about 11 km), and the dates, sent to {host}. The first time for a place, it also downloads the 1991-2020 daily values for that place, about 11,000 days; they are kept in this app's database (encrypted unless you chose to keep it unencrypted), so other windows for the same place need one small request. This browser remembers the rounded place for next time.", {host: _PLACE_HOST}))}</div>
+        <div class="row" style="gap:8px;margin:8px 0"><button type="button" data-climate-place="show">${esc(t("Show"))}</button>
+          <button type="button" class="secondary" data-climate-place="again" title="${esc(t("Downloads both again, for example once the latest days have been finalised."))}">${esc(t("Fetch again"))}</button></div>
+        <div id="climate-place-out"></div>`;
+      if (q.lat !== "" && q.lon !== "") climatePlaceShow(false, true);
+    }
+
+    async function climatePlaceShow(again, quiet) {
+      const t = _climateT(), tf = _climateTf();
+      const out = $("climate-place-out"), st = $("climate-status");
+      const say = (s) => { if (st) st.textContent = s; };
+      const val = (id) => { const el = $(id); return el ? String(el.value).trim() : ""; };
+      const q = {lat: val("climate-place-lat"), lon: val("climate-place-lon"), start: val("climate-place-start"), end: val("climate-place-end")};
+      const bad = climatePlaceProblem(q, new Date(), t);
+      if (bad) { if (!quiet) say(bad); return; }
+      const lat = climatePlaceRound(q.lat), lon = climatePlaceRound(q.lon);
+      const params = new URLSearchParams({lat: String(lat), lon: String(lon), start_date: q.start, end_date: q.end});
+      try {
+        if (!again) {
+          const held = await api("/api/weather/anomaly/held?" + params.toString());
+          if (held && held.held) { _climatePlaceSave(q); if (out) out.innerHTML = climatePlaceResultHtml(held, t, tf); say(t("Read from this machine; nothing was sent.")); return; }
+          if (quiet) { if (out) out.innerHTML = `<div class="muted">${esc(t("Not fetched on this machine yet for this place and window."))}</div>`; return; }
+        }
+        // The ONE consent (invariant #14); it names what leaves the machine. A place is personal,
+        // so it is asked for EVERY request (R675): when the app is already online the consent
+        // popup would not open, and a plain confirmation naming the place stands in for it.
+        // What stays on this machine is said in the same question: the browser keeps the rounded place.
+        if (!await ooAskToSendPlace(lat, lon, {shadow: t("This browser also keeps the rounded place, unencrypted, to fill it in next time.")})) return;
+        // Kept only once the person agreed (or the place was already held above), never before the question.
+        _climatePlaceSave(q);
+        say(t("Fetching…"));
+        const d = await api("/api/weather/anomaly", {method: "POST", body: JSON.stringify({
+          lat: lat, lon: lon, start_date: q.start, end_date: q.end, force: !!again, consent: true,
+        })});
+        if (!d || d.ok === false) {
+          say(ooLabelText(t("Could not fetch"), (d && (d.verdict_note || d.verdict)) || ""));
+          return;
+        }
+        if (out) out.innerHTML = climatePlaceResultHtml(d, t, tf);
+        say("");
+      } catch (e) {
+        say(ooLabelText(t("Could not fetch"), e.message));
       }
     }
 
@@ -371,9 +515,9 @@
         param = String(param).trim().toUpperCase();
       }
       const title = climateText(id, t).title;
-      // The ONE consent (invariant #14); its answer is USED.
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(tf("Fetch {dataset} from {host}, over your transport", {dataset: title, host: _climateHost(id)}))) return;
+      // The ONE consent (invariant #14); its answer is USED, and without the popup nothing is sent (fails closed).
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(tf("Fetch {dataset} from {host}, over your transport", {dataset: title, host: _climateHost(id)}))) return;
       say(t("Fetching in the background…"));
       try {
         const started = await api("/api/climate/fetch", {method: "POST", body: JSON.stringify({dataset: id, param: param, consent: true})});

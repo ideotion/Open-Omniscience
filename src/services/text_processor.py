@@ -31,6 +31,20 @@ import html
 import re
 import unicodedata
 
+from src.utils.markup_blocks import strip_html_tags
+
+
+def _drop_email_token(m: re.Match[str]) -> str:
+    """``\\S+@\\S+``'s answer for one whitespace-free run, in one scan of the run.
+
+    ``\\S`` cannot cross whitespace, so every match lies inside one run, and a run holds a
+    match exactly when some ``@`` has a character on each side of it (index 1 to len-2). The
+    leftmost match then starts at the run's first character and, the trailing ``\\S+`` being
+    greedy, ends at its last: the whole run becomes ``" "``. Otherwise the run is untouched.
+    """
+    run = m.group()
+    return " " if "@" in run[1:-1] else run
+
 
 class TextProcessor:
     """
@@ -43,8 +57,13 @@ class TextProcessor:
 
         # Patterns
         self.url_pattern = re.compile(r"https?://\S+|www\.\S+")
+        # Kept as attributes (callers may read them); clean_text no longer runs either one
+        # through ``re.sub``, because both are K*N on ordinary input: ``<[^>]+>`` on ``<``
+        # without a later ``>`` and ``\S+@\S+`` on one long token with no ``@`` (a base64 blob):
+        # MEASURED 0.03 -> 0.12 -> 0.48 s for a 5 -> 10 -> 20 KB token (audit recheck P8).
         self.email_pattern = re.compile(r"\S+@\S+")
         self.html_tag_pattern = re.compile(r"<[^>]+>")
+        self._token_pattern = re.compile(r"\S+")
         self.special_char_pattern = re.compile(r"[^\w\s\-]")
         self.multiple_space_pattern = re.compile(r"\s+")
         self.leading_trailing_space_pattern = re.compile(r"^\s+|\s+$")
@@ -77,8 +96,8 @@ class TextProcessor:
         text = str(text)
         text = html.unescape(text)
         text = self.url_pattern.sub(" ", text)
-        text = self.email_pattern.sub(" ", text)
-        text = self.html_tag_pattern.sub(" ", text)
+        text = self._token_pattern.sub(_drop_email_token, text)
+        text = strip_html_tags(text)
         text = self.special_char_pattern.sub(" ", text)
         text = unicodedata.normalize("NFKD", text)
         text = "".join(char for char in text if unicodedata.category(char)[0] != "C")

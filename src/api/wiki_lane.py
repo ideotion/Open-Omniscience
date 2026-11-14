@@ -389,6 +389,31 @@ def lane_places(limit: int = Query(2000, ge=1, le=20000)) -> dict:
     }
 
 
+@router.get("/located-addresses")
+def lane_located_addresses(limit: int = Query(2000, ge=1, le=20000)) -> dict:
+    """R17 step 4 (Q819, Q820, R678): addresses from place infoboxes, located ONLY in the local OSM address index, as map points.
+
+    Every point carries its provenance -- the page and edition, the infobox type and field, the address as written, the OSM object and
+    the vintage of the extract it came from -- so the map's hover can say where it came from. Nothing is looked up outside this machine;
+    an infobox about a person is never read. The answer is bounded and SAYS when it was (no silent downsample).
+    """
+    from src.wiki.located import located_report
+
+    if not lane_path("wiki").is_file():
+        return _absent()
+    try:
+        with lane_session("wiki") as lane:
+            rep = located_report(lane)
+    except LaneAbsentError:
+        return _absent()
+    except SQLAlchemyError as exc:
+        return _unreadable("located-addresses", exc)
+    if not rep.get("measured"):
+        return {**rep, "points": [], "n": 0}
+    points = rep["points"]
+    return {**rep, "points": points[:limit], "n": min(len(points), limit), "total_located": len(points), "truncated": len(points) > limit}
+
+
 @router.get("/sections")
 def lane_sections(external_id: str = Query(..., min_length=3, max_length=512)) -> dict:
     """Q711: which SECTIONS changed between this page's newest stored version and the

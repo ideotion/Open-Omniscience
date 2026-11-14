@@ -47,6 +47,9 @@ from src.monitoring import soak_window as sw
 from tests import previous_identity
 from tests.os_scope import scope_os
 
+# A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
+pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
+
 ROOT = Path(__file__).resolve().parent.parent
 T0 = 1_700_000_000.0
 _UNCAPPED = {"allocator": "glibc 2.39", "arena_cap": None, "effective": False,

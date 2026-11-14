@@ -832,7 +832,13 @@
       if (!panel || !sel) return;
       try {
         const f = await api("/api/sources/facets");
-        const tags = (f.tags || []).filter(x => x && x.key).slice(0, 20);
+        // Subject tags first: a `via:<origin>` tag names the LIST a source came from, not what
+        // it covers, and "via:curated" was what a new reader saw selected here (lane N walk,
+        // 2026-11-13). The via: tags stay in the list, after the others (ordering, never
+        // exclusion), and a reader's own pick of one is kept below.
+        const _isVia = (k) => String(k).indexOf("via:") === 0;
+        const tags = (f.tags || []).filter(x => x && x.key)
+          .slice(0, 20).sort((a, b) => (_isVia(a.key) ? 1 : 0) - (_isVia(b.key) ? 1 : 0));
         if (!tags.length) { panel.hidden = true; return; }
         const cur = sel.value;
         sel.innerHTML = tags.map(x => `<option value="${esc(x.key)}">${esc(x.key)} (${x.n})</option>`).join("");
@@ -926,14 +932,25 @@
         const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam(), {polled: true});
         homeTrendsNoteResult(!d.partial, Date.now(), "partial");
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
-        const terms = (wk && wk.terms) || [];
+        // "Trending" means RISING. The server ranks by growth but does not cut at 1, so on a
+        // flat or young corpus a falling term was listed under this title as "↑0.6×" (found by
+        // the other-tabs lane, 2026-11-13). A row whose growth IS a ratio is shown only above
+        // 1; a row with no baseline to divide by (growth_is_ratio false, worded by
+        // growthFallback) is new, which is rising, and stays.
+        const terms = ((wk && wk.terms) || []).filter(x =>
+          !(typeof growthIsRatio === "function" && growthIsRatio(x) === true && !(Number(x.growth) > 1)));
         if (!terms.length) {
+          _homeTrendTerms = []; _homeTrendCaveat = "";
           if (d.partial && d.caveat) {
             // Not computed is not "nothing is trending": say so where the strip would be (the server's own words).
-            _homeTrendTerms = []; _homeTrendCaveat = d.caveat;
+            _homeTrendCaveat = d.caveat;
             if (panel) panel.hidden = false;
             box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`;
           } else { if (panel) panel.hidden = true; box.innerHTML = ""; }
+          _homeTrendLang = lang;
+          // The compact Overview row reads the same stash: without this it kept the previous
+          // poll's chips once every term was filtered out (now common, as falling ones are).
+          _renderOverviewTrends(); _syncHomeSubtabs();
           return;
         }
         if (panel) panel.hidden = false;
@@ -957,7 +974,7 @@
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
               <a href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
-              <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
+              <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
@@ -1172,7 +1189,8 @@
     // generated_at untouched, and a guard on that alone would never repaint the new line.
     function _briefStamp(data) {
       return String(data.generated_at || "") + "|" + uiLangCode()
-        + "|" + (data.kept_reason || "") + "|" + (data.incomplete_reason || "");
+        + "|" + (data.kept_reason || "") + "|" + (data.incomplete_reason || "")
+        + (Array.isArray(data.stopped_producers) && data.stopped_producers.length ? "|" + data.stopped_producers.join(",") : "");
     }
 
     async function loadBriefing(force) {
@@ -1267,6 +1285,8 @@
       const feed = $("briefing-feed");
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
+      // R685: dismissed Leads can all come back from here (POST /api/briefing/dismissed/clear).
+      if (typeof ooPaintBriefDismissed === "function") ooPaintBriefDismissed(data.dismissed_count);
       // Recompute now runs OFF the request thread (field test 2026-06-24: Home froze on
       // "Loading the briefing…" at 60K). While a background refresh runs we show a real
       // progress bar and re-poll until cards land; if we already have (stale) cards we
@@ -1276,14 +1296,24 @@
       // The last refresh stopped early (diagnostics rank 4): say whether cards are missing
       // from this feed or whether this is the previous feed, and why -- a short or old feed
       // must not read as a complete, current one. Absent when the last refresh finished.
-      const stopWhy = (r) => (r === "memory_short" ? t("the machine was short of memory") : t("it ran out of time"));
+      const stopWhy = (r) => (r === "memory_short" ? t("the machine was short of memory")
+        : r === "wal_pinned" ? t("the database's log file had grown too large") : t("it ran out of time"));
       const stopNote = data.kept_reason
         ? tf("This is the previous feed: the last refresh stopped early because {why}.", {why: stopWhy(data.kept_reason)})
         : data.incomplete_reason
         ? tf("Some cards may be missing: the last refresh stopped early because {why}.", {why: stopWhy(data.incomplete_reason)})
         : "";
+      // R666: card builders stopped at their time bound. Their cards are missing from THIS feed for as long as it is shown
+      // (the list rides the cache), so the line stays until a refresh in which they finish. The names go in the hover.
+      const stoppedKinds = Array.isArray(data.stopped_producers) ? data.stopped_producers.filter((x) => typeof x === "string") : [];
+      const stoppedNote = stoppedKinds.length
+        ? tf("Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.",
+            {n: stoppedKinds.length, minutes: Number(data.producer_deadline_min) || 10})
+        : "";
+      const stoppedTitle = stoppedKinds.length ? tf("Stopped card builders: {names}", {names: stoppedKinds.join(", ")}) : "";
       const banner = (refreshing ? briefProgressHtml(data, t) : "")
-        + (stopNote ? `<p class="card-caveat" id="brief-stopped">${esc(stopNote)}</p>` : "");
+        + (stopNote ? `<p class="card-caveat" id="brief-stopped">${esc(stopNote)}</p>` : "")
+        + (stoppedNote ? `<p class="card-caveat" id="brief-stopped-builders" title="${esc(stoppedTitle)}">${esc(stoppedNote)}</p>` : "");
       if (!data.buckets || !data.buckets.length) {
         if (refreshing) { feed.innerHTML = banner; return; }
         // The stop line stays above the empty-state frame: an empty feed from a refresh that
@@ -1633,7 +1663,7 @@
       const chips = terms.slice(0, 6).map(x =>
         `<a class="chip tiny" href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}`
-        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>${kwQidHtml(x)}`).join("");
+        + ` <span class="muted">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span></a>${kwQidHtml(x)}`).join("");
       // The label takes the locale's own separator ("Tendances :", "热门："), not a welded
       // English colon (click-through B16, V13); the chips are the value that follows it.
       host.innerHTML = `<div class="ov-trend"><span class="muted">${ooLabelHtml(esc(t("Trending now")), "").trimEnd()}</span>${chips}`
@@ -2020,6 +2050,7 @@
             ${weatherBox}
             <div class="acts">
               ${openBtn}
+              ${typeof ooPatternListButton === "function" ? ooPatternListButton(c) : ""}
               ${recipeBtn}
               ${weatherBtn}
               <button class="secondary tiny" data-on-click="addToDraft(${esc(JSON.stringify(c.id))})">+ Add to draft</button>
@@ -2107,7 +2138,8 @@
       try {
         await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
         const el = document.querySelector(`.card[data-card="${id}"]`);
-        if (el) el.remove();
+        // R685: the card's place keeps a one-line note with an Undo button (POST /api/briefing/restore).
+        if (el && typeof ooCardDismissedUndo === "function") ooCardDismissedUndo(el, id); else if (el) el.remove();
       } catch (e) { toast(_failMsg("Could not dismiss: {error}", e), "err"); }
     }
 
@@ -2173,21 +2205,61 @@
     // ethical fetch path as everything else; failures render the honest
     // transport verdict, results render per-variable (one chart per unit —
     // mixed units on one axis would be a fabricated comparison).
+    // R675/R683: a place is personal, so EVERY weather fetch asks, naming the rounded place
+    // and the host it goes to. When the app is offline that is the ONE consent popup
+    // (invariant #14); when it is already online that popup would not open, so a plain
+    // confirmation naming the same things stands in for it. The rounding shown is the one
+    // the server applies (src/weather/openmeteo.py round_place). Shared by the Home card,
+    // the Claim Workspace and the Climate tab's "Your place".
+    const OO_WEATHER_HOST = "archive-api.open-meteo.com";
+    // The server's rounding, operation for operation (round_place in src/weather/openmeteo.py):
+    // floor(x*10 + 0.5)/10, so a tie such as 0.25 reads 0.3 on both sides.
+    function ooRoundPlace(v) {
+      const r = Math.floor(Number(v) * 10 + 0.5) / 10;
+      return Object.is(r, -0) ? 0 : r;
+    }
+    async function ooAskToSendPlace(lat, lon, opts) {
+      opts = opts || {};
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+      const r1 = (x) => fmtNum(ooRoundPlace(x), 1);
+      const ask = tf("Send the place {lat}, {lon} (rounded to 0.1 degree) and the dates to {host}",
+        {lat: r1(lat), lon: r1(lon), host: OO_WEATHER_HOST});
+      if (typeof ensureOnline !== "function") return false;  // fails closed: no popup, nothing sent
+      // Only these two options reach the popup (never skipDialog). ensureOnline asks the confirmation itself
+      // when it finds the app already online, on the one read that decided there was no popup.
+      const shadow = opts.shadow ? String(opts.shadow) : "";
+      return !!(await ensureOnline(ask, {shadow: shadow, confirmIfOnline: shadow ? ask + "\n\n" + shadow : ask}));
+    }
+
     async function cardWeatherFetch(id) {
       const c = _briefCards[id]; if (!c) return;
       const sig = c.signal || {};
       const box = document.getElementById("wx-" + id); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (!await ensureOnline(t("Fetch weather context for one place and time window (Open-Meteo)"))) return;
+      const body = {
+        lat: sig.lat, lon: sig.lon,
+        start_date: sig.window_start, end_date: sig.window_end,
+        variables: String(sig.variables || "").split(",").filter(Boolean),
+        label: sig.rule_label || c.title
+      };
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
       box.textContent = t("Loading…");
       try {
-        const body = {
-          lat: sig.lat, lon: sig.lon,
-          start_date: sig.window_start, end_date: sig.window_end,
-          variables: String(sig.variables || "").split(",").filter(Boolean),
-          label: sig.rule_label || c.title
-        };
-        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(body)});
+        // A slice already held is read from this machine first: nothing is sent and nothing is asked,
+        // in airplane mode too (R683). Only a slice not held leads to the question.
+        const q = new URLSearchParams({lat: String(sig.lat), lon: String(sig.lon), start_date: body.start_date,
+          end_date: body.end_date, variables: body.variables.join(","), label: body.label || ""});
+        if (!body.variables.length) { q.delete("variables"); delete body.variables; }  // the route's default set, as before
+        const held = await api("/api/weather/context/held?" + q.toString());
+        if (held && held.held) { renderWeatherContext(box, held, sig); return; }
+        box.textContent = "";
+        // The place, the dates and the host are named before anything is sent.
+        if (!await ooAskToSendPlace(sig.lat, sig.lon,
+          {shadow: tf("Dates sent: {start} to {end}.", {start: body.start_date, end: body.end_date})})) return;
+        box.textContent = t("Loading…");
+        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(Object.assign({}, body, {consent: true}))});
         renderWeatherContext(box, d, sig);
       } catch (e) {
         box.innerHTML = `<div class="note err">${esc(e.message)}</div>`;

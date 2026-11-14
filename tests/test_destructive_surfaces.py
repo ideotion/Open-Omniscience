@@ -146,7 +146,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "diagnostics.keyword_triage.keyword_triage_cancel", "diagnostics.model_bench.model_bench_cancel",
         "diagnostics.p0.p0_validation_cancel", "diagnostics.perception.perception_extract_cancel",
         "diagnostics.release_run.release_run_cancel", "diagnostics.source_tags.source_tags_cancel",
-        "geo.osm_download_pause", "jobs.cancel_job", "llm.llm_pull_cancel", "llm.ollama_stop", "llm.vllm_install_cancel",
+        "geo.osm_download_pause", "jobs.cancel_job", "llm.bulk_queue_cancel", "llm.llm_pull_cancel", "llm.ollama_stop", "llm.vllm_install_cancel",
         "llm.vllm_stop", "quarantine.quarantine_action", "scheduler.scheduler_stop",
         "source_management.qualify_sources_bulk_cancel", "system.unattended_stop", "wiki.dumps_index_cancel",
         "wiki.dumps_pause",
@@ -175,7 +175,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "source_management.remove_source_from_groups", "source_management.remove_sources_from_group",  # /groups/{id}/sources
     ),
     _DERIVED: (
-        "backup_v2.import_queue_clear", "database.vacuum", "insights.insights_prune_keywords", "wiki.dumps_index_clear",
+        "backup_v2.import_queue_clear", "database.vacuum", "llm.bulk_queue_clear_finished", "insights.insights_prune_keywords", "wiki.dumps_index_clear",
     ),
     _FILES: ("geo.osm_download_delete", "llm.llm_remove", "wiki.dumps_delete"),
     _OWN_LISTS: (
@@ -271,11 +271,16 @@ _NOT_SCANNED = {"i18n.js", "sw.js", "oo-on.js"}
 #: not on that table, so an entry cannot outlive the reason for it.
 _REQUEST_EXEMPT = {
     "_dismissCardNow": "files a dismissed card with its reason; the briefing's Restore puts it back (/api/briefing/restore)",
+    "maintPairAct": "confirms or withdraws ONE host pair (/api/quarantine/host-pairs): each undoes the other, only the next "
+    "dry run's count changes, and no article or source is marked or removed",
     "_leadDismissWith": "records the reason a lead was dismissed; additive, nothing is removed",
     "_stopServerRun": "the bulk/extractor Cancel's helper: the task manager's own Stop of a detached AI run (job control; finished "
     "articles stay stored, the run is started again from the same panel)",
     "_pruneCore": "garbage-collects keywords with ZERO mentions: derived rows nothing references, rebuilt by the next index",
     "dismissRetiredMode": "clears one informational 'retired mode' notice flag in the scheduler config",
+    "ooKeywordUndoButton": "the UNDO of a hidden keyword (R685): it shows the keyword again (/api/insights/include); Hide hides it again",
+    "ooPaintBriefDismissed": "brings every dismissed Lead BACK (R685, /api/briefing/dismissed/clear): it removes nothing, it un-hides",
+    "ooRestoreCard": "brings one dismissed Lead BACK from the Undo left in its place (R685, /api/briefing/restore); Dismiss hides it again",
     "overlayMerge": "posts the picked export files and reads back a merged REPORT; it writes no corpus row",
     "runLangDetect": "no caller in src/static (dead code); its cancel half would stop a running detection pass (job control)",
     "stopWikiLane": "switches the wiki lane off in the scheduler config (job control; the toggle switches it on again)",
@@ -356,8 +361,9 @@ def test_the_functions_the_request_finder_added_to_the_trusted_click_table_stay_
 
 
 def test_request_sites_outside_any_named_function_are_the_known_delegated_click_handlers() -> None:
-    """Seven requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
-    the reader's curation buttons and the task manager's job controls. A new one has to be looked at."""
+    """Eight requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
+    the reader's curation buttons and the task manager's job controls (the fifth: the low-memory pause's Resume, a retry the
+    guard takes back if memory is still low). A new one has to be looked at."""
     outside: dict[str, int] = {}
     for path in _js_files():
         js = path.read_text(encoding="utf-8")
@@ -371,4 +377,4 @@ def test_request_sites_outside_any_named_function_are_the_known_delegated_click_
         for req in re.finditer(r"""["']?method["']?\s*:\s*[^,}]*\b(?:DELETE|POST|PUT|PATCH)\b""", js):
             if not any(a <= req.start() < b for a, b in spans):
                 outside[path.name] = outside.get(path.name, 0) + 1
-    assert outside == {"reader.js": 3, "taskmanager.js": 4}, outside
+    assert outside == {"reader.js": 3, "taskmanager.js": 5}, outside
