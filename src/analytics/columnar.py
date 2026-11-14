@@ -146,10 +146,13 @@ def _offline_config(spill=None, snapshot: dict | None = None) -> dict:
     """DuckDB config that guarantees no network on open: extension autoload/autoinstall
     DISABLED and external access OFF. The columnar engine is local-first by construction.
 
-    ``spill`` is where DuckDB may offload blocks once it reaches its memory limit: ``None``
-    leaves DuckDB's own default (``.tmp`` beside the working directory), a path names the
-    directory, and ``""`` turns offloading OFF, so a build that outgrows its limit fails
-    with an out-of-memory error rather than writing derived data to disk.
+    ``spill`` is where DuckDB may offload blocks once it reaches its memory limit: a path names the
+    directory, and ``""`` or ``None`` turns offloading OFF, so a build that outgrows its limit fails
+    with an out-of-memory error rather than writing derived data to disk. ``None`` used to leave
+    DuckDB's own default, ``.tmp`` in the process's WORKING directory, where the spilled blocks are
+    plaintext whatever the corpus's encryption (measured on DuckDB 1.4.0 and 2.0.0: a sort past the
+    limit wrote the rows' text into ``./.tmp``). A caller that wants offload names a folder it owns
+    and removes (``rollup_serve._spill_setting``, which declines one for an encrypted corpus).
     """
     # S1.1: memory_limit and threads were set NOWHERE, so DuckDB used its documented
     # default of 80% of system RAM and one thread per core — a promise a laptop cannot
@@ -164,8 +167,7 @@ def _offline_config(spill=None, snapshot: dict | None = None) -> dict:
         "memory_limit": f"{int(snap['duckdb_limit_mb'])}MB",
         "threads": int(snap["duckdb_threads"]),
     }
-    if spill is not None:
-        cfg["temp_directory"] = str(spill)
+    cfg["temp_directory"] = "" if spill is None else str(spill)
     return cfg
 
 
@@ -182,11 +184,18 @@ def _persisted_config() -> dict:
     Error on ATTACH). The offline guarantee for this path is (a) autoload OFF so no extension
     is ever fetched, (b) the absolute-path LOAD, and (c) the process-wide airplane socket
     guard beneath -- not the external-access flag. The in-memory path keeps the stricter
-    :func:`_offline_config` (it never touches a file)."""
+    :func:`_offline_config` (it never touches a file).
+
+    ``temp_file_encryption`` is ON: DuckDB encrypts what it spills for the ATTACHED encrypted store's own
+    blocks, but not for anything held in the connection's in-memory or temporary catalog (a ``TEMP TABLE``
+    such as the refresh's ``_new_meta``, an intermediate), which it otherwise spilled into ``./.tmp`` as
+    plaintext beside a store that is encrypted (measured on DuckDB 1.4.0 and 2.0.0; off by default on
+    both). With it on, every spilled block is written under an ephemeral key."""
     return {
         "autoinstall_known_extensions": False,
         "autoload_known_extensions": False,
         "allow_unsigned_extensions": True,
+        "temp_file_encryption": True,
     }
 
 

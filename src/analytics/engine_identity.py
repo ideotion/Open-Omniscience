@@ -74,7 +74,7 @@ IDENTITY_SCHEMA = "oo-index-engine-2"
 #: rows ``index_article`` produces for the same input; a change that provably leaves them
 #: alone is recorded with ``--same "why"`` and leaves this number where it is, which is
 #: the point -- the restore then still carries. The guard is ``tests/test_indexer_pin.py``.
-INDEXER_VERSION = 2
+INDEXER_VERSION = 3
 
 #: The hand-bumped version of the PLACES AND ENTITIES stage alone (R415). Same discipline as :data:`INDEXER_VERSION`, policed by
 #: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
