@@ -1,10 +1,11 @@
-"""Read a locale file the way the UI reads a value that has no number (2026-11-14).
+"""Read a locale file with each plural value reduced to one form (2026-11-14).
 
-A translation may hold one form per CLDR plural category, "[one]...[few]...[other]...", and
-``OOI18N.t()``, the DOM walker and ``tf()`` without a count all render its ``[other]`` form. The
-tests that check a value's placeholders against its key compare that form: the rule that EVERY
-form carries exactly the key's placeholders is pinned once, in tests/test_i18n_plural_forms.py.
-A value without markers is returned unchanged.
+A translation may hold one form per CLDR plural category, "[one]...[few]...[other]...". The
+tests that check a value's placeholders against its key compare its ``[other]`` form: the rule
+that EVERY form carries exactly the key's placeholders is pinned once, in
+tests/test_i18n_plural_forms.py, so one form stands for all. (With no number the UI shows the
+form the language uses for 5, not necessarily ``[other]``; these tests compare placeholders,
+never that choice.) A value without markers is returned unchanged.
 """
 
 from __future__ import annotations

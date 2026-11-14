@@ -95,10 +95,40 @@ def test_terminal_translator_chooses_the_form():
     assert ru.tf("{n} sources", n=3) == "3 источника"
     assert ru.tf("{n} sources", n=11) == "11 источников"
     assert ru.tf("{n} sources", n=21) == "21 источник"
-    assert ru.tf("{n} sources", n="many") == "many источника"  # not a number: [other]
-    assert ru.t("{n} sources") == "{n} источника"  # no number: [other], never the markers
+    assert ru.tf("{n} sources", n="many") == "many источников"  # not a number: the form for 5
+    assert ru.t("{n} sources") == "{n} источников"  # no number: the form for 5, never the markers
+    assert ru.tf("{n} sources", n=1.5) == "1.5 источника"  # a fraction: [other]
+    assert (
+        ru.tf("{n} sources", n="12\u202f321") == "12\u202f321 источник"
+    )  # grouping spaces are not the number
+    assert (
+        ru.tf("{n} sources", n="\u2068+21\u2069") == "\u2068+21\u2069 источник"
+    )  # nor are bidi isolates
+    assert ru.tf("{n} sources", n=float("inf")) == "inf источников"  # never a crash
     plain = Translator("ru", {"{n} selected": "Выбрано: {n}"})
     assert plain.tf("{n} selected", n=5) == "Выбрано: 5"
+
+
+def test_no_converted_key_reaches_a_count_without_choosing_its_form():
+    """A plural value read with t() and then given its number by ``.replace`` shows the no-number form for every
+    count ("1 статей"). Every count a converted key carries goes through tf() (or ``_tfn``), which chooses; tf(t(KEY))
+    also chooses, because tf() looks the no-number form back up to its key."""
+    keys = {key for _lang, key, _value in _plural_values()}
+    alt = "|".join(
+        sorted(
+            (re.escape(json.dumps(k, ensure_ascii=False)[1:-1]) for k in keys),
+            key=len,
+            reverse=True,
+        )
+    )
+    welded = re.compile(r"\b(?:t|t9|T)\(\s*[^()]*?([\"'`])(?:" + alt + r")\1[^()]*\)\s*\.replace\(")
+    bad = []
+    for path in sorted((_ROOT / "src" / "static").rglob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        bad += [
+            f"{path.name}:{text.count(chr(10), 0, m.start()) + 1}" for m in welded.finditer(text)
+        ]
+    assert not bad, bad
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

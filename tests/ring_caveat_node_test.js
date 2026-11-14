@@ -61,8 +61,7 @@ function extract(name, decl, src) {
 const SHOW = extract("showRingMap", "async function showRingMap(", INS);
 // tf() and the plural-form helpers it calls (2026-11-14): a translation may hold "[one]...[other]..." forms, chosen
 // with Intl.PluralRules for the language current() names.
-const PLURAL_SRC = I18N.slice(I18N.indexOf("const PLURAL_MARK"), I18N.indexOf("\n", I18N.indexOf("const PLURAL_MARK")))
-  + "\n" + extract("pluralForms", "function pluralForms(", I18N) + "\n" + extract("pluralPick", "function pluralPick(", I18N);
+const PLURAL_SRC = require("./i18n_engine_node.js").pluralBlock();
 const TF_SRC = PLURAL_SRC + "\n" + extract("tf", "function tf(", I18N);
 const ESC = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
   (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[c])));

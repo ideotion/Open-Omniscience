@@ -5,8 +5,9 @@
 //
 // A translation may hold one form per CLDR category ("[one]...[few]...[other]..."). tf()
 // picks the form with the browser's Intl.PluralRules for the app language, on `n`, else
-// `count`, else the key's first placeholder; t() and the DOM walker, which have no number,
-// take [other]; a value without markers reads exactly as before.
+// `count`, else the key's first placeholder; with no number (t(), the DOM walker, a var that
+// is not a number) the form the language uses for 5, the plain plural of a whole count, since
+// Russian [other] is the fraction form; a value without markers reads exactly as before.
 
 const assert = require("assert");
 const fs = require("fs");
@@ -55,9 +56,15 @@ async function boot(lang, localeMap) {
   assert.strictEqual(ru.tf("{n} sources", { n: 1.5 }), "1.5 источника", "a fraction takes [other]");
   assert.strictEqual(ru.tf("{n} sources", { n: "12 345" }), "12 345 источников",
     "a count already written with grouping spaces still chooses its form");
-  assert.strictEqual(ru.tf("{n} sources", { n: "—" }), "— источника", "no number: [other]");
-  assert.strictEqual(ru.tf("{n} sources"), "{n} источника", "no vars: [other], placeholder kept");
-  assert.strictEqual(ru.t("{n} sources"), "{n} источника", "t() has no number: [other], never the markers");
+  assert.strictEqual(ru.tf("{n} sources", { n: "—" }), "— источников", "no number: the form for 5");
+  assert.strictEqual(ru.tf("{n} sources"), "{n} источников", "no vars: the form for 5, placeholder kept");
+  assert.strictEqual(ru.t("{n} sources"), "{n} источников", "t() has no number: the form for 5, never the markers");
+  assert.strictEqual(ru.tf("{n} sources", { n: "\u2068+21\u2069" }), "\u2068+21\u2069 источник",
+    "a count wrapped in bidi isolates for an RTL page still chooses its form");
+  assert.strictEqual(ru.tf(ru.t("{n} sources"), { n: 21 }), "21 источник",
+    "tf(t(KEY), vars): the no-number form t() returned is looked back up to its key and chooses");
+  assert.strictEqual(ru.tf(ru.t("{done} of {total} sources"), { done: 1, total: 25 }), "1 из 25 источника",
+    "...and the key's own first placeholder still drives it");
   assert.strictEqual(ru.tf("{done} of {total} sources", { done: 1, total: 25 }), "1 из 25 источника",
     "no n/count: the key's FIRST placeholder chooses ({done}=1 is [one], {total}=25 would be [many])");
   assert.strictEqual(ru.tf("{done} of {total} sources", { done: 5, total: 21 }), "5 из 21 источников");
@@ -73,6 +80,7 @@ async function boot(lang, localeMap) {
   for (const k of Object.keys(arWant)) {
     assert.strictEqual(ar.tf("{n} sources", { n: Number(k) }), arWant[k], "ar n=" + k);
   }
+  assert.strictEqual(ar.t("{n} sources"), "{n} مصادر", "ar with no number: the form for 5 (the plural)");
 
   // A value that merely starts with a bracket is not a plural value.
   const en = await boot("fr", { "[beta] {n} items": "[bêta] {n} éléments" });

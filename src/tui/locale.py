@@ -21,6 +21,7 @@ Standard library only, like the panel: it imports nothing from the app.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import unicodedata
@@ -37,6 +38,8 @@ RTL_NOTE = (
 _CODE = re.compile(r"^[a-z]{2,3}$")
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 _PLURAL_MARK = re.compile(r"\[(zero|one|two|few|many|other)\]")
+# Grouping spaces and the bidi isolates and marks a count may be wrapped in are not part of the number (as in i18n.js).
+_PLURAL_STRIP = re.compile(r"[\s\u00a0\u202f\u2066-\u2069\u200e\u200f\u061c]")
 
 
 def _plural_forms(value: str) -> dict[str, str] | None:
@@ -50,9 +53,17 @@ def _plural_forms(value: str) -> dict[str, str] | None:
     return forms if "other" in forms else None
 
 
+def _plural_fallback(code: str, forms: dict[str, str]) -> str:
+    """The form for a value with no number: the one the language uses for 5, the plain plural of a whole count (Russian
+    [other] is the fraction form), exactly as the browser's i18n.js chooses."""
+    return forms.get(plural_category(code, 5), forms["other"])
+
+
 def plural_category(code: str, x: float) -> str:
     """The CLDR plural category of ``x`` in language ``code``: the browser uses Intl.PluralRules, the terminal these rules
     (cardinal, CLDR 44) for the twelve app languages. A fraction takes the language's fractional category."""
+    if not math.isfinite(x):
+        return "other"
     whole = float(x).is_integer()
     i = int(abs(x)) if whole else None
     if code == "ru":
@@ -125,7 +136,7 @@ class Translator:
     def t(self, text: str) -> str:
         value = self._table.get(text, text)
         forms = _plural_forms(value)
-        return value if forms is None else forms["other"]
+        return value if forms is None else _plural_fallback(self.code, forms)
 
     def tf(self, text: str, **values: object) -> str:
         """``t`` then ``{name}`` filled from ``values``. A placeholder with no value is left as written, as in the browser's ``tf``;
@@ -133,7 +144,7 @@ class Translator:
         out = self._table.get(text, text)
         forms = _plural_forms(out)
         if forms is not None:
-            out = forms["other"]
+            out = _plural_fallback(self.code, forms)
             name = (
                 "n"
                 if "n" in values
@@ -142,10 +153,14 @@ class Translator:
                 else next(iter(_PLACEHOLDER.findall(text)), None)
             )
             try:
-                x = float(str(values[name])) if name is not None and name in values else None
+                x = (
+                    float(_PLURAL_STRIP.sub("", str(values[name])))
+                    if name is not None and name in values
+                    else None
+                )
             except (TypeError, ValueError):
                 x = None
-            if x is not None:
+            if x is not None and math.isfinite(x):
                 out = forms.get(plural_category(self.code, x), forms["other"])
         return _PLACEHOLDER.sub(
             lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), out

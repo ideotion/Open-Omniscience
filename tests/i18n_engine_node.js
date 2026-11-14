@@ -31,14 +31,16 @@ function extract(name) {
   return I18N.slice(at, j);
 }
 
-const markAt = I18N.indexOf("const PLURAL_MARK");
-if (markAt < 0) throw new Error("i18n.js has no PLURAL_MARK -- was it renamed?");
-const SRC = I18N.slice(markAt, I18N.indexOf("\n", markAt)) + "\n"
-  + ["pluralForms", "pluralPick", "t", "tf"].map(extract).join("\n")
-  + "\nreturn { t: t, tf: tf };";
+// The plural block whole, between its two marker lines, then t() and tf().
+function pluralBlock() {
+  const a = I18N.indexOf("// >>> PLURAL FORMS"), b = I18N.indexOf("// <<< PLURAL FORMS");
+  if (a < 0 || b < a) throw new Error("i18n.js has no '>>> PLURAL FORMS' ... '<<< PLURAL FORMS' block");
+  return I18N.slice(a, b);
+}
+const SRC = pluralBlock() + "\n" + ["t", "tf"].map(extract).join("\n") + "\nreturn { t: t, tf: tf };";
 
 function engine(map, current) {
   return new Function("map", "current", SRC)(map, current);
 }
 
-module.exports = { engine };
+module.exports = { engine, pluralBlock };

@@ -230,7 +230,7 @@ async function t2() {
     const attrsDecl = (I18N.match(/const ATTRS = \[[^\]]*\];/) || ['const ATTRS = ["placeholder", "title", "aria-label"];'])[0];
     const body = "let map = {};\n" + attrsDecl + "\nconst origAttr = new WeakMap();\n"
       // tr() reads a plural value's [other] form through pluralForms (2026-11-14).
-      + (I18N.match(/const PLURAL_MARK = [^\n]*/) || [""])[0] + "\n" + extract(I18N, "pluralForms")
+      + require("./i18n_engine_node.js").pluralBlock() + "\nfunction current() { return \"en\"; }\n"
       + extract(I18N, "tr") + extract(I18N, "doAttrs")
       + "return { doAttrs, setMap: (m) => { map = m; } };";
     const W = new Function(body)();

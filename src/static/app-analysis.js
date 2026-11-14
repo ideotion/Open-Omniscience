@@ -1759,7 +1759,7 @@
       });
       const note = _anDupBadges.note;
       if (note && note.isConnected && _anDupBadges.flagged) {
-        note.textContent = t(_AN_DUP_NOTE).replace("{n}", _anDupBadges.flagged);
+        note.textContent = _tfn(_AN_DUP_NOTE, { n: _anDupBadges.flagged });
       }
     }
     // Registered in app-boot's ONE `oo:langchange` listener (never a second listener:
@@ -3190,7 +3190,7 @@
     // "12 articles" as ONE keyed frame, the singular taking its own key -- not a count
     // welded to a translated plural noun (the same class as the label colons, N-5).
     function _synthCountLabel(t, n) {
-      return t(n === 1 ? "{n} article" : "{n} articles").replace("{n}", n);
+      return _tfn(n === 1 ? "{n} article" : "{n} articles", { n: n });
     }
     function _synthAsMarkdown() {
       const t = _synthT(); const r = _synthData; if (!r) return "";
