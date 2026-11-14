@@ -167,3 +167,69 @@ def test_the_manual_drain_waits_while_the_settings_cannot_be_read(article, monke
     out = pending.drain()
     assert out["settings_unreadable"] and out["recorded"] == 0 and out["still_pending"] == 1 and not opened
     assert pending.pending_count() == 1
+
+
+def test_a_log_opened_on_an_unreadable_store_signs_nothing(tmp_path, monkeypatch):
+    """Row 32: the caller read the settings fine, the log's own read failed -- PQC off and local anchoring would be guesses."""
+    from src.custody.log import CustodyAction, CustodyLog
+    from src.custody.settings import CustodySettingsUnreadable
+
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    log = CustodyLog(db_path=str(tmp_path / "c.db"))
+    try:
+        assert log.prefs_unreadable
+        with pytest.raises(CustodySettingsUnreadable):
+            log.record("article:1", "a" * 64, CustodyAction.INGEST)
+        assert log.all_entries() == []
+    finally:
+        log.close()
+    # Given explicitly, nothing is guessed: the log signs.
+    from src.custody.signing import HybridSigner
+
+    with CustodyLog(db_path=str(tmp_path / "c.db"), signer=HybridSigner(use_pqc=False), anchoring_mode="local") as ok:
+        assert not ok.prefs_unreadable
+        ok.record("article:1", "a" * 64, CustodyAction.INGEST)
+
+
+def test_the_log_route_answers_503_on_an_unreadable_store(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    r = TestClient(app).post("/api/custody/log", json={"item_id": "article:1", "item_hash": "a" * 64,
+                                                        "action": "ingest"})
+    assert r.status_code == 503 and "could not be read" in r.json()["detail"]
+
+
+def test_a_drain_stops_when_the_log_opens_on_an_unreadable_store(tmp_path):
+    """The drain read its settings fine; the log it opens could not: nothing is tried, every entry stays owed."""
+
+    class _Log:
+        prefs_unreadable = True
+        closed = False
+
+        def close(self):
+            _Log.closed = True
+
+    pending.note_failed(1, item_hash="a" * 64)
+    out = pending.drain(prefs=CustodySettings(), log_factory=_Log)
+    assert out["settings_unreadable"] is True and out["recorded"] == 0 and out["still_pending"] == 1 and _Log.closed
+
+
+def test_a_batch_drops_a_log_that_opened_on_an_unreadable_store(article, monkeypatch):
+    """The pipeline's read is fine, the batch log's own read is not: that entry is owed and the next article reopens."""
+    from src.custody.log import CustodyLog
+    from src.ingest.pipeline import _CustodyBatch, _maybe_record_custody
+
+    reads = iter([CustodySettings(), CustodySettings(auto_log_on_ingest=False, store_unreadable=True),
+                  CustodySettings(), CustodySettings()])
+    monkeypatch.setattr("src.custody.settings.load_settings", lambda *a, **k: next(reads))
+    with _CustodyBatch() as batch:
+        _maybe_record_custody(article, batch=batch)  # the log opens on the unreadable read: refused, owed
+        _maybe_record_custody(article, batch=batch)  # a fresh log, read fine: written
+        assert batch.opened == 2 and batch.settings_unreadable == 1
+    assert pending.pending_count() == 1
+    with CustodyLog(signer=__import__("src.custody.signing", fromlist=["x"]).HybridSigner(use_pqc=False),
+                    anchoring_mode="local") as log:
+        assert len(log.entries_for(f"article:{article.id}")) == 1

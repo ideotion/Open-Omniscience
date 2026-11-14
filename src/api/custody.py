@@ -26,6 +26,7 @@ from src.custody.log import (
 from src.custody.settings import (
     VALID_ANCHORING,
     CustodySettingsError,
+    CustodySettingsUnreadable,
     availability,
     load_settings,
     save_settings,
@@ -72,6 +73,10 @@ def log_action(req: LogRequest) -> dict:
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except CustodySettingsUnreadable:
+        # The custody settings could not be read: nothing is signed under guessed preferences (PQC off, local anchoring).
+        raise HTTPException(status_code=503, detail="the custody settings could not be read, so no entry was signed "
+                            "under guessed preferences: try again once the database can be read") from None
     except TimestampUnavailable as exc:
         # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
         # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
