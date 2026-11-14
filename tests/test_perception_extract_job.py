@@ -631,3 +631,9 @@ def test_the_preview_reads_the_stored_model_without_a_probe(monkeypatch):
     assert J._stored_extract_model() == "org/m"
     monkeypatch.setattr("src.config.app_settings.load_settings", settings(llm_backend="vllm"))
     assert J._stored_extract_model() is None, "an unchosen vLLM model clears nothing"
+    # OO_LLM_BACKEND outranks the stored setting, as in resolve_backend.
+    monkeypatch.setattr(
+        "src.config.app_settings.load_settings", settings(llm_model="mistral:7b", llm_model_vllm="org/m")
+    )
+    monkeypatch.setenv("OO_LLM_BACKEND", "vllm")
+    assert J._stored_extract_model() == "org/m"

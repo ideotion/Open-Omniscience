@@ -525,19 +525,25 @@ def _stored_extract_model() -> str | None:
 
     The preview is a GET and opens no socket (tests/test_get_routes_side_effects.py), so
     it cannot ask ``resolve_backend``/``active_model`` which backend is live -- both probe
-    the local servers. It reads the operator's stored backend and model instead: the
-    vLLM model when vLLM is the stored backend, otherwise the Ollama model or the app's
-    default. A machine on ``auto`` that is actually serving vLLM can therefore preview a
-    language the sweep then refuses; never the reverse, because the sweep binds again to
-    the model it really runs and names both in its refusal. ``None`` when settings are
-    unreadable, which clears nothing.
+    the local servers. It reads the backend the way ``resolve_backend`` ranks it without
+    a probe -- ``OO_LLM_BACKEND`` first, then the stored setting -- and the model stored
+    for it: the vLLM model when the backend is vLLM, otherwise the Ollama model or the
+    app's default. A machine on ``auto`` that is actually serving vLLM can therefore
+    preview a language the sweep then refuses. The preview never licenses a store: the
+    sweep binds again to the model it really runs and names both in its refusal. ``None``
+    (an unchosen vLLM model, unreadable settings) clears nothing in the preview even
+    where the sweep's own fallback model might clear -- the cautious direction.
     """
     try:
+        import os
+
         from src.config.app_settings import load_settings
         from src.llm.ollama import DEFAULT_MODEL
 
         s = load_settings()
-        if s.llm_backend == "vllm":
+        env = os.getenv("OO_LLM_BACKEND", "").strip().lower()
+        backend = env if env in ("vllm", "ollama") else s.llm_backend
+        if backend == "vllm":
             return s.llm_model_vllm or None
         return s.llm_model or DEFAULT_MODEL
     except Exception:  # noqa: BLE001 - an unreadable choice of model clears nothing (R704)
