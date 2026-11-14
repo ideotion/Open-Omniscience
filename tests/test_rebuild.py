@@ -434,7 +434,8 @@ def test_the_routes_refuse_without_an_answer_and_remove_only_a_listed_name(tmp_p
     prefix = next(r.path for r in router.routes if r.path.endswith("/rebuild")).rsplit("/rebuild", 1)[0]
     assert client.post(prefix + "/rebuild", json={}).status_code == 400
     assert client.post(prefix + "/rebuild", json={"backup_answer": "sure"}).status_code == 400
-    assert client.post(prefix + "/rebuild/remove-kept", json={"name": "live.db"}).status_code == 404
+    assert client.post(prefix + "/rebuild/remove-kept", json={"name": "live.db"}).status_code == 400, "no confirm, no removal"
+    assert client.post(prefix + "/rebuild/remove-kept", json={"name": "live.db", "confirm": True}).status_code == 404
     assert live.exists()
     assert client.get(prefix + "/rebuild").json()["scope"] == "main library only"
 
@@ -444,3 +445,102 @@ def test_the_job_is_a_cancellable_writer():
     assert st["kind"] == "rebuild-database" and st["cancellable"] is True
     assert rebuild.REBUILD_JOB.is_writer is True
     assert repair.corpus_path is not None
+
+
+# --------------------------------------------------------------------------- #
+#  the review's findings, one test each
+# --------------------------------------------------------------------------- #
+def test_a_library_in_wal_mode_with_saves_in_its_log_is_rebuilt_with_them(tmp_path, monkeypatch, key_held, engine):
+    from src.database.connect import connect
+
+    live = _live(tmp_path, monkeypatch, encrypted=True)
+    holder = connect(str(live), check_same_thread=False, timeout=30, cipher_page_size=4096)
+    try:
+        holder.execute("PRAGMA journal_mode = WAL")
+        holder.execute("UPDATE sources SET name = 'only in the log' WHERE id = 1")
+        holder.commit()
+        assert Path(str(live) + "-wal").stat().st_size > 0, "the save must sit in the log when the rebuild starts"
+        report = rebuild.run("have_backup")
+    finally:
+        holder.close()
+    assert report["outcome"] == "rebuilt"
+    c = connect(str(live), check_same_thread=False, timeout=30)
+    try:
+        assert c.execute("SELECT name FROM sources WHERE id = 1").fetchone()[0] == "only in the log"
+        assert int(c.execute("PRAGMA page_size").fetchone()[0]) == 16384
+    finally:
+        c.close()
+
+
+def test_a_stop_during_the_check_stops_before_the_switch(tmp_path, monkeypatch, key_held, engine):
+    live = _live(tmp_path, monkeypatch, encrypted=True)
+    old = H.sha(live)
+
+    class StopAtCheck(_Ctx):
+        def set_progress(self, *, done=None, total=None, detail=None) -> None:
+            super().set_progress(done=done, total=total, detail=detail)
+            if getattr(detail, "i18n", None) == rebuild.FRAME_CHECKING:
+                self.stopping = True  # pressed while the copy is being checked
+
+    ctx = StopAtCheck()
+    with pytest.raises(rebuild.Stopped):
+        rebuild.run("have_backup", ctx)
+    assert rebuild.FRAME_SWITCHING not in ctx.frames
+    assert H.sha(live) == old and not [n for n in _names(tmp_path) if "rebuild-" in n]
+
+
+def test_a_refusal_or_a_stop_ends_the_job_with_its_report_not_an_error(tmp_path, monkeypatch, key_held, engine):
+    _live(tmp_path, monkeypatch, encrypted=True)
+    out = rebuild._worker(_Ctx(), backup_answer="")
+    assert out["outcome"] == "declined" and out["reason"] == "no-backup-answer"
+    ctx = _Ctx()
+    ctx.stopping = True
+    assert rebuild._worker(ctx, backup_answer="have_backup")["outcome"] == "stopped"
+
+
+def test_the_status_opens_no_connection_while_a_rebuild_runs(tmp_path, monkeypatch, key_held):
+    live = _live(tmp_path, monkeypatch, encrypted=True)
+    (tmp_path / "live.rebuild-20261114T101010Z.db.partial").write_bytes(b"being written")
+
+    def no(*a, **kw):
+        raise AssertionError("a keyed connection was opened while the rebuild ran")
+
+    monkeypatch.setattr(rebuild, "_settings_of", no)
+    monkeypatch.setattr(rebuild.REBUILD_JOB, "status", lambda: {"state": "running", "kind": rebuild.JOB_KIND})
+    st = rebuild.status()
+    assert st["running"] is True and st["current"] is None
+    assert (tmp_path / "live.rebuild-20261114T101010Z.db.partial").exists(), "the copy being written is not swept"
+    assert live.exists()
+
+
+def test_a_kept_name_that_is_the_live_library_or_not_a_real_date_is_not_offered(tmp_path, monkeypatch, no_key):
+    live = tmp_path / "live.db"
+    live.write_bytes(b"x")
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (live, live.name) if key == FILE_CORPUS else (None, None))
+    os.link(live, tmp_path / "live.pre-rebuild-20261114T080000Z.db")  # a rebuild cut between the link and the swap
+    (tmp_path / "live.pre-rebuild-20261399T999999Z.db").write_bytes(b"y")
+    assert rebuild.kept_copies() == []
+    assert rebuild.status()["kept_copies"] == []
+
+
+def test_a_kept_copy_is_not_removed_while_a_rebuild_runs(tmp_path, monkeypatch, no_key):
+    live = tmp_path / "live.db"
+    live.write_bytes(b"x")
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (live, live.name) if key == FILE_CORPUS else (None, None))
+    kept = tmp_path / "live.pre-rebuild-20261101T080000Z.db"
+    kept.write_bytes(b"old")
+    monkeypatch.setattr(rebuild.REBUILD_JOB, "status", lambda: {"state": "running"})
+    with pytest.raises(rebuild.Running):
+        rebuild.remove_kept_copy(kept.name)
+    assert kept.exists()
+
+
+def test_a_volume_export_or_restore_refuses_while_a_rebuild_runs(tmp_path, monkeypatch):
+    from src.backup import volume_job
+
+    monkeypatch.setattr(rebuild.REBUILD_JOB, "status", lambda: {"state": "running"})
+    mgr = volume_job.VolumeBackupManager()
+    for what in ("export", "import"):
+        with pytest.raises(RuntimeError, match="rebuilt"):
+            mgr._reap_or_reject(what)
+    mgr._reap_or_reject("verify")  # a verification reads the backup files only

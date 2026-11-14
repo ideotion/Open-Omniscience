@@ -275,6 +275,13 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # The repair reads its OWN refusals (``Declined``, ``salvage.SalvageRefused``: fixed sentences the code wrote, a code key and numbers) and
     # one salvage failure (``SalvageFailed``: a table or index name and the class and fixed label of the driver's error); ``refusal.detail``
     # reaches a record and a log only through ``exception_text``, and tests/test_refusal_detail_source.py reads what each refusal may be made of.
+    # The rebuild (R702) reads its OWN refusals the same way: the code key, and the words through ``_words_of`` (``record_text``). And
+    # the code of the repair's refusal from the log fold it borrows, said again in its own words (never the repair's text).
+    'src/database/rebuild.py': {
+        ('_run', 'code = refusal.code'): 1,
+        ('_run', 'report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))'): 1,
+        ('_switch', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
+    },
     'src/database/repair.py': {
         ('run', 'code = refusal.code'): 2,
         ('run', 'report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)'): 1,

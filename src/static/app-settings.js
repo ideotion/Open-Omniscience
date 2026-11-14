@@ -1506,6 +1506,7 @@
       // The job's own progress line, in the UI language through its keyed frame.
       const res = $("rebuild-result");
       if (running) {
+        delete res.dataset.keep;  // a start that did go ahead replaces the refusal shown before it
         res.textContent = job.detail_i18n ? _rbTf(t(job.detail_i18n), job.detail_vars || {}) : t("Rebuilding…");
       } else if (st.last && st.last.outcome && !res.dataset.keep) {
         const L = st.last;
@@ -1547,12 +1548,15 @@
       if (!st || !st.needed) return;
       const gb = (st.bytes_in_use || 0) / 1e9;
       const lo = Math.max(1, Math.round(gb * REBUILD_LO_S_PER_GB)), hi = Math.max(1, Math.round(gb * REBUILD_HI_S_PER_GB));
-      const about = _rbTf("The library holds about {size}; a rebuild typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). Collection and every other job wait while it runs.",
+      const about = _rbTf("The library holds about {size}; a rebuild typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark), plus any wait for work already in progress to finish. Collection and every other job wait while it runs.",
         {size: _fmtBytes(st.bytes_in_use || 0), lo: fmtNum(lo, 0), hi: fmtNum(hi, 0)});
-      // The backup question first, and two separate answers: "I have one" is not the same consent as "go on without one".
+      // The backup question first, and two separate answers: "I have one" is not the same consent as "go on without one". On the
+      // no-backup path a reflexive OK lands on the backup export, never on the rebuild: going on without one takes a Cancel and
+      // then an explicit OK on a dialog that says so.
       let answer = null;
       if (window.confirm(about + "\n\n" + t("Do you have a recent backup of this library? OK = yes, I have one. Cancel = I have none."))) answer = "have_backup";
-      else if (window.confirm(t("Rebuild WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to make a backup first."))) answer = "no_backup_understood";
+      else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
+      else if (window.confirm(t("Rebuild WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
       if (!answer) return;
       const res = $("rebuild-result");
       delete res.dataset.keep;
@@ -1577,7 +1581,7 @@
       if (!window.confirm(_rbTf("Remove {name}? It is the library as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name}))) return;
       btn.disabled = true;
       try {
-        const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name})});
+        const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, confirm: true})});
         toast(_rbTf("Removed. {size} freed.", {size: _fmtBytes(r.bytes || 0)}), "ok");
       } catch (e) { toast(ooLabelText(t("Could not remove the file"), e.message), "err"); btn.disabled = false; }
       loadRebuild();

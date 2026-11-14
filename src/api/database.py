@@ -27,6 +27,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -647,24 +648,34 @@ def rebuild_start(body: dict) -> dict:
             raise HTTPException(status_code=409, detail="the rebuild waits until the backup download in progress has finished")
         try:
             return rebuild.start(answer)
+        except rebuild.NoRoom as refusal:
+            raise HTTPException(status_code=507, detail=http_detail(refusal)) from None
         except rebuild.Declined as refusal:
-            code = 507 if refusal.code == "no-room" else 409
-            raise HTTPException(status_code=code, detail=refusal.detail) from None
+            raise HTTPException(status_code=409, detail=http_detail(refusal)) from None
         except RuntimeError:
-            raise HTTPException(status_code=409, detail="a rebuild is already running") from None
+            raise HTTPException(status_code=409, detail="a rebuild is already running, or its job could not be started") from None
+
+
+class RemoveKeptBody(BaseModel):
+    name: str = ""
+    #: The page asks before it removes (the kept file is the library as it was, recoverable only from a backup once gone).
+    confirm: bool = False
 
 
 @router.post("/rebuild/remove-kept")
-def rebuild_remove_kept(body: dict) -> dict:
+def rebuild_remove_kept(body: RemoveKeptBody) -> dict:
     """R702 (Q-a): remove one file an earlier rebuild kept, on the operator's own click. Only a name the status lists now is
-    removed; any other is refused with 404."""
+    removed; any other is refused with 404; without ``confirm`` 400; while a rebuild runs 409."""
     from src.database import rebuild
 
-    name = str((body or {}).get("name") or "")
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm the removal (confirm: true)")
     try:
-        return rebuild.remove_kept_copy(name)
+        return rebuild.remove_kept_copy(body.name)
+    except rebuild.Running as refusal:
+        raise HTTPException(status_code=409, detail=http_detail(refusal)) from None
     except rebuild.Declined as refusal:
-        raise HTTPException(status_code=404, detail=refusal.detail) from None
+        raise HTTPException(status_code=404, detail=http_detail(refusal)) from None
     except OSError as exc:
         raise HTTPException(status_code=409, detail=f"the file could not be removed ({type(exc).__name__})") from None
 

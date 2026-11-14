@@ -25,7 +25,9 @@ How, and why this way (the design note: /mnt/project-files/lanes-2026-11-14/lane
 
 STATED LIMITS: the main library only (R702 Q-b: the other stores follow in a later change, and the panel says so). A file system
 that cannot give a file a second name is refused before anything is copied. A reader that is still reading when the swap comes is
-refused from its next statement, as at a restore or a repair.
+refused from its next statement, as at a restore or a repair. A Stop takes effect up to the moment the switch begins, never
+after it. A second server on the same data folder is not held by this process's swap window (the R176 limit a restore and a
+repair share): its writes after the switch land in the kept file, not the library.
 """
 
 from __future__ import annotations
@@ -74,6 +76,14 @@ class Declined(RuntimeError):
         self.code = code
         self.detail = detail
         self.facts = facts
+
+
+class NoRoom(Declined):
+    """The library's drive has not the room the new file needs (the route answers 507)."""
+
+
+class Running(Declined):
+    """A rebuild is running, and what was asked must wait for it (the route answers 409)."""
 
 
 class Stopped(RuntimeError):
@@ -139,9 +149,11 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
             if not entry.is_file(follow_symlinks=False):
                 continue
             size = entry.stat(follow_symlinks=False).st_size
-        except OSError:
-            continue
-        made = datetime.strptime(m.group(1), STAMP_FORMAT).replace(tzinfo=UTC).isoformat(timespec="seconds")
+            made = datetime.strptime(m.group(1), STAMP_FORMAT).replace(tzinfo=UTC).isoformat(timespec="seconds")
+        except (OSError, ValueError):
+            continue  # a stamp that is not a real date is a name this module never gave
+        if _same_file(Path(entry.path), target):
+            continue  # a second name of the LIVE library (a rebuild cut between the link and the swap): not a kept copy
         out.append({"name": entry.name, "bytes": int(size), "made_at": made})
     return sorted(out, key=lambda k: k["made_at"], reverse=True)
 
@@ -149,6 +161,8 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
 def remove_kept_copy(name: str) -> dict[str, Any]:
     """Remove one file an earlier rebuild kept, on the operator's own request. Only a name :func:`kept_copies` lists now is
     removed (with its side files); anything else is refused. Answers ``{"removed": name, "bytes": n}``."""
+    if REBUILD_JOB.status().get("state") == "running":
+        raise Running("running", "a rebuild is running; remove the kept file once it has finished")
     target = corpus_path()
     listed = {k["name"]: k for k in kept_copies(target)}
     if target is None or name not in listed:
@@ -168,12 +182,16 @@ def sweep_partials(target: Path | None = None) -> int:
     if target is None or REBUILD_JOB.status().get("state") == "running":
         return 0
     pattern, gone = _partial_pattern(target), 0
-    with contextlib.suppress(OSError):
-        for entry in list(os.scandir(target.parent)):
-            if pattern.fullmatch(entry.name) and not entry.is_symlink():
-                with contextlib.suppress(OSError):
-                    os.unlink(entry.path)
-                    gone += 1
+    try:
+        entries = list(os.scandir(target.parent))
+    except OSError:
+        return 0
+    for entry in entries:
+        if not pattern.fullmatch(entry.name) or entry.is_symlink():
+            continue
+        with contextlib.suppress(OSError):
+            os.unlink(entry.path)
+            gone += 1
     return gone
 
 
@@ -253,6 +271,12 @@ def status() -> dict[str, Any]:
     if target is None or is_encrypted_file(target) is None:
         out["supported"] = False
         return out
+    if out["job"].get("state") == "running":
+        # No keyed connection and no sweep while the rebuild runs: a connection opened as the swap window begins would make the
+        # swap refuse, and the panel polls this every two seconds. The settings are read again once it has finished.
+        out["running"] = True
+        out["kept_copies"] = kept_copies(target)
+        return out
     sweep_partials(target)
     out["kept_copies"] = kept_copies(target)
     try:
@@ -276,19 +300,35 @@ def _others_running() -> list[str]:
     busy = [str(s.get("label") or s.get("kind")) for s in all_job_statuses() if s.get("state") == "running" and s.get("kind") != JOB_KIND]
     if exclusive_window_open():
         busy.append("an import or restore")
-    # The folder backup and the volume backup/restore keep their own managers rather than registry jobs; each reads the
-    # library while it runs, so a switch under it would hand it half of one file and half of another.
-    for name, getter in (("a folder backup", "src.backup.folder_backup:get_folder_manager"), ("a volume backup or restore", "src.backup.volume_job:get_volume_manager")):
-        mod, fn = getter.split(":")
-        try:
-            import importlib
-
-            running = bool(getattr(importlib.import_module(mod), fn)().status().get("running"))
-        except Exception:  # noqa: BLE001 -- a manager that cannot say is treated as busy, never as idle
-            running = True
-        if running:
-            busy.append(name)
+    # The folder backup and the volume backup/restore keep their own managers rather than registry jobs. The volume set reads the
+    # library; the folder backup (large data: dumps, map regions, models) does not, and is named only so "every other job waits"
+    # stays true. A manager that cannot say is counted as running, never as idle.
+    if _manager_running("folder"):
+        busy.append("a folder backup")
+    if _manager_running("volume"):
+        busy.append("a volume backup or restore")
     return busy
+
+
+def _manager_running(which: str) -> bool:
+    try:
+        if which == "folder":
+            from src.backup.folder_backup import get_folder_manager
+
+            return bool(get_folder_manager().status().get("running"))
+        from src.backup.volume_job import get_volume_manager
+
+        return bool(get_volume_manager().status().get("running"))
+    except Exception:  # noqa: BLE001 - the class is not needed: the answer is "running" either way
+        return True
+
+
+def _words_of(refusal: Declined) -> str:
+    """A refusal's words as a record and a log may have them: scrubbed (every producer writes a fixed sentence and numbers today;
+    this keeps the next one that quotes a driver from carrying a passphrase into the report the panel and the bundle read)."""
+    from src.monitoring.secret_scrub import record_text
+
+    return record_text(refusal, typed=False)
 
 
 def _check_copy(copy: Path, target: Path) -> dict[str, Any]:
@@ -380,7 +420,7 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
         room = preflight(target, now["bytes_in_use"])
         report["preflight"] = room
         if room.get("sufficient") is False:
-            raise Declined("no-room", room["detail"], free_bytes=room["free_bytes"], needed_bytes=room["needed_bytes"])
+            raise NoRoom("no-room", room["detail"], free_bytes=room["free_bytes"], needed_bytes=room["needed_bytes"])
         sweep_partials(target)
         partial = _partial_name(target, stamp)
         kept = _kept_name(target, stamp)
@@ -402,6 +442,8 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
                     report["checked"] = _check_copy(partial, target)
                     repair._durable(partial)
                     repair._fsync_dir(target.parent)
+                    if stopping():
+                        raise Stopped("the rebuild was stopped before the switch")  # the last point a stop can take effect
                     progress(FRAME_SWITCHING)
                     switched = _switch(target, partial, kept, watch)
                 finally:
@@ -415,8 +457,9 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
         _LOG.warning("database rebuild: the library now has the current settings; the old file is kept as %s", kept.name)
         return report
     except Declined as refusal:
-        report.update(outcome="declined", reason=refusal.code, reason_text=refusal.detail)
-        _LOG.warning("database rebuild: not done (%s)", refusal.code)
+        code = refusal.code
+        report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))
+        _LOG.warning("database rebuild: not done (%s)", code)
         raise
     except Stopped:
         report["outcome"] = "stopped"
@@ -424,6 +467,9 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
     except Exception as exc:
         # The TYPE only, never the text: the copy runs on keyed connections and a driver's words can quote a statement that holds
         # the passphrase. The exception goes on with its chain cut for the same reason.
+        # A step after a successful replace can raise too (merge's own finally): whether the library IS the new file is read from
+        # the files, not from how far the code got.
+        switched = switched or (kept is not None and kept.exists() and not _same_file(kept, target))
         report.update(outcome="failed", failure=type(exc).__name__, switched=switched)
         _LOG.warning("database rebuild failed (%s)", type(exc).__name__)
         raise
@@ -473,29 +519,54 @@ def _switch(target: Path, finished: Path, kept: Path, watch: Any) -> bool:
     repair_cancel = repair._CANCEL  # _empty_the_log polls the repair's stop: a rebuild runs only when no repair does
     if repair_cancel.is_set():
         raise Stopped("the app is shutting down")
-    repair._empty_the_log(target, watch)
+    from src.database import salvage
+
+    stopped = refused = None
+    try:
+        repair._empty_the_log(target, watch)
+    except salvage.SalvageStopped:
+        stopped = True
+    except repair.Declined as theirs:
+        refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words
+    if stopped:
+        raise Stopped("the app is shutting down")
+    if refused is not None:
+        raise Declined(refused, "a reader kept the library's log open, so it could not be folded before the switch; nothing was switched")
     before = repair.fingerprint(target)
+    taken = linked = False
     try:
         os.link(target, kept)
+        linked = True
+    except FileExistsError:
+        taken = True
     except OSError:
-        raise Declined("no-hard-links", "the drive cannot give the library a second name, so the old file could not be kept") from None
+        pass
+    if taken:
+        raise Declined("name-taken", "a file already has the name the old library would be kept under; start the rebuild again")
+    if not linked:
+        raise Declined("no-hard-links", "the drive cannot give the library a second name, so the old file could not be kept")
     repair._fsync_dir(target.parent)
 
     def written_to_since() -> None:
+        moved, failed = False, None
         try:
             moved = watch.moved()
         except Exception as exc:  # noqa: BLE001 - the type only: the connection is keyed
-            raise Declined(
-                "writer-busy", f"another connection kept the library's write lock, so it could not be told whether it was written to ({type(exc).__name__})"
-            ) from None
+            failed = type(exc).__name__
+        if failed is not None:  # raised outside the handler, so the keyed connection's error is not carried as the context
+            raise Declined("writer-busy", f"another connection kept the library's write lock, so it could not be told whether it was written to ({failed})")
         if moved or repair.fingerprint(target) != before:
             raise Declined("saved-during-the-copy", "something was saved to the library while it was copied, so nothing was switched; start the rebuild again")
         watch.close()
 
     try:
         swap_in_corpus(finished, target, check=written_to_since)
-    except library_generation.LibraryBusy as busy:
-        raise Declined("writer-busy", str(busy)) from None
+    except library_generation.LibraryBusy:
+        busy = True
+    else:
+        busy = False
+    if busy:
+        raise Declined("writer-busy", "a connection opened before the switch was still in use, so nothing was switched")
     # From here the library IS the new file: what follows is best effort, and a step that fails is logged by its class and never
     # turns a rebuild that happened into one reported as failed.
     with contextlib.suppress(Exception):
@@ -515,7 +586,12 @@ def _kv_invalidate() -> None:
 
 
 def _worker(ctx: JobContext, *, backup_answer: str) -> dict[str, Any]:
-    return run(backup_answer, ctx)
+    """A refusal and a stop are ordinary outcomes, not crashes: the job ends with the report (the panel reads it from
+    :func:`last_report`), so the task manager never shows "nothing to change" or a Stop as an error."""
+    try:
+        return run(backup_answer, ctx)
+    except (Declined, Stopped):
+        return last_report()
 
 
 REBUILD_JOB = register_job(BackgroundJob(JOB_KIND, LABEL, _worker, is_writer=True, cancellable=True))
@@ -536,5 +612,5 @@ def start(backup_answer: str) -> dict[str, Any]:
         raise Declined("nothing-to-change", "the library already has the current settings")
     room = st.get("preflight") or {}
     if room.get("sufficient") is False:
-        raise Declined("no-room", room["detail"])
+        raise NoRoom("no-room", room["detail"])
     return REBUILD_JOB.start(backup_answer=backup_answer)
