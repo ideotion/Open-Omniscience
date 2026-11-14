@@ -17,6 +17,7 @@ import pytest
 from src.custody import signing
 from src.custody.log import (
     ML_DSA_ONLY_ROTATION_NOTE,
+    ML_DSA_UNENDORSED_ROTATION_NOTE,
     ROTATION_ITEM,
     CustodyAction,
     CustodyLog,
@@ -55,9 +56,7 @@ def _resign(entry: dict, signer: HybridSigner) -> None:
 # --- row 42: a change of the ML-DSA half alone is recorded ----------------------------------------------------------
 
 
-@pqc
-@pytest.mark.parametrize("change", ["re-created", "turned off", "turned on"])
-def test_a_change_of_the_ml_dsa_half_alone_writes_a_record_and_verifies_pinned(tmp_path, change):
+def _change(tmp_path: Path, change: str) -> tuple[HybridSigner, HybridSigner, dict, dict, dict]:
     db = str(tmp_path / "c.db")
     before = _signer(tmp_path, "k", use_pqc=change != "turned on")
     after = {"re-created": _signer(tmp_path, "k", ml="k2"), "turned off": _signer(tmp_path, "k", use_pqc=False),
@@ -66,22 +65,74 @@ def test_a_change_of_the_ml_dsa_half_alone_writes_a_record_and_verifies_pinned(t
         _record(log, 3)
     with CustodyLog(db_path=db, signer=after) as log:
         _record(log, 2, 3)
-        bundle = log.export()
-        item = log.export(item_id="article:0")
-        in_app = log.verify_report()
+        bundle, item, in_app = log.export(), log.export(item_id="article:0"), log.verify_report()
+    return before, after, bundle, item, in_app
+
+
+@pqc
+@pytest.mark.parametrize("change", ["re-created", "turned off", "turned on"])
+def test_a_change_of_the_ml_dsa_half_alone_writes_a_record(tmp_path, change):
+    before, after, bundle, item, in_app = _change(tmp_path, change)
     rot = _rotations(bundle)
     assert len(rot) == 1 and rot[0]["seq"] == 4
     md = rot[0]["metadata"]
-    assert md["previous_ed25519_pub"] == md["ed25519_pub"] and md["endorsement"] is None
-    assert md["note"] == ML_DSA_ONLY_ROTATION_NOTE
+    assert md["previous_ed25519_pub"] == md["ed25519_pub"]
     assert md["previous_ml_dsa_pub"] == before.public_identity().ml_dsa_pub
     assert md["ml_dsa_pub"] == after.public_identity().ml_dsa_pub
-    # Accepted without --accept-unendorsed-rotation: the Ed25519 key that signed the entries before signs the record.
+    # The operator's own store accepts every one of them, named.
+    assert in_app["verified"], in_app["issues"]
+    assert any("seq 4: the signing identity changed" in n or "seq 4: the signing key changed" in n
+               for n in in_app["notes"])
+
+
+@pqc
+@pytest.mark.parametrize("change", ["turned off", "turned on"])
+def test_turning_post_quantum_signing_on_or_off_verifies_pinned_without_a_flag(tmp_path, change):
+    """On: nothing is weakened, the Ed25519 key's word suffices. Off: the ML-DSA key is still in the folder, so the
+    previous identity, both halves, endorses the record."""
+    before, _after, bundle, item, _ = _change(tmp_path, change)
+    md = _rotations(bundle)[0]["metadata"]
+    if change == "turned on":
+        assert md["endorsement"] is None and md["note"] == ML_DSA_ONLY_ROTATION_NOTE
+    else:
+        assert md["endorsement"]["ml_dsa"]["pub"] == before.public_identity().ml_dsa_pub
     report = verify_export_report(bundle, require_signer=True)
     assert report["verified"], report["issues"]
-    assert any(ML_DSA_ONLY_ROTATION_NOTE in n for n in report["notes"])
-    assert verify_export(item, require_signer=True) == (True, [])
-    assert in_app["verified"] and any(ML_DSA_ONLY_ROTATION_NOTE in n for n in in_app["notes"])
+    assert verify_export(item, require_signer=True)[0]
+
+
+@pqc
+def test_a_re_created_ml_dsa_key_is_an_unendorsed_rotation(tmp_path):
+    _before, _after, bundle, item, _ = _change(tmp_path, "re-created")
+    md = _rotations(bundle)[0]["metadata"]
+    assert md["endorsement"] is None and md["note"] == ML_DSA_UNENDORSED_ROTATION_NOTE
+    for b in (bundle, item):
+        ok, issues = verify_export(b, require_signer=True)
+        assert not ok and issues[0].startswith("the post-quantum (ML-DSA) key changes at seq 4 with no endorsement")
+        report = verify_export_report(b, require_signer=True, accept_unendorsed_rotation=True)
+        assert report["verified"] and any(ML_DSA_UNENDORSED_ROTATION_NOTE in n for n in report["notes"])
+
+
+@pqc
+@pytest.mark.parametrize("evil_ml", [None, "evil"])
+def test_a_holder_of_the_ed25519_key_alone_cannot_drop_the_post_quantum_half_unseen(tmp_path, evil_ml):
+    """Security read A, finding 1: a copy of an honest hybrid log, opened with its Ed25519 key and no ML-DSA key (or
+    one of the forger's own), and signed on: refused, under the pin too, unless accepted by name."""
+    import shutil
+
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        _record(log, 3)
+    shutil.copy(db, tmp_path / "copy.db")
+    forger = (HybridSigner(ed25519_path=tmp_path / "k.pem", mldsa_path=tmp_path / "absent.key", use_pqc=False)
+              if evil_ml is None else _signer(tmp_path, "k", ml=evil_ml))
+    with CustodyLog(db_path=str(tmp_path / "copy.db"), signer=forger) as log:
+        _record(log, 1, 3)
+        bundle = log.export()
+    assert not (tmp_path / "absent.key").exists()  # nothing created
+    for pin in (False, True):
+        ok, issues = verify_export(bundle, require_signer=pin)
+        assert not ok and "with no endorsement by the previous ML-DSA key" in issues[0]
 
 
 @pqc
@@ -257,3 +308,92 @@ def test_a_middle_stretch_whose_full_record_names_no_ml_dsa_key_is_pinned_too(tm
     assert verify_export(forged)[0]
     ok, issues = verify_export(forged, require_signer=True)
     assert not ok and any("seq 4" in i and "ml-dsa public key does not match" in i for i in issues)
+
+
+def test_an_old_style_record_after_a_full_one_is_refused(tmp_path):
+    """Security read A, finding 2: a record naming no previous ML-DSA key after one that does would put its stretch
+    back under the old rules."""
+    from tests.test_custody_key_rotation import _forge
+
+    db = str(tmp_path / "c.db")
+    a, b, c = _signer(tmp_path, "a"), _signer(tmp_path, "b"), _signer(tmp_path, "c")
+    with CustodyLog(db_path=db, signer=a) as log:
+        _record(log, 1)
+    with CustodyLog(db_path=db, signer=b) as log:
+        log.rotate_signing_key(a)
+        _record(log, 1, 1)
+    with CustodyLog(db_path=db, signer=c) as log:
+        log.rotate_signing_key(b)
+        bundle = log.export()
+    assert verify_export(bundle)[0]
+
+    def old_style(md: dict) -> None:
+        md.pop("previous_ml_dsa_variant"), md.pop("previous_ml_dsa_pub")
+
+    assert [e["seq"] for e in _rotations(bundle)] == [2, 4]
+    ok, issues = verify_export(_forge(bundle, 3, old_style, c, c), accept_unendorsed_rotation=True)
+    assert not ok and "names no previous ML-DSA key, though the record at seq 2 before it does" in issues[0]
+
+
+@pqc
+def test_each_full_record_leaves_the_identity_the_one_before_introduced(tmp_path):
+    """Checked in a one-item bundle too, which holds every record but not the entries before them."""
+    from tests.test_custody_key_rotation import _forge
+
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        _record(log, 2)
+    off = _signer(tmp_path, "k", use_pqc=False)
+    with CustodyLog(db_path=db, signer=off) as log:
+        _record(log, 1, 2)  # record at seq 3, endorsed
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        log.record("other:1", "b" * 64, CustodyAction.INGEST)  # record at seq 5
+        item = log.export(item_id="article:0")
+    assert [e["seq"] for e in _rotations(item)] == [3, 5]
+    assert verify_export(item, require_signer=True)[0]
+
+    def claims_another_previous(md: dict) -> None:
+        md["previous_ml_dsa_pub"] = _signer(tmp_path, "x").public_identity().ml_dsa_pub
+
+    at = [e["seq"] for e in item["entries"]].index(5)
+    ok, issues = verify_export(_forge(item, at, claims_another_previous, off, _signer(tmp_path, "k")),
+                               accept_unendorsed_rotation=True)
+    assert not ok and "other than the one the record at seq 3 introduced" in issues[0]
+
+
+@pqc
+def test_a_machine_without_the_post_quantum_library_signs_nothing_and_writes_no_record(tmp_path, monkeypatch):
+    """Security reads A (finding 3) and B: nobody changed the key, so no permanent record says so, and nothing is signed
+    with the Ed25519 half alone; the entry stays owed and the routes answer 503 in plain words."""
+    from fastapi.testclient import TestClient
+
+    from src.api import custody as api
+    from src.api.main import app
+    from src.custody.signing import PostQuantumUnavailable
+
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        _record(log, 2)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    missing = _signer(tmp_path, "k")
+    assert missing.pqc_unavailable_but_requested and not missing.is_hybrid
+    with CustodyLog(db_path=db, signer=missing) as log:
+        with pytest.raises(PostQuantumUnavailable, match="install the 'pqc' extra"):
+            _record(log, 1, 2)
+        with pytest.raises(PostQuantumUnavailable):
+            log.export()
+        assert [e.seq for e in log.all_entries()] == [1, 2]
+    monkeypatch.setattr(api, "_log", lambda: CustodyLog(db_path=db, signer=_signer(tmp_path, "k")))
+    client = TestClient(app)
+    r = client.get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 503 and "post-quantum library is not installed" in r.json()["detail"]
+    r = client.post("/api/custody/log", json={"item_id": "a:1", "item_hash": "a" * 64, "action": "ingest"},
+                    headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 503 and "post-quantum library is not installed" in r.json()["detail"]
+
+
+def test_an_endorsing_signer_never_creates_a_post_quantum_key(tmp_path):
+    """Security read B: the previous identity is only ever LOADED to endorse a change, never created."""
+    s = HybridSigner(ed25519_path=tmp_path / "k.pem", mldsa_path=tmp_path / "k.key", use_pqc=False)
+    assert s.with_existing_post_quantum_key() is None
+    assert not (tmp_path / "k.key").exists()

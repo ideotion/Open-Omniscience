@@ -145,6 +145,11 @@ class SigningError(RuntimeError):
     """Raised when signing cannot proceed (e.g. a requested algorithm is absent)."""
 
 
+class PostQuantumUnavailable(SigningError):
+    """Post-quantum signing is wanted and the log's key has an ML-DSA half, but this machine lacks the library: nothing
+    is signed with the Ed25519 half alone (custody rows 42-44), and an entry stays owed until the library is back."""
+
+
 # --------------------------------------------------------------------------- #
 # Key paths / at-rest protection
 # --------------------------------------------------------------------------- #
@@ -409,12 +414,14 @@ class HybridSigner:
         mldsa_path: Path | None = None,
         *,
         use_pqc: bool = True,
+        create_mldsa: bool = True,
     ):
         # ``use_pqc`` is the operator's *preference* (see src/custody/settings).
         # When False we sign Ed25519-only and label the result "ed25519" even if
         # the post-quantum library is installed -- the toggle can suppress PQC but
         # the label can never claim quantum resistance that was not produced.
         self._use_pqc = use_pqc
+        self._create_mldsa = create_mldsa  # False: an ML-DSA key is only loaded, never created
         self._ed_path = ed25519_path or (_keys_dir() / "custody_ed25519.pem")
         self._mldsa_path = mldsa_path or (_keys_dir() / "custody_ml_dsa_65.key")
         for p in (self._ed_path, self._mldsa_path):
@@ -458,6 +465,15 @@ class HybridSigner:
     def reloaded(self) -> HybridSigner:
         """A signer loaded afresh from the same key files, with the same post-quantum preference."""
         return HybridSigner(self._ed_path, self._mldsa_path, use_pqc=self._use_pqc)
+
+    def with_existing_post_quantum_key(self) -> HybridSigner | None:
+        """The same key files with post-quantum signing on, or ``None`` when the library is missing or there is no
+        ML-DSA key file: a key is only ever LOADED here, never created (custody rows 42-44: the previous identity
+        endorsing the change when post-quantum signing is turned off)."""
+        if not PQC_AVAILABLE:
+            return None
+        signer = HybridSigner(self._ed_path, self._mldsa_path, use_pqc=True, create_mldsa=False)
+        return signer if signer.is_hybrid else None
 
     # -- properties -------------------------------------------------------- #
     @property
@@ -558,6 +574,8 @@ class HybridSigner:
         try:
             raw, seen = keyfile.read_settled(path)
         except FileNotFoundError:
+            if not self._create_mldsa:
+                return None, None
             pk, sk = _mldsa.generate_keypair()
             try:
                 keyfile.create_new(path, seal_mldsa_key(pk, sk, self._pp))

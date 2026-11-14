@@ -31,13 +31,16 @@ from src.custody.settings import (
     load_settings,
     save_settings,
 )
-from src.custody.signing import HybridSigner, SigningError
+from src.custody.signing import HybridSigner, PostQuantumUnavailable, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
 
 
+_PQC_UNAVAILABLE = ("post-quantum signing is on and this custody log's key has an ML-DSA half, but the post-quantum "
+                    "library is not installed here, so nothing was signed: install the 'pqc' extra, or turn post-quantum "
+                    "signing off in Settings, which the log then records")
 _KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was signed: unlock the app with its "
                    "passphrase, or check the key folder")
 
@@ -77,6 +80,8 @@ def log_action(req: LogRequest) -> dict:
         # The custody settings could not be read: nothing is signed under guessed preferences (PQC off, local anchoring).
         raise HTTPException(status_code=503, detail="the custody settings could not be read, so no entry was signed "
                             "under guessed preferences: try again once the database can be read") from None
+    except PostQuantumUnavailable:
+        raise HTTPException(status_code=503, detail=_PQC_UNAVAILABLE) from None
     except TimestampUnavailable as exc:
         # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
         # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
@@ -105,6 +110,8 @@ def export(item_id: str | None = None) -> dict:
         # written under guessed preferences.
         raise HTTPException(status_code=503, detail="the signing key changed and its key-rotation record is owed, but "
                             "the custody settings could not be read: export again once they can be") from None
+    except PostQuantumUnavailable:
+        raise HTTPException(status_code=503, detail=_PQC_UNAVAILABLE) from None
     except SigningError:
         # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
         # bundle is signed and nothing is written. The answer says what to do.

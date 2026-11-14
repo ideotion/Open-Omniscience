@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.custody import signing
-from src.custody.signing import HybridSigner, PublicIdentity, canonical_bytes
+from src.custody.signing import HybridSigner, PostQuantumUnavailable, PublicIdentity, canonical_bytes
 from src.custody.timestamp import (
     TimestampProof,
     TimestampUnavailable,
@@ -126,11 +126,19 @@ def _records_previous_ml_dsa(md: dict) -> bool:
     return "previous_ml_dsa_pub" in md
 
 
-#: Said for a record that changes only the post-quantum (ML-DSA) half of the signing identity (row 42).
+#: Said for a record that only ADDS a post-quantum (ML-DSA) half to the signing identity (row 42): there was no earlier
+#: post-quantum key to vouch for it, and the change weakens nothing.
 ML_DSA_ONLY_ROTATION_NOTE = (
-    "only the post-quantum (ML-DSA) half of the signing identity changed here (post-quantum signing turned on or off, "
-    "or its key re-created). The Ed25519 key that signed the entries before signs this record too, so the change is "
-    "that key's word; the previous ML-DSA key did not vouch for it."
+    "post-quantum signing was turned on here: the signing identity gains an ML-DSA half. The Ed25519 key that signed "
+    "the entries before signs this record too, so the change is that key's word; there was no earlier post-quantum key "
+    "to vouch for it."
+)
+#: Said for a record that drops or replaces the ML-DSA half when the previous ML-DSA key was not there to endorse it.
+#: Someone able to forge the Ed25519 key alone could write exactly this, so it is refused unless accepted by name.
+ML_DSA_UNENDORSED_ROTATION_NOTE = (
+    "the post-quantum (ML-DSA) half of the signing identity was dropped or replaced here, and the previous ML-DSA key was "
+    "not available to vouch for it: only the Ed25519 key signs this record, and someone able to forge that key alone "
+    "could write the same."
 )
 
 
@@ -342,15 +350,30 @@ class CustodyLog:
 
         Keys re-created after a restore, or a lost key folder: the change is said IN the chain before the new key signs
         anything -- an entry or an export's head -- so a reader can follow it instead of meeting an unexplained new key
-        (R-rotation). Nobody here holds the old key, so the record is unendorsed."""
+        (R-rotation). Nobody here holds the old key, so the record is unendorsed -- except when only post-quantum signing
+        was turned off: the ML-DSA key is still in the folder, and the previous identity, both halves, endorses it."""
         self._refresh_signer()
         prev = self._last()
         if prev is not None and not _signed_by(prev, self.signer):
+            same_ed = _sig_ed25519_pub(prev.signature) == self.signer.public_identity().ed25519_pub
+            if same_ed and _sig_ml_dsa(prev.signature)[1] and getattr(self.signer, "pqc_unavailable_but_requested", False):
+                # Post-quantum signing is still wanted, but this machine lacks the library: nobody changed the key, so no
+                # permanent record says so (each trip between two machines would add two), and nothing is signed with
+                # the Ed25519 half alone, which a pinned check would refuse for good. The entry stays owed.
+                raise PostQuantumUnavailable(
+                    "post-quantum signing is on and this custody log's key has an ML-DSA half, but the post-quantum "
+                    "library is not installed here: nothing is signed until it is (install the 'pqc' extra), or turn "
+                    "post-quantum signing off in Settings, which the log then records"
+                )
             # Either half of the identity: a change of the post-quantum key alone is recorded too (row 42), or a pinned
             # check would hold every entry to an ML-DSA key the older ones were never signed with.
             # A permanent record: never written under guessed preferences (an export reaches here too).
             self._refuse_on_unread_prefs()
-            prev = self._insert_rotation(prev, previous_signer=None)
+            previous: HybridSigner | None = None
+            if same_ed and _sig_ml_dsa(prev.signature)[1]:
+                with_pq = getattr(self.signer, "with_existing_post_quantum_key", lambda: None)()
+                previous = with_pq if with_pq is not None and _signed_by(prev, with_pq) else None
+            prev = self._insert_rotation(prev, previous_signer=previous)
         return prev
 
     def rotate_signing_key(self, previous_signer: HybridSigner) -> CustodyEntry:
@@ -390,7 +413,7 @@ class CustodyLog:
             meta["note"] = "The previous custody signing key signed the new key's identity and this place in the chain."
         elif old_pub == identity.get("ed25519_pub"):
             meta["endorsement"] = None
-            meta["note"] = ML_DSA_ONLY_ROTATION_NOTE
+            meta["note"] = ML_DSA_UNENDORSED_ROTATION_NOTE if previous_ml[1] else ML_DSA_ONLY_ROTATION_NOTE
         else:
             meta["endorsement"] = None
             meta["note"] = UNENDORSED_ROTATION_NOTE
@@ -774,6 +797,7 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
             if _records_previous_ml_dsa(first.metadata) else current
     else:
         start = _identity_line(current, _sig_ml_dsa(first.signature)[1])
+    last_full: CustodyEntry | None = None  # the latest record that names the whole identity
     for i, e in enumerate(entries):
         k = _sig_ed25519_pub(e.signature)
         if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM:
@@ -782,6 +806,11 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
             # Since 0.5.1 a record names the previous identity's ML-DSA half too (row 43), and is written when only
             # that half changes (row 42); one written before names Ed25519 keys only and must change that key.
             full = _records_previous_ml_dsa(md)
+            if last_full is not None and not full:
+                # Every record since 0.5.1 names the whole identity: one that does not, after one that does, would put
+                # its stretch back under the old rules (an Ed25519-only endorsement, no post-quantum pin).
+                return (f"the key-rotation record at seq {e.seq} names no previous ML-DSA key, though the record at seq "
+                        f"{last_full.seq} before it does"), notes
             prev_ml, new_ml = (md.get("previous_ml_dsa_pub") or None) if full else None, md.get("ml_dsa_pub") or None
             if e.seq <= 1 or e.prev_entry_hash == GENESIS_PREV:
                 # A log never starts with a rotation: there is no previous key to rotate from.
@@ -796,6 +825,11 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                         "before it"), notes
             if k != new_k:
                 return f"the key-rotation record at seq {e.seq} is not signed by the key it introduces", notes
+            if full and last_full is not None and (last_full.metadata.get("ml_dsa_pub") or None) != prev_ml:
+                # Any change of identity since a full record has its own record, so the identity one record leaves
+                # must be the one the record before it introduced -- a one-item bundle holds every record.
+                return (f"the key-rotation record at seq {e.seq} names a previous ML-DSA key other than the one the "
+                        f"record at seq {last_full.seq} introduced"), notes
             if full and not one_item and i > 0 and _sig_ml_dsa(entries[i - 1].signature)[1] != prev_ml:
                 # The record is written from the entry before it, which a whole log holds: its ML-DSA half must be the
                 # one the record names, or the record could name any post-quantum key as the previous one.
@@ -804,9 +838,20 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
             # A record that names both halves is printed with both, so a reader who knows either can compare it.
             was, now = (_identity_line(prev_k, prev_ml), _identity_line(new_k, new_ml)) if full else (prev_k, new_k)
             endorsement = md.get("endorsement")
-            if endorsement is None and same_ed:
-                # The Ed25519 key that signed the entries before signs this record: the change is that key's word.
+            if endorsement is None and same_ed and prev_ml is None:
+                # Post-quantum signing turned on: the Ed25519 key that signed the entries before signs this record, and
+                # there was no earlier post-quantum key whose protection the change could take away.
                 notes.append(f"seq {e.seq}: the signing identity changed from {was} to {now}: {ML_DSA_ONLY_ROTATION_NOTE}")
+            elif endorsement is None and same_ed:
+                # The ML-DSA half dropped or replaced on the Ed25519 key's word alone: what someone able to forge that
+                # key would write to strip the post-quantum protection, so it is an unendorsed rotation.
+                if not accept_unendorsed:
+                    return (f"the post-quantum (ML-DSA) key changes at seq {e.seq} with no endorsement by the previous "
+                            "ML-DSA key: its record says that key was not available, and someone able to forge the "
+                            "Ed25519 key alone would write the same. Verify again accepting an unendorsed rotation "
+                            "only if you know the post-quantum key was re-created"), notes
+                notes.append(f"seq {e.seq}: the signing identity changed from {was} to {now}, accepted on the record's "
+                             f"word: {ML_DSA_UNENDORSED_ROTATION_NOTE}")
             elif endorsement is None:
                 if not accept_unendorsed:
                     return (f"the signing key changes at seq {e.seq} with no endorsement by the previous key: its record "
@@ -830,6 +875,11 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                 if not ok:
                     return f"the key-rotation record at seq {e.seq} has an invalid endorsement: {reason}", notes
                 notes.append(f"seq {e.seq}: the signing key changed from {was} to {now}, endorsed by the previous key")
+            if full and one_item and last_full is None and prev_ml is not None:
+                notes.append(f"seq {e.seq}: in a one-item bundle the previous ML-DSA key this record names is its own "
+                             "word; the whole-log check ties it to the entry before the record")
+            if full:
+                last_full = e
             current = new_k
         elif k != current:
             if not accept_unrecorded:

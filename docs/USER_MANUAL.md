@@ -1487,11 +1487,13 @@ last key, because a log cut and re-signed by someone else carries exactly such a
 follows the key through the same records and names each rotation. On your own store it accepts an unendorsed one on its
 word, and a key change with no record at all, which is what a log written before 0.5.1 shows when its key was
 re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Since 0.5.1,
-changing only the post-quantum key (turning post-quantum signing on or off, or re-creating its key) writes a key-rotation
-record too. The Ed25519 key that signed everything before signs that record, so it is followed without being accepted by
-name, and its note says the old post-quantum key did not vouch for the change. Every record now names the whole previous
-key, its post-quantum half included, and an endorsement must carry that same post-quantum key. A checker older than
-0.5.1 refuses a log with such a record rather than misreading it.
+changing only the post-quantum key writes a key-rotation record too, and every record names the whole previous key,
+its post-quantum half included. Turning post-quantum signing on is followed without being asked. Turning it off is
+endorsed by the old post-quantum key, which is still in the key folder, so it is followed too. A re-created post-quantum
+key cannot be endorsed and is refused unless you pass `--accept-unendorsed-rotation`, because someone who could forge the
+Ed25519 key alone would write the same record. If post-quantum signing is on and this machine lacks the post-quantum
+library, nothing is signed until it is installed or the setting is turned off; entries on ingest wait meanwhile. A
+checker older than 0.5.1 refuses a log with such a record rather than misreading it.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
