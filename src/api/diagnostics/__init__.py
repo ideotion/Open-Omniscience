@@ -479,6 +479,7 @@ from .field_cards import (
     _evidence_ids,
     _newsletter_article_ids,
     build_field_cards_files,
+    field_candidate_sources,
     field_cards,
 )
 # What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
@@ -534,6 +535,7 @@ __all__ = [
     "_evidence_ids",
     "_newsletter_article_ids",
     "build_field_cards_files",
+    "field_candidate_sources",
     "field_cards",
     "_MAX_MERGE_UPLOADS",
     "_MERGE_MEDIA_TYPES",
