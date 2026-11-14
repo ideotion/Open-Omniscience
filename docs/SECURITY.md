@@ -672,13 +672,22 @@ imply a protection we cannot deliver.
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
   a folder `DATABASE_URL` points to: an encrypted one loses its head and is unlinked before the slow rewrite, a plaintext
-  one is rewritten whole. **A data folder the app does not own (R711)** (the home folder, a folder above it or one of its
-  standard folders such as Documents, a drive root, a mount point, or a folder with other files and none of the app's
-  markers, read before the erase starts) is never walked whole or removed: every step above still runs, and the rest
-  reaches only the entries the app owns there, by name (`src/safety/data_scope.py`, kept complete by a test over every
-  `data_dir() / "name"` in the code); the report says `scope: "app-only"` and names every top-level entry left. A secure
-  uninstall's watcher applies the same names. Such a folder is also said at every start: a warning in the log and the
-  terminal, and a notice on the unlock page and in the app. A step of the tidying after a completed erase that fails is
+  one is rewritten whole (a copy of a store not known to be encrypted always is, since a damaged copy's page 1 can stop reading
+  as SQLite with plaintext behind it). **A data folder the app does not own (R711).** Ownership is where the app put the
+  folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
+  `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the
+  home folder, a folder above it or one of its standard folders such as Documents, a drive root or a mount point, or when it
+  holds any entry the app does not own (system clutter such as `.DS_Store` aside; the check stops at the first such entry).
+  There every step above still runs by name, and the rest reaches only the app's own entries (`src/safety/data_scope.py`:
+  its file and folder names, its databases' side files, its copy and staging patterns, an atomic write's temp and a lock
+  beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). The app's COMMON names
+  (`models`, `cache`, `keys`, `diagnostics`...) are left there, because an operator's own folder may carry one; a `keys`
+  folder loses only the app's key files and its `.pending` folder. The folder is kept, and the report says
+  `scope: "app-only"` and names, without reading them, the entries left (`left_untouched`), the common names left
+  (`left_common_names`) and any of the app's own a removal failed on (`not_removed`). A scope that cannot be read counts as
+  shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. Such
+  a folder is also said at every start: a warning in the log and the terminal, and a notice on the unlock page and in the
+  app, which carries a reason code and never the path. A step of the tidying after a completed erase that fails is
   named in the report (`after_erase_failures`), never answered as a failed wipe. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and

@@ -390,8 +390,10 @@ def _data_folder_scope(folder: str) -> dict:
         scope = folder_scope(Path(folder))
     except Exception as exc:  # noqa: BLE001 - a notice never breaks the watchdog's endpoint
         log_failure(_LOG, "could not read the data folder's scope", exc, level=logging.DEBUG)
-        return {"broad": False, "reason": None, "data_dir": folder}
-    return {"broad": scope["broad"], "reason": scope["reason"], "data_dir": folder}
+        return {"broad": False, "reason": None}
+    # Never the path: this endpoint answers before unlock, and a path carries the account name
+    # (tests/test_data_volume.py::test_the_state_endpoint_never_discloses_the_path).
+    return {"broad": scope["broad"], "reason": scope["reason"]}
 
 
 @router.post("/data-volume/close-now")

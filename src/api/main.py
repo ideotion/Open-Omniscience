@@ -3804,12 +3804,20 @@ def _panic_cli(*, force: bool) -> None:
 
     target = data_dir()
     if not force:
-        ans = input(f"Irreversibly wipe ALL data under {target}? Type 'wipe' to confirm: ")
+        ans = input(f"Irreversibly wipe the app's data under {target}? Type 'wipe' to confirm: ")
         if ans.strip().lower() != "wipe":
             print("Aborted.")
             return
     report = panic_wipe(confirm=True)
     print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    if report.get("scope") == "app-only":
+        # R711: a folder the app does not own keeps everything that is not the app's, and the folder itself.
+        print(f"The data folder is not the app's own ({report.get('scope_reason')}): only the app's files were removed; "
+              f"{len(report.get('left_untouched') or [])} other entries and the folder were left.")
+        if report.get("left_common_names"):
+            print("Also left, because the name is common and may be yours: " + ", ".join(report["left_common_names"]))
+    if report.get("after_erase_failures"):
+        print("The erase completed; these steps after it failed: " + ", ".join(report["after_erase_failures"]))
     print(report["limit"])
 
 

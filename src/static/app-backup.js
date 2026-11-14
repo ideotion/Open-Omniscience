@@ -3795,7 +3795,10 @@
           `<span class="muted">${esc(r.limit)}</span>` +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"
-            ? `<div class="card-caveat" title="${esc((r.left_untouched || []).join(", "))}">${esc(tfw("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.", { n: fmtNum((r.left_untouched || []).length, 0) }))}</div>`
+            ? `<div class="card-caveat" title="${esc((r.left_untouched || []).join(", "))}">${esc(tfw("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.", { n: fmtNum((r.left_untouched || []).length, 0) }))}</div>` +
+              ((r.left_common_names || []).length
+                ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: r.left_common_names.join(", ") }))}</div>`
+                : "")
             : "") +
           `<div class="hint" style="margin-top:8px">${esc(rec)}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +

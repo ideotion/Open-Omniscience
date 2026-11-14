@@ -24,7 +24,8 @@ _DATA_DIR_CALLS = frozenset({"data_dir", "_data_dir", "_dd", "_default_dir"})
 
 
 def _literal_top_level_names() -> dict[str, str]:
-    """Every literal name joined straight onto a ``data_dir()`` call in ``src``, or onto it through a module-level string constant."""
+    """Every literal name joined onto a ``data_dir()`` call in ``src``: straight, through a module-level string constant, or through
+    a helper of the same module that joins its parameter on (``_store_path("calendar_feed_imports.json")``)."""
     found: dict[str, str] = {}
     for f in (_ROOT / "src").rglob("*.py"):
         tree = ast.parse(f.read_text(encoding="utf-8"))
@@ -34,7 +35,25 @@ def _literal_top_level_names() -> dict[str, str]:
             if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
             and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
         }
+        # A helper that takes the name (``def _store_path(name): return data_dir() / name``): its callers' names count too.
+        helpers = {
+            fn.name
+            for fn in ast.walk(tree)
+            if isinstance(fn, ast.FunctionDef)
+            and any(
+                isinstance(r, ast.Return) and isinstance(r.value, ast.BinOp) and isinstance(r.value.op, ast.Div)
+                and isinstance(r.value.left, ast.Call) and isinstance(r.value.left.func, ast.Name)
+                and r.value.left.func.id in _DATA_DIR_CALLS and isinstance(r.value.right, ast.Name)
+                and r.value.right.id in {a.arg for a in fn.args.args}
+                for r in ast.walk(fn)
+            )
+        }
         for n in ast.walk(tree):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in helpers and n.args:
+                arg = n.args[0]
+                name = arg.value if isinstance(arg, ast.Constant) else consts.get(arg.id) if isinstance(arg, ast.Name) else None
+                if isinstance(name, str):
+                    found[name.split("/")[0]] = str(f.relative_to(_ROOT))
             if not (isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div)):
                 continue
             left = n.left
@@ -56,7 +75,7 @@ def test_every_name_the_app_writes_at_the_top_of_its_folder_is_known():
 
 
 def test_names_the_app_does_not_write_are_not_claimed():
-    for name in ("Documents", ".bashrc", "notes.db", "thesis.salvage-20261114T101010Z.db", "pre-restore.txt", "wiki"):
+    for name in ("Documents", ".bashrc", "notes.db", "thesis.salvage-20261114T101010Z.db", "pre-restore.txt", "wiki", "notes.json.tmp"):
         assert not is_app_owned(name), name
     for name in ("open_omniscience.db-wal", "wiki.db-shm", "law.salvage-20261114T101010Z.db", "pre-encrypt-20261114T101010Z-open_omniscience.db",
                  ".restore-abc", "x.oopart", "keys", "session_state.json"):
@@ -86,14 +105,50 @@ def test_a_mount_point_is_broad(home, monkeypatch):
     assert folder_scope(target)["reason"] == "mount_point"
 
 
-def test_the_app_s_own_folder_is_not_broad(home):
-    folder = home / "OOS data"
+def test_ownership_is_where_the_app_put_the_folder_never_its_own_files(home, monkeypatch):
+    """The app writes session_state.json at every start: a file of the app's can never make a folder the app's."""
+    folder = home / "projects"
     folder.mkdir()
-    assert folder_scope(folder)["broad"] is False, "an empty folder (a first launch) is not broad"
-    (folder / "something-new.bin").write_bytes(b"x")
-    assert folder_scope(folder)["reason"] == "not_app_folder", "other files and no marker"
-    (folder / "legal_consent.json").write_text("{}", encoding="utf-8")
-    assert folder_scope(folder)["broad"] is False, "a marker makes it the app's"
+    monkeypatch.setenv("OO_DATA_DIR", str(folder))
+    assert folder_scope(folder)["broad"] is False, "an empty folder (a first launch) is not shared"
+    (folder / ".DS_Store").write_bytes(b"")
+    (folder / "session_state.json").write_text("{}", encoding="utf-8")
+    assert folder_scope(folder)["broad"] is False, "the app's files and the system's clutter only"
+    (folder / "thesis.docx").write_bytes(b"x")
+    assert folder_scope(folder)["reason"] == "shared_folder"
+    chosen = home / "OOS data"
+    chosen.mkdir()
+    (chosen / "thesis.docx").write_bytes(b"x")
+    assert folder_scope(chosen)["broad"] is False, "the first-launch step's folder is the app's, whatever is in it"
+
+
+def test_the_default_location_is_the_app_s(home, monkeypatch):
+    from src import paths
+
+    monkeypatch.delenv("OO_DATA_DIR", raising=False)
+    default = home / "xdg" / "open-omniscience"
+    default.mkdir(parents=True)
+    (default / "stray.bin").write_bytes(b"x")
+    monkeypatch.setattr(paths, "data_dir", lambda: default)
+    assert folder_scope(default)["broad"] is False
+
+
+def test_a_link_to_a_drive_root_is_a_drive_root(home, tmp_path):
+    link = home / "oo"
+    link.symlink_to(Path(tmp_path.anchor))
+    assert folder_scope(link)["reason"] == "drive_root"
+
+
+def test_the_shared_names_leave_the_common_ones_and_strip_the_app_s_endings():
+    from src.safety.data_scope import owned_spec
+
+    shared = owned_spec(shared=True)
+    for name in ("models", "cache", "keys", "runs.jsonl"):
+        assert is_app_owned(name) and not is_app_owned(name, spec=shared), name
+    for name in ("app_settings.json.tmp", "briefing_draft.json.tmp.12.34", "session_history.jsonl.lock", "calendar_feed_imports.json.damaged",
+                 ".oos-volume", ".oo_scrub", ".merge-probe-1"):
+        assert is_app_owned(name, spec=shared), name
+    assert not is_app_owned("thesis.tmp") and not is_app_owned("my.lock")
 
 
 def test_the_startup_warning_names_the_folder_and_what_a_wipe_does(home):
@@ -126,5 +181,6 @@ def test_the_watchdog_endpoint_carries_the_scope(home, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(home))
     unlock._data_folder_scope.cache_clear()
     out = unlock.data_volume_state()
-    assert out["data_folder_scope"] == {"broad": True, "reason": "home", "data_dir": str(home)}
+    assert out["data_folder_scope"] == {"broad": True, "reason": "home"}
+    assert str(home) not in json.dumps(out), "this endpoint answers before unlock: never the path"
     unlock._data_folder_scope.cache_clear()

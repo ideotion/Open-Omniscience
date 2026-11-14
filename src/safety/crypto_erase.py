@@ -245,10 +245,17 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
     return KEY_FILES_LOCK
 
 
-def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None) -> tuple[int, int]:
+#: The key files the app keeps beside the two named above: the evidence-signing key (src/reporting/evidence.py) and the
+#: private copies a key change stages in ``keys/.pending`` (src/custody/keyfile.py).
+_OTHER_KEY_FILES = ("evidence_ed25519.pem",)
+_KEYS_PENDING = ".pending"
+
+
+def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, shared: bool = False) -> tuple[int, int]:
     """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
     (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
-    before the caller lets the key-file lock go. A function of its own with no handler, called inside the caller's
+    before the caller lets the key-file lock go. In a SHARED data folder (R711) a ``keys`` folder may be the operator's
+    own, so only the app's key files and its ``.pending`` folder go, and the folder is removed only if that left it empty. A function of its own with no handler, called inside the caller's
     ``with``: CPython 3.13 leaves a loop's back-edge outside the exception table of the block around it, so the loops
     live here (R163; tests/test_loop_heads_reach.py)."""
     seen = wiped = 0
@@ -258,6 +265,15 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
         wiped += w
         if s and overwritten:
             keys_destroyed.append(name)
+    if shared:
+        for name in _OTHER_KEY_FILES:
+            s, _overwritten, w = track(keys_dir / name)
+            seen += s
+            wiped += w
+        pending = keys_dir / _KEYS_PENDING
+        if _is_link(pending) or not pending.is_dir():
+            return seen, wiped
+        keys_dir = pending  # walked and removed below, like the whole folder in the app's own data folder
     if keys_dir.is_dir():
         for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
             dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]  # a junction too, never entered
@@ -266,6 +282,9 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
                 seen += s
                 wiped += w
         shutil.rmtree(keys_dir, ignore_errors=True)
+    if shared:
+        with contextlib.suppress(OSError):
+            keys_dir.parent.rmdir()  # only when empty: what is left in it is not the app's to remove
     return seen, wiped
 
 
@@ -394,16 +413,18 @@ def _db_copies(folder: Path, base: Path, dbs: list[Path]) -> list[Path]:
     return out
 
 
-def _copy_mode(p: Path) -> str:
+def _copy_mode(p: Path, *, encrypted_store: bool) -> str:
     """How a copy is destroyed: ``whole`` (a log or a side file: the salt sits past the head, or there is no salt), ``zeros``
     (a -shm index: no page data), ``plain`` (a plaintext database: no salt to lose, so rewritten whole, later) or ``head``
-    (an encrypted database: its salt is its first page). A head that cannot be read counts as plaintext: rewritten whole."""
+    (an encrypted database: its salt is its first page). Only a copy of a store KNOWN to be encrypted is ever head-only: a
+    damaged copy of a plaintext store can have a page 1 that no longer reads as SQLite and a plaintext body behind it. A
+    head that cannot be read counts as plaintext: rewritten whole."""
     name = p.name
     if name.endswith(("-wal", "-journal", ".json")):
         return "whole"
     if name.endswith("-shm"):
         return "zeros"
-    if name.startswith("pre-encrypt-"):
+    if name.startswith("pre-encrypt-") or not encrypted_store:
         return "plain"
     try:
         with open(p, "rb") as f:
@@ -422,7 +443,7 @@ def _erase_roots(base: Path, *, app_only: bool) -> list[Path]:
         return [base]
     from src.safety.data_scope import is_app_owned, owned_spec
 
-    spec = owned_spec()
+    spec = owned_spec(shared=True)  # the app's common names (models, cache, keys...) are left: they may be the operator's
     return sorted(Path(e.path) for e in _listing(base) if is_app_owned(e.name, spec=spec))
 
 
@@ -451,9 +472,18 @@ def _remove_app_folders(roots: list[Path]) -> None:
             shutil.rmtree(root, ignore_errors=True)
 
 
-def _left_entries(base: Path) -> list[str]:
-    """The names of the top-level entries an app-only erase left in the data folder (never opened or read)."""
-    return sorted(e.name for e in _listing(base))
+def _left_entries(base: Path) -> dict[str, list[str]]:
+    """What an app-only erase left at the top of the data folder, by name (never opened or read): ``others`` the app does not
+    own, ``common`` the app's common names left because they may be the operator's, ``not_removed`` the app's own that a
+    removal failed on (each also named in ``overwrite_failures`` when its overwrite failed)."""
+    from src.safety.data_scope import is_app_owned, owned_spec
+
+    full, shared = owned_spec(), owned_spec(shared=True)
+    left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
+    for name in sorted(e.name for e in _listing(base)):
+        kind = "not_removed" if is_app_owned(name, spec=shared) else "common" if is_app_owned(name, spec=full) else "others"
+        left[kind].append(name)
+    return left
 
 
 def quick_crypto_erase(
@@ -464,8 +494,10 @@ def quick_crypto_erase(
     Order: (1) in three passes, the salt page of each encrypted DB (main, custody, lanes) with its -shm head zeroed,
     then its WAL and journal whole (they hold copies of page 1), then the salt pages again, unlinked; (2) the on-disk
     keys; (3) the DuckDB cache header and key sidecar; (4) ``anchors.db`` whole; (5) the in-memory passphrase;
+    (5a) the copies the app made of a database beside it, wherever it is (an encrypted one head-only, a plaintext one whole);
     (5b) the head of every other file under the data dir (encrypted snapshots and copies); (6) a full overwrite and
-    unlink of everything left, then ``rmtree``. No link is written through except the app's own databases. Fast at any corpus size (the encrypted body is never rewritten —
+    unlink of everything left, then ``rmtree``. In a data folder the app does not own (R711), 5b and 6 reach only the app's
+    own entries and the folder is kept (``scope`` in the report). No link is written through except the app's own databases. Fast at any corpus size (the encrypted body is never rewritten —
     its key is gone). ``data_dir`` overrides the target (tests/tools).
 
     ``hold_for_rescrub`` (the panic wipe, POSIX only) keeps a descriptor on every main file, -wal and -journal before
@@ -478,14 +510,19 @@ def quick_crypto_erase(
 
     paths = _resolve(data_dir)
     base: Path = paths["base"]
-    # R711. Is the data folder the app's own? A folder an operator pointed OO_DATA_DIR at by hand (their home folder, a drive root, a
-    # mount point, a folder with other files and no trace of the app) is never walked whole or removed: steps 5b and 6 reach only the
-    # entries the app owns there (src/safety/data_scope.py, by name), and the report names every top-level entry they left. Read
-    # HERE, before a byte is touched: the markers it looks for are the files steps 1 to 4 destroy. Steps 1 to 5 go by name, so they
-    # are the same in both scopes.
-    from src.safety.data_scope import folder_scope
+    # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
+    # drive root, a mount point, a projects folder) is never walked whole or removed: steps 5b and 6 reach only the entries the app
+    # owns there (src/safety/data_scope.py, by name, its common names such as "models" excepted), the keys folder keeps whatever is
+    # not a key of the app's, and the report names every top-level entry left. Read before a byte is touched; bounded (the scan
+    # stops at the first entry the app does not own). A scope that cannot be read is treated as shared: leaving an operator's file
+    # is recoverable, destroying it is not.
+    try:
+        from src.safety.data_scope import folder_scope
 
-    scope = folder_scope(base)
+        scope = folder_scope(base)
+    except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
+        log_failure(_LOG, "could not read the data folder's scope; erasing the app's own files only", exc, level=logging.WARNING)
+        scope = {"broad": True, "reason": "unknown"}
     app_only = bool(scope["broad"])
     seen = wiped = 0
     headers: list[str] = []
@@ -505,9 +542,6 @@ def quick_crypto_erase(
             overwrite_failures.append(str(p))
         return s, overwritten, w
 
-    # Was the corpus actually encrypted? Determines whether crypto-erase is the real
-    # guarantee (encrypted) or degrades to header-overwrite (plaintext store -> the
-    # optional full pass matters more; surfaced so the UI can recommend it).
     # The columnar serves are the same kind of thing: a PERSISTED one keeps the cache's derived key inside DuckDB for the life of
     # the process and goes on answering from a file step 3 is about to overwrite. Closed here, before a byte is touched and
     # without waiting (a serve in use is left open and named: an erase is not held up behind a refresh).
@@ -520,6 +554,9 @@ def quick_crypto_erase(
     except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
         log_failure(_LOG, "could not close the columnar serves before the erase", exc, level=logging.WARNING)
 
+    # Was the corpus actually encrypted? Determines whether crypto-erase is the real
+    # guarantee (encrypted) or degrades to header-overwrite (plaintext store -> the
+    # optional full pass matters more; surfaced so the UI can recommend it).
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
 
@@ -576,6 +613,8 @@ def quick_crypto_erase(
             if s and overwritten and p == db:
                 headers.append(db.name)
 
+    salt_gone = {db.absolute() for db in dbs if head_ok.get(db)}
+
     # Close every lane pool now that its salt is gone, and before step 5 drops the passphrase. A pooled SQLCipher connection holds
     # a derived key in memory and an open handle on its file: measured without the close, a connection this process already had
     # open went on serving PRE-ERASE rows from a file that had been randomised and unlinked, for as long as the process lived.
@@ -597,7 +636,7 @@ def quick_crypto_erase(
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
     with _key_files_lock():
-        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted)
+        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only)
     seen += _s
     wiped += _w
 
@@ -648,7 +687,7 @@ def quick_crypto_erase(
     plain_copies: list[Path] = []
     for folder in dict.fromkeys([base, *(db.parent for db in dbs)]):
         for p in _db_copies(folder, base, dbs):
-            mode = _copy_mode(p)
+            mode = _copy_mode(p, encrypted_store=encrypted is True)
             if mode == "plain":
                 plain_copies.append(p)
                 continue
@@ -714,10 +753,16 @@ def quick_crypto_erase(
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
+        if p.absolute() in salt_gone:
+            # A database whose salt page step 1 destroyed but could not unlink (on Windows a pool still open holds it): its body
+            # is noise already, and rewriting it whole here would turn the erase into hours at corpus size.
+            with contextlib.suppress(OSError):
+                p.unlink()
+            continue
         _s, _overwritten, _w = _track(p)
         seen += _s
         wiped += _w
-    left: list[str] = []
+    left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
     if app_only:
         _remove_app_folders(roots)
         left = _left_entries(base)
@@ -756,10 +801,13 @@ def quick_crypto_erase(
         "encrypted_corpus": encrypted,
         "copies_destroyed": copies_destroyed,
         # R711: "data-folder" removes the folder whole; "app-only" reached only the app's own entries in a folder it does not
-        # own, and ``left_untouched`` names every top-level entry it left there (names only, never read).
+        # own. Names only, never read: ``left_untouched`` the entries that are not the app's, ``left_common_names`` the app's
+        # common names left because they may be the operator's, ``not_removed`` the app's own whose removal failed.
         "scope": "app-only" if app_only else "data-folder",
         "scope_reason": scope["reason"],
-        "left_untouched": left,
+        "left_untouched": left["others"],
+        "left_common_names": left["common"],
+        "not_removed": left["not_removed"],
         "removed": not base.exists(),
         "limit": _LIMIT_NOTE,
     }

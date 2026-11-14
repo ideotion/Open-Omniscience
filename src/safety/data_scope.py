@@ -3,26 +3,30 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-The emergency erase ends by removing the whole data folder, and the secure uninstall does the same. That is right
-for the folder the first-launch step creates (it always ends in ``OOS data``), and wrong for a folder an operator
-pointed ``OO_DATA_DIR`` at by hand: their home folder, a drive root, a mount point, or any folder that holds no
-trace of the app. There the erase must still destroy everything the app owns, and must not touch the rest.
+The emergency erase ends by removing the whole data folder, and the secure uninstall does the same. That is right for a
+folder the app chose itself: the default location, or the ``OOS data`` folder the first-launch step creates. It is wrong for
+a folder an operator pointed ``OO_DATA_DIR`` at by hand that holds their own files too: their home folder, a drive root, a
+mount point, a projects folder. There the erase must still destroy everything the app owns, and must not touch the rest.
 
-So this module answers two questions, both by NAME only (nothing is opened or read):
+So this module answers, by NAME only (nothing is opened or read):
 
-* :func:`folder_scope` -- is this folder too broad to remove whole, and why (a ``reason`` code the UI translates).
-* :func:`is_app_owned` -- is this top-level entry one the app writes (a known file or folder name, a sidecar of an
-  app database, a staging or copy pattern).
+* :func:`folder_scope` -- is this folder shared, and why (a ``reason`` code the UI translates). OWNERSHIP IS DECIDED BY WHERE
+  THE APP PUT THE FOLDER, never by the app's own files in it: the app writes ``session_state.json`` at every start, so "holds
+  a file of ours" is true of any folder the app has ever started in and protected nothing (the security read's finding).
+* :func:`is_app_owned` -- is this top-level entry one the app writes (a known name, a database's side file, a copy or
+  staging pattern, an atomic-write temp or a lock beside one of those).
+* :func:`owned_spec` -- the same rules as plain lists for the uninstall watcher, which cannot import the app. In a shared
+  folder it leaves out the app's COMMON names (``models``, ``cache``, ``keys``...): an operator's own folder can carry one of
+  them, so an erase there leaves it and names it rather than destroy what may be theirs.
 
-The name list is long because the app writes many small files at the top of its folder. It is kept complete by
-``tests/test_data_scope.py``, which reads every ``data_dir() / "name"`` in ``src`` and fails on a name this module
-does not know. A name built at run time that the test cannot read is the stated limit; the erase reports every
-top-level entry it left, by name, so one of ours left behind is visible rather than silent.
+The name list is kept complete by ``tests/test_data_scope.py``, which reads every name the code joins onto ``data_dir()``
+(directly, through a module constant, or through a helper that takes the name) and fails on one this module does not know.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 #: Top-level FILES the app writes into its data folder.
@@ -49,24 +53,38 @@ APP_FILES: frozenset[str] = frozenset({
     "storage_events.json", "translation-sweep-coverage.json", "triage_progress_state.json", "update-plan.json",
     "update-result.json", "update.lock", "vitals_history.json", "vllm_start_attempts.jsonl", "volumes.json",
     "volumes.building.json", "volumes-readme.json", "weather_signals.json", "world_discovery.json",
+    "calendar_autoimport.json", "calendar_feed_attempts.json", "calendar_feed_checks.json", "calendar_feed_imports.json",
+    "calendar_feeds.yml", ".oos-volume",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.
 APP_DIRS: frozenset[str] = frozenset({
     "annotations", "bench", "bulletin", "cache", "diagnostics", "duckdb_tmp", "import_reports", "ip_geo", "keys",
     "leases", "models", "osm_borders", "osm_regions", "osm_work", "rings", "run_logs", "runtime", "triage",
-    "vllm_failed_starts", "vllm_venv", "weather_context", "wiki_dumps",
+    "vllm_failed_starts", "vllm_venv", "weather_context", "wiki_dumps", ".oo_scrub",
 })
+
+#: The app's names an operator's own entry can also carry. In a SHARED folder these are left and named in the report, never
+#: destroyed: the erase cannot tell the app's ``models`` folder from the operator's. (In a folder of the app's own, they go.)
+COMMON_NAMES: frozenset[str] = frozenset({
+    "annotations", "bench", "bulletin", "cache", "diagnostics", "keys", "leases", "models", "rings", "runtime", "triage",
+    "runs.jsonl", "update.lock", "volumes.json",
+})
+
+#: Endings the app adds to one of its names: an atomic write's temp (``<name>.tmp`` and ``file_lock.temp_name``'s
+#: ``<name>.tmp.<pid>.<thread>``), a lock sidecar (``file_lock._SIDECAR``), a damaged or partial copy. Stripped before the
+#: name is looked up, so ``app_settings.json.tmp`` is the app's because ``app_settings.json`` is.
+STRIP_RE = r"(?:\.tmp(?:\.\d+\.\d+)?|\.lock|\.damaged|\.part|\.partial|\.unreadable)+$"
 
 #: Databases whose ``-wal``, ``-shm`` and ``-journal`` are the app's too (the lane files are added at run time).
 _DB_NAMES = ("open_omniscience.db", "custody_log.db", "anchors.db")
 
 #: Name shapes the app gives its copies and staging: a retained pre-restore snapshot, a pre-encryption copy, a repair's
 #: salvage and damaged copies, a backup or restore staging folder, a reassembling archive part, a free-space scrub file.
-_PREFIXES = ("pre-restore-", "pre-encrypt-", ".bak-build-", ".restore-", ".oo-vllm-pip-build", ".oo-backup-", ".oo_scrub_",
+_PREFIXES = ("pre-restore-", "pre-encrypt-", ".bak-build-", ".restore-", ".oo-vllm-pip-build", ".oo-backup-", ".oo_scrub_", ".merge-probe-",
              "oo-osm-reference-run-")
 _INFIXES = (".salvage-", ".damaged-")
-_SUFFIXES = (".oopart",)
+_SUFFIXES = (".oopart", ".reassembling")
 
 
 def _lane_names() -> tuple[str, ...]:
@@ -78,31 +96,37 @@ def _lane_names() -> tuple[str, ...]:
         return ("wiki.db", "law.db", "osm.db")
 
 
-def owned_spec(lanes: tuple[str, ...] | None = None) -> dict:
-    """Every rule :func:`is_app_owned` applies, as plain lists: the exact ``names``, the ``prefixes`` and the ``suffixes``. The
-    uninstall watcher (stdlib only, the app gone) is handed this, so both erasers apply ONE definition."""
+def owned_spec(lanes: tuple[str, ...] | None = None, *, shared: bool = False) -> dict:
+    """Every rule :func:`is_app_owned` applies, as plain lists: the exact ``names``, the ``prefixes``, the ``suffixes`` and the
+    ``strip`` pattern. With ``shared`` (a folder the app does not own) the :data:`COMMON_NAMES` are left out. The uninstall
+    watcher (stdlib only, the app gone) is handed this, so both erasers apply ONE definition."""
     dbs = (*_DB_NAMES, *(lanes if lanes is not None else _lane_names()))
     names = APP_FILES | APP_DIRS | set(dbs) | {db + s for db in dbs for s in ("-wal", "-shm", "-journal")}
+    if shared:
+        names = names - COMMON_NAMES
     prefixes = [*_PREFIXES]
     for db in dbs:
         stem = db.rsplit(".", 1)[0]
         # a repair's salvage and damaged copies (src/database/repair.py) and an encryption's in-progress copy (encrypt_tool.py)
         prefixes += [stem + i for i in _INFIXES] + [db + ".enc-"]
-    return {"names": sorted(names), "prefixes": prefixes, "suffixes": list(_SUFFIXES)}
+    return {"names": sorted(names), "prefixes": prefixes, "suffixes": list(_SUFFIXES), "strip": STRIP_RE}
 
 
-def is_app_owned(name: str, *, lanes: tuple[str, ...] | None = None, spec: dict | None = None) -> bool:
+def is_app_owned(name: str, *, lanes: tuple[str, ...] | None = None, spec: dict | None = None, shared: bool = False) -> bool:
     """Whether a top-level entry called ``name`` is one the app writes. By name only: nothing is opened."""
-    spec = spec if spec is not None else owned_spec(lanes)
-    return name in spec["names"] or name.startswith(tuple(spec["prefixes"])) or name.endswith(tuple(spec["suffixes"]))
+    spec = spec if spec is not None else owned_spec(lanes, shared=shared)
+    names, prefixes, suffixes = spec["names"], tuple(spec["prefixes"]), tuple(spec["suffixes"])
+    for candidate in dict.fromkeys((name, re.sub(spec["strip"], "", name))):
+        if candidate and (candidate in names or candidate.startswith(prefixes) or candidate.endswith(suffixes)):
+            return True
+    return False
 
 
 #: The folders of a home folder that hold a person's own files, on Linux, macOS and Windows.
 _HOME_FOLDERS = ("Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos", "Movies", "Public", "OneDrive")
 
-#: The markers whose presence says the app has used this folder.
-_MARKERS = ("open_omniscience.db", "custody_log.db", "anchors.db", "keys", "legal_consent.json", "app_settings.json",
-            "session_state.json", "session_history.jsonl")
+#: What an operating system or a file manager leaves in any folder; never a sign that the folder holds a person's files.
+_OS_CLUTTER = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "lost+found", ".directory", ".localized"})
 
 
 def _same(a: Path, b: Path) -> bool:
@@ -112,17 +136,62 @@ def _same(a: Path, b: Path) -> bool:
         return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
-def folder_scope(base: Path) -> dict:
-    """``{"broad": bool, "reason": code | None, "other_entries": int}`` for the data folder ``base``.
+def chosen_by_app(base: Path) -> bool:
+    """Whether the app chose this folder itself: the first-launch step's ``OOS data`` folder, or the default location (no
+    ``OO_DATA_DIR``), which is a folder of the app's own name."""
+    from src.safety.data_location import DATA_SUBDIR
 
-    Broad when it is the home folder, a folder above it or one of its standard folders (Documents, Desktop...), the
-    root of a drive, a mount point, or a folder with entries the app does not own and none of the app's markers. Never
-    raises: a check that cannot be made is skipped, and a folder that cannot be listed counts as holding others."""
-    base = Path(base)
+    if Path(base).name == DATA_SUBDIR:
+        return True
+    if os.getenv("OO_DATA_DIR"):
+        return False
+    try:
+        from src.paths import data_dir
+
+        return _same(base, data_dir())
+    except Exception:  # noqa: BLE001 - an unanswerable question is answered "not chosen": the erase then keeps to the app's names
+        return False
+
+
+def _first_other(base: Path) -> bool | None:
+    """Whether ``base`` holds an entry the app does not own (stopping at the first: a home folder may hold a million), None
+    when it cannot be listed. The full name set: the app's own common names are the app's in this question."""
+    spec = owned_spec()
+    try:
+        it = os.scandir(base)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+    return _scan_for_other(it, spec)
+
+
+def _scan_for_other(it, spec: dict) -> bool | None:
+    try:
+        with it:
+            for entry in it:
+                if entry.name in _OS_CLUTTER or is_app_owned(entry.name, spec=spec):
+                    continue
+                return True
+    except OSError:
+        return None
+    return False
+
+
+def folder_scope(base: Path) -> dict:
+    """``{"broad": bool, "reason": code | None}`` for the data folder ``base``, read on the folder the path leads to (a link to
+    a drive root is a drive root).
+
+    Broad when it is the root of a drive, the home folder, a folder above it or one of its standard folders (Documents,
+    Desktop...), a mount point, or, unless the app chose it (:func:`chosen_by_app`), a folder holding any entry the app does
+    not own. A folder that cannot be listed is broad. Never raises."""
+    try:
+        real = Path(os.path.realpath(base))
+    except (OSError, ValueError):
+        real = Path(base)
     reason: str | None = None
     try:
-        absolute = Path(os.path.abspath(base))
-        if absolute == Path(absolute.anchor):
+        if real == Path(real.anchor):
             reason = "drive_root"
     except (OSError, ValueError):
         pass
@@ -131,36 +200,25 @@ def folder_scope(base: Path) -> dict:
     except (RuntimeError, OSError):
         home = None
     if reason is None and home is not None:
-        if _same(base, home):
+        if _same(real, home):
             reason = "home"
-        elif any(_same(base, p) for p in home.parents):
+        elif any(_same(real, p) for p in home.parents):
             reason = "above_home"
-        elif any(_same(base, home / d) for d in _HOME_FOLDERS):
+        elif any(_same(real, home / d) for d in _HOME_FOLDERS):
             reason = "home_folder"
     if reason is None:
         try:
-            if os.path.ismount(base):
+            if os.path.ismount(real):
                 reason = "mount_point"
         except (OSError, ValueError):
             pass
-    lanes = _lane_names()
-    spec = owned_spec(lanes)
-    others = 0
-    marked = False
-    try:
-        names = [e.name for e in os.scandir(base)]  # ``list`` ends the scan, which closes it
-    except FileNotFoundError:
-        names = []
-    except OSError:
-        names, others = [], 1
-    for name in names:
-        if name in _MARKERS or name in lanes:
-            marked = True
-        if not is_app_owned(name, spec=spec):
-            others += 1
-    if reason is None and others and not marked:
-        reason = "not_app_folder"
-    return {"broad": reason is not None, "reason": reason, "other_entries": others}
+    if reason is None and not chosen_by_app(base):
+        other = _first_other(real)
+        if other is None:
+            reason = "unlistable"
+        elif other:
+            reason = "shared_folder"
+    return {"broad": reason is not None, "reason": reason}
 
 
 #: The startup warning, in English for the log and the terminal; the UI writes it from ``reason`` in its own language.
@@ -170,7 +228,8 @@ REASON_TEXT = {
     "home_folder": "one of your own folders (such as Documents or Desktop)",
     "drive_root": "the root of a drive",
     "mount_point": "the top of a mounted drive",
-    "not_app_folder": "a folder that holds other files and no sign of this app",
+    "shared_folder": "a folder that also holds files this app did not write",
+    "unlistable": "a folder the app cannot list",
 }
 
 

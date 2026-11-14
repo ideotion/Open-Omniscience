@@ -526,8 +526,10 @@ def dispose_lane(kind: str) -> None:
     What is true now: this tree has NO in-process relock (grep-verified — the only
     callers of ``set_passphrase(None)`` are the crypto-erase and a fresh-state failure
     path), so "locking" is a restart and a restart takes the engines with it. The two
-    real in-process events are ``src/safety/crypto_erase.py`` (which now calls
-    ``dispose_all`` before it touches a byte) and ``src/database/encrypt_tool.py``
+    real in-process events are ``src/safety/crypto_erase.py`` (which calls
+    ``dispose_all`` once every lane's salt page is gone and before the passphrase is
+    cleared: closing first would write a large lane log back while the salt is still on
+    the disk, row 28) and ``src/database/encrypt_tool.py``
     (which swaps each file underneath, so a cached engine would keep using the replaced
     one). Both call it. Also the right thing before any other file-level operation on a
     lane — a snapshot, a restore swap.

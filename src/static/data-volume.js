@@ -131,7 +131,7 @@
     fetch(URL + "/close-now", { method: "POST" }).then(poll).catch(function () {});
   }
 
-  // R711: the data folder is shared with other files (a home folder, a drive root, a folder with no sign of the app). Said at
+  // R711: the data folder is shared with other files (a home folder, a drive root, a folder that also holds the operator's own files). Said at
   // every start, on both pages, in a notice that stays until hidden for this page: an emergency wipe or a secure uninstall
   // there removes only the app's own files, which the operator must know before they ever need one. Not modal: the app works.
   var SCOPE_TEXT = {
@@ -140,7 +140,8 @@
     home_folder: "Your data folder is one of your own folders, such as Documents or Desktop.",
     drive_root: "Your data folder is the root of a drive.",
     mount_point: "Your data folder is the top of a mounted drive.",
-    not_app_folder: "Your data folder holds other files and no sign of this app."
+    shared_folder: "Your data folder also holds files this app did not write.",
+    unlistable: "The app cannot list your data folder."
   };
 
   function renderScope(sc) {
@@ -152,9 +153,8 @@
       "position:fixed;left:16px;right:16px;bottom:16px;z-index:50;max-width:44rem;margin:0 auto;padding:12px 14px;" +
       "background:var(--panel,#1b1f24);color:var(--fg,#e8e6e3);border:1px solid var(--caveat,#eab44e);border-radius:8px;" +
       "line-height:1.45;box-shadow:0 4px 16px rgba(0,0,0,.3)";
-    var head = el("p", "", tr(SCOPE_TEXT[sc.reason] || SCOPE_TEXT.not_app_folder));
+    var head = el("p", "", tr(SCOPE_TEXT[sc.reason] || SCOPE_TEXT.shared_folder));
     head.style.cssText = "margin:0 0 4px;font-weight:600;color:var(--caveat,#eab44e)";
-    head.title = sc.data_dir || "";
     n.appendChild(head);
     var body = el("p", "", tr("An emergency wipe or a secure uninstall removes only this app’s own files there, and leaves the folder and everything else in it."));
     body.style.margin = "0 0 4px";

@@ -52,7 +52,7 @@ AUDIT_LOG = Path.home() / ".open-omniscience-uninstall.log"
 # absolute paths + flags — the detached process computes NO paths itself (so it can only
 # ever remove exactly what plan_uninstall decided in-process).
 _WATCHER_SRC = r"""
-import os, sys, json, time, shutil, datetime
+import os, re, sys, json, time, shutil, datetime
 pid = int(sys.argv[1]); plan = json.loads(sys.argv[2])
 os.chdir(os.path.expanduser("~"))          # never sit inside a folder we may delete
 for _ in range(240):                        # wait <=120s for the server to exit, then go
@@ -96,25 +96,32 @@ if v:
     rec(("removed venv " if not os.path.exists(v) else "venv KEPT (in use?) ") + v)
 wd = plan.get("wipe_data_dir")
 # R711: a data folder the app does not own (a home folder, a drive root...) is never walked whole or removed. The plan then
-# carries the app's own NAMES (decided in-process, src/safety/data_scope.py), matched against the folder's top level when the
-# wipe runs, so a file the app wrote while it shut down is reached too; everything else stays, and is named in the audit log.
+# carries the app's own NAMES (decided in-process, src/safety/data_scope.py, its common names such as "models" left out),
+# matched against the folder's top level when the wipe runs, so a file the app wrote while it shut down is reached too, plus
+# the app's key files by path; everything else stays, and the audit log gives only its COUNT (the names are the operator's).
 only = plan.get("app_only")
+def linkish(p):   # a symlink, or a Windows junction (os.walk enters those)
+    try: return os.path.islink(p) or bool(getattr(os.path, "isjunction", lambda _p: False)(p))
+    except OSError: return True
 def ours(nm):
-    return (nm in only["names"] or nm.startswith(tuple(only["prefixes"])) or nm.endswith(tuple(only["suffixes"])))
+    for c in dict.fromkeys((nm, re.sub(only["strip"], "", nm))):
+        if c and (c in only["names"] or c.startswith(tuple(only["prefixes"])) or c.endswith(tuple(only["suffixes"]))): return True
+    return False
 def roots():
     if not only: return [wd]
-    try: return [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
-    except OSError: return []
+    try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
+    except OSError: tops = []
+    return tops + [os.path.join(wd, k) for k in only.get("key_paths", []) if os.path.lexists(os.path.join(wd, k))]
 if wd and os.path.isdir(wd):
     seen = wiped = 0
     for top in roots():
-        if top != wd and (os.path.islink(top) or not os.path.isdir(top)):
+        if top != wd and (linkish(top) or not os.path.isdir(top)):
             seen += 1; overwrite(top, header_only(os.path.basename(top)))
             try: os.remove(top); wiped += 1
             except OSError: pass
             continue
         for root, dirs, names in os.walk(top):
-            dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+            dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d))]
             for nm in names:
                 seen += 1; fp = os.path.join(root, nm); overwrite(fp, header_only(nm))
                 try: os.remove(fp); wiped += 1
@@ -139,10 +146,12 @@ if wd and os.path.isdir(wd):
             try: os.remove(fp)
             except OSError: pass
     if only:
-        try: left = sorted(os.listdir(wd))
-        except OSError: left = []
-        rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries: %s"
-            % (wd, only.get("reason"), len(left), ", ".join(left)))
+        try: os.rmdir(os.path.join(wd, "keys"))     # only when empty: what is left in it is not the app's
+        except OSError: pass
+        try: left = len(os.listdir(wd))
+        except OSError: left = -1
+        rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries"
+            % (wd, only.get("reason"), left))
     else:
         shutil.rmtree(wd, ignore_errors=True)
     rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (wd, wiped, seen, scrubbed))
@@ -167,7 +176,7 @@ rec("uninstall watcher done")
 lp = plan.get("audit_log")
 if lp:
     try:
-        with open(lp, "a", encoding="utf-8") as fh:
+        with open(lp, "a", encoding="utf-8", errors="backslashreplace") as fh:
             fh.write("\n".join(log) + "\n")
     except OSError: pass
 """
@@ -256,7 +265,7 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
 
             data_scope = folder_scope(Path(data))
         except Exception:  # noqa: BLE001 - unknown scope: reported as unknown, and the wipe below keeps to the app's names
-            data_scope = {"broad": True, "reason": "unknown", "other_entries": None}
+            data_scope = {"broad": True, "reason": "unknown"}
     removable = bool(
         venv.exists() or launchers or (remove_folder and root.exists()) or wipe_data_dir
     )
@@ -300,9 +309,11 @@ def _app_only(scope: dict | None) -> dict | None:
     """The app's own names for the watcher when the data folder is broad (R711), else None (the folder is removed whole)."""
     if not scope or not scope.get("broad"):
         return None
+    from src.safety.crypto_erase import _KEY_FILES, _KEYS_PENDING, _OTHER_KEY_FILES
     from src.safety.data_scope import owned_spec
 
-    return {**owned_spec(), "reason": scope.get("reason")}
+    keys = [f"keys/{n}" for n in (*_KEY_FILES, *_OTHER_KEY_FILES, _KEYS_PENDING)]
+    return {**owned_spec(shared=True), "key_paths": keys, "reason": scope.get("reason")}
 
 
 def _default_spawn(plan: dict, server_pid: int) -> None:
