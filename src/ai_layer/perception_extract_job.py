@@ -514,16 +514,34 @@ def current_language_gate() -> dict[str, dict]:
     from src.ai_layer.perception_job import last_perception_eval_live_report
 
     report = last_perception_eval_live_report()
-    try:
-        from src.api.llm import active_model
-
-        model: str | None = active_model()
-    except Exception:  # noqa: BLE001 - an unreadable choice of model clears nothing (R704)
-        model = None
     return PE.apply_operator_off(
-        PE.bind_gate_to_model(PE.gate_languages_from_report(report), report, model),
+        PE.bind_gate_to_model(PE.gate_languages_from_report(report), report, _stored_extract_model()),
         PE.operator_off_languages(),
     )
+
+
+def _stored_extract_model() -> str | None:
+    """The model a sweep would run, read from the STORED settings only (R704's preview).
+
+    The preview is a GET and opens no socket (tests/test_get_routes_side_effects.py), so
+    it cannot ask ``resolve_backend``/``active_model`` which backend is live -- both probe
+    the local servers. It reads the operator's stored backend and model instead: the
+    vLLM model when vLLM is the stored backend, otherwise the Ollama model or the app's
+    default. A machine on ``auto`` that is actually serving vLLM can therefore preview a
+    language the sweep then refuses; never the reverse, because the sweep binds again to
+    the model it really runs and names both in its refusal. ``None`` when settings are
+    unreadable, which clears nothing.
+    """
+    try:
+        from src.config.app_settings import load_settings
+        from src.llm.ollama import DEFAULT_MODEL
+
+        s = load_settings()
+        if s.llm_backend == "vllm":
+            return s.llm_model_vllm or None
+        return s.llm_model or DEFAULT_MODEL
+    except Exception:  # noqa: BLE001 - an unreadable choice of model clears nothing (R704)
+        return None
 
 
 __all__ = [

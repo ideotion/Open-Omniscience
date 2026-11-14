@@ -153,9 +153,11 @@ def test_the_sweep_and_the_preview_both_read_the_switches(monkeypatch):
 
     monkeypatch.setattr(PE, "gate_languages_from_report", lambda _r: dict(_GATE))
     monkeypatch.setattr(PE, "operator_off_languages", lambda: ["fr"])
+    # R704: the gate binds to the model the report measured, so the report names one.
     monkeypatch.setattr(
-        "src.ai_layer.perception_job.last_perception_eval_live_report", lambda: {}
+        "src.ai_layer.perception_job.last_perception_eval_live_report", lambda: {"model": "m:1"}
     )
+    monkeypatch.setattr(J, "_stored_extract_model", lambda: "m:1")
     g = J.current_language_gate()
     assert g["fr"]["active"] is False and g["fr"]["switched_off"] is True
     import inspect

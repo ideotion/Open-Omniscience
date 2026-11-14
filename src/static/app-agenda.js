@@ -539,8 +539,8 @@
           <button data-on-click="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
           <div id="bul-pub" class="hint" style="align-self:center"></div>
         </div>
-        <label class="row" style="gap:6px;align-items:center;margin-top:8px">
-          <input type="checkbox" id="bul-fulltext"${_bulFullText ? " checked" : ""} data-on-change="bulletinToggleFullText(this)">
+        <label class="row" style="${_BUL_CHECK_ROW};margin-top:8px">
+          <input type="checkbox" style="${_BUL_CHECK_BOX}" id="bul-fulltext"${_bulFullText ? " checked" : ""} data-on-change="bulletinToggleFullText(this)">
           <span>${esc(_bulT("Include each article's full text in the annexes"))}</span>
         </label>
         <p class="hint" id="bul-fulltext-hint">${esc(_bulFullTextHint())}</p>

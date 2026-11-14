@@ -147,7 +147,7 @@ def test_perception_extract_gate_reads_the_saved_live_eval_report(monkeypatch):
         }}}},
     )
     # R704: the gate is the measurement of the model that would extract.
-    monkeypatch.setattr("src.api.llm.active_model", lambda *a, **k: "stub:test")
+    monkeypatch.setattr("src.ai_layer.perception_extract_job._stored_extract_model", lambda: "stub:test")
     resp = d.perception_extract_gate()
     body = json.loads(bytes(resp.body))
     assert body["en"]["active"] is True

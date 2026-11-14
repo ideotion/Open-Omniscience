@@ -529,7 +529,7 @@ def test_current_language_gate_reads_the_last_saved_live_eval_report(monkeypatch
         "src.ai_layer.perception_job.last_perception_eval_live_report",
         lambda: _CLEAR_EN_REPORT,
     )
-    monkeypatch.setattr("src.api.llm.active_model", lambda *a, **k: "stub:test")
+    monkeypatch.setattr(J, "_stored_extract_model", lambda: "stub:test")
     gate = J.current_language_gate()
     assert gate["en"]["active"] is True
     assert gate["en"]["measured_model"] == "stub:test"
@@ -552,7 +552,7 @@ def test_a_report_measured_on_another_model_licenses_nothing_for_this_one(db, tm
     monkeypatch.setattr(
         "src.ai_layer.perception_job.last_perception_eval_live_report", lambda: _CLEAR_EN_REPORT
     )
-    monkeypatch.setattr("src.api.llm.active_model", lambda *a, **k: "mistral:7b")
+    monkeypatch.setattr(J, "_stored_extract_model", lambda: "mistral:7b")
     gate = J.current_language_gate()
     assert gate["en"]["active"] is None and gate["en"]["model_matches"] is False
     assert all(f["active"] is None for f in gate["en"]["fields"].values())
@@ -607,3 +607,27 @@ def test_the_model_binding_matches_one_model_only_and_never_licenses():
     bound = PE.bind_gate_to_model(failed, _CLEAR_EN_REPORT, "stub:test")
     assert bound["en"]["active"] is False, "a matching model keeps the harness's own verdict"
     assert gate["en"].get("measured_model") is None, "the input is not mutated"
+
+
+def test_the_preview_reads_the_stored_model_without_a_probe(monkeypatch):
+    """The gate preview is a GET and opens no socket, so it reads the STORED backend and
+    model; the sweep binds again to the model it actually runs."""
+    from types import SimpleNamespace
+
+    from src.llm.ollama import DEFAULT_MODEL
+
+    def settings(**kw):
+        base = {"llm_backend": "auto", "llm_model": "", "llm_model_vllm": ""}
+        base.update(kw)
+        return lambda: SimpleNamespace(**base)
+
+    monkeypatch.setattr("src.config.app_settings.load_settings", settings(llm_model="mistral:7b"))
+    assert J._stored_extract_model() == "mistral:7b"
+    monkeypatch.setattr("src.config.app_settings.load_settings", settings())
+    assert J._stored_extract_model() == DEFAULT_MODEL
+    monkeypatch.setattr(
+        "src.config.app_settings.load_settings", settings(llm_backend="vllm", llm_model_vllm="org/m")
+    )
+    assert J._stored_extract_model() == "org/m"
+    monkeypatch.setattr("src.config.app_settings.load_settings", settings(llm_backend="vllm"))
+    assert J._stored_extract_model() is None, "an unchosen vLLM model clears nothing"
