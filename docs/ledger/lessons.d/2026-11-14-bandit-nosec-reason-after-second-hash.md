@@ -1,4 +1,4 @@
-## 2026-11-14 — bandit reads the words after a nosec id as more ids; put the reason after a second # (OPEN_QUEUE 24)
+## 2026-11-14 — bandit reads the words after a nosec id as more ids; put the reason after a second # (OPEN_QUEUE 24, PR #1988)
 
 **What was found.** Bandit 1.9.4 parses `# nosec` with `#\s*nosec:?(?P<tests>[^#]+)?#?`: everything after `nosec` up to the next `#` is the test list. The convention this ledger recorded (`# nosec B608 - <reason>`, the merge.py/diagnostics.py form named in an earlier lesson on columnar.py) therefore handed bandit every word of the reason as a test name. The marker still worked, because B608 was in the list, but each word printed a "Test in comment: <word> is not a test name or id, ignoring" warning: about 3,100 of the 3,543 stderr lines of a green static job, burying anything real.
 
