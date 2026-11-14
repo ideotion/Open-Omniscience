@@ -463,9 +463,10 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
     # Item 32: each producer is bounded (PRODUCER_DEADLINE_S) and the log latch is asked between producers, so one producer can
     # no longer hold the write-ahead log's read mark for hours while the log fills the disk.
+    timings: list[dict] = []
     produced, stats = run_all_bounded(
         session, on_progress=on_progress, lanes=True, memory_stop=True,
-        producer_deadline_s=PRODUCER_DEADLINE_S, log_pin_stop=True, run_last=run_last,
+        producer_deadline_s=PRODUCER_DEADLINE_S, log_pin_stop=True, run_last=run_last, timings=timings,
     )
     cards = [c.to_dict() for c in produced]
 
@@ -540,6 +541,12 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         # makes the cache stale, because a newly hidden word would otherwise stay in a title.
         "stoplist": _stoplist_fingerprint(),
         "cards": _sorted(cards),
+        # Each producer's time and outcome on this refresh, and which producer made each card, for the card quality check
+        # (Lane X). A map beside the cards rather than a key inside them: the cards keep Card.to_dict's shape.
+        "producer_timings": timings,
+        "card_producers": {
+            str(getattr(c, "id", "")): getattr(c, "produced_by", "") for c in produced if getattr(c, "produced_by", "")
+        },
     }
     if stats.get("truncated"):
         # A feed that is missing the producers the run never reached says so, in the cache
@@ -554,6 +561,7 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         payload["producer_deadline_s"] = PRODUCER_DEADLINE_S
     _write_cache(payload)
     _LOG.info("briefing refreshed: %d cards", len(cards))
+    record_card_self_check(payload)
     # Warm the heavy whole-corpus read cache (top / trending / map) in this same
     # background pass, so the Home + Insights surfaces are instant and never trigger
     # a cold multi-second aggregation in the UI (perf, field report 2026-06-18).
@@ -568,6 +576,31 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         except Exception as exc:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
             log_failure(_LOG, "insights cache warm failed; briefing continues", exc, level=logging.WARNING)
     return payload
+
+
+def _self_check_path() -> Path:
+    return _cache_path().with_name("card_quality_selfcheck.jsonl")
+
+
+def record_card_self_check(payload: dict) -> None:
+    """The recurring card self-check: the cheap card quality checks over the feed just written, one line kept in
+    ``card_quality_selfcheck.jsonl`` beside the cache (newest 200). The Field data button carries the history; nothing
+    is shown on Home. Pure work over the cards in memory (no corpus read), and never fatal to the feed."""
+    try:
+        from src.briefing.card_audit import check_trigger
+        from src.briefing.card_quality import append_history, self_check
+        from src.briefing.registry import producers
+
+        per_card = {
+            str(c.get("id")): {"arithmetic": check_trigger(c.get("trigger"))}
+            for c in payload.get("cards") or [] if isinstance(c, dict)
+        }
+        record = self_check(payload, registered=[n for n, _p in producers()], per_card=per_card)
+        path = _self_check_path()
+        lines = path.read_text("utf-8").splitlines() if path.exists() else []
+        atomic_replace(path, "\n".join(append_history(lines, record)) + "\n", encoding="utf-8", fsync=False)
+    except Exception as exc:  # noqa: BLE001 - a quality check must never break the feed it checks
+        log_failure(_LOG, "card self-check not recorded; briefing continues", exc, level=logging.WARNING)
 
 
 def _write_cache(payload: dict) -> None:

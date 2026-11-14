@@ -3140,6 +3140,9 @@
       // zips of at most 4 MB, walked by the server's cursor header.
       {kind: "file", url: "/api/diagnostics/source-quality?download=1", name: "oo-field-source-quality.zip"},
       {kind: "cursor", url: "/api/diagnostics/source-samples?after=", next: "X-Source-Samples-Next", name: "oo-field-source-samples-{n}.zip"},
+      // Cards (Lane X, 2026-11-14): every Home card as served, its evidence and the card quality checks, one zip.
+      // POST (R694): it reads article text. scripts/card_quality_report.py reads it back.
+      {kind: "file", method: "POST", url: "/api/diagnostics/field-cards", name: "oo-field-cards.zip"},
     ];
     function _fieldSave(blob, name) {
       const a = document.createElement("a");
@@ -3163,7 +3166,7 @@
         for (const ex of FIELD_DATA_EXPORTS) {
           if (ex.kind === "file") {
             say(tf("Saving… {files} files so far.", {files}));
-            const r = await fetch(ex.url);
+            const r = await fetch(ex.url, ex.method ? {method: ex.method} : undefined);
             if (!r.ok) throw new Error("HTTP " + r.status);
             _fieldSave(await r.blob(), ex.name);
             files += 1;

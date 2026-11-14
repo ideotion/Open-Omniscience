@@ -457,6 +457,24 @@ from .source_samples import (
     include_newsletter_text,
     source_samples,
 )
+# Every Home card and its evidence, one zip (2026-11-14, Lane X; saved by the Field data button): the same slice position.
+from .field_cards import (
+    FIELD_CARDS_EVIDENCE_BUDGET_S,
+    FIELD_CARDS_EXCERPT_CHARS,
+    FIELD_CARDS_MAX_ARTICLES,
+    FIELD_CARDS_MAX_LINKED_ROWS,
+    FIELD_CARDS_SCHEMA,
+    _COORD_KEYS,
+    _STATEMENT_DEADLINE_S,
+    _card_evidence,
+    _clean_url,
+    _clean_urls,
+    _count_coordinates,
+    _evidence_ids,
+    _newsletter_article_ids,
+    build_field_cards_files,
+    field_cards,
+)
 # What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
 # run, whose eight routes test_release_run pins as the package's last.
 from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
@@ -492,6 +510,21 @@ __all__ = [
     "build_sample_zip",
     "include_newsletter_text",
     "source_samples",
+    "FIELD_CARDS_EVIDENCE_BUDGET_S",
+    "FIELD_CARDS_EXCERPT_CHARS",
+    "FIELD_CARDS_MAX_ARTICLES",
+    "FIELD_CARDS_MAX_LINKED_ROWS",
+    "FIELD_CARDS_SCHEMA",
+    "_COORD_KEYS",
+    "_STATEMENT_DEADLINE_S",
+    "_card_evidence",
+    "_clean_url",
+    "_clean_urls",
+    "_count_coordinates",
+    "_evidence_ids",
+    "_newsletter_article_ids",
+    "build_field_cards_files",
+    "field_cards",
     "_MAX_MERGE_UPLOADS",
     "_MERGE_MEDIA_TYPES",
     "_form_body_only",

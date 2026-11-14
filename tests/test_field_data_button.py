@@ -65,11 +65,18 @@ def test_sources_and_articles_come_first_and_every_export_is_a_loopback_read():
     js = _js()
     exports = array_literal(js, "FIELD_DATA_EXPORTS")
     urls = re.findall(r'url: "([^"]+)"', exports)
-    assert urls == ["/api/diagnostics/source-quality?download=1", "/api/diagnostics/source-samples?after="]
+    # Sources and articles first (2026-11-09); the cards file joined them on 2026-11-14 (Lane X).
+    assert urls == [
+        "/api/diagnostics/source-quality?download=1",
+        "/api/diagnostics/source-samples?after=",
+        "/api/diagnostics/field-cards",
+    ]
     # same-origin paths only: nothing the button saves goes online
     assert all(u.startswith("/api/") for u in urls)
+    # the cards export reads article text, so it is a POST (R694)
+    assert 'method: "POST", url: "/api/diagnostics/field-cards"' in exports
     run = function_body(js, "downloadFieldData")
-    assert "fetch(ex.url)" in run and "fetch(ex.url + after)" in run
+    assert "fetch(ex.url, ex.method ? {method: ex.method} : undefined)" in run and "fetch(ex.url + after)" in run
     assert "ensureOnline(" not in run
     # a cursor that does not advance ends the walk; the button is given back whatever happens
     assert "!(Number(nxt) > after)" in run

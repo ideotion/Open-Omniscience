@@ -612,6 +612,7 @@ def run_all_bounded(
     producer_deadline_s: float | None = None,
     log_pin_stop: bool = False,
     run_last: frozenset[str] | set[str] | None = None,
+    timings: list[dict] | None = None,
 ) -> tuple[list[Card], dict]:
     """Run every registered producer, isolating failures. Returns ``(cards, stats)``
     where ``stats`` is ``{"producers_run", "producers_total", "truncated"}`` plus, when
@@ -662,6 +663,10 @@ def run_all_bounded(
     ABSENT, not empty, on a pass with none, so a caller comparing the whole stats dict is unaffected. Measured at the
     producer's end: a producer still running when the process stops is not in it (its stack is what a diagnostics bundle
     shows for that).
+
+    ``timings``, when the caller hands in a list, gets one ``{"name", "seconds", "outcome", "cards", "error_type"}`` per
+    producer that ran (outcome ``ok``, ``no-signal``, ``error``, ``stopped`` or ``disabled``). Opt-in and appended to, so
+    ``stats`` keeps its shape; Home's refresh keeps it in the feed so the card quality check can see each producer's time.
 
     ``lanes`` runs :data:`LANE_ONLY_PRODUCERS` too. Off by default: the skipped names travel
     in ``stats["held_q823"]`` so a document can say which cards it does not carry and why.
@@ -797,6 +802,7 @@ def run_all_bounded(
                     produced = producer(session) or []
         except Exception as exc:  # noqa: BLE001 - one bad producer must not abort the feed
             produced = []
+            error_type: str | None = type(exc).__name__
             if producer_deadline_s is not None and _is_memory_short(type(exc)):
                 log_failure(_LOG, f"briefing producer {name!r} stopped: memory short", exc, level=logging.WARNING)
                 stopped_by_memory = True
@@ -806,11 +812,14 @@ def run_all_bounded(
             timed_out = armed and _is_statement_timeout(type(exc)) and not stopped_by_memory
         else:
             stopped_by_memory = timed_out = False
+            error_type = None
         took = time.monotonic() - began_mono
+        was_stopped = False
         if producer_deadline_s is not None and armed and not stopped_by_memory and (timed_out or took >= producer_deadline_s):
             # Its cards are left out even when it finished: a producer that ran past the bound held the log's read mark past it,
             # and keeping cards that only a disk-filling run can make would hide the cost the bound exists to stop.
             produced = []
+            was_stopped = True
             stopped.append({"name": name, "seconds": round(took, 1)})
             _LOG.warning(
                 "briefing producer %r stopped after %.0f s (bound %.0f s, %d checkpoint cycles); its cards are left out of this "
@@ -824,6 +833,17 @@ def run_all_bounded(
                 "the write-ahead log back for as long as one statement runs",
                 name, took, when, _SLOW_PRODUCER_S,
             )
+        if timings is not None:
+            timings.append({
+                "name": name,
+                "seconds": round(took, 3),
+                "outcome": (
+                    "disabled" if name in disabled else "stopped" if was_stopped else "error" if error_type
+                    else "ok" if produced else "no-signal"
+                ),
+                "cards": len(produced),
+                "error_type": error_type,
+            })
         if as_of is not None and name not in disabled:
             (anchored_names if anchorable.get(name) else unanchored_names).append(name)
         for card in produced:
