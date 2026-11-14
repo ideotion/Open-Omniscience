@@ -149,7 +149,7 @@ def test_going_online_uses_the_one_consent_path():
     # a local row: nothing is fetched until the reader is online.
     writes = re.findall(r"""apiCall\(\s*["'`]([^"'`]+)["'`]\s*,\s*\{\s*method\s*:\s*["'](POST|PUT|PATCH|DELETE)""", code)
     assert writes == [("/api/sources/", "POST")], writes
-    assert len(re.findall(r"method\s*:\s*[\"'][A-Z]", code)) == 1, "every write must be the one listed above"
+    assert len(re.findall(r"method\s*:\s*[\"'][a-z]", code, re.I)) == 1, "every write must be the one listed above"
     # Outbound originals open the local preview first (invariant #6), never the site.
     assert "openLinkPreview" in code
     assert not re.search(r"href=\$\{a\.url\}", code), "an article's original URL is never a bare link"
@@ -265,6 +265,10 @@ def test_a_known_site_with_a_new_feed_is_still_added():
     # The server keeps a second feed of a known domain as a sibling source, so the duplicate check
     # must compare the feed too, never the domain alone.
     assert 'String(x.rss_url || "") === feed' in add
+    # The server matches feeds more loosely and returns the existing row: a known id is not "Added".
+    assert "x.id === r.id" in add
+    # A stored country scope keeps only bare codes, so a reload cannot carry a hidden scope.
+    assert "/^[a-z]{2,3}$/i.test(c)" in function_body(code, "loadState")
     # An article set (ids) outranks a country scope, which never narrows a lead's own articles.
     sp = function_body(code, "searchParams")
     assert '!(s.ids && s.ids.length)' in sp

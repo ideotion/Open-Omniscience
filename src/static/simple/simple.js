@@ -218,7 +218,11 @@
     try {
       var s = JSON.parse(ssGet(K_STATE) || "null");
       if (s && typeof s === "object") Object.assign(store, s);
-      if (!Array.isArray(store.countries)) store.countries = null;
+      // Only bare country codes survive a reload; anything else would become a hidden scope.
+      store.countries = Array.isArray(store.countries)
+        ? store.countries.filter(function (c) { return typeof c === "string" && /^[a-z]{2,3}$/i.test(c); })
+        : null;
+      if (store.countries && !store.countries.length) store.countries = null;
       if (!Array.isArray(store.ids)) store.ids = null;
     } catch (e) { /* start clean */ }
     if (["today", "read", "search", "world", "numbers", "more"].indexOf(store.view) < 0) store.view = "today";
@@ -619,7 +623,8 @@
       if (x.country) byC[x.country] = (byC[x.country] || 0) + (x.articles || 0);
     });
     var from = Object.keys(byC).sort(function (a, b) { return byC[b] - byC[a]; });
-    var srcCapped = !!(src && src.sources && src.sources.length >= 200);   // the endpoint's page, not every source
+    // Partial when the set itself was capped, or when the 200-source page may have left sources out.
+    var srcCapped = !!(src && (src.capped || (src.sources && src.sources.length >= 200)));
     var rows = [];
     if (from.length) rows.push([t("Covered from"), from.slice(0, 8).map(function (c) { return c + " (" + fmtInt(byC[c]) + ")"; }).join(", ")
       + (from.length > 8 ? " " + t("and {n} more", { n: from.length - 8 }) : "")]);
@@ -834,7 +839,14 @@
           return null;
         }
         return apiCall("/api/sources/", { method: "POST", body: JSON.stringify({
-          name: v.name.trim(), domain: domain, rss_url: feed || null, tags: "" }) }).then(function () {
+          name: v.name.trim(), domain: domain, rss_url: feed || null, tags: "" }) }).then(function (r) {
+          // The server matches feeds more loosely than the check above (scheme, case, a trailing
+          // slash) and hands back the existing row then: an id we already had means nothing was added.
+          var known = (list || []).filter(function (x) { return r && x.id === r.id; })[0];
+          if (known) {
+            setS({ busy: false, msg: t("{name} is already in your sources.", { name: known.name || low }), err: "" });
+            return;
+          }
           setV({ name: "", domain: "", rss: "" });
           setS({ busy: false, msg: t("Added. It is collected from the next time you are online."), err: "" });
         });
