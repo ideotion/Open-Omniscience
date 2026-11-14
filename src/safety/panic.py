@@ -17,6 +17,7 @@ run without an explicit confirmation.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 # Re-exported for callers/tests that referenced the honest-limit note here.
@@ -53,30 +54,51 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             from src.api import served_cache
 
             served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
+            _dispose_after_erase()
 
 
 def _close_database_now() -> None:
-    """Close the database to every writer before the wipe, waiting on NOTHING (R689 follow-up (1)): collection is held and told to
-    stop, every background job is asked to stop and refused from this instant (its next statement or commit raises), and the pool is
-    disposed. A wipe races a seizure, so no step joins a thread, and a step that fails never stops the wipe. Without this a job still
-    writing could open a fresh connection after the erase and recreate the store file under the data dir."""
+    """Close the database to the writers that could recreate the store after the wipe, waiting on NOTHING (R689 follow-up (1)):
+    collection is held and told to stop, every background job is asked to stop and refused from this instant (its next statement or
+    commit raises), and so are the collector's own threads (the scheduler loop, its ``oo-collect`` workers, the briefing and
+    housekeeping lanes), which the graceful stop leaves to their own joins. A wipe races a seizure, so no step joins a thread, and a
+    step that fails never stops the wipe.
+
+    NOT covered, stated: the import queue, the re-index managers, the backup threads and the request threads keep running and can
+    still check out a connection; with the data folder removed by the erase, a new store has nowhere to go but is not refused here.
+    The pool is disposed AFTER the erase (:func:`_dispose_after_erase`), never before: closing the last connection on the file runs
+    SQLite's write-back of its log, which can be hundreds of MiB, and that must not stand between the panic and the destroyed key."""
     try:
         from src.scheduler.runner import pause_for_exclusive_operation
 
         # The hold blocks "Run now"; the loop is signalled, never joined. It is never released, on purpose (R383's counted hold): the
         # corpus is gone and the app must be restarted, so nothing may start collection on this process again.
         pause_for_exclusive_operation(timeout=0.0)
+        global _HOLDS_TAKEN
+        _HOLDS_TAKEN += 1  # counted, so the test suite can give back exactly the holds a wipe took and no others
     except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
         pass
     try:
-        from src.database.after_shutdown import stop_jobs_and_close
+        from src.database.after_shutdown import refuse_threads, stop_jobs_and_close
 
         stop_jobs_and_close(0.0)
+        refuse_threads([(t, t.name) for t in threading.enumerate() if t.name.startswith(_COLLECTOR_THREADS)])
     except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
         pass
+
+
+#: How many collection holds the wipe has taken in this process (never released; read by the test suite's isolation).
+_HOLDS_TAKEN = 0
+
+#: The collector's own threads, refused by name on the panic path only (the graceful stop joins them).
+_COLLECTOR_THREADS = ("oo-scheduler", "oo-collect", "oo-briefing-bg", "oo-housekeeping-lane")
+
+
+def _dispose_after_erase() -> None:
+    """Close the pool once the key is gone. Never raises."""
     try:
         from src.database.session import dispose_engine
 
         dispose_engine()
-    except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
+    except Exception:  # noqa: BLE001 - the wipe is done; this is tidying  # nosec B110
         pass

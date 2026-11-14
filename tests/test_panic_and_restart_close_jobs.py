@@ -88,7 +88,7 @@ def test_the_panic_wipe_closes_the_database_first_and_waits_on_nothing(panic_ste
     from src.safety import panic_wipe
 
     panic_wipe(confirm=True)
-    assert panic_steps == [("pause", 0.0), ("jobs", 0.0), ("dispose",), ("erase",)]
+    assert panic_steps == [("pause", 0.0), ("jobs", 0.0), ("erase",), ("dispose",)], "the pool is closed only once the key is gone"
 
 
 def test_a_failing_close_step_never_stops_the_wipe(panic_steps, monkeypatch):
@@ -104,6 +104,29 @@ def test_a_failing_close_step_never_stops_the_wipe(panic_steps, monkeypatch):
     monkeypatch.setattr(session, "dispose_engine", boom)
     assert panic_wipe(confirm=True) == {"files_wiped": 0}
     assert panic_steps == [("erase",)]
+
+
+def test_the_wipe_refuses_the_collectors_own_threads(panic_steps):
+    from src.safety import panic_wipe
+
+    go, out = threading.Event(), {}
+
+    def collector():
+        go.wait(10)
+        try:
+            after_shutdown.check("a commit")
+            out["refused"] = False
+        except after_shutdown.WriteAfterShutdownRefused:
+            out["refused"] = True
+
+    t = threading.Thread(target=collector, name="oo-collect_0")
+    t.start()
+    try:
+        panic_wipe(confirm=True)
+    finally:
+        go.set()
+        t.join(10)
+    assert out == {"refused": True}
 
 
 def test_an_unconfirmed_wipe_closes_nothing(panic_steps):

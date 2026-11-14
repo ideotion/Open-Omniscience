@@ -640,7 +640,8 @@ def _restart_after_reconnect() -> None:
             # The jobs are refused and the engine disposed by now: say so loudly and shut down instead of running on like that.
             log_failure(_LOG, "data drive: the restart failed; shutting down instead", exc, level=logging.ERROR)
             record_incident("restart_failed", error=type(exc).__name__)
-            MONITOR._close("the restart after the drive came back failed")
+            with MONITOR._lock:
+                MONITOR._close("the restart after the drive came back failed")
 
     threading.Thread(target=_go, name="oo-data-volume-restart", daemon=True).start()
 

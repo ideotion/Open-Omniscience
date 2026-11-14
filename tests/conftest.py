@@ -869,18 +869,25 @@ def _database_open_to_jobs():
 
 
 @pytest.fixture(autouse=True)
-def _scheduler_hold_restored():
+def _panic_hold_given_back():
     """A panic wipe holds collection for good (R689 follow-up (1): the corpus is gone, nothing may start collection on that process
-    again). A test that runs a real wipe must not hand that hold to the tests after it, so the singleton's count is put back."""
+    again). A test that runs a real wipe must not hand that hold to the tests after it, so exactly the holds the wipe took are given
+    back, and no others: any other unbalanced hold (an R383-class leak) stays visible to the tests after it."""
+    from src.safety import panic
+
+    before = panic._HOLDS_TAKEN
+    yield
+    taken = panic._HOLDS_TAKEN - before
+    if taken <= 0:
+        return
     from src.scheduler import runner
 
     sch = runner._scheduler
-    before = getattr(sch, "_exclusive_holds", None) if sch is not None else None
-    yield
-    sch = runner._scheduler
     if sch is not None and hasattr(sch, "_exclusive_holds"):
         with sch._state_lock:
-            sch._exclusive_holds = before or 0
+            sch._exclusive_holds = max(0, sch._exclusive_holds - taken)
+            if sch._exclusive_holds == 0:
+                sch._start_deferred = False
 
 
 @pytest.fixture
