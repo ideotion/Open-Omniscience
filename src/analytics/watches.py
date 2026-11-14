@@ -333,7 +333,7 @@ def _recent_matching(
 
 
 def evaluate_watches(
-    session: Session, *, now: datetime | None = None, matcher: Matcher | None = None
+    session: Session, *, now: datetime | None = None, matcher: Matcher | None = None, flush: bool = True
 ) -> list[dict]:
     """Evaluate every ENABLED watch; fire those with new evidence over threshold.
 
@@ -342,15 +342,50 @@ def evaluate_watches(
     the in-window count is >= threshold AND there is at least one new article. Always
     stamps ``last_evaluated_at``. The caller owns the transaction (the single-writer
     gate serialises the flush). Returns the list of watches that fired this pass.
+
+    R695: the pass may run under a statement deadline (Home's refresh bounds it as it bounds each producer). Its loop runs with
+    autoflush off, so only reads run while the deadline can interrupt, and ``flush=False`` leaves the one flush to the caller, who
+    makes it after the deadline has exited (an interrupted write would roll the session back). A deadline's stop
+    (``StatementTimeout``, and ``MemoryShort`` with it) is never taken for one bad watch: it ends the pass, and the watches it did
+    not reach keep their ``last_evaluated_at``, so none is recorded as checked when it was not. A firing recorded before the stop
+    stays: it is true.
     """
+    from src.database.maintenance import StatementTimeout
+
     now = now or datetime.now(UTC)
     now_naive = now.replace(tzinfo=None)
     matcher = matcher or _fts_matcher
-    fired: list[dict] = []
     # threshold 0 = a saved search (Q606): never evaluated, so it can never fire.
-    for w in session.execute(
+    with session.no_autoflush:
+        fired = _evaluate_each(session, now_naive, matcher, StatementTimeout)
+    if flush:
+        session.flush()
+    return fired
+
+
+def _deadline_stopped(session: Session, exc: BaseException) -> bool:
+    """Whether ``exc`` is an enclosing statement deadline's stop rather than one watch's error (R695). Inside the deadline's block
+    its stop arrives as the driver's own interrupt (``OperationalError: interrupted``, from the progress handler that only the
+    deadline arms): the deadline has expired, or the memory guard on the same handler cut the read. Never raises."""
+    try:
+        from src.database.maintenance import deadline_expired
+
+        if deadline_expired(session):
+            return True
+    except Exception:  # noqa: BLE001 - no DB layer: no deadline
+        return False
+    orig = getattr(exc, "orig", exc)
+    return str(orig).strip().lower() == "interrupted"
+
+
+def _evaluate_each(session: Session, now_naive: datetime, matcher: Matcher, stop: type[BaseException]) -> list[dict]:
+    """:func:`evaluate_watches`' loop over the enabled watches. A ``stop`` (a deadline's) propagates; any other error is one
+    bad watch's."""
+    fired: list[dict] = []
+    watches = session.execute(
         select(Watch).where(Watch.enabled.is_(True), Watch.threshold > 0)
-    ).scalars():
+    ).scalars().all()
+    for w in watches:
         try:
             adv = watch_filters(w)
             if adv.is_default:
@@ -360,7 +395,11 @@ def evaluate_watches(
                     session, w.query, w.window_days,
                     matcher if matcher is not _fts_matcher else _filtered_matcher(adv), adv,
                 )
-        except Exception:  # noqa: BLE001 - one bad watch query must never break the pass
+        except stop:
+            raise  # the pass's deadline, not this watch's fault: this watch stays unstamped (R695)
+        except Exception as exc:  # noqa: BLE001 - one bad watch query must never break the pass
+            if _deadline_stopped(session, exc):
+                raise  # the deadline surfaces here as the driver's interrupt; statement_deadline names it on the way out (R695)
             w.last_evaluated_at = now_naive
             continue
         w.last_evaluated_at = now_naive
@@ -387,7 +426,6 @@ def evaluate_watches(
             if _d is not None:
                 row["cross_language"] = _d
             fired.append(row)
-    session.flush()
     return fired
 
 

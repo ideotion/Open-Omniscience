@@ -436,6 +436,58 @@ def refresh_briefing(session, on_progress=None) -> dict:
             _marker_retry["at"] = _monotonic()
 
 
+#: The producer whose cards a saved watch's firing becomes (``producers.watch_matches``, catalog label "A watch matched"): the kind
+#: of card Home names as missing when the watch pass is stopped at its bound (R695).
+_WATCH_PRODUCER = "watch_matches"
+
+
+def _evaluate_watches_bounded(session) -> bool:
+    """Evaluate the saved watches under the producers' bound; True when the pass was stopped at it (R695, item 32's residual).
+
+    The pass runs before the producers so a watch that just crossed its threshold surfaces in the same refresh, and it was the one
+    part of the refresh R666 left unbounded: its reads hold the write-ahead log's read mark like a producer's. It now runs under
+    :data:`PRODUCER_DEADLINE_S` (not armed under an enclosing deadline, which bounds the whole refresh), and a pass that ran past
+    it is reported as stopped even when it finished, as a producer is, because ``statement_deadline`` cannot cut Python between
+    statements. The pass's writes are flushed after the deadline has exited, so none is interrupted; the firings it recorded before
+    a stop are kept, and the watches it did not reach stay unstamped and are evaluated by the next refresh. A watch problem never
+    blocks the briefing."""
+    from src.briefing.registry import _is_memory_short, _is_statement_timeout, _producer_deadline
+
+    armed = timed_out = finished = False
+    began = time.monotonic()
+    try:
+        from src.analytics.watches import evaluate_watches
+
+        with _producer_deadline(session, PRODUCER_DEADLINE_S) as bound:
+            armed = bool(bound)
+            began = time.monotonic()
+            evaluate_watches(session, flush=False)
+        finished = True
+    except Exception as exc:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
+        timed_out = armed and _is_statement_timeout(type(exc)) and not _is_memory_short(type(exc))
+        if not timed_out:
+            log_failure(_LOG, "watch evaluation failed; briefing continues", exc, level=logging.WARNING)
+    took = time.monotonic() - began
+    if finished or timed_out:
+        # Outside the deadline, so no write is interrupted: the firings and stamps the pass made are written whole. A pass that
+        # failed for any other reason flushes nothing here, as before R695 (its own flush was never reached).
+        try:
+            session.flush()
+        except Exception as exc:  # noqa: BLE001 - see above
+            log_failure(_LOG, "watch evaluation could not be written; briefing continues", exc, level=logging.WARNING)
+            try:
+                session.rollback()  # a failed flush leaves the session unusable for the producers that follow
+            except Exception:  # noqa: BLE001 - nothing more to do; the producers report their own failures
+                pass
+    if armed and (timed_out or took >= PRODUCER_DEADLINE_S):
+        _LOG.warning(
+            "watch evaluation stopped after %.0f s (bound %.0f s); the watches it did not reach are evaluated next refresh",
+            took, PRODUCER_DEADLINE_S,
+        )
+        return True
+    return False
+
+
 def _refresh_briefing(session, on_progress=None) -> dict:
     """The body of :func:`refresh_briefing`.
 
@@ -445,12 +497,7 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     # The convergence WATCH engine is ON by default (ruling #3): evaluate saved watches
     # BEFORE producing cards, so a watch that just crossed its threshold surfaces in
     # this very refresh. Local-only; a watch problem must never block the briefing.
-    try:
-        from src.analytics.watches import evaluate_watches
-
-        evaluate_watches(session)
-    except Exception as exc:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
-        log_failure(_LOG, "watch evaluation failed; briefing continues", exc, level=logging.WARNING)
+    watches_stopped = _evaluate_watches_bounded(session)
     # Which feed was on disk when this run STARTED: a refresh that lands while this one runs
     # must not be overwritten with the feed it just replaced, and only a read taken before the
     # run can tell (two reads taken after it cannot).
@@ -546,6 +593,9 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         # and in the view: a short feed must not read as a complete one.
         payload["incomplete_reason"] = stop_reason
     stopped = [str(p.get("name")) for p in stats.get("stopped_producers") or [] if p.get("name")]
+    if watches_stopped and _WATCH_PRODUCER not in stopped:
+        # R695: the watch pass stopped at the same bound, so the firings it did not reach are missing from this feed's watch cards.
+        stopped.append(_WATCH_PRODUCER)
     if stopped:
         # Item 32: the producers stopped by their own bound, BY NAME, so Home can say which kinds of card this feed is missing.
         # Deliberately not an ``incomplete_reason``: that marker asks for an automatic repair every _MARKER_RETRY_S, and a
