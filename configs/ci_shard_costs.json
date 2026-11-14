@@ -795,7 +795,9 @@
   "tests/test_young_corpus_and_diagnostics.py": 3.5,
   "tests/test_zz_dev_null_is_left_alone.py": 0.7
  },
- "overhead_seconds": [],
+ "overhead_seconds": [
+  80
+ ],
  "shards": 3,
  "source": "measured: CI run 41995058978 (PR #1726, head 07ec3eaf8), job parity-unsharded, the whole suite in one process (1579 modules, 29656 tests, 1:26:12 wall), `python scripts/ci_shard.py costs --stdout --min-seconds 0.5 junit.xml`: per-module test seconds summed; the 794 modules of half a second or more are listed (4960 s in all), the others fall to the hash. Refresh it with `python scripts/ci_shard.py costs --min-seconds 0.5 JUNIT...` from a measured run."
 }
