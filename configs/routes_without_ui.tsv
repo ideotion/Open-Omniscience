@@ -140,8 +140,6 @@ GET	/api/keywords/process	superseded			legacy free-text keyword toolkit (/api/ke
 GET	/api/keywords/statistics	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/keywords/top	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/law/documents/{document_id}/provision-timeline	internal		api	the JSON form of the law reader's Provisions fold, which /api/law/documents/{document_id}/view renders server-side from the same payload (PR #1959); kept for API callers
-GET	/api/links/export.graphml	feature	2	Explore > Links (N)	download the citation graph (opens in Gephi)
-GET	/api/links/export.json	feature	2	Explore > Links (N)	download the citation graph as JSON
 GET	/api/links/stats	feature	3	Explore > Links (N)	corpus-wide link totals
 POST	/api/llm/bulk	superseded			the synchronous bulk summarize/translate; R600 PR2 (#1938) moved the UI to /api/llm/bulk/queue
 POST	/api/llm/generate	internal		api	single-shot generation for programmatic callers

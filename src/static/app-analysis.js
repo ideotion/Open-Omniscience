@@ -2684,7 +2684,18 @@
             + `<th style="text-align:right" title="${esc(t("How many distinct matched articles cite this link — an exact count, never a score."))}">${esc(t("Cited by"))}</th>`
             + `<th style="text-align:right" title="${esc(t("How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent."))}">${esc(t("Citing sources"))}</th>`
             + `<th title="${esc(t("Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement."))}">${esc(t("Independence"))}</th></tr></thead><tbody>${rows}</tbody></table>`
-          : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`);
+          : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`)
+        // The WHOLE-corpus citation graph as a file (R684, Lane M): /api/links/export.graphml
+        // and .json had no button. It sits under this table because that is where a reader
+        // looks for links, and its caveat says loudly that it is NOT this analysis's set.
+        // Same-origin downloads: no network call, nothing leaves the machine.
+        + `<div class="an-graph-export" style="margin-top:12px">`
+        + `<b>${esc(t("Download the citation graph of your whole corpus"))}</b> `
+        + `<a class="btnlike tiny" href="/api/links/export.graphml" download="citation-graph.graphml" `
+        + `title="${esc(t("GraphML opens in Gephi, yEd or NetworkX."))}">GraphML</a> `
+        + `<a class="btnlike tiny" href="/api/links/export.json" download="citation-graph.json">JSON</a>`
+        + `<p class="card-caveat" style="margin:4px 0 0">${esc(t("This file covers your whole corpus, not only this analysis: each stored article and the sites it links to. It keeps the 2,000 most-cited sites and at most 2,000 of their articles. Links counted, never a credibility score."))}</p>`
+        + `</div>`;
     }
     function _anSentimentHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
