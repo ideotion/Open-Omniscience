@@ -72,7 +72,7 @@ CHECKS: dict[str, dict[str, Any]] = {
     },
     "n_mismatch": {
         "dimension": "accuracy", "severity": MEDIUM, "cheap": True,
-        "what": "The card's n differs from the number of articles it links to.",
+        "what": "The card links more articles than its n says the signal was built from.",
     },
     "evidence_missing_articles": {
         "dimension": "accuracy", "severity": HIGH, "cheap": False,
@@ -180,7 +180,8 @@ _FALLING = re.compile(
 _COUNT_PARTS = frozenset({
     "n", "count", "articles", "sources", "mentions", "voices", "reports", "outlets", "items", "docs", "total",
 })
-# Pairs of signal keys that carry a "now" and a "before" figure, tried in order.
+# Pairs of signal keys that carry a "now" and a "before" figure, tried in order when the card states no
+# ratio. Their windows may differ in length, which is why a stated ratio wins over them.
 _PAIRS = (
     ("recent", "prior"),
     ("recent_mentions", "prior_mentions"),
@@ -259,17 +260,20 @@ def direction_check(card: dict) -> dict | None:
     signal = _dict(card, "signal")
     measured: str | None = None
     basis: dict[str, Any] = {}
-    for now_key, before_key in _PAIRS:
+    # A ratio, when the card states one, is the producer's own normalised answer: "rising" cards carry
+    # a 7-day recent count beside a 30-day prior one, so the raw pair falls on most genuinely rising
+    # terms (2.1x the rate is 10 recent vs 20 prior). The pair decides only when no ratio is given.
+    if str(signal.get("metric") or "") in _RATIO_METRICS:
+        v = _num(signal.get("value"))
+        if v is not None:
+            basis = {"metric": signal.get("metric"), "value": v}
+            measured = "rising" if v > 1 else "falling" if v < 1 else "flat"
+    for now_key, before_key in (() if measured is not None else _PAIRS):
         a, b = _num(signal.get(now_key)), _num(signal.get(before_key))
         if a is not None and b is not None:
             basis = {now_key: a, before_key: b}
             measured = "rising" if a > b else "falling" if a < b else "flat"
             break
-    if measured is None and str(signal.get("metric") or "") in _RATIO_METRICS:
-        v = _num(signal.get("value"))
-        if v is not None:
-            basis = {"metric": signal.get("metric"), "value": v}
-            measured = "rising" if v > 1 else "falling" if v < 1 else "flat"
     if measured is None:
         return None
     return {"claimed": claimed, "measured": measured, "agrees": measured == claimed, "basis": basis}
@@ -286,9 +290,15 @@ def _walk_numbers(obj: Any, path: str = ""):
         yield path, obj
 
 
+_SIGNED_PARTS = frozenset({"delta", "change", "diff", "deltas", "shift", "net", "growth", "trend"})
+
+
 def _is_count_name(key: str) -> bool:
     low = key.lower()
-    return low in _COUNT_PARTS or any(p in _COUNT_PARTS for p in low.split("_"))
+    parts = low.split("_")
+    if any(p in _SIGNED_PARTS for p in parts):
+        return False  # a difference between two counts can be negative
+    return low in _COUNT_PARTS or any(p in _COUNT_PARTS for p in parts)
 
 
 def check_card(card: dict, *, now: datetime | None = None) -> list[dict]:
@@ -313,8 +323,10 @@ def check_card(card: dict, *, now: datetime | None = None) -> list[dict]:
     evidence = _list(card, "evidence")
     if n is None and not ids:
         out.append(_finding("n_missing", card, "n is null and the card links no article set"))
-    if isinstance(n, int) and not isinstance(n, bool) and ids and n != len(ids):
-        out.append(_finding("n_mismatch", card, f"n = {n}, article_ids = {len(ids)}",
+    # n is the sample behind the SIGNAL (mentions, sources, the corpus), and article_ids is often a sample of
+    # it, so n > len(ids) is normal. Only more linked articles than n is a contradiction on every card kind.
+    if isinstance(n, int) and not isinstance(n, bool) and ids and len(ids) > n:
+        out.append(_finding("n_mismatch", card, f"n = {n}, but the card links {len(ids)} articles",
                             {"n": n, "article_ids": len(ids)}))
     if not ids and not evidence:
         out.append(_finding("no_evidence_link", card, "no article_ids and no evidence rows"))
@@ -513,6 +525,7 @@ def quality_report(
     not_checkable_direction = 0
     checked_direction = 0
     arithmetic_seen = evidence_seen = False
+    evidence_checked = evidence_not_checked = 0
     for c in cards:
         findings.extend(check_card(c, now=now))
         if direction_check(c) is None:
@@ -520,12 +533,16 @@ def quality_report(
         else:
             checked_direction += 1
         extra = per_card.get(str(c.get("id"))) or {}
-        if "arithmetic" in extra:
+        if isinstance(extra.get("arithmetic"), dict):
             arithmetic_seen = True
             findings.extend(check_arithmetic(c, extra.get("arithmetic")))
-        if not cheap_only and "evidence" in extra:
+        ev = extra.get("evidence") if not cheap_only else None
+        if isinstance(ev, dict) and isinstance(ev.get("missing_n"), int) and isinstance(ev.get("quarantined_n"), int):
             evidence_seen = True
-            findings.extend(check_evidence(c, extra.get("evidence")))
+            evidence_checked += 1
+            findings.extend(check_evidence(c, ev))
+        elif not cheap_only:
+            evidence_not_checked += 1
     findings.extend(check_feed(cards))
     findings.extend(check_meta(meta, registered=registered, cards=cards, now=now))
     ranked = _rank(findings)
@@ -542,7 +559,7 @@ def quality_report(
     ran = [
         k for k, v in CHECKS.items()
         if (k != "arithmetic_failed" or arithmetic_seen) and (v["cheap"] or evidence_seen)
-    ]
+    ] if cards else []  # no feed is not a clean feed: with no cards nothing was checked, so nothing compares
     return {
         "schema": SCHEMA,
         "generated_at": now.isoformat(timespec="seconds"),
@@ -550,6 +567,8 @@ def quality_report(
         "cards": len(cards),
         "checks_run": ran,
         "checks_not_run": [k for k in CHECKS if k not in ran],
+        "evidence": {"checked": evidence_checked, "not_checked": evidence_not_checked,
+                     "note": "not_checked cards had no evidence rows in this file (skipped by budget or a failed read)"},
         "direction": {"checked": checked_direction, "not_checkable": not_checkable_direction,
                       "note": "not_checkable cards carry no direction word or no pair of figures; they are not passes"},
         "counts": [{"check": k, "n": by_check.get(k, 0), "severity": CHECKS[k]["severity"],
@@ -563,8 +582,20 @@ def quality_report(
 
 
 def finding_key(f: dict) -> str:
-    """A finding's identity across two files: the check plus what it is about."""
-    return "|".join(str(x or "") for x in (f.get("check"), f.get("card_id"), f.get("producer")))
+    """A finding's identity across two files: the check, what it is about, and which part of it.
+
+    Two findings of one check on one card (a long title and a long summary, two near-identical
+    partners, two feed markers) stay two; a figure in the detail is never part of the key, so a
+    finding whose numbers moved is still the same finding."""
+    other = (f.get("evidence") or {}).get("other_card_id") if isinstance(f.get("evidence"), dict) else None
+    detail = str(f.get("detail") or "")
+    if f.get("check") == "too_long":
+        part = detail.split(" ", 1)[0]  # "title" or "summary", never the length, which moves
+    elif not f.get("card_id") and not f.get("producer"):
+        part = detail.split(" = ", 1)[0]  # a feed-level finding: which marker, never its value
+    else:
+        part = ""
+    return "|".join(str(x or "") for x in (f.get("check"), f.get("card_id"), f.get("producer"), other, part))
 
 
 def compare_reports(previous: dict, current: dict) -> dict:

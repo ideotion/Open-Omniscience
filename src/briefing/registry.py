@@ -665,7 +665,7 @@ def run_all_bounded(
     shows for that).
 
     ``timings``, when the caller hands in a list, gets one ``{"name", "seconds", "outcome", "cards", "error_type"}`` per
-    producer that ran (outcome ``ok``, ``no-signal``, ``error``, ``stopped`` or ``disabled``). Opt-in and appended to, so
+    producer that ran (outcome ``ok``, ``no-signal``, ``error``, ``stopped`` (its bound, or memory) or ``disabled``). Opt-in and appended to, so
     ``stats`` keeps its shape; Home's refresh keeps it in the feed so the card quality check can see each producer's time.
 
     ``lanes`` runs :data:`LANE_ONLY_PRODUCERS` too. Off by default: the skipped names travel
@@ -838,7 +838,7 @@ def run_all_bounded(
                 "name": name,
                 "seconds": round(took, 3),
                 "outcome": (
-                    "disabled" if name in disabled else "stopped" if was_stopped else "error" if error_type
+                    "disabled" if name in disabled else "stopped" if (was_stopped or stopped_by_memory) else "error" if error_type
                     else "ok" if produced else "no-signal"
                 ),
                 "cards": len(produced),

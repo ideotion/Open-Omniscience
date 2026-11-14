@@ -578,6 +578,9 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     return payload
 
 
+_self_check_lock = threading.Lock()
+
+
 def _self_check_path() -> Path:
     return _cache_path().with_name("card_quality_selfcheck.jsonl")
 
@@ -597,8 +600,9 @@ def record_card_self_check(payload: dict) -> None:
         }
         record = self_check(payload, registered=[n for n, _p in producers()], per_card=per_card)
         path = _self_check_path()
-        lines = path.read_text("utf-8").splitlines() if path.exists() else []
-        atomic_replace(path, "\n".join(append_history(lines, record)) + "\n", encoding="utf-8", fsync=False)
+        with _self_check_lock:  # two overlapping refreshes must not each drop the other's line
+            lines = path.read_text("utf-8").splitlines() if path.exists() else []
+            atomic_replace(path, "\n".join(append_history(lines, record)) + "\n", encoding="utf-8", fsync=False)
     except Exception as exc:  # noqa: BLE001 - a quality check must never break the feed it checks
         log_failure(_LOG, "card self-check not recorded; briefing continues", exc, level=logging.WARNING)
 

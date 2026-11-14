@@ -11,8 +11,9 @@ together with that entry. Imported after the other field-data route, so no pinne
 WHAT THE ZIP HOLDS
 ------------------
 * ``manifest.json``: what each file is, and in plain words what PERSONAL content the zip carries
-  (article titles and excerpts, the terms the cards are about, places with coordinates when any),
-  counted from the files themselves rather than asserted.
+  (article titles and excerpts, date snippets, entities, links, the terms the cards are about,
+  places with and without coordinates), counted from the files themselves rather than asserted,
+  and what the app cannot detect (another service's credential written into text).
 * ``feed.json``: the Home feed exactly as the app serves it from its cache (the same cards the
   full view and the simple view show), each with its dismissed state, plus the feed's own record:
   when it was computed, whether the last refresh stopped early or kept the previous feed, which
@@ -28,9 +29,10 @@ WHAT THE ZIP HOLDS
 * ``selfcheck.jsonl``: the recurring self-check history (one line per Home refresh, newest 200).
 
 WHAT STAYS HOME. Every string passes ``scrubbed_value`` (no passphrase the process holds, in any
-shape). Article addresses are written without user name, password, query or fragment (a token in
-a query string is the one secret an address commonly carries). A newsletter's body stays out
-unless ``OO_QUALITY_INCLUDE_NEWSLETTER_TEXT`` is set, the R655 gate the other field files use.
+shape). Every web address in every string, under any key, loses its user name, password, query and
+fragment (a token in a query string is the secret an address most often carries); other schemes keep
+only their scheme. A newsletter's body, and every layer read out of it, stays out unless
+``OO_QUALITY_INCLUDE_NEWSLETTER_TEXT`` is set, the R655 gate the other field files use.
 Read-only, loopback, no network; a POST (R694) because it reads article text.
 """
 
@@ -38,6 +40,8 @@ from __future__ import annotations
 
 import io
 import json
+import re
+import threading
 import time
 import zipfile
 from datetime import UTC, datetime
@@ -45,7 +49,7 @@ from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -63,40 +67,76 @@ FIELD_CARDS_MAX_LINKED_ROWS = 10
 #: Seconds spent resolving evidence before the remaining cards are written without it (and say so).
 FIELD_CARDS_EVIDENCE_BUDGET_S = 180.0
 _STATEMENT_DEADLINE_S = 240.0
-_COORD_KEYS = frozenset({"lat", "lon", "lng", "latitude", "longitude"})
 
 
-def _clean_url(url: Any) -> Any:
-    """An address without user name, password, query or fragment."""
-    if not isinstance(url, str) or not url:
-        return url
+#: An absolute address inside a string: a web or file address (``scheme://``) or one of the schemes whose body
+#: is an address, a payload or code. A word followed by a colon ("note:x", "sha256:ab") is not one.
+_ADDRESS = re.compile(
+    r"(?i)\b(?:(?:https?|ftps?|wss?|file)://|(?:mailto|data|javascript|vbscript|tel|sms):)[^\s\"'<>]+"
+)
+
+
+def _clean_url(url: str) -> str:
+    """An address as this file may carry it.
+
+    ``http``/``https`` keep scheme, host, port and path, never user name, password, query or
+    fragment (a per-subscriber token in a query is the secret an address most often carries, and a
+    newsletter's link sanitizer removes only the parameters it knows). Any other scheme (``mailto:``,
+    ``data:``, ``javascript:``, ...) keeps only its scheme: its body is an address, a payload or
+    code, never something a card check needs. A relative address ("/#markets") is the app's own."""
     try:
         parts = urlsplit(url)
-        if not parts.netloc:
-            return url  # an address inside the app ("/#markets") carries nothing of anyone's
-        host = parts.hostname or ""
-        if parts.port:
-            host = f"{host}:{parts.port}"
-        return urlunsplit((parts.scheme, host, parts.path, "", ""))
     except ValueError:
-        return None
+        return "[address withheld]"
+    scheme = (parts.scheme or "").lower()
+    if not scheme:
+        return url
+    if scheme in ("http", "https") and parts.netloc:
+        host = parts.hostname or ""
+        try:
+            if parts.port:
+                host = f"{host}:{parts.port}"
+        except ValueError:
+            pass
+        return urlunsplit((scheme, host, parts.path, "", ""))
+    return f"{scheme}:[withheld]"
+
+
+def _clean_text(text: str) -> str:
+    """``text`` with every absolute address in it cleaned by :func:`_clean_url`, wherever it sits."""
+    if ":" not in text:
+        return text
+    return _ADDRESS.sub(lambda m: _clean_url(m.group(0)), text)
 
 
 def _clean_urls(value: Any) -> Any:
+    """Every string in ``value`` (any key, any depth, lists of strings too) with its addresses cleaned."""
+    if isinstance(value, str):
+        return _clean_text(value)
     if isinstance(value, dict):
-        return {k: (_clean_url(v) if k in ("url", "href", "link") else _clean_urls(v)) for k, v in value.items()}
+        return {k: _clean_urls(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_clean_urls(v) for v in value]
     return value
 
 
-def _count_coordinates(value: Any) -> int:
-    if isinstance(value, dict):
-        own = 1 if any(str(k).lower() in _COORD_KEYS and v is not None for k, v in value.items()) else 0
-        return own + sum(_count_coordinates(v) for v in value.values())
-    if isinstance(value, list):
-        return sum(_count_coordinates(v) for v in value)
-    return 0
+def _layer_items(doc: dict, layer: str) -> list[dict]:
+    """Every row of one linked layer across the cards file's shown articles (each article once)."""
+    out: list[dict] = []
+    for it in _shown_articles(doc).values():
+        block = (it.get("linked") or {}).get(layer) or {}
+        out.extend(x for x in block.get("items") or [] if isinstance(x, dict))
+    return out
+
+
+def _shown_articles(doc: dict) -> dict:
+    """The shown articles by id (an article behind several cards counts once)."""
+    out: dict = {}
+    for r in doc.get("cards") or []:
+        for it in ((r.get("evidence") or {}).get("articles") or {}).get("items") or []:
+            if isinstance(it, dict) and it.get("id") is not None:
+                out.setdefault(it["id"], it)
+    return out
 
 
 def _newsletter_article_ids(db: Session, ids: list[int]) -> set[int]:
@@ -150,8 +190,13 @@ def _card_evidence(db: Session, card: dict, *, include_newsletters: bool) -> dic
     if isinstance(resolved, dict) and resolved.get("items") and not include_newsletters:
         letters = _newsletter_article_ids(db, [it["id"] for it in resolved["items"] if isinstance(it.get("id"), int)])
         for it in resolved["items"]:
-            if it.get("id") in letters and "content" in it:
-                it["content"] = {"withheld": "a newsletter body stays home unless OO_QUALITY_INCLUDE_NEWSLETTER_TEXT is set (R655)"}
+            if it.get("id") in letters:
+                # The body AND everything read out of it: date snippets, link targets and texts, entities,
+                # keyword terms, places, AI keywords. The title and source stay, as in the other field files.
+                note = "a newsletter body stays home unless OO_QUALITY_INCLUDE_NEWSLETTER_TEXT is set (R655)"
+                it["content"] = {"withheld": note}
+                if "linked" in it:
+                    it["linked"] = {"withheld": note + "; so do the layers read out of it"}
                 withheld += 1
     keywords = _safe_section("keywords", lambda: _keyword_facts(db, SimpleNamespace(key=card.get("key") or "")))
     return {
@@ -262,20 +307,16 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
 
     feed = scrubbed_value(_clean_urls(feed))
     cards_doc = scrubbed_value(_clean_urls(cards_doc))
-    quality = scrubbed_value(quality)
+    quality = scrubbed_value(_clean_urls(quality))
     history = scrubbed_value(history)
 
-    excerpts = sum(
-        1 for r in cards_doc["cards"]
-        for it in ((r.get("evidence") or {}).get("articles") or {}).get("items") or []
-        if isinstance(it, dict) and isinstance(it.get("content"), dict) and it["content"].get("text")
+    shown = _shown_articles(cards_doc)
+    excerpts = sum(1 for it in shown.values() if isinstance(it.get("content"), dict) and it["content"].get("text"))
+    places = _layer_items(cards_doc, "mentioned_places")
+    signal_coords = sum(
+        1 for c in feed["cards"] if isinstance(c.get("signal"), dict)
+        and any(k in c["signal"] and c["signal"][k] is not None for k in ("lat", "lon", "latitude", "longitude"))
     )
-    titles = sum(
-        1 for r in cards_doc["cards"]
-        for it in ((r.get("evidence") or {}).get("articles") or {}).get("items") or []
-        if isinstance(it, dict) and it.get("title")
-    )
-    coords = _count_coordinates(feed) + _count_coordinates(cards_doc)
     from src import __version__
 
     manifest = {
@@ -295,17 +336,34 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
             ),
             "cards": len(cards),
             "card_text": "every card's title and summary, which name the terms, places, sources and stories they are about",
-            "article_titles": titles,
-            "article_excerpts": excerpts,
+            "articles_shown": len(shown),
+            "article_text_excerpts": excerpts,
             "excerpt_chars_max": FIELD_CARDS_EXCERPT_CHARS,
-            "newsletter_bodies": "included (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT is set)" if include_nl else "withheld (R655)",
-            "places_with_coordinates": coords,
+            "article_metadata": "per shown article: title, address (cleaned), source name, domain and country, dates, "
+                                "language, word count, sentiment, the news server's address and fetched host",
+            "mentioned_date_snippets": len(_layer_items(cards_doc, "mentioned_dates")),
+            "entities_named": len(_layer_items(cards_doc, "entities")),
+            "outbound_links": len(_layer_items(cards_doc, "outbound_links")),
+            "keyword_terms": len(_layer_items(cards_doc, "keyword_mentions")) + len(_layer_items(cards_doc, "ai_keywords")),
+            "mentioned_places": len(places),
+            "mentioned_places_with_coordinates": sum(1 for p in places if p.get("lat") is not None and p.get("lon") is not None),
+            "cards_with_coordinates": signal_coords,
+            "newsletter_bodies": (
+                "included (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT is set)" if include_nl
+                else "withheld, with every layer read out of them (R655); their titles and sources stay"
+            ),
             "dismissed_cards": sum(1 for c in cards if c.get("dismissed")),
+            "counts_note": "counts are of rows in this file; an article behind several cards is counted once",
         },
         "not_included": [
-            "your passphrase or any key: every string is scrubbed of the passphrases the app holds",
-            "query strings, fragments, user names and passwords in addresses: removed",
+            "the passphrases this app holds: every string is scrubbed of them, in every shape",
+            "query strings, fragments, user names and passwords in web addresses, wherever they appear: removed; "
+            "other addresses (mailto:, data:, ...) keep only their scheme",
             "anything from the network: nothing is fetched to make this file",
+        ],
+        "not_detected": [
+            "other credentials (another service's token or key) written into text or into the path of an address: "
+            "the app does not recognise them, so read the file before you send it",
         ],
         "checks": {k: v["what"] for k, v in CHECKS.items()},
     }
@@ -319,10 +377,21 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
     }
 
 
+_ONE_AT_A_TIME = threading.Lock()
+
+
 @router.post("/field-cards")
 def field_cards(db: Session = Depends(get_db)) -> Response:
-    """Field data export: every Home card and its evidence, as ONE zip (see the module docstring)."""
-    files = build_field_cards_files(db)
+    """Field data export: every Home card and its evidence, as ONE zip (see the module docstring).
+
+    One build at a time: a second press while one runs gets a 429 rather than a second copy of the work."""
+    if not _ONE_AT_A_TIME.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="the cards file is already being made; try again when it is done",
+                            headers={"Retry-After": "5"})
+    try:
+        files = build_field_cards_files(db)
+    finally:
+        _ONE_AT_A_TIME.release()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, data in files.items():

@@ -1,4 +1,4 @@
-## 2026-11-14 — Two cards of one kind share their template, so compare what was filled in (card quality loop, Lane X)
+## 2026-11-14 — Two cards of one kind share their template, so compare what was filled in (card quality loop, Lane X, PR #1999)
 
 **What was found.** The first card quality round, on the synthetic click-through corpus, reported 13 "near-identical" card pairs. Ten were false: `“regional” spread across 5 sources` and `“local” spread across 3 sources` overlapped 0.92 on title and summary words because every story-propagation card is the same sentence with four holes, and the sentence is most of the words. Separately, the feed cache carried no producer for any card: `Card.to_dict` leaves out `produced_by`, so the coverage check ("which producer made nothing") had nothing to compare and stayed silent rather than failing.
 

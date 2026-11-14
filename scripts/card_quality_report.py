@@ -24,7 +24,7 @@ import json
 import sys
 import zipfile
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,14 @@ def load_input(path: Path) -> dict[str, Any]:
             if isinstance(ev, dict) and "skipped" not in ev:
                 extra["evidence"] = ev
             per_card[str(row.get("card_id"))] = extra
-        history = [json.loads(ln) for ln in (members.get("selfcheck.jsonl") or "").splitlines() if ln.strip()]
+        history, bad_lines = [], 0
+        for ln in (members.get("selfcheck.jsonl") or "").splitlines():
+            if not ln.strip():
+                continue
+            try:
+                history.append(json.loads(ln))
+            except json.JSONDecodeError:
+                bad_lines += 1  # one torn line must not cost the whole report; it is counted instead
         return {
             "kind": "field-cards",
             "cards": feed.get("cards") or [],
@@ -74,6 +81,7 @@ def load_input(path: Path) -> dict[str, Any]:
             "registered": feed.get("registered_producers"),
             "per_card": per_card,
             "selfcheck": history,
+            "selfcheck_bad_lines": bad_lines,
             "manifest": json.loads(members["manifest.json"]) if "manifest.json" in members else None,
             "stale_by_corpus_growth": feed.get("stale_by_corpus_growth"),
         }
@@ -98,15 +106,40 @@ def load_input(path: Path) -> dict[str, Any]:
                 "producer_timings": timings}, "registered": [t["name"] for t in timings] or None,
                 "per_card": per_card, "selfcheck": [], "manifest": None, "stale_by_corpus_growth": None}
     if "cards" in doc:  # a Home cache, briefing_cache.json
-        return {"kind": "briefing-cache", "cards": doc.get("cards") or [], "meta": doc, "registered": None,
+        return {"kind": "briefing-cache", "cards": mod_with_producers(doc), "meta": doc, "registered": None,
                 "per_card": {}, "selfcheck": [], "manifest": None, "stale_by_corpus_growth": None}
     raise SystemExit(f"{path}: not a field-cards file, a card audit or a Home cache")
 
 
+def mod_with_producers(doc: dict) -> list[dict]:
+    return load_checks().with_producers(doc)
+
+
+def _saved_at(data: dict[str, Any]) -> datetime | None:
+    """When the file was SAVED: a feed's age is judged against that, never against the day it is read."""
+    raw = (data.get("manifest") or {}).get("generated_at")
+    if not raw:
+        return None
+    try:
+        t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=UTC)
+
+
 def build(mod, data: dict[str, Any], *, now: datetime | None = None) -> dict:
+    saved = _saved_at(data)
+    if now is None and saved is not None:
+        now = saved
+    meta = data["meta"]
+    if now is None:
+        # No save time in the input (a cache or an audit): the feed's age cannot be judged, so it is not.
+        meta = {**meta, "generated_at": None}
     report = mod.quality_report(
-        data["cards"], meta=data["meta"], registered=data["registered"], per_card=data["per_card"], now=now,
+        data["cards"], meta=meta, registered=data["registered"], per_card=data["per_card"], now=now,
     )
+    report["feed_generated_at"] = data["meta"].get("generated_at")
+    report["judged_at"] = "the time the file was saved" if saved is not None else "not judged (no save time in the input)"
     report["input_kind"] = data["kind"]
     report["stale_by_corpus_growth"] = data.get("stale_by_corpus_growth")
     hist = data.get("selfcheck") or []
@@ -116,6 +149,7 @@ def build(mod, data: dict[str, Any], *, now: datetime | None = None) -> dict:
         "last_at": hist[-1].get("at") if hist else None,
         "high_n_series": [h.get("high_n") for h in hist][-30:],
         "note": "one record per Home refresh, written by the app; the newest 30 high-severity counts are shown",
+        "unreadable_lines": data.get("selfcheck_bad_lines", 0),
     }
     if data.get("manifest"):
         report["manifest_personal_content"] = data["manifest"].get("personal_content")

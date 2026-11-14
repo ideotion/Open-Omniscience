@@ -76,7 +76,7 @@ def test_a_card_with_no_figures_to_compare_is_not_checkable_rather_than_passed()
     ({"title": ""}, "empty_text"),
     ({"summary": "About {term} today."}, "unfilled_template"),
     ({"n": None, "article_ids": []}, "n_missing"),
-    ({"n": 5, "article_ids": [1, 2, 3]}, "n_mismatch"),
+    ({"n": 2, "article_ids": [1, 2, 3]}, "n_mismatch"),
     ({"evidence": [], "article_ids": []}, "no_evidence_link"),
     ({"signal": {"metric": "articles", "value": float("nan")}}, "non_finite_figure"),
     ({"signal": {"metric": "x", "value": 1, "n_sources": -2}}, "negative_count"),
@@ -323,7 +323,9 @@ def test_the_cards_file_carries_every_card_its_evidence_and_a_manifest(db, tmp_p
     assert "evidence_missing_articles" in {f["check"] for f in quality["findings"]}
     man = json.loads(files["manifest.json"])
     pc = man["personal_content"]
-    assert pc["article_excerpts"] == 4 and pc["newsletter_bodies"].startswith("withheld") and pc["dismissed_cards"] == 1
+    assert pc["article_text_excerpts"] == 4 and pc["articles_shown"] == 5
+    assert pc["newsletter_bodies"].startswith("withheld") and pc["dismissed_cards"] == 1
+    assert letter["linked"].get("withheld"), "the layers read out of a newsletter body stay home too"
     assert files["selfcheck.jsonl"].strip()
 
 
@@ -408,3 +410,97 @@ def test_the_producer_map_fills_produced_by_without_touching_the_cache():
     out = cq.with_producers(payload)
     assert [c["produced_by"] for c in out] == ["rising_now", ""]
     assert cards[0]["produced_by"] == "", "copies, never the cache's own dicts"
+
+
+def test_every_web_address_anywhere_loses_its_query_and_other_schemes_their_body():
+    fc = _field_cards_module()
+    doc = {
+        "normalized_url": "https://x.example/a?token=SECRET#f",
+        "signal": {"shared_origin_examples": ["https://u:p@y.example/b?r=SECRET", "http://z.example/c"]},
+        "title": "see https://w.example/d?id=SECRET now",
+        "link_text": "mailto:person@x.org?subject=SECRET",
+        "js": "javascript:alert(SECRET)",
+        "inside": "/#markets",
+        "plain": "note:keep sha256:abc 2026-11-14T10:00:00+00:00",
+    }
+    out = fc._clean_urls(doc)
+    assert "SECRET" not in json.dumps(out) and "person@x.org" not in json.dumps(out)
+    assert out["normalized_url"] == "https://x.example/a"
+    assert out["signal"]["shared_origin_examples"] == ["https://y.example/b", "http://z.example/c"]
+    assert out["title"] == "see https://w.example/d now"
+    assert out["link_text"] == "mailto:[withheld]" and out["inside"] == "/#markets"
+    assert out["plain"] == doc["plain"]
+
+
+def test_a_second_press_while_one_build_runs_is_refused_not_doubled(db, tmp_path, monkeypatch):
+    from fastapi import HTTPException
+
+    fc = _field_cards_module()
+    _feed(tmp_path, monkeypatch, [_card()])
+    assert fc._ONE_AT_A_TIME.acquire(blocking=False)
+    try:
+        with pytest.raises(HTTPException) as exc:
+            fc.field_cards(db=db)
+        assert exc.value.status_code == 429
+    finally:
+        fc._ONE_AT_A_TIME.release()
+    assert fc.field_cards(db=db).media_type == "application/zip"
+
+
+def test_the_real_rising_card_shape_is_not_a_direction_or_n_finding():
+    """rising_now: a 7-day recent count beside a 30-day prior one, n = recent mentions, a 6-id sample."""
+    c = _card(signal={"metric": "growth_ratio", "value": 2.1, "recent": 10, "prior": 20}, n=10,
+              article_ids=[1, 2, 3, 4, 5, 6])
+    assert _checks(c) == []
+    d = cq.direction_check(c)
+    assert d["agrees"] and d["basis"] == {"metric": "growth_ratio", "value": 2.1}
+
+
+def test_a_signed_difference_is_not_a_negative_count():
+    assert "negative_count" not in _checks(_card(signal={"metric": "x", "value": 1, "sources_delta": -3, "n_change": -1}))
+
+
+def test_a_failed_evidence_read_is_not_counted_as_checked():
+    per = {"c1": {"arithmetic": {"failed_n": 0}, "evidence": {"total": 3, "missing_n": None, "quarantined_n": None}}}
+    rep = cq.quality_report([_card()], per_card=per, now=NOW)
+    assert "evidence_missing_articles" in rep["checks_not_run"]
+    assert rep["evidence"]["checked"] == 0 and rep["evidence"]["not_checked"] == 1
+
+
+def test_an_empty_feed_checks_nothing_so_it_never_reads_as_an_improvement():
+    before = cq.quality_report([_card(caveat="")], now=NOW)
+    empty = cq.quality_report([], now=NOW)
+    assert empty["checks_run"] == []
+    assert {p["verdict"] for p in cq.compare_reports(before, empty)["per_check"]} == {"not-comparable"}
+
+
+def test_finding_identity_keeps_two_findings_on_one_card_apart_and_ignores_moving_figures():
+    c = _card(title="t" * 121, summary="s" * 401)
+    keys = {cq.finding_key(f) for f in cq.check_card(c) if f["check"] == "too_long"}
+    assert len(keys) == 2
+    a = cq.check_card(_card(n=2, article_ids=[1, 2, 3]))
+    b = cq.check_card(_card(n=1, article_ids=[1, 2, 3]))
+    assert {cq.finding_key(f) for f in a} == {cq.finding_key(f) for f in b}
+
+
+def test_a_memory_stop_is_a_stopped_producer_not_an_error():
+    src = (ROOT / "src" / "briefing" / "registry.py").read_text("utf-8")
+    assert '"stopped" if (was_stopped or stopped_by_memory)' in src
+
+
+def test_the_script_judges_a_feeds_age_at_save_time_and_survives_a_torn_history_line(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("cqr2", ROOT / "scripts" / "card_quality_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    saved = datetime(2026, 1, 2, tzinfo=UTC)
+    z = _zip(tmp_path / "old.zip", {
+        "manifest.json": json.dumps({"generated_at": saved.isoformat()}),
+        "feed.json": json.dumps({"feed": {"generated_at": (saved - timedelta(hours=1)).isoformat()}, "cards": [_card()]}),
+        "cards.json": json.dumps({"cards": []}),
+        "selfcheck.jsonl": '{"at": "a", "high_n": 0}\n{"torn\n',
+    })
+    rep = mod.build(mod.load_checks(), mod.load_input(z))
+    assert "feed_old" not in {f["check"] for f in rep["findings"]}, "a feed an hour old when saved is not old"
+    assert rep["selfcheck_history"]["records"] == 1 and rep["selfcheck_history"]["unreadable_lines"] == 1
