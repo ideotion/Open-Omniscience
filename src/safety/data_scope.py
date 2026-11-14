@@ -88,6 +88,17 @@ _INFIXES = (".salvage-", ".damaged-")
 _SUFFIXES = (".oopart", ".reassembling")
 
 
+def _configured_db_name() -> tuple[str, ...]:
+    """The corpus file's own name when ``DATABASE_URL`` gives it another one: that file is the app's under whatever name."""
+    try:
+        from src.api.unlock import main_db_path
+
+        p = main_db_path()
+    except Exception:  # noqa: BLE001 - the default name is in the list already
+        return ()
+    return (p.name,) if p is not None and p.name not in _DB_NAMES else ()
+
+
 def _lane_names() -> tuple[str, ...]:
     try:
         from src.versioned.lanes import all_lanes
@@ -101,7 +112,7 @@ def owned_spec(lanes: tuple[str, ...] | None = None, *, shared: bool = False) ->
     """Every rule :func:`is_app_owned` applies, as plain lists: the exact ``names``, the ``prefixes``, the ``suffixes`` and the
     ``strip`` pattern. With ``shared`` (a folder the app does not own) the :data:`COMMON_NAMES` are left out. The uninstall
     watcher (stdlib only, the app gone) is handed this, so both erasers apply ONE definition."""
-    dbs = (*_DB_NAMES, *(lanes if lanes is not None else _lane_names()))
+    dbs = (*_DB_NAMES, *_configured_db_name(), *(lanes if lanes is not None else _lane_names()))
     names = APP_FILES | APP_DIRS | set(dbs) | {db + s for db in dbs for s in ("-wal", "-shm", "-journal")}
     if shared:
         names = names - COMMON_NAMES
