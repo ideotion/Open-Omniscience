@@ -17,7 +17,9 @@ so most of a multi-GB corpus survived, forensically recoverable. These tests pro
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import subprocess
 import sys
 
@@ -181,8 +183,6 @@ def test_quick_crypto_erase_destroys_every_copy_of_the_salt_in_the_write_ahead_l
         salt = db.read_bytes()[:16]
         wal = db.with_name(db.name + "-wal")
         kept = tmp_path / "kept-wal"
-        import os
-
         os.link(wal, kept)
         before = _salt_hits(kept.read_bytes(), salt)
         assert [h for h in before if h >= crypto_erase._SQLCIPHER_PAGE1], "the setup must put the salt past the head"
@@ -195,11 +195,67 @@ def test_quick_crypto_erase_destroys_every_copy_of_the_salt_in_the_write_ahead_l
     assert _salt_hits(kept.read_bytes(), salt) == [], "a copy of the salt survived in the write-ahead log"
 
 
+@sqlcipher_only
+@pytest.mark.skipif(os.name != "posix", reason="the kept descriptors are POSIX only")
+@pytest.mark.parametrize("mode", ["DELETE", "WAL"])
+def test_a_transaction_that_commits_after_the_erase_is_rewritten_through_the_kept_descriptors(tmp_path, mode):
+    """A transaction already under way when the erase runs commits into the unlinked file and puts page 1, salt
+    included, back on the disk (measured by the security read: 0 copies before the COMMIT, 1 after). The panic wipe
+    keeps a descriptor on every unlinked main file, -wal and -journal, and rewrites them again once the pool is closed."""
+    data = tmp_path / "data"
+    data.mkdir()
+    db = data / "custody_log.db"
+    con = connect(db, key=_PW)
+    kept: list = []
+    try:
+        con.execute(f"PRAGMA journal_mode={mode}")
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        salt = db.read_bytes()[:16]
+        os.link(db, tmp_path / "kept-db")
+        con.execute("BEGIN")
+        con.execute("CREATE TABLE u(x)")  # a schema change rewrites page 1
+        con.execute("INSERT INTO t VALUES (randomblob(3000))")
+        for suffix in ("-wal", "-journal"):
+            side = db.with_name(db.name + suffix)
+            if side.exists():
+                os.link(side, tmp_path / ("kept" + suffix))
+        crypto_erase.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=True)
+        with contextlib.suppress(Exception):
+            con.commit()
+    finally:
+        with contextlib.suppress(Exception):
+            con.close()
+    kept = sorted(tmp_path.glob("kept*"))
+    late = [k.name for k in kept if _salt_hits(k.read_bytes(), salt)]
+    assert late, "the setup must reproduce the late commit putting the salt back"
+    assert crypto_erase.rescrub_held(close=True) >= 1
+    assert [k.name for k in kept if _salt_hits(k.read_bytes(), salt)] == [], (
+        f"a late commit's salt survived the rescrub (before it: {late})"
+    )
+
+
+def test_the_log_index_head_is_zeroed_never_randomised(tmp_path):
+    """A connection that rolls back after the erase reads its frame count from the -shm header and grows the mapped file
+    toward it: random bytes there grew it toward 32 GiB in the security read (the disk filled). The header holds no page
+    data, so the erase writes zeros over it, which read as "rebuild the index from the log"."""
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    shm = data / "open_omniscience.db-shm"
+    shm.write_bytes(b"\xff" * 32768)
+    kept = tmp_path / "kept-shm"
+    os.link(shm, kept)
+
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    assert kept.read_bytes()[: crypto_erase._SQLCIPHER_PAGE1] == bytes(crypto_erase._SQLCIPHER_PAGE1)
+    assert str(shm) not in report["overwrite_failures"]
+
+
 def test_quick_crypto_erase_overwrites_the_whole_rollback_journal(tmp_path):
     """R708, the rollback-mode twin: a hot -journal holds the original page 1, salt included, at an offset past the
     head. The erase rewrites it whole."""
-    import os
-
     data = tmp_path / "data"
     data.mkdir()
     (data / "open_omniscience.db").write_bytes(b"\x00" * 8192)
@@ -231,8 +287,8 @@ def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_l
     real_overwrite = crypto_erase._overwrite
     seen: dict[str, object] = {}
 
-    def spy(path, *, head_bytes=None):
-        done = real_overwrite(path, head_bytes=head_bytes)
+    def spy(path, *, head_bytes=None, zeros=False):
+        done = real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
         if path.name == sidecar.name:
             seen.update(done=done, head_bytes=head_bytes, after=path.read_bytes())
         return done
@@ -361,8 +417,6 @@ def test_uninstall_watcher_embedded_crypto_erase(tmp_path):
 def test_uninstall_watcher_overwrites_the_whole_write_ahead_log(tmp_path):
     """R708 in the watcher's embedded copy: a server that died without a clean close leaves a -wal whose frames hold
     copies of page 1, salt included, past the first 4 KiB. The watcher rewrites it whole (and the -shm stays head-only)."""
-    import os
-
     from src.safety.uninstall import _WATCHER_SRC
 
     dead = subprocess.Popen([sys.executable, "-c", "pass"])

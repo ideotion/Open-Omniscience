@@ -641,8 +641,11 @@ imply a protection we cannot deliver.
   best-effort overwrite-then-delete of the whole data dir, requiring an explicit confirmation. The encrypted databases
   lose their salt page first (crypto-erase; the corpus body is never rewritten, so the erase stays fast at any size),
   then their write-ahead log and rollback journal are overwritten WHOLE, because each commit that touched page 1 left a
-  copy of the salt in them past their first 4 KiB (R708); every other file under the data dir is then overwritten in
-  full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*
+  copy of the salt in them past their first 4 KiB (R708), and the main heads are overwritten again after that, so a
+  checkpoint running meanwhile cannot carry the salt home. A transaction already under way can still commit into the
+  unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
+  a commit later than that is the window left; every file under the data dir the earlier steps did not
+  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).

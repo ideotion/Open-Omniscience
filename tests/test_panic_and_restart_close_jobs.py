@@ -3,7 +3,7 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-* The panic wipe holds collection, refuses every job and disposes the pool BEFORE the erase, and waits on nothing: a wipe races
+* The panic wipe holds collection and refuses every job BEFORE the erase, disposes the pool after it, and waits on nothing: a wipe races
   a seizure. A step that fails never stops the wipe.
 * The data-drive restart runs the graceful stop's job steps (ask, wait against ONE 5 s deadline, refuse, dispose) before its
   execve, so a job is no longer cut mid-unit. A failed execve is loud and ends in a shutdown, never a half-alive app.
@@ -179,3 +179,22 @@ def test_a_failed_execve_is_loud_and_shuts_down(restart_steps, monkeypatch, capl
     assert "restart_failed" in incidents
     assert closed == [True] and data_volume.MONITOR.phase == "closing"
     assert any("the restart failed" in r.getMessage() for r in caplog.records)
+
+
+def test_the_wipe_rewrites_the_kept_files_after_the_dispose_and_once_more_later(panic_steps, monkeypatch):
+    import src.safety.crypto_erase as crypto_erase
+    from src.safety import panic, panic_wipe
+
+    done = threading.Event()
+
+    def rescrub(*, close):
+        panic_steps.append(("rescrub", close))
+        if close:
+            done.set()
+        return 1
+
+    monkeypatch.setattr(crypto_erase, "rescrub_held", rescrub)
+    monkeypatch.setattr(panic, "_LATE_RESCRUB_S", 0.01)
+    panic_wipe(confirm=True)
+    assert done.wait(10)
+    assert panic_steps[-3:] == [("dispose",), ("rescrub", False), ("rescrub", True)]

@@ -37,6 +37,7 @@ import contextlib
 import logging
 import os
 import shutil
+import threading
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
@@ -76,7 +77,7 @@ _LIMIT_NOTE = (
 )
 
 
-def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
+def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> bool:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
     otherwise the whole file is overwritten in bounded chunks (small files only —
@@ -95,7 +96,8 @@ def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
             while True:
                 if written >= limit:
                     break
-                chunk = os.urandom(min(_CHUNK, limit - written))
+                n = min(_CHUNK, limit - written)
+                chunk = bytes(n) if zeros else os.urandom(n)
                 f.write(chunk)
                 written += len(chunk)
             f.flush()
@@ -104,6 +106,55 @@ def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
     except OSError:
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", path)
         return False
+
+
+# Descriptors the panic wipe keeps on the files it unlinked, as (fd, whole): a transaction already under way when the
+# erase ran still holds the unlinked file and, on commit, writes page 1 -- salt included -- into it.
+_HELD: list[tuple[int, bool]] = []
+_HELD_LOCK = threading.Lock()
+
+
+def _hold(path: Path, *, whole: bool) -> None:
+    """Keep a descriptor on ``path`` for :func:`rescrub_held`. POSIX only: on Windows an open descriptor would make the
+    unlink fail. Never raises."""
+    if os.name != "posix":
+        return
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        return
+    with _HELD_LOCK:
+        _HELD.append((fd, whole))
+
+
+def rescrub_held(*, close: bool) -> int:
+    """Overwrite again, through the kept descriptors, the head of every unlinked main file and the whole of every
+    unlinked -wal and -journal; with ``close`` the descriptors are then let go. Returns how many were rewritten. Never
+    raises: the wipe is done, this closes the window a late commit leaves."""
+    with _HELD_LOCK:
+        held = list(_HELD)
+        if close:
+            _HELD.clear()
+    done = 0
+    for fd, whole in held:
+        try:
+            size = os.fstat(fd).st_size
+            limit = size if whole else min(size, _SQLCIPHER_PAGE1)
+            os.lseek(fd, 0, os.SEEK_SET)
+            written = 0
+            while True:
+                if written >= limit:
+                    break
+                written += os.write(fd, os.urandom(min(_CHUNK, limit - written)))
+            os.fsync(fd)
+            done += 1
+        except OSError:
+            _LOG.warning("crypto-erase: a held file could not be rewritten again")
+        finally:
+            if close:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+    return done
 
 
 def _key_files_lock() -> contextlib.AbstractContextManager:
@@ -140,7 +191,7 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tu
     return seen, wiped
 
 
-def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
+def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> tuple[bool, bool, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
     write actually completed, ``unlinked`` whether the directory entry was removed.
@@ -152,7 +203,7 @@ def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bo
             return (False, False, False)
     except OSError:
         return (False, False, False)
-    overwritten = _overwrite(path, head_bytes=head_bytes)
+    overwritten = _overwrite(path, head_bytes=head_bytes, zeros=zeros)
     try:
         path.unlink()
         return (True, overwritten, True)
@@ -217,15 +268,19 @@ def _resolve(data_dir: Path | None) -> dict:
     }
 
 
-def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -> dict:
+def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
-    Order: destroy the SQLCipher salt page of each encrypted DB (+ its WAL/SHM/
-    journal sidecars), destroy the on-disk signing keys, overwrite the DuckDB cache
+    Order: destroy the SQLCipher salt page of each encrypted DB, then overwrite its
+    WAL and journal whole (they hold copies of page 1) and its -shm head, destroy the on-disk signing keys, overwrite the DuckDB cache
     header, fully overwrite the plaintext ``anchors.db``, clear the in-memory
     passphrase, then overwrite-and-unlink anything else under the data dir and
     ``rmtree`` it. Fast at any corpus size (the encrypted body is never rewritten —
-    its key is gone). ``data_dir`` overrides the target (tests/tools)."""
+    its key is gone). ``data_dir`` overrides the target (tests/tools).
+
+    ``hold_for_rescrub`` (the panic wipe, POSIX only) keeps a descriptor on every main file, -wal and -journal before
+    it is unlinked, so :func:`rescrub_held` can destroy what a transaction already under way writes into the unlinked
+    file after this returns (its commit puts page 1, salt included, back on the disk)."""
     if not confirm:
         raise PermissionError("quick_crypto_erase requires confirm=True (this is irreversible)")
 
@@ -278,37 +333,56 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
 
-    # 1) Destroy the salt/header page of each encrypted DB and its sidecars. Head-only
-    #    overwrite = instant even for a 100 GB corpus; the salt is what matters.
+    # 1) Destroy the salt/header page of each encrypted DB, then its sidecars. Head-only
+    #    on the main file = instant even for a 100 GB corpus; the salt is what matters.
     # The lane files join this loop rather than falling through to step 6: each is an
     # encrypted SQLCipher database with its OWN salt page, and head-only is what keeps
     # the erase instant at 100 GB (see ``_lane_dbs``).
-    # TWO PASSES (R708). Every main file's salt page goes first, so the corpus is unrecoverable as early as possible.
+    # TWO PASSES (R708). Every main file's salt page goes first, so no long WAL write delays them.
     # The sidecars follow, and the write-ahead log and the rollback journal are overwritten WHOLE: SQLCipher keeps the
     # 16-byte salt in plaintext at the start of page 1, and every committed change to page 1 leaves a copy of that page
     # in a WAL frame (or, in rollback mode, in the journal) at an offset far past this file's first 4 KiB. Measured on a
     # 20-commit WAL with checkpoints off: the salt sat in 21 places in the -wal, 20 of them beyond the 4 KiB the old
     # head-only pass destroyed, so the old erase left the salt readable for as long as the WAL's blocks survived. The
-    # WAL has no journal_size_limit here, so this pass costs one sequential write of the WAL's size (usually a few MiB,
-    # at worst the hundreds of MiB a long un-checkpointed write leaves) -- and it waits on nothing else. The -shm index
+    # journal_size_limit (session.py) caps only the size the WAL is cut back to after a checkpoint, never its growth, so
+    # this pass costs one sequential write of the WAL's size (usually a few MiB, at worst the hundreds of MiB a long
+    # un-checkpointed write leaves) -- and it waits on nothing else. The -shm index
     # holds frame numbers and checksums, never page data, so its head pass stays as it was.
+    # THREE PASSES, so no checkpoint can carry the salt back into a file this step has already left. Pass 1 overwrites
+    # the head of every -shm (its header gone, no connection trusts the log index again, so none checkpoints) and of
+    # every main file, unlinking nothing. Pass 2 rewrites the -wal and -journal whole. Pass 3 overwrites the main and
+    # -shm heads once more and unlinks them, catching a checkpoint that was already copying page 1 home during pass 2.
     dbs = [db for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
+    head_ok: dict[Path, bool] = {}
+    # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
+    # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
+    # it toward 32 GiB in the security read; a zeroed header reads as "rebuild from the log", which is already noise.
     for db in dbs:
-        s, overwritten, w = _shred(db, head_bytes=_SQLCIPHER_PAGE1)
-        seen += s
-        wiped += w
-        if s and not overwritten:
-            overwrite_failures.append(str(db))
-        if s and overwritten:
-            headers.append(db.name)
+        for p in (db.with_name(db.name + "-shm"), db):
+            if p.exists():
+                head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
     for db in dbs:
-        for suffix in _DB_SIDECARS:
+        for suffix in ("-wal", "-journal"):
             p = db.with_name(db.name + suffix)
-            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None)
+            if hold_for_rescrub:
+                _hold(p, whole=True)
+            s, overwritten, w = _shred(p)
             seen += s
             wiped += w
             if s and not overwritten:
                 overwrite_failures.append(str(p))
+    for db in dbs:
+        for p in (db, db.with_name(db.name + "-shm")):
+            if hold_for_rescrub and p == db:
+                _hold(p, whole=False)
+            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
+            overwritten = overwritten and head_ok.get(p, True)
+            seen += s
+            wiped += w
+            if s and not overwritten:
+                overwrite_failures.append(str(p))
+            if s and overwritten and p == db:
+                headers.append(db.name)
 
     # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
     # Under the lock every key-file change of THIS process takes (src/custody/keyfile.py KEY_FILES_LOCK), held
