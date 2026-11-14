@@ -106,7 +106,7 @@ def test_a_bundle_without_a_signed_head_is_refused(bundle):
     assert not ok and issues[0].startswith("no signed head") and "export it again" in issues[0]
 
 
-def test_an_item_bundle_carrying_another_items_entry_is_refused(bundle):
+def test_a_whole_log_bundle_relabelled_as_one_item_is_refused(bundle):
     full, item = bundle
     b = copy.deepcopy(full)
     b["item_id"] = "article:1"
@@ -171,6 +171,9 @@ def test_a_one_item_bundle_with_a_middle_entry_re_signed_by_another_key_is_refus
     lambda b: b.__setitem__("head_signature", {"ed25519": "s"}),
     lambda b: b.__setitem__("head_signature", "s"),
     lambda b: b.__setitem__("signer", "s"),
+    lambda b: b["entries"][-1].__setitem__("metadata", {"note": "\ud800"}),
+    lambda b: b["entries"][-1].__setitem__("item_id", "\ud800"),
+    lambda b: b["head"].__setitem__("item_id", "\ud800"),
 ])
 @pytest.mark.parametrize("which", [0, 1])
 def test_odd_shapes_are_refused_by_name_never_raised(bundle, mutate, which):
@@ -221,7 +224,53 @@ def test_a_cut_log_with_a_tail_re_signed_by_another_key_is_refused_even_unpinned
         b["head_signature"] = forger.signer.sign(canonical_bytes(b["head"]))
     ok, issues = verify_export(b)
     assert not ok and issues[0].startswith("head signature invalid")
-    b["head_signature"] = b["head_signature"]  # and with the signer relabelled to B, the key change is named
+    # and with the signer relabelled to B, the key change is named
     b["signer"] = {**b["signer"], "ed25519_pub": b["head_signature"]["ed25519"]["pub"]}
     ok, issues = verify_export(b)
     assert not ok and issues[0].startswith("the signing key changes at seq 3 with no key-rotation record")
+
+
+def test_an_item_bundle_carrying_another_items_entry_is_refused(tmp_path):
+    """Self-consistent: one key, a head re-signed for the padded entries, yet a foreign entry inside."""
+    from src.custody.log import _bundle_head
+    from src.custody.signing import canonical_bytes
+
+    signer = HybridSigner(ed25519_path=tmp_path / "k.pem", mldsa_path=tmp_path / "k.key")
+    with CustodyLog(db_path=str(tmp_path / "c.db"), signer=signer) as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+        log.record("article:2", "b" * 64, CustodyAction.INGEST)
+        log.record("article:1", "a" * 64, CustodyAction.ACCESS)
+        b = log.export(item_id="article:1")
+        foreign = log.entries_for("article:2")[0]
+        entries = sorted([*log.entries_for("article:1"), foreign], key=lambda e: e.seq)
+    b["entries"] = [e.to_dict() for e in entries]
+    b["entry_count"] = len(entries)
+    b["head"] = _bundle_head("article:1", entries)
+    b["head_signature"] = signer.sign(canonical_bytes(b["head"]))
+    ok, issues = verify_export(b)
+    assert not ok and issues == ["the bundle is for 'article:1' but holds entries of other items"]
+
+
+def test_a_lone_surrogate_is_refused_by_the_route_and_the_cli(bundle, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    text = json.dumps(bundle[0]).replace('"article:2"', '"\\ud800"', 1)
+    assert "\\ud800" in text
+    with TestClient(app) as c:
+        r = c.post("/api/custody/verify", content=text.join(['{"bundle": ', '}']),
+                   headers={"content-type": "application/json"})
+    assert r.status_code == 200 and r.json()["verified"] is False and "surrogate" in r.json()["issues"][0]
+    path = tmp_path / "b.json"
+    path.write_text(text)
+    r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)
+    assert r.returncode == 1 and "surrogate" in r.stdout and "Traceback" not in r.stderr
+
+
+def test_an_empty_item_bundle_is_named_as_such(tmp_path):
+    with _log(tmp_path) as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+        b = log.export(item_id="article:9")
+    ok, issues = verify_export(b)
+    assert not ok and issues[0].startswith("this item has no custody entries")

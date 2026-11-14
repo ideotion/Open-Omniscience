@@ -35,10 +35,11 @@ HTTP API) and troubleshooting.
 3. [The tools, one by one](#3-the-tools-one-by-one)
    - [Home](#30-home) · [Activity & Task manager](#30a-activity--the-task-manager) ·
      [Feed](#30b-feed) ·
-     [Search](#31-search) · [Collect](#32-collect-in-settings--collect) ·
-     [Sources](#33-sources-in-settings--sources) · [Library](#34-library) · [Markets](#35-markets) ·
+     [Explore: search](#31-search) · [Explore: the analysis](#31a-analysis--the-corpora-window) · [Collect](#32-collect-in-settings--advanced--collection) ·
+     [Sources](#33-sources-in-settings--advanced--sources) · [Library](#34-library) · [Markets](#35-markets) ·
      [Indices](#35a-indices) · [Insights](#36-insights) ·
      [World map](#36a-world-map) · [Agenda](#36b-agenda) ·
+     [Living sources](#36b-living-sources) · [Climate](#36c-climate) · [Observatory](#36d-observatory) ·
      [Wikipedia](#37-wikipedia-in-settings--wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
@@ -135,14 +136,16 @@ on boot**, and going online **starts collecting automatically**, after which **S
 has real articles in it.
 
 **The shell.** Navigation lives in a **left sidebar** — a **flat list** of the data
-tools: **Home · Insights · World map · Governments · Agenda · Indices · Commodities**
-*(advanced)* **· Library** (it collapses to an icon rail on narrow windows but never
+tools: **Home · Feed · Explore · Insights · Observatory · World map · Governments ·
+Agenda · Climate · Indices · Commodities *(advanced)* · Living sources · Library** (at the
+**Essentials** interface depth only Home and Feed are pinned and the rest sit behind a
+labelled **Show more** row; see [3.](#3-the-tools-one-by-one)) (it collapses to an icon rail on narrow windows but never
 disappears). A **Settings** button sits at the **bottom of the sidebar** (with the
 collapse toggle), and a **minimal top bar** above the content carries:
 
 - **The search / command bar (⌘K / Ctrl-K).** Type to jump to any tool, run a common
   action, open any document — or federated-search your data (see [3.1 Search](#31-search)).
-  This is the only search entry point; there is no "Search" tab.
+  The full search, with its analysis, is the **Explore** tab.
 - **Live status** — a backend health dot and an **LLM** pill (click it to open
   Settings → AI).
 - **Task manager** — a button that opens the [task-manager window](#30a-activity--the-task-manager).
@@ -159,7 +162,7 @@ collapse toggle), and a **minimal top bar** above the content carries:
 
 **Settings** opens from the **Settings button at the bottom of the sidebar** (the
 command palette also jumps straight there); see [3.9 Settings](#39-settings).
-**Appearance** (**Settings → Graphics**) offers **17 colour themes + System**, accent,
+**Appearance** (**Settings → Graphics**) offers **14 colour themes + System**, accent,
 density, a bundled-typeface picker, and sidebar collapse. Everything is
 stored locally; nothing is transmitted.
 
@@ -290,15 +293,21 @@ no build of it yet, so there the app starts without the panel.
 
 The core loop is:
 
-> **Pick/add a source → Collect → Search → (analyse) → Export / sign.**
+> **Pick/add a source → Collect → Explore (search and analyse) → Export / sign.**
 
-1. **Settings → Sources** — a worldwide catalog is already seeded; add your own if you like.
-2. **Settings → Collect** — fetch a source's RSS feed or paste a single article URL.
-   Or let the **scheduler** do it automatically on an interval.
-3. **Search** — Boolean full-text search across everything you've gathered.
-4. **Analysis / Insights / World map / Commodities / Indices** — optional analysis
-   layers on top of the corpus (the corpora window, patterns, space-time, prices).
-5. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
+1. **Settings → Advanced → Sources** — a worldwide catalog is already seeded; add your own if you like.
+2. **Settings → Advanced → Collection** — fetch a source's RSS feed or paste a single article URL.
+   Or let the **scheduler** do it automatically on an interval. Collecting needs the
+   network: the airplane button in the top bar must be off, and turning it off asks you
+   first.
+3. **Home** and **Feed** — read what came in: Home as measured signals (Leads), Feed as
+   a plain stream of articles.
+4. **Explore** — Boolean full-text search across everything you've gathered; the
+   analysis of the matching articles appears under the results.
+5. **Insights / Observatory / World map / Governments / Agenda / Climate / Indices /
+   Commodities / Living sources** — optional views on top of the corpus and of public
+   data (patterns, space-time, law, dates, climate records, prices, what changed).
+6. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
    offline.
 
 Pick any tool from the sidebar, or just press **⌘K / Ctrl-K** and type where you
@@ -314,12 +323,21 @@ Destructive actions always ask first.
 
 The sidebar is a **flat list** of the data tools (top to bottom):
 
-- **Home · Insights · World map · Governments · Agenda · Indices · Commodities**
-  *(advanced)* **· Library** — plus the **Settings** button at the bottom of the
-  sidebar. Search is the top-bar omnibar; there is no "Search", "Analysis" or "Collect"
-  tab. Analysis **spawns** from a query — press Enter in the omnibar, or click a keyword
-  or a Home Lead, and a named analysis window opens (see
-  [3.1a](#31a-analysis--the-corpora-window)).
+- **Home · Feed · Explore · Insights · Observatory · World map · Governments · Agenda ·
+  Climate · Indices · Commodities *(advanced)* · Living sources · Library** — plus the
+  **Settings**
+  button at the bottom of the sidebar. Help opens from the **?** button in the top bar.
+  There is no "Collect" tab: collection lives in Settings.
+- **Explore** is one page: the search box on top, and the analysis of the matching
+  articles under the results as soon as a search returns (see [3.1](#31-search) and
+  [3.1a](#31a-analysis--the-corpora-window)). A keyword
+  clicked inside the app opens its analysis on this page; a keyword in the article
+  reader, a Home Lead's **Open corpus ↗** and Enter in the omnibar open it on Explore in
+  a **new browser tab**.
+- **Interface depth** (Settings → General) changes what the sidebar *pins*, never what
+  you can reach. At **Essentials** only Home and Feed are pinned and the other tabs sit
+  behind a labelled **Show more** row; **Standard** and **Full** list every tab. The
+  command palette (Ctrl/⌘-K) reaches every tab at every depth.
 
 **Content-first.** The sidebar shows the *data*; the acquisition and maintenance
 surfaces live in **Settings**: **Collect** (the scheduler + manual ingest), **Sources**
@@ -427,7 +445,11 @@ other, and lets you scroll.
 
 ### 3.1 Search
 
-**What it's for:** finding articles in your corpus.
+**What it's for:** finding articles in your corpus. Search is the top half of the
+**Explore** tab in the sidebar; the analysis of the articles it matched
+([3.1a](#31a-analysis--the-corpora-window)) appears right under the results, with no
+button to press. A search with no words and no filter simply lists every article and
+analyses nothing.
 
 - **Boolean query** — supports `AND` / `OR` / `NOT`, `"exact phrases"`, and
   parentheses with correct precedence, e.g.
@@ -466,8 +488,8 @@ other, and lets you scroll.
   them (see the deep-dive). Runs are queued and cancellable; the same controls sit in the
   analysis window.
 
-> **This page is reached from the omnibar, not the sidebar.** Choosing *"Run the full
-> Boolean search"* in the command palette lands you here with the query prefilled.
+> **Two ways in.** Open **Explore** from the sidebar, or type in the omnibar and choose
+> *"Run the full Boolean search"*: both land on the same page with the query prefilled.
 
 **The omnibar (Ctrl/⌘-K), from anywhere:** the command palette is also a
 federated search over your data. From two typed characters it shows the first
@@ -484,17 +506,20 @@ away.
 
 **What it's for:** turning a *set* of articles, or a single keyword, into an analysis
 object you can read from every angle. A keyword is a corpus; a single article is a corpus
-of one. There is **no "Analysis" sidebar tab** — an analysis window is **spawned by a
-query**:
+of one. The analysis lives on the **Explore** page, under the search results. It
+appears when you:
 
-- press **Enter** in the omnibar (or choose *"Run the full Boolean search"*),
-- click a **keyword** anywhere (Insights, a Lead's back, a reader),
-- click a **Home Lead** (its "Open corpus ↗" opens the *exact* article set), or
+- run a search in Explore (or choose *"Run the full Boolean search"* in the omnibar),
+- press **Enter** in the omnibar (this opens Explore in a new browser tab),
+- click a **keyword** anywhere (Insights, a Lead's back, or the reader, where it opens in a new browser tab),
+- click a **Home Lead** (its "Open corpus ↗" opens the *exact* article set, in a new browser tab), or
 - click a commodity chart title / **Analyse ↗**.
 
-Several searches coexist as **named tabs** in a strip at the top of the window (a
-multi-document workspace); each is titled by its query and shows the **article count** it
-was computed over. The subtabs are:
+When an analysis is opened from somewhere else (a keyword, a Lead, a commodity), the
+search list is set aside and the page says whose analysis it is showing, so the list and
+the analysis never quietly describe two different sets of articles. Several analyses
+coexist as **named tabs** in a strip at the top; each is titled by its query and shows the
+**article count** it was computed over. The subtabs are:
 
 - **Overview** — a one-glance summary of the set.
 - **Keywords** — the ranked keyword table (real co-occurrence / n / PMI, no score).
@@ -537,8 +562,9 @@ was computed over. The subtabs are:
   origins, each with a **"Branch into a new corpus →"** that spawns a fresh analysis
   window over exactly those articles.
 - **Sentiment** — per-source tone (VADER; the English-only caveat is shown).
-- **Sources** — the descriptive provenance + competitive view of the outlets in the set
-  (volume / tone / timing / emphasis — descriptive, never a winner or a score).
+- **Sources** — the descriptive provenance of the outlets in the set.
+- **Competitive** — how the outlets in the set compare (volume / tone / timing /
+  emphasis — descriptive, never a winner or a score).
 - **Price** — *(only when the window was seeded from a commodity)* the price curve
   overlaid on your corpus coverage on a shared time axis (co-occurrence, never causation),
   each series on its own real-unit scale.
@@ -547,12 +573,12 @@ was computed over. The subtabs are:
 
 The action row carries **Methods appendix**, **Export signed evidence**, **Synthesize
 results** (the member-selection window), and queued **Summarize all / Translate all / Run
-extractor** local-model runs — the same set as the Search page.
+extractor** local-model runs — the same set as the search above it.
 
-### 3.2 Collect *(in Settings → Collect)*
+### 3.2 Collect *(in Settings → Advanced → Collection)*
 
 > **Where it lives now.** Collection is an acquisition surface, so it moved out of the
-> sidebar into **Settings → Collect** (content-first). The controls are unchanged.
+> sidebar into **Settings → Advanced → Collection** (content-first). The controls are unchanged.
 
 **What it's for:** getting articles into the corpus — automatically or manually.
 
@@ -586,10 +612,10 @@ timer. Controls:
 Either way the result line shows a tally: stored, duplicates skipped, blocked by
 robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
 
-### 3.3 Sources *(in Settings → Sources)*
+### 3.3 Sources *(in Settings → Advanced → Sources)*
 
 > **Where it lives now.** Like Collect, the source catalog moved into **Settings →
-> Sources** (content-first). The controls are unchanged.
+> Advanced → Sources** (content-first). The controls are unchanged.
 
 **What it's for:** registering and curating the outlets you gather from.
 
@@ -646,9 +672,10 @@ yet), then the sources whose re-check is due. A new source is always more urgent
 re-check (ruling R94). The panel also says how many qualified sources are waiting and when
 the next one joins the queue.
 
-**How many sources a pass judges** grows with the machine (ruling R95): the two numbers in
-Settings → Scheduler (*qualification per pass*, *qualification re-checks per pass*) are a
-minimum, and while *qualification budget auto* is on (the default) each pass judges as many
+**How many sources a pass judges** grows with the machine (ruling R95): the number in
+Settings → Advanced → Quality gates (*Sources to judge each collection pass*) and the scheduler's
+*qualification re-checks per pass* (set through the scheduler configuration, `PUT /api/scheduler/config`;
+there is no Settings control for it) are a minimum, and while *qualification budget auto* is on (the default) each pass judges as many
 new sources and re-checks as the machine's memory and cores carry, with no fixed ceiling. A
 setting below the defaults, or 0, is kept as given; switching auto off pins the numbers
 exactly. Each candidate is judged on its newest articles, as many as the memory available can
@@ -678,7 +705,7 @@ read as if the app were already gathering from all of them.
 #### Re-verification — a stamp does not last forever
 
 A verdict is a measurement, and a measurement ages. **A qualified stamp is re-checked
-about every three months** (ruling R94, 2026-09-29) (Settings → Scheduler, *qualification re-checks per pass*; 0
+about every three months** (ruling R94, 2026-09-29) (the scheduler's `qualification_recheck_per_pass` setting, API only; 0
 turns re-verification off). The re-check is a flat interval, not the disqualified
 ladder's doubling — doubling encodes diminishing hope after repeated failure and means
 nothing after a success.
@@ -722,7 +749,7 @@ An adopted verdict is recorded as **inherited**, not as something this machine m
 and it keeps the date it was originally reached — so nothing ever reads as though your
 install measured it. What starts fresh is your machine's own re-check clock: it runs from
 the day you adopted the verdict, not the day someone else earned it. A first download is
-therefore quiet, which is the point — a shipped catalog is always older than the six-month
+therefore quiet, which is the point — a shipped catalog is always older than the three-month
 interval by the time it reaches you, so clocking on the original date would have every
 fresh install re-qualify the whole catalog on day one, which is exactly the work the
 shipped file exists to save.
@@ -810,7 +837,7 @@ than present unreliable analytics. An **explicit** `enabled: true` in a CSV impo
 always wins (your curation is respected), and a source whose language is **unknown**
 stays enabled (we never disable what we can't classify).
 
-**To apply this to an existing corpus:** Settings → Sources shows how many enabled
+**To apply this to an existing corpus:** Settings → Advanced → Sources shows how many enabled
 sources are in unmanaged languages (and which) and offers **"Disable sources in
 languages we can't analyse yet"** — a reversible bulk action that disables them
 (kept). Re-enable any of them at any time from the sources table.
@@ -1048,6 +1075,59 @@ is read from this machine; nothing is fetched to draw it.
 Freshness is shown as dates, never judged: how recent is recent enough depends on
 the story. Budgets are shown but set in **Settings → Data & backup**.
 
+### 3.6c Climate
+
+**What it's for:** reading six published climate and Earth records next to your corpus,
+each exactly as its publisher released it. The tab has one subtab per dataset:
+
+- **Temperature** — NASA GISTEMP v4: monthly and yearly global temperature
+  *anomalies* (differences from the 1951-1980 average, in °C, not temperatures).
+- **Sea ice** — NSIDC Sea Ice Index v3: the daily Arctic or Antarctic sea ice extent, in
+  million km².
+- **El Niño** — NOAA's Oceanic Niño Index: the three-month sea-surface temperature
+  anomaly in the Niño 3.4 region of the Pacific.
+- **Earthquakes** — the USGS catalogue: earthquakes of magnitude 6.0 and above worldwide,
+  counted per month since January 1973, with each month's largest magnitude.
+- **Emissions & energy** — Our World in Data: yearly emissions and energy figures by
+  country and region, each column keeping its original producer's terms.
+- **Weather station** — NOAA GHCN-Daily: daily temperature, precipitation and snow at
+  **one** station, chosen by its 11-character id (for example `USW00094728`, New York
+  Central Park). One station describes one place, not a region and not the climate.
+
+**How it fetches.** Nothing is downloaded until you ask. Each subtab has its own
+**Fetch from the publisher** button (it reads **Update from the publisher** once something
+is stored; on **Weather station** you type a station id and press **Fetch station**, then
+**Update this station**), which names the server it contacts. It passes the same consent popup as every
+other network action and is refused while airplane mode is on. The fetch runs in the
+background; the task manager shows it. Reading what is already stored makes no network
+call.
+
+**What you can rely on.** Each subtab names its source, its licence, its method and when
+this machine last fetched it. A new fetch stores only values that are new or that the
+publisher revised: earlier values stay readable, and periods the publisher stopped serving
+are counted, never deleted. An empty cell is a published gap, never a zero. Nothing here is
+a forecast, a score or a risk rating.
+
+### 3.6d Observatory
+
+**What it's for:** seeing your whole corpus at once, drawn as a night sky. Each
+**galaxy** is a group of related keywords; each wedge of the circle is one of twelve topic
+domains.
+
+- **Angle** carries the domain only. Where a galaxy sits inside its wedge is a stable
+  hash, so it stays put between visits and means nothing in itself.
+- **Distance from the centre** carries the one measure you choose, with labelled rings.
+  **Star size** is drawn as area (mentions) and is a secondary cue.
+- **Colour** shows language, or the **Trend** lens; it is never the only signal.
+  Constellation lines join galaxies that share a member keyword, never galaxies that
+  merely look close.
+- The **ranked table** under the sky lists every galaxy in full, including the ones the
+  sky cannot place. The table is the canonical view; the sky is a second way of reading
+  it. A line above it counts what the picture leaves out (galaxies not observed yet, and
+  keywords outside every galaxy).
+- The same corpus always draws the same sky, so a change you see is a change in your
+  data. There is no composite score.
+
 ### 3.7 Wikipedia *(in Settings → Wikipedia)*
 
 > **Where it lives now.** Wikipedia change-tracking and the offline-dump tools moved
@@ -1182,7 +1262,7 @@ Opening one shows that version's text, where it is kept and its full address on
 Wikipedia; **Add to corpus** adds that exact version as its own article, dated when
 the wiki made it, and says so when your corpus already holds it or the same words
 instead of storing them twice. Nothing from the lane reaches your corpus otherwise.
-The **Search tab** lists the same hits in a section of their own below your
+The **Explore** page lists the same hits in a section of their own below your
 corpus's results, each with the passage that matched and its own **Add to corpus**
 button. Above them it says what was searched: only the texts the Wikipedia lane
 holds on this machine, never Wikipedia itself, with the pages and editions they come
@@ -1375,8 +1455,8 @@ entries, one cut mid-record, one whose signing key changes with no key-rotation 
 export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
 A verified bundle proves it is consistent and signed by one key, or by a line of keys each handed on to the next by
-a key-rotation record; to know the last key is the real signer's (and so that nobody cut the log and re-signed it),
-run with `--pin` and compare the printed signer key with one you already know.
+a key-rotation record. To know the last key is the real signer's (and so that nobody cut the log and re-signed it
+whole), compare the printed signer key with one you already know: that comparison, not the tool, is what catches it.
 
 **When the signing key changes.** If the key folder is lost or re-created (after a restore onto a new machine, for
 example), the log writes a key-rotation record before the new key signs anything. That record says in plain words
@@ -1447,8 +1527,8 @@ with the two irreversible actions — **Panic wipe** and **Uninstall the app** �
 into a section of their own (**Uninstall & wipe**) so neither can be reached by mistake
 while you are reading about encryption. Nothing was lost in either move: every control
 that was on the Safety subtab is still there, under the same headings. **Collect** and **Sources** are
-documented above ([3.2](#32-collect-in-settings--collect),
-[3.3](#33-sources-in-settings--sources)) and are reached through Advanced;
+documented above ([3.2](#32-collect-in-settings--advanced--collection),
+[3.3](#33-sources-in-settings--advanced--sources)) and are reached through Advanced;
 **Wikipedia** ([3.7](#37-wikipedia-in-settings--wikipedia)) keeps its own section.
 Official **figures** are not here at all — they are data, so they live under
 **Governments → Statistics**.
@@ -1616,7 +1696,7 @@ Official **figures** are not here at all — they are data, so they live under
     is really rows across many tables) — how many articles came in, how many were
     screened out as non-articles (see **Non-article screening**, below), and the
     "work induced" it leaves behind (e.g. how many newly-imported sources are still
-    awaiting qualification, see [§3.3](#33-sources-in-settings--sources)). The report
+    awaiting qualification, see [§3.3](#33-sources-in-settings--advanced--sources)). The report
     itself rides your **next** encrypted backup, so it travels with the corpus. It is
     downloadable via `GET /api/backup/import-reports` (list) and
     `GET /api/backup/import-reports/{filename}` (as JSON, or `?format=md` for a
@@ -1795,14 +1875,14 @@ raw API schema is at `/openapi.json`.
 ## 4. Common workflows (how-to)
 
 **Gather news on a topic and search it**
-1. **Settings → Sources** → confirm relevant sources are enabled (filter by country/tag).
-2. **Settings → Collect** → either click **Fetch feed** per source, or set the
+1. **Settings → Advanced → Sources** → confirm relevant sources are enabled (filter by country/tag).
+2. **Settings → Advanced → Collection** → either click **Fetch feed** per source, or set the
    **scheduler** to RSS mode with your **Tags/keywords** and **Start** (or just go online
    — collection runs automatically).
 3. Search from the **omnibar** → Boolean query → **Export CSV/JSON** if needed.
 
 **Continuously monitor a beat in the background**
-1. **Settings → Collect** → scheduler **Mode: RSS feeds**, set **Languages**/**Tags**,
+1. **Settings → Advanced → Collection** → scheduler **Mode: RSS feeds**, set **Languages**/**Tags**,
    **Preview targets**, set an **Interval**, tick **Start automatically on launch**,
    **Save**.
 2. Optionally enable **Evidence & custody → Auto-log on ingest** so each capture is
@@ -2152,7 +2232,7 @@ The app already shrinks itself on a small box: below **4 GB of RAM**, or with
 under **1 GB free**, it uses a smaller database cache and fewer pooled
 connections, caps how many sources it fetches at once, and **pauses the
 whole-corpus background scans** (source qualification). It tells you so, with the
-numbers, beside the collection state in Settings → Collect.
+numbers, beside the collection state in Settings → Advanced → Collection.
 
 **Say the cost out loud:** on a machine with a large corpus and little free
 memory this can mean source qualification never runs there. That is the cost of
@@ -2368,7 +2448,7 @@ sweep"). None is a bug; each shapes how to read a result.
   `offline` if the API isn't reachable.
 - **Search is empty.** You haven't collected yet — **go online** with the airplane
   button (one consent popup) and collection starts automatically; the manual path is
-  **Settings → Collect → Fetch feed**.
+  **Settings → Advanced → Collection → Fetch feed**.
 - **An ingest stored nothing.** That's often correct and ethical: the page may be
   blocked by `robots.txt` (fail-closed), rate-limited, a duplicate, or have no
   extractable body. The result tally tells you which.
@@ -2856,7 +2936,7 @@ ingest an article ──► extract (baseline / opt-in spaCy) ──► KeywordM
   ingest (fast baseline, fail-open). Indexing is **automatic** — any backlog is cleared
   by a silent background top-up when you open Insights (the "remaining" count ticks to 0
   on its own); there is no "Index corpus" button. A full re-index of the existing corpus
-  is available from **Settings → Diagnostics** ("Re-index the whole corpus" / "Clean up
+  is available from **Settings → Advanced → Diagnostics** ("Re-index the whole corpus" / "Clean up
   keywords") as a pausable background job.
 
 ### Functions (Insights tab + `/api/insights`)
@@ -3123,7 +3203,7 @@ honest boundary here matters more than a long feature list.
 ### What is pre-packaged (ready to run as-is)
 
 `configs/markets_sources.yml` is seeded automatically alongside the news catalog
-(`configs/sources.yml`) on first launch and via **Settings → Sources → Seed
+(`configs/sources.yml`) on first launch and via **Settings → Advanced → Sources → Seed
 starter sources**. It contains ~110 curated entries identified by stable primary
 domain:
 
@@ -3142,12 +3222,12 @@ domain:
 These are ordinary **sources**: they feed the unified corpus through the same
 ethical fetcher (robots.txt fail-closed, rate-limited). Each carries a
 `source_type` (`stock_exchange` / `commodity` / `financial`), region, country and
-tags, so you can filter them in **Settings → Sources** and attach price rules in
+tags, so you can filter them in **Settings → Advanced → Sources** and attach price rules in
 **Commodities**.
 
 > RSS feeds are intentionally left blank for these entries (a wrong feed URL is
 > just noise). Ingest them with the recursive crawler, or add a verified RSS feed
-> per source from **Settings → Sources**.
+> per source from **Settings → Advanced → Sources**.
 
 ### Getting real price numbers
 
@@ -3474,7 +3554,7 @@ watch. Blank = off (the default); nothing new = no file.
 The app now suggests sources on its own — **offline only**: domains your stored articles
 repeatedly cite, and packaged-catalog outlets for countries your corpus covers thinly.
 Suggestions are staged, never acted on: each carries its evidence in the **Discovery
-candidates** panel (Settings → Sources), runs are capped by the scheduler's discovery budget and
+candidates** panel (Settings → Advanced → Sources), runs are capped by the scheduler's discovery budget and
 recorded in the run log, and a Home card tells you when candidates await review.
 **Promote** creates a *disabled* source you still have to enable; **Dismiss** is remembered
 and never re-suggested. The DuckDuckGo-powered topic search remains separate, **off by

@@ -721,7 +721,11 @@ def verify_export_report(
 ) -> dict:
     """``{"verified", "issues", "notes"}`` for an exported bundle; ``notes`` names every key rotation crossed."""
     notes: list[str] = []
-    ok, issues = _verify_export(bundle, require_signer, accept_unendorsed_rotation, notes)
+    try:
+        ok, issues = _verify_export(bundle, require_signer, accept_unendorsed_rotation, notes)
+    except UnicodeEncodeError:
+        # A lone surrogate (JSON "\ud800") has no UTF-8 form, so no signature over it can exist.
+        ok, issues = False, ["a text field holds a character with no UTF-8 form (a lone surrogate), so no signature covers it"]
     return {"verified": ok, "issues": issues, "notes": notes if ok else []}
 
 
@@ -763,6 +767,8 @@ def _verify_export(
         return False, ["not a custody bundle (not a JSON object)"]
     raw = bundle.get("entries")
     if not isinstance(raw, list) or not raw:
+        if isinstance(bundle.get("item_id"), str) and bundle.get("item_id"):
+            return False, [f"this item has no custody entries: the bundle for {bundle['item_id']!r} holds none to verify"]
         return False, ["empty log: the bundle holds no custody entries, so there is nothing to verify"]
     entries: list[CustodyEntry] = []
     for i, d in enumerate(raw, start=1):

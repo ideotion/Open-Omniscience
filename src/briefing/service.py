@@ -605,7 +605,9 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
         "generated_at": payload.get("generated_at"),
         "count": len(visible),
         "total": len(cards),
-        "dismissed_count": len(dismissed),
+        # Only the dismissed cards this feed holds: an id kept from a card no producer emits any
+        # more is not a card the "Show N dismissed cards" button could bring back.
+        "dismissed_count": sum(1 for c in cards if c["id"] in dismissed),
         "buckets": buckets,
         "cards": visible,
     }
