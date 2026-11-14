@@ -44,7 +44,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from src.jobs.background import BackgroundJob, Framed, JobContext, register_job
+from src.jobs.background import BackgroundJob, Framed, JobContext, register_job, stop_all_count
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("jobs.llm_bulk_queue")
 
@@ -377,13 +378,36 @@ class LlmBulkQueue:
             if self._paused or self._draining or not any(entry.get("state") == "queued" for entry in self._entries):
                 return
             self._draining = True
+        try:
+            _JOB.start()
+            return
+        except RuntimeError:
+            pass
+        # The previous drain found the queue empty and is returning. Wait for its thread OFF the request (Lane F row 13: three
+        # joins of 5 s held an add or a Resume for up to 15 s), then start again.
+        threading.Thread(target=self._start_after_previous, args=(stop_all_count(),), name="oo-llmbulk-kick", daemon=True).start()
+
+    def _start_after_previous(self, stops_seen: int) -> None:
         for _ in range(3):
+            _JOB.join(5)
+            if stop_all_count() != stops_seen:
+                # The app is shutting down: do not start a writer the shutdown's stop has not seen.
+                with self._lock:
+                    self._draining = False
+                return
             try:
                 _JOB.start()
-                return
             except RuntimeError:
-                # The previous drain found the queue empty and is returning: wait for its thread, then start again.
-                _JOB.join(5)
+                continue
+            except Exception as exc:  # noqa: BLE001 - a failed start must not leave the queue marked draining for good
+                log_failure(_LOG, "bulk queue: the drain could not be started", exc, level=logging.WARNING)
+                break
+            if stop_all_count() != stops_seen:
+                # The shutdown began between the check and the start (stop_all_jobs counts before it looks at the jobs): stop
+                # the drain it may not have seen. A start racing it closer still is refused at its first statement by
+                # src/database/after_shutdown.py (R689 (2)).
+                _JOB.cancel()
+            return
         with self._lock:
             self._draining = False
         _LOG.warning("bulk queue: the drain could not be started; the next add or Resume tries again")
@@ -511,7 +535,10 @@ class LlmBulkQueue:
         try:
             req = BulkLLMRequest(**body)
             with SessionLocal() as db:
-                tok, gen, ids = prepare_bulk_run(req, db, get_llm_client_with_name(), resume_since=since)
+                # R689 (1): the stop is looked at while a generation runs, so a shutdown's stop lands within its deadline.
+                tok, gen, ids = prepare_bulk_run(
+                    req, db, get_llm_client_with_name(), resume_since=since, should_stop=lambda: ctx.stopping,
+                )
         except HTTPException as exc:
             # A refusal of the selection can quote it (an unreadable search's words, an unknown source's name): the finished run
             # keeps a fixed phrase instead, so nothing of what it was run on outlives it (R669(b)). The model's own refusals
@@ -553,14 +580,21 @@ class LlmBulkQueue:
                             entry["stored"] = int(entry.get("stored") or 0) + 1
                         elif status in ("stored", "skipped", "failed"):
                             entry[status] = int(entry.get(status) or 0) + 1
+                    elif ev == "stopped":
+                        # The generation in flight was abandoned and nothing of it stored: a task-manager Stop cancels the run,
+                        # anything else (the job's stop: a shutdown, a model release) leaves it paused for the resume.
+                        outcome = ("cancelled", None) if _tasks.cancel_requested(tok) else ("paused", None)
                     elif ev == "done":
                         if o.get("aborted"):
-                            outcome = ("error", str(o.get("reason") or "aborted"))
+                            # The only abort is the model backend being unreachable (stopped, model gone, airplane mode):
+                            # the run waits PAUSED with its frozen list, never an error that forgets it (R669). The queue
+                            # pauses behind it, so a Resume before the backend is back pauses it again and loses nothing.
+                            outcome = ("paused", str(o.get("reason") or "the model backend is not reachable"))
                         else:
                             outcome = ("done", None)
                     done_now = entry["done"]
                 ctx.set_progress(done=done_now)
-                if ev == "done":
+                if ev in ("done", "stopped"):
                     break
                 if ctx.stopping:
                     outcome = ("paused", None)
@@ -590,6 +624,9 @@ class LlmBulkQueue:
         finally:
             with contextlib.suppress(Exception):
                 gen.close()  # the runner's own finally: the task row's finish and the model hold's release
+        if outcome and outcome[0] == "paused" and not self._stale(gen0):
+            with self._lock:
+                self._paused = True  # _next stops the drain here; the runs behind wait for the same Resume
         self._finish(entry, outcome[0] if outcome else "error", outcome[1] if outcome else "the run ended unexpectedly", gen=gen0)
 
 
@@ -633,6 +670,20 @@ def get_queue() -> LlmBulkQueue:
     return _QUEUE
 
 
+def pause_for_backend() -> bool:
+    """Before the model backend is released or stopped: the run in flight pauses at once (the article in flight is dropped and redone on resume), and the queue
+    behind it waits paused for a Resume (R669: paused, never lost, nothing stored twice). True when a run was going."""
+    if not _JOB.status().get("running"):
+        return False
+    _JOB.cancel()  # the job's own stop: ``_run`` ends the run "paused" and the queue pauses behind it
+    return True
+
+
+def wait_paused(timeout: float) -> bool:
+    """Wait for the drain :func:`pause_for_backend` stopped to end. True when it has."""
+    return _JOB.join(timeout)
+
+
 def queue_rows() -> list[dict[str, Any]]:
     """The task manager's rows for what the queue holds besides the running run (which shows as its own ``llm`` row with a Stop):
     the paused queue after a restart (Resume / Cancel), or each run waiting its turn (Cancel)."""
@@ -649,8 +700,8 @@ def queue_rows() -> list[dict[str, Any]]:
         return [{
             "id": KIND,
             "kind": KIND,
-            "label": f"Summary & translation queue paused by a restart ({n} run(s) waiting)",
-            "label_i18n": "Summary & translation queue paused by a restart ({n} run(s) waiting)",
+            "label": f"Summary & translation queue paused ({n} run(s) waiting)",
+            "label_i18n": "Summary & translation queue paused ({n} run(s) waiting)",
             "label_vars": {"n": n},
             "state": "paused",
             "progress": None,

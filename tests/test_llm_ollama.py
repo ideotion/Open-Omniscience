@@ -25,6 +25,19 @@ from src.llm import ollama
 from src.llm.ollama import LLMError, LLMUnavailable, OllamaClient
 
 
+def _installed(handler, *names: str):
+    """``handler`` behind a daemon whose ``/api/tags`` lists ``names`` (default: the default model), the list a generation is checked
+    against first (R671: a model runs only when the daemon lists it as local)."""
+    listed = names or (ollama.DEFAULT_MODEL,)
+
+    def wrapped(request):
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": n, "model": n} for n in listed]})
+        return handler(request)
+
+    return wrapped
+
+
 def _client_with(handler, *, base_url: str = "http://testollama") -> OllamaClient:
     transport = httpx.MockTransport(handler)
     http = httpx.Client(transport=transport, base_url=base_url)
@@ -61,7 +74,7 @@ def test_generate_parses_response():
         assert request.url.path == "/api/generate"
         return httpx.Response(200, json={"response": "  a summary.  ", "eval_count": 7})
 
-    client = _client_with(handler)
+    client = _client_with(_installed(handler, "llama3.2:3b"))
     out = client.generate("hi", model="llama3.2:3b")
     assert out.text == "a summary."
     assert out.model == "llama3.2:3b"
@@ -71,7 +84,7 @@ def test_missing_model_raises_with_hint():
     def handler(request):
         return httpx.Response(404, json={"error": "model not found"})
 
-    client = _client_with(handler)
+    client = _client_with(_installed(handler, "nope:1b"))  # listed, so the 404 comes from the generation itself
     with pytest.raises(LLMUnavailable) as exc:
         client.generate("hi", model="nope:1b")
     assert "ollama pull nope:1b" in str(exc.value)
@@ -317,7 +330,7 @@ def test_summarize_persists_with_provenance(client):
     def ok(request):
         return httpx.Response(200, json={"response": "The town approved its budget for the year."})
 
-    app.dependency_overrides[get_llm_client] = lambda: mk(ok)
+    app.dependency_overrides[get_llm_client] = lambda: mk(_installed(ok))
     r = c.post("/api/llm/articles/1/summarize", json={})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -355,7 +368,7 @@ def test_a_500_carries_ollamas_own_reason():
         )
 
     with pytest.raises(LLMError) as exc:
-        _client_with(handler).generate("hi", model="qwen3.5:0.8b-q8_0")
+        _client_with(_installed(handler, "qwen3.5:0.8b-q8_0")).generate("hi", model="qwen3.5:0.8b-q8_0")
     msg = str(exc.value)
     assert "more system memory" in msg, "the server's reason must reach the caller"
     assert "500" in msg, "the status line is still reported alongside it"
@@ -369,7 +382,7 @@ def test_a_500_with_no_body_degrades_to_the_status_line():
         return httpx.Response(500, content=b"")
 
     with pytest.raises(LLMError) as exc:
-        _client_with(handler).generate("hi", model="m")
+        _client_with(_installed(handler, "m")).generate("hi", model="m")
     msg = str(exc.value)
     assert "500" in msg
     assert "—" not in msg, "no reason separator with nothing after it"
@@ -380,7 +393,7 @@ def test_a_non_json_500_body_is_kept_verbatim():
         return httpx.Response(500, content=b"llama runner process has terminated: signal 9")
 
     with pytest.raises(LLMError) as exc:
-        _client_with(handler).generate("hi", model="m")
+        _client_with(_installed(handler, "m")).generate("hi", model="m")
     assert "signal 9" in str(exc.value)
 
 
@@ -389,7 +402,7 @@ def test_a_very_long_reason_is_bounded():
         return httpx.Response(500, json={"error": "x" * 5000})
 
     with pytest.raises(LLMError) as exc:
-        _client_with(handler).generate("hi", model="m")
+        _client_with(_installed(handler, "m")).generate("hi", model="m")
     assert len(str(exc.value)) < 700, "a runaway body must not become the whole log line"
     assert "…" in str(exc.value), "truncation is disclosed, never silent"
 
@@ -402,7 +415,7 @@ def test_a_404_still_says_pull_it_rather_than_the_body():
         return httpx.Response(404, json={"error": "model 'nope' not found"})
 
     with pytest.raises(LLMUnavailable) as exc:
-        _client_with(handler).generate("hi", model="nope")
+        _client_with(_installed(handler, "nope")).generate("hi", model="nope")
     assert "ollama pull nope" in str(exc.value)
 
 # --------------------------------------------------------------------------- #
@@ -480,7 +493,7 @@ def test_the_mdn_link_does_not_occupy_the_budget():
         return httpx.Response(500, json={"error": "llama-server binary not found"})
 
     with pytest.raises(LLMError) as exc:
-        _client_with(handler).generate("hi", model="m")
+        _client_with(_installed(handler, "m")).generate("hi", model="m")
     msg = str(exc.value)
     assert "developer.mozilla.org" not in msg
     assert "500" in msg and "llama-server binary not found" in msg

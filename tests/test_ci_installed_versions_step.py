@@ -16,8 +16,8 @@ with ``continue-on-error``, and is not covered):
 * it runs ``python -m pip list --format=freeze`` (not ``pip freeze``, whose editable-install line carries the repository URL and the commit and
   which leaves pip itself out) and ``tee``s the result into ``$GITHUB_STEP_SUMMARY``, so it is in the log as well as in the summary: a plain
   redirect would take the list out of the log, the one copy ``get_job_logs`` can read;
-* it comes straight after the pytest step and before any later ``pip install`` step: in ``test`` the bandit and pip-audit steps install their
-  own packages, and a list taken after them is not the environment the tests ran in.
+* it comes straight after the pytest step and before any later ``pip install`` step: bandit and pip-audit install their own packages (in the
+  ``static`` job since R668, so no longer in ``test``), and a list taken after such a step is not the environment the tests ran in.
 
 The guard proves itself: each mutant below is the step with one property removed, and the checker must name it.
 """

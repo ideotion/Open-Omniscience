@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-13,ui/security,R673 delegated clicks need a person,shipped,PR #1957; R673; R443,src/static/taskmanager.js; src/static/reader.js; src/static/unlock.js; tests/test_delegated_clicks_need_a_person.py,"The task manager's data-tm job controls, the reader's AI-keyword and date buttons and the unlock page's buttons return first on an untrusted click, as the oo-on dispatcher does; a sweep test holds the rule for any later document click listener that acts."
