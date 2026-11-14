@@ -943,32 +943,44 @@ def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
     return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
 
 
-def _earlier_own_keys(entries: list[dict], local_ed: str) -> dict[str, str | None]:
-    """The keys that handed over, by ENDORSED rotations only, down to this installation's key: ``{ed25519: ml_dsa}``.
+def _own_positions(entries: list[CustodyEntry], local: PublicIdentity) -> list[PublicIdentity | None]:
+    """For each entry of a VERIFIED bundle, the identity of this installation's that it must be signed by to be this
+    installation's, or ``None`` when no key of this installation's signs that place in the chain.
 
-    Called only on a bundle that verified, so every rotation record in it was checked by ``_key_lineage``: it is signed by
-    the key it introduces and, when endorsed, its endorsement was made by the previous key over both keys and this place
-    in the chain. Walking back from this installation's key, an endorsed record says the previous key's holder handed the
-    log to the next one, which ``rotate_signing_key`` only writes with the old key at hand. The endorsement is signed by
-    the previous key's whole identity, so it also names that key's ML-DSA half (``None`` when it had none). An UNENDORSED
-    record stops the walk: it says the previous key was not available, which is also what restoring another
-    installation's log and re-creating keys would write, so the keys before it are not called this installation's."""
-    own: dict[str, str | None] = {}
-    current = local_ed
-    for d in reversed(entries):
-        if d.get("action") != CustodyAction.KEY_ROTATION.value or d.get("item_id") != ROTATION_ITEM:
-            continue
-        md = d.get("metadata") or {}
-        if md.get("ed25519_pub") != current:
-            continue  # a rotation further down the line than the walk has reached (cannot happen once verified)
+    The rotation records cut the chain into stretches, each signed by one key (``_key_lineage`` checked that every entry
+    is signed by its stretch's key, and every record by the key it introduces). The LAST stretch is this installation's
+    only when its key is this installation's own. Going back, a stretch is this installation's only when the one after it
+    is, and the record between them is ENDORSED: the previous key's holder handed the log over, which
+    ``rotate_signing_key`` only writes with the old key at hand, and the endorsement is signed with that key's whole
+    identity, so it also names its ML-DSA half. An UNENDORSED record stops the walk: it says the previous key was not
+    available, which is also what restoring another installation's log and re-creating keys would write.
+
+    The answer is by POSITION, never by key: an earlier key covers only the stretch it signed before handing over. A key
+    that leaked and was rotated away from can still sign, so an entry it signed anywhere else (after a forged rotation
+    back to it) is not this installation's, whatever the same key signed before."""
+    rotations = [i for i, e in enumerate(entries)
+                 if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM]
+    starts = [0, *rotations]
+    ends = [*rotations, len(entries)]
+    out: list[PublicIdentity | None] = [None] * len(entries)
+    expected: PublicIdentity | None = local
+    for k in range(len(starts) - 1, -1, -1):
+        lo, hi = starts[k], ends[k]
+        stretch_key = _sig_ed25519_pub(entries[lo].signature) if lo < hi else None
+        if expected is None or (stretch_key is not None and stretch_key != expected.ed25519_pub):
+            break
+        for i in range(lo, hi):
+            out[i] = expected
+        if k == 0:
+            break
+        md = entries[starts[k]].metadata  # the record that opened this stretch
         endorsement = md.get("endorsement")
         prev = md.get("previous_ed25519_pub")
-        if not isinstance(endorsement, dict) or not isinstance(prev, str) or not prev or prev in own or prev == local_ed:
+        if not isinstance(endorsement, dict) or not isinstance(prev, str) or not prev:
             break
         ml = (endorsement.get("ml_dsa") or {}).get("pub") if endorsement.get("algorithm") == "hybrid" else None
-        own[prev] = ml if isinstance(ml, str) and ml else None
-        current = prev
-    return own
+        expected = PublicIdentity(ed25519_pub=prev, ml_dsa_variant=None, ml_dsa_pub=ml if isinstance(ml, str) and ml else None)
+    return out
 
 
 def describe_export(
@@ -984,36 +996,49 @@ def describe_export(
     installation's (``local``; ``None`` when they cannot be read).
 
     Across a key rotation a bundle has several signers by design. A signer older than this installation's key is
-    called this installation's only when an unbroken run of ENDORSED rotations leads from it to that key (see
-    ``_earlier_own_keys``); ``earlier_key`` marks it, and ``notes`` names every change of key, as
+    called this installation's only for the stretch it signed before an unbroken run of ENDORSED rotations led from it
+    to that key (see ``_own_positions``); ``earlier_key`` marks it, and ``notes`` names every change of key, as
     :func:`verify_export_report` does."""
     report = verify_export_report(
         bundle, require_signer=require_signer, accept_unendorsed_rotation=accept_unendorsed_rotation
     )
     ok, issues, notes = report["verified"], report["issues"], report["notes"]
-    if not bundle.get("entries"):
+    raw = bundle.get("entries") if isinstance(bundle, dict) else None
+    raw = raw if isinstance(raw, list) else []  # untrusted JSON: a number or a string here would crash the loop below
+    if not raw:
         ok, issues = False, [*issues, "the bundle carries no entries: there is nothing to verify"]
+    parsed: list[CustodyEntry] = []
+    keyed: list[tuple[str, str | None]] = []
     counts: dict[tuple[str, str | None], int] = {}
     proven: dict[tuple[str, str | None], bool] = {}
-    for d in bundle.get("entries", []):
+    for d in raw:
         try:
             e = CustodyEntry.from_dict(d)
             key = _signer_of(e)
             good, _reason = signing.verify(e.signature, canonical_bytes({**e.signable_core()}))
         except Exception:  # noqa: BLE001 - a malformed entry is already an issue from verify_export
             continue
+        parsed.append(e)
+        keyed.append(key)
         counts[key] = counts.get(key, 0) + 1
         proven[key] = proven.get(key, True) and good
     # ``yours`` is said only of a signer whose every signature verified: a key merely CLAIMED by an entry with a
     # bad signature proves nothing, and answering for it would let any caller ask whether a key is this install's.
-    earlier = _earlier_own_keys(bundle["entries"], local.ed25519_pub) if ok and local is not None else {}
+    # And only of a signer every one of whose entries sits where this installation's key signs (``_own_positions``).
+    # A bundle that did not verify gets no rotation credit: each signer is only compared with this installation's key.
+    owns = (_own_positions(parsed, local) if ok and len(parsed) == len(raw) else [local] * len(parsed)) if local else []
+    own_everywhere: dict[tuple[str, str | None], bool] = {}
+    earlier: set[str] = set()
+    for (ed, ml), want in zip(keyed, owns, strict=False):  # ``owns`` is empty when this installation's keys are unread
+        mine = want is not None and _is_yours((ed, ml), want)
+        own_everywhere[(ed, ml)] = own_everywhere.get((ed, ml), True) and mine
+        if mine and want is not local:
+            earlier.add(ed)
 
     def yours(ed: str, ml: str | None) -> bool | None:
         if local is None or not proven[(ed, ml)]:
             return None
-        if ed in earlier:
-            return ml is None or ml == earlier[ed]  # held to the ML-DSA half its own endorsement was signed with
-        return _is_yours((ed, ml), local)
+        return own_everywhere.get((ed, ml), False)
 
     signed_by = [
         {

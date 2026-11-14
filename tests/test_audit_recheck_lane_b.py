@@ -268,11 +268,85 @@ def test_a_rotated_log_ending_on_another_installs_key_is_not_yours(tmp_path):
 
 
 def test_an_earlier_key_is_held_to_the_ml_dsa_half_its_endorsement_names(tmp_path):
-    from src.custody.log import _earlier_own_keys
+    from src.custody.log import CustodyEntry, _own_positions
 
     bundle, old, new = _rotated_bundle(tmp_path, endorsed=True)
-    own = _earlier_own_keys(bundle["entries"], new.public_identity().ed25519_pub)
-    assert own == {old.public_identity().ed25519_pub: old.public_identity().ml_dsa_pub}
+    entries = [CustodyEntry.from_dict(d) for d in bundle["entries"]]
+    owns = _own_positions(entries, new.public_identity())
+    assert [w.ed25519_pub for w in owns] == [old.public_identity().ed25519_pub] * 2 + [new.public_identity().ed25519_pub] * 2
+    assert owns[0].ml_dsa_pub == old.public_identity().ml_dsa_pub
+
+
+def _relinked(entries: list[dict], signers: list[HybridSigner]) -> list[dict]:
+    """Re-hash, re-link and re-sign each entry with its signer: what a forger holding those keys can do."""
+    from hashlib import sha256
+
+    from src.custody.log import CustodyEntry, _entry_digest
+    from src.custody.signing import canonical_bytes
+
+    out = [CustodyEntry.from_dict(d) for d in entries]
+    for i, e in enumerate(out):
+        if i:
+            e.seq = out[i - 1].seq + 1
+            e.prev_entry_hash = out[i - 1].entry_hash
+        partial = {k: v for k, v in e.signable_core().items() if k != "timestamp"}
+        e.timestamp = {**e.timestamp, "digest": sha256(canonical_bytes(partial)).hexdigest()}
+        e.entry_hash = _entry_digest(e.signable_core())
+        e.signature = signers[i].sign(canonical_bytes(e.signable_core()))
+    return [e.to_dict() for e in out]
+
+
+def test_a_leaked_earlier_key_cannot_vouch_for_what_it_signs_after_handing_over(tmp_path):
+    """Second security read, must-fix: the old key P leaked, which is why it was rotated to L. A forger holding P replays
+    the genuine endorsed P->L record, forges an unendorsed L->P after it and signs a new entry with P. P's earlier
+    stretch was this installation's; what P signs after handing over never is."""
+    import copy
+
+    from src.custody.log import (
+        ROTATION_ITEM,
+        UNENDORSED_ROTATION_NOTE,
+        VERDICT_NOT_YOURS,
+        _bundle_head,
+        describe_export,
+    )
+    from src.custody.log import CustodyEntry as _E
+    from src.custody.signing import canonical_bytes
+
+    bundle, old, new = _rotated_bundle(tmp_path, endorsed=True)
+    genuine = next(d for d in bundle["entries"] if d["item_id"] == ROTATION_ITEM)
+    back = copy.deepcopy(genuine)
+    p_id = old.public_identity()
+    back["metadata"].update(
+        previous_ed25519_pub=new.public_identity().ed25519_pub,
+        ed25519_pub=p_id.ed25519_pub,
+        ml_dsa_variant=p_id.ml_dsa_variant,
+        ml_dsa_pub=p_id.ml_dsa_pub,
+        endorsement=None,
+        note=UNENDORSED_ROTATION_NOTE,
+    )
+    item = copy.deepcopy(next(d for d in bundle["entries"] if d["item_id"] == "article:3"))
+    item["item_id"], item["item_hash"] = "article:9", "f" * 64
+    forged_tail = _relinked([genuine, back, item], [new, old, old])
+    forged_tail[0] = genuine  # the replayed record stays byte-identical: it is the user's own
+    forged = {
+        **bundle,
+        "item_id": "article:9",
+        "entries": forged_tail,
+        "signer": p_id.to_dict(),
+    }
+    forged["head"] = _bundle_head("article:9", [_E.from_dict(d) for d in forged_tail])
+    forged["head_signature"] = old.sign(canonical_bytes(forged["head"]))
+    out = describe_export(forged, local=new.public_identity(), accept_unendorsed_rotation=True)
+    assert out["verified"] is True, out["issues"]  # the chain itself is well formed: the verdict is what must not lie
+    assert out["verdict"] == VERDICT_NOT_YOURS and out["signer_is_yours"] is False
+    by_key = {s["ed25519_pub"]: s["yours"] for s in out["signed_by"]}
+    assert by_key[p_id.ed25519_pub] is False
+
+
+def test_a_bundle_whose_entries_are_not_a_list_is_an_answer_not_a_crash(client):
+    for junk in (5, True, "x", {"a": 1}):
+        r = client.post("/api/custody/verify", json={"bundle": {"entries": junk}})
+        assert r.status_code == 200 and r.json()["verdict"] == "not-verified"
 
 
 # --------------------------------------------------------------------------- P16
