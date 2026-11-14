@@ -219,7 +219,13 @@
      */
     function _obsOuterFor(w, h) {
       const half = Math.min(w, h) / 2;
-      return Math.max(80, Math.floor((half - 16) / 1.22));
+      // The label ring holds the label's ANCHOR; the text then grows sideways from it.
+      // On a phone that text ran off the canvas (the 2026-11-13 walk at 320 px read
+      // "structure", "ance"), so a narrow canvas also keeps a fifth of its width for the
+      // left and right labels, which oosky wraps onto two lines inside that room.
+      const side = w < 560 ? Math.round(w * 0.22) : 0;
+      const byWidth = (w / 2 - 4 - side) / 1.22;
+      return Math.max(56, Math.floor(Math.min((half - 16) / 1.22, byWidth)));
     }
 
     function _obsRender() {
@@ -242,7 +248,10 @@
       }
       _obsAssignLangSlots(_obs.payload.galaxies || []);
       _obs.layout = window.ooSky.skyLayout(_obs.payload, {
-        measure: _obs.measure, rInner: 46, rOuter: _obs.rOuter || 240,
+        // The SAME inner radius _obsPaintNow lays out with: a fixed 46 px here left a
+        // phone-width sky (outer 70 px) a 24 px value band after any measure switch.
+        measure: _obs.measure, rOuter: _obs.rOuter || 240,
+        rInner: Math.max(24, Math.round((_obs.rOuter || 240) * 0.19)),
       });
       _obs.view.focus = null;
       _obs.view.hover = null;
@@ -275,7 +284,9 @@
       const stage = cv.parentElement;
       if (stage && stage.clientWidth < 1) return;
       const w = Math.max(240, Math.round(stage ? stage.clientWidth : 720));
-      const h = Math.max(320, Math.min(640, Math.round(w * 0.62)));
+      // A phone-width sky is bounded by its WIDTH, so the 320 px floor only added an empty
+      // band under it; the floor now never exceeds the width plus a label line.
+      const h = Math.max(Math.min(320, w + 24), Math.min(640, Math.round(w * 0.62)));
       const ctx = window.ooViz.setupCanvas(cv, w, h);
       _obs.view.w = w;
       _obs.view.h = h;

@@ -3765,6 +3765,9 @@
       try {
         // Phase 1 — instant crypto-erase (destroys the SQLCipher salt; fast at any size).
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});
+        // The browser's own copy of a personal place goes too (Climate "Your place", R683): the wipe
+        // reaches what this page stored, not only the server's files.
+        try { localStorage.removeItem("oo.climate.place"); } catch (_e) { /* storage may be unavailable */ }
         const plaintext = r.encrypted_corpus === false;
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state.
         const rec = plaintext

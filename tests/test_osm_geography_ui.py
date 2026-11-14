@@ -90,3 +90,26 @@ def test_the_region_sentences_are_shared_not_copied():
     js = (STATIC / "app-map.js").read_text(encoding="utf-8")
     assert js.count('"Per region: not counted yet. Counting reads every place once, on this machine."') == 1, "the admin-1 sentences were copied, not shared"
     assert "OSM_ADMIN1_SAY[a.status]" in function_source(js, "_osmCompAdmin1") and "OSM_ADMIN1_SAY[f.status]" in function_source(js, "_osmGeogDraw")
+
+
+def test_every_osm_panel_carries_the_odbl_credit_once_at_its_foot():
+    """ODbL 1.0 s. 4.3: the four panels derived from OpenStreetMap credit it (the 2026-11-13 Row B walk found none did). One compact line each."""
+    js = (STATIC / "app-map.js").read_text(encoding="utf-8")
+    credit = function_source(js, "_osmCredit")
+    assert 'href="https://www.openstreetmap.org/copyright"' in credit and 't("OpenStreetMap contributors")' in credit and "ODbL 1.0" in credit
+    for fn in ("_renderOsmCompleteness", "_renderOsmTrends", "_renderOsmProfile", "_renderOsmGeography"):
+        assert function_source(js, fn).count("_osmCredit()") == 1, f"{fn} lost its OpenStreetMap credit, or carries it twice"
+    en = json.loads((STATIC / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "OpenStreetMap contributors" in en
+
+
+def test_the_changed_measure_states_where_its_window_starts():
+    """Q814 = b: a count over the window observed here says since when; the other measures count the places as they stand and do not."""
+    js = (STATIC / "app-map.js").read_text(encoding="utf-8")
+    vint = function_source(js, "_osmGeogVintage")
+    assert "Changes observed here since {since}." in vint
+    figs = function_source(js, "_osmGeogFigures")
+    assert '_osmGeogVintage(name, a.vintage, m === "changed" ? a.observed_since : null)' in figs
+    for lang in ("en", "fr", "ar", "zh"):
+        loc = json.loads((STATIC / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        assert "{since}" in loc["Changes observed here since {since}."], lang

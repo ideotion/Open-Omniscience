@@ -18,10 +18,10 @@ WHAT IT REFUSES TO DO.
 * A gap is a named stretch the lane did not see (Q727). The report lists the newest ones per edition with the reason, and the count per
   reason; it never turns them into a percentage, because a lane cannot know how much it missed.
 
-S3, THE LOCATED-SHARE COUNTERS. "Addresses found / located / outside your OSM countries" per edition and per press lane need the address
-extractor (S2) and the local OSM address index (S05-04), neither of which is in this build. The block says so in a ``reason``; it carries
-no number, because a zero would read as "none were found" where the truth is "nothing looked". It exists so the bundle member has the
-place K8's located share will fill, and so a reader is told why it is empty.
+S3, THE LOCATED-SHARE COUNTERS (R678). "Addresses found / located / outside your OSM countries" per edition come from
+``src.wiki.located``: the place infoboxes of the stored texts, looked up only in the local OSM address index. The scan is incremental, so the
+block says how many stored texts it has read of how many. The press lane is not read (no body-text grammar), and its block says so with a
+reason instead of a zero.
 """
 
 from __future__ import annotations
@@ -48,7 +48,11 @@ GAPS_LISTED_PER_EDITION: int = 5
 #: The two feed names an edition's changes and gaps carry (``src.wiki.lane.feed_name`` and the adapter's fallback).
 _FEED_PREFIXES: tuple[str, ...] = ("stream:", "recentchanges:")
 
-_LOCATED_REASON = "address-extractor-not-built"
+_LOCATED_STATUSES: tuple[str, ...] = (
+    "located", "ambiguous", "not_located", "outside_your_osm_countries", "no_house_number", "no_osm_country",
+)
+_LOCATED_SKIPS: tuple[str, ...] = ("skipped_about_a_person", "skipped_type_not_on_the_list")
+_PRESS_REASON = "press-body-addresses-not-read"
 
 
 def _utcnow() -> datetime:
@@ -189,27 +193,52 @@ def _gaps(lane: Any, *, newest: bool = True) -> dict[str, dict[str, Any]]:
     return by_edition
 
 
-def _located_block() -> dict[str, Any]:
-    """S3's counters, absent with the reason: no extractor and no address index exist in this build, so there is nothing to count."""
-    return {
-        "measured": False,
-        "reason": _LOCATED_REASON,
-        "fields": ["addresses_found", "addresses_located", "addresses_outside_your_osm_countries"],
-        "per_edition": None,
+def _located_block(lane: Any = None, *, budget: float | None = None, compact: bool = False) -> dict[str, Any]:
+    """S3's counters, read from :mod:`src.wiki.located` (R678): per edition, the addresses found in place infoboxes and what became of them.
+
+    No lane, or a scan that could not read, is ``measured: false`` with the reason, never a zero. The press lane is not read (a body-text
+    address grammar is a recorded gap), so ``per_press_lane`` is ``None`` with its reason. ``compact`` is the bundle member's form (R413):
+    the counts, without the located points, which the map reads from the lane route.
+    """
+    from src.wiki.located import SCAN_BUDGET_SECONDS, located_report
+
+    base: dict[str, Any] = {
+        "fields": ["found", *_LOCATED_STATUSES, *_LOCATED_SKIPS],
         "per_press_lane": None,
-        "method": (
-            "Not measured. Counting addresses found, located and outside the user's OSM countries needs the address extractor (S06-03 S2) and the "
-            "local OSM address index (S05-04); until both exist the report has no number to give, and a zero would read as 'none found'."
-        ),
+        "per_press_lane_reason": _PRESS_REASON,
+    }
+    if lane is None:
+        return {"measured": False, "reason": "lane-never-run", "per_edition": None, **base}
+    rep = located_report(lane, budget=SCAN_BUDGET_SECONDS if budget is None else budget)
+    if not rep.get("measured"):
+        return {"measured": False, "reason": rep.get("reason"), "per_edition": None, **base}
+    out = {
+        "measured": True,
+        "reason": None,
+        "per_edition": rep["per_edition"],
+        "texts_read": rep["texts_read"],
+        "texts_held": rep["texts_held"],
+        "complete": rep["complete"],
+        **base,
+    }
+    if compact:
+        return out
+    return {
+        **out,
+        "located_points": len(rep["points"]),
+        "scope": rep["scope"],
+        "gaps": rep["gaps"],
+        "method": rep["method"],
         "caveat": (
             "No bar is set and none is implied (K8's located share is pending ruling V1-6): a resolver ships before any bar (Q1017). "
-            "Addresses outside your OSM countries are not located, and never sent to an external geocoder (Q820)."
+            "Addresses outside your OSM countries are not located, and never sent to an external geocoder (Q820). An infobox about a "
+            "person is never read (R678)."
         ),
     }
 
 
 def edition_coverage(
-    lane: Any, *, now: datetime | None = None, newest_gaps: bool = True
+    lane: Any, *, now: datetime | None = None, newest_gaps: bool = True, located_budget: float | None = None
 ) -> dict[str, Any]:
     """The report: one row per edition (the twelve first), a totals row, and the located block. Never raises on a missing table.
 
@@ -233,7 +262,7 @@ def edition_coverage(
             "measured": False,
             "reason": "unreadable",
             "editions": [],
-            "located": _located_block(),
+            "located": {**_located_block(), "reason": "unreadable"},
         }
 
     walk_by = (
@@ -330,11 +359,7 @@ def edition_coverage(
         "read_at": at.isoformat(),
         "editions": rows,
         "totals": totals,
-        "located": (
-            {k: v for k, v in _located_block().items() if k in ("measured", "reason", "fields")}
-            if not newest_gaps
-            else _located_block()
-        ),
+        "located": _located_block(lane, budget=located_budget, compact=not newest_gaps),
         "method": (
             "Read, not accumulated, from rows the lane wrote: pages seen and the edition's article count from the walk's bookmark rows (walk_coverage), "
             "pages holding a text from HOT's revisions and WARM's counts, the last event from the newest versioned_changes row of the edition's "

@@ -176,6 +176,10 @@
     // Minimal, safe Markdown → HTML (escape first, then format). Handles
     // headings, lists, tables, code fences, blockquotes, rules and inline marks.
     function mdToHtml(md) {
+      // A translated draft opens with an HTML comment naming what it is (tests/test_help_docs_translated.py requires one).
+      // The reader's own banner already says it, in the reader's language, so the comment is for people editing the file
+      // and is not drawn: rendered, it showed as a raw "<!-- ... -->" paragraph above the title (R677, 2026-11-13).
+      md = String(md).replace(/^\s*<!--[\s\S]*?-->\s*/, "");
       const fences = [];
       const headingIds = new Map(); // per-document dedupe: repeat text -> slug, slug-1, slug-2...
       // a11y-help-scrollable-region: `.prose pre` and `.prose table` are declared

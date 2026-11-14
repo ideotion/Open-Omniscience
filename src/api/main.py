@@ -683,6 +683,19 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - a watchdog must never block startup
         log_failure(logger, "could not start the data-drive watchdog", exc, level=logging.WARNING)
 
+    # R683: weather slices now live in the encrypted store; delete the plaintext folder older
+    # versions wrote (its file names hashed unrounded places, its files named them). It needs no key,
+    # so it runs BEFORE the lock check: an install that is never unlocked again keeps no location on
+    # disk. A no-op once it is gone.
+    try:
+        from src.weather.openmeteo import purge_plaintext_cache
+
+        _n_wx = purge_plaintext_cache()
+        if _n_wx:
+            logger.info(f"deleted {_n_wx} plaintext weather file(s) left by an older version")
+    except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
+        log_failure(logger, "plaintext weather cache purge failed", exc, level=logging.WARNING)
+
     state = app_lock_state()
     if state.startswith("unlocked"):
         run_deferred_startup()

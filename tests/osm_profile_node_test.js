@@ -47,7 +47,7 @@ function extractConst(name, end) {
 }
 
 const FUNCS = [
-  "_osmCompShare", "_osmTrendTable", "_osmTrendLead", "_osmProfileCacheKey", "_osmProfileShare", "_osmProfileLabel", "_osmProfileSnapBrands", "_osmProfileSnapChannels",
+  "_osmCredit", "_osmCompShare", "_osmTrendTable", "_osmTrendLead", "_osmProfileCacheKey", "_osmProfileShare", "_osmProfileLabel", "_osmProfileSnapBrands", "_osmProfileSnapChannels",
   "_osmProfileSnapFreshness", "_osmPriorSource", "_osmProfileBlock", "_osmProfilePicker", "_osmProfileBody", "_osmProfileDraw", "_osmProfileFill", "_osmProfileShowTab",
   "_renderOsmProfile", "_osmProfileFetch", "loadOsmProfile",
 ];
