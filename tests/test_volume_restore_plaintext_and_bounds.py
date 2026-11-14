@@ -449,7 +449,7 @@ def test_what_the_removal_checks_is_the_folder_it_removes_from(tmp_path, monkeyp
     the removal cannot turn the removal onto another folder's files."""
     from src.backup import import_scan
 
-    if not import_scan.can_scan_by_handle():
+    if not getattr(import_scan, "can_scan_by_handle", lambda: True)():
         pytest.skip("no folder handles on this platform")
     out = _with_leftovers(tmp_path)
     first = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][0]["name"]
