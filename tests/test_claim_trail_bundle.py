@@ -99,7 +99,8 @@ def test_step_four_offers_weather_for_the_trail_only_and_fetches_nothing(corpus,
     assert op["kind"] == "weather" and op["rule"] == "drought"
     assert sorted(op["article_ids"]) == sorted([ids["wire"], ids["indep"]])
     assert op["host"] == HOST and op["request_url"].startswith(f"https://{HOST}/")
-    assert "latitude=46.0200" in op["request_url"] and op["coords_from"] == "article_mentioned_places"
+    # The request names the place rounded to 0.1 degree, as it is sent (R683).
+    assert "latitude=46.0000" in op["request_url"] and op["coords_from"] == "article_mentioned_places"
     assert op["reveals"] == ["ip_address", "coordinates", "date_window"]
     assert op["cached"] is False
     # Asking whether a slice is held creates nothing on disk.
@@ -116,13 +117,26 @@ def test_a_drought_article_outside_the_trail_makes_no_offer(corpus, data_dir, no
     assert _ws(TS)["corroboration"]["total"] == 0
 
 
-def test_an_offer_knows_when_its_slice_is_already_held(corpus, data_dir, no_network):
-    from src.weather.openmeteo import cache_path
+def _held_box(monkeypatch) -> dict:
+    """The encrypted key-value store as a dict: weather slices live there (R683), never in a file."""
+    box: dict = {}
+    monkeypatch.setattr("src.config.kv_store.kv_get_json", lambda k: box.get(k))
+    monkeypatch.setattr("src.config.kv_store.kv_set_json", lambda k, v: box.__setitem__(k, v))
+    return box
 
+
+def _hold(box: dict, url: str, payload: dict) -> None:
+    from src.weather.held import slice_key
+
+    box[slice_key(url)] = {**payload, "provenance": {"requested_url": url}}
+
+
+def test_an_offer_knows_when_its_slice_is_already_held(corpus, data_dir, no_network, monkeypatch):
+    box = _held_box(monkeypatch)
     TS, ids = corpus
     _drought(TS, [ids["wire"]])
     url = _ws(TS)["corroboration"]["offers"][0]["request_url"]
-    cache_path(url).write_text(json.dumps({"ok": True, "daily": {"time": []}, "units": {}}), encoding="utf-8")
+    _hold(box, url, {"ok": True, "daily": {"time": []}, "units": {}})
     assert _ws(TS)["corroboration"]["offers"][0]["cached"] is True
 
 
@@ -236,18 +250,17 @@ def test_an_osm_derived_row_rides_with_the_osm_credit_and_the_odbl(corpus, data_
         assert "OpenStreetMap" not in zf.read("ATTRIBUTION.md").decode()
 
 
-def test_the_open_meteo_line_rides_only_with_a_carried_slice(corpus, data_dir, no_network, signer):
-    from src.weather.openmeteo import cache_path
-
+def test_the_open_meteo_line_rides_only_with_a_carried_slice(corpus, data_dir, no_network, signer, monkeypatch):
+    box = _held_box(monkeypatch)
     TS, ids = corpus
     _drought(TS, [ids["wire"]])
     ws = _ws(TS)
     with TS() as s:
         data, report = cb.build_trail_bundle(s, ws, signer=signer)
     assert report["weather_slices"] == 0 and "Open-Meteo" not in _zip(data).read("ATTRIBUTION.md").decode()
-    cache_path(ws["corroboration"]["offers"][0]["request_url"]).write_text(
-        json.dumps({"ok": True, "daily": {"time": ["2026-08-28"], "precipitation_sum": [0.0]},
-                    "units": {"precipitation_sum": "mm"}}), encoding="utf-8")
+    _hold(box, ws["corroboration"]["offers"][0]["request_url"],
+          {"ok": True, "daily": {"time": ["2026-08-28"], "precipitation_sum": [0.0]},
+           "units": {"precipitation_sum": "mm"}})
     with TS() as s:
         data, report = cb.build_trail_bundle(s, ws, signer=signer)
     zf = _zip(data)

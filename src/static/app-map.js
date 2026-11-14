@@ -1238,7 +1238,7 @@
         const fill = has ? fillFor(v) : "url(#oomap-nodata)";
         const title = `${ooRegionName(code, c.name)} — ${has ? vlabel(code, v) : t("no data")}${c.osm ? " · " + t("boundary from OSM") : ""}`;
         paths += `<path d="${d}" fill="${fill}" fill-rule="evenodd" stroke="${c.osm ? "var(--accent)" : "var(--border)"}" stroke-width="${c.osm ? "0.5" : "0.3"}" data-iso="${esc(code)}"`
-          + `${opts.onCountry ? ' style="cursor:pointer"' : ""}><title>${esc(title)}</title></path>`;
+          + `${opts.onCountry ? ' style="cursor:pointer"' : ""} title="${esc(title)}"></path>`;
       }
       // Centroid POINT fallback: areas WITH data but NO polygon (microstates).
       const pointRows = (opts.points || []).filter(p => p.lat != null && p.lon != null
@@ -1247,8 +1247,8 @@
       for (const p of pointRows) {
         const _pp = project(p.lon, p.lat), x = _pp.x.toFixed(1), y = _pp.y.toFixed(1), iso = (p.iso2 || "").toLowerCase();
         pts += `<circle cx="${x}" cy="${y}" r="2.4" fill="${fillFor(p.value)}" stroke="var(--accent)" stroke-width="0.5" `
-          + `data-iso="${esc(iso)}"${opts.onCountry ? ' style="cursor:pointer"' : ""}>`
-          + `<title>${esc((p.label || p.iso2 || "") + " — " + vlabel(iso, p.value) + " " + t("(shown as a point)"))}</title></circle>`;
+          + `data-iso="${esc(iso)}"${opts.onCountry ? ' style="cursor:pointer"' : ""}`
+          + ` title="${esc((p.label || p.iso2 || "") + " — " + vlabel(iso, p.value) + " " + t("(shown as a point)"))}"></circle>`;
       }
       // Mentioned-places OVERLAY (switchable, slice 4): hollow markers DISTINCT
       // from the solid centroid points, sized by article spread (raw count). A
@@ -1403,15 +1403,15 @@
       const granHtml = (opts.onGranularity || _disp.shown || hasAdmin1) ? `
         <div class="oomap-gran" role="group" aria-label="${esc(t("Granularity"))}"
              style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;z-index:5">
-          ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
-          <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>` : ""}
-          ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
-          ${opts.onWiki ? `<button class="tiny secondary" data-oomap-wiki aria-pressed="${opts.wikiOn ? "true" : "false"}"${opts.wikiOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Wikipedia pages your lane follows that carry a coordinate. A page with no coordinate is absent, never placed at 0,0."))}">${esc(t("Wikipedia"))}</button>` : ""}
-          ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
-          ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
-          ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
-          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn || opts.osmLane ? "true" : "false"}"${opts.osmOn || opts.osmLane ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
-          ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
+          ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Country"))}</button>
+          <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Continent"))}</button>` : ""}
+          ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Places"))}</button>` : ""}
+          ${opts.onWiki ? `<button class="tiny secondary" data-oomap-wiki aria-pressed="${opts.wikiOn ? "true" : "false"}"${opts.wikiOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Wikipedia pages your lane follows that carry a coordinate. A page with no coordinate is absent, never placed at 0,0."))}">${esc(t("Wikipedia"))}</button>` : ""}
+          ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Signals"))}</button>` : ""}
+          ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
+          ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Labels"))}</button>` : ""}
+          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn || opts.osmLane ? "true" : "false"}"${opts.osmOn || opts.osmLane ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
+          ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
@@ -1421,8 +1421,8 @@
       // warp (log ticks bunch at the old end, linear ticks are evenly spaced).
       const _tsc = opts.timeScale === "log" ? "log" : opts.timeScale;   // may be undefined when no toggle
       const scaleBtns = opts.onTimeScale ? `<span class="oomap-tscale" role="group" aria-label="${esc(t("Time scale"))}" style="display:inline-flex;gap:3px">
-            <button class="tiny secondary" data-oomap-tscale="linear" aria-pressed="${_tsc !== "log"}"${_tsc !== "log" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Even year-by-year sweep"))}">${esc(t("Linear"))}</button>
-            <button class="tiny secondary" data-oomap-tscale="log" aria-pressed="${_tsc === "log"}"${_tsc === "log" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Compress antiquity so recent years — where most events are — get more of the slider"))}">${esc(t("Log"))}</button>
+            <button class="tiny secondary" data-oomap-tscale="linear" aria-pressed="${_tsc !== "log"}"${_tsc !== "log" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Even year-by-year sweep"))}">${esc(t("Linear"))}</button>
+            <button class="tiny secondary" data-oomap-tscale="log" aria-pressed="${_tsc === "log"}"${_tsc === "log" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Compress antiquity so recent years — where most events are — get more of the slider"))}">${esc(t("Log"))}</button>
           </span>` : "";
       const tickStrip = (Array.isArray(opts.focusTicks) && opts.focusTicks.length) ? `<div style="position:relative;height:11px;margin-top:1px">
           ${opts.focusTicks.map(tk => {
@@ -1448,7 +1448,7 @@
         <div class="oomap-dims" role="group" aria-label="${esc(t("Map dimension"))}"
              style="position:absolute;top:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;z-index:5;max-width:62%">
           ${opts.dimensions.map(dm => `<button class="tiny secondary" data-oomap-dim="${esc(dm.id)}" aria-pressed="${dm.id === opts.activeDim ? "true" : "false"}"`
-            + `${dm.id === opts.activeDim ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(dm.label)}</button>`).join("")}
+            + `${dm.id === opts.activeDim ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(dm.label)}</button>`).join("")}
         </div>` : "";
       // Legend: a sequential ramp for counts, a diverging red..panel..green ramp
       // for signed data (the 0 sits at the centre stop).
@@ -1474,6 +1474,9 @@
           ${_mapSphere()}${grid}${paths}${_adm1.markup}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${wikiPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
+        <div class="oomap-scale" data-oomap-scale hidden
+             title="${esc(t("Measured along the parallel at the centre of the view. This map keeps areas true, not distances, so the scale changes across the map."))}">
+          <span class="oomap-scale-bar"></span><span class="oomap-scale-l" dir="ltr"></span></div>
         <button type="button" class="tiny secondary oomap-ctl-toggle" data-oomap-ctl aria-expanded="false"
                 title="${esc(t("Show or hide the map's controls"))}">☰ ${esc(t("Map controls"))}</button>
         <div class="oomap-panel">
@@ -1537,6 +1540,7 @@
             disputed: Object.fromEntries((((wv === OOMAP_WORLDVIEW_OSM ? osmConv : disputed) || {}).areas || []).map(a => [a.id, a])) } : null;
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
+      _ooMapScaleWatch(host);
       // The caller's own follow-up for a redraw of THIS host (the Regions toggle, the worldview
       // select and another map's worldview change all re-enter here with `host._ooOpts`).
       if (typeof opts.afterRender === "function") opts.afterRender(host);
@@ -1555,6 +1559,62 @@
         void ooMap(host, host._ooOpts);
       });
     }
+    // THE SCALE BAR (journalist walk 2026-09-30, finding 1c: "zoomed in, I am lost").
+    // Equal Earth keeps AREAS true, not distances, so one bar cannot hold for the whole
+    // view: it is measured along the parallel through the CENTRE of the view (the great-
+    // circle length of a short east-west step there) and the hover says so. The length
+    // is rounded DOWN to 1, 2 or 5 x 10^k so the bar never claims more than it spans; a
+    // centre outside the globe (the corners of a zoomed-out view) hides the bar rather
+    // than guess. Pure arithmetic on the view: no fetch, nothing stored.
+    function _ooMapNiceLen(m) {
+      if (!(m > 0) || !isFinite(m)) return 0;
+      const p = Math.pow(10, Math.floor(Math.log10(m))), f = m / p;
+      return (f >= 5 ? 5 : f >= 2 ? 2 : 1) * p;
+    }
+    function _ooMapKmPerUnit(cx, cy) {
+      const a = unproject(cx - 0.5, cy), b = unproject(cx + 0.5, cy);
+      if (![a.lon, a.lat, b.lon, b.lat].every(isFinite)) return 0;
+      if (Math.abs(a.lon) > 180 || Math.abs(b.lon) > 180 || Math.abs(a.lat) > 90) return 0;
+      const R = 6371.0088, r = Math.PI / 180;
+      const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+    function _ooMapScaleBar(host, svg, vb) {
+      const box = host && host.querySelector("[data-oomap-scale]"); if (!box || !svg) return;
+      if (!vb) { const b = svg.viewBox && svg.viewBox.baseVal; if (!b) return; vb = { x: b.x, y: b.y, w: b.width, h: b.height }; }
+      // Screen pixels per map unit from the SVG's own transform, not from its box: the box
+      // includes the border and would be wrong the day CSS letterboxes the map.
+      const ctm = typeof svg.getScreenCTM === "function" ? svg.getScreenCTM() : null;
+      const pxPerUnit = ctm ? Math.hypot(ctm.a, ctm.b) : 0;
+      const w = pxPerUnit * vb.w;
+      const kmPerUnit = _ooMapKmPerUnit(vb.x + vb.w / 2, vb.y + vb.h / 2);
+      if (!(pxPerUnit > 0) || !(kmPerUnit > 0)) { box.hidden = true; return; }
+      const kmPerPx = kmPerUnit / pxPerUnit;
+      const km = _ooMapNiceLen(Math.min(110, w * 0.3) * kmPerPx);
+      const barPx = km / kmPerPx;
+      // Too narrow to draw a bar that matches its own label: no bar, never a padded one.
+      if (!(km > 0) || barPx < 8) { box.hidden = true; return; }
+      const bar = box.querySelector(".oomap-scale-bar"), lab = box.querySelector(".oomap-scale-l");
+      if (bar) bar.style.width = `${Math.round(barPx)}px`;
+      const fmt = (v) => (typeof fmtNum === "function") ? fmtNum(v, 0) : String(v);
+      // "≈": a distance on an equal-area map is approximate, and the mark says so visibly.
+      if (lab) lab.textContent = km >= 1 ? `≈ ${fmt(km)} km` : `≈ ${fmt(km * 1000)} m`;
+      box.hidden = false;
+    }
+
+    // The bar is in SCREEN pixels, so it is re-measured whenever the map's width changes
+    // (a window resize, a hidden tab shown, fullscreen), not only on zoom. One observer per
+    // host, re-pointed at whichever svg the latest render drew.
+    function _ooMapScaleWatch(host) {
+      const svg = host && host.querySelector("svg#oo-choro"); if (!svg) return;
+      _ooMapScaleBar(host, svg);
+      if (typeof ResizeObserver !== "function") return;
+      if (host._ooScaleRO) host._ooScaleRO.disconnect();
+      host._ooScaleRO = new ResizeObserver(() => _ooMapScaleBar(host, host.querySelector("svg#oo-choro")));
+      host._ooScaleRO.observe(svg);
+    }
+
     // Greedy non-overlapping label declutter (THEME-2), re-run on every viewBox
     // change so labels stay constant-size on screen, never overlap, and reveal more
     // detail as you zoom in. Highest-value countries win ties (placed first).
@@ -1768,6 +1828,7 @@
       const minW = W * OO_OSM_LANE_MIN_ZOOM;
       const apply = () => {
         svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+        _ooMapScaleBar(host, svg, vb);
         // Re-declutter labels for the new viewBox (THEME-2: dynamic, constant-size,
         // non-overlapping — more reveal as you zoom). No-op when labels are off.
         if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb);
@@ -1969,7 +2030,7 @@
       sig.forEach(s => { const k = s.kind || "article"; counts[k] = (counts[k] || 0) + 1; });
       const kinds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
       const chip = (key, label, n, on, dot) => `<button type="button" class="tiny secondary" data-story-kind="${esc(key)}" aria-pressed="${on ? "true" : "false"}"`
-        + `${on ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+        + `${on ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>`
         + (dot ? `<span style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block;margin-right:4px;vertical-align:middle"></span>` : "")
         + `${esc(label)}${n != null ? ` <span class="muted">${esc(fmtNum(n))}</span>` : ""}</button>`;
       const allOn = _ooMapStoryKind == null;
@@ -1987,15 +2048,15 @@
         const tkeys = Object.keys(types).sort((a, b) => types[b] - types[a]);
         const majorChip = `<button type="button" class="tiny secondary" id="oomap-haz-major"`
           + ` aria-pressed="${_ooMapHazMajorOnly ? "true" : "false"}"`
-          + `${_ooMapHazMajorOnly ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+          + `${_ooMapHazMajorOnly ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>`
           + `${esc(t("Major only"))} <span class="muted">${esc(fmtNum(majorN))}/${esc(fmtNum(haz.length))}</span></button>`;
         const typeChips = [`<button type="button" class="tiny secondary" data-haz-type="__all"`
           + ` aria-pressed="${_ooMapHazType == null ? "true" : "false"}"`
-          + `${_ooMapHazType == null ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+          + `${_ooMapHazType == null ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>`
           + `${esc(t("All hazard types"))}</button>`]
           .concat(tkeys.map(k => `<button type="button" class="tiny secondary" data-haz-type="${esc(k)}"`
             + ` aria-pressed="${_ooMapHazType === k ? "true" : "false"}"`
-            + `${_ooMapHazType === k ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+            + `${_ooMapHazType === k ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>`
             + `${esc(hazardTypeLabel(k))} <span class="muted">${esc(fmtNum(types[k]))}</span></button>`));
         hazRow = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:5px">
             <span class="muted" style="font-size:12px">${ooLabelHtml(esc(t("Hazards")), "")}</span>${majorChip}${typeChips.join("")}
@@ -2892,7 +2953,7 @@
       if (!await ensureOnline(t("Read the exact current size of the selected Wikipedia dumps"))) return;
       if (out) out.textContent = t("Reading exact sizes…");
       try {
-        const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`);
+        const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`, {method: "POST"});
         const rows = d.sizes || [];
         const ok = [], bad = [];
         rows.forEach(r => {
@@ -4288,7 +4349,7 @@
       if (!await ensureOnline(t("Read the size of the full-history planet"))) return;
       if (btn) { btn.disabled = true; btn.textContent = t("Reading…"); }
       const code = ((_osmHistory || {}).download || {}).code || "planet-history";
-      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code) + "&consent=true"); }
+      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code) + "&consent=true", {method: "POST"}); }
       catch (e) { toast(_failMsg("Size check failed: {error}", e), "err"); }
       _renderOsmHistory();
     }
@@ -4455,6 +4516,8 @@
     // oo:langchange listener) rather than leaving the numbers-bearing lines in the
     // language they were drawn in, and without a second request.
     let _statFigLast = null, _statRevLast = null;
+    // The one figure whose revision trail is open under the table (null: none).
+    let _statVint = null;
     // A number inside a sentence, isolated so an RTL page cannot reorder it (R7).
     function _statIso(x) { return "\u2068" + String(x) + "\u2069"; }
     async function loadStatFigures(fromCache) {
@@ -4462,6 +4525,7 @@
       const box = $("statfig-table"); if (!box) return;
       if (!(fromCache === true && _statFigLast)) {
         const series = ($("statfig-view-series").value || "").trim();
+        _statVint = null;
         box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
         try {
           const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
@@ -4481,22 +4545,91 @@
       // alpha-3 on screen, the localised name or "published aggregate" in the hover, the
       // non-ISO disclosure for XKX -- from the classification the server sends beside
       // each code. It printed the producer's code bare, with no hover at all.
-      const rows = figs.map(f => `<tr>
+      // Each row opens its own revision trail (GET /api/stats/figures/vintages): the table
+      // shows the LATEST vintage only, so an earlier published value was stored and
+      // unreachable. One delegated listener on the box, wired once.
+      const th = (k, right) => `<th${right ? ' style="text-align:right"' : ""}>${esc(t(k))}</th>`;
+      const vk = (f) => [f.agency, f.series_id, f.ref_area, f.time_period].join("\u0001");
+      const vBtnTitle = t("Every stored version of this figure, oldest first");
+      const rows = figs.map((f, i) => {
+        const open = !!(_statVint && _statVint.key === vk(f));
+        return `<tr>
           <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${ooAreaCell(f.ref_area, f.area_kind, f.area_name)}</td>
           <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
           <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
-        </tr>`).join("");
+          <td><button type="button" class="ghost tiny" data-statvint="${i}" aria-expanded="${open}" title="${esc(vBtnTitle)}">${esc(t("Show"))}</button></td>
+        </tr>`;
+      }).join("");
+      if (!box._statVintWired) {
+        box._statVintWired = true;
+        box.addEventListener("click", (ev) => {
+          const b = ev.target && ev.target.closest ? ev.target.closest("button[data-statvint]") : null;
+          if (b) _statLoadVintages(Number(b.dataset.statvint));
+        });
+      }
+      // The open trail, drawn from what it last fetched so a language switch redraws it
+      // too. Each version's change is shown against the one before it only when both
+      // share unit, adjustment and base year; across a basis change it is "—", never a
+      // difference between two different quantities.
+      let vint = "";
+      const vf = _statVint ? figs.find((f) => vk(f) === _statVint.key) : null;
+      if (vf && _statVint.loading) {
+        vint = `<div class="muted" style="margin-top:10px">${esc(t("Loading…"))}</div>`;
+      } else if (vf && _statVint.error != null) {
+        vint = `<div class="muted" style="margin-top:10px">${esc(_mapTf("Could not load the versions: {error}", { error: _statVint.error }))}</div>`;
+      } else if (vf && _statVint.d) {
+        const vd = _statVint.d, vs = vd.vintages || [];
+        const same = (a, b) => a && b && (a.unit || "") === (b.unit || "")
+          && (a.adjustment || "") === (b.adjustment || "") && (a.base_year || "") === (b.base_year || "");
+        const vrows = vs.map((v, j) => {
+          const prev = j > 0 ? vs[j - 1] : null;
+          const num = (x) => x !== null && x !== undefined && isFinite(Number(x));
+          const ch = (prev && same(prev, v) && num(prev.value) && num(v.value))
+            ? _statfigFmt(Number(v.value) - Number(prev.value)) : "—";
+          return `<tr><td>${esc(fmtDateTime(v.extracted_at) || String(v.extracted_at || ""))}</td>`
+            + `<td style="text-align:right">${_statfigFmt(v.value)}</td><td style="text-align:right">${ch}</td>`
+            + `<td>${esc(v.unit || "")}</td><td>${esc(v.adjustment || "")}</td><td>${esc(v.base_year || "")}</td></tr>`;
+        }).join("");
+        const vhint = _mapTf("{n} stored versions of {series} · {area} · {period}, oldest first", {
+          n: _statIso(fmtNum(vd.count != null ? vd.count : vs.length, 0)), series: vf.series_id,
+          area: vf.ref_area, period: vf.time_period });
+        vint = `<div class="statfig-vint" style="margin-top:12px"><div class="hint">${esc(vhint)}</div>`
+          + `<table><tr>${th("Stored on")}${th("Value", true)}${th("Change in value", true)}`
+          + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}</tr>${vrows}</table>`
+          // The store's fixed caveat, visible beside the numbers it qualifies (R685).
+          + `<p class="card-caveat" style="margin-top:6px">${esc(t(vd.caveat || "Revisions are preserved as evidence; no vintage is treated as the single truth."))}</p></div>`;
+      }
       // ONE keyed frame, its numbers grouped and isolated (R7): the English hint had its
       // two numbers reordered around "of" on an Arabic page.
       const hint = _mapTf("Showing {shown} of {total} · latest vintage", {
         shown: _statIso(fmtNum(d.shown || figs.length, 0)), total: _statIso(fmtNum(d.count || figs.length, 0)) });
-      const th = (k, right) => `<th${right ? ' style="text-align:right"' : ""}>${esc(t(k))}</th>`;
       box.innerHTML = `<div class="hint">${esc(hint)}</div>
         <table><tr>${th("Agency")}${th("Series")}${th("Area")}${th("Period")}${th("Value", true)}`
-        + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}</tr>${rows}</table>`
+        + `${th("Unit")}${th("SA/NSA")}${th("Base yr")}${th("Versions")}</tr>${rows}</table>`
         // The store's fixed caveat, keyed x12 like the headers above (L-4's class: it
         // said "A None value" and stayed English under translated headers).
-        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "");
+        + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
+        + vint;
+    }
+    // Open (or close, on a second click) one figure's revision trail. Keyed by the
+    // observation, not the row number, so a reload that reorders rows cannot show one
+    // figure's history under another.
+    async function _statLoadVintages(i) {
+      const figs = (_statFigLast && _statFigLast.d && _statFigLast.d.figures) || [];
+      const f = figs[i]; if (!f) return;
+      const key = [f.agency, f.series_id, f.ref_area, f.time_period].join("\u0001");
+      if (_statVint && _statVint.key === key && !_statVint.loading) { _statVint = null; loadStatFigures(true); return; }
+      _statVint = { key, loading: true };
+      loadStatFigures(true);
+      let next;
+      try {
+        const qs = "?agency=" + encodeURIComponent(f.agency) + "&series_id=" + encodeURIComponent(f.series_id)
+          + "&ref_area=" + encodeURIComponent(f.ref_area) + "&time_period=" + encodeURIComponent(f.time_period);
+        next = { key, d: await api("/api/stats/figures/vintages" + qs) };
+      } catch (e) {
+        next = { key, error: e.message };
+      }
+      if (_statVint && _statVint.key === key) { _statVint = next; loadStatFigures(true); }
     }
     // Redraw the two statistics tables from what they last drew, in the language now
     // current. Only what is on screen: a table never loaded stays unloaded.

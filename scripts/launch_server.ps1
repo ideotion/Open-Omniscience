@@ -61,6 +61,15 @@ function Add-RowText([string]$Path, [string]$Text) {
     }
     return $false
 }
+# A ROW WRITTEN WITHOUT THE LOCK SAYS SO (item 66 follow-up, 2026-11-14). Every such append can race another launcher's trim and be lost, and on CI
+# one was (run 43552997010: 24 lines and 7 of 8 rows, which takes an append that skipped both the lock and the trim). These paths were silent, so
+# that red could not say which one ran. The words are fixed and carry nothing of the row; the reason is one of a fixed few or an exception's type name.
+function Add-RowUnlocked([string]$Path, [string]$Text, [string]$Why) {
+    [Console]::Error.WriteLine("launcher record: a row was appended without the lock: $Why")
+    $ok = Add-RowText $Path $Text
+    if (-not $ok) { [Console]::Error.WriteLine('launcher record: a row could not be appended after 5 tries and was not written') }
+    return $ok
+}
 
 # THE EVIDENCE FILES AND THE LAUNCHERS THAT SHARE THEM (R173). Every append and every trim of one file happens under ONE named mutex for that file
 # (the scripts/launch.sh counterpart), and a trim writes a temp file of its own and replaces the file with it. Before, the trim read the whole file
@@ -91,18 +100,19 @@ function Get-RecMutex([string]$Path) {
 function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep, [int]$FallbackWaitMs = -1) {
     $text = ($Row | ConvertTo-Json -Compress) + "`n"
     $mutex = Get-RecMutex $Path
-    if (-not $mutex) { return (Add-RowText $Path $text) }   # no mutex can be made at all: as before
+    if (-not $mutex) { return (Add-RowUnlocked $Path $text "no lock could be made for the file") }   # no mutex can be made at all: as before, and said
     $held = $false
     try {
-        try { $held = $mutex.WaitOne($RecLockWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowText $Path $text) }
+        try { $held = $mutex.WaitOne($RecLockWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowUnlocked $Path $text ("waiting for its lock failed (" + $_.Exception.GetBaseException().GetType().Name + ")")) }
         if (-not $held) {
             if (Start-DeferredRow $Path $text $Max $Keep) { return $true }
             # no child could be started or handed the row (item 66: that row was dropped): this launcher waits for the mutex itself, so the row is late
             # and the launcher ends late, never the row lost; past a bounded wait the row is appended without the mutex
-            try { $held = $mutex.WaitOne($FallbackWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowText $Path $text) }
-            if (-not $held) { return (Add-RowText $Path $text) }
+            try { $held = $mutex.WaitOne($FallbackWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowUnlocked $Path $text ("waiting for its lock failed (" + $_.Exception.GetBaseException().GetType().Name + ")")) }
+            if (-not $held) { return (Add-RowUnlocked $Path $text "its lock was not obtained in time") }
         }
         $ok = Add-RowText $Path $text
+        if (-not $ok) { [Console]::Error.WriteLine('launcher record: a row could not be appended after 5 tries and was not written') }
         if ($ok -and $Max -gt 0) { Limit-Rows $Path $Max $Keep }
         return $ok
     } finally {
@@ -125,7 +135,8 @@ function Start-DeferredRow([string]$Path, [string]$Text, [int]$Max, [int]$Keep) 
             "if (`$parts.Length -lt 4 -or `$parts[3].Length -eq 0 -or `$parts[3][-1] -ne [char]10) { [Console]::Error.WriteLine('launcher record: a deferred row arrived cut short and was not written'); exit 1 }`n" +
             "`$path = `$parts[0]; `$max = [int]`$parts[1]; `$keep = [int]`$parts[2]; `$text = `$parts[3]`n" +
             "`$m = Get-RecMutex `$path; `$held = `$false`n" +
-            "if (`$m) { try { `$m.WaitOne() | Out-Null; `$held = `$true } catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { } }`n" +
+            "if (-not `$m) { [Console]::Error.WriteLine('launcher record: a deferred row was appended without the lock: no lock could be made for the file') }`n" +
+            "if (`$m) { try { `$m.WaitOne() | Out-Null; `$held = `$true } catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { [Console]::Error.WriteLine('launcher record: a deferred row was appended without the lock: waiting for its lock failed (' + `$_.Exception.GetBaseException().GetType().Name + ')') } }`n" +
             "try { `$ok = Add-RowText `$path `$text`n" +
             "  if (`$ok -and `$held -and `$max -gt 0) { Limit-Rows `$path `$max `$keep }`n" +
             "  if (-not `$ok) { [Console]::Error.WriteLine('launcher record: a deferred row could not be appended'); exit 1 }`n" +
@@ -162,7 +173,7 @@ function Limit-Rows([string]$Path, [int]$Max, [int]$Keep) {
             [System.IO.File]::WriteAllLines($tmp, ($rows | Select-Object -Last $Keep), $Utf8)
             [System.IO.File]::Replace($tmp, $Path, [NullString]::Value)
         }
-    } catch { }
+    } catch { [Console]::Error.WriteLine("launcher record: a trim failed and the file was left as it was (" + $_.Exception.GetBaseException().GetType().Name + ")") }
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 }
 

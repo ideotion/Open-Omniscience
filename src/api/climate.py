@@ -44,8 +44,9 @@ def _fetch_worker(ctx, *, dataset: str, param: str | None) -> dict:
 
 
 #: A WRITER: it commits figures and the fetch record to the corpus file, so the offline
-#: maintenance hold-off must see it. NOT cancellable, honestly: each download is a blocking GET
-#: with no stop flag to check, and a Cancel button that did nothing would be theater.
+#: maintenance hold-off must see it. NOT cancellable from its own control, honestly: a Cancel button
+#: that did nothing would be theater. Stop (the kill switch) does end it: the download reads the
+#: switch between chunks (src/stats/fetch.py _bounded_get) and the job fails naming airplane mode.
 _FETCH_JOB = register_job(
     BackgroundJob("climate-fetch", "Fetching a climate dataset", _fetch_worker, is_writer=True, cancellable=False)
 )

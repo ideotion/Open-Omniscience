@@ -314,8 +314,10 @@ def test_doc_translation_served_and_fallback(client):
     assert r.status_code == 200
     assert r.headers["x-oo-doc-lang"] == "fr"
     assert "Démarrage rapide" in r.text
-    # No German manual yet -> English fallback, honestly labelled.
-    r = client.get("/api/docs/quickstart?lang=de")
+    # No German security doc yet -> English fallback, honestly labelled.
+    # (Quick start and the user manual have drafts in every locale since
+    # 2026-11-13, so the fallback is pinned on a document that has none.)
+    r = client.get("/api/docs/security?lang=de")
     assert r.status_code == 200
     assert r.headers["x-oo-doc-lang"] == "en"
     # A path-shaped lang can never traverse: falls back to English, no error.

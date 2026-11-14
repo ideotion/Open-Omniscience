@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-13,help,English User manual and Quick start describe today's app,shipped,PR #1944; R677; 0.6 gate row E,docs/USER_MANUAL.md; docs/QUICKSTART.md; src/static/app-settings.js,"The manual named a Search tab, Settings paths and a six-month re-check that no longer exist; it now names Explore, Settings > Advanced > Collection/Sources/Quality gates, the Climate and Observatory tabs and the three-month re-check, each checked against the code. A translated draft's leading banner comment is no longer drawn above its title."

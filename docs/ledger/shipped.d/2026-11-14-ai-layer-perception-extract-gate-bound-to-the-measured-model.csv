@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,ai_layer,perception-extract gate bound to the measured model (R704),shipped,PR #1993; R704,src/ai_layer/perception_extract.py; src/ai_layer/perception_extract_job.py; src/static/app-diagnostics.js,"Who/where/when extraction runs only on an eval of the model that would extract; a report from another model (or none named) reads every language unmeasured, so a clean report can no longer license Mistral-7B (94.7% who-hallucination in the field). Settings -> AI names the measured model."

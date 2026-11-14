@@ -464,10 +464,13 @@ def corroboration_offers(session, article_ids: list[int], *, today=None) -> dict
             # What the request tells the host: this machine's address, a point and a date
             # window -- together, which place and period the reader is looking into.
             "reveals": ["ip_address", "coordinates", "date_window"],
-            "cached": read_cached_slice(url) is not None,
         })
+    shown = offers[:MAX_OFFERS]
+    # Whether a slice is held is read for the shown offers only: each read opens the encrypted store (R683).
+    for offer in shown:
+        offer["cached"] = read_cached_slice(offer["request_url"]) is not None
     return {
-        "offers": offers[:MAX_OFFERS],
+        "offers": shown,
         "total": len(offers),
         "in_future": in_future,
         "skipped_no_coords": found["skipped_no_coords"],

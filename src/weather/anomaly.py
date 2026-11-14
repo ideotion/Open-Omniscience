@@ -41,7 +41,13 @@ import math
 from datetime import date
 from typing import Any
 
-from src.weather.openmeteo import LICENSE_NOTE, build_archive_url, fetch_daily_slice
+from src.weather.openmeteo import (
+    LICENSE_NOTE,
+    PLACE_DECIMALS,
+    build_archive_url,
+    fetch_daily_slice,
+    round_place,
+)
 
 BASELINE_START = date(1991, 1, 1)
 BASELINE_END = date(2020, 12, 31)
@@ -220,11 +226,8 @@ def compute_anomalies(baseline: dict, window: dict, variables: list[str] | None 
     }
 
 
-#: R675: the place is ROUNDED before it leaves the machine. One decimal of a degree (about 11 km
-#: north-south) is the spacing of ERA5-Land, the finest grid behind the archive's land values,
-#: so the rounded point sits on a grid node of the cell the archive answers for. Coarser rounding
-#: would move the answer to another cell; finer would only send more of where the person is.
-PLACE_DECIMALS = 1
+#: R675: the place is ROUNDED before it leaves the machine (:data:`src.weather.openmeteo.PLACE_DECIMALS`,
+#: one decimal of a degree, the ERA5-Land spacing; ``build_archive_url`` applies it for every caller).
 PLACE_NOTE = (
     "Coordinates are rounded to 0.1 degree (about 11 km) before they are sent: that is the spacing of "
     "ERA5-Land, the finest grid behind these values. Open-Meteo also adjusts temperature for the terrain "
@@ -234,7 +237,7 @@ PLACE_NOTE = (
 
 def place(lat: float, lon: float) -> tuple[float, float]:
     """The rounded place actually sent and stored (R675). ``-0.0`` reads as ``0.0``."""
-    return (round(float(lat), PLACE_DECIMALS) + 0.0, round(float(lon), PLACE_DECIMALS) + 0.0)
+    return round_place(lat, lon)
 
 
 def _all_vars() -> list[str]:
@@ -242,12 +245,13 @@ def _all_vars() -> list[str]:
     return sorted(SUPPORTED)
 
 
-def _store(store):
+def _place_store(store):
+    # The person's own place, kept apart from corroboration slices (src/weather/held.py PLACE_KEY_PREFIX).
     if store is not None:
         return store
-    from src.weather.held import HeldSlices
+    from src.weather.held import PLACE_KEY_PREFIX, HeldSlices
 
-    return HeldSlices()
+    return HeldSlices(PLACE_KEY_PREFIX)
 
 
 def _place_block(lat: float, lon: float) -> dict:
@@ -259,7 +263,7 @@ def held_anomalies(lat: float, lon: float, start: date, end: date,
     """The anomalies from slices ALREADY held on this machine. Never fetches: a slice not held is
     named in ``missing`` and no number is computed (R675's re-view, readable in airplane mode)."""
     lat, lon = place(lat, lon)
-    st = _store(store)
+    st = _place_store(store)
     base = st.get(build_archive_url(lat, lon, BASELINE_START, BASELINE_END, _all_vars()))
     win = st.get(build_archive_url(lat, lon, start, end, _all_vars()))
     missing = [name for name, p in (("baseline", base), ("window", win)) if p is None]
@@ -288,7 +292,7 @@ def fetch_anomalies(lat: float, lon: float, start: date, end: date,
     if unknown:
         raise ValueError(f"no anomaly definition for {unknown}; supported: {sorted(SUPPORTED)}")
     lat, lon = place(lat, lon)
-    st = _store(store)
+    st = _place_store(store)
     got: dict[str, dict] = {}
     held: dict[str, bool] = {}
     kept = True
@@ -298,7 +302,7 @@ def fetch_anomalies(lat: float, lon: float, start: date, end: date,
         held[stage] = payload is not None
         if payload is None:
             payload = fetch_daily_slice(lat, lon, s, e, _all_vars(), force=True, fetcher=fetcher,
-                                        use_file_cache=False)
+                                        keep=False)
             if not payload.get("ok"):
                 return {**payload, "stage": stage, "place": _place_block(lat, lon)}
             payload = {k: v for k, v in payload.items() if k not in ("label", "cached")}

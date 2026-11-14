@@ -227,7 +227,7 @@ def test_the_endpoint_names_the_editions_it_did_not_probe(client, monkeypatch):
 
     monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
     codes = [f"a{i}" for i in range(MAX_SIZE_PROBE_EDITIONS + 3)]
-    r = client.get("/api/wiki/dumps/sizes", params={"wikis": ",".join(codes)})
+    r = client.post("/api/wiki/dumps/sizes", params={"wikis": ",".join(codes)})
     assert r.status_code == 200
     d = r.json()
     assert d["requested"] == len(codes)
@@ -237,13 +237,13 @@ def test_the_endpoint_names_the_editions_it_did_not_probe(client, monkeypatch):
 
 
 def test_the_endpoint_refuses_a_traversal_shaped_edition_code(client):
-    r = client.get("/api/wiki/dumps/sizes", params={"wikis": "en,../../etc"})
+    r = client.post("/api/wiki/dumps/sizes", params={"wikis": "en,../../etc"})
     assert r.status_code == 400
 
 
 def test_the_endpoint_refuses_an_empty_selection(client):
     # Never silently substitute a default edition the operator did not choose.
-    assert client.get("/api/wiki/dumps/sizes", params={"wikis": " , "}).status_code == 400
+    assert client.post("/api/wiki/dumps/sizes", params={"wikis": " , "}).status_code == 400
 
 
 # --------------------------------------------------------------------------- #
@@ -268,7 +268,7 @@ def test_the_probe_route_names_an_airplane_refusal_instead_of_a_bare_null(client
             ]
 
     monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
-    r = client.get("/api/wiki/dumps/probe", params={"wiki": "en"})
+    r = client.post("/api/wiki/dumps/probe", params={"wiki": "en"})
     assert r.status_code == 200
     d = r.json()
     assert d["size_bytes"] is None
@@ -290,7 +290,7 @@ def test_the_probe_route_names_every_absence_reason(client, monkeypatch, reason)
             return [dumps.DumpSizeReading(wiki=w, kind=kind, url="", size_bytes=None, reason=reason)]
 
     monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
-    r = client.get("/api/wiki/dumps/probe", params={"wiki": "en"})
+    r = client.post("/api/wiki/dumps/probe", params={"wiki": "en"})
     assert r.status_code == 200
     assert r.json()["reason"] == reason
 
@@ -304,7 +304,7 @@ def test_the_probe_route_reports_a_real_size_with_no_reason(client, monkeypatch)
             return [dumps.DumpSizeReading(wiki=w, kind=kind, url="https://x", size_bytes=4242, reason=None)]
 
     monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
-    r = client.get("/api/wiki/dumps/probe", params={"wiki": "en"})
+    r = client.post("/api/wiki/dumps/probe", params={"wiki": "en"})
     assert r.status_code == 200
     d = r.json()
     assert d["size_bytes"] == 4242

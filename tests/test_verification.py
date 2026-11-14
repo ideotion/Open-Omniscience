@@ -83,3 +83,57 @@ def test_api_rejects_non_image():
         files={"file": ("x.txt", b"hello", "text/plain")},
     )
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize("side", [8000, 13000])
+def test_a_small_file_declaring_huge_dimensions_is_refused_before_decoding(side):
+    """A ~20 KB PNG can declare 169 million pixels and decode to ~670 MB (security read,
+    Lane M): the header's size is checked first, both under Pillow's own bomb limit
+    (8000 x 8000 = 64 MP) and over it, and the refusal is a 400 with a reason, not a 500."""
+    buf = io.BytesIO()
+    Image.new("1", (side, side)).save(buf, "PNG")
+    assert len(buf.getvalue()) < 100_000
+    with pytest.raises(ImageError, match="too large"):
+        extract_image_metadata(buf.getvalue())
+    r = TestClient(app).post(
+        "/api/verify/image-metadata", files={"file": ("big.png", buf.getvalue(), "image/png")}
+    )
+    assert r.status_code == 400 and "too large" in r.json()["detail"]
+
+
+def test_the_capture_date_in_the_exif_sub_block_is_read():
+    """DateTimeOriginal lives in the Exif sub-block (tag 0x8769), not the main block: a
+    photo whose only date is its capture date must not read as "no date" (final read,
+    Lane M), and the internal pointer itself is not listed as a tag."""
+    exif = Image.Exif()
+    exif[0x0110] = "Cam"  # Model
+    exif.get_ifd(0x8769)[0x9003] = "2026:01:02 10:11:12"  # DateTimeOriginal
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, "JPEG", exif=exif.tobytes())
+    meta = extract_image_metadata(buf.getvalue())
+    assert meta.exif.get("DateTimeOriginal") == "2026:01:02 10:11:12", meta.exif
+    assert "ExifOffset" not in meta.exif
+    assert not any("No capture" in o for o in meta.observations)
+
+
+def test_a_json_of_another_shape_is_not_a_bundle_and_not_a_500():
+    r = TestClient(app).post("/api/reports/evidence/verify", json={"bundle": {"manifest": "x"}})
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "verified": False,
+        "reason": "malformed bundle: not the shape this app exports",
+    }
+
+
+def test_pointers_are_not_tags_binary_is_named_and_the_main_block_wins():
+    exif = Image.Exif()
+    exif[0x0131] = "MainSoft"  # Software, main block
+    sub = exif.get_ifd(0x8769)
+    sub[0x0131] = "SubSoft"
+    sub[0x927C] = b"\x00\xff" * 5000  # MakerNote
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, "JPEG", exif=exif.tobytes())
+    meta = extract_image_metadata(buf.getvalue())
+    assert meta.exif["Software"] == "MainSoft"
+    assert meta.exif["MakerNote"] == "(10000 bytes of binary data, not shown)"
+    assert not {"ExifOffset", "ExifInteroperabilityOffset"} & set(meta.exif)

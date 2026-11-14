@@ -11,6 +11,7 @@ Scoped explicitly as "metadata checks" -- NOT deepfake/manipulation detection
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from src.monitoring.secret_scrub import http_detail
 from src.verification.metadata import ImageError, extract_image_metadata
@@ -30,7 +31,8 @@ async def image_metadata(file: UploadFile) -> dict:
     if len(data) > _MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="Image exceeds 50 MB limit.")
     try:
-        meta = extract_image_metadata(data)
+        # the decode is synchronous: off the event loop, so other requests keep moving
+        meta = await run_in_threadpool(extract_image_metadata, data)
     except ImageError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     return {"filename": file.filename, **meta.to_dict()}

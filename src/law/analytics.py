@@ -52,6 +52,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: the two are equal, so the copy cannot drift in silence.
 SPARSE_BAR_MAX = 10
 
+#: The caveats that stay VISIBLE beside the figure (the informed-consent non-negotiable); the long ``caveat``
+#: and the ``method`` sit one click away. Both are locale keys.
+CAVEAT_SHORT_TIMELINE = "Versions captured on this machine, not the legislature's own amendments."
+CAVEAT_SHORT_VELOCITY = "What this install polls and how often, not how fast a legislature amends."
+
 
 def provision_timeline(
     lane: Session,
@@ -119,17 +124,15 @@ def provision_timeline(
         "n": len(events),
         "sparse": len(events) < SPARSE_BAR_MAX,
         "method": (
-            "each consecutive pair of stored versions is compared by PROVISION ADDRESS "
-            "and content hash; a provision present in both with a different hash is "
-            "'changed', one that appears is 'added', one that disappears is 'removed'. "
-            "Version order comes from the document's own revision history, never from "
-            "the order rows were written here."
+            "Each stored version is compared with the one before it, provision by provision: a "
+            "provision whose text differs is 'changed', a new one is 'added', a missing one is "
+            "'removed'. The versions are put in the order this machine captured them."
         ),
+        "caveat_short": CAVEAT_SHORT_TIMELINE,
         "caveat": (
-            "This counts the versions THIS INSTANCE captured, not the amendments the "
-            "legislature made: two amendments between one poll and the next arrive as "
-            "one change. Addresses are per LANGUAGE — a translation's provisions carry "
-            "its own container names, so they do not line up with the original's."
+            "This counts the versions this machine captured, not the amendments the legislature "
+            "made: two amendments between one check and the next arrive as one change. Provision "
+            "names follow each language, so a translation's do not line up with the original's."
         ),
     }
 
@@ -200,16 +203,16 @@ def amendment_velocity(
         "n": sum(s["n"] for s in series),
         "excluded_baseline_captures": excluded_baselines,
         "method": (
-            "one count per stored version per period, from this instance's own capture "
-            "timestamps. The first capture of a document is EXCLUDED — it is a first "
-            "sighting, not a change — and the count of those exclusions is reported."
+            "One count per stored version per period, by the date this machine captured it. A "
+            "document's first capture is left out, because it is a first sighting, not a change, "
+            "and how many were left out is shown."
         ),
+        "caveat_short": CAVEAT_SHORT_VELOCITY,
         "caveat": (
-            "This is a property of what this install polls and how often, NOT of a "
-            "legislature. Two amendments between consecutive polls arrive as one "
-            "version. `tracked_documents` is given per jurisdiction as the denominator a "
-            "reader needs; no rate is computed here, because dividing would produce a "
-            "figure that reads as a legislative rate and is a statement about a watch list."
+            "This depends on which documents this install tracks and how often it checks them, "
+            "not on a legislature. Two amendments between two checks arrive as one version. The "
+            "number of tracked documents is shown beside each count; no rate is computed, because "
+            "dividing would read as a legislature's pace."
         ),
     }
 

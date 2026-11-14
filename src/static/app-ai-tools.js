@@ -2148,7 +2148,15 @@
             notes +
             `</details>`
           : "";
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + logBlock;
+        // R688: a server that answers but is neither vLLM nor a known relay gets the text, and the app cannot see where
+        // that server sends it. Said here, only when such a server is the one configured; a known relay is named as
+        // refused before the first generation is.
+        const kindNote = s.server_kind === "other"
+          ? `<p class="muted">${esc(t("The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer."))}</p>`
+          : s.server_kind === "relay"
+            ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
+            : "";
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + kindNote + logBlock;
         if (!s.installed) {
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {
@@ -2442,6 +2450,9 @@
         "tries again each time it loads it.",
     };
 
+    const _CUSTODY_NO_KEY_TIP = "No signing key exists yet. The first custody entry creates it, encrypted under your passphrase when the app has one.";
+    const _CUSTODY_KEY_LOST_TIP = "The custody log has entries, but its signing key is not in the keys folder. Put the key back before the next entry: otherwise that entry creates a new key, and the log records the change without the old key's endorsement.";
+
     function renderCustodyStatus(s) {
       const id = s.signer || {};
       const trunc = (h) => h ? esc(h.slice(0, 16)) + "…" : "—";
@@ -2460,13 +2471,36 @@
       // it, and the database passphrase wraps the keys too. A value with no entry gets no hover.
       const keyTip = Object.prototype.hasOwnProperty.call(_KEY_PROTECTION_TIPS, s.key_protection)
         ? _KEY_PROTECTION_TIPS[s.key_protection] : "";
+      // Reading this status never makes a key (R694): before the first entry there is none, and the pill says so.
+      const keyPill = s.keys_created === false
+        ? (s.log_exists
+          ? `<span class="pill warn" title="${esc(_CUSTODY_KEY_LOST_TIP)}">keys: missing</span>`
+          : `<span class="pill" title="${esc(_CUSTODY_NO_KEY_TIP)}">keys: none yet</span>`)
+        : `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
+          (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>`;
       $("custody-status").innerHTML =
-        `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` +
-        `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
-        (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>` +
+        `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` + keyPill +
         `<div class="muted" style="font-size:12px;margin-top:4px">` +
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
-        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;
+        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>` +
+        // An unreadable settings store is not an unset one: the switches below then show defaults, not the saved choice.
+        (s.store_unreadable ? `<div class="card-caveat" style="margin-top:4px">${esc(_custT(CUST_STORE_UNREADABLE))}</div>` : "");
+    }
+
+    const CUST_STORE_UNREADABLE = "The custody settings could not be read, so automatic logging is off and each new entry is queued " +
+      "until they can be read. The switches below show the defaults, not your saved choice.";
+    const CUST_DRAIN_SETTINGS_UNREADABLE = "Nothing was recorded: the custody settings could not be read, so no entry is signed under " +
+      "guessed preferences. The entries stay queued; try again once the settings can be read.";
+    const CUST_DRAIN_QUEUE_UNREADABLE = "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.";
+    function _custT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    // What a drain could not do, said beside its result: an unread queue or unreadable settings are not "nothing owed".
+    function _custDrainNotes(d) {
+      const runs = [d.drained, d.drained_after_queue].filter(Boolean);
+      const notes = [];
+      if (runs.some((r) => r.settings_unreadable)) notes.push(_custT(CUST_DRAIN_SETTINGS_UNREADABLE));
+      const qerr = runs.find((r) => r.queue_read_error);
+      if (qerr) notes.push(_qualTf(CUST_DRAIN_QUEUE_UNREADABLE, { reason: qerr.queue_read_error }));
+      return notes.join(" ");
     }
 
     // The server's LAST-KNOWN anchoring_mode, tracked so saveCustody() can tell a
@@ -2538,9 +2572,11 @@
           if (rec) rec.style.display = "none";
           return;
         }
+        const notes = _custDrainNotes(d);
         out.textContent = _qualTf("{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
           { n: sc.missing || 0, checked: sc.checked || 0 })
-          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."));
+          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."))
+          + (notes ? " " + notes : "");
         if (rec) rec.style.display = sc.missing ? "" : "none";
       } catch (e) {
         out.textContent = _apiErrorMessage(e);
@@ -2554,7 +2590,8 @@
         // Both drains write owed entries marked late: the gaps a refused drain left queued are written by the FIRST one of the next
         // press (R618), so counting only the second said "Recorded 0" for entries it had just written.
         const n = ((d.drained || {}).recorded || 0) + ((d.drained_after_queue || {}).recorded || 0);
-        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n });
+        const notes = _custDrainNotes(d);
+        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n }) + (notes ? " " + notes : "");
         if (btn) btn.style.display = "none";
       } catch (e) {
         out.textContent = _apiErrorMessage(e);
@@ -2629,6 +2666,7 @@
         const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
         $("cust-result").innerHTML = d.verified
           ? '<span class="pill ok">verified</span> chain intact, signatures valid.'
+            + ((d.notes||[]).length ? ' ' + esc(d.notes.join("; ")) : "")
           : '<span class="pill err">FAILED</span> ' + esc((d.issues||[]).join("; "));
       } catch (e) { toast(_failMsg("Verify: {error}", e), "err"); }
     }
@@ -2636,7 +2674,7 @@
     async function exportCustody() {
       const id = $("cust-item").value.trim();
       try {
-        const bundle = await api("/api/custody/export" + (id ? "?item_id=" + encodeURIComponent(id) : ""));
+        const bundle = await api("/api/custody/export" + (id ? "?item_id=" + encodeURIComponent(id) : ""), {method: "POST"});
         const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);

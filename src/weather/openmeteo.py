@@ -14,19 +14,19 @@ Honesty, stated in every payload:
   * license/attribution: Open-Meteo open data, CC BY 4.0;
   * the data is ERA5-family REANALYSIS — a model estimate on a grid cell,
     not a station record; corroboration is never proof;
-  * a fetched slice is cached to disk so re-viewing it is offline; the cache
-    hit is disclosed (``cached: true`` + the original ``fetched_at``).
+  * the place is rounded to 0.1 degree before it is sent or kept (R675, R683);
+  * a fetched slice is kept in the encrypted store, never a loose file, so
+    re-viewing it is offline; the hit is disclosed (``cached: true`` + the
+    original ``fetched_at``).
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
+import math
 from datetime import date
-from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -55,9 +55,33 @@ LICENSE_NOTE = (
 )
 
 
+#: Decimal places a place keeps before it is sent or stored (R675, R683). 0.1 degree is the spacing
+#: of ERA5-Land, the finest grid behind the archive's values, so the rounded point sits on a grid
+#: node of the cell the archive answers for. Coarser rounding would move the answer to another
+#: cell; finer would only send more of where the place is.
+PLACE_DECIMALS = 1
+
+
+def _round1(x: float) -> float:
+    # floor(x*10 + 0.5)/10, NOT round(): Python's round() sends a tie such as 0.25 to the even
+    # neighbour (0.2) where the page's Math.floor(x*10 + 0.5)/10 says 0.3, and the page names the
+    # place it asks consent for. The same IEEE operations on both sides give the same number.
+    return math.floor(float(x) * 10 + 0.5) / 10 + 0.0
+
+
+def round_place(lat: float, lon: float) -> tuple[float, float]:
+    """The rounded place that is actually sent and stored. ``-0.0`` reads as ``0.0``.
+
+    Mirrors ``ooRoundPlace`` in src/static/app-home.js exactly (ties go up)."""
+    return (_round1(lat), _round1(lon))
+
+
 def build_archive_url(lat: float, lon: float, start: date, end: date,
                       variables: list[str]) -> str:
-    """The exact upstream URL (deterministic — it doubles as the cache key)."""
+    """The exact upstream URL (deterministic: it doubles as the key of the held slice).
+
+    The place is rounded here (:func:`round_place`), so no caller can send or key a finer one."""
+    lat, lon = round_place(lat, lon)
     daily = ",".join(sorted(variables))
     return (
         f"{ARCHIVE_BASE}?latitude={lat:.4f}&longitude={lon:.4f}"
@@ -66,29 +90,47 @@ def build_archive_url(lat: float, lon: float, start: date, end: date,
     )
 
 
-def cache_file(url: str) -> Path:
-    """Where the slice for ``url`` is cached. Pure: creates nothing (a reader asking
-    whether a slice is held must not write a directory to find out)."""
-    return data_dir() / "weather_context" / (hashlib.sha256(url.encode()).hexdigest()[:24] + ".json")
+#: The folder the loose JSON cache used to live in, before R683 moved every slice into the
+#: encrypted store. Its file names hashed URLs carrying unrounded coordinates, in plaintext.
+LEGACY_CACHE_DIR = "weather_context"
 
 
-def cache_path(url: str) -> Path:
-    p = cache_file(url)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+def purge_plaintext_cache() -> int:
+    """Delete the pre-R683 plaintext slice folder, if any; returns how many files it held.
+
+    Deleting rather than migrating is deliberate: the files were keyed by unrounded places, and
+    every slice can be fetched again behind the consent. Run once at startup; a no-op after."""
+    import shutil
+
+    folder = data_dir() / LEGACY_CACHE_DIR
+    if folder.is_symlink():
+        folder.unlink()  # the link only, never what it points at; no file of ours is counted
+        return 0
+    if not folder.exists():
+        return 0
+    if not folder.is_dir():
+        folder.unlink()
+        return 1
+    n = sum(1 for p in folder.rglob("*") if p.is_file())
+    shutil.rmtree(folder)
+    return n
 
 
-def read_cached_slice(url: str) -> dict | None:
-    """The cached slice for ``url``, or None when none is held or it is unreadable.
-    Local only: this never fetches."""
-    p = cache_file(url)
-    if not p.is_file():
-        return None
+def held_store(store):
+    if store is not None:
+        return store
+    from src.weather.held import HeldSlices
+
+    return HeldSlices()
+
+
+def read_cached_slice(url: str, *, store=None) -> dict | None:
+    """The held slice for ``url``, or None when none is held or the store cannot be read.
+    Local only: this never fetches. Slices live in the encrypted store (R683), never a file."""
     try:
-        payload = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return held_store(store).get(url)
+    except Exception:  # noqa: BLE001 - a locked or unreadable store is "not held", never a crash
         return None
-    return payload if isinstance(payload, dict) and payload.get("ok") else None
 
 
 def fetch_daily_slice(
@@ -101,33 +143,29 @@ def fetch_daily_slice(
     label: str | None = None,
     force: bool = False,
     fetcher=None,
-    use_file_cache: bool = True,
+    keep: bool = True,
+    store=None,
 ) -> dict:
-    """Fetch (or serve from cache) one bounded daily slice. Never raises for
-    transport problems — failures come back as honest transport verdicts
-    (the T4 taxonomy), exactly like the markets feeds.
+    """Fetch (or serve from the held copy) one bounded daily slice. Never raises for
+    transport problems: failures come back as honest transport verdicts (the T4 taxonomy),
+    exactly like the markets feeds.
 
-    ``use_file_cache=False`` neither reads nor writes the loose JSON cache: the caller keeps the
-    slice itself (the anomaly view keeps it in the encrypted store, R675)."""
+    The place is rounded to :data:`PLACE_DECIMALS` before anything is sent or kept. With
+    ``keep`` (the default) a held slice is served without a fetch and a fetched one is kept in
+    the encrypted store (:mod:`src.weather.held`); ``keep=False`` neither reads nor writes it,
+    for a caller that keeps the slice itself (the anomaly view). Nothing here logs the URL."""
     url = build_archive_url(lat, lon, start, end, variables)
-    cpath = cache_file(url) if not use_file_cache else cache_path(url)
-    if use_file_cache and not force and cpath.exists():
-        try:
-            payload = json.loads(cpath.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            payload = None
-        if isinstance(payload, dict):
-            payload["cached"] = True
-            payload["label"] = label or payload.get("label")
-            return payload
-        # Unreadable, or valid JSON that is not a slice (``[1, 2]``, a bare number): a miss, refetched, never a 500.
-        _LOG.warning("unreadable weather cache %s; refetching", cpath)
+    if keep and not force:
+        held = read_cached_slice(url, store=store)
+        if held is not None:
+            return {**held, "cached": True, "label": label}
 
-    if fetcher is None:
-        from src.safety.fetcher import make_fetcher
-
-        fetcher = make_fetcher()
     try:
+        if fetcher is None:
+            from src.safety.fetcher import make_fetcher
+
+            # Inside the try: a transport that cannot be built (protected mode, no proxy) is a verdict too.
+            fetcher = make_fetcher()
         fetched = fetcher.fetch(url, require_html=False)
     except Exception as exc:  # noqa: BLE001 - every refusal becomes a verdict, never a crash
         from src.ingest.fetch_verdict import without_private_query
@@ -170,10 +208,13 @@ def fetch_daily_slice(
             ),
         },
     }
-    if not use_file_cache:
+    if not keep:
         return payload
     try:
-        cpath.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    except OSError as exc:
-        log_failure(_LOG, f"could not cache weather slice to {cpath}", exc, level=logging.WARNING)
+        held_store(store).put(url, {k: v for k, v in payload.items() if k not in ("label", "cached")})
+        payload["kept"] = True
+    except Exception as exc:  # noqa: BLE001 - the slice is still shown; that it was not kept is said
+        payload["kept"] = False
+        # The type only: a store error can quote what it was handed, and the slice names the place (R683).
+        _LOG.warning("could not keep a weather slice in the database (%s)", type(exc).__name__)
     return payload

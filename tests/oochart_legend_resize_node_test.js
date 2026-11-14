@@ -109,7 +109,7 @@ const document = {
 };
 
 const NAMES_FN = ["_figStyle", "_figMarkerPath", "_figMarkerCanvas", "_figGlyph",
-                  "_chartAria", "_chartSrTable", "_allInteger", "honestTicks", "_msLabel", "_msRowLabel", "_seriesRuns",
+                  "_chartAria", "_chartSrTable", "_allInteger", "honestTicks", "_msTickSnap", "_msLabel", "_msRowLabel", "_seriesRuns",
                   "_stackSeries", "_stackPick", "_ooChartWatch", "_figTf", "ooChart"];
 const NAMES_CONST = ["esc", "_SPARSE_BAR_MAX", "_FIG_STYLES", "_FIG_STROKE_MARKERS", "_missing",
                      "_GAP_FACTOR"];

@@ -887,9 +887,18 @@
       const curEmph = (cfg && cfg.language_equilibrium) || {};
       const covTags = (cov && cov.tags) || [];
       const byTotal = {}; covTags.forEach((x) => { byTotal[x.tag] = x.total || 0; });
-      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)");
+      // A `via:<origin>` tag records WHICH LIST a source came from (src/catalog/
+      // provenance_scope.py), not what it writes about, so it is no theme: "via:curated" was
+      // the first "theme" a new reader was offered. The seed plan drops them from its theme
+      // view for the same reason (src/ingest/seed_plan.py). One exception: a via: tag an
+      // earlier config ALREADY filters on is shown, checked, like any other pick, so the
+      // filter stays visible and the reader can untick it; it is never kept out of sight.
+      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)"
+        && (x.indexOf("via:") !== 0 || curTags.indexOf(x) >= 0));
       tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
-      tags = tags.slice(0, 16);
+      // The top 16, plus every tag the config already filters on even if it ranks lower: a
+      // chosen tag that is not drawn is missing from the picks and would be dropped on save.
+      tags = tags.slice(0, 16).concat(tags.slice(16).filter((x) => curTags.indexOf(x) >= 0));
       if (!tags.length) {
         box.innerHTML = `<div class="muted">${esc(_gwT("Themes will appear once your sources are set up. Your app collects from every source by default."))}</div>`;
       } else {
@@ -967,6 +976,24 @@
         } catch (_e) { /* best-effort local settings write; never block the guide */ }
       }
     }
+    // Where the reader starts (R682, R710 = b): a first run shows both views with NOTHING
+    // preselected, so simple mode is only ever the reader's own pick; a re-run starts from the
+    // view in use. Applied on closing the guide, any way it closes; no pick changes nothing.
+    function _gwRenderStart() {
+      // "done" is cleared by the Settings re-run toggle, so the first run is told apart by whether
+      // a start was ever picked. A peek at a full-view tool still counts as simple mode.
+      const inSimple = !!(window.ooSimple && window.ooSimple.mode() !== "full");
+      const want = inSimple ? "simple" : (_guideState().start ? "full" : null);
+      document.querySelectorAll('#guide-wizard input[name="gw-start"]').forEach((i) => { i.checked = want !== null && i.value === want; });
+    }
+    function _gwApplyStart() {
+      const pick = document.querySelector('#guide-wizard input[name="gw-start"]:checked');
+      const s = window.ooSimple;
+      if (!pick || !s) return;
+      const st = _guideState(); st.start = pick.value; _guideSave(st);
+      if (pick.value === "simple" && s.mode() !== "simple") s.enter();
+      else if (pick.value === "full" && s.mode() !== "full") s.leave();
+    }
     function _gwRenderDepth() {
       const stored = (typeof getUi === "function") ? getUi().depth : null;
       const want = ["essentials", "standard", "full"].includes(stored) ? stored : "standard";
@@ -980,10 +1007,15 @@
     }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;
-      _gwIdx = 0; _gwPaint();
+      _gwIdx = 0; _gwRenderStart(); _gwPaint();   // the start choice is set once per opening, so Back keeps a pick
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       else dlg.setAttribute("open", "");
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
+      // A modal focuses its first focusable control, which here is the ✕: its "Close" bubble
+      // then opened over the guide's first line on every first run (lane N walk, 2026-11-13).
+      // Focus goes to the "what this app does" lines instead (tabindex -1), so a screen reader
+      // starts there and Tab then reaches the depth choice before Next.
+      { const intro = dlg.querySelector(".gw-intro"); if (intro && typeof intro.focus === "function") intro.focus(); }
       // Product feedback 2026-07-17: the network-status poll that decides whether to
       // show the airplane-mode coachmark runs independently of (and typically resolves
       // before) this wizard opening, so the coach could already be showing when the
@@ -1001,6 +1033,7 @@
       _gwApplyDepth();
       if (markDone !== false) { const s = _guideState(); s.done = true; _guideSave(s); }
       try { dlg.close(); } catch { dlg.removeAttribute("open"); }
+      _gwApplyStart();   // after the dialog closes, so the view swap never happens under a modal
       _syncRerunGuide();
     }
     // The Settings "Re-run the first-launch guide" toggle is the user-VISIBLE
@@ -1042,7 +1075,13 @@
           return;   // let the user retry or choose "Stay offline" instead of closing on failure
         }
         if (typeof _flashNet === "function") _flashNet(true);
-        toast(t("Back online — network requests allowed again."), "ok");
+        // The first-run reader is told WHERE the first result will appear (lane N): the
+        // collector starts by itself, so without this the guide closed on an empty Home
+        // with nothing saying what to do next. No time is promised: it depends on the network.
+        const startSimple = !!document.querySelector('#guide-wizard input[name="gw-start"][value="simple"]:checked');
+        toast(startSimple
+          ? t("Collecting now. The first articles appear in Read as they arrive, then in Today.")
+          : t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
         // Once online the background collector runs continuously on its own (only
         // airplane mode stops it) — no manual seed/ingest step or progress card needed.
         closeGuide(true);
@@ -1565,7 +1604,10 @@
       try {
         const nm = await api("/api/system/network");
         _paintNetwork(nm.online);
-        if (nm.online) return true;
+        // Already online: no popup to show. A caller whose request names something personal (a place,
+        // R683) passes confirmIfOnline, and that plain confirmation is asked here, on the SAME read that
+        // decided there was no popup, so no state change between two reads can skip both.
+        if (nm.online) return opts.confirmIfOnline ? window.confirm(opts.confirmIfOnline) : true;
       } catch (_e) { /* fall through to consent — flipping online still asks */ }
       if (opts.skipDialog) return _postGoOnline();
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1963,6 +2005,14 @@
       const _nf = /^The backup without newsletters was stopped: the clean copy of your corpus could not be made \((.+)\)\. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead\.$/.exec(s.trim());
       if (_nf) {
         return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
+      }
+      // backup/merge.py _WRITER_JOBS_REFUSAL (R659): a restore refused while a background job writes to the corpus. Whole message only;
+      // the jobs are the registry's own labels, each translated where the page has it, joined by "; ".
+      const _wj = /^a background job is writing to your corpus \((.+)\) — nothing was imported, and nothing was written to your corpus\. What it writes during an import would be lost when your corpus is switched\. Let it finish, or stop it if it can be stopped, then import again\.$/.exec(s.trim());
+      if (_wj) {
+        return tf("A background job is writing to your corpus ({jobs}). Nothing was imported and nothing in your corpus changed: what it writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again.", {
+          jobs: _wj[1].split("; ").map((x) => t(x)).join("; "),
+        });
       }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);

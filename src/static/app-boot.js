@@ -538,6 +538,9 @@
         pressT = setTimeout(() => show(el, t.clientX, t.clientY), 450);
       }, {passive: true});
       document.addEventListener("touchend", () => { clearTimeout(pressT); hideT = setTimeout(hide, 2600); }, {passive: true});
+      // A finger that MOVES is scrolling, not pressing: without this a slow scroll over the
+      // world map (229 titled shapes since lane N) opened a country's bubble.
+      document.addEventListener("touchmove", () => { clearTimeout(pressT); }, {passive: true});
     })();
 
     // Keyword hover-stats (wave 4 I / GET /api/insights/keyword-stats): hovering any
