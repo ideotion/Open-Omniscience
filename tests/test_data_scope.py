@@ -247,3 +247,8 @@ def test_shared_wins_over_the_name(tmp_path, monkeypatch):
 
     scope_os(monkeypatch, data_scope, scandir=refuse)
     assert folder_scope(chosen)["reason"] == "unlistable"
+
+
+def test_a_path_the_os_refuses_is_broad_and_never_raises():
+    """The delta read's nit: a NUL byte made os.path.samefile raise ValueError, which "never raises" did not hold for."""
+    assert folder_scope(Path("bad\0name")) == {"broad": True, "reason": "unlistable"}

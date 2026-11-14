@@ -107,6 +107,7 @@ _AMBIENT_FILES = frozenset(
         "vitals_history.json",  # the vitals sampler's history
         "storage_events.json",
         "briefing_cache.json",  # derived: the briefing refresh thread writes it whenever a request started one
+        "card_quality_selfcheck.jsonl",  # the same refresh's card self-check, one line beside that cache (newest 200)
     }
 )
 # The lazy rollup build (R308). With the `[columnar]` extra (duckdb) the first demand for a rollup builds it in a daemon thread, BY DESIGN
