@@ -2847,7 +2847,7 @@ systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 \
 | الطريقة والمسار | الغرض |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | التعليقات التي ألّفتها |
-| `GET /api/annotations/export` | حزمة موقَّعة قابلة للنقل من تعليقاتك |
+| `POST /api/annotations/export` | حزمة موقَّعة قابلة للنقل من تعليقاتك |
 | `POST /api/annotations/import` | التحقق من حزمة مستورَدة وتخزينها (تُرفض إن كانت غير صالحة) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | شبكة الثقة |
 | `GET /api/annotations/for?target=` | تجميع شفاف — من أكّد ماذا |
