@@ -92,3 +92,40 @@ def test_a_reader_with_no_key_raises_and_makes_no_folder(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError):
         CustodyLog(create=False)
     assert _made(tmp_path) == set()
+
+
+def test_a_reader_log_refuses_to_sign(tmp_path, monkeypatch):
+    # A reader loads no signer: one that signed would do it Ed25519-only and leave a legacy key unwrapped, so it is refused by name.
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.custody.log import CustodyLog
+
+    with CustodyLog() as writer:
+        writer.record("article:1", "e" * 64, writer_action())
+    with CustodyLog(create=False) as reader:
+        assert len(reader.entries_for("article:1")) == 1
+        with pytest.raises(RuntimeError, match="opened to read cannot sign"):
+            reader.export()
+
+
+def writer_action():
+    from src.custody.log import CustodyAction
+
+    return CustodyAction("ingest")
+
+
+def test_a_log_whose_key_was_lost_says_so(client, tmp_path):
+    client.post("/api/custody/log", json={"item_id": "article:5", "item_hash": "f" * 64, "action": "ingest"})
+    for p in (tmp_path / "keys").iterdir():
+        p.unlink()
+    body = client.get("/api/custody/settings").json()
+    assert body["keys_created"] is False and body["log_exists"] is True  # the tab says "keys: missing", not "none yet"
+    assert not any((tmp_path / "keys").iterdir())
+
+
+def test_an_unreadable_key_is_reported_not_a_500(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_KEY_PASSPHRASE", "the first passphrase, long enough")
+    client.post("/api/custody/log", json={"item_id": "article:6", "item_hash": "0" * 64, "action": "ingest"})
+    monkeypatch.setenv("OO_KEY_PASSPHRASE", "another passphrase, also long enough")
+    r = client.get("/api/custody/settings")
+    assert r.status_code == 200, r.text
+    assert r.json()["key_protection"] == "unreadable" and r.json()["keys_created"] is True

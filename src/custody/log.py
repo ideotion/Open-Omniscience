@@ -172,7 +172,7 @@ class CustodyLog:
         create: bool = True,
     ):
         """``create=False`` opens an EXISTING log to read it (R694): a missing file raises FileNotFoundError before anything is
-        made, and the signer is built only if something asks for it, from the keys already on disk (never minted)."""
+        made, and no signer is loaded at all: a reader that tries to sign is refused (RuntimeError)."""
         if db_path is None:
             from src.paths import data_dir
 
@@ -231,8 +231,10 @@ class CustodyLog:
 
     @property
     def signer(self) -> HybridSigner:
-        if self._signer is None:  # only a reader (create=False) gets here; a missing key raises FileNotFoundError
-            self._signer = HybridSigner(use_pqc=self._use_pqc, create=False)
+        if self._signer is None:
+            # Only a reader (create=False) has none: it reads entries and checks the chain, which need no key, and never signs.
+            # A reader that signed would do it Ed25519-only and without wrapping a legacy key, so it is refused by name.
+            raise RuntimeError("a custody log opened to read cannot sign; open it with create=True to record or export")
         return self._signer
 
     @signer.setter

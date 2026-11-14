@@ -2451,6 +2451,7 @@
     };
 
     const _CUSTODY_NO_KEY_TIP = "No signing key exists yet. The first custody entry creates it, encrypted under your passphrase when the app has one.";
+    const _CUSTODY_KEY_LOST_TIP = "The custody log has entries, but its signing key is not in the keys folder. Put the key back before the next entry: otherwise that entry creates a new key, and the log records the change without the old key's endorsement.";
 
     function renderCustodyStatus(s) {
       const id = s.signer || {};
@@ -2472,7 +2473,9 @@
         ? _KEY_PROTECTION_TIPS[s.key_protection] : "";
       // Reading this status never makes a key (R694): before the first entry there is none, and the pill says so.
       const keyPill = s.keys_created === false
-        ? `<span class="pill" title="${esc(_CUSTODY_NO_KEY_TIP)}">keys: none yet</span>`
+        ? (s.log_exists
+          ? `<span class="pill warn" title="${esc(_CUSTODY_KEY_LOST_TIP)}">keys: missing</span>`
+          : `<span class="pill" title="${esc(_CUSTODY_NO_KEY_TIP)}">keys: none yet</span>`)
         : `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
           (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>`;
       $("custody-status").innerHTML =

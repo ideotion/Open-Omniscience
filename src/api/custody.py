@@ -128,11 +128,21 @@ def _settings_status(*, count_late: bool = True) -> dict:
     # Load the signer the way the log would, to report the real identity that signs entries under the current preference. A read
     # never mints a key (R694): with none yet, the identity is absent and ``keys_created`` says so; the first entry makes them.
     # An ML-DSA pair not made yet is not claimed either: pqc_effective stays False until a signature has asked for it.
+    # A key that is there but cannot be opened with what this process holds (wrapped under another passphrase, damaged) is
+    # reported as unreadable, as the export answers it, never as a 500 with the parser's text.
     signer: HybridSigner | None
+    unreadable = False
     try:
         signer = HybridSigner(use_pqc=prefs.pqc_enabled, create=False)
     except FileNotFoundError:
         signer = None
+    except SigningError:
+        signer, unreadable = None, True
+    from src.paths import data_dir
+
+    # The log can outlive its key (the keys folder lost or moved): then the next entry makes a NEW key and records the change
+    # without the old key's endorsement, which the Custody tab says rather than "no key yet".
+    log_exists = (data_dir() / "custody_log.db").exists()
     return {
         **prefs.to_dict(),
         "anchoring_modes": list(VALID_ANCHORING),
@@ -145,8 +155,9 @@ def _settings_status(*, count_late: bool = True) -> dict:
         "ots_available": avail["ots_available"],
         "ots_reason": avail["ots_reason"],
         "ots_effective": prefs.anchoring_mode == "opentimestamps" and avail["ots_available"],
-        "keys_created": signer is not None,
-        "key_protection": signer.key_protection if signer else None,
+        "keys_created": signer is not None or unreadable,
+        "log_exists": log_exists,
+        "key_protection": "unreadable" if unreadable else (signer.key_protection if signer else None),
         "signer": signer.public_identity().to_dict() if signer else None,
         # CUST-1 (2026-09-24): ingest entries a failure left owed, and those written late.
         # Shown beside the chain's own status, because a gap nobody reports is the defect.
