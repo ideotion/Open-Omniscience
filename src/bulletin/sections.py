@@ -706,8 +706,15 @@ def build_sections(session, period: Period, **options) -> list[dict]:
     silently vanished would read as "nothing to report".
     """
     ctx: dict[str, Any] = dict(options)
+    # ``omit_sections`` ({key: reason in plain words}): a section the CALLER chose not to build, reported in place
+    # through the same ``skipped`` field, so the edition still lists it and says why it is empty. The all-diagnostics
+    # bundle uses it for the cards section, which reruns every card producer that bundle already ran elsewhere.
+    omit: dict[str, str] = dict(ctx.pop("omit_sections", None) or {})
     out: list[dict] = []
     for key, build in SECTIONS:
+        if key in omit:
+            out.append({"section": key, "skipped": omit[key], "omitted_by_caller": True})
+            continue
         # THE BUDGET GUARD (field round 2026-09-24). Under a statement deadline, once it
         # has expired every later statement is interrupted -- so the loop's per-section
         # isolation turned one slow early section into a run of independent-looking

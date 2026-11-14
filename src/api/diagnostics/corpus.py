@@ -362,6 +362,14 @@ def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) 
     return JSONResponse(report, headers=headers)
 
 
+def leads_quality_for_bundle(db: Session) -> dict:
+    """The all-diagnostics member ``leads-quality.json``: Home's cached feed when it is fresh (the file says so in
+    ``source`` and ``source_note``), else the same bounded producer pass the route runs."""
+    from src.analytics.leads_quality import leads_quality_report
+
+    return leads_quality_report(db, budget_s=_leads_quality_budget_s(), prefer_home_cache=True)
+
+
 # --------------------------------------------------------------------------- #
 #  CARD-SYSTEM AUDIT — the deep per-card fact bundle (src/briefing/card_audit.py).
 #
