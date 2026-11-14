@@ -36,7 +36,8 @@ is not known from the answer (measured: it had emptied the log). The answer is r
 ``shutdown``, and the facts the sentinel carries, ``forensics.dispose_facts``): a log that is left is a recorded fact, and a ``clean``
 sentinel never stands for a clean log.
 
-NO TIME CAP (ruled 17 Oct, D1): the step takes as long as the write-back (about 90 s for 1.4 GB on the field disk), because the next open
+NO TIME CAP (ruled 17 Oct, D1): the step takes as long as the write-back (about 90 s for 1.4 GB on the field disk, an unreproduced field
+observation; a 1.57 GB appended log took 3.2 s on a fast cloud disk on 2026-11-14, item (a) of docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md), because the next open
 pays the same time anyway and a kill in the middle is safe, SQLite recovers from the start and it is never worse than skipping except for
 the wait at exit. NO WAIT FOR A STRAGGLER (D2): a connection inside a read leaves the log (or, with a recent snapshot or a writer mid-write,
 leaves it written back and not truncated) and the record says so; a wait would be a number invented before the first bundle says how often that happens.

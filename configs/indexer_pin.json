@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "732d10f099bc17b90f650d61ca46f177bda3e01a6cfb0cffb4941a2e594ca740",
+  "digest": "2c65ac996c68f4bf98d94d50d5d6d02eac7a335a2a580d62bd2deedd1e1bbf17",
   "log": [
     {
       "version": 1,
@@ -49,6 +49,12 @@
       "digest": "732d10f099bc17b90f650d61ca46f177bda3e01a6cfb0cffb4941a2e594ca740",
       "kind": "same",
       "note": "datestore.articles_for_date now also returns each tag's id for the Agenda's confirm and reject; the rows index_article writes are unchanged"
+    },
+    {
+      "version": 1,
+      "digest": "2c65ac996c68f4bf98d94d50d5d6d02eac7a335a2a580d62bd2deedd1e1bbf17",
+      "kind": "same",
+      "note": "comment-only: perf figure pointers to PERF_FIGURES_REMEASURE_2026-11-14 (sentiment.py)"
     }
   ]
 }

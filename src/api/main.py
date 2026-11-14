@@ -794,7 +794,9 @@ async def lifespan(app: FastAPI):
     shutdown_checkpoint: dict | None = None
     try:
         # its own phase: the step can take as long as the write-back (about 90 s for 1.4 GB, where a service manager's stop timeout is about
-        # as long), and a death inside it must not read as a death "during shutdown" with the previous step as its last word
+        # as long), and a death inside it must not read as a death "during shutdown" with the previous step as its last word. The 90 s is an
+        # unreproduced field observation: a 1.57 GB appended log checkpointed in 3.2 s on a fast cloud disk on 2026-11-14 (item (a) of
+        # docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md)
         from src.monitoring.forensics import record_shutdown_phase
 
         record_shutdown_phase("writing-back")
@@ -4048,7 +4050,8 @@ def _serve() -> None:
     install_stop_signal_cleanup()
     # A graceful-shutdown deadline (S0.2). Without one, uvicorn waits indefinitely for
     # in-flight requests -- and this app has requests that legitimately run for
-    # minutes (a cold alerts compute measured 558 s in the field). A logout SIGTERM
+    # minutes (a cold alerts compute measured 558 s in the field: an unreproduced field
+    # observation, store size and date not recorded; docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md, item (b)). A logout SIGTERM
     # arriving during one of those left the app waiting until logind SIGKILLed it,
     # which skips the lifespan shutdown entirely and reads as a crash on the next
     # boot. 30 s is long enough for an ordinary request and short enough to lose the

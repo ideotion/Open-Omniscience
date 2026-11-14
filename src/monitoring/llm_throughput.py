@@ -396,6 +396,8 @@ class _FakeClient:
 
 # How long a rendezvous waits for the pool to assemble before concluding it never will.
 # Measured worst assembly of a REAL 4-worker pool under 8x CPU oversubscription: 92 ms.
+# (Re-measured 2026-11-14, 4 vCPU cloud VM, 32 busy-loop spinners, 200 trials: worst
+# 32.1 ms, p99 28.1 ms; item (f) of docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md.)
 # This is ~100x that, so it can only fire when the pool genuinely is not concurrent --
 # and it is paid ONCE per run, not once per call (see _ConcurrencyProbe).
 _RENDEZVOUS_TIMEOUT_S = 10.0

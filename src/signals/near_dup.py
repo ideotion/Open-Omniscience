@@ -31,7 +31,10 @@ from random import Random
 # 32 bits): the numpy fast path and the pure-Python fallback then compute the
 # *identical* signature — clusters never depend on which optional deps are
 # installed (performance batch 2026-06-12; the briefing refresh measured 36 s
-# at the live corpus scale, >95% of it in this module's pure-Python inner loop).
+# at the live corpus scale, >95% of it in this module's pure-Python inner loop;
+# that 36 s is an unreproduced field observation, the scale was not recorded. Probe,
+# 2026-11-14, 4 vCPU cloud VM, 1,000 docs of 20,000 chars: 40.1 s pure Python, 5.18 s
+# with numpy: item (c) of docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md).
 _MERSENNE = (1 << 61) - 1
 _MAX_HASH = (1 << 32) - 1
 _AB_BOUND = 1 << 31

@@ -37,7 +37,9 @@ def _analyzer():
     except ImportError:
         return None
     # Stock VADER's scores in time LINEAR in the text, where stock is quadratic: an 80 KB
-    # English page took 1.5 s per pass, now 36 ms. It falls back to the stock analyzer
+    # English page took 1.5 s per pass, now 36 ms (2026-09-27, vader_linear.py; re-measured
+    # 2026-11-14 on a 4 vCPU cloud VM: 1,029 ms against 21.4 ms, item (d) of
+    # docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md). It falls back to the stock analyzer
     # for any VADER it was not checked against (src/analytics/vader_linear.py).
     from src.analytics.vader_linear import make_analyzer
 
