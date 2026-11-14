@@ -26,6 +26,7 @@ from src.custody.log import (
 from src.custody.settings import (
     VALID_ANCHORING,
     CustodySettingsError,
+    CustodySettingsUnreadable,
     availability,
     load_settings,
     save_settings,
@@ -72,6 +73,10 @@ def log_action(req: LogRequest) -> dict:
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except CustodySettingsUnreadable:
+        # The custody settings could not be read: nothing is signed under guessed preferences (PQC off, local anchoring).
+        raise HTTPException(status_code=503, detail="the custody settings could not be read, so no entry was signed "
+                            "under guessed preferences: try again once the database can be read") from None
     except TimestampUnavailable as exc:
         # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
         # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
@@ -95,6 +100,11 @@ def export(item_id: str | None = None) -> dict:
         raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     try:
         return log.export(item_id=item_id)
+    except CustodySettingsUnreadable:
+        # The key changed and its rotation record is owed, but the settings could not be read: no permanent record is
+        # written under guessed preferences.
+        raise HTTPException(status_code=503, detail="the signing key changed and its key-rotation record is owed, but "
+                            "the custody settings could not be read: export again once they can be") from None
     except SigningError:
         # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
         # bundle is signed and nothing is written. The answer says what to do.

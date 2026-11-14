@@ -167,3 +167,129 @@ def test_the_manual_drain_waits_while_the_settings_cannot_be_read(article, monke
     out = pending.drain()
     assert out["settings_unreadable"] and out["recorded"] == 0 and out["still_pending"] == 1 and not opened
     assert pending.pending_count() == 1
+
+
+def test_a_log_opened_on_an_unreadable_store_signs_nothing(tmp_path, monkeypatch):
+    """Row 32: the caller read the settings fine, the log's own read failed -- PQC off and local anchoring would be guesses."""
+    from src.custody.log import CustodyAction, CustodyLog
+    from src.custody.settings import CustodySettingsUnreadable
+
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    log = CustodyLog(db_path=str(tmp_path / "c.db"))
+    try:
+        assert log.prefs_unreadable
+        with pytest.raises(CustodySettingsUnreadable):
+            log.record("article:1", "a" * 64, CustodyAction.INGEST)
+        assert log.all_entries() == []
+    finally:
+        log.close()
+    # Given explicitly, nothing is guessed: the log signs.
+    from src.custody.signing import HybridSigner
+
+    with CustodyLog(db_path=str(tmp_path / "c.db"), signer=HybridSigner(use_pqc=False), anchoring_mode="local") as ok:
+        assert not ok.prefs_unreadable
+        ok.record("article:1", "a" * 64, CustodyAction.INGEST)
+
+
+def test_the_log_route_answers_503_on_an_unreadable_store(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    r = TestClient(app).post("/api/custody/log", json={"item_id": "article:1", "item_hash": "a" * 64,
+                                                        "action": "ingest"})
+    assert r.status_code == 503 and "could not be read" in r.json()["detail"]
+
+
+def test_a_drain_stops_when_the_log_opens_on_an_unreadable_store(tmp_path):
+    """The drain read its settings fine; the log it opens could not: nothing is tried, every entry stays owed."""
+
+    class _Log:
+        prefs_unreadable = True
+        closed = False
+
+        def close(self):
+            _Log.closed = True
+
+    pending.note_failed(1, item_hash="a" * 64)
+    out = pending.drain(prefs=CustodySettings(), log_factory=_Log)
+    assert out["settings_unreadable"] is True and out["recorded"] == 0 and out["still_pending"] == 1 and _Log.closed
+
+
+def test_a_batch_drops_a_log_that_opened_on_an_unreadable_store(article, monkeypatch):
+    """The pipeline's read is fine, the batch log's own read is not: that entry is owed and the next article reopens."""
+    from src.custody.log import CustodyLog
+    from src.ingest.pipeline import _CustodyBatch, _maybe_record_custody
+
+    reads = iter([CustodySettings(), CustodySettings(auto_log_on_ingest=False, store_unreadable=True),
+                  CustodySettings(), CustodySettings()])
+    monkeypatch.setattr("src.custody.settings.load_settings", lambda *a, **k: next(reads))
+    with _CustodyBatch() as batch:
+        _maybe_record_custody(article, batch=batch)  # the log opens on the unreadable read: refused, owed
+        _maybe_record_custody(article, batch=batch)  # a fresh log, read fine: written
+        assert batch.opened == 2 and batch.settings_unreadable == 1
+    assert pending.pending_count() == 1
+    with CustodyLog(signer=__import__("src.custody.signing", fromlist=["x"]).HybridSigner(use_pqc=False),
+                    anchoring_mode="local") as log:
+        assert len(log.entries_for(f"article:{article.id}")) == 1
+
+
+def test_the_settings_panel_and_the_reconcile_result_say_what_could_not_be_read():
+    """Row 33: store_unreadable, a drain's settings_unreadable and its queue_read_error each reach the screen, x12."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "src" / "static" / "app-ai-tools.js").read_text(encoding="utf-8")
+    assert "s.store_unreadable ?" in js and "r.settings_unreadable" in js and "r.queue_read_error" in js
+    assert js.count("const notes = _custDrainNotes(d)") == 2  # the gap check and the record-gaps button both say it
+    keys = [
+        "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can "
+        "be read. The switches below show the defaults, not your saved choice.",
+        "Nothing was recorded: the custody settings could not be read, so no entry is signed under guessed preferences. "
+        "The entries stay queued; try again once the settings can be read.",
+        "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.",
+    ]
+    for loc in sorted((root / "src" / "static" / "locales").glob("*.json")):
+        data = json.loads(loc.read_text(encoding="utf-8"))
+        for k in keys:
+            assert data.get(k), (loc.name, k[:40])
+            assert ("{reason}" in data[k]) == ("{reason}" in k), loc.name
+
+
+def test_no_permanent_record_is_written_under_unread_settings_by_export_or_rotate(tmp_path, monkeypatch):
+    """An export owing a key-rotation record, and an endorsed rotation, both refuse rather than write under guessed preferences."""
+    from src.custody.log import CustodyAction, CustodyLog
+    from src.custody.settings import CustodySettingsUnreadable
+    from src.custody.signing import HybridSigner
+
+    db = str(tmp_path / "c.db")
+    old = HybridSigner(ed25519_path=tmp_path / "old.pem", mldsa_path=tmp_path / "old.key", use_pqc=False)
+    with CustodyLog(db_path=db, signer=old, anchoring_mode="local") as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    log = CustodyLog(db_path=db)  # its own key (another file): a rotation record is owed
+    try:
+        assert log.prefs_unreadable
+        with pytest.raises(CustodySettingsUnreadable):
+            log.export()
+        with pytest.raises(CustodySettingsUnreadable):
+            log.rotate_signing_key(old)
+        assert [e.action for e in log.all_entries()] == ["ingest"]
+    finally:
+        log.close()
+
+
+def test_the_export_route_answers_503_when_a_rotation_is_owed_under_unread_settings(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.custody.log import CustodyAction, CustodyLog
+    from src.custody.signing import HybridSigner
+
+    old = HybridSigner(ed25519_path=tmp_path / "old.pem", mldsa_path=tmp_path / "old.key", use_pqc=False)
+    with CustodyLog(db_path=str(tmp_path / "custody_log.db"), signer=old, anchoring_mode="local") as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    r = TestClient(app).get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 503 and "rotation record is owed" in r.json()["detail"]

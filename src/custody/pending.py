@@ -444,6 +444,12 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
         if log_factory is None:
             from src.custody.log import CustodyLog as log_factory
         log = log_factory()
+        if getattr(log, "prefs_unreadable", False):
+            # Read fine above, unreadable when the log opened: the same refusal, before any entry is tried.
+            with contextlib.suppress(Exception):
+                log.close()
+            return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": len(first),
+                    "settings_unreadable": True}
         try:
             for at, it in enumerate(todo):
                 aid = int(it["article_id"])

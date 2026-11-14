@@ -537,6 +537,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             # Not a failure of the log: one line per flush (or one plain line unbatched), never a traceback per article.
             if batch is not None:
                 batch.settings_unreadable += 1
+                if log_touched:
+                    # The batch's log opened on settings it could not read (the read here was fine): it would refuse every
+                    # later entry too, so the next article opens a fresh one, which reads them again.
+                    batch.drop()
             else:
                 logging.getLogger(__name__).warning("custody entry on ingest owed: the custody settings could not be read")
         elif isinstance(exc, TimestampRefusedOffline):

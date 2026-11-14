@@ -176,10 +176,14 @@ class CustodyLog:
         # Honour the operator's GUI-configured preferences when not overridden.
         # The signer's PQC use and the default anchoring mode both come from the
         # persisted custody settings unless explicitly passed in (tests / callers).
+        #: True when this log had to read the custody settings and could not: it then holds the defaults (PQC off,
+        #: local anchoring), which are guesses, not the operator's choice, so it signs no entry (see ``record``).
+        self.prefs_unreadable = False
         if signer is None or anchoring_mode is None:
             from src.custody.settings import load_settings
 
             prefs = load_settings()
+            self.prefs_unreadable = prefs.store_unreadable
             if signer is None:
                 signer = HybridSigner(use_pqc=prefs.pqc_enabled)
             if anchoring_mode is None:
@@ -266,12 +270,27 @@ class CustodyLog:
             # Only this log writes its key-rotation records (``_insert_rotation``): one written from outside would name
             # keys of the caller's choosing, and every later export of the log would be refused for good.
             raise ValueError("key-rotation records are written by the custody log itself, never through record()")
+        self._refuse_on_unread_prefs()
         meta = metadata or {}
         # Serialise the whole READ-CHAIN-INSERT so concurrent ingest workers can never
         # read the same tail, compute the same seq, and collide / fork the chain.
         with _APPEND_LOCK:
             prev = self._tail_on_signer()
             return self._insert(prev, item_id, item_hash, action_val, actor, meta, timestamp)
+
+    def _refuse_on_unread_prefs(self) -> None:
+        """Raise ``CustodySettingsUnreadable`` when this log opened on settings it could not read.
+
+        The caller that read the settings a moment earlier (the ingest pipeline, a drain) may have read them fine: an
+        entry signed here would then go out with the post-quantum half off and local anchoring because a second read
+        failed, which is not what the operator chose. Refused instead, so the caller keeps the entry owed."""
+        if self.prefs_unreadable:
+            from src.custody.settings import CustodySettingsUnreadable
+
+            raise CustodySettingsUnreadable(
+                "the custody settings could not be read when this log was opened, so it signs nothing under guessed "
+                "preferences; the entry stays owed until they can be read"
+            )
 
     def _refresh_signer(self) -> None:
         """Reload the signer when its key file changed since it was loaded (lock held).
@@ -292,6 +311,8 @@ class CustodyLog:
         self._refresh_signer()
         prev = self._last()
         if prev is not None and _sig_ed25519_pub(prev.signature) != self.signer.public_identity().ed25519_pub:
+            # A permanent record: never written under guessed preferences (an export reaches here too).
+            self._refuse_on_unread_prefs()
             prev = self._insert_rotation(prev, previous_signer=None)
         return prev
 
@@ -300,6 +321,7 @@ class CustodyLog:
         identity and the chain position. Call it with the old key still at hand, before the new key signs anything.
         Raises ``ValueError`` when the tail was not signed by ``previous_signer`` (it cannot vouch for what it did not
         sign) or when the two keys are the same."""
+        self._refuse_on_unread_prefs()
         old_pub = previous_signer.public_identity().ed25519_pub
         with _APPEND_LOCK:
             self._refresh_signer()
