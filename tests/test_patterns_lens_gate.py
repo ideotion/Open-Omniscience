@@ -137,7 +137,8 @@ def test_the_gate_answers_over_http_and_omits_the_rate_on_the_wire(tmp_path, mon
     handler."""
     from fastapi.testclient import TestClient
 
-    from src.api.main import app  # imported BEFORE the variable moves, so the engine stays bound to the suite's directory
+    # imported BEFORE the variable moves, so the engine stays bound to the suite's directory
+    from src.api.main import app
 
     # monkeypatch, so the three variables come back after the test. They were set with ``os.environ.update`` and never restored: the
     # rest of the process then read its settings from this test's deleted temporary directory, where the store's country-form marker

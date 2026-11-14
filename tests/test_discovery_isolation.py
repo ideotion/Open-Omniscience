@@ -28,7 +28,6 @@ import src.discovery.channels as channels
 from src.database.models import Article, Source, SourceCandidate
 from src.database.session import SessionLocal, init_db
 
-
 #: Every row these tests write carries this in its domain (or belongs to a source that does), so the teardown removes exactly them.
 _MARK = "discovery-isolation.example"
 
