@@ -996,7 +996,8 @@ def previous_session_report() -> dict[str, Any]:
         # a different fact from being killed mid-collection, and one the two-state
         # sentinel could not express.
         "shutting-down": "unclean-end-during-shutdown",
-        # the write-back before the disposal can take as long as the write-back itself (about 90 s for 1.4 GB), so a death inside it is its own fact
+        # the write-back before the disposal can take as long as the write-back itself (about 90 s for 1.4 GB, a field observation: see item (a)
+        # of docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md), so a death inside it is its own fact
         "writing-back": "unclean-end-during-write-back",
         "dispose-done": "unclean-end-after-dispose",
         "clean": "clean",
