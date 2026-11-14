@@ -1055,6 +1055,7 @@ def _corpus_encrypted() -> bool:
 #: Set once this process has swept the folders a PREVIOUS process with the same pid left behind (a container
 #: restarts as pid 1 every time). After that, this pid's folders are live connections' and are never swept.
 _OWN_SPILL_SWEPT = False
+_SPILL_LOCK = threading.Lock()
 
 
 def _sweep_spill_folders(root) -> None:
@@ -1090,7 +1091,7 @@ def _remove_spill(path: str | None) -> None:
 
 
 def _spill_setting() -> str:
-    """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else a NEW
+    """DuckDB's offload directory for an in-memory build (the keyword rollup, the map serve, both benchmarks): ``""`` (none) for an encrypted corpus, else a NEW
     folder under the data directory for this connection alone. The folders of processes that are gone are
     swept in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must
     not stay."""
@@ -1100,15 +1101,18 @@ def _spill_setting() -> str:
 
         global _OWN_SPILL_SWEPT
         root = data_dir() / "duckdb_tmp"
-        if root.is_dir():
-            _sweep_spill_folders(root)
-        _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
-        if encrypted:
-            return ""
-        root.mkdir(parents=True, exist_ok=True)
-        mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-        mine.mkdir()
-        return str(mine)
+        # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
+        # sweep running beside another caller's new folder of this pid would remove a live connection's folder.
+        with _SPILL_LOCK:
+            if root.is_dir():
+                _sweep_spill_folders(root)
+            _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
+            if encrypted:
+                return ""
+            root.mkdir(parents=True, exist_ok=True)
+            mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+            mine.mkdir()
+            return str(mine)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
         return ""
 

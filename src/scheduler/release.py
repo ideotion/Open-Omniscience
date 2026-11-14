@@ -44,6 +44,7 @@ allow-list every one of those copies goes through.
 from __future__ import annotations
 
 import logging
+import shutil
 import sys
 import time
 from contextlib import suppress
@@ -133,6 +134,7 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
             if not mod._LOCK.acquire(blocking=wait):
                 out.setdefault("busy", []).append(name)
                 continue
+            spill = None
             try:
                 con = mod._STATE.get("con")
                 if con is not None:
@@ -140,9 +142,12 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
                         con.close()
                     mod._STATE["con"] = None
                     mod._STATE["built_at"] = 0.0
+                    spill, mod._STATE["spill"] = mod._STATE.get("spill"), None
                     out["closed"].append(name)
             finally:
                 mod._LOCK.release()
+            if spill:  # the closed connection's offload folder (after the close: DuckDB holds its files open until then)
+                shutil.rmtree(spill, ignore_errors=True)
         except Exception as exc:  # noqa: BLE001
             out.setdefault("errors", {})[name] = type(exc).__name__
     out["ok"] = "errors" not in out
