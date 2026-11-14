@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "5f2e67167027836c4a6ab9699515eded39866e2a4ae791fc176f0aa1509107d5",
+  "digest": "aba0cc9620f33c95b93bd2fe54ab4717c1e93fcf05cd4c2083e52b1853ad6f81",
   "log": [
     {
       "version": 1,
@@ -67,6 +67,12 @@
       "digest": "5f2e67167027836c4a6ab9699515eded39866e2a4ae791fc176f0aa1509107d5",
       "kind": "same",
       "note": "Only a docstring in src/analytics/reindex_parallel.py changed (terminate_live_pools now describes the R689 shutdown order); no row index_article writes can change."
+    },
+    {
+      "version": 3,
+      "digest": "aba0cc9620f33c95b93bd2fe54ab4717c1e93fcf05cd4c2083e52b1853ad6f81",
+      "kind": "same",
+      "note": "PR #1972: datestore.articles_for_date also returns each tag's id for the Agenda's confirm and reject, and sentiment.py gains a comment-only perf pointer; the rows index_article writes are unchanged"
     }
   ]
 }

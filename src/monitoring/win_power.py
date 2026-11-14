@@ -16,7 +16,8 @@ WHAT THIS DOES, on Windows only (a no-op everywhere else, and a failure to regis
   uvicorn's capture turns into the ONE graceful path (lifespan shutdown, ``checkpoint_before_dispose``, the clean sentinel). The handler
   thread then stays in the handler: returning ends the process at once, and the OS stops waiting after its own limit anyway (about 5 s
   for CLOSE, longer for LOGOFF / SHUTDOWN: the OS's number, not ours). HONEST LIMIT: a 90 s write-back of a 1.4 GB log cannot finish inside
-  that, so the sentinel may still read unclean; the recorded reason says why.
+  that, so the sentinel may still read unclean; the recorded reason says why. (The 90 s is a field observation this project could not
+  reproduce on a fast disk: item (a) of docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md.)
 * ``RegisterSuspendResumeNotification`` (a callback, no window needed; Windows 8 and later): on ``PBT_APMSUSPEND`` a PASSIVE checkpoint
   runs from a connection of its own, interrupted after :data:`SUSPEND_BUDGET_S` (the OS allows about two seconds before it sleeps).
   PASSIVE copies what it can without waiting for any reader or writer and never truncates, so it cannot block the suspend and cannot
