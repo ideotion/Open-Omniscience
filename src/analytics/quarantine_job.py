@@ -260,22 +260,51 @@ def default_quarantine_candidates_batch(
 
     newly_written = 0
     if write and to_write:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+        from src.analytics.store import shift_keyword_counters_for_quarantine
+        from src.database.writer import connection_first, write_lock
+
         now = datetime.now(UTC)
-        for aid, signal in to_write.items():
-            # A targeted, no-load UPDATE (the batch already read every candidate's
-            # columns above; no second content decrypt). synchronize_session=False --
-            # this session never re-reads these rows again in the same batch.
-            session.query(Article).filter(Article.id == aid).update(
-                {
-                    "quarantined": True,
-                    "quarantine_reason": signal,
-                    "quarantine_criteria_version": criteria_version,
-                    "quarantined_at": now,
-                },
-                synchronize_session=False,
-            )
-        session.commit()
-        newly_written = len(to_write)
+        # R101: the stamps, the keyword counters they move and the corpus epoch land in ONE commit under ONE hold of
+        # the write gate. Only the newly stamped articles leave the counters (an already-quarantined one left them when
+        # it was stamped). The epoch bump makes the keyword rollup rebuild without them: a stamp appends no mention row,
+        # so the rollup's tail gate alone would never notice it. ``strict=True``: a bump that fails rolls the whole batch
+        # back and raises, so no stamp lands while the rollup still counts its article.
+        connection_first(session)
+        with write_lock():
+            try:
+                stamped: list[int] = []
+                for aid, signal in to_write.items():
+                    # A targeted, no-load UPDATE (the batch already read every candidate's
+                    # columns above; no second content decrypt). synchronize_session=False --
+                    # this session never re-reads these rows again in the same batch.
+                    #
+                    # CONDITIONAL, under the gate (R101): ``to_write`` was read before the gate, so another stamping path
+                    # (the retroactive job beside an import's screening) may have stamped the article since. Only a row
+                    # this UPDATE really changed leaves the counters; subtracting one twice would be hidden by the floor.
+                    changed = session.query(Article).filter(
+                        Article.id == aid, Article.quarantined.isnot(True)
+                    ).update(
+                        {
+                            "quarantined": True,
+                            "quarantine_reason": signal,
+                            "quarantine_criteria_version": criteria_version,
+                            "quarantined_at": now,
+                        },
+                        synchronize_session=False,
+                    )
+                    if not changed:
+                        continue  # the guard-clause form keeps the loop's back-edge inside the try (src/utils/interrupts.py)
+                    stamped.append(aid)
+                shift_keyword_counters_for_quarantine(session, stamped, quarantined=True)
+            except BaseException:
+                session.rollback()
+                raise
+            if stamped:
+                bump_corpus_epoch(session, reason="quarantine", strict=True)  # commits the batch with the bump
+            else:
+                session.commit()  # nothing changed under the gate: nothing to subtract, no rebuild to force
+        newly_written = len(stamped)
 
     return {
         "scanned": scanned,
