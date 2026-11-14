@@ -768,6 +768,10 @@ async def lifespan(app: FastAPI):
     # hold a passphrase). NOT covered: the backup import queue, the .eml import manager, the re-index managers and the backup threads, which
     # are not registry jobs and keep their own stops; nor the request-bound AI streams (the streamed POST /api/llm/bulk, ai.py's extract and
     # prompt runs), which stop at their next line once the server drops the connection and may still commit the article they are on. Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
+    # The repair of a damaged library file IS a registry job, registered ``cancellable=False`` because its switch must never be cut
+    # halfway and a late finish must not read as cancelled. It is stopped by its own flag, which ``_stop_database_check`` above raised
+    # before this wait (its copy ends at the next batch); this wait then covers it like any other job, and a repair still running past
+    # the deadline stops before its swap once the database is closed to jobs below (R689).
     try:
         from src.jobs.background import stop_all_jobs
 

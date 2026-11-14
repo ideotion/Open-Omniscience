@@ -841,7 +841,12 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         raise
     except salvage.SalvageStopped:
         report["outcome"] = "stopped"
-        _LOG.info("database repair: stopped (the app is shutting down); the copy is removed at the next start")
+        # What happens to the copy depends on the work (R689): a fresh copy (``.partial``) is removed by the ``finally`` below and made
+        # again at the next start; a resume or finish keeps its finished copy and its sidecar, so the next start takes it up again.
+        if work["kind"] != "repair":
+            _LOG.info("database repair: stopped (the app is shutting down); the finished copy is kept and the next start completes it")
+        else:
+            _LOG.info("database repair: stopped (the app is shutting down); the copy is removed and made again at the next start")
     except salvage.SalvageRefused as refusal:
         code = refusal.code
         text = _words_of(refusal)

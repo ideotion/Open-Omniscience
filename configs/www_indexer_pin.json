@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
+  "digest": "6f033974620f7820de7e3dfb300dcd2d2c98bd2bd1e4be35cff9e643ef2d7a2e",
   "log": [
     {
       "version": 1,
@@ -19,6 +19,12 @@
       "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
       "kind": "same",
       "note": "R415 review: reindex_parallel.py (_extract_www picks the text and source country) joins the www modules"
+    },
+    {
+      "version": 1,
+      "digest": "6f033974620f7820de7e3dfb300dcd2d2c98bd2bd1e4be35cff9e643ef2d7a2e",
+      "kind": "same",
+      "note": "Only a docstring in src/analytics/reindex_parallel.py changed (terminate_live_pools now describes the R689 shutdown order); no row index_article writes can change."
     }
   ]
 }
