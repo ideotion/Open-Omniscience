@@ -76,7 +76,7 @@ jobs:
           rc=0
           bandit -r src/ -ll -q 2> "$RUNNER_TEMP/bandit.err" || rc=$?
           grep -v -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" >&2 || true
-          echo "bandit: $(grep -c -E 'nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
+          echo "bandit: $(grep -c -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
           exit "$rc"
       - name: Dependency audit (pip-audit)
         run: |
@@ -589,7 +589,7 @@ jobs:
           rc=0
           bandit -r src/ -ll -q 2> "$RUNNER_TEMP/bandit.err" || rc=$?
           grep -v -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" >&2 || true
-          echo "bandit: $(grep -c -E 'nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
+          echo "bandit: $(grep -c -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
           exit "$rc"
 
       - name: Dependency audit (pip-audit)

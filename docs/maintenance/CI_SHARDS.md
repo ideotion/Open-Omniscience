@@ -129,8 +129,8 @@ number of concurrent jobs. This is an INFERENCE; the limit of the plan is not vi
   22 to 23 minutes per leg on the same arithmetic.
 * **The runner moves more than the dealing.** The same suite took 80:45 (A), 72:17 (B) and 90:09 (C) of `test` job time, a spread of 25 % between runs, against 3 %
   between the legs of one run; the same leg varied by up to 8:37 (`test` shard 1: 21:21 in B, 29:58 in C).
-* **The static steps of leg 1** (until R668 moved them to the `static` job) took about 100 s (41 s before pytest, about 59 s after: mypy 30, bandit 25, pip-audit 4); `overhead_seconds` models 80. The 20 s
-  difference moves the dealing by under 7 s per leg, so the number stays (R433 dropped a measured overhead).
+* **The static steps of leg 1** (until R668 moved them to the `static` job) took about 100 s (41 s before pytest, about 59 s after: mypy 30, bandit 25, pip-audit 4); `overhead_seconds` then modelled 80. The 20 s
+  difference moves the dealing by under 7 s per leg, so the number stayed (R433 dropped a measured overhead); it went to none in #1988, once the steps had left leg 1.
 * **Core-only is the one imbalance measured:** the pytest steps took 1556, 1122 and 1492 s, a spread of 434 s. The light leg was leg 1 in A and B and leg 2 in C,
   so three runs do not say how much of it is the table (measured where the analysis tests run, which a core-only install skips) and how much is the runner. Dealing
   the 4170 s evenly would give 23:10 against 25:56 for the slowest leg, and only matters in a run where Core-only is the slowest job (B yes, A a tie, C no).
