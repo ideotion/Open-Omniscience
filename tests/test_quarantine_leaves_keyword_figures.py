@@ -643,3 +643,187 @@ def test_a_deferred_reindex_while_the_recompute_is_owed_keeps_its_own_deferral(d
     assert not is_deferral_open(db)
     assert counter_envelope(db).is_exact()
 
+
+
+# --------------------------------------------------------------------------- open-on-main row 40
+
+
+def test_the_observatory_breadth_leaves_a_quarantined_articles_outlet_out(db):
+    """distinct_sources (the Observatory's radius, every galaxy's breadth) counted the outlet of a page judged not an
+    article as one more independent voice."""
+    from src.analytics.supergroup_stats import _distinct_source_count
+
+    db.add(Source(name="T", domain="y.test", country="de", language="en"))
+    db.commit()
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"source_id": 2}, synchronize_session=False)
+    db.commit()
+    from src.analytics.store import reindex_articles
+
+    reindex_articles(db, extractor=BaselineExtractor(), article_ids=[arts[0].id])
+    kid = _kw(db).id
+    assert _distinct_source_count(db, [kid]) == 2
+    _stamp(db, arts[0])
+    assert _distinct_source_count(db, [kid]) == 1
+
+
+def test_the_bulletin_country_coverage_leaves_a_quarantined_article_out(db):
+    from src.bulletin.coverage import country_coverage
+    from src.bulletin.period import Period
+
+    arts = _corpus(db)
+    today = datetime.now(UTC).date()
+    period = Period(cadence="weekly", start=today - timedelta(days=7), end=today + timedelta(days=1),
+                    baseline_start=today - timedelta(days=35))
+
+    def _fr(out: dict) -> dict:
+        return next(c for c in out["countries"] if c["country"] == "fr")
+
+    before = _fr(country_coverage(db, period))
+    assert before["local"]["articles"] == 3
+    _stamp(db, arts[0])
+    after = country_coverage(db, period)
+    fr = _fr(after)
+    assert fr["local"]["articles"] == 2
+    term = next(t for t in fr["local"]["terms"] if t["normalized"] == WORD)
+    assert term["articles"] == 2
+
+
+def test_the_rising_galaxy_cards_outlets_and_drill_leave_a_quarantined_article_out(db):
+    """The rising-galaxy card filtered its share and growth (_corpus_volume) but counted a quarantined page's outlet in
+    distinct_sources and listed the page in its article drill: one card in two scopes."""
+    from src.analytics.store import reindex_articles
+    from src.analytics.supergroup_rising import _article_ids_windowed, _distinct_sources_windowed
+
+    db.add(Source(name="T", domain="y.test", country="de", language="en"))
+    db.commit()
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"source_id": 2}, synchronize_session=False)
+    db.commit()
+    reindex_articles(db, extractor=BaselineExtractor(), article_ids=[arts[0].id])
+    kid = _kw(db).id
+    lo, hi = date.today() - timedelta(days=30), date.today() + timedelta(days=1)
+    assert _distinct_sources_windowed(db, [kid], lo, hi) == 2
+    assert arts[0].id in _article_ids_windowed(db, [kid], lo, hi)
+    _stamp(db, arts[0])
+    assert _distinct_sources_windowed(db, [kid], lo, hi) == 1
+    assert arts[0].id not in _article_ids_windowed(db, [kid], lo, hi)
+
+
+def test_the_bulletin_first_channel_is_never_a_quarantined_page(db):
+    from src.bulletin.period import Period
+    from src.bulletin.sections import across_channels
+
+    now = datetime.now(UTC)
+    early = _add(db, 0, when=now - timedelta(days=5))
+    later = [_add(db, n, when=now - timedelta(days=2)) for n in (1, 2)]
+    for a in [early, *later]:
+        index_article(db, a, extractor=BaselineExtractor())
+    today = now.date()
+    period = Period(cadence="weekly", start=today - timedelta(days=7), end=today + timedelta(days=1),
+                    baseline_start=today - timedelta(days=35))
+
+    def _first_seen() -> str:
+        out = across_channels(db, period, terms=[{"normalized": WORD, "term": WORD}])
+        return next(t for t in out["terms"] if t["normalized"] == WORD)["first_seen"]
+
+    assert _first_seen() == (now - timedelta(days=5)).date().isoformat()
+    _stamp(db, early)
+    assert _first_seen() == (now - timedelta(days=2)).date().isoformat()
+
+
+def test_the_bulletin_topic_table_counts_no_quarantined_article(db):
+    from src.bulletin.period import Period
+    from src.bulletin.sections import by_topic_tag
+    from src.database.models import KeywordTag
+
+    now = datetime.now(UTC)
+    arts = [_add(db, n, when=now - timedelta(days=2)) for n in (0, 1)]
+    for a in arts:
+        index_article(db, a, extractor=BaselineExtractor())
+    kid = db.query(Keyword.id).filter(Keyword.normalized_term == WORD).scalar()
+    db.add(KeywordTag(keyword_id=kid, axis="topic", tag="science", source="user"))
+    db.commit()
+    today = now.date()
+    period = Period(cadence="weekly", start=today - timedelta(days=7), end=today + timedelta(days=1),
+                    baseline_start=today - timedelta(days=35))
+
+    def _read() -> tuple[int, int, int]:
+        out = by_topic_tag(db, period)
+        row = next(t for t in out["topics"] if t["topic"] == "science")
+        return row["articles"], out["mentions_total"], out["mentions_tagged"]
+
+    articles, total, tagged = _read()
+    assert articles == 2 and total > 0
+    _stamp(db, arts[0])
+    after = _read()
+    assert after[0] == 1
+    assert after[1] < total and after[2] < tagged
+
+
+# --------------------------------------------------------------------------- open-on-main row 47
+
+
+#: Every reader that leaves a salvage stand-in out of a per-source or per-article count from the keyword mentions
+#: leaves a quarantined article out beside it (R101). A new stand-in gate in these modules without its R101 twin fails here.
+_ROW_47_MODULES = (
+    "src/analytics/story_propagation.py",
+    "src/analytics/concentration.py",
+    "src/analytics/supply_chain_ripple.py",
+    "src/analytics/source_topics.py",
+    "src/ai_layer/source_tags.py",
+    "src/analytics/supergroup_rising.py",
+    "src/analytics/supergroup_stats.py",
+    "src/bulletin/sections.py",
+)
+
+
+@pytest.mark.parametrize("path", _ROW_47_MODULES)
+def test_every_stand_in_gate_on_the_mentions_has_its_r101_twin(path):
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / path).read_text(encoding="utf-8")
+    stand_in = src.count("not_a_stand_in_article_id(KeywordMentionRead.article_id)")
+    assert stand_in, f"{path} no longer gates stand-ins on the mentions; update this list"
+    assert src.count("not_quarantined(KeywordMentionRead.article_id)") >= stand_in
+
+
+def _two_outlets(db) -> list[Article]:
+    from src.analytics.store import reindex_articles
+
+    db.add(Source(name="T", domain="y.test", country="de", language="en"))
+    db.commit()
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"source_id": 2}, synchronize_session=False)
+    db.commit()
+    reindex_articles(db, extractor=BaselineExtractor(), article_ids=[arts[0].id])
+    return arts
+
+
+def test_the_ripple_independence_gate_and_the_story_drill_leave_a_quarantined_article_out(db):
+    from src.analytics.story_propagation import _term_article_ids
+    from src.analytics.supply_chain_ripple import _source_counts
+
+    arts = _two_outlets(db)
+    kid = _kw(db).id
+    lo, hi = date.today() - timedelta(days=30), date.today() + timedelta(days=1)
+    assert _source_counts(db, [kid], lo, hi) == {kid: 2}
+    assert arts[0].id in _term_article_ids(db, kid, lo, hi, 100)
+    _stamp(db, arts[0])
+    assert _source_counts(db, [kid], lo, hi) == {kid: 1}
+    assert arts[0].id not in _term_article_ids(db, kid, lo, hi, 100)
+
+
+def test_the_source_tag_evidence_floor_counts_no_quarantined_article(db):
+    from src.ai_layer.source_tags import select_source_tag_candidates
+
+    arts = _corpus(db)
+
+    def _articles_of_x() -> int:
+        items, skipped, _ = select_source_tag_candidates(db, min_articles=1)
+        row = next(r for r in [*items, *skipped] if r.domain == "x.test")
+        return row.article_count
+
+    assert _articles_of_x() == 3
+    _stamp(db, arts[0])
+    assert _articles_of_x() == 2
