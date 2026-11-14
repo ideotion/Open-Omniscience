@@ -124,6 +124,8 @@ def test_a_confirmed_pair_is_shown_as_confirmed_not_hidden_and_nothing_is_marked
     assert (row["article_site"], row["state"], row["note"]) == ("example.net", "confirmed", "ours")
     still = c.get("/api/quarantine/samples?signal=host_mismatch").json()["signals"]["host_mismatch"]
     assert [r["article_site"] for r in still["rows"]] == ["example.org"]
+    # The sample row carries the source number a confirm or withdraw is keyed on (the panel's button reads it).
+    assert row["source_id"] == sid and [r["source_id"] for r in still["rows"]] == [sid]
 
 
 def test_a_confirmation_made_during_a_pause_is_seen_by_the_next_batch(world):

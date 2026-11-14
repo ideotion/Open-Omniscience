@@ -640,6 +640,21 @@ finding things, or it finds so much that every answer is the same answer).
    `consent: true` (#14/#14f). Each subtab names its source, licence and last fetch; the caveat is visible; no score.
    A re-fetch stores only new or revised values (R662). Enforced in test_ui_invariants (#33) +
    tests/test_climate_api.py + tests/climate_node_test.js.
+34. **SIMPLE MODE IS AN OPT-IN SECOND INTERFACE OVER THE SAME PAGE (R682, maintainer-asked 2026-11-13):** one
+   top-bar switch (`#ui-simple-toggle`, `role="switch"`, remembered per device as `oo.ui.simple`) swaps the sidebar list
+   and tab pages for task views (Today, Read, Search, More tools), same routes, same chrome, full mode unchanged when off.
+   AMENDS the visible-caveat non-negotiable FOR THIS MODE ONLY: caveat, method, n, source and date sit one click away
+   behind an ⓘ (keyboard, touch, screen reader), and an approximate, partial or stale figure keeps a visible mark (~ ◐ ◷).
+   NEVER hidden in either mode: the consent popup (going online calls the full app's `toggleNetwork`), airplane and
+   Tor/Protected state, lock, destructive confirms, errors. A full-view tool opens with a one-click "Back to simple view"
+   bar. Preact 10 + hooks + htm vendored in `src/static/simple/vendor/`, sha256-pinned, licences shipped, no eval, no
+   request off this origin. Exemptions, simple mode only: the sidebar list (#2) and #rate-toggle/#tm-open (#4) step aside;
+   #health keeps its slot (#3) and shows when not healthy. Enforced in test_ui_invariants (#34) + tests/test_simple_mode.py.
+35. **EVERY SERVER FEATURE HAS A BUTTON OR A LISTED REASON (R684, Lane M, PR #1954):** a route no UI file calls is
+   listed in `configs/routes_without_ui.tsv` as `internal`, `superseded`, `feature` or `unseen`, with a reason
+   (`scripts/route_callers.py` finds them from source). The `feature` count has a zero-slack ceiling that only goes
+   down; a superseded route is removed only in a separate PR after its owning lane confirms. Enforced by
+   tests/test_routes_have_a_caller.py + test_ui_invariants (#35).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

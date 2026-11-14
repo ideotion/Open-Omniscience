@@ -866,3 +866,18 @@ def _database_open_to_jobs():
 
     after_shutdown.clear()
     yield
+
+
+@pytest.fixture
+def no_cgroup_limit(monkeypatch):
+    """The process runs under no cgroup memory limit, whatever the machine running the suite says.
+
+    A test that fakes the machine's memory (``total_ram_mb``, ``_mem_reading``) means "a machine of this size"; since R302 every
+    memory verdict also reads the cgroup limit, and a CI runner or sandbox with a real limit would bound the faked figure."""
+    from src.config import cgroup_memory
+
+    monkeypatch.setattr(
+        cgroup_memory,
+        "cgroup_available_mb",
+        lambda *a, **k: {"available_mb": None, "limit_mb": None, "min_limit_mb": None, "source": None, "unreadable": False},
+    )

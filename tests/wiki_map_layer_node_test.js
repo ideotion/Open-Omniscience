@@ -55,12 +55,36 @@ function build() {
     + extract("_eeFwd") + "\n"
     + extract("project") + "\n"
     + extract("_ooWikiLayer") + "\n"
+    + extract("_ooWikiAddrMarker") + "\n"
     + "return { project, layer: _ooWikiLayer };";
-  const fn = new Function("esc", body);
-  return fn(sandbox.esc);
+  // The shipped ooIsoDate (app-core.js), extracted too, with a left-to-right page.
+  const isoDate = new Function("document", extract("ooIsoDate") + "\nreturn ooIsoDate;")({ documentElement: { dir: "ltr" } });
+  const fn = new Function("esc", "ooIsoDate", body);
+  return fn(sandbox.esc, isoDate);
 }
 
 const { project, layer } = build();
+
+// --------------------------------------------------------------------------- //
+// R17 step 4 (R678): a located infobox address is a SQUARE drawn through the same seam,
+// and its hover carries its provenance: page, edition, field, address, OSM object, vintage.
+// --------------------------------------------------------------------------- //
+(function locatedAddressesAreSquaresWithTheirProvenance() {
+  const addr = { edition: "fr", title: "Salle Fixture", external_id: "fr:#7", field: "adresse", address: "2 Rue Fixture, Paris",
+    lat: 48.85, lon: 2.35, osm_object: "way/42", osm_vintage: "2026-10-01T00:00:00+00:00" };
+  const out = layer({ measured: true, points: [], addresses: [addr] });
+  const want = project(addr.lon, addr.lat);
+  const x = /<rect x="([-\d.]+)" y="([-\d.]+)"/.exec(out.markup);
+  assert.ok(x, "no square was drawn for a located address: " + out.markup);
+  assert.strictEqual(x[1], (want.x - 2).toFixed(1), "the square's x came from somewhere other than project()");
+  assert.strictEqual(x[2], (want.y - 2).toFixed(1), "the square's y came from somewhere other than project()");
+  for (const piece of ["2 Rue Fixture, Paris", "adresse", "Salle Fixture", "(fr)", "way/42", "2026-10-01"]) {
+    assert.ok(out.markup.includes(piece), "the hover lost its provenance piece " + piece + ": " + out.markup);
+  }
+  assert.strictEqual(out.n, 1);
+  const bad = layer({ measured: true, points: [], addresses: [{ address: "x" }, null] });
+  assert.ok(!/<rect/.test(bad.markup), "an address with no point was drawn: " + bad.markup);
+})();
 
 // --------------------------------------------------------------------------- //
 // It draws THROUGH the seam.

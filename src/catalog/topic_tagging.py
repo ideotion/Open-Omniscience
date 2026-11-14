@@ -15,6 +15,14 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
   kept in the set conservatively) a word boundary cannot be checked, so a
   label is matched as a SUBSTRING of a run of text, and EVERY such hit is ≈, whatever the
   label. A one-character label is never matched there: it would hit inside unrelated words.
+  "One character" counts letters, not combining marks. A label with inner punctuation or a space
+  (情報・通信) is found only where the text writes it joined (情報通信), since a match never crosses
+  one; such labels are counted so the narrower reach is visible.
+
+* R690: combining marks and joiners belong to their word in every script (a vowel sign or a virama
+  never splits a Hindi or Bengali word, a haraka never splits an Arabic one). Languages in
+  ``UNVERIFIED_LANGUAGES`` (Khmer, Lao, Burmese) are not tagged at all until a test shows their
+  matching works: their items count as unsupported, never as a precision figure.
 
 The classifier's module home (S06-02 S4, "record it") is ``src/catalog/topic_tagging.py``.
 No network, no model. An item in a language no loaded scheme carries a single label for is
@@ -26,14 +34,29 @@ denominator is zero is ``None`` with a reason, never ``0``; every figure carries
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from dataclasses import asdict, dataclass
 from typing import Any
 
 UNSEGMENTED_LANGUAGES = frozenset({"zh", "ja", "ko", "th", "my", "km", "lo"})
 
-_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+#: R690(3)/(4): languages whose matching no test shows working yet. Their labels never make the language
+#: taggable, so a sample item in one is counted as unsupported and no precision figure is published for it.
+#: Leaves this set only with a test that matches real words of the script (as Thai, Hindi and Bengali have).
+UNVERIFIED_LANGUAGES = frozenset({"km", "lo", "my"})
+
+# Optional in ordinary writing, so dropped before tokenizing (never a boundary): a text that carries them
+# and a label that does not are the same word. Arabic harakat, tanwin, shadda, sukun, superscript alef and
+# tatweel; Hebrew points and cantillation (U+0591-U+05C7 minus the maqaf and the punctuation in that block);
+# the zero-width joiner and non-joiner, which Persian and Indic text uses or omits for the same word.
+_OPTIONAL = frozenset(
+    chr(c)
+    for c in (
+        *range(0x064B, 0x0653), 0x0670, 0x0640,
+        *(c for c in range(0x0591, 0x05C8) if c not in (0x05BE, 0x05C0, 0x05C3, 0x05C6)),
+        0x200C, 0x200D,
+    )
+)
 
 CAVEAT = (
     "Topics are assigned by label rules over titles and provisions: a lens, never a verdict. "
@@ -42,9 +65,37 @@ CAVEAT = (
 )
 
 
+def _in_word(ch: str) -> bool:
+    """A letter or digit, or a combining mark (Mn, Mc, Me): both belong to the word (R690(1)).
+
+    ``[^\\W_]+`` alone split a word at every vowel sign and virama (Devanagari, Bengali, Thai) and at every
+    Arabic haraka, because marks are not alphanumeric: मनुष्य ("human") folded to मन + ुष + ्य, so the label
+    मन ("mind") matched inside it as an EXACT whole word.
+    """
+    return ch.isalnum() or unicodedata.category(ch)[0] == "M"
+
+
 def fold(text: str) -> tuple[str, ...]:
-    """Case-folded NFKC word tokens; diacritics are kept (they separate real words)."""
-    return tuple(_TOKEN.findall(unicodedata.normalize("NFKC", text).casefold()))
+    """Case-folded NFKC word tokens; diacritics and combining marks stay with their letters."""
+    words: list[str] = []
+    cur: list[str] = []
+    for ch in unicodedata.normalize("NFKC", text).casefold():
+        if ch in _OPTIONAL:
+            continue
+        if _in_word(ch):
+            if cur or ch.isalnum():  # a stray mark with no letter before it starts no word
+                cur.append(ch)
+        elif cur:
+            words.append("".join(cur))
+            cur = []
+    if cur:
+        words.append("".join(cur))
+    return tuple(words)
+
+
+def _base_letters(s: str) -> int:
+    """Letters and digits, not counting marks: one Khmer or Devanagari syllable is several code points."""
+    return sum(1 for c in s if c.isalnum())
 
 
 @dataclass(frozen=True)
@@ -72,6 +123,10 @@ class Index:
         self.languages: set[str] = set()
         #: per unsegmented language, the one-character labels never matched (R680), counted so they do not vanish
         self.short_labels: dict[str, int] = {}
+        #: per unsegmented language, the labels with inner punctuation or a space, matched only written joined
+        self.split_labels: dict[str, int] = {}
+        #: per language of UNVERIFIED_LANGUAGES, the labels set aside (R690(3)), counted so they do not vanish
+        self.unverified_labels: dict[str, int] = {}
         self.schemes: list[str] = []
         self.empty: list[str] = []
         for art in artifacts:
@@ -92,9 +147,16 @@ class Index:
         toks = fold(label)
         if not toks:
             return
+        if lang in UNVERIFIED_LANGUAGES:  # R690(3): never taggable until a test shows it works
+            self.unverified_labels[lang] = self.unverified_labels.get(lang, 0) + 1
+            return
         if lang in UNSEGMENTED_LANGUAGES:
             key = "".join(toks)
-            if len(key) < 2:  # never matched, so it does not make the language taggable either
+            if len(toks) > 1:
+                # 情報・通信, 국제 관계: a match never crosses punctuation or space, so the label is found only
+                # where the text writes it joined (情報通信, 국제관계). Counted, so the narrower reach is visible.
+                self.split_labels[lang] = self.split_labels.get(lang, 0) + 1
+            if _base_letters(key) < 2:  # never matched, so it does not make the language taggable either
                 self.short_labels[lang] = self.short_labels.get(lang, 0) + 1
                 return
             self.languages.add(lang)
@@ -215,6 +277,11 @@ def measure(sample: list[dict[str, Any]], index: Index) -> dict[str, Any]:
         "schemes": index.schemes,
         "schemes_without_concepts": index.empty,
         "one_character_labels_skipped": dict(index.short_labels),
+        "labels_matched_only_when_written_joined": dict(index.split_labels),
+        "unverified_languages": {
+            "labels_set_aside": dict(index.unverified_labels),
+            "reason": "no test yet shows this script's words are matched correctly, so no figure is given (R690)",
+        },
         "method": "whole-word label match (longest first) over the text, per language; "
                   "alt labels and labels shared by several concepts are marked ≈; in a language written "
                   "without spaces a label of two or more characters is matched inside a run of text and "

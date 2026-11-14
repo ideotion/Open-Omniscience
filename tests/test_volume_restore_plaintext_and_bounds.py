@@ -425,3 +425,74 @@ def test_the_remove_button_answers_only_the_persons_own_click():
     body = function_body((ROOT / "src/static/app-backup.js").read_text("utf-8"), "_uxImLeftoverPlaintext")
     i = body.index("isTrusted !== true")
     assert i < body.index("confirm(") < body.index("remove-leftover-plaintext")
+
+
+def test_a_listed_name_in_another_case_and_a_trailing_newline_are_never_offered(tmp_path):
+    """R692 follow-up: a copy whose name a case-insensitive drive would take for a listed volume, and a manifest name with
+    a trailing newline (which ``$`` let through), are never offered for removal."""
+    out = _legacy_set(tmp_path)
+    m = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))
+    first = m["volumes"][0]["name"]
+    (out / (first + ".plain")).write_bytes(b"x")
+    m["volumes"].append({"name": (first + ".plain").upper()})
+    m["volumes"].append({"name": "vol-77777.ooenc\n"})
+    (out / MANIFEST_NAME).write_text(json.dumps(m), encoding="utf-8")
+    import contextlib
+
+    with contextlib.suppress(OSError):  # a platform that refuses the name has nothing to offer either
+        (out / "vol-77777.ooenc\n.plain").write_bytes(b"y")
+    assert leftover_plaintext(out) == []
+    assert remove_leftover_plaintext(out, [first + ".plain", "vol-77777.ooenc\n.plain"]) == {"removed": [], "failed": []}
+    assert (out / (first + ".plain")).exists()
+
+
+def test_what_the_removal_checks_is_the_folder_it_removes_from(tmp_path, monkeypatch):
+    """R692 follow-up: the scan and the removal go through ONE folder handle, so a folder swapped between the check and
+    the removal cannot turn the removal onto another folder's files."""
+    from src.backup import import_scan
+
+    if not getattr(import_scan, "can_scan_by_handle", lambda: True)():
+        pytest.skip("no folder handles on this platform")
+    out = _with_leftovers(tmp_path)
+    first = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][0]["name"]
+    other = tmp_path / "other"
+    other.mkdir()
+    for p in out.iterdir():  # a second folder holding the very same names
+        (other / p.name).write_bytes(p.read_bytes())
+    moved = tmp_path / "moved"
+
+    def swap_after(real):
+        def run(*a, **k):
+            res = real(*a, **k)
+            if not moved.exists():
+                out.rename(moved)
+                other.rename(out)
+            return res
+
+        return run
+
+    for name in ("leftovers_in_handle", "leftover_plaintext"):  # whichever does the check, the swap follows it
+        if hasattr(import_scan, name):
+            monkeypatch.setattr(import_scan, name, swap_after(getattr(import_scan, name)))
+    assert remove_leftover_plaintext(out, [first + ".plain"]) == {"removed": [first + ".plain"], "failed": []}
+    assert not (moved / (first + ".plain")).exists(), "the copy goes from the folder that was checked"
+    assert (out / (first + ".plain")).exists(), "the folder swapped in afterwards is untouched"
+
+
+def test_a_folder_that_cannot_be_opened_names_the_copies_it_could_not_remove(tmp_path, monkeypatch):
+    """Second read of #1964: when the folder cannot be opened for removal, the copies asked for are reported as not
+    removed, never answered with an empty, silent result while the plaintext stays on disk."""
+    from src.backup import import_scan
+
+    if not getattr(import_scan, "can_scan_by_handle", lambda: True)():
+        pytest.skip("no folder handles on this platform")
+    out = _with_leftovers(tmp_path)
+    first = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][0]["name"]
+
+    def refuse(_d):
+        raise PermissionError("no entry")
+
+    monkeypatch.setattr(import_scan, "open_folder_handle", refuse)
+    got = remove_leftover_plaintext(out, [first + ".plain", "notes.txt", "../x.plain"])
+    assert got == {"removed": [], "failed": [first + ".plain"]}
+    assert (out / (first + ".plain")).exists()

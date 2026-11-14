@@ -8360,15 +8360,32 @@ def _meminfo_mb(*keys: str) -> dict[str, int]:
     return out
 
 
+def _bounded_by_cgroup(machine_mb: int | None, key: str) -> int | None:
+    """``machine_mb`` bounded by the cgroup memory limit this process runs under (R302), through the one helper every memory verdict
+    uses (``src.config.cgroup_memory.effective_memory``). ``/proc/meminfo`` is the HOST's figure: inside a container the kernel kills
+    at the cgroup limit, so an import cache sized from the host could outgrow the container. Unreadable stays the machine's figure."""
+    try:
+        from src.config.cgroup_memory import effective_memory
+
+        if key == "total_mb":
+            got = effective_memory(machine_mb, None, read_machine=False)
+        else:
+            got = effective_memory(None, machine_mb, read_machine=False)
+    except Exception:  # noqa: BLE001 - an unreadable cgroup leaves the machine's figure
+        return machine_mb
+    fig = got.get(key)
+    return int(fig) if fig is not None else machine_mb
+
+
 def _available_ram_mb() -> int | None:
     """Currently AVAILABLE RAM in MiB (``MemAvailable``) -- the kernel's own
-    estimate of what a new allocation can get without swapping."""
-    return _meminfo_mb("MemAvailable").get("MemAvailable")
+    estimate of what a new allocation can get without swapping -- bounded by any cgroup limit."""
+    return _bounded_by_cgroup(_meminfo_mb("MemAvailable").get("MemAvailable"), "available_mb")
 
 
 def _total_ram_mb() -> int | None:
-    """TOTAL physical RAM in MiB (``MemTotal``)."""
-    return _meminfo_mb("MemTotal").get("MemTotal")
+    """TOTAL physical RAM in MiB (``MemTotal``), bounded by the smallest cgroup limit."""
+    return _bounded_by_cgroup(_meminfo_mb("MemTotal").get("MemTotal"), "total_mb")
 
 
 #: Share of AVAILABLE RAM an owning import may claim for the merge page cache.
