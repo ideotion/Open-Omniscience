@@ -2308,7 +2308,7 @@
         const cleared = measured === true;
         const on = cleared && !e.switched_off;
         const n = (e.n_cases == null) ? "?" : String(e.n_cases);
-        const numbers = t("n = {n} case(s)").replace("{n}", n)
+        const numbers = _tfn("n = {n} case(s)", { n: n })
           + ((e.checks && e.checks.length) ? " · " + e.checks.join("; ") : "");
         // R704: numbers measured on ANOTHER model license nothing for this one, and
         // the row says so rather than reading as "never measured" in general.

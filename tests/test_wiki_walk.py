@@ -30,6 +30,7 @@ from src.wiki import mediawiki as mw
 from src.wiki import walk as W
 from src.wiki.lane_models import WikiWalkCursor, WikiWalkPage, WikiWalkSample
 from src.wiki.tiers import budget_state
+from tests.locale_forms import load_locale
 
 EDITION = "oo"
 
@@ -603,7 +604,7 @@ _LOCALES = _ROOT / "src" / "static" / "locales"
 
 
 def _locales() -> dict[str, dict]:
-    out = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in _LOCALES.glob("*.json")}
+    out = {p.stem: load_locale(p) for p in _LOCALES.glob("*.json")}
     assert len(out) == 12
     return out
 
