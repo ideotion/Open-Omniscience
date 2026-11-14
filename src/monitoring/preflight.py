@@ -176,13 +176,9 @@ def _check_one(fetcher, source) -> dict:
                 # ... and not "ok": the address the homepage sends a crawler to is off-limits by its robots.txt, or its robots.txt
                 # could not be read (steward 3's low 1). ``robots`` stays the homepage's own answer, which is what the metadata
                 # records (``robots_allowed``), since the homepage's robots.txt did allow it.
-                hop_verdict = (
-                    "robots_denied"
-                    if isinstance(exc, RobotsDisallowed)
-                    else "robots_refused"
-                    if getattr(exc, "cause", None) == "refused"  # 401/403 on the hop host's robots.txt (OPEN_QUEUE C1)
-                    else "unreachable"
-                )
+                # A 401/403 on the hop host's robots.txt is "robots_refused" (OPEN_QUEUE C1): the cause, a fixed token, is read, never the words.
+                refused = isinstance(exc, RobotsUnavailable) and exc.cause == "refused"
+                hop_verdict = "robots_denied" if isinstance(exc, RobotsDisallowed) else "robots_refused" if refused else "unreachable"
             else:
                 rec["reachable"] = False
                 rec["homepage_error"] = record_text(exc, limit=200, typed=False)
