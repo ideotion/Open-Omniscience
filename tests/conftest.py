@@ -898,7 +898,7 @@ def _panic_rescrub_drained():
     import threading
 
     for t in threading.enumerate():
-        if t.name == "oo-panic-rescrub" and isinstance(t, threading.Timer):
+        if isinstance(t, threading.Timer) and t.name == "oo-panic-rescrub":  # a test may hand back stand-ins without a name
             t.cancel()
     from src.safety import crypto_erase
 

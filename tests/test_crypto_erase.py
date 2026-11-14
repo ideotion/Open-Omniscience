@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -570,13 +571,15 @@ def test_a_keys_subfolder_the_erase_cannot_list_is_named_as_a_failure(tmp_path, 
     sub = data / "keys" / "sub"
     sub.mkdir(parents=True)
     (sub / "evidence.key").write_bytes(b"K" * 100)
-    real_scandir = os.scandir
 
-    def scandir(path="."):
-        if not isinstance(path, int) and os.fspath(path) == str(sub):
-            raise PermissionError(13, "Permission denied", str(sub))
-        return real_scandir(path)
+    def walk(top, *a, onerror=None, **k):  # the listing of keys/sub fails, as an unreadable folder's does
+        for root, dirs, names in os.walk(top, *a, onerror=onerror, **k):
+            if "sub" in dirs and Path(root, "sub") == sub:
+                dirs.remove("sub")
+                if onerror is not None:
+                    onerror(PermissionError(13, "Permission denied", str(sub)))
+            yield root, dirs, names
 
-    monkeypatch.setattr(os, "scandir", scandir)
+    scope_os(monkeypatch, crypto_erase, walk=walk)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["overwrite_failures"].count(str(sub)) == 1

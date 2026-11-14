@@ -349,8 +349,8 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     # "keys_destroyed", which must only ever mean the overwrite actually completed.
     overwrite_failures: list[str] = []
 
-    def _unlisted(err: OSError) -> None:  # a folder a walk cannot list is named, never skipped in silence
-        overwrite_failures.append(str(err.filename or "an unlistable folder"))
+    def _unlisted(failed_listing) -> None:  # a folder a walk cannot list is named (its path only), never skipped in silence
+        overwrite_failures.append(str(getattr(failed_listing, "filename", None) or "an unlistable folder"))
 
     def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
         s, overwritten, w = _shred(p, head_bytes=head_bytes)
