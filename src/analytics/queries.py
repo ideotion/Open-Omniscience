@@ -3493,7 +3493,7 @@ def keyword_stats(
             func.count(func.distinct(KeywordMentionRead.article_id)),
             func.coalesce(func.sum(KeywordMentionRead.count), 0),
         )
-        .filter(KeywordMentionRead.keyword_id.in_(stat_ids))
+        .filter(KeywordMentionRead.keyword_id.in_(stat_ids), not_quarantined(KeywordMentionRead.article_id))
         .one()
     )
     distinct_articles, total_mentions = int(row[0] or 0), int(row[1] or 0)
@@ -3514,6 +3514,7 @@ def keyword_stats(
                 KeywordMentionRead.keyword_id.in_(stat_ids),
                 KeywordMentionRead.observed_on >= lo,
                 KeywordMentionRead.observed_on < hi,
+                not_quarantined(KeywordMentionRead.article_id),
             )
             .scalar()
             or 0

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "8a96f0895bcec453ae487c8de7d0555ac02be378690de281ac42bef6c3cdef45",
+  "digest": "0f586a7ac6fd89f1998c4929c9fba0a50966cbbaf4bcf283a4036ebf210d065b",
   "log": [
     {
       "version": 1,
@@ -49,6 +49,12 @@
       "digest": "8a96f0895bcec453ae487c8de7d0555ac02be378690de281ac42bef6c3cdef45",
       "kind": "same",
       "note": "R101: index_article writes the same mention rows; only its keyword counter delta now skips an article already quarantined, and counters are aggregates a re-index and a carry both reconcile"
+    },
+    {
+      "version": 1,
+      "digest": "0f586a7ac6fd89f1998c4929c9fba0a50966cbbaf4bcf283a4036ebf210d065b",
+      "kind": "same",
+      "note": "R101 review round: index_article reads the quarantine flag from idx_article_quarantined instead of the article row; the mention rows it writes are unchanged"
     }
   ]
 }

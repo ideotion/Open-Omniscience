@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import Table, bindparam, delete, func, insert, select, text, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
@@ -463,11 +464,22 @@ def _apply_keyword_counter_deltas(
 
 
 def _is_quarantined(session: Session, article: Article, inserted_in_this_transaction: bool) -> bool:
-    """Whether ``article`` is quarantined right now (R101). One primary-key read, unless the caller just inserted
-    it, in which case the object's own value is the stored one."""
+    """Whether ``article`` is quarantined right now (R101), unless the caller just inserted it, in which case the
+    object's own value is the stored one. Answered from ``idx_article_quarantined`` alone: a primary-key read of
+    ``quarantined`` would walk the row's overflow pages, since the column was added by ALTER after ``content``."""
     if inserted_in_this_transaction or article.id is None:
         return bool(article.quarantined)
-    return bool(session.execute(select(Article.quarantined).where(Article.id == article.id)).scalar())
+    # INDEXED BY because the planner otherwise picks the primary key for ``id = ?`` (measured). A store still
+    # missing the index (it is a HOT_INDEXES self-heal) fails the prepare, which leaves the transaction alone, and
+    # takes the primary-key read instead.
+    try:
+        row = session.execute(
+            text("SELECT 1 FROM articles INDEXED BY idx_article_quarantined WHERE quarantined IS 1 AND id = :a"),
+            {"a": int(article.id)},
+        ).first()
+    except OperationalError:
+        return bool(session.execute(select(Article.quarantined).where(Article.id == article.id)).scalar())
+    return row is not None
 
 
 def shift_keyword_counters_for_quarantine(

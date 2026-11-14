@@ -656,6 +656,14 @@ def init_db() -> None:
     _init_step("ensure_merged_rows_row_key_column")
     ensure_merged_rows_row_key_column(engine)
 
+    # R101: a store written before 0.5.1 still counts quarantined articles in the keyword counters, the rollup and
+    # the day counts. Once, before anything can stamp an article (src/analytics/quarantine_transition.py).
+    _init_step("import:quarantine_transition")
+    from src.analytics.quarantine_transition import heal_r101_transition
+
+    _init_step("heal_r101_transition")
+    heal_r101_transition(engine)
+
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
     # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that
     # breaks the next real migration and the cross-version restore's `alembic upgrade`

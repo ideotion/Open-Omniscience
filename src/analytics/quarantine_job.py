@@ -293,8 +293,9 @@ def default_quarantine_candidates_batch(
                         },
                         synchronize_session=False,
                     )
-                    if changed:
-                        stamped.append(aid)
+                    if not changed:
+                        continue  # the guard-clause form keeps the loop's back-edge inside the try (src/utils/interrupts.py)
+                    stamped.append(aid)
                 shift_keyword_counters_for_quarantine(session, stamped, quarantined=True)
             except BaseException:
                 session.rollback()

@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -376,3 +376,79 @@ def test_furniture_share_does_not_move(db):
     assert "quarantined_excluded" in src and "Article.quarantined.isnot(True)" in src
     assert "Keyword.article_count" not in src and "Keyword.mention_count" not in src
     assert "rollup_serve" not in src and "columnar" not in src
+
+
+def test_a_keyword_fold_moves_a_quarantined_articles_rows_but_not_the_counters(tmp_path, monkeypatch):
+    """The fold (``src/analytics/keyword_fold.py``) moves every mention row of a folded keyword and moved the
+    counters for each one, so it put a quarantined article's mentions back into them. Built on
+    ``tests/test_keyword_fold.py``'s corpus and job helpers."""
+    import tests.test_keyword_fold as kf
+
+    eng, s = kf._corpus(tmp_path, "old.db", lemma=False, monkeypatch=monkeypatch)
+    aid = s.execute(text("SELECT id FROM articles WHERE hash = 'en1'")).scalar()
+    s.query(Article).filter(Article.id == aid).update({"quarantined": True}, synchronize_session=False)
+    shift_keyword_counters_for_quarantine(s, [aid], quarantined=True)
+    s.commit()
+    kf._run_fold(tmp_path, eng, monkeypatch)
+    s.expire_all()
+    live = {
+        int(k): (int(m), int(n))
+        for k, m, n in s.execute(text(
+            "SELECT keyword_id, SUM(count), COUNT(*) FROM keyword_mentions"
+            " WHERE article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1) GROUP BY keyword_id"
+        ))
+    }
+    bad = [
+        (int(kid), (int(mc or 0), int(ac or 0)), live.get(int(kid), (0, 0)))
+        for kid, mc, ac in s.execute(text("SELECT id, mention_count, article_count FROM keywords"))
+        if (int(mc or 0), int(ac or 0)) != live.get(int(kid), (0, 0))
+    ]
+    assert not bad, bad
+    assert s.execute(text("SELECT COUNT(*) FROM keyword_mentions WHERE article_id = :a"), {"a": aid}).scalar() > 0
+
+
+def test_the_upgrade_heal_subtracts_the_quarantined_articles_once_and_bumps_the_epoch(db):
+    """A store written before R101 counted its quarantined articles. The one-time boot heal subtracts them, bumps the
+    corpus epoch so the rollup and the day counts rebuild, and does neither twice."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
+    from src.database.models import DerivedMeta
+
+    arts = _corpus(db)
+    # The pre-R101 state: an article stamped by the old job, its mentions still in the counters.
+    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
+    db.commit()
+    kw = _kw(db)
+    assert kw.article_count == 3, "the fixture must start as an old store does, still counting it"
+    epoch = get_corpus_epoch(db)
+    engine = db.get_bind()
+
+    assert heal_r101_transition(engine)["articles"] == 1
+    kw = _kw(db)
+    assert kw.article_count == 2
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+    assert get_corpus_epoch(db) == epoch + 1
+    assert db.get(DerivedMeta, R101_TRANSITION_KEY) is not None
+
+    assert heal_r101_transition(engine) == {"skipped": "done"}
+    kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id), "a second boot must not subtract again"
+    assert get_corpus_epoch(db) == epoch + 1
+
+
+def test_init_db_runs_the_upgrade_heal():
+    import inspect
+
+    from src.database import session as sess
+
+    src = inspect.getsource(sess.init_db)
+    assert "heal_r101_transition(engine)" in src
+    assert src.index("heal_r101_transition(engine)") < src.index("align_stamp_to_head(engine)")
+
+
+def test_the_keyword_hover_stats_leave_a_quarantined_article_out(db):
+    arts = _corpus(db)
+    _stamp(db, arts[0])
+    kw = _kw(db)
+    stats = q.keyword_stats(db, WORD)
+    assert (stats["mentions"], stats["articles"]) == _live_unquarantined(db, kw.id) == (kw.mention_count, kw.article_count)
