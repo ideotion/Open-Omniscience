@@ -1690,7 +1690,9 @@ Official **figures** are not here at all — they are data, so they live under
     stays in the database and rides your backups; the tally is in the import report.
     Since 0.5.1 "analytics" includes every keyword figure (the counts, the windows, the
     trends, whichever store answers them), the per-language series in the Library and the
-    language-balance setting that paces collection: before, those still counted it. A
+    language-balance setting that paces collection: before, those still counted it. The
+    faster stores behind the keyword charts catch up after their next background rebuild,
+    and until then the app answers from the live tables, which already leave it out. A
     selection brushed on a trend chart says how many quarantined articles it left out.
   > **Legacy / migration paths (kept for older backups).** A separate panel restores an
   > **older single-file `oo-backup-2`** archive with the same additive-merge **preview**

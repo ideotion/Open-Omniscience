@@ -205,6 +205,40 @@ def test_the_quarantine_job_write_path_moves_the_counters_and_bumps_the_epoch(db
     assert get_corpus_epoch(db) == epoch0 + 1
 
 
+def test_a_stamp_another_path_landed_first_is_not_subtracted_twice(db, monkeypatch):
+    """``to_write`` is read before the write gate; an import's screening may stamp the same article in between. Only
+    the UPDATE that really changes the row may move the counters."""
+    from src.analytics.quarantine_job import default_quarantine_candidates_batch
+    from src.database import writer
+
+    _corpus(db)
+    junk = Article(
+        url="https://x.test/", canonical_url="https://x.test/", source_id=1, title="Home",
+        content=f"{WORD} {WORD} menu", hash="junk2", country="fr", language="en", word_count=3,
+        published_at=datetime.now(UTC) - timedelta(days=1), created_at=datetime.now(UTC) - timedelta(days=1),
+    )
+    db.add(junk)
+    db.commit()
+    index_article(db, junk, extractor=BaselineExtractor())
+    before = _kw(db).article_count
+
+    real = writer.connection_first
+    raced = []
+
+    def other_path_first(session):
+        if not raced:  # the other stamping path finishes between the read and the gate
+            raced.append(1)
+            _stamp(session, junk)
+        return real(session)
+
+    monkeypatch.setattr(writer, "connection_first", other_path_first)
+    out = default_quarantine_candidates_batch(db, article_ids=[junk.id], write=True)
+    assert raced and out["newly_written"] == 0
+    kw = _kw(db)
+    assert kw.article_count == before - 1, "subtracted once, by the path that stamped it"
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+
+
 # --------------------------------------------------------------------------- served counts (live)
 
 
@@ -269,32 +303,39 @@ def test_supergroup_live_fallbacks_leave_it_out(db):
     assert sum(p["count"] for p in supergroup_stats.daily_series(db, [kw.id], days=30)) == kw.mention_count
 
 
-# --------------------------------------------------------------------------- the rollup
+# --------------------------------------------------------------------------- the rollup and the day counts
+# The DuckDB rollup's build, tail and parity are pinned in tests/test_rollup_parity_bound.py (a duckdb file a blocking CI job runs).
 
 
-duckdb = pytest.importorskip("duckdb", reason="the columnar rollup needs the [columnar] extra")
+def test_the_day_counts_table_leaves_it_out_built_and_on_a_stale_day(tmp_path):
+    """``trending``'s second store: the per-day table and the stale days it reads live (R623, R625)."""
+    from tests.test_day_counts import HI, LO, _build, _corpus, _put_epoch_back, _served
 
+    eng, s, ex = _corpus(tmp_path)
+    arts = s.query(Article).order_by(Article.id).all()
+    s.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
+    s.commit()
+    _build(eng)
 
-def test_the_rollup_build_and_its_refresh_leave_it_out_and_match_live(db):
-    from src.analytics import columnar
-    from src.analytics.corpus_epoch import get_corpus_epoch
+    def live_unquarantined():
+        return {
+            int(k): int(v)
+            for k, v in s.query(KeywordMention.keyword_id, func.sum(KeywordMention.count))
+            .join(Article, Article.id == KeywordMention.article_id)
+            .filter(KeywordMention.observed_on >= LO, KeywordMention.observed_on <= HI, Article.quarantined.isnot(True))
+            .group_by(KeywordMention.keyword_id)
+        }
 
-    arts = _corpus(db)
-    _stamp(db, arts[0])
-    kid = _kw(db).id
-    con = duckdb.connect(":memory:")
-    columnar.build_keyword_daily(con, db)
-    rolled = columnar.windowed_term_counts(con, start_day=date.today() - timedelta(days=30))
-    assert rolled[kid] == (_kw(db).mention_count, 2)
-    parity = columnar.keyword_daily_parity(con, db)
-    assert parity["mentions_exact"] and parity["distinct_upper_bound_holds"], parity
+    assert _served(s) == live_unquarantined()
 
-    # An incremental tail of a quarantined article stays out too.
-    late = _add(db, 7, quarantined=True)
-    index_article(db, late, extractor=BaselineExtractor())
-    columnar.refresh_keyword_daily(con, db, corpus_epoch=get_corpus_epoch(db))
-    rolled = columnar.windowed_term_counts(con, start_day=date.today() - timedelta(days=30))
-    assert rolled[kid] == (_kw(db).mention_count, 2)
+    # A day made stale (a new article lands on it: the tail) is read live, and its quarantined rows stay out there too.
+    from tests.test_day_counts import _add
+
+    late = _add(s, ex, 50, 2)
+    s.query(Article).filter(Article.id == late.id).update({"quarantined": True}, synchronize_session=False)
+    s.commit()
+    _put_epoch_back(s, eng)
+    assert _served(s) == live_unquarantined()
 
 
 # --------------------------------------------------------------------------- language series and the lever

@@ -493,23 +493,32 @@ def shift_keyword_counters_for_quarantine(
         chunk = ids[i : i + _MENTION_ID_CHUNK]
         for kid, men, arts in session.execute(
             select(
-                KeywordMention.keyword_id,
-                func.sum(KeywordMention.count),
-                func.count(func.distinct(KeywordMention.article_id)),
+                KeywordMentionRead.keyword_id,
+                func.sum(KeywordMentionRead.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
             )
-            .where(KeywordMention.article_id.in_(chunk))
-            .group_by(KeywordMention.keyword_id)
+            .where(KeywordMentionRead.article_id.in_(chunk))
+            .group_by(KeywordMentionRead.keyword_id)
         ):
             d = deltas.setdefault(int(kid), [0, 0])
             d[0] += int(men or 0)
             d[1] += int(arts or 0)
     kids = sorted(deltas)
+    clamped = 0
     for i in range(0, len(kids), _MENTION_ID_CHUNK):
         for kw in session.query(Keyword).filter(Keyword.id.in_(kids[i : i + _MENTION_ID_CHUNK])).all():
             d_men, d_art = deltas[kw.id]
-            kw.mention_count = max(0, (kw.mention_count or 0) + sign * d_men)
-            kw.article_count = max(0, (kw.article_count or 0) + sign * d_art)
-    return {"articles": len(ids), "keywords": len(kids)}
+            men = (kw.mention_count or 0) + sign * d_men
+            art = (kw.article_count or 0) + sign * d_art
+            if men < 0 or art < 0:
+                clamped += 1
+            kw.mention_count = max(0, men)
+            kw.article_count = max(0, art)
+    if clamped:
+        # A counter that would go negative was already off before this shift: the floor keeps it sane and the
+        # budgeted reconcile repairs it. Said here so the drift is not silent.
+        _LOG.warning("quarantine counter shift floored %d keyword counter(s) at zero; reconcile will repair", clamped)
+    return {"articles": len(ids), "keywords": len(kids), "clamped": clamped}
 
 
 def _resolve_known_language(article: Article, content: str) -> str | None:

@@ -273,11 +273,18 @@ def default_quarantine_candidates_batch(
         connection_first(session)
         with write_lock():
             try:
+                stamped: list[int] = []
                 for aid, signal in to_write.items():
                     # A targeted, no-load UPDATE (the batch already read every candidate's
                     # columns above; no second content decrypt). synchronize_session=False --
                     # this session never re-reads these rows again in the same batch.
-                    session.query(Article).filter(Article.id == aid).update(
+                    #
+                    # CONDITIONAL, under the gate (R101): ``to_write`` was read before the gate, so another stamping path
+                    # (the retroactive job beside an import's screening) may have stamped the article since. Only a row
+                    # this UPDATE really changed leaves the counters; subtracting one twice would be hidden by the floor.
+                    changed = session.query(Article).filter(
+                        Article.id == aid, Article.quarantined.isnot(True)
+                    ).update(
                         {
                             "quarantined": True,
                             "quarantine_reason": signal,
@@ -286,12 +293,17 @@ def default_quarantine_candidates_batch(
                         },
                         synchronize_session=False,
                     )
-                shift_keyword_counters_for_quarantine(session, to_write, quarantined=True)
+                    if changed:
+                        stamped.append(aid)
+                shift_keyword_counters_for_quarantine(session, stamped, quarantined=True)
             except BaseException:
                 session.rollback()
                 raise
-            bump_corpus_epoch(session, reason="quarantine", strict=True)  # commits the batch with the bump
-        newly_written = len(to_write)
+            if stamped:
+                bump_corpus_epoch(session, reason="quarantine", strict=True)  # commits the batch with the bump
+            else:
+                session.commit()  # nothing changed under the gate: nothing to subtract, no rebuild to force
+        newly_written = len(stamped)
 
     return {
         "scanned": scanned,
