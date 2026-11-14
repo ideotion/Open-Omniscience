@@ -752,6 +752,7 @@ def _repair_once() -> str:
     if work is None:
         _record(outcome="skipped")
         return "skipped"
+    _CANCEL.clear()  # a stop left by an earlier start in this process; from here on a stop is this start's shutdown
     try:
         REPAIR_JOB.start(work=work)
     except RuntimeError:
@@ -764,6 +765,20 @@ def _repair_once() -> str:
     if REPAIR_JOB.status()["state"] == "error" and outcome not in ("declined",):
         return "failed"
     return outcome
+
+
+def _fixed_failure(exc: BaseException, failure: str) -> Exception:
+    """The error a failed repair raises in place of ``exc``, made of words of ours only. A salvage failure is rebuilt from its own
+    fields; a file error keeps its class, number, system words and file name (none of which comes from a driver) so a caller can
+    still tell a cut drive from the rest; anything else becomes a ``SalvageFailed`` carrying the record's fixed failure line."""
+    if isinstance(exc, salvage.SalvageFailed):
+        return salvage.SalvageFailed(exc.where, exc.reason)
+    if isinstance(exc, OSError):
+        try:
+            return type(exc)(exc.errno, exc.strerror, exc.filename) if exc.errno is not None else type(exc)(exc.strerror)
+        except Exception:  # noqa: BLE001 - a subclass with its own constructor: the fixed failure line instead
+            pass
+    return salvage.SalvageFailed("the repair", failure)
 
 
 def _words_of(refusal: Declined | salvage.SalvageRefused) -> str:
@@ -862,7 +877,9 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         # was raised from, which a traceback prints too) can carry a statement that holds the passphrase. The record above carries
         # the class and a fixed label of the driver's error (no word of its text); this log carries the class alone.
         _LOG.warning("database repair failed (%s)", type(exc).__name__)
-        raise
+        # Nor is the error itself passed on as it came: whatever prints it upstream (the job runner's record, a traceback) would show
+        # the driver's text and the chain it was raised from. What leaves here is built from our own words, raised from None.
+        raise _fixed_failure(exc, failure) from None
     finally:
         report["finished_at"] = time.time()
         report["seconds"] = round(time.monotonic() - started, 1)
@@ -955,7 +972,9 @@ def _repair(work: dict[str, Any], target: Path, report: dict[str, Any], ctx: Job
     _remove_scratch(target)
     partial = _salvage_target(target, stamp).with_name(_salvage_target(target, stamp).name + ".partial")
     report["stamp"] = stamp
-    _CANCEL.clear()
+    # NOT cleared here (R689 follow-up): this runs after the quiet wait and inside the write gate, whose wait has no time limit, so a
+    # clear here wiped a shutdown's stop that landed while the repair waited for the gate, and the copy then ran on, deaf to it. A stop
+    # only ever means the app is shutting down; ``run_now_and_wait`` clears it once, before the job starts.
 
     def progress(event: dict[str, Any]) -> None:
         if ctx is None:

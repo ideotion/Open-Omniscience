@@ -19,6 +19,7 @@ recorder (the swap's file work is the thing under test, not the pool):
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -370,6 +371,42 @@ def test_a_failed_repair_clears_the_record_and_is_tried_again_at_the_next_start(
     assert engine_calls == []
 
 
+def test_a_failed_repair_raises_words_of_ours_and_never_the_drivers_error_or_its_chain(tmp_path, monkeypatch, reg, engine_calls):
+    """Row 9 (open-on-main): the failure was re-raised as it came, so the job runner's record or any traceback upstream could show a
+    driver's text, which on a keyed connection can hold the passphrase. Now what leaves ``run`` is built from our words, from None."""
+    import sqlite3
+
+    secret = "PRAGMA key = 'hunter2-correct-horse'"
+    _live(tmp_path, monkeypatch, reg)
+
+    def driver_error(self):
+        try:
+            raise sqlite3.OperationalError(secret)
+        except sqlite3.OperationalError as inner:
+            raise RuntimeError(f"wrapped: {inner}") from inner
+
+    monkeypatch.setattr(salvage.Salvage, "run", driver_error)
+    with pytest.raises(salvage.SalvageFailed) as caught:
+        repair.run(repair.plan())
+    err = caught.value
+    assert "hunter2" not in str(err) and err.__cause__ is None and err.__suppress_context__
+    assert reg.repairs()[-1]["state"] == "failed" and "hunter2" not in reg.repairs()[-1]["failure"]
+
+    # A salvage failure keeps its own fields, and a file error keeps its class, number and file name, nothing chained.
+    def disk(self):
+        try:
+            raise sqlite3.OperationalError(secret)
+        except sqlite3.OperationalError:
+            raise OSError(5, "Input/output error", "live.db") from None
+
+    monkeypatch.setattr(salvage.Salvage, "run", disk)
+    repair._reset_for_tests()
+    with pytest.raises(OSError) as caught_os:
+        repair.run(repair.plan())
+    assert (caught_os.value.errno, caught_os.value.filename) == (5, "live.db") and caught_os.value.__cause__ is None
+    assert caught_os.value.__suppress_context__ and "hunter2" not in str(caught_os.value)
+
+
 def test_a_quit_during_the_repair_gives_the_attempt_back_and_a_second_quit_clears_it(tmp_path, monkeypatch, reg):
     marker = tmp_path / repair.ATTEMPT_FILE
     repair._arm(2)
@@ -401,6 +438,31 @@ def test_a_stop_ends_the_copy_at_its_next_batch_and_changes_nothing(tmp_path, mo
     assert report["outcome"] == "stopped" and H.sha(live) == before
     assert not list(tmp_path.glob("live.salvage-*")) and not list(tmp_path.glob("live.damaged-*"))
     assert reg.repairs()[-1]["state"] == "stopped"
+    assert engine_calls == []
+
+
+def test_a_stop_that_lands_while_the_repair_waits_for_the_write_gate_is_not_wiped(tmp_path, monkeypatch, reg, engine_calls):
+    """R689 follow-up: the copy cleared the stop AFTER the gate's wait, which has no time limit, so a shutdown landing in that wait
+    was forgotten and the copy ran on. The stop now holds, and nothing is copied or switched."""
+    from src.database import writer
+
+    live = _live(tmp_path, monkeypatch, reg)
+    before = H.sha(live)
+    real = writer.write_lock
+
+    @contextlib.contextmanager
+    def stopped_while_waiting(*a, **kw):
+        repair.stop()  # the shutdown's stop, landing while the repair waits for the gate
+        with real(*a, **kw):
+            yield
+
+    monkeypatch.setattr(writer, "write_lock", stopped_while_waiting)
+    copies: list = []
+    real_run = salvage.Salvage.run
+    monkeypatch.setattr(salvage.Salvage, "run", lambda self: copies.append(1) or real_run(self))
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "stopped" and H.sha(live) == before
+    assert not list(tmp_path.glob("live.salvage-*")) and not list(tmp_path.glob("live.damaged-*"))
     assert engine_calls == []
 
 
