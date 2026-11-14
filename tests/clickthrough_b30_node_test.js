@@ -273,6 +273,23 @@ async function test(name, fn) { await fn(); n++; console.log("ok  - " + name); }
     assert.strictEqual(API_CALLS.length, 1);
   });
 
+  await test("Q1147: the directory's progress is one counts-only line, method in the hover", async () => {
+    I18N.lang = "en";
+    API_ANSWERS["/api/stats/agencies"] = {
+      agencies: [{ name: "Rosstat", scope: "national", country: "RU", region: "Europe" }],
+      continents_covered: ["Europe"],
+      directory_progress: { listed: 1, news_url_confirmed: 0, planned_about: 152, method: "M.", caveat: "C." },
+    };
+    await M.loadStatAgencies();
+    const cov = $("stat-coverage");
+    assert.ok(cov.textContent.includes("News page verified for 0 of 1 (about 152 planned)"), cov.textContent);
+    assert.strictEqual(cov.title, "M. C.");
+    API_ANSWERS["/api/stats/agencies"] = { agencies: [], continents_covered: [] };
+    await M.loadStatAgencies();
+    assert.ok(!cov.textContent.includes("verified"), "no progress block, no line");
+    assert.strictEqual(cov.title, "");
+  });
+
   await test("L-3: the World map's country detail redraws in place, without scrolling again", () => {
     I18N.lang = "en";
     const host = $("oo-coverage-detail");

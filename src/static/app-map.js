@@ -4311,6 +4311,14 @@
         cov.textContent = _mapTf("Continents covered: {n}", { n: fmtNum(n, 0) })
           + " · " + (ags.length === 1 ? _mapTf("{n} producer", { n: fmtNum(1, 0) })
             : _mapTf("{n} producers", { n: fmtNum(ags.length, 0) }));
+        // Q1147: how far the directory is from the planned build, as counts only. The
+        // method and caveat ride in the hover bubble, not as more visible text.
+        const dp = d.directory_progress;
+        if (dp && dp.listed != null) {
+          cov.textContent += " · " + _mapTf("News page verified for {n} of {m} (about {p} planned)",
+            { n: fmtNum(dp.news_url_confirmed || 0, 0), m: fmtNum(dp.listed, 0), p: fmtNum(dp.planned_about || 0, 0) });
+          cov.title = [dp.method, dp.caveat].filter(Boolean).join(" ");
+        } else cov.title = "";
       }
       if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
       // The API already orders international-first, then by region, then name —
