@@ -544,7 +544,29 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
     readers of that same object ask for its known language afterwards — e.g. a
     precompute step run BEFORE ``index_article`` itself (see
     :func:`reindex_articles`) sees and reuses the identical deduction, rather
-    than the two silently disagreeing on which language drove extraction."""
+    than the two silently disagreeing on which language drove extraction.
+
+    A REFUTED TAG IS DROPPED FIRST (R699, cause 1). When the article's own letters are
+    demonstrably not in the asserted language's script (Cyrillic text tagged ``en``, see
+    :mod:`src.analytics.script_check`), the tag is wrong as a matter of counting, not of
+    opinion, so it is cleared and the article goes through the same offline detection as
+    one that arrived untagged: it gets a deduced language or stays honestly unknown. The
+    cleared value is WRITTEN (not just ignored for this pass), because every reader that
+    skips the body -- ``article_lang_map``, the language series, the search filter --
+    reads the stored column and must agree with what extraction used. Runs at ingest and
+    on every re-index, so an old row converges only when a re-index reaches it."""
+    asserted = (article.language or "").strip()
+    if asserted:
+        from src.analytics.script_check import script_refutes
+
+        if script_refutes(asserted, content):
+            _LOG.info(
+                "article %s: language tag %r refuted by its own script; re-deducing",
+                getattr(article, "id", None),
+                asserted,
+            )
+            article.language = None
+            article.detected_language = None
     if not (article.language or "").strip() and not (
         getattr(article, "detected_language", None) or ""
     ).strip():
@@ -1721,6 +1743,11 @@ def _reindex_articles_impl(
                 art.country,
                 observed.date().isoformat() if observed else None,
                 None,  # `today`: the store's own default, never a worker's clock
+                # R697: the date language is the article's OWN column, the value the inline
+                # store and the ingest precompute pass; `lang or "en"` below is only the
+                # keyword stoplist pick. Read after _resolve_known_language, which clears a
+                # tag the script refutes.
+                art.language,
             )
             if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))

@@ -435,7 +435,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 يُعيد الارتباط معاملًا حقيقيًا + قيمة p + n من scipy (Pearson/Spearman)،
 مع تحذير «الارتباط ≠ السببية»؛ وإن كان التداخل قليلًا جدًا ← `insufficient_data`.
 
-**المراقبة.** يُجري `GET /api/monitoring/health` فحوص وصول حقيقية
+**المراقبة.** يُجري `POST /api/monitoring/health` فحوص وصول حقيقية
 (عبر الجالب الأخلاقي)؛ ويُعلِّم `GET /api/monitoring/anomalies`
 القفزات في حجم المقالات وفق درجة z (z-score). **البريد الإلكتروني:** يدمج `POST /api/sources/{id}/ingest-email`
 (IMAP) الرسائل في المجموعة النصية نفسها القابلة للبحث.

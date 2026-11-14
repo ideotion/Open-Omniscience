@@ -763,7 +763,7 @@ def _probe_import_custom_feed(c):
 
 def _probe_sources_health(c):
     _seed_source(c)
-    r = c.get("/api/monitoring/health?limit=1", headers=_H)
+    r = c.post("/api/monitoring/health?limit=1", headers=_H)
     return r, r.status_code == 200 and r.json().get("summary", {}).get(
         "refused_by_kill_switch"
     ) == 1
@@ -807,7 +807,7 @@ def _probe_feed_verify_batch(c):
 
 
 def _probe_list_hazards(c):
-    r = c.get("/api/hazards", headers=_H)
+    r = c.post("/api/hazards", headers=_H)
     failures = r.json().get("failures")
     return r, r.status_code == 200 and isinstance(failures, list) and len(failures) >= 1 and all(
         _kill(f) for f in failures

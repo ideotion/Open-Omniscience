@@ -150,3 +150,74 @@ def test_the_feeds_of_one_outlet_share_one_robots_read_and_each_keeps_its_own_re
                                                                     "https://dw.example/robots.txt"]
     rows = db.query(SourceMetadata).filter(SourceMetadata.robots_allowed.is_(True)).count()
     assert rows == 4  # every feed's own metadata carries the outlet's verdict
+
+
+def test_a_refused_robots_read_is_its_own_verdict_and_never_a_disallow(tmp_path, monkeypatch):
+    """OPEN_QUEUE C1: a 401/403 on robots.txt read as ``robots_denied``, the verdict of an explicit ``Disallow``, and wrote
+    ``robots_allowed = False``. A refusal on that one path says nothing about the site's policy (over Tor it is often the exit's
+    reputation; ``RobotsUnavailable.cause == "refused"``), so it is ``robots_refused``, listed apart, and the metadata column stays
+    UNKNOWN (``None``). Fail-closed is unchanged: no homepage ping is made, and the fetcher still refuses the site."""
+    monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    init_db()
+    db = SessionLocal()
+    try:
+        denied = _mk(db, f"deny-{uuid.uuid4().hex[:6]}.example")
+        refused = {code: _mk(db, f"refused{code}-{uuid.uuid4().hex[:6]}.example") for code in (401, 403)}
+        fetcher = _F(_Sess({denied.domain: "User-agent: *\nDisallow: /", **{s.domain: code for code, s in refused.items()}}))
+        summary = preflight_sources(db, fetcher, limit=500)
+        assert denied.domain in summary["robots_denied"]
+        for source in refused.values():
+            assert source.domain not in summary["robots_denied"]
+            assert source.domain in summary["robots_refused"]
+            assert source.domain not in summary["unreachable"]
+            assert db.query(SourceMetadata).filter_by(source_id=source.id).one().robots_allowed is None
+        rows = {r["domain"]: r for r in recent_results(limit=2000)}
+        for source in refused.values():
+            rec = rows[source.domain]
+            assert rec["verdict"] == "robots_refused" and rec["robots"] == "blocked"
+            assert rec["reachable"] is None and "homepage_status" not in rec  # still fail-closed: the homepage was not asked
+        assert rows[denied.domain]["verdict"] == "robots_denied"
+        assert db.query(SourceMetadata).filter_by(source_id=denied.id).one().robots_allowed is False
+    finally:
+        db.close()
+
+
+def test_a_hop_whose_robots_read_is_refused_reads_as_refused_not_unreachable():
+    """The homepage ping's redirect hop (R636): a ``RobotsUnavailable`` whose cause is ``refused`` is ``robots_refused``; a
+    disallowed hop stays ``robots_denied`` and any other cause ``unreachable``."""
+    from src.ingest import RobotsDisallowed, RobotsUnavailable
+    from src.monitoring.preflight import _check_one
+
+    for exc, verdict in (
+        (RobotsUnavailable("hop refused", cause="refused"), "robots_refused"),
+        (RobotsUnavailable("hop broken", cause="server_error"), "unreachable"),
+        (RobotsUnavailable("hop down", cause="unreachable"), "unreachable"),
+        (RobotsDisallowed("hop disallowed"), "robots_denied"),
+    ):
+
+        class _Hop(_F):
+            def _guarded_redirect_get(self, url, *, _exc=exc, **kw):
+                if url.endswith("/robots.txt"):
+                    return _Resp(200, "User-agent: *\nAllow: /"), url
+                raise _exc
+
+        source = Source(id=1, name="hop.example", domain="hop.example", language="en", enabled=True)
+        rec = _check_one(_Hop(_Sess({})), source)
+        assert rec["verdict"] == verdict, (exc, rec)
+        assert rec["robots"] == "allowed" and rec["reachable"] is True
+
+
+def test_a_first_check_that_learns_nothing_stores_unknown_not_the_columns_default(tmp_path, monkeypatch):
+    """A source with no metadata row yet: an unreachable robots.txt stored ``robots_allowed = True``, the column's default, because the
+    ORM leaves a ``None`` with a default out of the INSERT. Unknown is NULL (the 2026-09-11 tri-state), on the first check too."""
+    monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    init_db()
+    db = SessionLocal()
+    try:
+        down = _mk(db, f"down-{uuid.uuid4().hex[:6]}.example")
+        fetcher = _F(_Sess({down.domain: ConnectionError("no route")}))
+        preflight_sources(db, fetcher, limit=500)
+        db.expire_all()
+        assert db.query(SourceMetadata).filter_by(source_id=down.id).one().robots_allowed is None
+    finally:
+        db.close()

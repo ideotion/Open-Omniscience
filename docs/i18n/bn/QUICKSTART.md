@@ -432,7 +432,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Correlation scipy (Pearson/Spearman) থেকে একটি প্রকৃত coefficient + p-value + n ফেরত দেয়,
 একটি "সহসম্পর্ক ≠ কার্যকারণ" সতর্কতাসহ; যথেষ্ট overlap না থাকলে → `insufficient_data`।
 
-**পর্যবেক্ষণ (Monitoring)।** `GET /api/monitoring/health` প্রকৃত পৌঁছানো-যোগ্যতা
+**পর্যবেক্ষণ (Monitoring)।** `POST /api/monitoring/health` প্রকৃত পৌঁছানো-যোগ্যতা
 পরীক্ষা করে (নৈতিক fetcher-এর মাধ্যমে); `GET /api/monitoring/anomalies`
 z-score অনুযায়ী নিবন্ধ-সংখ্যার আকস্মিক বৃদ্ধি চিহ্নিত করে। **ইমেইল:** `POST /api/sources/{id}/ingest-email`
 (IMAP) বার্তাগুলোকে একই অনুসন্ধানযোগ্য corpus-এ যোগ করে।
