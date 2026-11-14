@@ -277,26 +277,44 @@ def test_a_known_site_with_a_new_feed_is_still_added():
     assert '!(s.ids && s.ids.length)' in sp
 
 
-def test_first_run_offers_simple_mode_as_the_starting_view():
+def test_first_run_offers_both_views_with_nothing_preselected():
     html = _read(_STATIC / "index.html")
-    # The guide's first step asks where to start; simple view is preselected, the full view is
-    # the other choice, and the top-bar switch changes it any time.
-    assert re.search(r'name="gw-start" value="simple" checked', html)
-    assert 'name="gw-start" value="full"' in html
+    # R710 = b: the guide shows both views side by side, NEITHER preselected, each with one line
+    # on how it differs. Simple mode stays opt-in: no default path lands in it.
+    assert 'name="gw-start" value="simple">' in html and 'name="gw-start" value="full">' in html
+    assert not re.search(r'name="gw-start"[^>]*\bchecked\b', html), "no starting view is preselected"
+    assert 'class="depth-pick start-pick"' in html
+    assert "Notes on method and limits sit behind \u24d8." in html
+    assert "with the notes on method and limits in view." in html
     core = _strip_js_comments(_read(_STATIC / "app-core.js"))
     close = function_body(core, "closeGuide")
     # Applied after the dialog closes, whichever way it closes, so the view never swaps under a modal.
     assert close.index("dlg.close()") < close.index("_gwApplyStart()")
     apply = function_body(core, "_gwApplyStart")
     assert "s.enter()" in apply and "s.leave()" in apply
+    # A guide closed with no pick changes nothing and saves nothing: a first run stays in full view.
+    assert apply.index("if (!pick || !s) return;") < apply.index("st.start = pick.value")
+    assert apply.index("if (!pick || !s) return;") < apply.index("s.enter()")
     # Set once per opening, so going Back keeps the reader's pick; a re-run starts from the view in use.
     assert "_gwRenderStart()" in function_body(core, "openGuide")
     assert "_gwRenderStart()" not in function_body(core, "_gwPaint")
-    # "done" is cleared by the Settings re-run toggle, so a first run is told apart by a saved pick;
-    # a peek at a full-view tool counts as simple mode in both directions.
+    # The only preselection is the view already in use (a peek counts as simple mode) or, on a
+    # re-run, a saved pick of the full view; a first run in full view checks nothing.
     render = function_body(core, "_gwRenderStart")
-    assert "_guideState().start" in render and 'mode() !== "full"' in render
-    assert "st.start = pick.value" in apply and 's.mode() !== "full"' in apply
+    assert 'mode() !== "full"' in render
+    assert 'inSimple ? "simple" : (_guideState().start ? "full" : null)' in render
+    assert "want !== null && i.value === want" in render
+    assert 's.mode() !== "full"' in apply
+
+
+def test_simple_mode_boots_only_when_the_reader_chose_it():
+    # Existing installs and a first run with no pick stay in full view: simple mode boots only
+    # from its own stored switch, which only enter() writes.
+    boot = _strip_js_comments(_read(_SIMPLE / "boot.js"))
+    assert 'simple = localStorage.getItem("oo.ui.simple") === "1"' in boot
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    assert code.count('lsSet(K_SIMPLE, "1")') == 1
+    assert 'lsSet(K_SIMPLE, "1")' in function_body(code, "enterSimple")
 
 
 def test_search_pages_and_filters_by_language():
