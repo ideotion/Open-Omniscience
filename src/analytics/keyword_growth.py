@@ -104,7 +104,7 @@ def keyword_growth_curve(session: Session) -> dict[str, Any]:
         text(
             "SELECT first_date AS d, COUNT(*) AS new_kw FROM ("
             "  SELECT keyword_id, MIN(observed_on) AS first_date"
-            f"  FROM {MENTIONS_VIEW} WHERE observed_on IS NOT NULL" + _NOT_QUARANTINED +  # nosec B608 - constants
+            f"  FROM {MENTIONS_VIEW} WHERE observed_on IS NOT NULL" + _NOT_QUARANTINED +  # nosec B608 # constants
             "  GROUP BY keyword_id"
             ") GROUP BY first_date"
         )
@@ -113,12 +113,12 @@ def keyword_growth_curve(session: Session) -> dict[str, Any]:
     per_date_rows = session.execute(
         text(
             "SELECT observed_on AS d, SUM(count) AS toks, COUNT(DISTINCT article_id) AS arts"
-            f" FROM {MENTIONS_VIEW} WHERE observed_on IS NOT NULL" + _NOT_QUARANTINED +  # nosec B608 - constants
+            f" FROM {MENTIONS_VIEW} WHERE observed_on IS NOT NULL" + _NOT_QUARANTINED +  # nosec B608 # constants
             " GROUP BY observed_on"
         )
     ).all()
     undated = session.execute(
-        text(f"SELECT COUNT(*) FROM {MENTIONS_VIEW} WHERE observed_on IS NULL" + _NOT_QUARANTINED)  # nosec B608 - constants
+        text(f"SELECT COUNT(*) FROM {MENTIONS_VIEW} WHERE observed_on IS NULL" + _NOT_QUARANTINED)  # nosec B608 # constants
     ).scalar() or 0
 
     new_kw_by_date: dict[str, int] = {str(r.d): int(r.new_kw) for r in new_kw_rows}

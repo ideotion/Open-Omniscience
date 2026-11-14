@@ -591,7 +591,7 @@ def _outlet_id_recompute(domain_ref: str) -> str:
     wrong are written (``IS NOT`` is NULL-safe), so the trigger of a source that joins an existing outlet changes nothing
     when the outlet's id is already right."""
     return (
-        "UPDATE sources SET outlet_id = (SELECT MIN(s2.id) FROM sources s2 WHERE s2.domain = sources.domain)"  # noqa: S608  # nosec B608 - {domain_ref} is NEW.domain or OLD.domain, a literal of this module
+        "UPDATE sources SET outlet_id = (SELECT MIN(s2.id) FROM sources s2 WHERE s2.domain = sources.domain)"  # noqa: S608  # nosec B608 # {domain_ref} is NEW.domain or OLD.domain, a literal of this module
         f" WHERE domain = {domain_ref} AND outlet_id IS NOT (SELECT MIN(s3.id) FROM sources s3 WHERE s3.domain = {domain_ref});"
     )
 
@@ -3543,7 +3543,7 @@ def mentions_view_sql() -> str:
     """The exact ``CREATE VIEW`` for the current column set (also what a stale view is
     compared against, whitespace-insensitively)."""
     cols = ", ".join(c.name for c in KeywordMention.__table__.columns)
-    return f"CREATE VIEW {MENTIONS_VIEW} AS SELECT {cols} FROM {KeywordMention.__tablename__}"  # nosec B608 - view name is a module constant; columns and table name come from the KeywordMention model, never request, user or file input
+    return f"CREATE VIEW {MENTIONS_VIEW} AS SELECT {cols} FROM {KeywordMention.__tablename__}"  # nosec B608 # view name is a module constant; columns and table name come from the KeywordMention model, never request, user or file input
 
 
 event.listen(

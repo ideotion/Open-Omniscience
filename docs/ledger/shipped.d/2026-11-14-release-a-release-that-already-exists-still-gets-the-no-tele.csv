@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,release,a release that already exists still gets the no-telemetry re-check in its notes,SHIPPED,PR #1988; RELEASE_0.4_GATE row V,.github/workflows/release.yml; tests/test_release_workflow.py,"release.yml appended only the checksums to a release created on GitHub's page with its tag, so the generated no-telemetry re-check never reached those notes; it now appends that section when the body lacks it, says so in the log, and leaves a body that has both untouched"

@@ -996,7 +996,7 @@ def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], s
                 # around it on CPython 3.13, so an interrupt delivered there would skip the ``finally`` that closes the connection (R163)
                 if not _SAFE_ID.match(t):
                     continue
-                cur.execute(f'SELECT COUNT(*) FROM "{t}"')  # noqa: S608  # nosec B608 - identifier from sqlite_master, validated against _SAFE_ID; no user input
+                cur.execute(f'SELECT COUNT(*) FROM "{t}"')  # noqa: S608  # nosec B608 # identifier from sqlite_master, validated against _SAFE_ID; no user input
                 counts[t] = int(cur.fetchone()[0])
             if "articles" in counts:
                 from src.reporting.evidence import canonical_bytes

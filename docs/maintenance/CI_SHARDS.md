@@ -21,7 +21,7 @@ name**, and never make an aggregator skippable: a job whose `needs` failed is sk
 
 `scripts/ci_shard.py`, from the cost table `configs/ci_shard_costs.json` (`path -> seconds`):
 
-* files the table names are dealt out longest first, each to the shard with the least work so far (shard 1 starts with `overhead_seconds`; the static steps left leg 1 for the `static` job in R668, but the 80 stays so the deal does not move: a re-deal to 0 exposed two order-dependent tests on its first run, and is a separate change that fixes them first);
+* files the table names are dealt out longest first, each to the shard with the least work so far (a shard starts with its `overhead_seconds`, empty since the static steps left leg 1 for the `static` job in R668; the 80 leg 1 carried until then stayed while a re-deal to 0 exposed two order-dependent tests on its first run, `test_launcher_signals.py` and `test_windowed_group_counts.py`, and went once R674 (PR #1943) had made both independent of their neighbours);
   the result depends on the table alone, so adding or deleting a test file moves none of the files the table names;
 * a file the table does not name (a new test file) goes to `crc32(path) % N + 1`: the same in every process, no edit needed in the PR that adds it, spread
   evenly in the long run. The plan step prints how many files the table does not name.
@@ -129,8 +129,8 @@ number of concurrent jobs. This is an INFERENCE; the limit of the plan is not vi
   22 to 23 minutes per leg on the same arithmetic.
 * **The runner moves more than the dealing.** The same suite took 80:45 (A), 72:17 (B) and 90:09 (C) of `test` job time, a spread of 25 % between runs, against 3 %
   between the legs of one run; the same leg varied by up to 8:37 (`test` shard 1: 21:21 in B, 29:58 in C).
-* **The static steps of leg 1** took about 100 s (41 s before pytest, about 59 s after: mypy 30, bandit 25, pip-audit 4); `overhead_seconds` models 80. The 20 s
-  difference moves the dealing by under 7 s per leg, so the number stays (R433 dropped a measured overhead).
+* **The static steps of leg 1** (until R668 moved them to the `static` job) took about 100 s (41 s before pytest, about 59 s after: mypy 30, bandit 25, pip-audit 4); `overhead_seconds` then modelled 80. The 20 s
+  difference moves the dealing by under 7 s per leg, so the number stayed (R433 dropped a measured overhead); it went to none in #1988, once the steps had left leg 1.
 * **Core-only is the one imbalance measured:** the pytest steps took 1556, 1122 and 1492 s, a spread of 434 s. The light leg was leg 1 in A and B and leg 2 in C,
   so three runs do not say how much of it is the table (measured where the analysis tests run, which a core-only install skips) and how much is the runner. Dealing
   the 4170 s evenly would give 23:10 against 25:56 for the slowest leg, and only matters in a run where Core-only is the slowest job (B yes, A a tie, C no).

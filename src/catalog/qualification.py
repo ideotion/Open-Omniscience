@@ -1496,7 +1496,7 @@ def undo_admission(session: Session, event_id: int, *, now: datetime) -> dict:
     refusal = admission_undo_refusal(session, ev, source)
     if refusal is not None:
         raise AdmissionUndoRefused(UNDO_REFUSAL_MESSAGES[refusal])
-    assert source is not None  # nosec B101 - admission_undo_refusal returns a token first
+    assert source is not None  # nosec B101 # admission_undo_refusal returns a token first
 
     source.enabled = ev.prior_enabled
     # NARROWED, not cast. `Source.status` is NOT NULL with `server_default="unqualified"`,

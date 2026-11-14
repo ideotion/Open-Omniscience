@@ -37,7 +37,7 @@ import logging
 import os
 import re
 import shutil
-import subprocess  # nosec B404 - reads the local kernel log; never a network call
+import subprocess  # nosec B404 # reads the local kernel log; never a network call
 from typing import Any
 
 from src.monitoring.secret_scrub import scrubbed
@@ -119,7 +119,7 @@ def _run(cmd: list[str]) -> tuple[int, str]:
     found" there while still exiting 0 — and that sentence is the difference between
     "we looked and found nothing" and "we could not look"."""
     try:
-        proc = subprocess.run(  # nosec B603 - fixed argv, no shell, local read only
+        proc = subprocess.run(  # nosec B603 # fixed argv, no shell, local read only
             cmd,
             capture_output=True,
             text=True,
