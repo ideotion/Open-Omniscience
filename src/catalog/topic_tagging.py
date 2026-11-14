@@ -203,8 +203,15 @@ def _on_syllable_edges(run: str, start: int, end: int) -> bool:
     if end >= len(run):
         return True
     nxt = run[end]
-    if nxt in _TRAILING_VOWEL_LETTERS or (end + 1 < len(run) and run[end + 1] == _ASAT):
+    if nxt in _TRAILING_VOWEL_LETTERS:
         return False
+    # A Burmese final: the next letter is closed by an asat among the marks that follow it (NFKC puts a dot below, U+1037,
+    # before the asat, so ပြည့် stores ည + ့ + ်).
+    k = end + 1
+    while k < len(run) and unicodedata.category(run[k])[0] == "M":
+        if run[k] == _ASAT:
+            return False
+        k += 1
     return not (unicodedata.category(nxt)[0] == "M" and not _is_variation_selector(nxt))
 
 

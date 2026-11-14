@@ -255,6 +255,7 @@ def test_a_substring_hit_never_cuts_a_syllable():
         ("th", "กฎหม", "กฎหมาย"),
         ("lo", "ກົດໝ", "ກົດໝາຍ"),  # the same with Lao າ
         ("my", "အလု", "အလုပ်သမား"),  # ends right before ပ, the final the asat closes
+        ("my", "အပြ", "အပြည့်"),  # the same when a dot below stands between the final and its asat
     ]
     for lang, label, text in cases:
         assert label in text

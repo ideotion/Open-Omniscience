@@ -185,7 +185,7 @@ def _build_and_swap() -> None:
                 if old is not None:
                     with contextlib.suppress(Exception):
                         old.close()  # safe: serves hold _LOCK, so none is mid-query here
-                rollup_serve._remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
+            rollup_serve._remove_spill(old_spill)  # the retired connection's folder, closed above; deleted outside the lock
         finally:
             if not served:  # a failed or empty build: this connection is never served, so neither it nor its folder may leak
                 if con is not None:
