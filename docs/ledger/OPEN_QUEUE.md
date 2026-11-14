@@ -138,8 +138,8 @@
   (R27/R28). **Also open and not this thread's:** the bundles' hourly WAL history holds logs of 36.3 GB (Asus), 29.3 GB (OOS-7), 25.7 GB (OOS-8) and 23.1 GB (NUC), which the
   build's session does not explain (the WAL / disk thread).
   **PARTLY CLOSED 2026-11-14 (row 18, Lane U):** measured on a 200k-article generated corpus, the cost of leads-quality (86 s) and bulletin-weekly
-  (107 s) was the card producer pass, which card-audit also runs in the same bundle. In the bundle, leads-quality now reads Home's cached feed when
-  Home would serve it as fresh (0.01 s; else the bounded pass as before) and bulletin-weekly leaves its cards section out (29 s); each file and its
+  (107 s) was the card producer pass, which card-audit also runs in the same bundle. In the bundle, leads-quality now reads Home's cached feed when it
+  passes Home's own freshness test (0.01 s; else the bounded pass as before) and bulletin-weekly leaves its cards section out (29 s); each file and its
   manifest entry (`bundle_note`) say so, and the routes still serve the full reports. keyword-engine (8.1 s) and debug-bundle (3.8 s) are cheap at
   this scale with no dominant step, so their field times are scale-bound and stay open until a field profile names the step.
 - **THE "ALL KEYWORDS" ZIP CRASH: WHAT SHIPPED, THE DEFAULTS TAKEN ON ITS FORKS, AND WHAT IS STILL OPEN (keyword-export

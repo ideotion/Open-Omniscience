@@ -45,8 +45,10 @@ def _cached_card(**over):
 
 
 def _payload(**over):
-    p = {"version": "oo-briefing-cache-3", "generated_at": "2026-11-14T10:00:00", "article_count": 0,
-         "cards": [_cached_card()]}
+    from src.briefing.service import CACHE_VERSION, _stoplist_fingerprint
+
+    p = {"version": CACHE_VERSION, "generated_at": "2026-11-14T10:00:00", "article_count": 0,
+         "stoplist": _stoplist_fingerprint(), "cards": [_cached_card()]}
     p.update(over)
     return p
 
@@ -76,6 +78,7 @@ def test_a_fresh_home_feed_is_read_and_the_file_says_so(monkeypatch):
     assert out["source"] == "home-cache"
     assert out["feed_generated_at"] == "2026-11-14T10:00:00"
     assert "Home's cached feed" in out["source_note"] and "2026-11-14T10:00:00" in out["source_note"]
+    assert "dismissed" in out["source_note"]
     assert out["bundle_note"] == out["source_note"]
     row = out["cards"][0]
     # The same leads.py helpers read the cached dict: three distinct outlets (a, b, and C by its label).
@@ -111,14 +114,67 @@ def test_no_cache_and_an_unreadable_cache_fall_back(monkeypatch):
 
 def test_a_partial_home_feed_is_marked_partial(monkeypatch):
     _no_producer_pass(monkeypatch)
-    monkeypatch.setattr(
-        "src.briefing.service._read_cache",
-        lambda: _payload(incomplete_reason="memory short", stopped_producers=[{"name": "x", "seconds": 1.0}]),
-    )
+    monkeypatch.setattr("src.briefing.service._read_cache", lambda: _payload(incomplete_reason="memory short"))
     out = LQ.leads_quality_report(_sess(), prefer_home_cache=True)
+    assert out["source"] == "home-cache"
     assert out["truncated"] is True
     assert "PARTIAL" in out["caveat"] and "memory short" in out["caveat"]
-    assert out["stopped_producers"] == [{"name": "x", "seconds": 1.0}]
+
+
+def test_a_kept_feed_says_it_is_the_earlier_feed(monkeypatch):
+    _no_producer_pass(monkeypatch)
+    monkeypatch.setattr("src.briefing.service._read_cache", lambda: _payload(kept_reason="disk short"))
+    out = LQ.leads_quality_report(_sess(), prefer_home_cache=True)
+    assert out["truncated"] is True
+    assert "KEPT" in out["caveat"] and "earlier feed" in out["caveat"] and "disk short" in out["caveat"]
+    assert "did not reach" not in out["caveat"]
+
+
+def test_stopped_producers_alone_mark_the_feed_partial(monkeypatch):
+    """Home writes stopped producers as a list of names and no incomplete_reason (item 32)."""
+    _no_producer_pass(monkeypatch)
+    monkeypatch.setattr("src.briefing.service._read_cache", lambda: _payload(stopped_producers=["trending_terms"]))
+    out = LQ.leads_quality_report(_sess(), prefer_home_cache=True)
+    assert out["truncated"] is True
+    assert "trending_terms" in out["caveat"]
+    assert out["stopped_producers"] == ["trending_terms"]
+
+
+def test_an_older_cache_shape_is_not_read(monkeypatch):
+    calls = _no_producer_pass(monkeypatch)
+    monkeypatch.setattr("src.briefing.service._read_cache", lambda: _payload(version="oo-briefing-cache-2"))
+    assert LQ.leads_quality_report(_sess(), prefer_home_cache=True)["source"] == "producer-pass"
+    assert calls == [1]
+
+
+def test_a_feed_made_under_another_stoplist_is_not_read(monkeypatch):
+    calls = _no_producer_pass(monkeypatch)
+    monkeypatch.setattr("src.briefing.service._read_cache", lambda: _payload(stoplist="an-older-list"))
+    monkeypatch.setattr("src.briefing.service._stoplist_fingerprint", lambda: "the-list-shipped-now")
+    assert LQ.leads_quality_report(_sess(), prefer_home_cache=True)["source"] == "producer-pass"
+    assert calls == [1]
+
+
+def test_a_malformed_cached_card_falls_back_instead_of_failing(monkeypatch):
+    calls = _no_producer_pass(monkeypatch)
+    monkeypatch.setattr(
+        "src.briefing.service._read_cache", lambda: _payload(cards=[_cached_card(evidence=["not-a-dict"])])
+    )
+    assert LQ.leads_quality_report(_sess(), prefer_home_cache=True)["source"] == "producer-pass"
+    assert calls == [1]
+
+
+def test_home_and_the_reader_share_one_freshness_test():
+    """get_briefing's stale test is built from the helpers feed_is_current uses, so the two cannot drift."""
+    import inspect
+
+    from src.briefing import service
+
+    src = inspect.getsource(service.get_briefing)
+    assert "_feed_outdated(session, cached" in src
+    assert "_stoplist_wants_refresh(cached)" in src
+    assert "_stoplist_differs(payload)" in inspect.getsource(service._stoplist_wants_refresh)
+    assert "feed_is_current" in inspect.getsource(LQ._fresh_home_feed)
 
 
 def test_the_route_on_its_own_still_runs_the_producers(monkeypatch):

@@ -526,9 +526,10 @@ def _bulletin_layer_a_payload(db: Session, cadence: str, omit_sections: dict[str
 #: Why the all-diagnostics copy of the weekly bulletin has no cards section. Said in the file (the section's
 #: ``skipped`` field and ``bundle_note``) and in the manifest entry (``bundle_note``).
 BULLETIN_BUNDLE_CARDS_OMITTED = (
-    "Not built in the all-diagnostics bundle: the cards section runs every card producer again, which this bundle "
-    "already does in card-audit.json, and it was most of this member's time. The other sections are complete. The "
-    "full edition, cards included, is /api/diagnostics/bulletin-preview?cadence=weekly."
+    "Not built in the all-diagnostics bundle: the cards section runs every card producer again (as of the period's "
+    "end), and it was most of this member's time. The same producers run as of now in card-audit.json when that "
+    "member runs. The other sections are complete. The full edition, cards included, is "
+    "/api/diagnostics/bulletin-preview?cadence=weekly."
 )
 
 

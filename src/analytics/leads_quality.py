@@ -49,18 +49,15 @@ def _row(c) -> dict:
 
 
 def _fresh_home_feed(session) -> dict | None:
-    """Home's cached feed when it describes the corpus as it is now, else ``None``.
-
-    Fresh means the same test Home itself applies before serving the cache: the corpus has not grown
-    past the stale threshold since the feed was computed. A feed that a refresh stopped early, or one
-    a refresh kept because it could not finish, is still served by Home and is used here too; its
-    markers travel into the report so the reader sees it was partial."""
-    from src.briefing.service import _is_cache_stale, _read_cache
+    """Home's cached feed when Home's own freshness test (``service.feed_is_current``: current cache shape, corpus not
+    grown past the stale threshold, same shipped stoplist) passes, else ``None``. A feed carrying a stop marker or
+    stopped producers passes and is reported as partial."""
+    from src.briefing.service import _read_cache, feed_is_current
 
     payload = _read_cache()
     if not payload or not isinstance(payload.get("cards"), list):
         return None
-    if _is_cache_stale(session, payload):
+    if not feed_is_current(session, payload):
         return None
     return payload
 
@@ -80,18 +77,32 @@ def _report_from_home_feed(payload: dict) -> dict:
         rows.append(_row(c))
     generated_at = payload.get("generated_at")
     note = (
-        f"Read from Home's cached feed, computed at {generated_at}, instead of running every card "
-        "producer again: the corpus has not grown enough since then for Home to call that feed stale. "
-        "These are the cards Home is showing now, which include the one lane-only producer's card "
-        "(osm_tag_completeness) that a fresh run of this report leaves out. For a fresh producer pass, "
-        "call /api/diagnostics/leads-quality on its own."
+        f"Read from Home's cached feed, computed at {generated_at}, instead of running every card producer again: "
+        "it passes Home's own freshness test (the same cache shape, the same shipped stoplist, and a corpus that has "
+        "not grown past the stale threshold since). The rows are every card in that feed, including any dismissed on "
+        "Home and the one lane-only producer's card (osm_tag_completeness) that a fresh run of this report leaves "
+        "out, in Home's order. For a fresh producer pass, call /api/diagnostics/leads-quality on its own."
     )
-    partial = payload.get("incomplete_reason") or payload.get("kept_reason")
     caveat = LEADS_QUALITY_CAVEAT
-    if partial:
+    partial = False
+    if payload.get("incomplete_reason"):
+        partial = True
         caveat += (
-            " PARTIAL: Home's last refresh did not finish every producer, so cards from the "
-            f"producers it did not reach are absent here ({partial})."
+            " PARTIAL: Home's last refresh stopped before every producer had run, so cards from the producers it "
+            f"did not reach are absent here ({payload['incomplete_reason']})."
+        )
+    if payload.get("kept_reason"):
+        partial = True
+        caveat += (
+            " KEPT: this is the earlier feed Home kept because its last refresh stopped "
+            f"({payload['kept_reason']}), so it can be older than the corpus suggests."
+        )
+    stopped = [str(x.get("name") if isinstance(x, dict) else x) for x in payload.get("stopped_producers") or []]
+    if stopped:
+        partial = True
+        caveat += (
+            " PARTIAL: these producers were stopped at their own time bound on Home's last refresh, so their cards "
+            f"are absent here: {', '.join(stopped)}."
         )
     out = {
         "schema": SCHEMA,
@@ -103,12 +114,12 @@ def _report_from_home_feed(payload: dict) -> dict:
         "bundle_note": note,
         "producers_run": None,
         "producers_total": None,
-        "truncated": bool(partial),
+        "truncated": partial,
         "method": LEADS_QUALITY_METHOD,
         "caveat": caveat,
     }
-    if payload.get("stopped_producers"):
-        out["stopped_producers"] = payload["stopped_producers"]
+    if stopped:
+        out["stopped_producers"] = stopped
     return out
 
 
@@ -136,10 +147,10 @@ def leads_quality_report(session, *, budget_s: float | None = None, prefer_home_
     if prefer_home_cache:
         try:
             payload = _fresh_home_feed(session)
-        except Exception:  # noqa: BLE001 - an unreadable cache falls back to the producer pass
-            payload = None
-        if payload is not None:
-            return _report_from_home_feed(payload)
+            if payload is not None:
+                return _report_from_home_feed(payload)
+        except Exception:  # noqa: BLE001 - an unreadable or malformed cache falls back to the producer pass
+            pass
 
     cards, stats = run_all_bounded(
         session,
