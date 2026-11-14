@@ -12181,6 +12181,11 @@ gated months in the pool. **Old rows do not converge on their own:** the date st
 removes a tag, to keep human confirm/reject decisions), so a tag the pool once stored under the "en" guess
 stays after a re-index, and an existing tag keeps its old `dateextract` label even when it is found again with no language. Pruning unconfirmed tags that a re-extraction no longer finds is a separate
 change, not made here. Enforced by tests/test_date_language_every_path.py.
+**FOLLOW-UP SHIPPED 2026-11-14 (row 31, lane V, in the R698 PR):** old rows now converge on a re-index.
+`store_for_article` treats a re-extraction as the truth for tags nobody has judged: a `candidate` made by
+this extractor (`dateextract` or `dateextract:no-language`) that the text no longer yields is removed, and
+one it yields again takes the current label. A confirmed or rejected tag is never touched, and neither is
+a tag another extractor made. Enforced by the same test file.
 
 **RECORDED, NOT FIXED (2) — the collector could gain the same date recall and deliberately
 does not.** `ArticleBatch._precompute` passes `a.language` for dates, byte-identical to the

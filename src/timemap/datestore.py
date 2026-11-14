@@ -29,6 +29,7 @@ _CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is fir
 #: unknown" is recorded rather than read later as an English extraction.
 EXTRACTOR_KNOWN_LANGUAGE = "dateextract"
 EXTRACTOR_NO_LANGUAGE = "dateextract:no-language"
+_OWN_EXTRACTORS = frozenset({EXTRACTOR_KNOWN_LANGUAGE, EXTRACTOR_NO_LANGUAGE})
 
 
 def _to_row(tag: ArticleMentionedDate) -> dict:
@@ -54,15 +55,22 @@ def store_for_article(
 
     Idempotent: an existing (article, date, precision) tag is left untouched — so a human's
     confirm/reject decision is preserved across re-runs.
+
+    A re-extraction is also the truth for the tags NOBODY has judged (R697 follow-up, row 31):
+    an extractor-made ``candidate`` the text no longer yields is removed, and one it yields again
+    takes the current provenance label. That is how a date the pooled re-index once read under
+    an English guess (``03/04/2024`` as 4 March in an untagged article) leaves on the next
+    re-index, the way a keyword mention does. A confirmed or rejected tag is a human decision and
+    is never touched, and neither is a tag another extractor made.
     """
     if article is None or not (article.content or "").strip():
         return 0
-    existing = {
-        (t.mentioned_on.isoformat(), t.precision)
-        for t in db.query(ArticleMentionedDate)
+    tags = (
+        db.query(ArticleMentionedDate)
         .filter(ArticleMentionedDate.article_id == article.id)
         .all()
-    }
+    )
+    existing = {(t.mentioned_on.isoformat(), t.precision) for t in tags}
     # Feed the extractor the article's OWN date + language so it can resolve the
     # commonest news forms it otherwise skips: day+month with no year ("11
     # September"), relative words ("yesterday"), bare weekdays ("on Tuesday"), and
@@ -83,6 +91,19 @@ def store_for_article(
         article.content, today=today, anchor=anchor, language=article.language
     )
     extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
+    found_keys = {(c["date"], c["precision"]) for c in found}
+    changed = False
+    for t in tags:
+        if t.status != "candidate" or t.extractor not in _OWN_EXTRACTORS:
+            continue
+        key = (t.mentioned_on.isoformat(), t.precision)
+        if key not in found_keys:
+            db.delete(t)
+            existing.discard(key)
+            changed = True
+        elif t.extractor != extractor:
+            t.extractor = extractor
+            changed = True
     for c in found:
         key = (c["date"], c["precision"])
         if key in existing:
@@ -100,7 +121,7 @@ def store_for_article(
         )
         existing.add(key)
         added += 1
-    if added:
+    if added or changed:
         # SAVEPOINT-AWARE (CI red 2026-07-17, root cause of the #691 regression):
         # index_article's when/where/who pass runs this inside its own
         # session.begin_nested() savepoint. A commit() here closes that caller's
