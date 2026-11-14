@@ -181,7 +181,15 @@ def test_both_pages_are_told_and_the_lifespan_logs_it():
     for key in ("Your data folder is your home folder.", "Hide",
                 "An emergency wipe or a secure uninstall removes only this app’s own files there, and leaves the folder and everything else in it."):
         assert key in en
+    # R715 condition 3: the notice is drawn at load, before the drive-watch early return, never behind a toggle; the wipe's report
+    # names what was left in plain words, on the page and in the terminal.
+    assert js.index("renderScope(s.data_folder_scope)") < js.index("if (!s || !s.watched) return")
+    backup = (_ROOT / "src/static/app-backup.js").read_text(encoding="utf-8")
+    for key in ("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.",
+                "Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s."):
+        assert key in backup and key in en, key
     main = (_ROOT / "src/api/main.py").read_text(encoding="utf-8")
+    assert "Also left, because the name is common and may be yours: " in main
     assert main.count("startup_warning(_scope_dir())") == 2, "the lifespan's log and the terminal line"
     for page in ("index.html", "unlock.html"):
         assert '<script src="/static/data-volume.js"></script>' in (_ROOT / "src/static" / page).read_text(encoding="utf-8")
@@ -206,3 +214,36 @@ def test_an_operator_s_models_folder_beside_the_app_s_files_makes_the_folder_sha
     (folder / "app_settings.json").write_text("{}", encoding="utf-8")
     monkeypatch.setenv("OO_DATA_DIR", str(folder))
     assert folder_scope(folder)["reason"] == "shared_folder"
+
+
+def test_shared_wins_over_the_name(tmp_path, monkeypatch):
+    """R715 condition 1: a folder called "OOS data" that is itself a home, a drive root, a mount point or unlistable is shared."""
+    monkeypatch.delenv("OO_DATA_DIR", raising=False)
+    named_home = tmp_path / "OOS data"
+    named_home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: named_home))
+    assert folder_scope(named_home)["reason"] == "home"
+
+    home = tmp_path / "home" / "me"
+    home.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    link = home / "OOS data"
+    link.symlink_to(Path(tmp_path.anchor))
+    assert folder_scope(link)["reason"] == "drive_root"
+
+    mounted = home.parent.parent / "mnt" / "OOS data"
+    mounted.mkdir(parents=True)
+    scope_os_path(monkeypatch, data_scope, ismount=lambda p: Path(p) == mounted)
+    assert folder_scope(mounted)["reason"] == "mount_point"
+
+    chosen = home.parent.parent / "elsewhere" / "OOS data"
+    chosen.mkdir(parents=True)
+    assert folder_scope(chosen)["broad"] is False
+
+    def refuse(path):
+        raise PermissionError(13, "denied", str(path))
+
+    from tests.os_scope import scope_os
+
+    scope_os(monkeypatch, data_scope, scandir=refuse)
+    assert folder_scope(chosen)["reason"] == "unlistable"

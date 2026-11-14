@@ -183,6 +183,18 @@ def _first_other(base: Path) -> bool | None:
     return _scan_for_other(it, spec)
 
 
+def _listable(base: Path) -> bool | None:
+    """False when ``base`` can be listed (or is gone), None when it cannot: the one question asked of a folder the app chose."""
+    try:
+        with os.scandir(base) as it:
+            next(it, None)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+    return False
+
+
 def _scan_for_other(it, spec: dict) -> bool | None:
     try:
         with it:
@@ -201,7 +213,8 @@ def folder_scope(base: Path) -> dict:
 
     Broad when it is the root of a drive, the home folder, a folder above it or one of its standard folders (Documents,
     Desktop...), a mount point, or, unless the app chose it (:func:`chosen_by_app`), a folder holding any entry the app does
-    not own. A folder that cannot be listed is broad. Never raises."""
+    not own. A folder that cannot be listed is broad, a folder the app chose included: the location checks and this one come
+    before the name, so shared always wins over it (R715). Never raises."""
     try:
         real = Path(os.path.realpath(base))
     except (OSError, ValueError):
@@ -229,8 +242,9 @@ def folder_scope(base: Path) -> dict:
                 reason = "mount_point"
         except (OSError, ValueError):
             pass
-    if reason is None and not chosen_by_app(base):
-        other = _first_other(real)
+    if reason is None:
+        # Shared wins over the name (R715): a folder the app chose is still judged unlistable when it cannot be listed.
+        other = _listable(real) if chosen_by_app(base) else _first_other(real)
         if other is None:
             reason = "unlistable"
         elif other:

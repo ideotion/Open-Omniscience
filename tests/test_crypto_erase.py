@@ -939,3 +939,48 @@ def test_a_shared_keys_folder_without_pending_is_removed_once_empty(tmp_path):
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
     assert report["scope"] == "app-only" and not (shared / "keys").exists()
     assert report["left_common_names"] == []
+
+
+@sqlcipher_only
+@pytest.mark.skipif(sys.platform == "win32", reason="reads an open, unlinked WAL through a hard link (POSIX semantics)")
+def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is_destroyed(tmp_path, monkeypatch):
+    """R715 condition 2: keeping to the app's names in a shared folder never keeps what opens the corpus. The database, its
+    write-ahead log, a salvage copy beside it and the app's key files are all destroyed, read back through hard links."""
+    shared = tmp_path / "projects"
+    shared.mkdir()
+    monkeypatch.setenv("OO_DATA_DIR", str(shared))
+    (shared / "thesis.docx").write_bytes(b"years of work")
+    db = shared / "open_omniscience.db"
+    con = connect(db, key=_PW)
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        for _ in range(10):
+            con.execute("CREATE TABLE IF NOT EXISTS u(x)")
+            con.execute("INSERT INTO t VALUES (randomblob(3000))")
+            con.commit()
+        salt = db.read_bytes()[:16]
+        salvage = shared / "open_omniscience.salvage-20261114T101010Z.db"
+        salvage.write_bytes(db.read_bytes())
+        (shared / "keys").mkdir()
+        key = shared / "keys" / "custody_ed25519.pem"
+        key.write_bytes(b"PRIVATE KEY " * 20)
+        kept = {}
+        for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal")), ("salvage", salvage), ("key", key)):
+            kept[name] = tmp_path / f"kept-{name}"
+            os.link(p, kept[name])
+        assert _salt_hits(kept["wal"].read_bytes(), salt), "the setup must put the salt in the log"
+
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
+    finally:
+        con.close()
+
+    assert report["scope"] == "app-only" and report["scope_reason"] == "shared_folder"
+    assert report["overwrite_failures"] == []
+    for name in ("main", "wal", "salvage"):
+        assert _salt_hits(kept[name].read_bytes(), salt) == [], f"a copy of the salt survived in the {name} file"
+    assert b"PRIVATE KEY" not in kept["key"].read_bytes()
+    assert not db.exists() and not salvage.exists() and not key.exists()
+    assert (shared / "thesis.docx").read_bytes() == b"years of work"
