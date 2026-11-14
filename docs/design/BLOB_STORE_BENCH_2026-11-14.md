@@ -32,9 +32,10 @@ connection" means an empty SQLite page cache, not a cold disk.
   Each run has its own temp dir, deleted at the end.
 - App pragmas on every store: page size 16384, auto_vacuum INCREMENTAL, WAL, synchronous NORMAL,
   64 MiB cache, temp_store MEMORY; mmap only on the plaintext store (as the app does).
-- 3 runs per engine, median reported. Spread across the 3 runs: ingest within ±5%; read latencies vary
-  more (fresh-connection p50 up to ±25%, e.g. 56/65/71 µs), so differences under ~30% in a read row
-  are not meaningful.
+- 3 runs per engine, median reported. Spread across the 3 runs: ingest within ±7%; read latencies vary
+  much more (fresh-connection p50 up to about ±40%, e.g. sqlcipher 36/52/37 µs), so differences under
+  ~50% in a read row are not meaningful. The 64 KiB prototype's fresh reads (56-94 µs over all runs)
+  sit above every sqlcipher run (30-52 µs), which is why the 1.8x below is read as real.
 - Workloads: ingest in 200-article transactions (row + FTS row; for the prototype also the dedup lookup
   and the staging row); unlock = open + key + count(*); read = 2,000 random ids, title + full body;
   feed = newest 100 by published_at, metadata only (200x); search = FTS MATCH on one term, top 50 by
@@ -52,7 +53,7 @@ check on every read; with 4 MiB or 64 KiB frames.
 | | sqlite (no enc) | sqlcipher (today) | prototype, 4 MiB frames | prototype, 64 KiB frames |
 |---|---|---|---|---|
 | ingest, articles/s | 3,179 | 2,267 | 2,001 | 2,143 |
-| seal + incremental_vacuum, s | – | – | 3.7 + 1.7 | 3.5 + 1.6 |
+| seal + incremental_vacuum, s | – | – | 3.7 + 1.7 | 3.5 + 1.5 |
 | unlock, s | 0.001 | 0.139 | 0.145 | 0.114 |
 | read, fresh connection, p50 / p95 µs | 8 / 15 | 37 / 69 | 1,769 / 2,110 | 65 / 147 |
 | read, warm, p50 / p95 µs | 4 / 8 | 5 / 9 | 1,696 / 2,141 | 48 / 92 |

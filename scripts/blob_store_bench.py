@@ -334,7 +334,7 @@ class BlobStore:
         self.k_addr = self._hkdf(master, b"oo/v1/blob-address")
         self.k_pack = self._hkdf(master, b"oo/v1/pack-aead")
         self.compress, self.decompress, self.codec_id = compress, decompress, codec_id
-        self._pack_cache: dict[int, tuple[bytes, int, AESGCM, bytes]] = {}
+        self._pack_cache: dict[int, tuple[bytes, int, int, AESGCM, bytes]] = {}
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         _fsync_dir(self.root.parent)
 
@@ -376,6 +376,7 @@ class BlobStore:
         while i < len(staged):
             buf = bytearray()
             entries: list[tuple[int, bytes, int, int]] = []
+            pending_in = 0
             while i < len(staged):
                 sid, addr, body = staged[i]
                 body = bytes(body)
@@ -388,11 +389,11 @@ class BlobStore:
                     break
                 entries.append((sid, addr, len(buf), len(stored)))
                 buf += stored
-                bytes_in += len(body)
+                pending_in += len(body)
                 i += 1
-            if i >= len(staged) and not flush_partial:
-                break
             used = len(buf)
+            if i >= len(staged) and used < PACK_TARGET and not flush_partial:
+                break  # leave the part-full last pack staged
             pad_bytes += PACK_TARGET - used
             buf += bytes(PACK_TARGET - used)
             name = secrets.token_bytes(16)  # opaque: says nothing about content or order
@@ -428,12 +429,15 @@ class BlobStore:
             c.executemany("DELETE FROM blob_staging WHERE id = ?", [(s,) for s, _, _, _ in entries])
             c.execute("COMMIT")
             packs += 1
+            bytes_in += pending_in
         return {"packs": packs, "plain_bytes": bytes_in, "padding_bytes": pad_bytes}
 
     def read(self, c: Conn, addr: bytes) -> bytes:
         row = c.execute("SELECT pack_id, off, len, codec FROM blobs WHERE addr = ?", (addr,))
         if not row:
             staged = c.execute("SELECT body FROM blob_staging WHERE addr = ?", (addr,))
+            if not staged:
+                raise ValueError("address not found in packs or staging")
             body = bytes(staged[0][0])
         else:
             pack_id, off, ln, codec = row[0]
@@ -443,15 +447,17 @@ class BlobStore:
                 name = bytes(p[0])
                 meta = (
                     name,
+                    int(p[1]),
                     int(p[2]),
                     self._cipher(name),
                     self._header(name, int(p[1]), int(p[2])),
                 )
                 self._pack_cache[pack_id] = meta
-            name, n_frames, aead, header = meta
-            frame = self.frame
+            name, frame, n_frames, aead, header = meta  # the pack's own recorded frame size
             first, last = off // frame, (off + ln - 1) // frame
             out = bytearray()
+            # the file's length is NOT checked against packs.ct_len here; the design checks it
+            # at open and at restore (note §8), so a truncated padding tail goes unseen here
             with open(self._pack_path(name), "rb") as f:
                 if f.read(len(header)) != header:  # the file must be the pack the index names
                     raise ValueError("pack header does not match its index row")
@@ -507,6 +513,7 @@ def run_engine(
     store: BlobStore | None = None
     if blob_frame is not None:
         comp, decomp, codec = _codec(args.codec)
+        res["codec"] = {0: "none", 1: "zlib-6", 2: "zstd-3"}[codec]
         store = BlobStore(workdir / "packs", master, blob_frame, comp, decomp, codec)
 
     # ingest
@@ -676,7 +683,7 @@ def _codec(
             cz, dz = zstandard.ZstdCompressor(level=3), zstandard.ZstdDecompressor()
             return cz.compress, dz.decompress, 2
         except ImportError:
-            pass  # fall through to zlib, and the report names the codec actually used
+            pass  # fall through to zlib; the report's "codec" field names the one used
     return (lambda b: zlib.compress(b, 6)), zlib.decompress, 1
 
 

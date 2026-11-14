@@ -37,7 +37,7 @@ their findings are folded in, and the ones that change a requirement are marked 
 ## 2. Shape
 
 ```
-<data dir>/
+<beside the database>/           (wherever main_db_path() resolves, which may be outside the data dir)
   corpus.db (SQLCipher)          articles(..., blob_addr), blobs, packs, blob_staging, blob_keys
   blobs/<2 hex>/<32 hex>         immutable packs, every one exactly the same size, names random
 ```
@@ -45,17 +45,25 @@ their findings are folded in, and the ones that change a requirement are marked 
 Four tables join the SQLCipher file. `blobs(addr PK, pack_id, off, len, codec)` maps an address
 to its place in a pack. `packs(id, name, epoch, frame, n_frames, plain_len, ct_len)` describes
 each pack, including the exact ciphertext length it must have. `blob_staging(id, addr UNIQUE,
-body)` holds bodies not yet sealed. `blob_keys(epoch, key)` holds the master keys (§3). The
-address → place map exists ONLY inside the encrypted file.
+body)` holds bodies not yet sealed. `blob_keys` holds the master keys per epoch and the one
+address key (§3). `pack_intents(name)` records a pack about to be written (§6). The address →
+place map exists ONLY inside the encrypted file. `blobs/` lives beside the database file, not
+at an assumed `<data dir>`, because `main_db_path()` honours `DATABASE_URL`; panic wipe resolves
+it the same way.
 
 **What a person who copies the disk learns** *(review: the first draft said "nothing else")*:
 the number of packs (so, in steps of one pack, the total stored volume); each pack's creation and
 modification time and its inode order (an ingest timeline at pack granularity); when packs were
 rewritten or removed by GC (when deletions happened, roughly how much); and, where the filesystem
-records it, access time (which packs were read recently). Mitigations the build must apply:
-packs are created `0600` in `0700` directories; the mtime is set to a constant after the write;
-reads open with `O_NOATIME` where the platform has it; the packer seals on a fixed timer rather
-than per collection pass. ctime cannot be set and stays a residual leak, stated.
+records it, access time (which packs were read recently); the shard directories' mtime and ctime,
+which change on every pack added; and the growth of the database file and its WAL as bodies are
+staged. Mitigations the build must apply: packs are created `0600` in `0700` directories; pack
+and shard-directory mtimes are reset to a constant after each seal; reads open with `O_NOATIME`
+where the platform has it; **the packer seals only at fixed timer ticks** (it seals every full
+pack it has at a tick, and a padded partial one only once the oldest staged body reaches the
+maximum age), never when a pack happens to fill, so pack times record the timer and not the
+ingest rate. Residual leaks, stated: ctime and creation time (btime, not settable on ext4 or
+btrfs), the per-tick pack count, and database/WAL growth between two views of the disk.
 
 ## 3. Keys — one passphrase, no second key surface
 
@@ -65,26 +73,35 @@ than per collection pass. ctime cannot be set and stays a residual leak, stated.
   KEK-wrap that STORAGE_5TB_PLAN §5 asked for, with SQLCipher as the wrap, rather than §5's
   deterministic derivation from the passphrase.
 - Working keys come from it through HKDF-SHA-256 with fixed, versioned labels:
-  `oo/v1/blob-address` (the HMAC key), `oo/v1/pack-aead` (the pack key), and per pack
-  `oo/v1/pack-subkey\0 || pack name (16 raw bytes)` (§4). A later dictionary registry would
-  take `oo/v1/dict-integrity`. The build ships test vectors for every label.
-- **Why stored rather than derived** — the differentiator is **panic wipe**: destroying the salt
-  page makes the BMK unreadable, so every pack is noise at once, and a passphrase obtained later
-  (coerced, say) recovers nothing from the packs. A passphrase-derived pack key would survive the
-  wipe for anyone who later learns the passphrase. A second, smaller reason: a passphrase
-  change, if one is ever added, would be a SQLCipher rekey and would re-wrap the BMK with it.
+  `oo/v1/pack-aead` from an epoch's BMK gives that epoch's pack key, and each pack's subkey is
+  `HKDF(pack key, "oo/v1/pack-subkey\0" || pack name (16 raw bytes))` (§4). A later dictionary
+  registry would take `oo/v1/dict-integrity`. The build ships test vectors for every label.
+- **The address key does not rotate** *(review)*. It is one random key stored in `blob_keys`
+  beside the epochs, never re-derived per epoch: if it changed with the epoch, dedup would split
+  across epochs and a GC re-seal into a new epoch would make the read check fail on old
+  addresses. Its exposure is the dedup leak of §5, already confined to passphrase holders.
+- **Why stored rather than derived** — one erase point and a free re-wrap. Everything a pack
+  needs is inside the SQLCipher file, so destroying its salt page is the single act that makes
+  every pack noise, and a passphrase obtained later (coerced, say) recovers nothing from the
+  packs. (A pack key derived from the passphrase with a salt kept on page 1 would die with the
+  wipe too; one derived without such a salt would not.) And a passphrase change, if one is ever
+  added, would be a SQLCipher rekey that re-wraps the stored keys without touching a pack.
 - **Key epochs** *(review)*. A rekey that keeps the same BMK would be a regression: anyone with an
   OLD copy of `corpus.db` (or an old backup) and the OLD passphrase would get the BMK and could
   read every pack written AFTER the change, given a later copy of `blobs/`. So a passphrase change
   creates a new epoch: a fresh BMK for new packs, recorded in `packs.epoch`; older BMKs stay
   inside the database to read older packs; an optional background re-seal retires an old epoch.
   **Stated exposure that remains:** packs of an old epoch stay readable by anyone holding an old
-  copy plus the old passphrase until they are re-sealed.
-- **What a backup copy of the database file alone gives** (R707's condition): with the
-  passphrase, the BMK of every epoch the copy knew, and so every pack of those epochs, wherever
-  those packs are later found; without the passphrase, nothing (the BMK is under SQLCipher's
-  encryption like any article). That is the same reach the copy already has over the article
-  text it holds today; it adds the packs written under the epochs it knew.
+  copy plus the old passphrase until they are re-sealed. A rekey must also checkpoint and
+  truncate the WAL so no frame under the old key remains (Q-W11).
+- **What a backup copy of the database file alone gives** (R707's condition): without the
+  passphrase, nothing (the keys are under SQLCipher's encryption like any article). With the
+  passphrase, the BMK of every epoch the copy knew, and so **every pack of those epochs, including
+  packs written long AFTER the copy was made**, given a later copy of `blobs/`. Because epochs
+  rotate only on a passphrase change, and there is no passphrase change today, a copy taken on
+  day one reaches forward for the life of the store. That is wider than today, where an old copy
+  reaches only the text it holds. Rotating the epoch on a schedule or at every backup (a new BMK
+  for new packs only, cheap) caps that reach; Q-W14 asks for the cadence.
 - **Plaintext stores** *(review)*. Under `OO_DB_PLAINTEXT=1` the database is not encrypted, so a
   BMK stored in it would lie in the clear beside the packs: encrypted-looking packs under a
   plaintext key would be fabricated security. The store therefore follows the database's at-rest
@@ -110,15 +127,20 @@ than per collection pass. ctime cannot be set and stays a residual leak, stated.
   across packs whatever their number, and a frame or a whole pack moved under another name fails
   authentication. Names are never reused, including by GC rewrites.
 - **Frame size 64 KiB, not the 4 MiB backup default** (R707, Q-W3). Measured (§9): a single-article
-  read from 4 MiB frames decrypts a whole 4 MiB frame, about 1.6 ms per article. Each frame adds a
+  read from 4 MiB frames decrypts a whole 4 MiB frame, about 1.7 ms per article. Each frame adds a
   16-byte tag, 0.02 % at 64 KiB.
 - **Every pack is exactly one fixed size** *(review)*: bodies, then zero padding, all inside the
   AEAD, to the target (8 MiB). The first draft let the last pack of every seal be partial, and
   compression is deterministic, so a pack holding one body would have given away that body's
   compressed length: an observer could compress a known document and look for a pack of that
   size, which is the confirmation attack row 5 exists to stop. Padding closes it; the residual
-  leak is the pack count (§2). Bodies wait in staging until a pack fills, or until a maximum age
-  after which a padded pack is sealed. A body larger than one pack needs size classes (Q-W10).
+  leak is the pack count (§2). Bodies wait in staging until a timer tick (§2). **The size
+  equation:** file size = header + n_frames × (frame + 16), with n_frames fixed by the pack size,
+  and the trailer, the bodies and the padding together fill exactly the fixed plaintext size; the
+  trailer is budgeted inside it before padding, never appended after it *(review)*, or the
+  length would vary with the number of bodies. A body larger than one pack is split across
+  fixed-size packs rather than given a larger size class, because a size class would announce
+  "a body over 8 MiB exists", the rare large document a confirmation attack looks for (Q-W10).
 - **Every read checks the body against its address** *(review)*: `HMAC(k_addr, body) == addr`,
   a few µs, so a wrong offset, a snapshot paired with the wrong pack set or a rebuilt index can
   never return the wrong text silently.
@@ -142,9 +164,10 @@ than per collection pass. ctime cannot be set and stays a residual leak, stated.
   neither: the addresses live inside the encrypted file, pack names are random, and every pack
   has the same size. A copier cannot test "is this leaked document here?" without the key.
 - **Active dedup oracle, stated:** someone who can get a document collected (by publishing it to
-  a watched feed) and can inspect the disk before and after could watch for growth; with
-  fixed-size packs this resolves only to "a pack was or was not added", which mixes with every
-  other body sealed in the same interval. Weak, not zero.
+  a watched feed) and can inspect the disk before and after could watch for growth. In the packs
+  this resolves only to "a pack was or was not added" at a timer tick, mixed with every other
+  body of the interval; but a staged body also grows the database and its WAL by whole pages,
+  which is a finer signal between two views of the disk. Weak, not zero; stated, not fixed.
 - `articles.hash` stays as it is. This is dedup of identical bodies under different rows
   (syndication), beneath the row-level rule. Near-duplicate folding stays a separate decision.
 
@@ -156,10 +179,12 @@ never a dangling reference:
 1. **Ingest** writes the article row, its FTS row and the body into `blob_staging`, in ONE SQL
    transaction (R707, Q-W4). Readers find a staged body there. Nothing touches the filesystem at
    ingest, so ingest atomicity is exactly today's.
-2. **The packer** (a background `is_writer` job, under the writer gate) writes a pack to
+2. **The packer** (a background `is_writer` job, under the writer gate) first commits a
+   `pack_intents(name)` row for a freshly drawn random name, then writes the pack to
    `<name>.tmp` (`0600`), fsyncs it, renames it, fsyncs its directory and **every directory it
    created on the way** *(review)*, and only THEN commits one SQL transaction that inserts the
-   `packs` and `blobs` rows and deletes the staging rows.
+   `packs` and `blobs` rows, deletes the staging rows and deletes the intent. A retry after a crash
+   always draws a NEW name, never one read back from an intent row, so a nonce key is never reused.
 
 **The staging window** (R707's condition): between ingest and sealing, a body sits in
 `blob_staging` as a row of the SQLCipher file, and after sealing its old pages sit on the
@@ -170,26 +195,43 @@ plaintext on disk. With fixed-size packs and a maximum age, the window is bounde
 | Crash point | State after restart | Repair |
 |---|---|---|
 | during ingest | transaction rolled back | none |
-| pack temp written, not renamed | a `.tmp` file nobody references | the orphan sweep deletes it |
-| pack renamed, SQL not committed | a whole pack nobody references; bodies still staged | the orphan sweep deletes it; the packer re-seals the staged bodies |
+| pack temp written, not renamed | a `.tmp` file and an intent row | the orphan sweep deletes the `.tmp` and the intent |
+| pack renamed, SQL not committed | a whole pack named by an intent row; bodies still staged | the orphan sweep deletes that pack and its intent; the packer re-seals the staged bodies under a new name |
 | after SQL commit | consistent | none |
 
-The orphan sweep runs **under the writer gate** *(review)*, so it can never see the window
-between a running packer's rename and commit; a grace period alone could be outlasted by a
-suspended packer.
+**The orphan sweep deletes only what an intent names** *(review)*: `.tmp` files, and packs whose
+name sits in `pack_intents` with no `packs` row. Any OTHER pack the database does not reference
+is reported and quarantined, never deleted automatically, because that state also arises from a
+database opened at an older state, a repair or salvage output that lost rows, or a lost commit
+(§7), and in each of those the "unreferenced" packs are live data, exactly what the trailer
+rebuild exists to recover. The sweep runs **under the writer gate** *(review)*, so it never sees
+a running packer's window between rename and commit.
 
 ## 7. Garbage collection and deletion
 
 Mark-and-sweep: every address referenced by `articles.blob_addr` is live; any other `blobs` row is
 dead. A pack whose live bytes fall below a threshold is rewritten (live bodies copied into a new
 pack through the same crash-ordered path), its old row deleted in the same SQL transaction that
-points the bodies at the new pack, and its file unlinked only after that commit. GC is an
-`is_writer` job, so R659's restore refusal covers it.
+points the bodies at the new pack, and its file unlinked only after that commit **is durable**
+*(review)*. The app runs WAL with `synchronous=NORMAL`, under which a committed transaction can
+be lost to a power cut; losing the packer's commit only leaves an orphan pack and staged bodies,
+but losing a GC commit after the unlink would leave rows pointing at a deleted pack, the bodies
+gone for good. So every commit that precedes an unlink (GC rewrite, purge, the restore swap) runs
+with `synchronous=FULL` or is followed by a durable checkpoint before the unlink, and a
+fault-injection test drops the un-fsynced WAL tail after the commit and checks nothing is lost.
+GC is an `is_writer` job, so R659's restore refusal covers it.
 
 **Deletion retention, stated** *(review)*: a deleted article's body stays decryptable inside its
-pack, to a passphrase holder, until a rewrite of that pack. "I deleted it" is therefore not true
-of the bytes until then. A user-initiated purge forces the rewrite of every affected pack at
-once; ordinary deletes wait for the threshold. The trailer rebuild never resurrects (§4).
+pack, to a passphrase holder, until that pack is rewritten, and even after the rewrite the old
+pack's blocks can survive on disk after the unlink, still decryptable under the live epoch key.
+Staged bodies linger in freelist and WAL pages, and the contentless FTS index keeps a deleted
+article's tokens until a merge. "I deleted it" is therefore not true of the bytes. A
+user-initiated purge forces the rewrite of every affected pack, runs with `secure_delete=ON` and
+an FTS merge (as the newsletter purge in `src/backup/newsletter_export.py` already does), and
+states the remaining limit on the old pack blocks. A stronger option, giving each pack its own
+random key stored in its `packs` row so that deleting the row crypto-shreds the pack, costs the
+trailer rebuild its independence from the database (Q-W15). The trailer rebuild never
+resurrects (§4).
 
 ## 8. Backup, restore, panic wipe
 
@@ -198,6 +240,10 @@ Lane B read this section (R707, Q-W5 pending their read) and asked for the gaps 
 - **Packs travel inside the encrypted backup volumes**, as their own member category in the
   volume manifest with size and checksum, never copied raw beside it *(review)*: raw copies with
   random names and sizes would link a backup to the live store and show ingest volume per period.
+  The volume manifest is plaintext JSON today, so pack members get **opaque per-backup ids**,
+  checksums are taken over the backup's own volume bytes rather than the pack ciphertext (which
+  is identical in both places), and the map from member id to pack name lives only inside the
+  encrypted stream *(review)*.
   This is a backup-format bump through the S04-04 normaliser path, in both directions: an older
   reader refuses a pack-bearing backup by name, and an older backup restores through the Q-W7
   migration.
@@ -208,7 +254,9 @@ Lane B read this section (R707, Q-W5 pending their read) and asked for the gaps 
 - **GC lease** *(Lane B must-fix)*: the backup takes it before the snapshot and holds it until the
   last pack is in the volumes. Taking it waits for any in-flight GC compaction to finish both its
   commit and its unlinks, and also stops the orphan sweep. A persisted lease carries an expiry
-  tied to its job, so a dead backup cannot block GC for ever.
+  tied to its job, so a dead backup cannot block GC for ever; a live backup renews it by
+  heartbeat, since a multi-TB backup can outlast any fixed expiry, and before finalising it checks
+  that every pack its snapshot references is in the volumes, refusing by name if one is not.
 - **Replace-restore**: packs are written and verified (size, checksum, header) BEFORE the database
   swap, so a crash leaves only orphan packs. Packs count in the restore's preflight and in its
   declared-size bound. A referenced pack that is missing, the wrong length (`packs.ct_len`) or
@@ -216,22 +264,32 @@ Lane B read this section (R707, Q-W5 pending their read) and asked for the gaps 
   offered. The packs the pre-restore rollback snapshot references are treated as live, so the
   orphan sweep cannot delete them *(Lane B must-fix)*.
 - **At open**, the same missing-pack check runs and names the pack and how many articles it
-  affects, rather than failing on the first read.
+  affects, in the UI rather than the plaintext log, rather than failing on the first read.
 - **Merge-restore (row-level)**: the source corpus has its own BMKs, so its addresses and packs
   mean nothing in the target. The merge reads each body through the source's keys, in memory only,
   and re-ingests it into the target's staging (new address, new pack). Its preflight counts the
   staging growth and the new packs. Cost scales with the merged text.
-- **Panic wipe**: the guarantee is the destroyed salt: once page 1 of `corpus.db` is overwritten,
-  every BMK and so every pack is unreadable. But the current quick pass then FULLY OVERWRITES
+- **Panic wipe**: the guarantee is the destroyed salt, and it holds only if EVERY keyed copy of
+  the database loses its salt *(review)*: `corpus.db` and its WAL, but also the retained
+  `pre-restore-<ts>.db` snapshots (kept 3 deep and 168 h; 25.8 GB each in the field) and any keyed
+  copy left in `.restore-` or `.bak-build-` staging. Today step 1 head-shreds only the main,
+  custody and lane databases; the snapshots are reached only by step 6's full overwrite, which is
+  slow and can be cut short, and each one would hold every BMK of its time. **Required change:**
+  step 1 head-shreds every SQLCipher file under the data directory, by registry or pattern,
+  before `blobs/` is touched. The current quick pass also FULLY OVERWRITES
   every remaining file under the data directory, on the premise that those are small side files;
   a multi-TB `blobs/` would turn the instant erase into hours. **Required change** *(review)*:
   after the salt is gone, `blobs/` is only unlinked, never overwritten, and a test proves the
   erase stays fast with a large pack tree; the optional free-space scrub covers the freed blocks
   as it does today. **A test also proves that after the quick pass no pack can be decrypted**
-  (R707's condition). Honest limits: a backup copy elsewhere still holds its own keys, and an
-  inherited issue in the current erase (the `-wal` sidecar is overwritten only in its first
-  4 KiB, while later copies of page 1 with the salt can sit deeper in it) is reported separately
-  and must be fixed before this store relies on the wipe.
+  (R707's condition), with a pre-restore snapshot, a staging copy and a WAL holding a deep page-1
+  frame all seeded first. Honest limits: a backup copy elsewhere still holds its own keys; the
+  inherited `-wal` issue (the sidecar is overwritten only in its first 4 KiB, while later copies
+  of page 1 with the salt can sit deeper in it) is reported separately and must be fixed before
+  this store relies on the wipe; and the whole guarantee rests on one 4 KiB byte overwrite, which
+  SSD wear-levelling or a copy-on-write filesystem can leave recoverable. With `blobs/` only
+  unlinked, one recovered 16-byte salt plus a coerced passphrase would open the whole store, so
+  that limit is stated beside the existing `_LIMIT_NOTE`, with higher stakes than today.
 
 ## 9. Benchmark (measured)
 
@@ -263,7 +321,7 @@ well as cipher.
 
 | # | Question | R707 | Condition |
 |---|---|---|---|
-| Q-W1 | BMK random, stored inside SQLCipher vs derived from the passphrase | stored | both security reads agree; §3 states what a DB copy alone gives; panic wipe tested to kill packs |
+| Q-W1 | BMK random, stored inside SQLCipher vs derived from the passphrase | stored | both security reads agree (both found the stored key sound, with the epoch, address-key and wipe requirements now in §3 and §8); §3 states what a DB copy alone gives; panic wipe tested to kill packs |
 | Q-W2 | Pack header | new magic `OOPACK1` with OOENC2 framing | – |
 | Q-W3 | Pack frame size | 64 KiB | – |
 | Q-W4 | Ingest stages in SQL, background packer seals | yes | §6 states the staging window and its encryption |
@@ -276,11 +334,27 @@ Open, not yet ruled, raised by the reviews:
 
 - **Q-W9 — Plaintext stores.** Write packs unencrypted and labelled on an `OO_DB_PLAINTEXT=1`
   store, or refuse to create the blob store there. Recommend: refuse (one less mode to test).
-- **Q-W10 — Bodies larger than one pack.** Split across packs, or a few coarse size classes of
-  pack. Recommend size classes (8 MiB, 64 MiB), each padded.
+- **Q-W10 — Bodies larger than one pack.** Split across fixed-size packs, or a few coarse size
+  classes. Recommend splitting: a size class announces that a large body exists.
 - **Q-W11 — Key epochs.** Confirm that a passphrase change (none exists today) must create a new
-  epoch, and whether old epochs are re-sealed automatically or only on request.
+  epoch and checkpoint-and-truncate the WAL, and whether old epochs are re-sealed automatically
+  or only on request.
 - **Q-W12 — Packer maximum age.** How long a body may wait in staging before a padded pack is
   sealed. Recommend 24 h: at field rates one 8 MiB pack is hours of bodies.
 - **Q-W13 — Whole-store rollback.** Restoring an older database together with its older packs is
   undetectable by design (there is no external anchor). Recommend: accepted, stated.
+- **Q-W14 — Epoch rotation cadence.** A database copy plus the passphrase reaches every pack of
+  its epochs, including later ones (§3). Rotate the epoch at every backup, on a schedule, or only
+  on a passphrase change. Recommend at every backup: it bounds what any one backup's keys can
+  open to the packs that existed when it was taken, and costs one new key.
+- **Q-W15 — Purge strength.** Rewrite affected packs plus `secure_delete` and an FTS merge, with
+  the old-block limit stated (recommended for a first build), or a per-pack random key in the
+  `packs` row so deleting the row crypto-shreds the pack, at the cost of a trailer rebuild that
+  needs the database.
+- **Q-W16 — Unreferenced packs outside an intent.** Quarantine and report (recommended, §6), or
+  also offer a manual "delete quarantined packs" action with a confirm naming the count and size.
+
+**What the prototype does not model**, so the measurements say nothing about it: key storage in
+SQLCipher and epochs, the address key in `blob_keys`, the trailer, `pack_intents` and the orphan
+sweep, timer-tick sealing, constant mtimes and `O_NOATIME`, GC and purge, the durable-commit rule,
+backup and restore, and panic wipe.
