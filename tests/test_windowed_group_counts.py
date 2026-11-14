@@ -226,17 +226,23 @@ def test_a_call_issues_ranges_times_days_statements_and_three_probes(corpus):
 # --------------------------------------------------------------------------- #
 #  the point: nothing is held between statements, and each statement is one seek
 # --------------------------------------------------------------------------- #
-def _checkpoint_passes(path) -> tuple[int, int, int]:
+def _checkpoint_passes(path, keyword_id: int = 1) -> tuple[int, int, int]:
     """Commit one write on ANOTHER connection, then ask for a TRUNCATE checkpoint. busy=1 = a reader is in
     the way (the very thing the guard's pin reports measure); busy=0 = nothing older than the write holds
-    the log."""
+    the log.
+
+    The write must change a page, or the log stays empty and every checkpoint passes whoever is reading:
+    ``keyword_id`` names a row that exists. On the app's shared engine id 1 may be gone (a neighbour's
+    cleanup), which made the contrast read (0, 0, 0) on every call (R674's CI red, reproduced by deleting
+    keyword 1 before the test), so that test passes one of its own ids."""
     con = sqlite3.connect(path, timeout=5)
     try:
         con.execute("PRAGMA journal_mode=WAL")
         con.execute("PRAGMA busy_timeout=0")  # a blocked checkpoint answers busy=1 at once, it does not wait
         con.execute("INSERT INTO keyword_mentions (keyword_id, article_id, count, observed_on) VALUES (1, 1, 1, '1999-01-01') "
                     "ON CONFLICT DO NOTHING")
-        con.execute("UPDATE keywords SET term = term WHERE id = 1")
+        changed = con.execute("UPDATE keywords SET term = term WHERE id = ?", (keyword_id,)).rowcount
+        assert changed == 1, f"keyword {keyword_id} is not there: the probe wrote nothing, so a checkpoint would pass trivially"
         con.commit()
         return tuple(con.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone())
     finally:
@@ -891,7 +897,7 @@ def _app_engine_body(engine, Sess, path, monkeypatch, own):
     busy: list[int] = []
     with Sess() as s:
         got = _chunked(s, TODAY - timedelta(days=6), TODAY + timedelta(days=1),
-                       lambda k, v: busy.append(_checkpoint_passes(path)[0]) or True, range_ids=6)
+                       lambda k, v: busy.append(_checkpoint_passes(path, kids[0])[0]) or True, range_ids=6)
         assert got == _reference(s, TODAY - timedelta(days=6), TODAY + timedelta(days=1), _always)
     assert len(busy) >= 20 and set(busy) == {0}, "the app's own engine held the log between statements"
     # the contrast on the same engine: the single statement, with its cursor open, DOES keep the checkpoint out
@@ -906,7 +912,7 @@ def _app_engine_body(engine, Sess, path, monkeypatch, own):
     def _keep(_k, _v):
         if "file" not in reader and reader.get("dbapi") is not None:  # the file the open statement reads, asked on its connection
             reader["file"] = reader["dbapi"].execute("PRAGMA database_list").fetchone()[2]
-        old.append(_checkpoint_passes(path))
+        old.append(_checkpoint_passes(path, kids[0]))
         return True
 
     event.listen(engine, "before_cursor_execute", _note_reader)
