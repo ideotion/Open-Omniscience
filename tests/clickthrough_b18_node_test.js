@@ -51,7 +51,9 @@ const FSI = "⁨", PDI = "⁩", NBSP = " ";
 // The DOM this batch's renderers write into: boxes and inputs by id.
 const BOXES = {};
 function $(id) {
-  if (!BOXES[id]) BOXES[id] = { id, innerHTML: "", value: "", textContent: "" };
+  // addEventListener: the figures table wires ONE delegated click listener for its
+  // per-row "Versions" buttons (stats_vintages_node_test.js drives it).
+  if (!BOXES[id]) BOXES[id] = { id, innerHTML: "", value: "", textContent: "", addEventListener() {} };
   return BOXES[id];
 }
 let API_CALLS = [];
