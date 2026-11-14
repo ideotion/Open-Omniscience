@@ -125,8 +125,9 @@ def test_the_three_targets_that_were_already_right_elsewhere_are_now_consistent(
     broken copy sat in the table of contents. Pinned because that shape -- one document
     carrying both spellings of one anchor -- is what let it survive a reading."""
     md = (_ROOT / "docs" / "USER_MANUAL.md").read_text("utf-8")
-    for target in ("#32-collect-in-settings--collect",
-                   "#33-sources-in-settings--sources",
+    # The first two headings were renamed on 2026-11-13 (Collect and Sources live in Settings -> Advanced now).
+    for target in ("#32-collect-in-settings--advanced--collection",
+                   "#33-sources-in-settings--advanced--sources",
                    "#37-wikipedia-in-settings--wikipedia"):
         assert f"]({target})" in md
         stale = target.split("-in-settings")[0]
