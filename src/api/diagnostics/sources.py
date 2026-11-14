@@ -115,7 +115,7 @@ def source_audit(
     if with_furniture:
         from src.monitoring.kpi import record_source_audit_status
 
-        record_source_audit_status(report)
+        record_source_audit_status(report, allowlisted=len(allow))
     if recency_window:
         # RC06 = a (2026-09-15): BESIDE, never replacing. It is its own key, carrying its own
         # window, its own n per source and its own caveat -- merging it into the rows above

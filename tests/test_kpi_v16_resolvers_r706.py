@@ -71,6 +71,17 @@ def test_k7_a_filtered_run_records_nothing(isolated, query):
     _assert_not_measured(_metric("K7"))
 
 
+def test_k7_only_the_standard_scan_is_recorded(isolated):
+    """The Opus read of R706: a quick probe (scan=50) measured another population and must not replace the standard record."""
+    assert K.record_date_coverage(_DATES, {"scan": 1500}) is not None
+    assert K.record_date_coverage({"corpus": {**_DATES["corpus"], "scanned": 50, "coverage_pct": 90.0}}, {"scan": 50}) is None
+    assert _metric("K7")["value"] == 51.6
+    route = (_ROOT / "src/api/diagnostics/dates.py").read_text(encoding="utf-8")
+    assert f"scan: int = Query({K.DATES_STANDARD_SCAN}," in route  # the constant is the route's own default
+    bundle = (_ROOT / "src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
+    assert f"scan={K.DATES_STANDARD_SCAN}" in bundle  # and the bundle's, so a bundle records it
+
+
 def test_k7_an_empty_scan_is_not_a_coverage_of_zero(isolated):
     empty = {"corpus": {"articles_total": 0, "scanned": 0, "articles_with_extracted_dates": 0, "coverage_pct": 0.0,
                         "articles_with_datelike_text_but_no_extraction": 0}}
@@ -98,6 +109,37 @@ def test_k8_shows_the_recorded_healthy_share_with_its_date_and_the_regions_besid
     assert m["value"] == 77.5 and m["n"] == 40 and m["as_of"] == then and m["verdict"] == "measured-no-bar"
     assert "31 healthy, 5 watch, 3 degraded, 1 failing" in m["method"]
     assert {r["region"]: r["pct_failing"] for r in m["by_region"]} == {"africa": 6.67, "europe": 0.0}
+
+
+def test_k8_says_the_share_is_cohort_relative_and_names_the_allowlist(isolated):
+    from src.analytics.source_audit import SOURCE_COHORT_FLOOR
+
+    K.record_source_audit_status(_AUDIT, allowlisted=2)
+    m = _metric("K8")
+    assert "COHORT-RELATIVE" in m["method"] and f"floor ({SOURCE_COHORT_FLOOR} sources)" in m["method"]
+    assert "2 allowlisted domain(s) capped at watch" in m["method"]
+
+
+def test_k8_a_record_without_a_healthy_row_says_so_not_that_none_was_audited(isolated):
+    K.record_source_audit_status({**_AUDIT, "status_counts": [{"status": "watch", "n": 40}]})
+    m = _metric("K8")
+    _assert_not_measured(m)
+    assert "no healthy count" in m["method"] and "audited no source" not in m["method"]
+
+
+@pytest.mark.parametrize(("furniture", "written"), [(False, False), (True, True)])
+def test_k8_the_route_records_only_the_full_audit(isolated, monkeypatch, furniture, written):
+    """Through the real route function: without the furniture check a failing source can read healthy, so nothing is kept."""
+    import src.analytics.source_audit as SA
+    from src.api.diagnostics import sources as route
+
+    monkeypatch.setattr(SA, "audit_sources", lambda *_a, **_k: dict(_AUDIT))
+    monkeypatch.setenv("OO_SOURCE_AUDIT_ALLOWLIST", "a.example,b.example")
+    route.source_audit(download=False, with_furniture=furniture, recency_window=False, db=None)
+    rec = K.read_source_audit_status()
+    assert (rec is not None) is written
+    if written:
+        assert rec["allowlisted_domains"] == 2
 
 
 def test_k8_no_audited_source_is_not_a_share(isolated):
@@ -154,13 +196,14 @@ def test_the_selftest_and_the_no_composite_rule_still_hold_with_all_three_measur
 
 
 def test_each_instrument_writes_its_record_where_it_measures():
-    """Wired at the three diagnostic routes (the all-diagnostics bundle calls the same functions), never in kpi_snapshot."""
+    """Wired at the three diagnostic routes, never in kpi_snapshot. (The all-diagnostics bundle calls these route functions;
+    the date one's standard scan is pinned in test_k7_only_the_standard_scan_is_recorded.)"""
     corpus = (_ROOT / "src/api/diagnostics/corpus.py").read_text(encoding="utf-8")
     dates = (_ROOT / "src/api/diagnostics/dates.py").read_text(encoding="utf-8")
     sources = (_ROOT / "src/api/diagnostics/sources.py").read_text(encoding="utf-8")
     assert "record_keyword_generic_terms(report)" in corpus
     assert 'record_date_coverage(payload, {"scan": scan, "days": days, "lang": lang})' in dates
-    assert "if with_furniture:" in sources and "record_source_audit_status(report)" in sources
+    assert "if with_furniture:" in sources and "record_source_audit_status(report, allowlisted=len(allow))" in sources
     snap = (_ROOT / "src/monitoring/kpi.py").read_text(encoding="utf-8")
     body = snap[snap.index("def kpi_snapshot"):snap.index("def run_kpi_selftest")]
     assert "record_" not in body

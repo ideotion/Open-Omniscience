@@ -90,9 +90,9 @@ _SPECS: tuple[dict, ...] = (
            "all-diagnostics bundle, on the live corpus)"},
     {"id": "K7", "name": "Date-extraction recall", "direction": "up",
      "target": "pending-ruling-V1-6", "source_endpoint": "/api/diagnostics/dates",
-     "nm": "no whole-corpus date diagnostic (no language or day filter) has recorded its coverage on "
-           "this machine yet (run the date diagnostics, or take an all-diagnostics bundle); the article "
-           "scan is never run on this GET"},
+     "nm": "no standard date diagnostic (the 1500 most recent articles, no language or day filter) has "
+           "recorded its coverage on this machine yet (run the date diagnostics, or take an all-diagnostics "
+           "bundle); the article scan is never run on this GET"},
     {"id": "K8", "name": "Source health + diversity", "direction": "up",
      "target": "pending-ruling-V1-6 (per-region flag distribution inspected, not scored)",
      "source_endpoint": "/api/diagnostics/source-audit",
@@ -556,10 +556,16 @@ def read_keyword_generic_terms() -> dict | None:
     return _read_record(_NOISE_FILE, _NOISE_SCHEMA)
 
 
+#: The date diagnostics' default scan (the route's and the all-diagnostics bundle's): the population K7 records.
+DATES_STANDARD_SCAN = 1500
+
+
 def record_date_coverage(payload: dict, query: dict) -> dict | None:
-    """Write down a WHOLE-CORPUS date-diagnostics run's coverage (K7). A run filtered to one language or to recent days measures
-    a slice, not the corpus the board names, so it records nothing (the last whole-corpus figure stays, with its own date)."""
-    if (query or {}).get("lang") or (query or {}).get("days"):
+    """Write down a STANDARD date-diagnostics run's coverage (K7): the most recent :data:`DATES_STANDARD_SCAN` articles, no
+    language or day filter. Any other run measures another population (a slice, or a quick probe of 50), so it records nothing
+    and the last standard figure stays, with its own date; two K7 figures are then always over the same kind of sample."""
+    q = query or {}
+    if q.get("lang") or q.get("days") or q.get("scan") != DATES_STANDARD_SCAN:
         return None
     corpus = (payload or {}).get("corpus")
     if not isinstance(corpus, dict):
@@ -578,8 +584,10 @@ def read_date_coverage() -> dict | None:
     return _read_record(_DATES_FILE, _DATES_SCHEMA)
 
 
-def record_source_audit_status(report: dict) -> dict | None:
-    """Write down a source audit's status counts and its per-region failing share (K8). Called by the endpoint that audits."""
+def record_source_audit_status(report: dict, *, allowlisted: int = 0) -> dict | None:
+    """Write down a source audit's status counts and its per-region failing share (K8). Called by the endpoint that audits.
+    ``allowlisted`` is how many domains ``OO_SOURCE_AUDIT_ALLOWLIST`` capped at watch for this run: it moves the tallies, so
+    it is recorded and named beside them."""
     if not isinstance(report, dict) or "status_counts" not in report:
         return None
     counts = [{"status": str(c.get("status")), "n": _int_or_none(c.get("n"))}
@@ -594,6 +602,7 @@ def record_source_audit_status(report: dict) -> dict | None:
         # Taken where the audit is made, so the board shows what was recorded and computes nothing (R706); none on 0 audited.
         "healthy_pct": round(100.0 * healthy / audited, 1) if audited and healthy is not None else None,
         "min_articles": _int_or_none(report.get("min_articles")),
+        "allowlisted_domains": _int_or_none(allowlisted),
         "status_counts": counts,
         "by_region": by_region,
     })
@@ -623,7 +632,7 @@ def _k5_noise(spec: dict) -> dict:
 
 
 def _k7_dates(spec: dict) -> dict:
-    """K7: the share of scanned articles in which the extractor found at least one date, from the last whole-corpus run."""
+    """K7: the share of scanned articles in which the extractor found at least one date, from the last standard run."""
     rec = read_date_coverage()
     if rec is None:
         return _entry(spec)
@@ -635,11 +644,22 @@ def _k7_dates(spec: dict) -> dict:
         ))
     return _entry(spec, value=pct, n=scanned, as_of=at, verdict=_NO_BAR, method=(
         f"{found} of the {scanned} most recent articles scanned (of {rec.get('articles_total')}) carry at least one date the "
-        f"extractor found ({pct}%), recorded by the whole-corpus date diagnostics{_ago(at)}; "
+        f"extractor found ({pct}%), recorded by the standard date diagnostics run{_ago(at)} (the most recent "
+        f"{DATES_STANDARD_SCAN} articles, never the whole corpus once it is larger); "
         f"{rec.get('datelike_no_extract')} more hold date-like text it did not turn into a date. A share of ARTICLES, not a "
         "recall over every date in the text (the recall probe over-matches, so it is no denominator). A persisted "
         "measurement, never re-run here; counts only. The bar is ruling V1-6, so no verdict is given."
     ))
+
+
+def _cohort_floor() -> int | str:
+    """The source audit's cohort floor, read from the audit itself so the sentence cannot drift from the rule."""
+    try:
+        from src.analytics.source_audit import SOURCE_COHORT_FLOOR
+
+        return SOURCE_COHORT_FLOOR
+    except Exception:  # noqa: BLE001 - the sentence still reads without the number
+        return "its"
 
 
 def _k8_sources(spec: dict) -> dict:
@@ -651,17 +671,25 @@ def _k8_sources(spec: dict) -> dict:
     audited, at = rec.get("sources_audited"), rec.get("measured_at")
     counts = {c.get("status"): c.get("n") for c in rec.get("status_counts") or [] if isinstance(c, dict)}
     healthy, pct = counts.get("healthy"), rec.get("healthy_pct")
-    if not audited or healthy is None or not isinstance(pct, (int, float)):
+    if not audited:
         return _entry(spec, method=(
             f"not measured: the source audit of {at} audited no source (none had {rec.get('min_articles')} articles), so "
             "no share exists"
         ))
+    if healthy is None or not isinstance(pct, (int, float)):
+        return _entry(spec, method=f"not measured: the source audit of {at} recorded no healthy count, so no share exists")
     tally = ", ".join(f"{n} {s}" for s, n in counts.items())
     entry = _entry(spec, value=pct, n=audited, as_of=at, verdict=_NO_BAR, method=(
         f"{healthy} of the {audited} audited sources read as healthy ({pct}%; {tally}), recorded by the source "
-        f"audit{_ago(at)}. Extraction validity, never editorial merit; each status is its own count, never blended. The "
-        "per-region failing shares ride beside it to be inspected, not scored. A persisted measurement, never re-run here. "
-        "The bar is ruling V1-6, so no verdict is given."
+        f"audit{_ago(at)}"
+        + (f", with {rec.get('allowlisted_domains')} allowlisted domain(s) capped at watch" if rec.get("allowlisted_domains")
+           else "")
+        + ". COHORT-RELATIVE, not absolute health: a source is healthy when none of its criteria falls in the bad tail of "
+        "its same-language cohort, so a large cohort holds some sources outside healthy by construction, and a cohort under "
+        f"the floor ({_cohort_floor()} sources) gets no soft baseline; the share can move when a cohort crosses that floor with no source "
+        "changing. Extraction validity, never editorial merit; each status is its own count, never blended. The per-region "
+        "failing shares ride beside it to be inspected, not scored. A persisted measurement, never re-run here. The bar is "
+        "ruling V1-6, so no verdict is given."
     ))
     entry["by_region"] = rec.get("by_region") or []
     return entry
