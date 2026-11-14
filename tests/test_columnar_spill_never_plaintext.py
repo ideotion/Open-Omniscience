@@ -33,8 +33,8 @@ MARK = "PLAINTEXTMARKERZQX"
 _SNAP = {"duckdb_limit_mb": 40, "duckdb_threads": 1}
 
 
-def _plaintext_spilled(con, work: Path, table: str) -> list[str]:
-    """Sort ``table`` past the memory limit while watching ``work``; the files that held the marker at any moment."""
+def _watched(con, work: Path, sql: str) -> tuple[list[str], BaseException | None]:
+    """Run ``sql`` while watching ``work``: the files that held the marker at any moment, and what the engine raised."""
     found: set[str] = set()
     stop = threading.Event()
 
@@ -51,19 +51,19 @@ def _plaintext_spilled(con, work: Path, table: str) -> list[str]:
 
     th = threading.Thread(target=watch, daemon=True)
     th.start()
+    raised: BaseException | None = None
     try:
-        con.execute(f"SELECT s FROM {table} ORDER BY s DESC").fetchmany(3)
-    except duckdb.Error:
-        pass  # an engine that refuses to spill fails the query: that is the fail-closed answer, not a leak
+        con.execute(sql).fetchmany(3)
+    except duckdb.Error as exc:
+        raised = exc
     finally:
         stop.set()
         th.join(5)
-    return sorted(found)
+    return sorted(found), raised
 
 
-def _fill(con, table: str) -> None:
-    with contextlib.suppress(duckdb.Error):  # building the table alone can need the offload this config refuses
-        con.execute(f"CREATE TABLE {table} AS SELECT i, '{MARK}' || i::VARCHAR || repeat('x', 200) AS s FROM range(600000) r(i)")
+def _fill_sql(table: str) -> str:
+    return f"CREATE TABLE {table} AS SELECT i, '{MARK}' || i::VARCHAR || repeat('x', 200) AS s FROM range(600000) r(i)"
 
 
 @pytest.fixture
@@ -73,13 +73,15 @@ def work(tmp_path, monkeypatch):
 
 
 def test_an_in_memory_store_with_no_offload_folder_writes_nothing_beside_it(work):
+    """~130 MB of rows against a 40 MB limit: with no offload the engine must REFUSE (out of memory), and nothing it
+    wrote while trying may hold the rows. Before the fix it spilled them into ``./.tmp`` in plaintext and succeeded."""
     con = duckdb.connect(":memory:", config=columnar._offline_config(snapshot=_SNAP))
     try:
-        _fill(con, "t")
-        assert _plaintext_spilled(con, work, "t") == []
+        found, raised = _watched(con, work, _fill_sql("t"))
+        assert found == []
+        assert isinstance(raised, duckdb.OutOfMemoryException), raised  # the limit was reached and offload refused
     finally:
         con.close()
-    assert not (work / ".tmp").exists()
 
 
 def test_the_persisted_config_encrypts_what_it_spills_from_the_temporary_catalog(work):
@@ -96,10 +98,12 @@ def test_the_persisted_config_encrypts_what_it_spills_from_the_temporary_catalog
         except duckdb.Error as exc:
             pytest.skip(f"no writable crypto module in this DuckDB: {type(exc).__name__}")
         con.execute("USE oo")
-        _fill(con, "memory.main.m")  # what a TEMP TABLE or an intermediate holds: NOT the encrypted file's blocks
-        assert _plaintext_spilled(con, work, "memory.main.m") == []
-        _fill(con, "oo.main.t")
-        assert _plaintext_spilled(con, work, "oo.main.t") == []
+        for table in ("memory.main.m", "oo.main.t"):  # the temporary catalog (a TEMP TABLE, an intermediate), then the file's own
+            found, raised = _watched(con, work, _fill_sql(table))
+            assert (found, raised) == ([], None)
+            found, raised = _watched(con, work, f"SELECT s FROM {table} ORDER BY s DESC")
+            assert (found, raised) == ([], None)
+        assert any(p.is_file() for p in (work / ".tmp").rglob("*")), "the engine spilled: the files above were really read"
     finally:
         con.close()
 
