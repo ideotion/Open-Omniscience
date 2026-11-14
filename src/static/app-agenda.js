@@ -1269,10 +1269,10 @@
       const body = $("ag-mentions-body"); if (!body) return;
       const rows = _agMentions.rows;
       const cut = rows.length >= AG_MENTIONS_LIMIT
-        ? `<div class="hint">${esc(T("Showing the first {n} mentions.").replace("{n}", AG_MENTIONS_LIMIT))}</div>` : "";
+        ? `<div class="hint">${esc(_tfn("Showing the first {n} mentions.", { n: AG_MENTIONS_LIMIT }))}</div>` : "";
       body.innerHTML = `<div class="card-caveat">${esc(T("Dates read from article text by the app, never confirmed as events. Confirming says the article does mention this date; it does not confirm that anything happens on it."))}</div>` +
         (rows.length
-          ? `<div class="hint">${esc(T("{n} mentions").replace("{n}", rows.length))}</div>` + cut + rows.map(_agMentionRow).join("")
+          ? `<div class="hint">${esc(_tfn("{n} mentions", { n: rows.length }))}</div>` + cut + rows.map(_agMentionRow).join("")
           : `<div class="muted">${esc(T("No article in your corpus mentions this date."))}</div>`);
     }
     async function agOpenMentions(iso) {

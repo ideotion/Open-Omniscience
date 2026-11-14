@@ -102,7 +102,7 @@ _NODE = r"""
 const calls = [];
 const store = {};
 const el = (id) => (store[id] = store[id] || { innerHTML: "", textContent: "", open: id === "ag-mentions" });
-global.window = {}; global.$ = el; global.esc = (s) => String(s); global.toast = () => {}; global.loadAgenda = () => {};
+global.window = {}; global.$ = el; global.esc = (s) => String(s); global.toast = () => {}; global.loadAgenda = () => {}; global._tfn = (s, v) => String(s).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
 global.api = async (url, opts) => {
   calls.push(url);
   const st = url.endsWith("/confirm") ? "confirmed" : url.endsWith("/reject") ? "rejected" : "candidate";
