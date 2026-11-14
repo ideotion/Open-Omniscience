@@ -37,7 +37,7 @@ def test_stopped_unwalked_tally_node_suite() -> None:
         check=False,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "5 passed" in proc.stdout, proc.stdout
+    assert "6 passed" in proc.stdout, proc.stdout
 
 
 def test_every_string_is_keyed_in_all_twelve_locales_with_its_placeholders() -> None:

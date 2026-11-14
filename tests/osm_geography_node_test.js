@@ -46,7 +46,7 @@ function extractConst(name, end) {
 }
 
 const FUNCS = [
-  "loadOsmGeography", "_osmGeogReloadSoon", "_osmGeogSigOf", "_osmGeogShellOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
+  "_osmCredit", "loadOsmGeography", "_osmGeogReloadSoon", "_osmGeogSigOf", "_osmGeogShellOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
 ];
 const src =
   extractConst("esc") + "\n" +

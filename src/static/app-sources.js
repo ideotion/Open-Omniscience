@@ -544,9 +544,12 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       cell.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const [prov, tally] = await Promise.all([
+        const [prov, tally, ips] = await Promise.all([
           api(`/api/sources/${id}/provenance`),
           api(`/api/sources/${id}/citation-tally`),
+          // the server IPs this source answered from (Lane M, R684); optional: a failure
+          // leaves the line out rather than failing the panel
+          api(`/api/sources/${id}/observed-ips`).catch(() => null),
         ]);
         // Every class -- including never_registered/filtered -- keeps its own dict
         // shape from the API (domain + sample_article_ids, +source_id/name when
@@ -555,7 +558,8 @@
           qualified: tally.qualified || [], disqualified: tally.disqualified || [],
           pending: tally.pending || [], never_registered: tally.never_registered || [],
         };
-        cell.innerHTML = _srcTrailHtml(id, prov, tally);
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+        cell.innerHTML = _srcTrailHtml(id, prov, tally) + (ips ? srcIpsHtml(ips, t, tf) : "");
       } catch (e) { cell.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     function _srcTrailHtml(id, prov, tally) {
@@ -610,6 +614,29 @@
         + `commerce ${c.filtered_commerce || 0} · social ${c.filtered_social || 0} · infrastructure ${c.filtered_infrastructure || 0}</div>`;
       html += `<div class="muted" style="font-size:.82em;margin-top:2px">${esc(tally.caveat || "")}</div>`;
       return html;
+    }
+    // One compact line: each distinct server IP with its country and article count, first and
+    // last capture on hover; the articles with no IP are counted, never guessed. The caveat is
+    // the short visible half; the server's method is the hover (invariant #17).
+    function srcIpsHtml(d, t, tf) {
+      const ips = (d && d.ips) || [];
+      const un = (d && d.unavailable) || {};
+      const shown = ips.map((x) => {
+        const when = tf("first seen {a}, last seen {b}", {a: ooIsoDate(x.first_seen || "?"), b: ooIsoDate(x.last_seen || "?")});
+        // the code visible, the country's name in the hover (Q302), through the one helper
+        const where = x.country ? " " + ooCountryCell(x.country) : "";
+        return `<span title="${esc(when)}"><code>${esc(x.ip)}</code>${where} ×${esc(String(x.articles))}</span>`;
+      }).join(" · ");
+      const gaps = [];
+      if (un.tor_or_proxy) gaps.push(tf("{n} via Tor or a proxy (no IP by design)", {n: un.tor_or_proxy}));
+      if (un.not_captured) gaps.push(tf("{n} not captured", {n: un.not_captured}));
+      return `<div style="margin-top:8px">`
+        + ooLabelHtml(`<strong title="${esc(String(d.method || ""))}">${esc(tf("Server IPs ({n})", {n: ips.length}))}</strong>`,
+          (shown || `<span class="muted">—</span>`) + (gaps.length ? ` <span class="muted">· ${esc(gaps.join(" · "))}</span>` : ""))
+        + `</div><div class="card-caveat" style="font-size:.82em">${esc(t("The server that answered (or, for a newsletter, the sending server in its mail headers): often a CDN or mail service, not where the publisher is. Several IPs over time is normal."))}`
+        // CC BY 4.0 asks for the credit wherever a looked-up country is shown
+        + (ips.some((x) => x.country) && d.attribution ? ` <span class="muted">${esc(String(d.attribution))}</span>` : "")
+        + `</div>`;
     }
     function _srcTrailToggleClass(id, cls) {
       const host = $("src-trail-cls-" + id); if (!host) return;
@@ -705,14 +732,32 @@
     // never asked for, so they are not an outcome either (R320/R337). It leaves the list and is said in words
     // after the counts (R353 = B); the long form rides on the hover (`tallyHover`). The returned line is PLAIN
     // text: a caller writing it into innerHTML escapes it there.
+    // The outcome keys get words in the reader's language (R665): a CLOSED map of the pipeline's own
+    // keys (IngestResult + entries/not_modified/errors). A key outside it (a newer server, the
+    // per-reason `ff:` breakdown) is shown as sent, never mapped onto the nearest known word.
     function tally(t) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) =>
         String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      const words = {
+        entries: "entries in the feed",
+        stored: "new articles stored",
+        duplicate: "already stored",
+        not_modified: "feed unchanged since the last check",
+        blocked_robots: "refused by the site's robots.txt",
+        robots_unavailable: "robots.txt could not be read",
+        fetch_failed: "could not be downloaded",
+        crawl_delay_deferred: "left for later (the site asked to wait)",
+        extract_failed: "no readable text",
+        non_article: "not an article (menu or index page)",
+        errors: "could not be saved",
+      };
+      const label = (k) => Object.prototype.hasOwnProperty.call(words, k) ? tr(words[k]) : k;
       const counts = Object.entries(t || {})
         .filter(([k,v]) => v > 0 && k !== "skipped_offline" && k !== "stopped_unwalked")
-        .map(([k,v]) => `${k}: ${v}`).join(", ");
+        .map(([k,v]) => `${label(k)}: ${v}`).join(", ");
       const cut = (t && t.stopped_unwalked) || 0;
-      if (!(cut > 0)) return counts || "nothing new";
+      if (!(cut > 0)) return counts || tr("nothing new");
       return counts
         ? tf("{counts} · {n} entries not asked for (you stopped collection)", {counts, n: cut})
         : tf("{n} entries not asked for (you stopped collection)", {n: cut});

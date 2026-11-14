@@ -23,6 +23,9 @@
        apply the chosen skin BEFORE first paint so there is no flash of the default.
        Additive, fail-safe and local-only; the default interface is untouched. -->
   <script src="/static/guis/boot.js"></script>
+  <!-- Simple mode (invariant #34, R682): its stylesheet, and the flag read before first paint. -->
+  <link rel="stylesheet" href="/static/simple/simple.css">
+  <script src="/static/simple/boot.js"></script>
 </head>
 <body>
   <a href="#main" class="skip-link">Skip to main content</a>
@@ -143,6 +146,12 @@
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="AI status" data-i18n-dyn>AI</span>
         </div>
+        <!-- Simple mode switch (invariant #34, R682): a second, task-first interface over the same
+             page; remembered on this device. Painted and translated by simple/simple.js. -->
+        <button type="button" class="icon-btn" id="ui-simple-toggle" role="switch" aria-checked="false"
+                aria-label="Simple view" title="Simple view" data-i18n-dyn>
+          <span class="simple-switch-track" aria-hidden="true"><span class="simple-switch-knob"></span></span>
+          <span class="simple-switch-label">Simple</span></button>
         <button class="icon-btn" id="tm-open" data-on-click="openTaskManager()" title="Tasks &amp; system" aria-label="Open the task manager (new tab)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>
         <!-- Collection-speed knob (maintainer ruling 2026-07-23): a gauge icon
@@ -398,7 +407,8 @@
 
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
-          <span id="brief-generated" class="hint" style="margin:0"></span></div>
+          <span id="brief-generated" class="hint" style="margin:0"></span>
+          <span id="brief-dismissed" style="margin-left:6px"></span></div>
         <div class="brief-toolbar">
           <!-- "Show method" toggle retired (field test 2026-06-19 P2-2): each Lead's
                method + "why" now live behind a per-card "?" affordance (bottom-right);
@@ -439,7 +449,7 @@
       <h2>Search the corpus</h2>
       <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
       <input id="q" placeholder='e.g.  (climate OR energy) AND policy NOT opinion' autocomplete="off">
-      <div class="row">
+      <div class="row explore-filters">
         <div><label for="f-source">Source</label><input id="f-source" placeholder="exact name (optional)"></div>
         <div><label for="f-lang">Language</label><input id="f-lang" placeholder="en (optional)"></div>
         <div style="flex:1;min-width:240px"><label>Time range</label>
@@ -909,6 +919,16 @@
       </div>
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
+
+      <hr>
+      <!-- Lane M (R684): check a file on this machine. A bundle (.json) is verified; an image's
+           metadata is read. Loopback only, nothing stored (app-evidence.js custodyCheckFile). -->
+      <div class="row" style="align-items:center">
+        <button type="button" class="secondary" id="cust-check-btn" title="An evidence bundle (.json) is checked against its signature; an image shows its metadata. The file stays on this machine and nothing is stored.">Check a file…</button>
+        <input type="file" id="cust-check-file" accept=".json,application/json,image/*" hidden aria-label="Choose an evidence bundle or an image to check">
+        <input id="cust-check-key" style="flex:1;min-width:12em" placeholder="Signer's public key (optional)" title="Paste the key the sender gave you to prove who signed a bundle. Without it, a valid signature proves only that the file was not changed.">
+      </div>
+      <div id="cust-check-result" class="hint" role="status" style="margin-top:6px"></div>
     </section>
     </div>
 
@@ -1267,6 +1287,7 @@
         <button type="button" data-tab="usgs">Earthquakes</button>
         <button type="button" data-tab="owid">Emissions &amp; energy</button>
         <button type="button" data-tab="ghcnd">Weather station</button>
+        <button type="button" data-tab="place">Your place</button>
       </nav>
       <div class="card-caveat" id="climate-caveat">Each series is its publisher's own figures, shown with its source, its method and when this machine last fetched it. Nothing here is a forecast, a score or a risk rating. A new fetch stores only values that are new or that the publisher revised: earlier values stay readable, and periods the publisher stopped serving are counted, never deleted.</div>
       <div id="climate-status" class="hint" role="status" aria-live="polite"></div>
@@ -1416,6 +1437,8 @@
         <button data-tab="convergence">Convergence</button>
         <button data-tab="watches">Watches</button>
         <button data-tab="lunar">Lunar</button>
+        <button data-tab="patterns">Patterns</button>
+        <button data-tab="who">Who</button>
       </nav>
     </section>
 
@@ -1647,6 +1670,27 @@
         <div style="flex:0 0 auto"><button id="lunar-test-btn" class="secondary" data-on-click="lunarTestTerm()" disabled>Test one keyword</button></div>
       </div>
       <div id="lunar-single" class="hint" style="margin-top:8px"></div>
+    </section>
+    <!-- R685: the full lists behind the eight pattern Leads (app-patterns.js). Each row opens its
+         list in #pattern-list; the count line there says how many and when, and "How this was
+         measured" sits beside it. -->
+    <section class="panel ins-view" id="ins-patterns" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Patterns across your sources</h2>
+      <div id="ins-patterns-body"><div class="muted">Loading…</div></div>
+    </section>
+
+    <!-- R685: people and organisations named across the whole corpus, with counts (GET /api/insights/who). -->
+    <section class="panel ins-view" id="ins-who" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">People and organisations</h2>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
+        <div><label for="who-class">Show</label>
+          <select id="who-class">
+            <option value="">People and organisations</option>
+            <option value="person">People</option>
+            <option value="organization">Organisations</option>
+          </select></div>
+      </div>
+      <div id="ins-who-body" style="margin-top:8px"><div class="muted">Loading…</div></div>
     </section>
     </div>
 
@@ -3978,6 +4022,15 @@
        evidence links): before any external link is followed, show what THIS
        database already knows about it; the outbound anchor's visible text IS
        the full URL, and clicking it still passes the external-link confirm. -->
+  <!-- R685: one pattern list (app-patterns.js openPatternList), from a Lead's back or Insights > Patterns. -->
+  <dialog id="pattern-list" aria-labelledby="pl-title" style="width:min(760px,94vw);max-height:90vh;padding:18px">
+    <h3 id="pl-title" style="margin:0 0 8px"></h3>
+    <div id="pl-body"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" data-on-click="ooCloseDialog('pattern-list')">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="link-preview" style="max-width:520px;padding:18px">
     <h3 style="margin:0 0 8px">Before you leave — what this app knows</h3>
     <div id="lp-body" style="display:flex;flex-direction:column;gap:5px"></div>
@@ -4248,6 +4301,16 @@
            guide closed or skipped here leaves Standard; Essentials only by a real choice.
            Local only (oo.ui); nothing is sent. -->
       <section class="gw-step" data-step="depth" hidden>
+        <!-- WHAT THIS APP DOES, before the first question (lane N, 2026-11-13): a person who
+             just installed was asked about "pinned tabs" before being told what the app is,
+             what stays on their computer and what needs the network. Three lines, no new
+             step, so the depth question still opens the guide (Q1121) and _GW_STEPS is
+             unchanged. Each line is a fact the app enforces, never a promise it cannot keep. -->
+        <ul class="gw-intro" tabindex="-1" aria-label="What this app does">
+          <li>It gathers public news, Wikipedia pages and laws, and keeps a copy on this computer.</li>
+          <li>It goes online only when you say so, to read public websites. No account, no cloud, no tracking.</li>
+          <li>Then you search and compare who reports what, where and when. The app shows counts and how it got them; you draw the conclusions.</li>
+        </ul>
         <h3 style="margin:0 0 6px">How much should the app show at once?</h3>
         <p class="muted" style="margin-top:0">This changes what is pinned, never what you can reach. You can change it anytime in Settings → General.</p>
         <div role="radiogroup" aria-label="Interface depth" class="depth-pick">
@@ -4348,6 +4411,7 @@
   <script src="/static/app-sources.js"></script>
   <script src="/static/app-markets.js"></script>
   <script src="/static/app-insights.js"></script>
+  <script src="/static/app-patterns.js"></script>
   <script src="/static/app-ipcc.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>
@@ -4365,6 +4429,12 @@
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>
+  <!-- Simple mode (invariant #34, R682): Preact 10 + hooks + htm, vendored and sha256-pinned
+       (simple/vendor/SHA256SUMS), then the mode itself. Loaded after app-boot.js: it wraps showTab. -->
+  <script src="/static/simple/vendor/preact.min.umd.js"></script>
+  <script src="/static/simple/vendor/hooks.umd.js"></script>
+  <script src="/static/simple/vendor/htm.umd.js"></script>
+  <script src="/static/simple/simple.js"></script>
   <!-- PWA: register the offline shell service worker (item #69). External file (no inline
        script) — best-effort + guarded; it only caches the static shell, never API responses. -->
   <script src="/static/sw-register.js"></script>

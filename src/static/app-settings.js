@@ -637,7 +637,7 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_model: tag})});
         toast(ooLabelText(t("Active model set"), tag)); loadLlmModels();
-      } catch (e) { toast(ooLabelText(t("Could not set the active model"), e.message), "err"); }
+      } catch (e) { toast(ooLabelText(t("Could not set the active model"), t(e.message)), "err"); }  // a keyed refusal (R671) is translated
     }
     async function removeModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -724,9 +724,27 @@
     // that queue only speaks Ollama, so this field was dead on a GPU machine — which is
     // the machine class most likely to want a model of its own.
     let _llmPullPoll = null;
+    // The same suffix rule as src/llm/remote_models.py is_cloud_name (Ollama's parseSourceSuffix): the part after the last ":" is
+    // "cloud", ends in "-cloud" with no "/", or is "local" over a base that is cloud.
+    function _ooIsCloudModel(name) {
+      const raw = String(name || "").trim();
+      const i = raw.lastIndexOf(":");
+      if (i < 0) return false;
+      const sufRaw = raw.slice(i + 1).trim(), suf = sufRaw.toLowerCase();
+      if (suf === "cloud") return true;
+      if (suf === "local") return _ooIsCloudModel(raw.slice(0, i));
+      return !sufRaw.includes("/") && suf.endsWith("-cloud");
+    }
     async function pullModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!tag) return;
+      // R671: an Ollama cloud model (a ":cloud" or "-cloud" tag) would send every prompt off this computer. Refused before the
+      // consent popup, since going online would not make it acceptable; the server refuses it too.
+      if (_ooIsCloudModel(tag)) {
+        const prog0 = $("llm-pull-progress");
+        if (prog0) prog0.textContent = t("That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model.");
+        return;
+      }
       if (!await ensureAiEgress(t("Download a model you named (over the clear internet)"))) return;
       const prog = $("llm-pull-progress");
       if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
@@ -738,7 +756,7 @@
         // is the whole value of the check.
         const refused = (r && r.refused) || [];
         if (refused.length) {
-          if (prog) prog.textContent = refused.map((x) => x.reason || t("refused")).join(" ");
+          if (prog) prog.textContent = refused.map((x) => (x.reason ? t(x.reason) : t("refused"))).join(" ");
           return;
         }
         const el = $("llm-pull-tag"); if (el) el.value = "";

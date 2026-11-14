@@ -25,7 +25,7 @@ from pathlib import Path
 
 from src.briefing.card import BUCKET_LABELS, BUCKETS
 from src.briefing.producers import register_default_producers
-from src.briefing.registry import run_all_bounded
+from src.briefing.registry import PRODUCER_DEADLINE_S, run_all_bounded
 from src.monitoring.secret_scrub import log_failure
 from src.safety.file_lock import atomic_replace, holding
 
@@ -454,10 +454,18 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     # Which feed was on disk when this run STARTED: a refresh that lands while this one runs
     # must not be overwritten with the feed it just replaced, and only a read taken before the
     # run can tell (two reads taken after it cannot).
-    started_with = (_read_cache() or {}).get("generated_at")
+    previous = _read_cache() or {}
+    started_with = previous.get("generated_at")
+    # R666: the producers the previous refresh stopped at their bound run last this time, so their ten minutes come after
+    # every other producer has had its turn rather than before.
+    stopped_before = previous.get("stopped_producers")
+    run_last = frozenset(n for n in stopped_before if isinstance(n, str)) if isinstance(stopped_before, list) else None
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
+    # Item 32: each producer is bounded (PRODUCER_DEADLINE_S) and the log latch is asked between producers, so one producer can
+    # no longer hold the write-ahead log's read mark for hours while the log fills the disk.
     produced, stats = run_all_bounded(
-        session, on_progress=on_progress, lanes=True, memory_stop=True
+        session, on_progress=on_progress, lanes=True, memory_stop=True,
+        producer_deadline_s=PRODUCER_DEADLINE_S, log_pin_stop=True, run_last=run_last,
     )
     cards = [c.to_dict() for c in produced]
 
@@ -481,7 +489,12 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     # partial set is written (something beats an empty Home), and ``truncated_reason`` in
     # ``run_all_bounded``'s stats records why.
     memory_stopped = stats.get("truncated_reason") == "memory_short"
-    if stats.get("truncated") and (memory_stopped or not cards):
+    # A pinned log is the same kind of stop as a memory one (the run ended between producers for a reason about the machine, not
+    # the corpus), so it gets the same treatment: the previous feed is kept whole rather than shown with whatever ran last missing.
+    pin_stopped = stats.get("truncated_reason") == "wal_pinned"
+    machine_stopped = memory_stopped or pin_stopped
+    stop_reason = "memory_short" if memory_stopped else "wal_pinned" if pin_stopped else "deadline"
+    if stats.get("truncated") and (machine_stopped or not cards):
         existing = _read_cache()
         if existing and existing.get("cards"):
             _LOG.warning(
@@ -489,13 +502,15 @@ def _refresh_briefing(session, on_progress=None) -> dict:
                 "replacing Home with %d",
                 "stopped because the machine was nearly out of memory"
                 if memory_stopped
+                else "stopped because the write-ahead log is pinned"
+                if pin_stopped
                 else "truncated by an enclosing deadline and produced no cards",
                 len(existing["cards"]),
                 len(cards),
             )
             # Said in the payload, not only in a log: the caller must not record this as a
             # refresh that surfaced cards (the Activity Ledger would claim one).
-            kept = {**existing, "kept_reason": "memory_short" if memory_stopped else "deadline"}
+            kept = {**existing, "kept_reason": stop_reason}
             # Written into the cache as well, so Home (which reads the cache, not this return
             # value) can say that the feed it shows is the previous one and why. The next
             # refresh that completes replaces the whole payload, marker included.
@@ -529,7 +544,14 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     if stats.get("truncated"):
         # A feed that is missing the producers the run never reached says so, in the cache
         # and in the view: a short feed must not read as a complete one.
-        payload["incomplete_reason"] = "memory_short" if memory_stopped else "deadline"
+        payload["incomplete_reason"] = stop_reason
+    stopped = [str(p.get("name")) for p in stats.get("stopped_producers") or [] if p.get("name")]
+    if stopped:
+        # Item 32: the producers stopped by their own bound, BY NAME, so Home can say which kinds of card this feed is missing.
+        # Deliberately not an ``incomplete_reason``: that marker asks for an automatic repair every _MARKER_RETRY_S, and a
+        # producer that needs longer than its bound would then be re-run, and re-stopped, every ten minutes for good.
+        payload["stopped_producers"] = stopped
+        payload["producer_deadline_s"] = PRODUCER_DEADLINE_S
     _write_cache(payload)
     _LOG.info("briefing refreshed: %d cards", len(cards))
     # Warm the heavy whole-corpus read cache (top / trending / map) in this same
@@ -538,7 +560,7 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     #
     # Not after a memory stop: the warm-up reads more of the corpus, and the run just
     # stopped because the machine was nearly out of memory.
-    if not memory_stopped:
+    if not machine_stopped:
         try:
             from src.api.insights import warm_cache
 
@@ -583,7 +605,9 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
         "generated_at": payload.get("generated_at"),
         "count": len(visible),
         "total": len(cards),
-        "dismissed_count": len(dismissed),
+        # Only the dismissed cards this feed holds: an id kept from a card no producer emits any
+        # more is not a card the "Show N dismissed cards" button could bring back.
+        "dismissed_count": sum(1 for c in cards if c["id"] in dismissed),
         "buckets": buckets,
         "cards": visible,
     }
@@ -591,9 +615,36 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
     # stopped early, either leaving cards out ("incomplete") or leaving this earlier feed
     # in place ("kept"). Absent when the last refresh completed.
     for key in ("incomplete_reason", "kept_reason"):
-        if payload.get(key) in ("memory_short", "deadline"):
+        if payload.get(key) in ("memory_short", "deadline", "wal_pinned"):
             view[key] = payload[key]
+    # Item 32: the kinds of card this feed is missing because their producer was stopped at its time bound, as the catalog's
+    # plain labels (a name the catalog does not know is left out, never echoed: the cache is a file on disk).
+    stopped = payload.get("stopped_producers")
+    if isinstance(stopped, list) and stopped:
+        labels = _producer_labels(stopped)
+        if labels:
+            view["stopped_producers"] = labels
+            minutes = payload.get("producer_deadline_s")
+            view["producer_deadline_min"] = (
+                round(float(minutes) / 60.0) if isinstance(minutes, (int, float)) and minutes > 0
+                else round(PRODUCER_DEADLINE_S / 60.0)
+            )
     return view
+
+
+def _producer_labels(names: list) -> list[str]:
+    """The catalog's plain label for each known producer name, in order, without repeats. Never raises."""
+    try:
+        from src.briefing.catalog import spec_for
+    except Exception:  # noqa: BLE001 - a missing catalog must never break Home
+        return []
+    out: list[str] = []
+    for name in names[:64]:
+        spec = spec_for(name) if isinstance(name, str) else None
+        label = getattr(spec, "label", None) if spec is not None else None
+        if isinstance(label, str) and label and label not in out:
+            out.append(label)
+    return out
 
 
 def get_briefing(

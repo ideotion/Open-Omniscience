@@ -204,9 +204,39 @@
         }
         facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
       }
-      facts.push({ label: t("Addresses located"), value: t("Not measured yet"),
-        hover: t("Counting addresses found, located and outside your OSM countries needs the address extractor and the local OSM address index, which this build does not have yet. A zero would read as none found; nothing has looked.") });
+      facts.push(livingLocatedFact(c.located, t, tf));
       return { title: t("Edition coverage"), facts };
+    }
+
+    // R17 step 4 (S06-03 S2 + S3, R678): addresses from place infoboxes, located only in the local OpenStreetMap index. Counts, never a
+    // share or a bar; the scan is incremental, so the hover says how many stored pages it has read. An absent block says so, never 0.
+    function livingLocatedFact(loc, t, tf) {
+      const label = t("Addresses located");
+      if (!loc || loc.measured !== true) return { label, value: t("Not measured yet"), hover: t("Addresses outside your OpenStreetMap countries are not located.") };
+      const sum = (k) => Object.values(loc.per_edition || {}).reduce((n, row) => n + (typeof row[k] === "number" ? row[k] : 0), 0);
+      const found = sum("found");
+      const value = found
+        ? tf("{n} of {m} addresses located", { n: _livingCount(sum("located")), m: _livingCount(found) })
+        : t("No address found yet");
+      const parts = [];
+      if (found) {
+        parts.push(tf("{a} ambiguous, {b} not located, {c} outside your OpenStreetMap countries, {d} without a house number.", {
+          a: _livingCount(sum("ambiguous")), b: _livingCount(sum("not_located")),
+          c: _livingCount(sum("outside_your_osm_countries")), d: _livingCount(sum("no_house_number")) }));
+      }
+      if (sum("no_osm_country") > 0) parts.push(t("No OpenStreetMap country is ingested, so no address can be located."));
+      const person = sum("skipped_about_a_person") + sum("skipped_a_home");
+      if (person > 0) parts.push(tf("{n} pages about a person or a home were not read.", { n: _livingCount(person) }));
+      if (sum("pending") > 0) parts.push(tf("{n} addresses are still being looked up.", { n: _livingCount(sum("pending")) }));
+      const failed = sum("lookup_failed") + sum("osm_unreadable");
+      if (failed > 0) parts.push(tf("{n} addresses could not be looked up: the OpenStreetMap index could not be read.", { n: _livingCount(failed) }));
+      const read = loc.texts_read || {}, held = loc.texts_held || {};
+      if (loc.complete !== true && ((read.hot || 0) + (read.warm || 0)) < ((held.hot || 0) + (held.warm || 0))) {
+        parts.push(tf("Read {n} of {m} stored pages so far.", {
+          n: _livingCount((read.hot || 0) + (read.warm || 0)), m: _livingCount((held.hot || 0) + (held.warm || 0)) }));
+      }
+      parts.push(t("Addresses outside your OpenStreetMap countries are not located."));
+      return { label, value, hover: parts.join(" ") };
     }
 
     // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports
@@ -933,12 +963,16 @@
       const tally = lawFloorStatesIn(sizes)
         .map((st) => `<div class="living-row"><span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))}</span>`
           + ` <b>${esc(String(sizes[st]))}</b></div>`).join("");
-      // A state this build does not know sorts after the known ones, never first.
+      // A state this build does not know sorts after the known ones, never first. Within a state the server's order holds
+      // (R679: population reached from the operator's dated table, else by code), so the browser never re-sorts by code.
       const rank = (cc) => { const i = _LAW_FLOOR_ORDER.indexOf(stateOf[cc]); return i < 0 ? _LAW_FLOOR_ORDER.length : i; };
+      const pos = {};
+      for (const st of Object.keys(f.by_state)) (Array.isArray(f.by_state[st]) ? f.by_state[st] : []).forEach((cc, i) => { pos[cc] = i; });
+      const at = (cc) => (cc in pos ? pos[cc] : Infinity);
       const langRow = (r) => {
         const members = [];
         for (const basis of ["official", "de-facto", "regional"]) for (const cc of (r[basis] || [])) members.push({ cc, basis });
-        members.sort((a, b) => rank(a.cc) - rank(b.cc) || (a.cc < b.cc ? -1 : 1));
+        members.sort((a, b) => rank(a.cc) - rank(b.cc) || at(a.cc) - at(b.cc) || (a.cc < b.cc ? -1 : 1));
         const contested = new Set(r.contested || []);
         const list = members.map((m) => `<div>${ooCountryCell(m.cc)} <span class="muted">${esc(lawFloorBasisWords(m.basis, t))}`
           + `${contested.has(m.cc) ? " · " + esc(t("contested")) : ""}</span> · ${esc(lawFloorStateWords(stateOf[m.cc], t))}</div>`).join("");
@@ -959,7 +993,10 @@
       const many = f.many_country_sources
         ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k] || {}).length, 0) : 0;
       const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + (Number(f.unplaced_documents[k]) || 0), 0) : 0;
-      const notes = `<p class="hint">${esc(t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
+      const byPop = f.order && f.order.by === "population";
+      const notes = `<p class="hint">${esc(byPop
+        ? tf("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by population reached ({source}, {date}); any the table lacks follow by code. These are counts of countries, never a share of anything.", { source: String(f.order.source || "—"), date: f.order.as_of ? ooIsoDate(f.order.as_of) : "—" })
+        : t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
         + (many ? `<p class="hint">${esc(tf("{n} sources that serve many countries at once are credited to no single country.", { n: String(many) }))}</p>` : "")
         + (unplaced ? `<p class="hint">${esc(tf("{n} tracked documents state no country and are credited to none.", { n: String(unplaced) }))}</p>` : "");
       return caveat + unchecked + head + tally + rows.map(langRow).join("") + zhNote + notes;

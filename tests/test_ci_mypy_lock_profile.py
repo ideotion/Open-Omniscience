@@ -134,13 +134,13 @@ def _problems(workflow: dict) -> list[str]:
                 f"{_JOB}: the step must not set `{key}:` (it runs on every pull request, in the repository root, under the default shell)"
             )
 
-    test_steps = (jobs.get("test") or {}).get("steps") or []
+    test_steps = (jobs.get("static") or {}).get("steps") or []  # the `static` job since R668 (it was leg 1 of `test`)
     theirs = _named(test_steps, _TEST_JOB_STEP_PREFIX)
     mypy_line = (
         _lines(test_steps[theirs[0]])[-1] if theirs and _lines(test_steps[theirs[0]]) else None
     )
     if mypy_line is None:
-        found.append(f"test: no step named '{_TEST_JOB_STEP_PREFIX}' to take the mypy command from")
+        found.append(f"static: no step named '{_TEST_JOB_STEP_PREFIX}' to take the mypy command from")
 
     lines = _lines(step)
     want = [

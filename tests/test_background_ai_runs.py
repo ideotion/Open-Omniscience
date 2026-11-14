@@ -168,11 +168,12 @@ def test_the_three_streamed_runs_are_detached_and_stoppable():
     """Source-level: each of the three streamed AI runs registers cancellable and returns through detached()."""
     ai = (REPO / "src" / "api" / "ai.py").read_text(encoding="utf-8")
     llm = (REPO / "src" / "api" / "llm.py").read_text(encoding="utf-8")
-    assert ai.count("detail_vars={\"model\": model}, cancellable=True") == 2 and ai.count("detached(_stream(), _tok") == 2
-    assert llm.count("detail_vars={\"model\": model}, cancellable=True") == 1 and llm.count("detached(_stream(), _tok") == 1
+    assert ai.count("detail_vars={\"model\": _label_model(model)}, cancellable=True") == 2 and ai.count("detached(_stream(), _tok") == 2
+    # The bulk run is built by prepare_bulk_run (shared with the server-side queue, R600's second PR) and the streamed route
+    # wraps its generator in detached() with the token it returns.
+    assert llm.count("detail_vars={\"model\": _label_model(model)}, cancellable=True") == 1 and llm.count("detached(gen, tok") == 1
     # The page's own Cancel needs the run's task id to stop it on the server (Opus read of #1830).
-    tag = 'headers={"X-OO-Task": f"task:{_tok}"}'
-    assert ai.count(tag) == 2 and llm.count(tag) == 1
+    assert ai.count('headers={"X-OO-Task": f"task:{_tok}"}') == 2 and llm.count('headers={"X-OO-Task": f"task:{tok}"}') == 1
 
 
 def test_the_task_manager_draws_stop_for_a_stoppable_run():
@@ -247,9 +248,12 @@ def test_the_pages_cancel_stops_the_run_on_the_server_not_only_the_fetch():
 
     for body in (function_body(js, "bulkJobCancel"), function_body(js, "bulkLlmStop")):
         assert ".abort()" not in body, "a Cancel that only aborts the fetch leaves the run going on the server"
-        assert "_stopServerRun(" in body
+    assert "_stopServerRun(" in function_body(js, "bulkLlmStop")
+    # The bulk queue lives on the server since R600's second PR: its Cancel is the queue's own, which stops the running run
+    # through the task manager's Stop (src/jobs/llm_bulk_queue.py LlmBulkQueue.cancel) and drops a waiting one.
+    assert "/api/llm/bulk/queue/${encodeURIComponent(id)}/cancel" in function_body(js, "bulkJobCancel")
     assert "/api/jobs/${encodeURIComponent(taskId)}/cancel" in function_body(js, "_stopServerRun")
-    assert js.count('resp.headers.get("X-OO-Task")') == 2
+    assert js.count('resp.headers.get("X-OO-Task")') == 1  # the extractor's stream; the bulk queue reads no stream
 
 
 def test_a_stopping_extractor_run_keeps_its_own_state_and_blocks_a_second_start():
@@ -269,7 +273,7 @@ def test_the_page_tells_its_own_cancel_from_a_run_the_model_ended_first():
     run first lost its reason. The page matches the Stop's own reason, spelled once on each side."""
     js = (REPO / "src" / "static" / "app-analysis.js").read_text(encoding="utf-8")
     assert f'const _STOPPED_REASON = "{ds.STOPPED_REASON}";' in js
-    assert js.count("o.reason === _STOPPED_REASON") == 2
+    assert js.count("o.reason === _STOPPED_REASON") == 1  # the extractor's; a queued run's Stop is told apart on the server
 
 
 def test_a_run_closed_at_its_start_line_still_leaves_the_task_manager():

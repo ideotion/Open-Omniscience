@@ -123,9 +123,9 @@ def test_a_running_bundle_blocks_a_manual_run_now(clean_window, inert_pass):
 
 def test_the_bundle_hold_never_clears_an_outer_operations_claim(clean_window, inert_pass):
     """WHY the helper uses ``exclusive_window`` rather than ``hold_exclusive`` directly:
-    ``_exclusive_hold`` is a BOOLEAN, so a bundle started during a restore would clear the
-    RESTORE's claim on its own release and put a manual Run now back on the machine
-    mid-restore. The re-entrant window restores the flag to what it FOUND."""
+    the re-entrant window restores its flag to what it FOUND, so a bundle inside an import
+    run never resumes collection mid-run. (The scheduler's hold itself is counted since
+    R383; the standalone-restore case is tests/test_scheduler_counted_hold.py.)"""
     _started, _done = inert_pass
     with R.exclusive_window():
         with d._bundle_exclusive_window() as excl:

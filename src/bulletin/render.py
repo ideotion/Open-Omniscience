@@ -236,7 +236,7 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     disclosure = T.disclosure()
     if disclosure:
         out[lang_at:lang_at] = [f"*{disclosure}*", ""]
-    return "\n".join(out)
+    return _md_safe_links("\n".join(out))
 
 
 def _md_attribution(edition: dict, T: Translator) -> list[str]:
@@ -798,6 +798,62 @@ def _coverage_blocks(section: dict, T: Translator) -> list[tuple[str | None, str
     return blocks
 
 
+#: The schemes a bulletin may link to (audit recheck P6, 2026-11-13). The exported HTML opens
+#: from a file, with no Content-Security-Policy to stop a ``javascript:`` link, and the record's
+#: URL is whatever the source published: the reader already passes the same field through
+#: ``safe_href``. Anything else is shown as the title alone, never as a link.
+_LINK_SCHEMES = ("http", "https", "mailto")
+
+
+def _link_target(url: object) -> str | None:
+    """``url`` when it is a link a reader can follow safely (``_LINK_SCHEMES``), else ``None``.
+
+    Control characters and spaces are refused rather than stripped: a browser drops them before
+    reading the scheme (``java\tscript:``), and ``_MD_LINK`` stops at whitespace anyway."""
+    if not isinstance(url, str) or not url or re.search(r"[\x00-\x20\x7f]", url):
+        return None
+    scheme, sep, _rest = url.partition(":")
+    if not sep or scheme.lower() not in _LINK_SCHEMES:
+        return None
+    return url
+
+
+# The three ways a Markdown reader makes a link out of text, matched where the link's TARGET sits rather
+# than by its label: a label may hold escaped or nested brackets (``[a [b] c](...)``), which a label
+# pattern misses, while a target always follows ``](``, ``]:`` or ``<``. Each is checked against
+# ``_LINK_SCHEMES`` and, when it fails, broken with ONE backslash, so the reader shows the text as written.
+# The target is read by LOOKAHEAD, never consumed: a safe-looking target can contain a second link
+# (``[a](https://x[b](javascript:y)``, whose outer link a reader rejects for its unbalanced bracket and
+# whose inner one it follows), so every ``](`` and ``]:`` is checked on its own (security read of #1968).
+_MD_INLINE_TARGET = re.compile(r"\]\((?=\s*(<[^>\n]*>|[^\s)]*))")
+_MD_DEFINITION_TARGET = re.compile(r"\]:(?=[ \t]*\n?[ \t]*(<[^>\n]*>|\S*))")
+# An autolink (``<javascript:x>``) or raw HTML (``<a href=...>``, ``<img onerror=...>``): a ``<`` that
+# opens a tag-like run and is not already escaped (an even run of backslashes before it). A safe
+# autolink stays; everything else loses its ``<``, which no source title needs to stay markup.
+_MD_ANGLE = re.compile(r"(?<!\\)((?:\\\\)*)<(?=[A-Za-z/!?])(?!(?i:https?|mailto):[^\s<>]*>)")
+
+
+def _md_safe_links(text: str) -> str:
+    """The Markdown export with every link a reader could follow limited to ``_LINK_SCHEMES``.
+
+    The HTML export checks its one ``href`` writer (``_html_link``); the Markdown file has no writer to
+    check, because the reader's own renderer makes the links, and a title is source text: before this,
+    ``[click](javascript:...)`` in a title reached the ``.md`` file as a live link. So the WHOLE text is
+    read once at the end, by target, and an unsafe target is escaped rather than removed: nothing the
+    source wrote disappears, it only stops being a link. Code spans are not skipped, on purpose: telling
+    them apart is a parser's job, and an extra backslash inside one costs less than a link let through."""
+
+    def escaped(mark: str):
+        def one(m: re.Match[str]) -> str:
+            return m.group(0) if _link_target(m.group(1).strip("<>")) is not None else "]\\" + mark
+
+        return one
+
+    text = _MD_INLINE_TARGET.sub(escaped("("), text)
+    text = _MD_DEFINITION_TARGET.sub(escaped(":"), text)
+    return _MD_ANGLE.sub(lambda m: m.group(1) + "\\<", text)
+
+
 def _article_lines(row: dict, T: Translator) -> list[str]:
     """One article as a few lines, with its two classes of fact kept apart.
 
@@ -809,7 +865,7 @@ def _article_lines(row: dict, T: Translator) -> list[str]:
     asserted = row.get("asserted") or {}
     deduced = row.get("deduced") or {}
     title = str(row.get("title") or "(untitled)")
-    url = row.get("url")
+    url = _link_target(row.get("url"))
     head = f"[{title}]({url})" if url else title
     # The reference number, when the record has been numbered. It is the article's
     # annex filename, so a reader following `[0012]` from here opens exactly one file
@@ -1628,6 +1684,18 @@ _MD_BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _MD_CODE = re.compile(r"`([^`\s<>]+)`")
 
 
+def _html_link(m: re.Match[str]) -> str:
+    """One Markdown link as HTML, only when its target passes ``_LINK_SCHEMES``; otherwise its label alone.
+
+    Checked HERE, at the one place an ``href`` is written, and not only where article URLs enter: a title is
+    source text too, and ``[click](javascript:...)`` inside a title became a live link (a security read of
+    PR #1949). The target is already HTML-escaped, which leaves the scheme and its colon as they were."""
+    target = _link_target(m.group(2))
+    if target is None:
+        return m.group(1)
+    return f'<a href="{target}" rel="noopener nofollow">{m.group(1)}</a>'
+
+
 def _inline(s: str) -> str:
     """Escape, then re-admit the three inline forms the block builders emit.
 
@@ -1639,7 +1707,7 @@ def _inline(s: str) -> str:
     """
     out = _e(s)
     out = _MD_CODE.sub(r"<code>\1</code>", out)
-    out = _MD_LINK.sub(r'<a href="\2" rel="noopener nofollow">\1</a>', out)
+    out = _MD_LINK.sub(_html_link, out)
     return _MD_BOLD.sub(r"<strong>\1</strong>", out)
 
 

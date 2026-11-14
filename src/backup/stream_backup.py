@@ -181,7 +181,9 @@ def is_active_staging(path: Path | str) -> bool:
 #: is a full plaintext copy of the corpus that would otherwise stay until then (0.5.1 item 40).
 _TEMP_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-backup-")
 #: The dirs whose owner writes a marker (:func:`write_owner_marker`), so a dead owner's leftover is told from a live job's at once.
-_OWNER_MARKED_PREFIXES = (".bak-build-", ".oo-backup-")
+#: A restore's ``.restore-*`` staging holds decrypted volumes and the plaintext corpus, so a crash's leftover goes at the next start, not
+#: after a day (R686).
+_OWNER_MARKED_PREFIXES = (".bak-build-", ".oo-backup-", ".restore-")
 _TEMP_FILE_SUFFIXES = (".oopart", ".reassembling")
 _OWNER_MARKER = ".owner.json"
 _DESTS_FILE = "backup-temp-dests.json"
@@ -1974,6 +1976,7 @@ def verify_stream_backup(
     m = load_manifest(src)
     if m.get("kind") == STREAM_KIND:
         _require_safe_manifest_names(m)
+        _require_each_volume_read_once(m, src)
     report: dict[str, Any] = {
         "kind": m.get("kind"),
         "ok": True,
@@ -2155,6 +2158,7 @@ def read_stream_backup(
     if m.get("kind") != STREAM_KIND:
         raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
     _require_safe_manifest_names(m)
+    _require_each_volume_read_once(m, src)
     sig_state = _manifest_signature_state(m)
     if sig_state == "bad-signature":
         raise VolumeError(
@@ -2191,12 +2195,16 @@ def read_stream_backup(
     staging.mkdir(parents=True, exist_ok=False)
     with active_staging(staging):
         try:
+            write_owner_marker(staging)
             t1 = time.monotonic()
             vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
             for mm in m.get("members") or []:
                 out_path = staging / mm["name"]
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 h = hashlib.sha256()
+                # What a member may write is the plaintext size its manifest declares, the size the staging preflight
+                # counted: a member whose volumes decrypt to more is refused at that size, never let fill the disk (R686).
+                budget = [int(mm.get("plaintext_bytes") or 0)]
                 with open(out_path, "wb") as fout:
                     for vname in mm.get("volumes") or []:
                         if vname not in vol_by_name:
@@ -2204,7 +2212,14 @@ def read_stream_backup(
                                 f"member {mm['name']} references an unknown volume {vname}"
                             )
 
-                        def _sink(b: bytes, _f: Any = fout, _h: Any = h) -> None:
+                        def _sink(
+                            b: bytes, _f: Any = fout, _h: Any = h, _left: list[int] = budget, _n: str = mm["name"]
+                        ) -> None:
+                            _left[0] -= len(b)
+                            if _left[0] < 0:
+                                raise VolumeError(
+                                    f"member {_n} holds more data than the backup's manifest declares; refusing to go on"
+                                )
                             _f.write(b)
                             _h.update(b)
 
@@ -2241,6 +2256,46 @@ def read_stream_backup(
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+
+
+def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -> None:
+    """A volume belongs to one member and is read once, and every declared size is a real size (R686).
+
+    A manifest that lists a volume twice in its registry, or in one or more members' lists, would have it
+    decrypted and written again past every declared size. "Twice" is judged the way the disk judges it: names
+    that differ only by case or a trailing dot or space are one file on FAT, exFAT, NTFS and APFS, a volume that
+    is a symbolic link is refused, and two names that are one file (a hard link) are one volume. A negative or
+    non-integer ``plaintext_bytes`` is refused too, because the staging preflight sums those sizes: one member
+    declaring minus what another declares would cancel it out of the free-space check. Refused before anything is
+    read."""
+    from src.backup.volumes import require_unique_volumes
+
+    for owner in [m, *(m.get("members") or [])]:
+        if "plaintext_bytes" not in owner:
+            continue
+        n = owner.get("plaintext_bytes")
+        if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+            raise VolumeError("the backup's manifest declares a size that is not a whole number of bytes; refusing to read it")
+    names = [str(v.get("name") or "") for v in m.get("volumes") or []]
+    require_unique_volumes(names)
+    require_unique_volumes(vname for mm in m.get("members") or [] for vname in mm.get("volumes") or [])
+    if src is None:
+        return
+    seen: dict[tuple[int, int], str] = {}
+    for name in names:
+        p = Path(src) / name
+        if p.is_symlink():
+            raise VolumeError(f"the volume {name} is a link to another file; refusing to read it")
+        try:
+            st = p.stat()
+        except OSError:
+            continue  # a missing volume is the verify step's to report (and parity's to recover)
+        if not st.st_ino:
+            continue  # a filesystem that reports no file identity (some FAT drives on Windows): the name checks above still hold
+        key = (st.st_dev, st.st_ino)
+        if key in seen:
+            raise VolumeError(f"the volumes {seen[key]} and {name} are the same file; refusing to read it twice")
+        seen[key] = name
 
 
 def _preflight_staging(
