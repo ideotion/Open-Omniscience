@@ -503,10 +503,13 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   signer's key to prove *provenance*, not just integrity. Verification needs nothing
   but the bundle + key (no DB, no trust in this tool).
 - An append-only, hash-chained, **signed custody log** (`src/custody/`) records
-  ongoing actions on an item; verify offline with `scripts/verify_custody.py`, which fails closed on an empty bundle, a record cut short, a bundle signed by more than one key, and a bundle whose entries do not match the head its export signs (count and last entry). A tail re-signed with a second key is refused as a key change. A bundle re-signed whole by someone else passes the tool: compare the printed signer key with one you already know, since that comparison, not the tool, is what catches it. A genuine log whose key was re-created partway (after a restore, say) is refused too; the in-app chain check still passes it, and a signed key-rotation record that lets the checker follow such a change is coming. It cannot see a cut made before export.
+  ongoing actions on an item; verify offline with `scripts/verify_custody.py`, which fails closed on an empty bundle, a record cut short, a change of signing key with no key-rotation record, and a bundle whose entries do not match the head its export signs (count and last entry). A tail re-signed with a second key is refused as a key change. A bundle re-signed whole by someone else passes the tool: compare the printed signer key with one you already know, since that comparison, not the tool, is what catches it. A change of signing key is followed only through a key-rotation record: endorsed by the old key, it passes; unendorsed (the old key was gone), it is refused unless accepted on the record's word, by name. With `--pin` across a rotation, each stretch of the chain is pinned to the identity that introduced it: its Ed25519 key, and its ML-DSA key where a signature carries one (an Ed25519-only signature is accepted under a pin, so the ML-DSA half adds no protection there; a stretch whose identity names no ML-DSA key, such as the one before the first rotation, is held to its Ed25519 key only). Key-rotation records are written only by the log itself, never through `POST /api/custody/log`; an export made after a key change and before anything new was logged writes the record first. A verified bundle that crosses a rotation lists its line of keys, first to last: an endorsement proves only that the old key's holder approved the change (anyone who took the old key can endorse a key of their own), and only to a reader who already knows one of those keys, and with `--accept-unendorsed-rotation` even `--pin` proves nothing unless the LAST key is already known, since a cut log re-signed by someone else carries exactly such a record. The in-app chain check follows the key through the same records; on the operator's own store it accepts an unendorsed rotation on its word and a key change with no record (all a log written before 0.5.1 can show, and it can never gain the record), naming each, while an exported bundle with such a change stays refused. A change of the ML-DSA key alone writes no record, and a pinned check then refuses the honest log, including a signer whose ML-DSA key differs from the one the last rotation introduced (open item). It cannot see a cut made before export.
   Signatures are **hybrid Ed25519 + post-quantum ML-DSA** when the `pqc` extra is
-  installed (honestly labelled `ed25519` otherwise; hybrid verification requires
-  *both* components — never a silent downgrade). Independent time comes from
+  installed (honestly labelled `ed25519` otherwise; a signature labelled hybrid
+  must verify in *both* components). A signature carrying only its Ed25519 half is
+  still accepted, even under `--pin` against a hybrid signer, so that a log whose
+  signer gained the post-quantum half later verifies: today the ML-DSA half adds
+  protection only where it is present, and stripping it is not refused (open item). Independent time comes from
   **OpenTimestamps** (Bitcoin-anchored); a self-asserted local time is the offline
   default. See `docs/USER_MANUAL.md` for the full model and its limits.
 - **Configurable from the UI:** post-quantum signing, anchoring mode
@@ -665,8 +668,35 @@ imply a protection we cannot deliver.
   sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked
   file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
-  a commit later than that is the window left; every file under the data dir the earlier steps did not
-  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*
+  a commit later than that is the window left, each wipe's own (a second wipe within the 15 s never shortens the first
+  one's late pass); every file under the data dir the earlier steps did not
+  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
+  The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
+  copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
+  and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
+  a folder `DATABASE_URL` points to: an encrypted one loses its head and is unlinked before the slow rewrite, a plaintext
+  one is rewritten whole (a copy of a store not known to be encrypted always is, since a damaged copy's page 1 can stop reading
+  as SQLite with plaintext behind it). **A data folder the app does not own (R711).** Ownership is where the app put the
+  folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
+  `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the
+  home folder, a folder above it or one of its standard folders such as Documents, a drive root or a mount point, or when it
+  holds any entry the app does not own (system clutter such as `.DS_Store` aside; the check stops at the first such entry).
+  There every step above still runs by name, and the rest reaches only the app's own entries (`src/safety/data_scope.py`:
+  its file and folder names, its databases' side files, its copy and staging patterns, an atomic write's temp and a lock
+  beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). The app's COMMON names
+  whose contents are re-downloadable or say nothing about the corpus (`models`, `cache`, `leases`, `runtime`) are left
+  there, because an operator's own folder may carry one (`annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
+  always go, so an operator's own entry under one of those names there goes too); a
+  `keys` folder loses the app's key files, every file named like one of its key forms (`*_ed25519.pem`, `*_ml_dsa_65.key`)
+  and its `.pending` folder, and keeps the rest. Stated limit: the databases (the corpus, the custody log, the lane files
+  `wiki.db`, `law.db`, `osm.db`) are erased by name in either scope, so an operator's own file under one of those names in
+  that folder (which the app would have opened as its own) is erased too. The folder is kept, and the report says
+  `scope: "app-only"` and names, without reading them, the entries left (`left_untouched`), the common names left
+  (`left_common_names`) and any of the app's own a removal failed on (`not_removed`). A scope that cannot be read counts as
+  shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. Such
+  a folder is also said at every start: a warning in the log and the terminal, and a notice on the unlock page and in the
+  app, which carries a reason code and never the path. A step of the tidying after a completed erase that fails is
+  named in the report (`after_erase_failures`), never answered as a failed wipe. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).

@@ -160,9 +160,11 @@ def _per_id_mentions(
     db, keyword_ids, lo: date | None = None, hi: date | None = None
 ) -> dict[int, int]:
     """Per-keyword-id summed mention COUNT, optionally windowed on observed_on.
-    Reads only the denormalised keyword_mentions.count -- no article decrypt."""
+    Reads only the denormalised keyword_mentions.count -- no article decrypt. A quarantined article's mentions are
+    left out (R101), as the rollup serve this stands in for leaves them out."""
     from sqlalchemy import func
 
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
 
     out: dict[int, int] = {}
@@ -172,7 +174,7 @@ def _per_id_mentions(
     for chunk in _chunks(ids):
         q = db.query(
             KeywordMentionRead.keyword_id, func.coalesce(func.sum(KeywordMentionRead.count), 0)
-        ).filter(KeywordMentionRead.keyword_id.in_(chunk))
+        ).filter(KeywordMentionRead.keyword_id.in_(chunk), not_quarantined(KeywordMentionRead.article_id))  # R101
         if lo is not None:
             q = q.filter(KeywordMentionRead.observed_on >= lo)
         if hi is not None:
@@ -254,6 +256,7 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
     scan only, bounded by ``days`` and the group's own (typically small) id set."""
     from sqlalchemy import func
 
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
 
     ids = sorted(keyword_ids)
@@ -268,6 +271,7 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
                 KeywordMentionRead.observed_on, func.coalesce(func.sum(KeywordMentionRead.count), 0)
             )
             .filter(KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.observed_on >= lo)
+            .filter(not_quarantined(KeywordMentionRead.article_id))  # R101: the series sums what the headline sums
             .group_by(KeywordMentionRead.observed_on)
             .all()
         )

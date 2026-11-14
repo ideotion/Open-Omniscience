@@ -17,11 +17,11 @@ from pydantic import BaseModel
 from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import (
-    ITEM_SCOPE_NOTE,
-    WHOLE_LOG_SCOPE,
+    ROTATION_ITEM,
     CustodyAction,
     CustodyLog,
-    verify_export,
+    describe_export,
+    scope_note,
 )
 from src.custody.settings import (
     VALID_ANCHORING,
@@ -30,11 +30,15 @@ from src.custody.settings import (
     load_settings,
     save_settings,
 )
-from src.custody.signing import HybridSigner
+from src.custody.signing import HybridSigner, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
+
+
+_KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was signed: unlock the app with its "
+                   "passphrase, or check the key folder")
 
 
 def _log() -> CustodyLog:
@@ -56,8 +60,12 @@ def log_action(req: LogRequest) -> dict:
     try:
         action = CustodyAction(req.action)
     except ValueError as exc:
-        valid = ", ".join(a.value for a in CustodyAction)
+        valid = ", ".join(a.value for a in CustodyAction if a is not CustodyAction.KEY_ROTATION)
         raise HTTPException(status_code=400, detail=f"unknown action; use one of: {valid}") from exc
+    if action == CustodyAction.KEY_ROTATION or req.item_id == ROTATION_ITEM:
+        # The log writes its own key-rotation records; one posted here would name keys of the caller's choosing and
+        # leave every later export of the log refused.
+        raise HTTPException(status_code=400, detail="key-rotation records are written by the custody log itself")
     log = _log()
     try:
         entry = log.record(
@@ -81,9 +89,16 @@ def list_providers() -> dict:
 @router.get("/export", dependencies=[Depends(refuse_cross_site_get)])
 def export(item_id: str | None = None) -> dict:
     """Export an offline-verifiable custody bundle (optionally for one item)."""
-    log = _log()
+    try:
+        log = _log()
+    except SigningError:
+        raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     try:
         return log.export(item_id=item_id)
+    except SigningError:
+        # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
+        # bundle is signed and nothing is written. The answer says what to do.
+        raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     finally:
         log.close()
 
@@ -239,8 +254,8 @@ def verify_item(item_id: str) -> dict:
     try:
         if not log.entries_for(item_id):
             raise HTTPException(status_code=404, detail="no custody entries for that item")
-        ok, issues = log.verify()
-        return {"verified": ok, "issues": issues}
+        # The chain's links and signatures, and its signing key followed through every key-rotation record.
+        return log.verify_report()
     finally:
         log.close()
 
@@ -248,15 +263,43 @@ def verify_item(item_id: str) -> dict:
 class VerifyBundleRequest(BaseModel):
     bundle: dict
     require_signer: bool = False
+    #: Pass a key change whose record says the previous key was gone, on that record's word (see verify_export).
+    accept_unendorsed_rotation: bool = False
+
+
+def _local_identity():
+    """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
+    be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
+    ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
+    key file already exists (``use_pqc`` would otherwise create one). Loading the signer re-seals a
+    legacy plaintext key file in place, as every load of it does."""
+    from src.paths import data_dir
+
+    keys = data_dir() / "keys"
+    try:
+        if not (keys / "custody_ed25519.pem").exists():
+            return None
+        has_pqc_key = (keys / "custody_ml_dsa_65.key").exists()
+        return HybridSigner(use_pqc=has_pqc_key).public_identity()
+    except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
+        return None
 
 
 @router.post("/verify")
 def verify_bundle(req: VerifyBundleRequest) -> dict:
-    """Verify a posted custody bundle offline (no DB needed)."""
-    ok, issues = verify_export(req.bundle, require_signer=req.require_signer)
-    # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry.
-    scope = (ITEM_SCOPE_NOTE if req.bundle.get("item_id") else WHOLE_LOG_SCOPE) if ok else None
-    return {"verified": ok, "issues": issues, "scope": scope}
+    """Verify a posted custody bundle offline (no DB needed), and say by whom it is signed (R681):
+    ``verified`` never travels without ``signed_by`` and a ``verdict`` that tells "verified against
+    your keys" from "signatures valid, signer not yours"; every key rotation crossed is named in ``notes``."""
+    out = describe_export(
+        req.bundle,
+        local=_local_identity(),
+        require_signer=req.require_signer,
+        accept_unendorsed_rotation=req.accept_unendorsed_rotation,
+    )
+    # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
+    # every key rotation crossed is named in the notes.
+    out["scope"] = scope_note(req.bundle, out["notes"]) if out["verified"] else None
+    return out
 
 
 class AnchorRequest(BaseModel):

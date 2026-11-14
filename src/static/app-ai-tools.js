@@ -2637,6 +2637,7 @@
         const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
         $("cust-result").innerHTML = d.verified
           ? '<span class="pill ok">verified</span> chain intact, signatures valid.'
+            + ((d.notes||[]).length ? ' ' + esc(d.notes.join("; ")) : "")
           : '<span class="pill err">FAILED</span> ' + esc((d.issues||[]).join("; "));
       } catch (e) { toast(_failMsg("Verify: {error}", e), "err"); }
     }

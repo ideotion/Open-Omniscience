@@ -300,6 +300,35 @@ def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
 # --------------------------------------------------------------------------- #
 # Copy + restore (atomic, idempotent, skip-if-present)
 # --------------------------------------------------------------------------- #
+def _write_manifest_atomically(path: Path, text: str) -> None:
+    """Write the folder backup's manifest through a temp file, fsync and rename (audit recheck P5).
+
+    Written in place, a crash mid-write left the folder backup with no readable manifest, and
+    the previous one already gone; now a reader sees the old manifest or the new one, whole."""
+    import secrets
+
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}{_PART_SUFFIX}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    try:  # the rename itself is durable only once its directory is (POSIX; not available on Windows)
+        fd = os.open(path.parent, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def _atomic_copy(
     src: Path,
     dst: Path,
@@ -479,7 +508,7 @@ def write_folder_backup(
         # is tamper-EVIDENCE against a drive, never trust in an origin -- which is why
         # every name->path field is still traversal-guarded before anything is touched.
         manifest["signature"] = _sign_folder_manifest(manifest)
-        (root / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        _write_manifest_atomically(root / MANIFEST_NAME, json.dumps(manifest, indent=2))
     return {
         "dest": str(root),
         "files": len(items),

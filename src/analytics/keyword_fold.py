@@ -70,7 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from src.database.corpus_lease import corpus_lease
@@ -268,24 +268,34 @@ def fold_page(
             session.commit()
             return res
 
-        # 1) the target keyword rows: the lowest id per term, as extraction resolves them,
-        # created (with extraction's own get-or-create) when the corpus has none yet.
-        wanted = sorted({m[4] for m in moving})
-        found = _prefetch_keywords(session, wanted)
-        tid: dict[str, int] = {}
-        for term in wanted:
-            kw = found.get(term)
-            if kw is None:
-                first_lang = next((m[6] for m in moving if m[4] == term and m[6]), None)
-                kw = _get_or_create_keyword(
-                    session,
-                    ExtractedTerm(term=src.term, normalized=term, kind="term", count=0, first_offset=None),
-                    language=first_lang,
-                    extractor=src.extractor or "baseline",
-                    prefetched=found,
-                )
-                res.targets_created += 1
-            tid[term] = int(kw.id)
+        # 1) the target keyword rows: the lowest id per term IN THE MENTION'S LANGUAGE (R698),
+        # as extraction resolves them, created (with extraction's own get-or-create) when the
+        # corpus has none yet. A row recorded in another language never takes the mention.
+        tid: dict[tuple[str, str | None], int] = {}
+        by_lang: dict[str | None, set[str]] = {}
+        for m in moving:
+            by_lang.setdefault(m[6], set()).add(m[4])
+        # Known languages FIRST and the unknown group last: a row the unknown group created
+        # would have no language, which every language may join, so creating it first
+        # would merge English and Spanish into one row again on a mixed page. This holds
+        # within a page only: a no-language row an earlier page (or extraction) created still
+        # takes every language, as the rule allows, so a fold and a re-index in article order
+        # can label a new term's row differently while grouping its mentions the same way.
+        for real_lang, terms in sorted(by_lang.items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
+            wanted = sorted(terms)
+            found = _prefetch_keywords(session, wanted, language=real_lang)
+            for term in wanted:
+                kw = found.get(term)
+                if kw is None:
+                    kw = _get_or_create_keyword(
+                        session,
+                        ExtractedTerm(term=src.term, normalized=term, kind="term", count=0, first_offset=None),
+                        language=real_lang,
+                        extractor=src.extractor or "baseline",
+                        prefetched=found,
+                    )
+                    res.targets_created += 1
+                tid[(term, real_lang)] = int(kw.id)
 
         aids = sorted({m[1] for m in moving})
         tids = sorted(set(tid.values()))
@@ -321,13 +331,25 @@ def fold_page(
 
         before = {a: _top(contrib[a]) for a in aids}
 
+        # R101: a quarantined article's mentions are not in the counters, so moving them must not
+        # move the counters either. The rows still move (quarantine is reversible). Read from
+        # idx_article_quarantined alone, never the article rows.
+        quarantined: set[int] = set()
+        for chunk in _chunks(aids):
+            quarantined.update(
+                int(r[0])
+                for r in session.execute(
+                    select(Article.id).where(Article.quarantined.is_(True), Article.id.in_(chunk))
+                )
+            )
+
         plain: dict[int, list[int]] = {}
         folds: list[dict[str, Any]] = []
         drop: list[int] = []
         d_men: Counter = Counter()
         d_art: Counter = Counter()
-        for mid, aid, cnt, off, target, lang, _real in moving:
-            t = tid[target]
+        for mid, aid, cnt, off, target, lang, real in moving:
+            t = tid[(target, real)]
             prev = existing.get((t, aid))
             if prev is not None:
                 pmid, pcnt, poff = prev
@@ -339,11 +361,13 @@ def fold_page(
             else:
                 plain.setdefault(t, []).append(mid)
                 existing[(t, aid)] = (mid, cnt, off)
-                d_art[t] += 1
+                if aid not in quarantined:
+                    d_art[t] += 1
                 res.moved += 1
-            d_men[t] += cnt
-            d_men[src.id] -= cnt
-            d_art[src.id] -= 1
+            if aid not in quarantined:
+                d_men[t] += cnt
+                d_men[src.id] -= cnt
+                d_art[src.id] -= 1
             c = contrib[aid]
             c.pop(src.id, None)
             c[t] = c.get(t, 0) + cnt
