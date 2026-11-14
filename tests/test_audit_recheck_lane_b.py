@@ -17,6 +17,7 @@ from src.api.main import app
 from src.backup import artifact, folder_backup, merge
 from src.custody.log import CustodyAction, CustodyLog
 from src.custody.signing import HybridSigner
+from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,7 +69,7 @@ def test_an_honest_archive_still_extracts_whole(tmp_path):
     with zipfile.ZipFile(io.BytesIO(blob)) as zf:
         artifact._safe_extract(zf, tmp_path)
     assert (tmp_path / "corpus.db").stat().st_size == 300_000
-    assert (tmp_path / "manifest.json").read_text() == "{}"
+    assert (tmp_path / "manifest.json").read_text(encoding="utf-8") == "{}"
 
 
 def test_each_member_and_each_level_of_its_path_is_charged_beyond_its_bytes(tmp_path, monkeypatch):
@@ -111,7 +112,7 @@ def test_the_folder_manifest_is_written_through_a_temp_file_and_a_rename(tmp_pat
     def boom(_src, _dst):
         raise OSError("disk went away")
 
-    monkeypatch.setattr(folder_backup.os, "replace", boom)
+    scope_os(monkeypatch, folder_backup, replace=boom)
     with pytest.raises(OSError):
         folder_backup._write_manifest_atomically(target, '{"new": true}')
     assert target.read_text(encoding="utf-8") == "previous", "a failed write leaves the previous manifest whole"
@@ -221,7 +222,7 @@ def test_restore_state_files_are_replaced_through_a_unique_temp_that_never_outli
     def boom(_src, _dst):
         raise OSError("no")
 
-    monkeypatch.setattr(merge.os, "replace", boom)
+    scope_os(monkeypatch, merge, replace=boom)
     with pytest.raises(OSError):
         merge._replace_file_bytes(target, b"two")
     assert target.read_bytes() == b"one"
