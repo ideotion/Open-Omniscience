@@ -90,12 +90,19 @@ def find_flooded_topics(
     max_items: int = 12,
 ) -> dict:
     """Sources flooding a single topic vs their own history (two-proportion z-test)."""
+    from sqlalchemy import and_
+
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, Source
     from src.database.stand_in import not_a_stand_in_article_id
 
     # A mention kept for a lost article names no article: it is no part of a source's coverage, a flood or a listed article (every read below).
-    kept = not_a_stand_in_article_id(KeywordMentionRead.article_id)
+    # R101: nor is a page judged not an article
+    kept = and_(
+        not_a_stand_in_article_id(KeywordMentionRead.article_id),
+        not_quarantined(KeywordMentionRead.article_id),
+    )
     today = date.today()
     r_start = today - timedelta(days=recent_days)
     b_start = r_start - timedelta(days=baseline_days)
@@ -381,6 +388,7 @@ def find_buried_topics(
     twin (specialization) is stated in the caveat; the signal carries its COMPONENTS
     (z, the two shares, counts, the BH-adjusted q-value), never a blend; no score.
     """
+    from src.analytics.quarantine_scope import not_quarantined
     from src.analytics.queries import _hidden_predicate
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, Source
@@ -401,6 +409,7 @@ def find_buried_topics(
         KeywordMentionRead.observed_on < hi,
         KeywordMentionRead.source_id.isnot(None),
         not_a_stand_in_article_id(KeywordMentionRead.article_id),
+        not_quarantined(KeywordMentionRead.article_id),  # R101
     ]
 
     # Corpus size N in the window (distinct sourced articles).
@@ -565,6 +574,7 @@ def find_buried_topics(
                 KeywordMentionRead.observed_on >= cutoff,
                 KeywordMentionRead.observed_on < hi,
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),  # R101
             )
             .distinct()
         )
