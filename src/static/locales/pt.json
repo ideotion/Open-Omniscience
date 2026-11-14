@@ -838,6 +838,7 @@
   "Changes": "Alterações",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "Alterações que uma heurística sinalizou. Uma sinalização é um motivo para olhar, não uma constatação.",
   "Changes in the last {n} days": "Alterações nos últimos {n} dias",
+  "Changes observed here since {since}.": "Alterações observadas aqui desde {since}.",
   "Changes of record": "Alterações no registo",
   "Changes on pages you do not follow": "Alterações em páginas que você não acompanha",
   "Changes recorded": "Alterações registadas",

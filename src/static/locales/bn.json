@@ -838,6 +838,7 @@
   "Changes": "পরিবর্তন",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "যেসব পরিবর্তন একটি হিউরিস্টিক চিহ্নিত করেছে। চিহ্ন দেখার একটি কারণ, কোনো সিদ্ধান্ত নয়।",
   "Changes in the last {n} days": "গত {n} দিনে পরিবর্তন",
+  "Changes observed here since {since}.": "{since} থেকে এখানে পরিবর্তন পর্যবেক্ষিত।",
   "Changes of record": "নথিতে পরিবর্তন",
   "Changes on pages you do not follow": "যেসব পৃষ্ঠা আপনি অনুসরণ করেন না সেগুলোর পরিবর্তন",
   "Changes recorded": "নথিভুক্ত পরিবর্তন",

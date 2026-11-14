@@ -838,6 +838,7 @@
   "Changes": "変更",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "ヒューリスティックがフラグを付けた変更。フラグは確認する理由であり、結論ではありません。",
   "Changes in the last {n} days": "直近{n}日間の変更",
+  "Changes observed here since {since}.": "{since} 以降、ここで観測した変更。",
   "Changes of record": "記録の変更",
   "Changes on pages you do not follow": "フォローしていないページの変更",
   "Changes recorded": "記録された変更",

@@ -838,6 +838,7 @@
   "Changes": "Изменения",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "Изменения, отмеченные эвристикой. Отметка — повод посмотреть, а не вывод.",
   "Changes in the last {n} days": "Изменений за последние {n} дн.",
+  "Changes observed here since {since}.": "Изменения наблюдаются здесь с {since}.",
   "Changes of record": "Изменения в записях",
   "Changes on pages you do not follow": "Изменения на страницах, за которыми вы не следите",
   "Changes recorded": "Зафиксировано изменений",

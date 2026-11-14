@@ -838,6 +838,7 @@
   "Changes": "التغييرات",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "تغييرات علّمتها قاعدة استدلالية. العلامة سببٌ للنظر، وليست استنتاجًا.",
   "Changes in the last {n} days": "التغييرات في آخر {n} أيام",
+  "Changes observed here since {since}.": "التغييرات مرصودة هنا منذ {since}.",
   "Changes of record": "تغيّرات في السجل",
   "Changes on pages you do not follow": "تغييرات في صفحات لا تتابعها",
   "Changes recorded": "التغييرات المسجّلة",

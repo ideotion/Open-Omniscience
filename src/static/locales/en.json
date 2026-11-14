@@ -838,6 +838,7 @@
   "Changes": "Changes",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "Changes a heuristic flagged. A flag is a reason to look, not a finding.",
   "Changes in the last {n} days": "Changes in the last {n} days",
+  "Changes observed here since {since}.": "Changes observed here since {since}.",
   "Changes of record": "Changes of record",
   "Changes on pages you do not follow": "Changes on pages you do not follow",
   "Changes recorded": "Changes recorded",

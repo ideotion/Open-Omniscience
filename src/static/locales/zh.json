@@ -838,6 +838,7 @@
   "Changes": "变更",
   "Changes a heuristic flagged. A flag is a reason to look, not a finding.": "被启发式规则标记的变更。标记是值得查看的理由，而非结论。",
   "Changes in the last {n} days": "最近 {n} 天的更改",
+  "Changes observed here since {since}.": "自 {since} 起在此观测到的变更。",
   "Changes of record": "记录的变更",
   "Changes on pages you do not follow": "你未关注页面上的变更",
   "Changes recorded": "已记录的变更",

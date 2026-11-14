@@ -52,7 +52,7 @@ _PINS = {
     "app-insights.js": 3,
     "app-living.js": 1,
     "app-map.js": 3,
-    "app-markets.js": 6,
+    "app-markets.js": 8,   # +2 (2026-11-13): _msRowLabel, a chart data-table row cell holding the date alone
     "app-settings.js": 4,
     "investigate.js": 2,
     "ootimeline.js": 1,
