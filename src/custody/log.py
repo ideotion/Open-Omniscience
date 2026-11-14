@@ -71,6 +71,31 @@ class CustodyAction(str, Enum):
     REDACT = "redact"
     DELETE = "delete"
     ANCHOR = "anchor"
+    KEY_ROTATION = "key_rotation"
+
+
+#: The item a key-rotation record is filed under: it is about the log, not about an article.
+ROTATION_ITEM = "custody:signing-key"
+
+
+def rotation_payload(previous_ed25519_pub: str, identity: dict, prev_entry_hash: str) -> dict:
+    """What the PREVIOUS key signs to endorse the next one: both keys and the place in the chain, so an endorsement
+    cannot be lifted onto another log or another point of this one."""
+    return {
+        "kind": "oo-custody-key-rotation",
+        "log_version": LOG_VERSION,
+        "previous_ed25519_pub": previous_ed25519_pub,
+        "ed25519_pub": identity.get("ed25519_pub"),
+        "ml_dsa_variant": identity.get("ml_dsa_variant"),
+        "ml_dsa_pub": identity.get("ml_dsa_pub"),
+        "prev_entry_hash": prev_entry_hash,
+    }
+
+
+UNENDORSED_ROTATION_NOTE = (
+    "The custody signing key changed and the previous key was not available on this machine to vouch for the new "
+    "one, so nothing but this record links them. Entries after it are signed by the new key."
+)
 
 
 def _entry_digest(core: dict) -> str:
@@ -235,48 +260,96 @@ class CustodyLog:
         # read the same tail, compute the same seq, and collide / fork the chain.
         with _APPEND_LOCK:
             prev = self._last()
-            prev_hash = prev.entry_hash if prev else GENESIS_PREV
-            seq = (prev.seq + 1) if prev else 1
+            if prev is not None and _sig_ed25519_pub(prev.signature) != self.signer.public_identity().ed25519_pub:
+                # The key that signs now is not the one that signed the tail (keys re-created after a restore, or a
+                # lost key folder): say so IN the chain before signing anything with it, so a reader can follow the
+                # change instead of meeting an unexplained new key (R-rotation). Nobody here holds the old key.
+                prev = self._insert_rotation(prev, previous_signer=None)
+            return self._insert(prev, item_id, item_hash, action_val, actor, meta, timestamp)
 
-            # Build the signable core, hash it, timestamp that digest, then re-hash so
-            # the timestamp is itself covered by entry_hash + signature.
-            partial = {
-                "version": LOG_VERSION,
-                "seq": seq,
-                "item_id": item_id,
-                "item_hash": item_hash,
-                "action": action_val,
-                "actor": actor,
-                "metadata": meta,
-                "prev_entry_hash": prev_hash,
-            }
-            digest = sha256(canonical_bytes(partial))
-            ts = (timestamp or self._default_timestamp(digest)).to_dict()
-            core = {**partial, "timestamp": ts}
-            entry_hash = _entry_digest(core)
-            sig = self.signer.sign(canonical_bytes(core))
+    def rotate_signing_key(self, previous_signer: HybridSigner) -> CustodyEntry:
+        """Record that this log's signer replaces ``previous_signer``, ENDORSED: the previous key signs the new key's
+        identity and the chain position. Call it with the old key still at hand, before the new key signs anything.
+        Raises ``ValueError`` when the tail was not signed by ``previous_signer`` (it cannot vouch for what it did not
+        sign) or when the two keys are the same."""
+        old_pub = previous_signer.public_identity().ed25519_pub
+        with _APPEND_LOCK:
+            prev = self._last()
+            if prev is None:
+                raise ValueError("the custody log is empty: there is no previous key to rotate from")
+            if _sig_ed25519_pub(prev.signature) != old_pub:
+                raise ValueError("the log's last entry was not signed by the previous key given")
+            if old_pub == self.signer.public_identity().ed25519_pub:
+                raise ValueError("the new signing key is the same as the previous one")
+            return self._insert_rotation(prev, previous_signer=previous_signer)
 
-            self.conn.execute(
-                """
-                INSERT INTO custody_entries
-                    (seq, item_id, item_hash, action, actor, metadata_json,
-                     prev_entry_hash, entry_hash, signature_json, timestamp_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    seq,
-                    item_id,
-                    item_hash,
-                    action_val,
-                    actor,
-                    json.dumps(meta, sort_keys=True),
-                    prev_hash,
-                    entry_hash,
-                    json.dumps(sig),
-                    json.dumps(ts),
-                ),
-            )
-            self.conn.commit()
+    def _insert_rotation(self, prev: CustodyEntry, *, previous_signer: HybridSigner | None) -> CustodyEntry:
+        """Append the key-rotation record (lock held). Signed by the NEW key; endorsed by the old one when it is given."""
+        identity = self.signer.public_identity().to_dict()
+        old_pub = _sig_ed25519_pub(prev.signature)
+        payload = rotation_payload(old_pub, identity, prev.entry_hash)
+        meta: dict = {
+            "previous_ed25519_pub": old_pub,
+            "ed25519_pub": identity.get("ed25519_pub"),
+            "ml_dsa_variant": identity.get("ml_dsa_variant"),
+            "ml_dsa_pub": identity.get("ml_dsa_pub"),
+        }
+        if previous_signer is not None:
+            meta["endorsement"] = previous_signer.sign(canonical_bytes(payload))
+            meta["note"] = "The previous custody signing key signed the new key's identity and this place in the chain."
+        else:
+            meta["endorsement"] = None
+            meta["note"] = UNENDORSED_ROTATION_NOTE
+        item_hash = sha256(canonical_bytes(payload)).hex()
+        # A local time: the record must not wait on, or be refused by, a calendar submission.
+        return self._insert(prev, ROTATION_ITEM, item_hash, CustodyAction.KEY_ROTATION.value, "custody", meta, None,
+                            local_only=True)
+
+    def _insert(self, prev: CustodyEntry | None, item_id: str, item_hash: str, action_val: str, actor: str | None,
+                meta: dict, timestamp: TimestampProof | None, *, local_only: bool = False) -> CustodyEntry:
+        """Sign and insert one entry after ``prev`` (``_APPEND_LOCK`` held by the caller)."""
+        prev_hash = prev.entry_hash if prev else GENESIS_PREV
+        seq = (prev.seq + 1) if prev else 1
+
+        # Build the signable core, hash it, timestamp that digest, then re-hash so
+        # the timestamp is itself covered by entry_hash + signature.
+        partial = {
+            "version": LOG_VERSION,
+            "seq": seq,
+            "item_id": item_id,
+            "item_hash": item_hash,
+            "action": action_val,
+            "actor": actor,
+            "metadata": meta,
+            "prev_entry_hash": prev_hash,
+        }
+        digest = sha256(canonical_bytes(partial))
+        ts = (timestamp or (local_timestamp(digest) if local_only else self._default_timestamp(digest))).to_dict()
+        core = {**partial, "timestamp": ts}
+        entry_hash = _entry_digest(core)
+        sig = self.signer.sign(canonical_bytes(core))
+
+        self.conn.execute(
+            """
+            INSERT INTO custody_entries
+                (seq, item_id, item_hash, action, actor, metadata_json,
+                 prev_entry_hash, entry_hash, signature_json, timestamp_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                seq,
+                item_id,
+                item_hash,
+                action_val,
+                actor,
+                json.dumps(meta, sort_keys=True),
+                prev_hash,
+                entry_hash,
+                json.dumps(sig),
+                json.dumps(ts),
+            ),
+        )
+        self.conn.commit()
         return CustodyEntry(
             seq=seq,
             item_id=item_id,
@@ -365,6 +438,10 @@ class CustodyLog:
     def export(self, item_id: str | None = None) -> dict:
         """Produce an offline-verifiable bundle of entries + the signer identity."""
         entries = self.entries_for(item_id) if item_id else self.all_entries()
+        if item_id and entries:
+            # The key-rotation records up to the item's last entry, so its key changes can be followed.
+            rotations = [e for e in self.entries_for(ROTATION_ITEM) if e.seq < entries[-1].seq]
+            entries = sorted(entries + rotations, key=lambda e: e.seq)
         ident = self.signer.public_identity()
         head = _bundle_head(item_id, entries)
         return {
@@ -522,11 +599,76 @@ def _entry_shape_problem(d: object) -> str | None:
     return _signature_shape_problem(d["signature"])
 
 
-def _ed25519_pub(sig: dict) -> str:
+def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed: bool) -> tuple[str | None, list[str]]:
+    """Walk the signing key through the entries. Returns ``(problem or None, notes)``; the key must end as
+    ``signer_key``. See :func:`verify_export`'s WHICH KEY."""
+    notes: list[str] = []
+    current = _sig_ed25519_pub(entries[0].signature)
+    for e in entries:
+        k = _sig_ed25519_pub(e.signature)
+        if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM:
+            md = e.metadata
+            prev_k, new_k = md.get("previous_ed25519_pub"), md.get("ed25519_pub")
+            if not isinstance(prev_k, str) or not isinstance(new_k, str) or not new_k or prev_k == new_k:
+                return f"the key-rotation record at seq {e.seq} does not name two different keys", notes
+            if prev_k != current:
+                return (f"the key-rotation record at seq {e.seq} names a previous key that did not sign the entries "
+                        "before it"), notes
+            if k != new_k:
+                return f"the key-rotation record at seq {e.seq} is not signed by the key it introduces", notes
+            endorsement = md.get("endorsement")
+            if endorsement is None:
+                if not accept_unendorsed:
+                    return (f"the signing key changes at seq {e.seq} with no endorsement by the previous key: its record "
+                            "says the previous key was not available, and a forged tail would say the same. Verify "
+                            "again accepting an unendorsed rotation only if you know the key was re-created"), notes
+                notes.append(f"seq {e.seq}: accepted on the record's word: {UNENDORSED_ROTATION_NOTE}")
+            else:
+                problem = _signature_shape_problem(endorsement)
+                if problem or _sig_ed25519_pub(endorsement) != prev_k:
+                    return f"the key-rotation record at seq {e.seq} carries an endorsement not made by the previous key", notes
+                identity = {"ed25519_pub": new_k, "ml_dsa_variant": md.get("ml_dsa_variant"),
+                            "ml_dsa_pub": md.get("ml_dsa_pub")}
+                ok, reason = signing.verify(endorsement, canonical_bytes(rotation_payload(prev_k, identity,
+                                                                                          e.prev_entry_hash)))
+                if not ok:
+                    return f"the key-rotation record at seq {e.seq} has an invalid endorsement: {reason}", notes
+                notes.append(f"seq {e.seq}: the signing key changed, endorsed by the previous key")
+            current = new_k
+        elif k != current:
+            return (f"the signing key changes at seq {e.seq} with no key-rotation record: a re-created key and a forged "
+                    "tail read the same here, so neither is verified"), notes
+    if current != signer_key:
+        return "the entries end on a different key from the bundle's signer key", notes
+    return None, notes
+
+
+def _sig_ed25519_pub(sig: dict) -> str:
     return str((sig.get("ed25519") or {}).get("pub") or "")
 
 
-def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, list[str]]:
+def verify_export(
+    bundle: dict, *, require_signer: bool = False, accept_unendorsed_rotation: bool = False
+) -> tuple[bool, list[str]]:
+    """``(ok, issues)`` of :func:`verify_export_report`."""
+    report = verify_export_report(
+        bundle, require_signer=require_signer, accept_unendorsed_rotation=accept_unendorsed_rotation
+    )
+    return report["verified"], report["issues"]
+
+
+def verify_export_report(
+    bundle: dict, *, require_signer: bool = False, accept_unendorsed_rotation: bool = False
+) -> dict:
+    """``{"verified", "issues", "notes"}`` for an exported bundle; ``notes`` names every key rotation crossed."""
+    notes: list[str] = []
+    ok, issues = _verify_export(bundle, require_signer, accept_unendorsed_rotation, notes)
+    return {"verified": ok, "issues": issues, "notes": notes if ok else []}
+
+
+def _verify_export(
+    bundle: dict, require_signer: bool, accept_unendorsed_rotation: bool, notes: list[str]
+) -> tuple[bool, list[str]]:
     """Verify an exported custody bundle (offline, no DB). FAILS CLOSED.
 
     Refused by name, before any entry is judged: a bundle with no entries; an entry that is not a whole record (a file
@@ -535,9 +677,13 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
     a head whose signature does not verify or was made with another key; and a bundle whose entries do not match its
     head (fewer or more than it says, or a different last entry).
 
-    WHICH KEY. The head and every entry must carry the Ed25519 key the bundle names as its signer; the first entry that
-    does not is named and the bundle is refused (a key honestly re-created after a restore reads the same as a tail
-    re-signed by someone else, so neither passes). Only the Ed25519 half is compared, so a log whose signer gained the
+    WHICH KEY. The head must carry the Ed25519 key the bundle names as its signer, and so must every entry, except
+    across a KEY-ROTATION record (``rotate_signing_key`` / the record written when a re-created key first signs): there
+    the key may change from the one that signed the entries before it to the one the record names, which signs it.
+    An ENDORSED rotation (the previous key signed the new key and this place in the chain) passes and is named in the
+    notes. An UNENDORSED one (the previous key was gone) is what a forged tail would also write, so it is refused unless
+    the caller passes ``accept_unendorsed_rotation`` -- then it passes on that record's word, said in the notes. Any
+    other key change is refused and its seq named. Only the Ed25519 half is compared, so a log whose signer gained the
     post-quantum half later still verifies; each signature is still verified in full. THIS PROVES CONSISTENCY, NOT
     PROVENANCE: anyone can build a whole bundle, head included, with a key of their own. A cut at the end is caught
     only when the signer key is compared with one the reader already knows to be the real signer's.
@@ -585,15 +731,12 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
     key = signer.get("ed25519_pub") if isinstance(signer, dict) else None
     if not isinstance(key, str) or not key:
         return False, ["no signer identity in the bundle: there is no key to hold its entries and head to"]
-    if _ed25519_pub(head_sig) != key:
+    if _sig_ed25519_pub(head_sig) != key:
         return False, ["head signature invalid: it was not made with the bundle's signer key"]
-    for e in entries:
-        if _ed25519_pub(e.signature) != key:
-            # One key for the whole bundle: where the key changes, a cut followed by entries re-signed with another key
-            # cannot be told apart from a key that was honestly re-created, so neither is passed.
-            return False, [f"the signing key changes at seq {e.seq}: every entry must carry the bundle's signer key, so a "
-                           "bundle signed by more than one key is not verified (a re-created key reads the same as a "
-                           "forged tail)"]
+    problem, rotation_notes = _key_lineage(entries, key, accept_unendorsed_rotation)
+    notes.extend(rotation_notes)
+    if problem:
+        return False, [problem]
     ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=pinned)
     if not ok:
         return False, [f"head signature invalid: {reason}"]
@@ -604,6 +747,9 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
                 f"truncated or padded: the signed head says {head.get('entry_count')} entries, the bundle holds {len(entries)}"
             ]
         return False, ["the bundle's entries do not match its signed head (a different last entry, scope or version)"]
-    if item_id and any(e.item_id != item_id for e in entries):
+    if item_id and any(e.item_id not in (item_id, ROTATION_ITEM) for e in entries):
         return False, [f"the bundle is for {item_id!r} but holds entries of other items"]
-    return verify_entries(entries, pinned=pinned, chained=not item_id)
+    # Each entry's signature is checked against the key it carries, which ``_key_lineage`` has already held to the
+    # signer key or to a key the lineage hands on to it; pinning every entry to the LAST key would refuse the entries
+    # signed before a rotation.
+    return verify_entries(entries, pinned=None if rotation_notes else pinned, chained=not item_id)

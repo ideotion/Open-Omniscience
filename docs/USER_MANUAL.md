@@ -1374,9 +1374,17 @@ Verify a bundle anywhere, without this app. The checker fails closed: it refuses
 entries, one cut mid-record, one signed by more than one key, one whose entries do not match the signed head its
 export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
-A verified bundle proves it is consistent and signed by ONE key; to know that key is the real signer's (and so
-that nobody cut the log and re-signed it), run with `--pin` and compare the printed signer key with one you
-already know.
+A verified bundle proves it is consistent and signed by one key, or by a line of keys each handed on to the next by
+a key-rotation record; to know the last key is the real signer's (and so that nobody cut the log and re-signed it),
+run with `--pin` and compare the printed signer key with one you already know.
+
+**When the signing key changes.** If the key folder is lost or re-created (after a restore onto a new machine, for
+example), the log writes a key-rotation record before the new key signs anything. That record says in plain words
+that the previous key was not available, so nothing but the record links the two keys, and a forged tail would
+read the same: the checker refuses it unless you pass `--accept-unendorsed-rotation` (or `accept_unendorsed_rotation`
+to the route), and then it names the rotation it accepted. A rotation made while the old key is still at hand
+(`CustodyLog.rotate_signing_key`) is endorsed: the old key signs the new key and that place in the chain, and the
+checker follows it without being asked. A key change with no record is refused.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]

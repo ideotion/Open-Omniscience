@@ -21,7 +21,7 @@ from src.custody.log import (
     WHOLE_LOG_SCOPE,
     CustodyAction,
     CustodyLog,
-    verify_export,
+    verify_export_report,
 )
 from src.custody.settings import (
     VALID_ANCHORING,
@@ -248,15 +248,21 @@ def verify_item(item_id: str) -> dict:
 class VerifyBundleRequest(BaseModel):
     bundle: dict
     require_signer: bool = False
+    #: Pass a key change whose record says the previous key was gone, on that record's word (see verify_export).
+    accept_unendorsed_rotation: bool = False
 
 
 @router.post("/verify")
 def verify_bundle(req: VerifyBundleRequest) -> dict:
     """Verify a posted custody bundle offline (no DB needed)."""
-    ok, issues = verify_export(req.bundle, require_signer=req.require_signer)
-    # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry.
+    report = verify_export_report(
+        req.bundle, require_signer=req.require_signer, accept_unendorsed_rotation=req.accept_unendorsed_rotation
+    )
+    ok = report["verified"]
+    # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
+    # every key rotation crossed is named in the notes.
     scope = (ITEM_SCOPE_NOTE if req.bundle.get("item_id") else WHOLE_LOG_SCOPE) if ok else None
-    return {"verified": ok, "issues": issues, "scope": scope}
+    return {"verified": ok, "issues": report["issues"], "notes": report["notes"], "scope": scope}
 
 
 class AnchorRequest(BaseModel):

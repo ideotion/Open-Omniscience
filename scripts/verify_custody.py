@@ -10,8 +10,11 @@ post-quantum half of hybrid signatures) -- NOT on the database or running app. A
 third party (court, editor, collaborator) can confirm a custody chain offline.
 
 Usage:
-    python scripts/verify_custody.py custody_bundle.json [--pin]
+    python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 Exit code 0 = verified, 1 = failed, 2 = bad arguments.
+
+A change of signing key is followed through its key-rotation record: endorsed by the previous key, it passes and is
+named; unendorsed (the previous key was gone), it is refused unless --accept-unendorsed-rotation is given.
 
 With --pin, every entry must be signed by the signer identity embedded in the
 bundle (internal-consistency pinning). To prove the bundle came from a *known*
@@ -24,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.custody.log import ITEM_SCOPE_NOTE, WHOLE_LOG_SCOPE, verify_export  # noqa: E402
+from src.custody.log import ITEM_SCOPE_NOTE, WHOLE_LOG_SCOPE, verify_export_report  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -32,7 +35,7 @@ def main(argv: list[str]) -> int:
     flags = {a for a in argv[1:] if a.startswith("--")}
     if len(args) != 1:
         print(
-            "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin]", file=sys.stderr
+            "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin] [--accept-unendorsed-rotation]", file=sys.stderr
         )
         return 2
 
@@ -45,7 +48,10 @@ def main(argv: list[str]) -> int:
         return 1
     if not isinstance(bundle, dict):
         bundle = {"entries": bundle}
-    ok, issues = verify_export(bundle, require_signer="--pin" in flags)
+    report = verify_export_report(
+        bundle, require_signer="--pin" in flags, accept_unendorsed_rotation="--accept-unendorsed-rotation" in flags
+    )
+    ok, issues = report["verified"], report["issues"]
 
     signer = bundle.get("signer") if isinstance(bundle.get("signer"), dict) else {}
     print(f"log_version    : {bundle.get('log_version')}")
@@ -55,6 +61,8 @@ def main(argv: list[str]) -> int:
     print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
     if ok:  # what a "verified" covers, said only beside one
         print(f"scope          : {ITEM_SCOPE_NOTE if bundle.get('item_id') else WHOLE_LOG_SCOPE}")
+        for n in report["notes"]:
+            print(f"key rotation   : {n}")
     print(f"VERIFIED       : {ok}")
     if issues:
         print("ISSUES:")
