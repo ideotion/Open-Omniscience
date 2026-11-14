@@ -37,7 +37,7 @@ TSV = ROOT / "configs" / "routes_without_ui.tsv"
 
 # Wire a feature, delete its row and lower this by one. Raising it means a new
 # server feature shipped without a button: say why in the PR.
-FEATURE_CEILING = 46
+FEATURE_CEILING = 43
 
 CLASSES = {"internal", "superseded", "feature", "unseen"}
 

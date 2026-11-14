@@ -244,7 +244,7 @@ def test_the_trusted_click_table_is_real_and_not_contradicted() -> None:
     """Every row is an allowlisted action with a reason that has no prompt of its own; a name that asks first leaves the table."""
     js = app_js()
     listed = set(_allowlist())
-    assert len(TRUSTED_CLICK_ONLY) == 29, f"the table changed size: {len(TRUSTED_CLICK_ONLY)}"
+    assert len(TRUSTED_CLICK_ONLY) == 30, f"the table changed size: {len(TRUSTED_CLICK_ONLY)}"
     assert all(reason.strip() for reason in TRUSTED_CLICK_ONLY.values())
     dead = sorted(set(TRUSTED_CLICK_ONLY) - listed)
     assert not dead, f"on the trusted-click table but not an allowlisted action: {dead}"

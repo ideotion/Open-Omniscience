@@ -224,6 +224,10 @@
       _bulMsgs[id] = {key, vars: vars || null};
       _bulPaintMsg(id);
     }
+    function _bulClearMsg(id) {
+      delete _bulMsgs[id];
+      const el = $(id); if (el) el.textContent = "";
+    }
     function _bulPaintMsg(id) {
       const el = $(id), m = _bulMsgs[id];
       if (!el || !m) return;
@@ -259,6 +263,7 @@
       _bulPaintGate();
       if (_bulEditions) _bulPaintEditions();
       if (_bulView && _bulFile) { _bulRender(_bulView); _bulPaintPrivacy(); }
+      _bulPaintEvidence();
       for (const id of Object.keys(_bulMsgs)) _bulPaintMsg(id);
     }
 
@@ -528,7 +533,8 @@
         <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
-          <button class="secondary" data-on-click="bulletinNarrate(this)" id="bul-narrate-run">${esc(_bulT("Narrate with the local model"))}</button>
+          <button class="secondary" data-on-click="bulletinNarrate(this)" id="bul-narrate-run"${_bulNarrating ? " disabled" : ""}>${esc(_bulT("Narrate with the local model"))}</button>
+          <button class="secondary" data-on-click="bulletinNarrateStop(this)" id="bul-narrate-stop"${_bulNarrating ? "" : " hidden"} title="${esc(_bulT("Stops after the paragraph being written. Each finished paragraph is kept, so narrating again carries on from there."))}">${esc(_bulT("Stop narration"))}</button>
           <button class="secondary" data-on-click="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
           <button class="secondary" data-on-click="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
           <button class="secondary" data-on-click="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
@@ -570,7 +576,16 @@
           {error: p.error}) + " " + _bulT("That is an unanswered question, not an all-clear.");
         return;
       }
-      const d = p.d || {};
+      box.innerHTML = _bulPrivacyHtml(p.d, "What a reader of these files can see");
+    }
+    // ONE renderer for the §18 enumeration, shared by the annexes and the evidence
+    // archive (whose plan carries the same payload, or {error, caveat} when it failed).
+    function _bulPrivacyHtml(d, heading) {
+      d = d || {};
+      if (d.error != null && !d.items) {
+        return esc(_bulTf("What a reader of these files could see could not be listed: {error}", {error: d.error})
+          + " " + _bulT("That is an unanswered question, not an all-clear."));
+      }
       const rows = (d.items || []).map(it => {
         const mark = it.present === true
           ? (it.n != null ? `${_bulT("yes")} (${it.n})` : _bulT("yes"))
@@ -578,7 +593,7 @@
         return `<li><strong>${esc(_bulT(it.what))}</strong> — ${esc(mark)}<br>
           <span class="muted">${esc(_bulT(it.why_it_matters))}</span></li>`;
       }).join("");
-      box.innerHTML = `<strong>${esc(_bulT("What a reader of these files can see"))}</strong>
+      return `<strong>${esc(_bulT(heading))}</strong>
         <p class="muted" style="margin:4px 0">${esc(_bulT(d.caveat || ""))}</p>
         <ul style="margin:4px 0 0 18px">${rows}</ul>`;
     }
@@ -685,6 +700,14 @@
     // has to be an explicit act, because the loss only ever surfaces as a progress bar
     // back at zero.
     let _bulNarratePoll = null;
+    // True while a run is being watched, so a Review redrawn mid-run (a language switch,
+    // a re-read) keeps Stop on screen and Narrate off.
+    let _bulNarrating = false;
+    function _bulNarrateButtons() {
+      const run = $("bul-narrate-run"), stop = $("bul-narrate-stop");
+      if (run) run.disabled = _bulNarrating;
+      if (stop) { stop.hidden = !_bulNarrating; if (!_bulNarrating) stop.disabled = false; }
+    }
 
     async function bulletinNarrate(btn) {
       if (!_bulFile) return;
@@ -693,6 +716,7 @@
         await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/narrate?${_bulQuery()}`,
           {method: "POST"});
         _bulSay("bul-pub", "Narrating in the background — watch it in the task manager.");
+        _bulNarrating = true; _bulNarrateButtons();
         _bulWatchNarration();
       } catch (e) {
         _bulSay("bul-pub", "Could not start narration: {error}", {error: e.message});
@@ -708,15 +732,15 @@
       _bulNarratePoll = setInterval(async () => {
         let d = null;
         try { d = await api("/api/bulletin/narration"); }
-        catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; return; }
-        const job = d.job || {}, btn = $("bul-narrate-run");
+        catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; _bulNarrating = false; _bulNarrateButtons(); return; }
+        const job = d.job || {};
         const n = {done: job.done || 0, total: job.total || 0};
         if (job.running) {
-          _bulSay("bul-pub", "Narrating — units: {done} of {total}", n);
+          if (!_bulStopAsked) _bulSay("bul-pub", "Narrating — units: {done} of {total}", n);
           return;
         }
         clearInterval(_bulNarratePoll); _bulNarratePoll = null;
-        if (btn) btn.disabled = false;
+        _bulNarrating = false; _bulStopAsked = false; _bulNarrateButtons();
         {
           // Three outcomes, three sentences. An ERROR is named rather than folded
           // into "finished" -- a run that lost its model must not read as a run that
@@ -739,6 +763,126 @@
         }
         if (_bulFile) bulletinReview(_bulFile);
       }, 3000);
+    }
+
+    // STOP (Lane M's routes list): the run could be started here and stopped nowhere. It is
+    // cooperative -- the server finishes the paragraph in flight and keeps every finished one
+    // (the cursor is saved per unit), so Narrate again resumes rather than starts over. That
+    // is why it asks no confirm(): nothing is lost (tests/trusted_click_table.py lists it
+    // with the other job stops). The poll above reports the outcome in its own words.
+    let _bulStopAsked = false;
+    async function bulletinNarrateStop(btn) {
+      btn.disabled = true;
+      try {
+        await api("/api/bulletin/narration/stop", {method: "POST"});
+        _bulStopAsked = true;
+        _bulSay("bul-pub", "Stopping after the paragraph being written…");
+        if (!_bulNarratePoll) _bulWatchNarration();
+      } catch (e) {
+        _bulSay("bul-pub", "Could not stop narration: {error}", {error: e.message});
+        btn.disabled = false;
+      }
+    }
+
+    // -- Evidence archive (Lane M's routes list: plan + build had no button) -- //
+    // Every article of the chosen period, in full, as ONE plaintext ZIP written to a
+    // folder on THIS machine. Two steps by design: Check reads the exact article count,
+    // a LABELLED size estimate, the folder's free space and what a reader of the file
+    // could see (§18); Write is enabled only by a passing Check for the SAME period and
+    // folder, and re-checks that at the click, so the numbers the operator decided on
+    // describe the file that gets written. The plaintext warning is the visible caveat
+    // (R685): this is the one place the encrypted corpus leaves as clear text.
+    let _bulEvPlan = null, _bulEvBuilt = null, _bulEvSeq = 0;
+    function _bulEvKey() {
+      return {cadence: ($("bul-cadence") || {}).value || "weekly",
+        dest: (($("bul-ev-dest") || {}).value || "").trim()};
+    }
+    function _bulEvReady() {
+      const p = _bulEvPlan, k = _bulEvKey();
+      return !!(p && p.d && p.cadence === k.cadence && p.dest === k.dest
+        && p.d.destination_writable === true && (p.d.articles || 0) > 0);
+    }
+    async function bulletinEvidencePlan(btn) {
+      const k = _bulEvKey();
+      if (!k.dest) { _bulSay("bul-ev-msg", "Type the folder on this machine to write it into."); return; }
+      const seq = ++_bulEvSeq;
+      btn.disabled = true;
+      _bulEvPlan = null; _bulEvBuilt = null; _bulPaintEvidence();
+      _bulSay("bul-ev-msg", "Checking…");
+      try {
+        const d = await api(`/api/bulletin/evidence/plan?cadence=${encodeURIComponent(k.cadence)}&dest=${encodeURIComponent(k.dest)}`,
+          {method: "POST"});
+        if (seq !== _bulEvSeq) return;  // a later Check owns the panel
+        _bulEvPlan = {d, cadence: k.cadence, dest: k.dest};
+        _bulClearMsg("bul-ev-msg");
+      } catch (e) {
+        if (seq !== _bulEvSeq) return;
+        _bulSay("bul-ev-msg", "Could not check: {error}", {error: e.message});
+      } finally {
+        btn.disabled = false;
+        _bulPaintEvidence();
+      }
+    }
+    async function bulletinEvidenceBuild(btn) {
+      if (!_bulEvReady()) {
+        // The period or the folder changed since the Check: its numbers describe another file.
+        _bulSay("bul-ev-msg", "The period or the folder changed since the check. Check again first.");
+        _bulPaintEvidence();
+        return;
+      }
+      const k = _bulEvKey(), seq = ++_bulEvSeq;
+      btn.disabled = true;
+      _bulSay("bul-ev-msg", "Writing the archive… a long period can take several minutes.");
+      try {
+        const r = await api(`/api/bulletin/evidence/build?cadence=${encodeURIComponent(k.cadence)}&dest=${encodeURIComponent(k.dest)}`,
+          {method: "POST"});
+        if (seq !== _bulEvSeq) return;
+        _bulEvBuilt = r;
+        _bulClearMsg("bul-ev-msg");
+      } catch (e) {
+        if (seq !== _bulEvSeq) return;
+        _bulSay("bul-ev-msg", "Could not write the archive: {error}", {error: e.message});
+      } finally {
+        _bulPaintEvidence();
+      }
+    }
+    function _bulPaintEvidence() {
+      const out = $("bul-ev-out"), wbtn = $("bul-ev-build");
+      if (wbtn) wbtn.disabled = !_bulEvReady();
+      if (!out) return;
+      const p = _bulEvPlan && _bulEvPlan.d, b = _bulEvBuilt;
+      if (!p) { out.innerHTML = ""; return; }
+      const per = p.period || {};
+      const size = p.estimated_bytes
+        ? `<span title="${esc(_bulT("Estimated from the stored length of a sample of the period's articles, times the exact count. The ZIP is compressed, so the file will be smaller."))}">${esc(_bulTf("About {size} before compression", {size: _fmtBytes(p.estimated_bytes)}))}</span>`
+        : esc(_bulT("Size not measurable: unknown, not zero."));
+      let dest;
+      if (p.destination_writable === true) {
+        dest = esc(p.free_bytes != null ? _bulTf("Folder writable, {free} free.", {free: _fmtBytes(p.free_bytes)}) : _bulT("Folder writable."));
+      } else {
+        dest = `<strong>${esc(_bulT("This folder cannot be written to."))}</strong>`
+          + (p.destination_error ? ` <span dir="auto">${esc(p.destination_error)}</span>` : "");
+      }
+      const lines = [
+        `<strong>${esc(_bulTf("Articles: {n} · period {start} – {end}", {n: p.articles || 0, start: ooIsoDate(per.start), end: ooIsoDate(per.last_day)}))}</strong> ${size}`,
+        dest,
+      ];
+      if (!(p.articles > 0)) lines.push(esc(_bulT("No articles in this period: there is nothing to write.")));
+      let done = "";
+      if (b) {
+        if (b.cancelled) {
+          done = esc(_bulTf("Stopped — articles: {done} of {total}. The partial file was removed.", {done: b.articles_written || 0, total: b.articles_expected || 0}));
+        } else {
+          const counts = b.complete
+            ? _bulTf("Articles: {n} · {size}", {n: b.articles || 0, size: _fmtBytes(b.bytes || 0)})
+            : _bulTf("Articles: {done} of {total} · {size}", {done: b.articles || 0, total: b.articles_expected || 0, size: _fmtBytes(b.bytes || 0)});
+          done = `<strong>${esc(_bulT("Written:"))}</strong> <span dir="ltr" style="overflow-wrap:anywhere">${esc(b.path || "")}</span> ${esc(counts)}`;
+        }
+      }
+      out.innerHTML = `<p class="card-caveat" style="margin:4px 0">${esc(_bulT("Plain text: your corpus is encrypted, this archive is not. It holds the full text of every article in the period. Keep it where you keep the corpus; it is not meant to be shared."))}</p>
+        <div>${lines.join("<br>")}</div>
+        <div style="margin-top:6px">${_bulPrivacyHtml(p.privacy, "What a reader of this archive can see")}</div>
+        ${done ? `<div style="margin-top:6px">${done}</div>` : ""}`;
     }
 
     async function bulletinPublish(btn) {
