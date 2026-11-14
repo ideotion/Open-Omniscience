@@ -291,5 +291,5 @@ def test_the_export_route_answers_503_when_a_rotation_is_owed_under_unread_setti
     with CustodyLog(db_path=str(tmp_path / "custody_log.db"), signer=old, anchoring_mode="local") as log:
         log.record("article:1", "a" * 64, CustodyAction.INGEST)
     monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
-    r = TestClient(app).get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    r = TestClient(app).post("/api/custody/export")
     assert r.status_code == 503 and "rotation record is owed" in r.json()["detail"]

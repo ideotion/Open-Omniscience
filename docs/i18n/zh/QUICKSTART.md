@@ -476,7 +476,7 @@ python scripts/verify_custody.py custody-bundle.json                   # exit 0 
   确认它（网络错误、超时、5xx，或受限的 401/403），该 URL
   **不会**被抓取。
 - 对每个主机强制执行最小访问间隔（遵循 `Crawl-delay`）。
-- 只有一条抓取路径，使用可识别身份的 User-Agent，文章只抓取 HTML——没有绕过机制。
+- 只有一条抓取路径，使用可识别身份的 User-Agent（保护模式下使用通用 User-Agent，但发往 Wikimedia 服务器的 API 和转储请求除外），文章只抓取 HTML——没有绕过机制。
 - 正文提取使用 trafilatura；如果找不到真正的文章正文，就什么也不存储
   （不会出现伪造的“No Title / No Content”记录）。
 - 每篇已存储的文章都带有来源信息：来源、原始 URL、规范 URL、

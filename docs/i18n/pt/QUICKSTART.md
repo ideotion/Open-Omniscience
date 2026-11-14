@@ -480,7 +480,7 @@ Modelo completo, modelo de ameaças e ressalvas de privacidade: [USER_MANUAL.md]
   confirmado (erro de rede, tempo esgotado, 5xx ou um 401/403 restrito), a URL **não** é
   baixada.
 - Um intervalo mínimo por host é aplicado (respeitando o `Crawl-delay`).
-- Um único caminho de download, um User-Agent que identifica o aplicativo, somente HTML para artigos — nenhum desvio direto.
+- Um único caminho de download, um User-Agent que identifica o aplicativo (no modo protegido, um genérico, exceto nas requisições de API e de dumps aos servidores da Wikimedia), somente HTML para artigos — nenhum desvio direto.
 - A extração usa o trafilatura; se nenhum corpo de artigo real for encontrado, nada é armazenado
   (nenhuma linha inventada "No Title / No Content").
 - Todo artigo armazenado carrega a procedência: fonte, URL original, URL canônica,

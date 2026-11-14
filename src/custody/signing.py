@@ -414,18 +414,25 @@ class HybridSigner:
         mldsa_path: Path | None = None,
         *,
         use_pqc: bool = True,
-        create_mldsa: bool = True,
+        create: bool = True,
     ):
+        # ``create=False`` is for a reader (R694): a missing Ed25519 key raises FileNotFoundError and a missing ML-DSA pair is
+        # simply not used, so a status read never mints a key or makes the keys folder. ``key_created`` says which case it was.
         # ``use_pqc`` is the operator's *preference* (see src/custody/settings).
         # When False we sign Ed25519-only and label the result "ed25519" even if
         # the post-quantum library is installed -- the toggle can suppress PQC but
         # the label can never claim quantum resistance that was not produced.
         self._use_pqc = use_pqc
-        self._create_mldsa = create_mldsa  # False: an ML-DSA key is only loaded, never created
-        self._ed_path = ed25519_path or (_keys_dir() / "custody_ed25519.pem")
-        self._mldsa_path = mldsa_path or (_keys_dir() / "custody_ml_dsa_65.key")
-        for p in (self._ed_path, self._mldsa_path):
-            p.parent.mkdir(parents=True, exist_ok=True)
+        if ed25519_path is None or mldsa_path is None:
+            from src.paths import data_dir
+
+            keys = _keys_dir() if create else data_dir() / "keys"  # a reader makes no folder
+        self._ed_path = ed25519_path or (keys / "custody_ed25519.pem")
+        self._mldsa_path = mldsa_path or (keys / "custody_ml_dsa_65.key")
+        self._create = create
+        if create:
+            for p in (self._ed_path, self._mldsa_path):
+                p.parent.mkdir(parents=True, exist_ok=True)
         self._pp = _passphrase()
         # what a key file still holds when a passphrase IS held but the file was not (or could not be) wrapped:
         self._legacy_plain = False  # a key readable in the clear
@@ -464,15 +471,15 @@ class HybridSigner:
 
     def reloaded(self) -> HybridSigner:
         """A signer loaded afresh from the same key files, with the same post-quantum preference."""
-        return HybridSigner(self._ed_path, self._mldsa_path, use_pqc=self._use_pqc)
+        return HybridSigner(self._ed_path, self._mldsa_path, use_pqc=self._use_pqc, create=self._create)
 
     def with_existing_post_quantum_key(self) -> HybridSigner | None:
         """The same key files with post-quantum signing on, or ``None`` when the library is missing or there is no
-        ML-DSA key file: a key is only ever LOADED here, never created (custody rows 42-44: the previous identity
+        ML-DSA key file: opened as a reader (R694), so a key is only ever LOADED here, never created (custody rows 42-44: the previous identity
         endorsing the change when post-quantum signing is turned off)."""
         if not PQC_AVAILABLE:
             return None
-        signer = HybridSigner(self._ed_path, self._mldsa_path, use_pqc=True, create_mldsa=False)
+        signer = HybridSigner(self._ed_path, self._mldsa_path, use_pqc=True, create=False)
         return signer if signer.is_hybrid else None
 
     # -- properties -------------------------------------------------------- #
@@ -516,6 +523,8 @@ class HybridSigner:
         try:
             raw, seen = keyfile.read_settled(path)
         except FileNotFoundError:
+            if not self._create:
+                raise
             key = Ed25519PrivateKey.generate()
             try:
                 keyfile.create_new(path, seal_ed25519_key(key, self._pp))
@@ -526,7 +535,11 @@ class HybridSigner:
             else:
                 return key
         key, form = parse_ed25519_key(path, raw, self._pp)
-        if self._pp and form != "wrapped":
+        if self._pp and form != "wrapped" and not self._create:
+            # A reader leaves the file as it is and says what it holds; the next signer that loads it wraps it.
+            self._legacy_plain = form == "plaintext"
+            self._ed_pkcs8 = form == "pkcs8"
+        elif self._pp and form != "wrapped":
             passphrase = self._pp
 
             def same_key(blob: bytes) -> None:
@@ -574,8 +587,8 @@ class HybridSigner:
         try:
             raw, seen = keyfile.read_settled(path)
         except FileNotFoundError:
-            if not self._create_mldsa:
-                return None, None
+            if not self._create:
+                return None, None  # a reader: the pair is made by the first signature that asks for it, never by a status read
             pk, sk = _mldsa.generate_keypair()
             try:
                 keyfile.create_new(path, seal_mldsa_key(pk, sk, self._pp))
@@ -586,7 +599,10 @@ class HybridSigner:
             else:
                 return pk, sk
         pk, sk, form = parse_mldsa_key(path, raw, self._pp)
-        if self._pp and form != "wrapped":
+        if self._pp and form != "wrapped" and not self._create:
+            if form == "plaintext":
+                self._legacy_plain = True  # a reader leaves the file as it is, as above
+        elif self._pp and form != "wrapped":
             passphrase = self._pp
 
             def same_pair(blob: bytes) -> None:

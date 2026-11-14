@@ -74,7 +74,7 @@ IDENTITY_SCHEMA = "oo-index-engine-2"
 #: rows ``index_article`` produces for the same input; a change that provably leaves them
 #: alone is recorded with ``--same "why"`` and leaves this number where it is, which is
 #: the point -- the restore then still carries. The guard is ``tests/test_indexer_pin.py``.
-INDEXER_VERSION = 2
+INDEXER_VERSION = 3
 
 #: The hand-bumped version of the PLACES AND ENTITIES stage alone (R415). Same discipline as :data:`INDEXER_VERSION`, policed by
 #: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
@@ -194,6 +194,10 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "by the merge in both modes, so a carry and a re-index cannot differ here"
     ),
     "src/analytics/engine_identity.py": "this module; it computes the stamp, not the rows",
+    "src/analytics/quarantine_scope.py": (
+        "the R101 quarantine filter; a pass reads it only to decide whether an already-quarantined article moves "
+        "the keyword COUNTERS, never which mention rows it writes, so a carry and a re-index cannot differ here"
+    ),
     "src/shared.py": (
         "stdlib-only helpers shared by self-tests, benchmarks, a settings parser, a snapshot wrapper, an RSS "
         "reading, a JSON-lines tail reader, an environment tri-state for the serve switches and the import "
