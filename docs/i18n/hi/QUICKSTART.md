@@ -435,7 +435,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Correlation, scipy (Pearson/Spearman) से एक वास्तविक coefficient + p-value + n लौटाता है,
 "सहसंबंध ≠ कार्य-कारण" (correlation ≠ causation) चेतावनी के साथ; बहुत कम overlap → `insufficient_data`।
 
-**निगरानी (Monitoring)।** `GET /api/monitoring/health` वास्तविक पहुँच-योग्यता
+**निगरानी (Monitoring)।** `POST /api/monitoring/health` वास्तविक पहुँच-योग्यता
 जाँच करता है (ethical fetcher के ज़रिए); `GET /api/monitoring/anomalies`
 z-score से लेखों की संख्या में अचानक उछाल को चिह्नित करता है। **Email:** `POST /api/sources/{id}/ingest-email`
 (IMAP) संदेशों को उसी खोजने-योग्य corpus में जोड़ देता है।
@@ -479,7 +479,7 @@ python scripts/verify_custody.py custody-bundle.json                   # exit 0 
   पुष्टि न हो सके (network त्रुटि, timeout, 5xx, या प्रतिबंधित 401/403), तो URL
   **नहीं** लाया जाता।
 - प्रति-host न्यूनतम अंतराल लागू किया जाता है (`Crawl-delay` का पालन करते हुए)।
-- एक ही fetch रास्ता, पहचान बताने वाला User-Agent, लेखों के लिए केवल HTML — कोई सीधा bypass नहीं।
+- एक ही fetch रास्ता, पहचान बताने वाला User-Agent (संरक्षित मोड में एक सामान्य User-Agent, सिवाय Wikimedia के servers को API और dump अनुरोधों के), लेखों के लिए केवल HTML — कोई सीधा bypass नहीं।
 - Extraction के लिए trafilatura का उपयोग होता है; अगर लेख का कोई वास्तविक मुख्य भाग नहीं मिलता, तो कुछ भी सहेजा नहीं जाता
   (कोई गढ़ी हुई "No Title / No Content" पंक्तियाँ नहीं)।
 - हर सहेजा गया लेख उत्पत्ति-विवरण रखता है: स्रोत, मूल URL, canonical URL,

@@ -38,6 +38,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from src.analytics.quarantine_scope import NOT_QUARANTINED_SQL
+
 # Cap the number of plotted points so the payload stays small regardless of how many
 # distinct article dates the corpus spans (the curve is sampled at even token strides).
 _MAX_POINTS = 120
@@ -83,6 +85,11 @@ def _rate_per_1k(d_vocab: int, d_tokens: int) -> float | None:
     return round(1000.0 * d_vocab / d_tokens, 3)
 
 
+#: R101: a quarantined article's mentions are not in any keyword figure, this curve included. Index-only
+#: (``idx_article_quarantined``): it reads no article row, so the curve stays decrypt-free.
+_NOT_QUARANTINED = NOT_QUARANTINED_SQL
+
+
 def keyword_growth_curve(session: Session) -> dict[str, Any]:
     """Build the vocabulary-growth curve from ``keyword_mentions`` (decrypt-free).
 
@@ -96,7 +103,7 @@ def keyword_growth_curve(session: Session) -> dict[str, Any]:
         text(
             "SELECT first_date AS d, COUNT(*) AS new_kw FROM ("
             "  SELECT keyword_id, MIN(observed_on) AS first_date"
-            "  FROM keyword_mentions WHERE observed_on IS NOT NULL"
+            "  FROM keyword_mentions WHERE observed_on IS NOT NULL" + _NOT_QUARANTINED +  # nosec B608 - constants
             "  GROUP BY keyword_id"
             ") GROUP BY first_date"
         )
@@ -105,11 +112,12 @@ def keyword_growth_curve(session: Session) -> dict[str, Any]:
     per_date_rows = session.execute(
         text(
             "SELECT observed_on AS d, SUM(count) AS toks, COUNT(DISTINCT article_id) AS arts"
-            " FROM keyword_mentions WHERE observed_on IS NOT NULL GROUP BY observed_on"
+            " FROM keyword_mentions WHERE observed_on IS NOT NULL" + _NOT_QUARANTINED +  # nosec B608 - constants
+            " GROUP BY observed_on"
         )
     ).all()
     undated = session.execute(
-        text("SELECT COUNT(*) FROM keyword_mentions WHERE observed_on IS NULL")
+        text("SELECT COUNT(*) FROM keyword_mentions WHERE observed_on IS NULL" + _NOT_QUARANTINED)  # nosec B608 - constants
     ).scalar() or 0
 
     new_kw_by_date: dict[str, int] = {str(r.d): int(r.new_kw) for r in new_kw_rows}
@@ -180,7 +188,8 @@ def keyword_growth_curve(session: Session) -> dict[str, Any]:
         },
         "method": (
             "cumulative distinct keywords vs cumulative words (token occurrences), "
-            "ordered by article date (observed_on); read from keyword_mentions only "
+            "ordered by article date (observed_on); read from keyword_mentions only, "
+            "leaving quarantined articles out "
             "(no article decrypt); Heaps fit log(V)=log(K)+beta*log(N)"
         ),
         "caveat": (

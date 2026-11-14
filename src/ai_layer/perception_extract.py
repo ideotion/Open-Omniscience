@@ -386,6 +386,68 @@ def apply_operator_off(gate: dict[str, dict], off) -> dict[str, dict]:
     return out
 
 
+def _model_key(model: str | None) -> str:
+    """One comparable form for a model tag: trimmed, lower-case, and ``:latest`` when no
+    tag is given (Ollama serves ``mistral`` and ``mistral:latest`` as the same model).
+    The namespace is KEPT -- ``hf.co/mistralai/...`` and a library tag of the same name
+    are different files, and treating them as one would let one license the other."""
+    key = (model or "").strip().lower()
+    if key and ":" not in key.rsplit("/", 1)[-1]:
+        key += ":latest"
+    return key
+
+
+def bind_gate_to_model(gate: dict[str, dict], report: dict | None, model: str | None) -> dict[str, dict]:
+    """The gate with every language made UNMEASURED when the report measured another model.
+
+    R704 (2026-11-14). The gate reads the LAST live perception-eval report, whichever
+    model produced it, while the sweep runs whatever model is active now. So an eval of
+    one model could license ``who`` storage for another that was never measured. That is
+    not hypothetical for the model the catalogue once prioritised: Mistral-7B scored a
+    **94.7% hallucination rate on "who" extraction** in a field instance's live
+    perception-eval run, on the 700k-article instance ``1fba378c``, recorded in
+    ``docs/ledger/OPEN_QUEUE.md``, HARDWARE DIAGNOSTICS COMPARISON 2026-07-26). That run's
+    own gate refused it correctly; this closes the path where a report from a DIFFERENT
+    model would have licensed it with no rate shown beside it.
+
+    So who-extraction (and every other field) runs only on a measurement of THE model
+    that will extract, and that measurement's own rates are what the toggle shows. A
+    mismatch, or a report that does not name its model, reads ``active: None`` with a
+    reason that names both models -- unmeasured for this model, never "failed", because
+    nothing was measured. One way only, like :func:`apply_operator_off`: nothing here can
+    set ``active`` to True. Every entry gains ``measured_model`` and ``extract_model`` so
+    the UI can say which model the numbers belong to. A NEW dict; the input is untouched.
+    """
+    measured = str((report or {}).get("model") or "").strip()
+    target = str(model or "").strip()
+    same = bool(measured) and _model_key(measured) == _model_key(target)
+    out: dict[str, dict] = {}
+    for lang, entry in (gate or {}).items():
+        e = dict(entry)
+        e["measured_model"] = measured or None
+        e["extract_model"] = target or None
+        e["model_matches"] = same
+        if not same:
+            if measured:
+                note = (
+                    f"measured on {measured}, but extraction would run {target or 'no model'}"
+                    " -- unmeasured for that model; run the live perception eval with it"
+                )
+            else:
+                note = (
+                    "the perception-eval report does not name the model it measured -- "
+                    "unmeasured for any model; run the live perception eval again"
+                )
+            e["active"] = None
+            e["reason"] = note
+            e["fields"] = {
+                fld: {**dict(v or {}), "active": None, "reason": note}
+                for fld, v in (entry.get("fields") or {}).items()
+            }
+        out[lang] = e
+    return out
+
+
 def operator_off_languages() -> list[str]:
     """The operator's switched-off perception languages, [] when settings are unreadable."""
     try:
@@ -571,6 +633,7 @@ __all__ = [
     "MAX_HALLUCINATION_RATE",
     "MIN_RECALL",
     "PERCEPTION_KINDS",
+    "bind_gate_to_model",
     "extract_perception_batch",
     "field_gate",
     "gate_languages_from_report",

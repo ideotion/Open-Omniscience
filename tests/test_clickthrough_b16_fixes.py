@@ -173,7 +173,7 @@ def test_the_review_checkboxes_keep_their_own_size_beside_their_label():
     assert_present(js, 'const _BUL_CHECK_ROW = "gap:8px;align-items:baseline;flex-wrap:nowrap";')
     body = strip_comments(function_body(js, "_bulRender"))
     boxes = re.findall(r'<input type="checkbox"[^>]*>', body)
-    assert len(boxes) == 2, boxes
+    assert len(boxes) == 3, boxes  # sections, stories, and R703's full-text opt-in
     for box in boxes:
         assert 'style="${_BUL_CHECK_BOX}"' in box, box
 

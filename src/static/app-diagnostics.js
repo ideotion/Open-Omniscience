@@ -2271,7 +2271,12 @@
         const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
         // Active languages show their reason too — that is what makes "cleared on 1
         // synthetic case — low statistical power" visible rather than implied.
-        let html = "<b>" + t("Active languages:") + "</b> "
+        // R704: the rates below belong to ONE model; name it beside them.
+        const first = keys.length ? g[keys[0]] : null;
+        let html = (first && first.measured_model)
+          ? "<b>" + esc(t("Measured on model:")) + "</b> " + esc(first.measured_model) + "<br>"
+          : "";
+        html += "<b>" + t("Active languages:") + "</b> "
           + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
         if (disabled.length) {
           html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
@@ -2305,9 +2310,13 @@
         const n = (e.n_cases == null) ? "?" : String(e.n_cases);
         const numbers = _tfn("n = {n} case(s)", { n: n })
           + ((e.checks && e.checks.length) ? " · " + e.checks.join("; ") : "");
-        const why = cleared ? "" : " — " + (measured === false
-          ? t("refused: the harness failed this language")
-          : t("refused: never measured"));
+        // R704: numbers measured on ANOTHER model license nothing for this one, and
+        // the row says so rather than reading as "never measured" in general.
+        const why = cleared ? "" : " — " + (e.model_matches === false && e.measured_model
+          ? t("refused: measured on {model}, not on the model that would extract").replace("{model}", e.measured_model)
+          : measured === false
+            ? t("refused: the harness failed this language")
+            : t("refused: never measured"));
         return '<label class="row" style="gap:6px;align-items:center" title="' + esc(e.reason || "") + '">'
           + '<input type="checkbox" data-pe-lang="' + esc(l) + '"' + (on ? " checked" : "")
           + (cleared ? "" : " disabled") + "> <span>" + esc(name(l)) + " <span class=\"muted\">("
@@ -3137,10 +3146,31 @@
     const FIELD_DATA_EXPORTS = [
       // Sources and articles: the per-source quality bundle (counts, keyword fingerprints, a bounded
       // text sample; private newsletter bodies stay gated), then one stored article per source as
-      // zips of at most 4 MB, walked by the server's cursor header.
+      // zips of at most 400 KB, walked by the server's cursor header.
       {kind: "file", url: "/api/diagnostics/source-quality?download=1", name: "oo-field-source-quality.zip"},
       {kind: "cursor", url: "/api/diagnostics/source-samples?after=", next: "X-Source-Samples-Next", name: "oo-field-source-samples-{n}.zip"},
+      // Cards (Lane X, 2026-11-14): every Home card as served, its evidence and the card quality checks, one zip.
+      // POST (R694): it reads article text. scripts/card_quality_report.py reads it back.
+      {kind: "file", method: "POST", url: "/api/diagnostics/field-cards", name: "oo-field-cards.zip"},
     ];
+    // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
+    // the parts would not upload; every part that did was under 175 KB). A larger file is cut into numbered byte
+    // pieces, name-part-001-of-003.zip and so on, which join back by plain concatenation in that order.
+    const FIELD_PART_BYTES = 400 * 1000;
+    // Pieces are saved one at a time with a pause between them: a browser drops or prompts on downloads started in a
+    // tight loop, and a lost piece cannot be joined. The number is padded to the width of the count, so a glob sorts them.
+    async function _fieldSaveParts(blob, name, pause) {
+      if (blob.size <= FIELD_PART_BYTES) { _fieldSave(blob, name); return 1; }
+      const n = Math.ceil(blob.size / FIELD_PART_BYTES);
+      const width = Math.max(3, String(n).length);
+      const pad = (k) => String(k).padStart(width, "0");
+      const stem = name.replace(/\.zip$/, "");
+      for (let k = 0; k < n; k++) {
+        _fieldSave(blob.slice(k * FIELD_PART_BYTES, (k + 1) * FIELD_PART_BYTES), `${stem}-part-${pad(k + 1)}-of-${pad(n)}.zip`);
+        if (k + 1 < n) await pause();
+      }
+      return n;
+    }
     function _fieldSave(blob, name) {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -3163,10 +3193,9 @@
         for (const ex of FIELD_DATA_EXPORTS) {
           if (ex.kind === "file") {
             say(tf("Saving… {files} files so far.", {files}));
-            const r = await fetch(ex.url);
+            const r = await fetch(ex.url, ex.method ? {method: ex.method} : undefined);
             if (!r.ok) throw new Error("HTTP " + r.status);
-            _fieldSave(await r.blob(), ex.name);
-            files += 1;
+            files += await _fieldSaveParts(await r.blob(), ex.name, pause);
             await pause();
             continue;
           }
@@ -3176,8 +3205,7 @@
             const r = await fetch(ex.url + after);
             if (!r.ok) throw new Error("HTTP " + r.status);
             part += 1;
-            _fieldSave(await r.blob(), ex.name.replace("{n}", String(part).padStart(3, "0")));
-            files += 1;
+            files += await _fieldSaveParts(await r.blob(), ex.name.replace("{n}", String(part).padStart(3, "0")), pause);
             const nxt = r.headers.get(ex.next);
             if (!nxt || !(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
             after = Number(nxt);

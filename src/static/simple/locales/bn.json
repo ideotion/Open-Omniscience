@@ -141,6 +141,11 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "দাম আপনার সম্মতিতে পূর্ণ দৃশ্যে আমদানি হয়; এখানে কিছুই আনা হয় না। প্রতিটি কার্ড সর্বশেষ সংরক্ষিত মান ও তার তারিখ দেখায়।",
   "A price can be old: read its date.": "দাম পুরোনো হতে পারে: তার তারিখ দেখুন।",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "প্রকাশিত রেকর্ড, আপনার সম্মতিতে পূর্ণ দৃশ্যে আনা হয়। গণনায় প্রকাশকের প্রতিটি সংশোধন অন্তর্ভুক্ত।",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "উৎস যাচাই না হওয়া পর্যন্ত আটকে রাখা নিবন্ধ অনুসন্ধানে লুকানো থাকে, তাই কোনো দেশের তালিকা এখানের গণনার চেয়ে ছোট হতে পারে।"
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "উৎস যাচাই না হওয়া পর্যন্ত আটকে রাখা নিবন্ধ অনুসন্ধানে লুকানো থাকে, তাই কোনো দেশের তালিকা এখানের গণনার চেয়ে ছোট হতে পারে।",
+  "Looking for leads in your corpus…": "আপনার সংগ্রহে সূত্র খোঁজা হচ্ছে…",
+  "Language": "ভাষা",
+  "Any language": "যেকোনো ভাষা",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "সংখ্যাগুলো প্রতিটি উৎসের ঘোষিত ভাষা ধরে, শুধু সাম্প্রতিক নিবন্ধগুলোর ওপর। ফিল্টারটি লেখা থেকে শনাক্ত ভাষার নিবন্ধও খুঁজে পায়, তাই সংখ্যা ফলাফলের থেকে আলাদা হতে পারে।",
+  "Articles counted": "গণনা করা নিবন্ধ"
  }
 }

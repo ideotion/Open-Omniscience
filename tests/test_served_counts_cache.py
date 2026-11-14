@@ -330,12 +330,20 @@ def test_the_change_probe_is_comparable_across_pooled_connections():
                 s.execute(text("SELECT total_changes()")).scalar(),
             )
 
-        assert _old_probe(a) != _old_probe(b), (
-            "the old probe agreed across connections here, so this test would not "
-            "discriminate -- check the pool really handed out two connections"
-        )
+        raw_a = a.connection().connection.dbapi_connection
+        raw_b = b.connection().connection.dbapi_connection
+        assert raw_a is not raw_b, "the pool must hand out two connections for this test to mean anything"
 
+        # The write goes through ``a`` and is flushed before the old pair is read, so the pair
+        # disagrees because of THIS write. It used to rely on history: after a test that disposed
+        # the engine, both connections were fresh, both read (2, 0), and the guard below tripped
+        # under -n 4 depending on the worker's neighbours (open-on-main row 55).
         a.add(Source(name=f"p-{uuid.uuid4().hex[:8]}", domain=f"{uuid.uuid4().hex[:8]}.test"))
+        a.flush()
+        assert _old_probe(a) != _old_probe(b), (
+            "the old probe agreed across connections after a write through one of them, "
+            "so this test would not discriminate"
+        )
         a.commit()
         after = served_cache.change_probe()
         assert after != before, "a write must move the probe"

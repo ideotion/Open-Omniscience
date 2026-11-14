@@ -378,6 +378,9 @@ _DATABASE_NOT_RECORDS: dict[str, dict[str, int]] = {
 }
 NOT_RECORDS.update(_DATABASE_NOT_RECORDS)
 _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    'src/monitoring/preflight.py': {  # RobotsUnavailable.cause is one of three fixed tokens the fetcher sets (OPEN_QUEUE C1); no words read
+        ('_check_one', 'refused = isinstance(exc, RobotsUnavailable) and exc.cause == "refused"'): 1,
+    },
     'src/monitoring/boots.py': {  # _error_text is record_text (a driver by class, the paths tokenised, then cut)
         ('diagnostics_member', 'return {"error": _error_text(exc)}'): 1,
     },
