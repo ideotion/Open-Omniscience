@@ -432,7 +432,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 相关性分析会返回由 scipy（Pearson/Spearman）计算出的真实系数 + p 值 + n，
 并附带“相关 ≠ 因果”的提示；重叠数据太少 → `insufficient_data`。
 
-**监测。** `GET /api/monitoring/health` 会执行真实的可达性
+**监测。** `POST /api/monitoring/health` 会执行真实的可达性
 检查（通过合乎伦理的抓取器）；`GET /api/monitoring/anomalies` 会按 z 分数标记
 文章数量的突增。**电子邮件：** `POST /api/sources/{id}/ingest-email`
 （IMAP）会把邮件并入同一个可搜索的语料库。

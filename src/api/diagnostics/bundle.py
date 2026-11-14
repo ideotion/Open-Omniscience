@@ -21,7 +21,7 @@ import pathlib
 import shutil
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
@@ -248,7 +248,7 @@ def _resuming_integrity(build: Callable[[], Any]) -> Any:
         _RESUME_INTEGRITY.reset(token)
 
 
-@router.get("/debug-bundle", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/debug-bundle")
 def debug_bundle(
     db: Session = Depends(read_only_db), slim: bool = Query(False)
 ) -> JSONResponse:
@@ -1813,6 +1813,31 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
 # router closes the SAME class of gap in one line rather than being independently
 # rediscovered. Filenames are relative to this module's own directory (src/api/).
 _DIAG_SIBLING_FILES: tuple[str, ...] = ("integrity.py",)
+# The diagnostics REPORTS that are POSTs since R694 (R278's proposal adopted): heavy work (the benchmarks, the model sweeps, /all,
+# /debug-bundle) or an on-demand self-test, moved off GET so another site's page cannot fire them. They are still reports, so they
+# stay in the coverage comparison above under their own paths; the other diagnostics POSTs are job control (run, cancel, save) and
+# are not reports.
+_DIAG_REPORT_POSTS: frozenset[str] = frozenset(
+    {
+        "/performance", "/benchmark", "/rollup-benchmark", "/llm-bench", "/llm-throughput", "/ai-activity-selftest",
+        "/llm-throughput-selftest", "/source-coverage-benchmark", "/ir-eval-selftest", "/perception-eval-selftest",
+        "/keyword-triage-selftest", "/recursive-loop", "/search-timing-selftest", "/debug-bundle", "/all",
+        "/bulletin-language-selftest", "/power-profile-selftest", "/keyword-selftest", "/qualification-assist-selftest",
+        "/source-audit-selftest", "/source-tags-selftest",
+    }
+)
+
+
+def diagnostics_report_routes(src: str, sibling_sources: Iterable[str] = ()) -> set[str]:
+    """The diagnostics report routes the coverage comparison classifies: every GET in ``src`` and the sibling routers, plus the
+    R694 report POSTs that are registered as POSTs in ``src``. Shared by the runtime coverage block and the CI ratchet."""
+    import re as _re
+
+    routes = set(_re.findall(r'@router\.get\("([^"]+)"', src))
+    for other in sibling_sources:
+        routes |= set(_re.findall(r'@router\.get\("([^"]+)"', other))
+    routes |= {p for p in _re.findall(r'@router\.post\("([^"]+)"', src) if p in _DIAG_REPORT_POSTS}
+    return routes
 
 
 def _diagnostics_coverage_report() -> dict:
@@ -1823,18 +1848,9 @@ def _diagnostics_coverage_report() -> dict:
     ``_DIAG_COVERAGE_EXEMPT`` above so the two checks cannot silently diverge. Degrades to
     ``{"available": False}`` rather than ever failing the whole bundle build over an
     introspection quirk."""
-    import re as _re
-
     try:
         src = package_source()
-        gets = set(_re.findall(r'@router\.get\("([^"]+)"', src))
-        for _fname in _DIAG_SIBLING_FILES:
-            gets |= set(
-                _re.findall(
-                    r'@router\.get\("([^"]+)"',
-                    (api_dir() / _fname).read_text(encoding="utf-8"),
-                )
-            )
+        gets = diagnostics_report_routes(src, ((api_dir() / _fname).read_text(encoding="utf-8") for _fname in _DIAG_SIBLING_FILES))
         covered = set(_DIAG_COVERAGE_MAP)
         exempt = set(_DIAG_COVERAGE_EXEMPT)
         unclassified = sorted(gets - covered - exempt)
@@ -3196,7 +3212,7 @@ def _write_all_diagnostics_zip(
 
 
 
-@router.get("/all", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/all")
 def all_diagnostics(
     profile: str = Query("full", description="full | light"),
     db: Session = Depends(get_db),

@@ -773,10 +773,10 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
                     ), f"{where}: refused_as must be the one table or the one pair written out"
                 else:
                     assert kw.arg in allowed_facts, f"{where}: {kw.arg} is not a fact a run may carry"
-    # Per file, so a file whose hooks were deleted cannot hide behind the others' count. EXACT at the time of writing (27, 1, 6, 8 and 17):
+    # Per file, so a file whose hooks were deleted cannot hide behind the others' count. EXACT at the time of writing (28, 1, 8, 8 and 17; R659's refusal added the 28th and the 7th and 8th):
     # a hook added or removed here moves the number in the same change, which is the point of a ratchet; a floor with slack let one
     # missing hook through.
-    counts = {"src/backup/volume_job.py": 27, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 6, "src/ingest/import_job.py": 8,
+    counts = {"src/backup/volume_job.py": 28, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 8, "src/ingest/import_job.py": 8,
               "src/backup/folder_backup.py": 17}
     for path, expected in counts.items():
         assert seen.get(path, 0) == expected, f"the scan found {seen.get(path, 0)} hooks in {path}, expected {expected}"

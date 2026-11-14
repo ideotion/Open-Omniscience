@@ -2851,7 +2851,7 @@ manifest पर एक हस्ताक्षर होता है। सत
 | विधि और पथ | उद्देश्य |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | आपके लिखे एनोटेशन |
-| `GET /api/annotations/export` | आपके एनोटेशन का एक हस्ताक्षरित, पोर्टेबल बंडल |
+| `POST /api/annotations/export` | आपके एनोटेशन का एक हस्ताक्षरित, पोर्टेबल बंडल |
 | `POST /api/annotations/import` | आयात किए गए बंडल का सत्यापन + संग्रहण (अमान्य होने पर अस्वीकार) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | web of trust |
 | `GET /api/annotations/for?target=` | पारदर्शी एकत्रीकरण — किसने क्या दावा किया |
