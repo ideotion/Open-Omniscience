@@ -47,7 +47,7 @@ import shutil
 import subprocess
 import time
 
-from src.monitoring.secret_scrub import log_failure, record_text
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("llm.ollama_lifecycle")
 
@@ -182,7 +182,9 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
             popen_kwargs["start_new_session"] = True
         _proc = subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 - fixed argv, absolute path from shutil.which, no shell
     except OSError as exc:
-        raise OllamaLifecycleError(f"could not launch 'ollama serve': {record_text(exc)}") from exc
+        log_failure(_LOG, "could not launch 'ollama serve'", exc, level=logging.WARNING)
+        # A fixed phrase, not the exception's words: it reaches the HTTP 409 detail; the log keeps the detail.
+        raise OllamaLifecycleError("could not launch 'ollama serve' (see the log)") from None
 
     if not wait:
         return {"started": True, "ready": False, "path": path, "note": "not waited for"}
@@ -249,7 +251,8 @@ def release_vram(*, timeout: float = 8.0) -> dict:
         }
     except Exception as exc:  # noqa: BLE001 - a courtesy release must never block a start
         log_failure(_LOG, "could not ask Ollama to release VRAM", exc, level=logging.INFO)
-        return {"released": [], "reason": record_text(exc), "attempted": True}
+        # A fixed phrase, not the exception's words: this reason reaches the Settings > Models toast (PR #1956); the log keeps the detail.
+        return {"released": [], "reason": "Ollama could not be asked to unload (see the log)", "attempted": True}
 
 
 def stop(*, timeout: float = 10.0) -> dict:
@@ -300,6 +303,8 @@ def stop(*, timeout: float = 10.0) -> dict:
             proc.kill()
             proc.wait(timeout=5)
     except OSError as exc:
-        return {"stopped": False, "owned": True, "reason": record_text(exc, typed=True)}
+        log_failure(_LOG, "could not stop the Ollama daemon this app started", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the Settings > Models toast (PR #1956).
+        return {"stopped": False, "owned": True, "reason": "the Ollama daemon this app started could not be stopped (see the log)"}
     _proc = None
     return {"stopped": True, "owned": True}
