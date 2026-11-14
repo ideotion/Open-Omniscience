@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,settings/ai,AI backend panel: a load overtaken by a pick or a save paints nothing,shipped,PR pending-number,src/static/app-ai-tools.js; tests/ai_backend_select_race_node_test.js,"loadAiBackendPanel guarded only the select against a stale load, then rewrote the Active backend line and the hardware override box from the old stored value until the save's reload corrected it. A stale load (and a stale failed load) now paints nothing; the reload that follows every save repaints the whole panel."
