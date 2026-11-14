@@ -5417,6 +5417,8 @@
   "The search re-index stopped on an error; the log has the details. Running it again continues from where it stopped.": "検索の再インデックスはエラーで停止しました。詳細はログにあります。もう一度実行すると、停止したところから続行します。",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "検索は最も多く言及された語形のみに拡張されました。上限をオフにすると、概念のすべての語形を検索できます。",
   "The sense you chose is not one this word belongs to, so it was ignored.": "選んだ意味はこの語に属さないため、無視されました。",
+  "The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer.": "vLLM のアドレスにあるサーバーは、モデルの所有者を OpenAI または LiteLLM と示しています。これはオンラインサービスへのプロキシが名乗る形なので、拒否されました。渡したテキストがこのマシンの外へ出るおそれがあります。vLLM のアドレスを、このコンピューター上で動くモデルに向けてください。",
+  "The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer.": "このアドレスのサーバーは自身を vLLM と名乗っていません。このアプリには、そのサーバーがあなたのテキストを別のコンピューターへ送っているかどうかは見えません。",
   "The server is busy — refreshing every {s}s until it recovers.": "サーバーが混雑しています — 回復するまで {s} 秒ごとに更新します。",
   "The server recovered — refreshing at the usual rate again.": "サーバーが回復しました — 通常の間隔で更新します。",
   "The server that answered (or, for a newsletter, the sending server in its mail headers): often a CDN or mail service, not where the publisher is. Several IPs over time is normal.": "応答したサーバー（ニュースレターの場合はメールヘッダーにある送信サーバー）：多くは CDN やメールサービスで、発行元の所在地ではありません。時間とともに IP が複数あるのは普通です。",
