@@ -1,0 +1,17 @@
+# The fault-reach audit's reviewed list (scripts/fault_reach_audit.py, OPEN_QUEUE item 30, R412).
+#
+# One line per test function whose installed fault never fires and where ZERO IS THE RIGHT COUNT, as
+#     tests/<file>.py::<test><TAB><why zero is right>
+# A test lands here only after a person read it. The usual reasons: the stub is a guard written with a non-assertion exception
+# (it raises if the code reaches somewhere it must not), or it fires only on the regression the test was written against.
+# The weekly job fails on a line whose test now fires its fault or no longer exists (remove it), and on a flagged test missing
+# here (read it: fix the test, or add it with the reason). Reviewed 2026-11-14 against main 03fa72672.
+tests/test_audit_recheck_small_fixes.py::test_forgetting_the_id_never_writes_oo_env_in_place	regression guard: cut_short fires only if oo.env is written in place again (it did before #1949)
+tests/test_bulletin_sink_sites_rest.py::test_a_run_with_no_backend_and_a_story_with_no_evidence_keep_the_class_and_log_scrubbed	the evidence call fails first, so the story never reaches the model; _FailingModel makes a call there loud
+tests/test_clickthrough_b15_fixes.py::test_the_restore_skips_a_folder_this_corpus_already_merged	guard: _would_restore raises if an already-merged folder is restored again
+tests/test_kill_switch_epoch_recorders_r617.py::test_qualification_a_stop_landing_before_the_trial_loop_and_cleared_after_the_refusal_judges_nothing	guard: the test asserts tried == [] (no trial under the Stop); the stub is what a trial would meet
+tests/test_process_source_failure_handler.py::test_recording_the_deferred_sources_reads_no_expired_row	regression guard: the pool timeout fires only if the finally reads an expired row again
+tests/test_refusal_by_type_r620.py::test_the_walk_reads_type_not_text	guard: _Mute's __str__ and __repr__ raise to prove the walk never reads an exception's text
+tests/test_statement_deadline_pool.py::test_the_card_diagnostic_never_rewrites_the_live_home_cache	guard: _Sess.query raises if the diagnostic needs a live corpus; the assertion is on the cache file
+tests/test_storage_events.py::test_a_reset_never_resolves_the_data_directory_again_whether_or_not_the_journal_was_touched	guard: gone() raises if the reset resolves the data folder again; the test asserts resolved == []
+tests/test_urllib3_log_withholds_the_path.py::test_an_argument_whose_class_property_raises_is_named_by_its_type_and_does_not_raise_into_the_library	guard: the __class__ property raises to prove the log filter names the argument by type() without reading it

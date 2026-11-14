@@ -1525,6 +1525,18 @@
       // has always asked; the import never did, so a re-index quietly parked with no
       // word to the operator about why its counter stopped. The reassurance is the
       // point of asking here: the honest answer is "yes, and nothing is lost".
+      // ASK THE SERVER FIRST WHETHER IT WOULD REFUSE (R659): while a background job writes to the corpus a committing import refuses, so
+      // offering "Start anyway?" for it would be a choice the server then takes back. The refusal is the server's own sentence.
+      // Only an import that switches the corpus is refused: large data and newsletters alone never are.
+      let _refusal = null;
+      if (items.some((it) => it.kind === "corpus" || it.kind === "legacy")) {
+        try { _refusal = (await api("/api/jobs")).import_refused || null; } catch { _refusal = null; }
+      }
+      if (_refusal) {
+        btn.disabled = false;
+        if (progEl) progEl.innerHTML = `<span style="color:var(--err)">${esc(ooServerText(_refusal))}</span>`;
+        return;
+      }
       if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) {
         btn.disabled = false;
         if (progEl) progEl.textContent = "";
@@ -3781,6 +3793,13 @@
           `<span class="pill warn">${esc(t("crypto-erased"))}</span> ${esc(tfw("{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
           `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` +
           `<span class="muted">${esc(r.limit)}</span>` +
+          // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
+          (r.scope === "app-only"
+            ? `<div class="card-caveat" title="${esc((r.left_untouched || []).join(", "))}">${esc(tfw("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.", { n: fmtNum((r.left_untouched || []).length, 0) }))}</div>` +
+              ((r.left_common_names || []).length
+                ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: r.left_common_names.join(", ") }))}</div>`
+                : "")
+            : "") +
           `<div class="hint" style="margin-top:8px">${esc(rec)}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +
           `<button class="danger" data-on-click="secureErase(1)">${esc(t("Single pass"))}</button>` +

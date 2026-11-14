@@ -636,6 +636,7 @@ def select_source_tag_candidates(
     cursor-is-only-an-efficiency-net convention (mirrors src.catalog.discover_job)."""
     from sqlalchemy import func
 
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, Source
     from src.database.stand_in import not_a_stand_in_article_id, not_a_stand_in_source
@@ -647,7 +648,11 @@ def select_source_tag_candidates(
             func.count(func.distinct(KeywordMentionRead.article_id)),
             func.sum(KeywordMentionRead.count),
         )
-        .filter(KeywordMentionRead.source_id.isnot(None), not_a_stand_in_article_id(KeywordMentionRead.article_id))
+        .filter(
+            KeywordMentionRead.source_id.isnot(None),
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_quarantined(KeywordMentionRead.article_id),
+        )
         .group_by(KeywordMentionRead.source_id)
         .all()
     )
@@ -692,7 +697,11 @@ def select_source_tag_candidates(
         term_rows = (
             session.query(Keyword.term, Keyword.language, func.sum(KeywordMentionRead.count).label("m"))
             .join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
-            .filter(KeywordMentionRead.source_id == sid, not_a_stand_in_article_id(KeywordMentionRead.article_id))
+            .filter(
+                KeywordMentionRead.source_id == sid,
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),
+            )
             .group_by(Keyword.id)
             .order_by(func.sum(KeywordMentionRead.count).desc())
             .limit(top_n)

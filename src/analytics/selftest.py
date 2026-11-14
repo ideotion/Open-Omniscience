@@ -12,7 +12,7 @@ It runs the REAL pipeline the app uses (``BaselineExtractor`` / ``build_families
 ``equivalence`` / ``baseline``) over each case and checks the outcome, so a
 regression shows up immediately. ``run_keyword_selftest()`` returns an exportable
 log (schema ``oo-selftest-1``); the in-app tool surfaces it at
-``GET /api/diagnostics/keyword-selftest`` so the maintainer can run it and send the
+``POST /api/diagnostics/keyword-selftest`` so the maintainer can run it and send the
 results back for the next optimization round. It asserts known-good behaviour on
 curated inputs — no DB, no network, no score, and it never edits data.
 """

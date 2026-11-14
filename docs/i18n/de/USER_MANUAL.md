@@ -2860,7 +2860,7 @@ Wenn Sie einem Autor das Vertrauen entziehen, werden seine Anmerkungen ausgeschl
 | Methode & Pfad | Zweck |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | Ihre selbst verfassten Anmerkungen |
-| `GET /api/annotations/export` | ein signiertes, portables Paket Ihrer Anmerkungen |
+| `POST /api/annotations/export` | ein signiertes, portables Paket Ihrer Anmerkungen |
 | `POST /api/annotations/import` | ein importiertes Paket prüfen + speichern (bei Ungültigkeit zurückgewiesen) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | das Web of Trust |
 | `GET /api/annotations/for?target=` | transparente Zusammenführung — wer was behauptet hat |

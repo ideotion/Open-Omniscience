@@ -22,7 +22,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.cross_site import refuse_cross_site_get
 from src.api.heavy import guarded_read, statement_budget
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
@@ -69,7 +68,7 @@ def bulletin_language(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(out, headers=headers)
 
 
-@router.get("/bulletin-language-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/bulletin-language-selftest")
 def bulletin_language_selftest() -> dict:
     """Prove the translation layer's four properties, with no DB, catalog or model.
 
@@ -167,7 +166,7 @@ def power_profile(
     return JSONResponse(report, headers=headers)
 
 
-@router.get("/power-profile-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/power-profile-selftest")
 def power_profile_selftest(download: bool = Query(False)) -> JSONResponse:
     """§7: prove the power-profile mechanism — Optimized is byte-identical to the current defaults,
     an explicit override wins, an unknown profile fails loud, no score leaks. Deterministic, no

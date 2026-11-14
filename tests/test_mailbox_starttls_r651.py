@@ -475,3 +475,32 @@ def test_a_constructor_that_fails_after_the_connect_closes_and_forgets_its_socke
         assert not any(s in ingest._LIVE_MAILBOX_SOCKETS for s in held)
     finally:
         srv.close()
+
+
+@pytest.mark.parametrize(("greeting", "script", "upgrade"), [(_IMAP_GREETING, _imap, b"a1 STARTTLS\r\n"), (_POP_GREETING, _pop, b"STLS\r\n")], ids=["imap", "pop3"])
+def test_the_helper_never_reads_a_handshake_as_a_command(greeting, script, upgrade):
+    """Row 41's flake, made deterministic. Without a ``starttls`` context, ``_Server`` answers the upgrade and must
+    never answer again: what follows is a TLS ClientHello, not a command. It went on splitting bytes on CRLF, so when the
+    ClientHello's random bytes held one (about 1 run in 100) the script answered "-ERR unexpected" / "BAD unexpected" into
+    the client's TLS layer, which then failed on "wrong version number" instead of timing out. Here the "ClientHello"
+    holds a CRLF on purpose; the helper must stay silent until the client goes."""
+    import socket
+
+    srv = _Server(greeting, script)
+    try:
+        with socket.create_connection(("127.0.0.1", srv.port), timeout=5) as c:
+            assert c.recv(4096) == greeting
+            c.sendall(upgrade)
+            time.sleep(0.2)
+            c.recv(4096)  # the upgrade answer
+            c.sendall(b"\x16\x03\x01\x00\x30random\r\nbytes\r\nmore")  # a handshake whose random bytes hold CRLF
+            c.settimeout(0.5)
+            try:
+                answer = c.recv(4096)
+            except TimeoutError:
+                answer = b""
+            assert answer == b"", f"the helper answered a handshake as a command: {answer!r}"
+        assert srv.eof.wait(5), "the helper keeps reading until the client goes"
+        assert srv.received[-1].upper().endswith(upgrade.strip().split(b" ")[-1]), srv.received
+    finally:
+        srv.close()

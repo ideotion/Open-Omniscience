@@ -473,6 +473,13 @@ def test_available_ram_reads_MemAvailable_not_MemTotal(tmp_path, monkeypatch):
         "builtins.open",
         lambda p, *a, **k: real_open(meminfo, *a, **k) if p == "/proc/meminfo" else real_open(p, *a, **k),
     )
+    # The figure is also bounded by the cgroup this process runs in (R302), which is read live: on a loaded runner the
+    # container's own headroom was 604 MiB and won, so the test failed by load and not by the reading it is about (open-on-main
+    # row 55). That bound has its own tests; here the cgroup sets no limit, so only the meminfo reading decides.
+    from src.config import cgroup_memory
+
+    monkeypatch.setattr(cgroup_memory, "cgroup_available_mb", lambda *a, **k: {
+        "available_mb": None, "limit_mb": None, "min_limit_mb": None, "source": None, "unreadable": False})
     assert M._available_ram_mb() == 10261176 // 1024  # MemAvailable, not the 16 GB MemTotal
 
 

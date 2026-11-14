@@ -148,7 +148,7 @@ def test_debug_bundle_shape_and_error_capture():
     install()
     logging.getLogger("oo.test").warning("synthetic warning for the bundle")
     with TestClient(app) as c:
-        r = c.get("/api/diagnostics/debug-bundle")
+        r = c.post("/api/diagnostics/debug-bundle")
         assert r.status_code == 200
         assert "attachment" in r.headers.get("content-disposition", "")
         body = r.json()
