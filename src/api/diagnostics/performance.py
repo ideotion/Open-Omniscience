@@ -20,7 +20,6 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.cross_site import refuse_cross_site_get
 from src.database.models import Article, Keyword, Source
 from src.database.session import get_db
 from src.monitoring.secret_scrub import http_detail
@@ -30,7 +29,7 @@ from ._base import _MAX_KEYWORDS_PER_LANG, router
 from .keywords import keyword_log
 
 
-@router.get("/performance", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/performance")
 def performance_report(
     selftest: bool = True, db: Session = Depends(get_db)
 ) -> JSONResponse:
@@ -304,7 +303,7 @@ def performance_report(
     )
 
 
-@router.get("/benchmark", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/benchmark")
 def benchmark_report(
     repeats: int = Query(3, ge=1, le=10, description="Runs per case (1 = cold only)"),
     db: Session = Depends(get_db),
@@ -336,7 +335,7 @@ def benchmark_report(
     )
 
 
-@router.get("/rollup-benchmark", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/rollup-benchmark")
 def rollup_benchmark(
     repeats: int = Query(3, ge=1, le=10, description="Timing runs per window"),
     db: Session = Depends(get_db),
@@ -364,7 +363,7 @@ def rollup_benchmark(
     )
 
 
-@router.get("/llm-bench", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/llm-bench")
 def llm_bench(
     repeats: int = Query(3, ge=1, le=10, description="Timed calls per prompt shape"),
 ) -> JSONResponse:
@@ -400,7 +399,7 @@ def llm_bench(
     )
 
 
-@router.get("/llm-throughput", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/llm-throughput")
 def llm_throughput(
     levels: str = Query(
         "1,2,4,8,16", description="Comma-separated concurrency levels to sweep"
@@ -485,7 +484,7 @@ def ai_activity(
     return recent_activity(session=db, recent=recent, hours=hours)
 
 
-@router.get("/ai-activity-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/ai-activity-selftest")
 def ai_activity_selftest() -> dict:
     """Prove the reader is bounded and the two rates really separate, on a fixture."""
     from src.ai_layer.activity import run_activity_selftest
@@ -493,7 +492,7 @@ def ai_activity_selftest() -> dict:
     return run_activity_selftest()
 
 
-@router.get("/llm-throughput-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/llm-throughput-selftest")
 def llm_throughput_selftest() -> dict:
     """Prove the concurrency sweep measures concurrency, with no model and no GPU.
 
@@ -557,7 +556,7 @@ def bulletin_preview(
     return JSONResponse(payload, headers=headers)
 
 
-@router.get("/source-coverage-benchmark", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/source-coverage-benchmark")
 def source_coverage_benchmark(
     repeats: int = Query(3, ge=1, le=10, description="Timing runs per read"),
     db: Session = Depends(get_db),

@@ -1873,8 +1873,10 @@ class EthicalFetcher:
         Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
         per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
         for this host. The page fetch and its robots.txt both route through this,
-        so a host's traffic shares one circuit and is unlinkable to other hosts'
-        circuits. ``None`` ONLY when there is no proxy at all.
+        so a host's traffic shares one circuit, separate from other hosts'
+        circuits. Separate circuits do not make the hosts' requests unlinkable:
+        the User-Agent and the timing still tie them together (R656). ``None``
+        ONLY when there is no proxy at all.
 
         WHENEVER A PROXY IS CONFIGURED THE MAPPING IS EXPLICIT, isolated or not
         (isolation disabled, or an HTTP proxy that cannot isolate, get the bare
@@ -2292,24 +2294,16 @@ class EthicalFetcher:
             # Pick a text encoding WITHOUT touching response.apparent_encoding: on a
             # streamed response the body is already consumed, so apparent_encoding
             # re-reads it and raises "content already consumed" (crashing the scrape).
-            # Detect from the bytes we just collected instead. requests also defaults
-            # unlabelled text/* to ISO-8859-1, which is usually wrong for modern pages,
-            # so detect in that case too.
-            encoding = getattr(response, "encoding", None)
-            if not encoding or str(encoding).lower() in ("iso-8859-1", "latin-1"):
-                try:
-                    from charset_normalizer import from_bytes
+            # Decide from the bytes we just collected instead (R699 cause 2: a UTF-8
+            # page with one stray byte used to come back as ptcp154 mojibake; the
+            # order of evidence is in src/ingest/charset.py).
+            from src.ingest.charset import choose_encoding
 
-                    best = from_bytes(raw).best()
-                    if best and best.encoding:
-                        encoding = best.encoding
-                except Exception:  # noqa: BLE001 - detection is best-effort
-                    pass
-                encoding = encoding or "utf-8"
+            encoding = choose_encoding(raw, getattr(response, "encoding", None))
             kept = raw if keep_bytes else None
             try:
                 return raw.decode(encoding, errors="replace"), kept
-            except (LookupError, TypeError):
+            except (LookupError, TypeError, ValueError):  # UnicodeError is a ValueError
                 return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:

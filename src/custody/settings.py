@@ -47,6 +47,10 @@ class CustodySettingsError(ValueError):
     """Raised when a settings update is invalid (e.g. an unknown anchoring mode)."""
 
 
+class CustodySettingsUnreadable(RuntimeError):
+    """Raised on the ingest path when the stored preferences cannot be read: the custody entry is queued as owed."""
+
+
 class _DamagedCustodySettingsError(CustodySettingsError):
     """The stored value is there and cannot be parsed: a user's own save may replace it (``replace_damaged``)."""
 
@@ -59,9 +63,18 @@ class CustodySettings:
     anchoring_mode: str = "local"
     auto_log_on_ingest: bool = True
     default_actor: str | None = None
+    #: The stored preferences are there and could not be read (a damaged row, a locked file, or a store keyed to
+    #: another passphrase). Never stored. Then auto-log reads as OFF and the ingest path queues the entry as owed
+    #: instead of writing it under guessed preferences: an operator who switched auto-log off is not logged, and one
+    #: who left it on loses nothing (queue:1255).
+    store_unreadable: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def stored(self) -> dict:
+        """The fields a save persists (``store_unreadable`` is a fact about a read, not a preference)."""
+        return {k: v for k, v in asdict(self).items() if k != "store_unreadable"}
 
 
 # The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
@@ -104,6 +117,12 @@ def _read_raw() -> dict | None:
     """Preferences source of truth: the encrypted ``app_state`` row (D1), falling back to
     (and one-time migrating) the legacy ``custody_settings.json`` file."""
     return _store().read_raw()
+
+
+def _read_raw_checked() -> dict | None:
+    """``_read_raw`` that raises CustodySettingsError on a stored row it could not read, instead of reading it as unset.
+    The reader's own open (read-only, a failed read held 2 s), never a save's."""
+    return _store().read_raw_checked()
 
 
 def _read_raw_strict() -> dict | None:
@@ -162,10 +181,20 @@ def load_settings(*, strict: bool = False) -> CustodySettings:
     """Load custody preferences, falling back to honest defaults.
 
     A missing file yields defaults (with ``auto_log_on_ingest`` seeded from the
-    legacy config flag). A corrupt file is logged and treated as defaults rather
-    than crashing the API.
+    legacy config flag). A stored row that cannot be read (damaged, locked, keyed otherwise) is NOT read as
+    unset: it yields the defaults with ``store_unreadable`` set and auto-log OFF, so nothing is logged under preferences
+    the operator may have changed; the ingest path queues that entry as owed. ``strict`` raises instead (a save).
     """
-    raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
+    if strict:
+        raw = _read_raw_strict()  # a save that rewrites what it read: an unreadable store refuses
+    else:
+        try:
+            raw = _read_raw_checked()
+        except CustodySettingsError as exc:
+            # Unreadable is not unset: the legacy default (ON) would log an operator who switched auto-log off.
+            # DEBUG: in a pool storm this is every ingest; each one's owed entry is logged by the ingest path already.
+            _LOG.debug("custody settings are unreadable; auto-log on ingest waits (%s)", type(exc).__name__)
+            return CustodySettings(auto_log_on_ingest=False, store_unreadable=True)
     if raw is None:
         return CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
 
@@ -222,7 +251,7 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySet
             current = load_settings(strict=True)
         except _DamagedCustodySettingsError:
             current = CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
-            reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
+            reset = sorted(set(current.stored()) - {k for k, v in updates.items() if v is not None})
     current.reset_fields = reset  # type: ignore[attr-defined]
 
     if "anchoring_mode" in updates and updates["anchoring_mode"] is not None:
@@ -253,7 +282,7 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySet
         actor = updates["default_actor"]
         current.default_actor = str(actor).strip() if actor and str(actor).strip() else None
 
-    _write_raw({"version": SETTINGS_VERSION, **current.to_dict()})
+    _write_raw({"version": SETTINGS_VERSION, **current.stored()})
     return current
 
 

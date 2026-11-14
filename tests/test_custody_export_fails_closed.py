@@ -132,11 +132,11 @@ def test_the_cli_refuses_a_file_cut_mid_record(bundle, tmp_path):
     full, _ = bundle
     text = json.dumps(full)
     p = tmp_path / "cut.json"
-    p.write_text(text[: len(text) - 40])  # cut inside the last record
+    p.write_text(text[: len(text) - 40], encoding="utf-8")  # cut inside the last record
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(p)], capture_output=True, text=True)
     assert r.returncode == 1 and "not a readable custody bundle" in r.stdout and "Traceback" not in r.stderr
     whole = tmp_path / "whole.json"
-    whole.write_text(text)
+    whole.write_text(text, encoding="utf-8")
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(whole)], capture_output=True, text=True)
     assert r.returncode == 0 and "VERIFIED       : True" in r.stdout
 
@@ -265,18 +265,18 @@ def test_a_lone_surrogate_is_refused_by_the_route_and_the_cli(bundle, tmp_path):
                    headers={"content-type": "application/json"})
     assert r.status_code == 200 and r.json()["verified"] is False and "surrogate" in r.json()["issues"][0]
     path = tmp_path / "b.json"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)
     assert r.returncode == 1 and "surrogate" in r.stdout and "Traceback" not in r.stderr
     # In a field the report prints back (the second read: the print itself raised).
     for field, refused in (("item_id", True), ("log_version", False)):  # the top-level log_version is not signed
-        path.write_text(json.dumps({**bundle[1], field: "x"}).replace('"x"', '"\\ud800"'))
+        path.write_text(json.dumps({**bundle[1], field: "x"}).replace('"x"', '"\\ud800"'), encoding="utf-8")
         r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True,
                            text=True)
         assert "Traceback" not in r.stderr and "\\ud800" in r.stdout, r.stderr
         assert (r.returncode == 1) is refused
     # A number too long for int(): a ValueError that is not a JSONDecodeError.
-    path.write_text('{"entries": [{"seq": ' + "9" * 5000 + "}]}")
+    path.write_text('{"entries": [{"seq": ' + "9" * 5000 + "}]}", encoding="utf-8")
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)
     assert r.returncode == 1 and "not a readable custody bundle" in r.stdout and "Traceback" not in r.stderr
 

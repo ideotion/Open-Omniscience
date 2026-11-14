@@ -137,7 +137,7 @@ def test_import_results_member_checks_what_an_older_build_wrote(monkeypatch, tmp
     (tmp_path / "import_results.jsonl").write_text(json.dumps(old) + '\n{"at": "torn ' + _PW + "\n", encoding="utf-8")
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
     with TestClient(app) as c:
-        data = c.get("/api/diagnostics/debug-bundle").json()["data"]
+        data = c.post("/api/diagnostics/debug-bundle").json()["data"]
     imports = data["imports"]
     for form in _forms():
         assert form not in json.dumps(imports), form

@@ -94,6 +94,26 @@ class SettingsStore:
         self._migrate(raw)
         return raw
 
+    def read_raw_checked(self) -> dict | None:
+        """``read_raw`` that tells UNREADABLE from unset: a stored row that could not be read raises the module's error
+        class (``damaged`` for a value there and unparseable), where ``read_raw`` reads it as absent. Same read as
+        ``read_raw`` (read-only open, the 2 s hold on a failed read): for a reader, not for a save."""
+        if not self._use_kv():
+            return self._json()
+        from src.config.kv_store import KvReadError, is_damaged, kv_get_json_checked, refusal_text
+
+        try:
+            raw = kv_get_json_checked(self.kv_key)
+        except KvReadError as exc:  # refused, by class, as read_raw_strict does
+            raise (self.damaged if is_damaged(exc) else self.refusal)(refusal_text(exc)) from None
+        if raw is not None:
+            return raw
+        raw = self._json()
+        if raw is None:
+            return None
+        self._migrate(raw)
+        return raw
+
     def read_raw_strict(self) -> dict | None:
         """``read_raw`` for a caller that will REWRITE what it read: a stored row that cannot
         be read raises the module's error class (the class only, never the engine's text)
