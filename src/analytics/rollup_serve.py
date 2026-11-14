@@ -632,6 +632,11 @@ def _refresh_persisted_build() -> bool | None:
                     _void_built_epoch(con)
                     raise
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+                # An in-memory rollup served until now (the persisted store has only just become available) is retired here, under the
+                # lock serves hold, so none is mid-query: left open it held up to DuckDB's whole memory limit until the process ended, and
+                # its offload folder stayed on disk (open-on-main row 25).
+                retired = _STATE["con"] if _STATE["con"] is not con else None
+                retired_spill, _STATE["spill"] = _STATE.get("spill"), None
                 _STATE["con"] = con
                 _STATE["persisted"] = True
                 _STATE["built_at"] = time.time()
@@ -639,6 +644,10 @@ def _refresh_persisted_build() -> bool | None:
                 _STATE["bind"] = s.get_bind()
                 _STATE["token"] = token
                 _STATE["pending"] = False
+                if retired is not None:
+                    with contextlib.suppress(Exception):
+                        retired.close()
+                _remove_spill(retired_spill)  # after the close: DuckDB holds its files open until then
     except Exception:
         if opened_now:  # release the file handle so the next attempt can reopen it cleanly
             try:
