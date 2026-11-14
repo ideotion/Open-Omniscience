@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "公開された記録で、同意のうえ完全表示で取得します。件数には発行元による改訂もすべて含まれます。",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "検索ではソース確認まで保留中の記事を表示しないため、国の一覧がここでの件数より短いことがあります。",
   "Looking for leads in your corpus…": "コーパスの中から手がかりを探しています…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "各記事が書かれている言語。情報源が示す言語、示されていなければ本文から検出した言語です。件数はコーパス全体のものです。",
   "Language": "言語",
-  "Any language": "すべての言語"
+  "Any language": "すべての言語",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "件数は各情報源が示す言語にもとづき、最新の記事のみを対象にしています。フィルターは本文から言語を検出した記事も見つけるため、件数と結果が異なることがあります。",
+  "Articles counted": "数えた記事"
  }
 }

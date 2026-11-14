@@ -292,7 +292,11 @@ def test_first_run_offers_simple_mode_as_the_starting_view():
     # Set once per opening, so going Back keeps the reader's pick; a re-run starts from the view in use.
     assert "_gwRenderStart()" in function_body(core, "openGuide")
     assert "_gwRenderStart()" not in function_body(core, "_gwPaint")
-    assert "guideDone()" in function_body(core, "_gwRenderStart")
+    # "done" is cleared by the Settings re-run toggle, so a first run is told apart by a saved pick;
+    # a peek at a full-view tool counts as simple mode in both directions.
+    render = function_body(core, "_gwRenderStart")
+    assert "_guideState().start" in render and 'mode() !== "full"' in render
+    assert "st.start = pick.value" in apply and 's.mode() !== "full"' in apply
 
 
 def test_search_pages_and_filters_by_language():
@@ -300,6 +304,11 @@ def test_search_pages_and_filters_by_language():
     results = function_body(code, "Results")
     assert 'p.set("offset", String(rows.length))' in results, "Search shows more than its first page"
     assert "x.key !== key" in results, "a late page never lands on a newer search"
+    assert "if (r.loading) return" in results, "a new search never shows the previous one's rows"
+    assert "!seen[a.id]" in results, "a row pushed across the page edge is not shown twice"
+    # The full analysis reads the same set: country and language scopes travel as its filters.
+    full = function_body(code, "openFullAnalysis")
+    assert "adv.countries" in full and "adv.langs" in full
     sp = function_body(code, "searchParams")
     assert 'p.set("langs"' in sp and '!(s.ids && s.ids.length)' in sp
     assert "/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(c)" in function_body(code, "loadState")

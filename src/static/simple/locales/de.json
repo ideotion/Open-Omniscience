@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Veröffentlichte Datensätze, mit Ihrer Zustimmung in der vollständigen Ansicht abgerufen. Die Zahl enthält jede Revision des Herausgebers.",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Die Suche blendet zurückgehaltene Artikel aus, bis ihre Quelle geprüft ist; die Liste eines Landes kann daher kürzer sein als seine Zahl hier.",
   "Looking for leads in your corpus…": "Suche nach Hinweisen in Ihrem Korpus…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "Die Sprache, in der jeder Artikel geschrieben ist, wie seine Quelle sie angibt oder, falls nicht, wie sie aus dem Text erkannt wurde. Die Zahlen gelten für den ganzen Korpus.",
   "Language": "Sprache",
-  "Any language": "Alle Sprachen"
+  "Any language": "Alle Sprachen",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Die Zahlen beruhen auf der Sprache, die jede Quelle angibt, und nur auf den neuesten Artikeln. Der Filter findet auch Artikel, deren Sprache aus dem Text erkannt wurde, daher kann eine Zahl von den Ergebnissen abweichen.",
+  "Articles counted": "Gezählte Artikel"
  }
 }

@@ -667,7 +667,13 @@
   function openFullAnalysis(s) {
     peekFull("explore", function () {
       if (s.ids && s.ids.length && typeof window.openAnalysisForIds === "function") window.openAnalysisForIds(s.ids, s.label || "");
-      else if (typeof window.openAnalysisFor === "function") window.openAnalysisFor(s.query);
+      else if (typeof window.openAnalysisFor === "function") {
+        // The country and language scopes travel as the analysis's own filters, so it reads the same set.
+        var adv = {};
+        if (s.countries && s.countries.length) adv.countries = s.countries;
+        if (s.langs && s.langs.length) adv.langs = s.langs;
+        window.openAnalysisFor(s.query, Object.keys(adv).length ? { adv: adv } : undefined);
+      }
     });
   }
   function Results(props) {
@@ -682,7 +688,8 @@
     // Further pages, appended under the first; a new search starts again from the top.
     var more = useState({ key: key, rows: [], busy: false, err: null }), setExtra = more[1];
     var extra = more[0].key === key ? more[0] : { key: key, rows: [], busy: false, err: null };
-    if (r.loading && !r.data) return html`<${Loading}/>`;
+    // A new search never shows the previous one's rows (useLoad keeps old data while it reloads).
+    if (r.loading) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
     var rows = (r.data.results || []).concat(extra.rows);
     var total = r.data.total || 0;
@@ -693,7 +700,15 @@
       p.set("ui_lang", curLang());
       setExtra({ key: key, rows: extra.rows, busy: true, err: null });
       apiCall("/api/articles?" + p.toString()).then(function (d) {
-        setExtra(function (x) { return x.key !== key ? x : { key: key, rows: x.rows.concat(d.results || []), busy: false, err: null }; });
+        setExtra(function (x) {
+          if (x.key !== key) return x;
+          // Newest first by offset: articles collected meanwhile push rows across the page edge,
+          // so a row already on screen is dropped rather than shown twice.
+          var seen = {};
+          (r.data.results || []).concat(x.rows).forEach(function (a) { seen[a.id] = true; });
+          var fresh = (d.results || []).filter(function (a) { return !seen[a.id]; });
+          return { key: key, rows: x.rows.concat(fresh), busy: false, err: null };
+        });
       }, function (e) {
         setExtra(function (x) { return x.key !== key ? x : Object.assign({}, x, { busy: false, err: (e && e.message) || String(e) }); });
       });
@@ -727,6 +742,7 @@
     // The languages the corpus holds, with their article counts, for the language filter.
     var lr = useLoad(function () { return apiCall("/api/insights/corpus-source-language-facets").catch(function () { return null; }); }, []);
     var langs = (lr.data && lr.data.languages) || [];
+    var langPartial = !!(lr.data && lr.data.corpus_total > lr.data.corpus_n);
     var picked = s.langs && s.langs.length ? s.langs[0] : "";
     return html`<div class="s-view">
       <h1 class="s-h1">${t("Search")}</h1>
@@ -748,8 +764,10 @@
           ${picked && !langs.some(function (x) { return x.language === picked; }) ? html`<option value=${picked}>${langName(picked)}</option>` : null}
         </select>
         <${Details} what=${t("Language")}>
-          <p>${t("The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.")}</p>
+          <p>${t("The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.")}</p>
+          ${lr.data ? html`<${Row} k=${t("Articles counted")} v=${fmtInt(lr.data.corpus_n) + " / " + fmtInt(lr.data.corpus_total)}/>` : null}
         <//>
+        ${langPartial ? html`<${Mark} kind="partial"/>` : null}
       </div>` : null}
       ${s.ids && s.ids.length ? html`<div class="s-scope">
         <span>${t("The articles behind: {label}", { label: s.label || "" })}</span>

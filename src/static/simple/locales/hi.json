@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "प्रकाशित रिकॉर्ड, जो आपकी सहमति से पूर्ण दृश्य में प्राप्त होते हैं। गिनती में प्रकाशक का हर संशोधन शामिल है।",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "खोज उन लेखों को छिपाती है जो स्रोत की जाँच तक रोके गए हैं, इसलिए किसी देश की सूची यहाँ की गिनती से छोटी हो सकती है।",
   "Looking for leads in your corpus…": "आपके संग्रह में सुराग खोजे जा रहे हैं…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "हर लेख जिस भाषा में लिखा है, जैसा उसका स्रोत बताता है या, न बताए तो, जैसा उसके पाठ से पहचाना गया। संख्याएँ पूरे संग्रह की हैं।",
   "Language": "भाषा",
-  "Any language": "कोई भी भाषा"
+  "Any language": "कोई भी भाषा",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "संख्याएँ हर स्रोत की बताई भाषा पर आधारित हैं, केवल नवीनतम लेखों पर। फ़िल्टर उन लेखों को भी ढूँढता है जिनकी भाषा पाठ से पहचानी गई, इसलिए संख्या परिणामों से अलग हो सकती है।",
+  "Articles counted": "गिने गए लेख"
  }
 }

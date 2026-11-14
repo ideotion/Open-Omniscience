@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Catatan yang diterbitkan, diambil dengan persetujuan Anda di tampilan lengkap. Jumlahnya mencakup setiap revisi dari penerbit.",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Pencarian menyembunyikan artikel yang ditahan sampai sumbernya diperiksa, jadi daftar suatu negara bisa lebih pendek daripada jumlahnya di sini.",
   "Looking for leads in your corpus…": "Mencari petunjuk di korpus Anda…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "Bahasa setiap artikel, seperti yang dinyatakan sumbernya atau, jika tidak, seperti yang terdeteksi dari teksnya. Angkanya untuk seluruh korpus.",
   "Language": "Bahasa",
-  "Any language": "Bahasa apa saja"
+  "Any language": "Bahasa apa saja",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Angkanya memakai bahasa yang dinyatakan setiap sumber, hanya atas artikel terbaru. Filter juga menemukan artikel yang bahasanya terdeteksi dari teksnya, jadi angka bisa berbeda dari hasil.",
+  "Articles counted": "Artikel yang dihitung"
  }
 }

@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "已发布的记录，在您同意后于完整视图中获取。计数包含发布方的每次修订。",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "搜索会隐藏在来源核实前被暂扣的文章，因此某国的列表可能少于此处的计数。",
   "Looking for leads in your corpus…": "正在您的语料库中寻找线索…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "每篇文章所用的语言：以其来源声明的为准，若无声明则按正文检测。数字针对整个语料库。",
   "Language": "语言",
-  "Any language": "任何语言"
+  "Any language": "任何语言",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "计数依据各来源声明的语言，且只针对最新的文章。筛选还会找到根据正文检测出语言的文章，因此计数可能与结果不同。",
+  "Articles counted": "已计数的文章"
  }
 }

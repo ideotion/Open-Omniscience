@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "سجلات منشورة تُجلب بموافقتك في العرض الكامل. يشمل العدد كل مراجعة أجراها الناشر.",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "يُخفي البحث المقالات المحجوزة حتى يُتحقق من مصدرها، لذا قد تكون قائمة البلد أقصر من عددها هنا.",
   "Looking for leads in your corpus…": "جارٍ البحث عن خيوط في مجموعتك…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "اللغة التي كُتبت بها كل مقالة، كما يذكرها مصدرها أو، إن لم يذكرها، كما اكتُشفت من نصها. الأعداد تخص المجموعة كلها.",
   "Language": "اللغة",
-  "Any language": "أي لغة"
+  "Any language": "أي لغة",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "تعتمد الأعداد على اللغة التي يذكرها كل مصدر، ولأحدث المقالات فقط. ويجد المرشّح أيضًا مقالات اكتُشفت لغتها من نصها، لذا قد يختلف العدد عن النتائج.",
+  "Articles counted": "المقالات المحسوبة"
  }
 }

@@ -979,16 +979,19 @@
     // Where the reader starts (R682): a first run offers simple mode; a re-run starts from the
     // view in use. Applied on closing the guide, any way it closes, like the depth.
     function _gwRenderStart() {
-      const inSimple = !!(window.ooSimple && window.ooSimple.mode() === "simple");
-      const want = (!guideDone() || inSimple) ? "simple" : "full";
+      // "done" is cleared by the Settings re-run toggle, so the first run is told apart by whether
+      // a start was ever picked. A peek at a full-view tool still counts as simple mode.
+      const inSimple = !!(window.ooSimple && window.ooSimple.mode() !== "full");
+      const want = (!_guideState().start || inSimple) ? "simple" : "full";
       document.querySelectorAll('#guide-wizard input[name="gw-start"]').forEach((i) => { i.checked = i.value === want; });
     }
     function _gwApplyStart() {
       const pick = document.querySelector('#guide-wizard input[name="gw-start"]:checked');
       const s = window.ooSimple;
       if (!pick || !s) return;
+      const st = _guideState(); st.start = pick.value; _guideSave(st);
       if (pick.value === "simple" && s.mode() !== "simple") s.enter();
-      else if (pick.value === "full" && s.mode() === "simple") s.leave();
+      else if (pick.value === "full" && s.mode() !== "full") s.leave();
     }
     function _gwRenderDepth() {
       const stored = (typeof getUi === "function") ? getUi().depth : null;

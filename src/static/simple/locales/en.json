@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.",
   "Looking for leads in your corpus…": "Looking for leads in your corpus…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.",
   "Language": "Language",
-  "Any language": "Any language"
+  "Any language": "Any language",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.",
+  "Articles counted": "Articles counted"
  }
 }

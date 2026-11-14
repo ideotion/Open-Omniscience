@@ -143,8 +143,9 @@
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Registos publicados, obtidos com o seu consentimento na vista completa. A contagem inclui cada revisão feita pelo editor.",
   "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "A pesquisa oculta artigos retidos até a fonte ser verificada, por isso a lista de um país pode ser mais curta do que a contagem aqui.",
   "Looking for leads in your corpus…": "A procurar pistas no seu corpus…",
-  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "A língua em que cada artigo está escrito, como a fonte a indica ou, na falta disso, como detetada no texto. Os números são de todo o corpus.",
   "Language": "Idioma",
-  "Any language": "Qualquer idioma"
+  "Any language": "Qualquer idioma",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Os números usam a língua que cada fonte declara, apenas sobre os artigos mais recentes. O filtro também encontra artigos cuja língua foi detetada no texto, por isso um número pode diferir dos resultados.",
+  "Articles counted": "Artigos contados"
  }
 }
