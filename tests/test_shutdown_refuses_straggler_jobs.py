@@ -32,6 +32,7 @@ import pytest
 
 from src.database import after_shutdown
 from src.jobs import background as bg
+from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -539,7 +540,7 @@ def test_the_repair_is_stopped_by_its_own_flag_before_the_stop_all_and_waited_fo
 
     assert repair.REPAIR_JOB.cancellable is False
     main = (ROOT / "src/api/main.py").read_text(encoding="utf-8")
-    assert "repair.stop()" in main[main.index("def _stop_database_check"):main.index("def _ends_the_check_wait")]
+    assert "repair.stop()" in python_function_source(main, "_stop_database_check")
     assert main.index("    _stop_database_check()") < main.index("jobs_left = stop_all_jobs(")
 
     # A writer that cannot be cancelled and ends only on the repair's own flag, as the copy does at its next batch.
