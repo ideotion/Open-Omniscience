@@ -260,21 +260,37 @@ def default_quarantine_candidates_batch(
 
     newly_written = 0
     if write and to_write:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+        from src.analytics.store import shift_keyword_counters_for_quarantine
+        from src.database.writer import connection_first, write_lock
+
         now = datetime.now(UTC)
-        for aid, signal in to_write.items():
-            # A targeted, no-load UPDATE (the batch already read every candidate's
-            # columns above; no second content decrypt). synchronize_session=False --
-            # this session never re-reads these rows again in the same batch.
-            session.query(Article).filter(Article.id == aid).update(
-                {
-                    "quarantined": True,
-                    "quarantine_reason": signal,
-                    "quarantine_criteria_version": criteria_version,
-                    "quarantined_at": now,
-                },
-                synchronize_session=False,
-            )
-        session.commit()
+        # R101: the stamps, the keyword counters they move and the corpus epoch land in ONE commit under ONE hold of
+        # the write gate. Only the newly stamped articles leave the counters (an already-quarantined one left them when
+        # it was stamped). The epoch bump makes the keyword rollup rebuild without them: a stamp appends no mention row,
+        # so the rollup's tail gate alone would never notice it. ``strict=True``: a bump that fails rolls the whole batch
+        # back and raises, so no stamp lands while the rollup still counts its article.
+        connection_first(session)
+        with write_lock():
+            try:
+                for aid, signal in to_write.items():
+                    # A targeted, no-load UPDATE (the batch already read every candidate's
+                    # columns above; no second content decrypt). synchronize_session=False --
+                    # this session never re-reads these rows again in the same batch.
+                    session.query(Article).filter(Article.id == aid).update(
+                        {
+                            "quarantined": True,
+                            "quarantine_reason": signal,
+                            "quarantine_criteria_version": criteria_version,
+                            "quarantined_at": now,
+                        },
+                        synchronize_session=False,
+                    )
+                shift_keyword_counters_for_quarantine(session, to_write, quarantined=True)
+            except BaseException:
+                session.rollback()
+                raise
+            bump_corpus_epoch(session, reason="quarantine", strict=True)  # commits the batch with the bump
         newly_written = len(to_write)
 
     return {

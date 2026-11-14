@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
+from src.analytics.quarantine_scope import not_quarantined
 from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 from src.database.stand_in import not_a_stand_in_article_id
@@ -461,6 +462,56 @@ def _apply_keyword_counter_deltas(
         kw.article_count = max(0, (kw.article_count or 0) + d_art)
 
 
+def _is_quarantined(session: Session, article: Article, inserted_in_this_transaction: bool) -> bool:
+    """Whether ``article`` is quarantined right now (R101). One primary-key read, unless the caller just inserted
+    it, in which case the object's own value is the stored one."""
+    if inserted_in_this_transaction or article.id is None:
+        return bool(article.quarantined)
+    return bool(session.execute(select(Article.quarantined).where(Article.id == article.id)).scalar())
+
+
+def shift_keyword_counters_for_quarantine(
+    session: Session, article_ids: Iterable[int], *, quarantined: bool
+) -> dict:
+    """Move ``Keyword.mention_count`` / ``article_count`` for articles whose quarantine stamp is changing (R101).
+
+    ``quarantined=True``: the articles are being stamped, so their mentions leave the counters. ``False``: they
+    are being un-stamped, so their mentions come back. Call it in the SAME transaction as the stamp, for the
+    articles whose stamp really changes (an already-quarantined article stamped again must not be subtracted
+    twice), after the write gate is held, and with the stamp not yet committed.
+
+    Each article holds at most one mention row per keyword (the unique ``(keyword_id, article_id)`` index), so a
+    keyword's ``article_count`` moves by the number of these articles that mention it and its ``mention_count`` by
+    their summed occurrences. The ``max(0, ...)`` floor matches :func:`_apply_keyword_counter_deltas`;
+    :func:`reconcile_keyword_counters` remains the authoritative repair. Returns a small tally."""
+    ids = sorted({int(i) for i in article_ids})
+    if not ids:
+        return {"articles": 0, "keywords": 0}
+    sign = -1 if quarantined else 1
+    deltas: dict[int, list[int]] = {}
+    for i in range(0, len(ids), _MENTION_ID_CHUNK):
+        chunk = ids[i : i + _MENTION_ID_CHUNK]
+        for kid, men, arts in session.execute(
+            select(
+                KeywordMention.keyword_id,
+                func.sum(KeywordMention.count),
+                func.count(func.distinct(KeywordMention.article_id)),
+            )
+            .where(KeywordMention.article_id.in_(chunk))
+            .group_by(KeywordMention.keyword_id)
+        ):
+            d = deltas.setdefault(int(kid), [0, 0])
+            d[0] += int(men or 0)
+            d[1] += int(arts or 0)
+    kids = sorted(deltas)
+    for i in range(0, len(kids), _MENTION_ID_CHUNK):
+        for kw in session.query(Keyword).filter(Keyword.id.in_(kids[i : i + _MENTION_ID_CHUNK])).all():
+            d_men, d_art = deltas[kw.id]
+            kw.mention_count = max(0, (kw.mention_count or 0) + sign * d_men)
+            kw.article_count = max(0, (kw.article_count or 0) + sign * d_art)
+    return {"articles": len(ids), "keywords": len(kids)}
+
+
 def _resolve_known_language(article: Article, content: str) -> str | None:
     """The known/deduced language driving extraction + sentiment for one article.
 
@@ -786,6 +837,13 @@ def index_article(
     _t_read = time.monotonic() if timings is not None else 0.0
     # ``{}`` and not ``None``: ``None`` is "two rows share a keyword", the legacy delete-then-insert shape.
     old_rows = {} if inserted_in_this_transaction else _read_mention_rows(session, article.id)
+    # R101: a quarantined article contributes NOTHING to the keyword counters, before or after this pass, so
+    # its re-index moves none of them (its mention rows are still written: quarantine is reversible, and
+    # un-quarantining adds them back through ``shift_keyword_counters_for_quarantine``). Read from the
+    # database inside the write window, not from the ORM object, so a stamp that landed after the caller
+    # loaded the article is seen; an article inserted in this transaction has no stamp to miss.
+    if maintain_counters and _is_quarantined(session, article, inserted_in_this_transaction):
+        maintain_counters = False
     old_contrib: dict[int, int] = {}
     if maintain_counters:
         if old_rows is None:  # two rows for one keyword: sum them, as the old read did
@@ -2138,6 +2196,7 @@ def backfill_keyword_counters(session: Session) -> dict:
                     func.count(func.distinct(KeywordMention.article_id)),
                 )
                 .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
                 .group_by(KeywordMention.keyword_id)
             )
         }
@@ -2261,6 +2320,7 @@ def reconcile_keyword_counters(
                     func.count(func.distinct(KeywordMention.article_id)),
                 )
                 .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
                 .group_by(KeywordMention.keyword_id)
             )
         }

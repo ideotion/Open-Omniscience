@@ -4751,7 +4751,11 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             "INSERT INTO temp.carry_delta (kid, m, a) SELECT ck.new, SUM(im.count), COUNT(*)"
             " FROM temp.carry_win w"
             " CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE w.kw = 1 GROUP BY ck.new"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE w.kw = 1"
+            # R101: an article that arrives already quarantined adds nothing to the counters. Answered from
+            # idx_article_quarantined (one covering range read per window), never by reading the article rows.
+            " AND w.new NOT IN (SELECT id FROM main.articles WHERE quarantined IS 1)"
+            " GROUP BY ck.new"
         )
         con.execute(
             "UPDATE main.keywords SET"
