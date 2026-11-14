@@ -346,12 +346,19 @@ def test_the_instance_tag_is_random_kept_and_says_nothing_about_the_folder(tmp_p
     a, b = tmp_path / "home" / "alice" / "oo", tmp_path / "home" / "alice" / "oo2"
     monkeypatch.setenv("OO_DATA_DIR", str(a))
     first = paths.instance_tag()
-    assert first == paths.instance_tag() and (a / "instance_id").read_text().strip() == first   # made once, kept
+    assert first == paths.instance_tag() and (a / ".oo-instance-id").read_text().strip() == first   # made once, kept
     assert first != hashlib.sha256(str(a.resolve()).encode()).hexdigest()[:8]   # not derived from the path
     monkeypatch.setenv("OO_DATA_DIR", str(b))
     assert paths.instance_tag() != first   # another folder, another tag
-    (b / "instance_id").write_text("../../etc\n")
-    assert len(paths.instance_tag()) == 8 and (b / "instance_id").read_text().strip() != "../../etc"
+    (b / ".oo-instance-id").write_text("../../etc\n")
+    assert len(paths.instance_tag()) == 8 and (b / ".oo-instance-id").read_text().strip() != "../../etc"
+    import os
+
+    c = tmp_path / "fifo"
+    c.mkdir()
+    os.mkfifo(c / ".oo-instance-id")   # a FIFO would block a read forever, holding the lock for every later export
+    monkeypatch.setenv("OO_DATA_DIR", str(c))
+    assert paths.instance_tag() == "no-id"
 
 
 def test_the_cards_file_scrubs_a_held_passphrase(db, tmp_path, monkeypatch):

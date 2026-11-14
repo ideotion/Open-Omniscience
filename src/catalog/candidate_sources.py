@@ -18,13 +18,16 @@ WHAT IT REFUSES:
     rows from several instances into a review table, and only a reviewed PR changes a catalogue.
   * AN INHERITED VERDICT IS NOT A CANDIDATE. Only sources with a judging attempt this install made (``measured``, the same
     rule ``qualification_export`` applies) are listed; one a backup brought in is counted apart.
-  * PRIVATE SOURCES STAY HOME. Newsletter and mailbox sources (their domain can name a person's subscriptions) are left
-    out and counted. A feed address keeps only scheme, host, port and path: user, password, query and fragment are
-    removed, so a feed's token never leaves.
+  * PRIVATE SOURCES STAY HOME. Newsletter and mailbox sources (their domain can name a person's subscriptions: a
+    mailbox domain, a newsletter-tagged row, or a publisher row the newsletter import made, ``source_type`` newsletter)
+    are left out and counted, and newsletters attached to a web source stay out of its counts. A feed address keeps
+    only scheme, public host, port and path, with token-like or ``@`` path segments withheld (``clean_feed_address``).
 """
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -42,22 +45,42 @@ def _iso(value: datetime | None) -> str | None:
     return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
 
 
+_ENTROPIC = re.compile(r"(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9_\-]{16,}")
+
+
+def _public_host(host: str) -> bool:
+    """A name or address anyone on the internet could reach: not loopback, private, link-local or a bare local name."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        name = host.lower().rstrip(".")
+        return "." in name and not name.endswith((".local", ".localhost", ".internal", ".lan", ".home", ".arpa"))
+    return ip.is_global
+
+
 def clean_feed_address(url: str | None) -> str | None:
-    """Scheme, host, port and path of a feed address; user, password, query and fragment removed. A non-web address
-    keeps only its scheme; an address that does not parse is withheld."""
+    """Scheme, host, port and path of a public web feed address, nothing more.
+
+    User, password, query, fragment and ``;params`` are removed; a path segment that carries an ``@`` or looks like a
+    token (16+ letters and digits mixed) is withheld; a non-web address or a host that is not public (loopback, private,
+    link-local, a bare local name) is withheld whole, since an intranet feed is no catalogue candidate."""
     if not url:
         return None
     try:
         parts = urlsplit(url.strip())
         if parts.scheme.lower() not in ("http", "https"):
-            return f"{parts.scheme or 'address'}:[withheld]"
+            return "[non-web address withheld]"
         host = parts.hostname or ""
+        if not _public_host(host):
+            return "[non-public address withheld]"
         if ":" in host:
             host = f"[{host}]"
         netloc = host + (f":{parts.port}" if parts.port else "")
     except ValueError:
         return "[address withheld]"
-    return urlunsplit((parts.scheme.lower(), netloc, parts.path, "", ""))
+    segs = [seg.split(";", 1)[0] for seg in parts.path.split("/")]
+    path = "/".join("[withheld]" if ("@" in seg or _ENTROPIC.fullmatch(seg)) else seg for seg in segs)
+    return urlunsplit((parts.scheme.lower(), netloc, path, "", ""))
 
 
 def _tags(raw: str | None) -> list[str]:
@@ -87,7 +110,8 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
     for s in rows:
         domain = (s.domain or "").lower()
         tags = _tags(s.tags)
-        if domain in private or any("newsletter" in t.lower() or "mailbox" in t.lower() for t in tags):
+        if (domain in private or (s.source_type or "").strip().lower() == "newsletter"
+                or any("newsletter" in t.lower() or "mailbox" in t.lower() for t in tags)):
             skipped["newsletter_or_mailbox"] += 1
         elif domain in shipped:
             skipped["in_a_shipped_catalogue"] += 1
@@ -113,7 +137,9 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
         for sid, n, first_art, last_art in (
             session.query(Article.source_id, func.count(Article.id), func.min(Article.published_at),
                           func.max(Article.published_at))
-            .filter(Article.source_id.in_(chunk)).group_by(Article.source_id).all()
+            # a newsletter attached to a web source stays out of its counts and dates (R655)
+            .filter(Article.source_id.in_(chunk), Article.newsletter_attached_via.is_(None))
+            .group_by(Article.source_id).all()
         ):
             articles[int(sid)] = (int(n or 0), first_art, last_art)
     out: list[dict[str, Any]] = []

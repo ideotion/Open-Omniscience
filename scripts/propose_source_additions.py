@@ -37,27 +37,40 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _doc(raw: bytes | str) -> dict[str, Any] | None:
+    doc = json.loads(raw)
+    return doc if isinstance(doc, dict) and isinstance(doc.get("candidates"), list) else None
+
+
 def _load(path: Path) -> list[tuple[str, dict[str, Any]]]:
-    """``(instance tag, candidates document)`` pairs read from one zip or json file."""
+    """``(instance tag, candidates document)`` pairs read from one zip or json file; an unreadable file raises."""
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as z:
             names = set(z.namelist())
             if "candidates.json" not in names:
                 return []
-            doc = json.loads(z.read("candidates.json"))
+            doc = _doc(z.read("candidates.json"))
             man = json.loads(z.read("manifest.json")) if "manifest.json" in names else {}
-        return [(str(man.get("instance") or path.name), doc)]
-    doc = json.loads(path.read_text(encoding="utf-8"))
-    return [(path.parent.name or path.name, doc)] if isinstance(doc, dict) and "candidates" in doc else []
+        return [(str(man.get("instance") or path.name), doc)] if doc else []
+    doc = _doc(path.read_text(encoding="utf-8"))
+    sibling = path.with_name("manifest.json")   # an extracted zip: its manifest names the instance
+    man = json.loads(sibling.read_text(encoding="utf-8")) if sibling.is_file() else {}
+    return [(str(man.get("instance") or path.parent.name or path.name), doc)] if doc else []
 
 
-def collect(inputs: list[Path]) -> list[tuple[str, dict[str, Any]]]:
+def collect(inputs: list[Path]) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
+    """Every readable candidates document, and the files that could not be read (a lone numbered piece, a damaged zip),
+    which are reported and never stop the run."""
     out: list[tuple[str, dict[str, Any]]] = []
+    unreadable: list[str] = []
     for p in inputs:
         files = sorted(p.rglob("*.zip")) + sorted(p.rglob("candidates.json")) if p.is_dir() else [p]
         for f in files:
-            out += _load(f)
-    return out
+            try:
+                out += _load(f)
+            except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError) as exc:
+                unreadable.append(f"{f.name}: {type(exc).__name__}")
+    return out, unreadable
 
 
 def _shipped_domains() -> frozenset[str] | None:
@@ -70,12 +83,19 @@ def _shipped_domains() -> frozenset[str] | None:
         return None
 
 
-def build(docs: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
-    by_domain: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+def build(docs: list[tuple[str, dict[str, Any]]], unreadable: list[str] | None = None) -> dict[str, Any]:
+    # one row per (instance, domain): the NEWEST press of an instance wins, so a second press never counts twice
+    latest: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
     for inst, doc in docs:
+        when = str(doc.get("generated_at") or "")
         for row in doc.get("candidates") or []:
             if isinstance(row, dict) and row.get("domain"):
-                by_domain[str(row["domain"]).lower()].append((inst, row))
+                key = (inst, str(row["domain"]).lower())
+                if key not in latest or when >= latest[key][0]:
+                    latest[key] = (when, row)
+    by_domain: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+    for (inst, domain), (_when, row) in latest.items():
+        by_domain[domain].append((inst, row))
     shipped = _shipped_domains()
     rows: list[dict[str, Any]] = []
     for domain, seen in sorted(by_domain.items()):
@@ -104,6 +124,7 @@ def build(docs: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
     return {
         "schema": "oo-proposed-sources-1",
         "inputs": len(docs),
+        "unreadable": unreadable or [],
         "instances": sorted({i for i, _ in docs}),
         "note": "Every row is PROPOSED. Nothing is added to a shipped catalogue without a maintainer's verification and a "
                 "reviewed pull request.",
@@ -112,11 +133,18 @@ def build(docs: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
 
 
 def to_markdown(rep: dict[str, Any]) -> str:
+    def cell(x: Any) -> str:
+        return str(x).replace("|", "\\|").replace("\n", " ")
+
     lines = [
         "# Proposed source additions",
         "",
         f"{len(rep['rows'])} domains from {rep['inputs']} file(s), {len(rep['instances'])} instance(s). {rep['note']}",
         "",
+    ]
+    if rep.get("unreadable"):
+        lines += [f"Not read (join numbered pieces first, or the file is damaged): {', '.join(rep['unreadable'])}", ""]
+    lines += [
         "| Domain | Instances | Articles | Tags | Language | Country | Disagree | Shipped now |",
         "|---|---|---|---|---|---|---|---|",
     ]
@@ -124,8 +152,8 @@ def to_markdown(rep: dict[str, Any]) -> str:
         tags = ", ".join(f"{t} ({n})" for t, n in list(r["tags"].items())[:6])
         shipped = {None: "not checked", True: "yes", False: "no"}[r["already_shipped"]]
         lines.append(
-            f"| {r['domain']} | {r['instances_n']} | {r['max_articles_stored']} | {tags} | "
-            f"{', '.join(r['languages']) or '-'} | {', '.join(r['countries']) or '-'} | "
+            f"| {cell(r['domain'])} | {r['instances_n']} | {r['max_articles_stored']} | {cell(tags)} | "
+            f"{cell(', '.join(r['languages']) or '-')} | {cell(', '.join(r['countries']) or '-')} | "
             f"{', '.join(r['disagreement']) or '-'} | {shipped} |"
         )
     return "\n".join(lines) + "\n"
@@ -136,11 +164,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("inputs", nargs="+", type=Path)
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
-    docs = collect(a.inputs)
+    docs, unreadable = collect(a.inputs)
+    for u in unreadable:
+        print(f"not read: {u}", file=sys.stderr)
     if not docs:
         print("no candidate-sources file found in the inputs", file=sys.stderr)
         return 2
-    rep = build(docs)
+    rep = build(docs, unreadable)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "proposed-sources.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")
     (a.out / "proposed-sources.md").write_text(to_markdown(rep), encoding="utf-8")

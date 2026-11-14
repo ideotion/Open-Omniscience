@@ -51,20 +51,35 @@ def test_only_measured_qualified_sources_outside_every_catalogue_are_proposed(db
     _src(db, 4, NEWSLETTER_SOURCE_DOMAINS[0])            # a mailbox: stays home
     _src(db, 5, "letters.example", tags="newsletter")    # a newsletter publisher: stays home
     _src(db, 6, "pending.example", status="unqualified")
+    _src(db, 7, "someauthor.substack.com", tags="")       # a publisher row the newsletter import made
+    db.query(Source).filter(Source.id == 7).update({"source_type": "newsletter"})
+    db.add(Article(url="https://new.example/n", canonical_url="https://new.example/n", source_id=1, title="n",
+                   content="x", hash="7" * 64, published_at=datetime(2026, 11, 9), newsletter_attached_via="list-id"))
+    db.commit()
     doc = cs.build_candidate_sources(db)
     assert [c["domain"] for c in doc["candidates"]] == ["new.example"]
     row = doc["candidates"][0]
     assert row["proposal"] == "proposed" and row["tags"] == ["via:wikidata-discovery", "news", "fr"]
     assert row["feed"] == "https://new.example/feed.xml", "no user, password, query or fragment"
     assert row["evidence"]["articles_stored"] == 1 and row["evidence"]["attempts"] == {"qualified": 1}
-    assert doc["left_out"] == {"in_a_shipped_catalogue": 1, "inherited_not_measured": 1, "newsletter_or_mailbox": 2}
+    assert doc["left_out"] == {"in_a_shipped_catalogue": 1, "inherited_not_measured": 1, "newsletter_or_mailbox": 3}
+    assert row["evidence"]["last_article"].startswith("2026-11-01"), "an attached newsletter stays out of the dates"
     assert "SECRET" not in json.dumps(doc) and "pw@" not in json.dumps(doc)
 
 
 @pytest.mark.parametrize(("raw", "shown"), [
-    ("http://[::1]:8080/rss?k=1", "http://[::1]:8080/rss"),
-    ("ftp://u:p@host/x", "ftp:[withheld]"),
-    ("http://bad:port/x", "[address withheld]"),
+    ("https://news.example:8443/rss?k=1", "https://news.example:8443/rss"),
+    ("http://[2606:4700::1111]/rss", "http://[2606:4700::1111]/rss"),
+    ("https://news.example/feeds/private/a1b2c3d4e5f6a7b8c9d0/rss.xml", "https://news.example/feeds/private/[withheld]/rss.xml"),
+    ("https://news.example/u/john.doe@mail.com/feed", "https://news.example/u/[withheld]/feed"),
+    ("https://news.example/rss;jsessionid=ABC123", "https://news.example/rss"),
+    ("https://news.example/2026/world-news/rss.xml", "https://news.example/2026/world-news/rss.xml"),
+    ("http://[::1]:8080/rss", "[non-public address withheld]"),
+    ("http://192.168.1.4/rss", "[non-public address withheld]"),
+    ("http://intranet/rss", "[non-public address withheld]"),
+    ("ftp://u:p@host/x", "[non-web address withheld]"),
+    ("javascript:alert(1)", "[non-web address withheld]"),
+    ("http://bad.example:port/x", "[address withheld]"),
     (None, None),
 ])
 def test_feed_addresses_keep_only_scheme_host_port_and_path(raw, shown):
@@ -107,11 +122,14 @@ def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path,
     _zip(tmp_path / "one.zip", "aaaa1111", [a, {"domain": "old.example", "tags": []}])
     _zip(tmp_path / "two.zip", "bbbb2222", [b])
     _zip(tmp_path / "again.zip", "aaaa1111", [a])          # a second press of the first instance counts once
+    (tmp_path / "x-part-001-of-002.zip").write_bytes(b"PK\x03\x04 half a zip")   # a lone piece is reported, not fatal
     out = tmp_path / "out"
     assert psa.main([str(tmp_path), "--out", str(out)]) == 0
     rep = json.loads((out / "proposed-sources.json").read_text())
     row = rep["rows"][0]
     assert row["domain"] == "new.example" and row["instances_n"] == 2 and row["max_articles_stored"] == 40
     assert row["disagreement"] == ["language"] and row["proposal"] == "proposed" and row["already_shipped"] is False
+    assert row["attempts"] == {"qualified": 3} and row["tags"] == {"news": 2}, "one count per instance, never per press"
+    assert rep["unreadable"] == ["x-part-001-of-002.zip: BadZipFile"]
     assert [r for r in rep["rows"] if r["domain"] == "old.example"][0]["already_shipped"] is True
     assert "Proposed source additions" in (out / "proposed-sources.md").read_text()

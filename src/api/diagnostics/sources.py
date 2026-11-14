@@ -183,7 +183,10 @@ def source_qualification_export(
     if fmt == "yaml":
         headers = {"Content-Disposition": f'attachment; filename="source_qualification-{stamp}.yml"'}
         return Response(to_overlay_yaml(report), media_type="text/yaml", headers=headers)
-    headers = {}
+    from src.paths import instance_tag
+
+    # which data folder this came from (a random tag kept in it), in the header only: the body stays the overlay's schema
+    headers = {"X-OO-Instance": instance_tag()}
     if download:
         headers["Content-Disposition"] = (
             f'attachment; filename="oo-source-qualification-{stamp}.json"'
