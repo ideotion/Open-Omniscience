@@ -302,7 +302,7 @@
       acts.push('<button class="tbtn" data-tm="resume" data-id="' + esc(j.id) + '">' + esc(t("Resume")) + "</button>");
     // The bulk summary & translation queue and the Insights backlog drain (R600's second PR):
     // the actions the server lists, drawn as listed; local work, so a resume asks nothing.
-    if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog") {
+    if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog" || j.kind === "reindex-backlog") {
       var sa = Array.isArray(j.actions) ? j.actions : [];
       if (sa.indexOf("resume") >= 0)
         acts.push('<button class="tbtn" data-tm="resume" data-local="1" data-id="' + esc(j.id) + '">' + esc(t("Resume")) + "</button>");
@@ -414,6 +414,7 @@
   function storagePausedText(phase, g) {
     if (phase === "paused-damaged") return "Paused: the database reported damage"; // see app-core.js
     if (phase === "paused-verifying") return "Paused: checking the data files after an unexpected stop";
+    if (phase === "paused-low-memory") return "Paused: low memory"; // the memory guard (see app-core.js)
     if (g && g.overridden) return null; // see app-core.js _storagePausedText
     return { "paused-wal-pinned": "Paused: the database log has grown too large",
              "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
@@ -472,7 +473,8 @@
     var pausedTxt = storagePausedText(a.phase, a.storage_guard);
     var state = offline ? '<span class="pill err">' + esc(t("paused — airplane mode")) + "</span>"
               : a.active ? '<span class="pill ok">' + esc(t("running — collection in progress")) + "</span>"
-              : pausedTxt ? '<span class="pill warn">' + esc(t(pausedTxt)) + "</span>"
+              : pausedTxt ? '<span class="pill warn">' + esc(t(pausedTxt)) + "</span>" + (a.phase === "paused-low-memory"
+                ? ' <button class="tiny secondary" title="' + esc(t("Collection pauses again if memory is still low.")) + '" data-tm="memory-resume">' + esc(t("Resume")) + "</button>" : "")
               : a.running ? '<span class="pill ok">' + esc(t("running")) + "</span>"
               : '<span class="pill">' + esc(t("stopped")) + "</span>";
     var now;
@@ -749,6 +751,11 @@
     // The storage guard's "Resume anyway" (R112): the operator's OVERRIDE. The server grants it
     // within its bounds or refuses with a sentence frame, which is shown with the sizes through
     // this page's formatter (see app-core.js storageGuardResume).
+    // The memory guard's Resume: releases the low-memory pause; it pauses again if memory is still low (a retry, never an override).
+    memoryResume: async function () {
+      try { await api("/api/scheduler/memory-guard/resume", { method: "POST" }); toast(t("Resumed.")); }
+      catch (e) { toast(e.message, "err"); }
+    },
     storageResume: async function () {
       try {
         var r = await api("/api/scheduler/storage-guard/resume", { method: "POST" });
@@ -792,6 +799,7 @@
     if (act === "cancel") window.TM.cancel(id);
     else if (act === "resume") window.TM.resume(id, b.getAttribute("data-local") === "1");
     else if (act === "storage-resume") window.TM.storageResume();
+    else if (act === "memory-resume") window.TM.memoryResume();
     else if (act === "move") window.TM.move(b.getAttribute("data-key"), Number(b.getAttribute("data-dir")), b.getAttribute("data-kind"));
   });
 

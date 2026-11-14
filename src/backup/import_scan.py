@@ -21,6 +21,7 @@ fully unit-testable with a temp directory.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
@@ -176,7 +177,14 @@ def scan_import_folder(
 
     if corpus_dirs:
         found["corpus"] = [
-            {"path": str(d), "manifest": _VOL_MANIFEST, "volumes": _volume_count(d)}
+            {
+                "path": str(d),
+                "manifest": _VOL_MANIFEST,
+                "volumes": _volume_count(d),
+                # Unencrypted volume copies an interrupted import left here before R686: named, never removed
+                # unless the operator asks (POST /api/backup/import-scan/remove-leftover-plaintext).
+                "leftover_plaintext": leftover_plaintext(d),
+            }
             for d in corpus_dirs
         ]
 
@@ -236,6 +244,54 @@ def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
         nbytes = sum(int(it.get("size", 0)) for it in items if isinstance(it, dict))
         out[catdir] = (len(items), nbytes)
     return out
+
+
+#: The suffix the old reassembly gave a decrypted volume it wrote INTO the backup folder (before R686).
+LEFTOVER_PLAIN_SUFFIX = ".plain"
+
+
+#: The only volume names the oo-volumes-1 writer ever made (``vol-00001.ooenc`` ...), mirrored from src.backup.volumes so this
+#: module stays crypto-free. A leftover is only ever ``<one of these>.plain``.
+_V1_VOLUME_NAME = re.compile(r"^vol-[0-9]{5,}\.ooenc$")
+_V1_KIND = "oo-volumes-1"
+
+
+def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
+    """Decrypted volume copies an interrupted restore left in this backup folder (R686), by file name.
+
+    Before R686 the oo-volumes-1 reassembly decrypted each volume to ``<volume>.plain`` beside it and removed it
+    after; a crash or a kill in between left that PLAINTEXT on the backup drive. A name is reported only when this
+    folder's own manifest is an oo-volumes-1 manifest (the only format that ever wrote such a copy), lists the
+    volume under a name that writer gives (``vol-NNNNN.ooenc``, so never a path, a drive letter, a stream name or
+    a file of the user's), the copy is not itself a listed volume, and it sits in this folder. Read-only and
+    crypto-free (it reads the manifest's names, nothing else); never raises."""
+    try:
+        import json
+
+        folder = Path(d)
+        m = json.loads((folder / _VOL_MANIFEST).read_text(encoding="utf-8"))
+        if not isinstance(m, dict) or m.get("kind") != _V1_KIND:
+            return []
+        vols = m.get("volumes")
+        names = (
+            [str(v.get("name") or "") for v in vols if isinstance(v, dict)]
+            if isinstance(vols, list)
+            else []
+        )
+        listed = set(names)
+        root = folder.resolve()
+        out: set[str] = set()
+        for n in names:
+            cand = n + LEFTOVER_PLAIN_SUFFIX
+            if not _V1_VOLUME_NAME.match(n) or cand in listed:
+                continue
+            p = folder / cand
+            # a link is never offered (R692): what a removal takes is a copy this folder holds, not something it points at
+            if not p.is_symlink() and p.is_file() and p.parent.resolve() == root:
+                out.add(cand)
+        return sorted(out)
+    except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
+        return []
 
 
 def _volume_count(d: Path) -> int:
