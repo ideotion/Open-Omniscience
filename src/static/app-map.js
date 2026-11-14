@@ -3489,6 +3489,11 @@
         },
       });
     }
+    // ODbL 1.0 s. 4.3: every figure below is derived from OpenStreetMap, so each OSM panel carries the credit once, compact, at its foot.
+    function _osmCredit() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div class="hint" data-osm-credit style="margin-top:6px">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</div>`;
+    }
     function _renderOsmCompleteness() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("osm-comp-body"); if (!host || !_osmComp) return;
@@ -3510,6 +3515,7 @@
       host.querySelectorAll("select[data-osm-comp-key]").forEach((sel) => {
         sel.addEventListener("change", () => { _osmCompKey = sel.value; _renderOsmCompleteness(); });
       });
+      host.insertAdjacentHTML("beforeend", _osmCredit());
       for (const c of _osmComp) _osmCompDrawMap(c);
     }
     // -- Trends 2 and 3 (v0.6.0 B3a, S06-01 S3) ------------------------------------------- //
@@ -3702,7 +3708,7 @@
     }
     function _renderOsmTrends() {
       const host = $("osm-trend-body"); if (!host || !_osmTrends) return;
-      host.innerHTML = _osmTrends.map((c, i) => `<div data-osm-trend-country="${i}">${_osmTrendCountry(c, i)}</div>`).join("");
+      host.innerHTML = _osmTrends.map((c, i) => `<div data-osm-trend-country="${i}">${_osmTrendCountry(c, i)}</div>`).join("") + _osmCredit();
       // No `initial`: it would fire onSelect. The active button is in the markup.
       _osmTrendNavs = Array.prototype.map.call(host.querySelectorAll("[data-osm-trend-tabs]"), (nav) => ooSubtabs(nav, _osmTrendShowTab));
       host.querySelectorAll("select[data-osm-trend-key]").forEach((sel) => {
@@ -3927,7 +3933,7 @@
       host.innerHTML = _osmProfileDone.map((lane, i) => {
         const tabs = `<nav class="tabs" data-osm-profile-tabs>${OSM_PROFILE_TABS.map(([k, lab]) => `<button type="button" data-tab="${k}"${k === _osmProfileTab ? ' class="active"' : ""}>${esc(t(lab))}</button>`).join("")}</nav>`;
         return `<div data-osm-profile-country="${i}"><h3 class="lib-sub">${esc(_osmPickLabel(lane.alpha3, lane.name))}</h3>${tabs}<div data-osm-profile-body="${i}">${_osmProfileBody(i)}</div></div>`;
-      }).join("");
+      }).join("") + _osmCredit();
       // No `initial`: it would fire onSelect. The active button is in the markup.
       _osmProfileNavs = Array.prototype.map.call(host.querySelectorAll("[data-osm-profile-tabs]"), (nav) => ooSubtabs(nav, _osmProfileShowTab));
       if (host.getAttribute("data-bound") === "1") return;
@@ -4009,13 +4015,15 @@
       const sig = _osmGeogSigOf(); if (sig === _osmGeogSig) return;
       _osmGeogDone = done; _osmGeogDraw(done);
     }
-    function _osmGeogVintage(name, v) {
+    function _osmGeogVintage(name, v, since) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const extract = v && v.extract ? ooIsoDate(v.extract) : t("Not recorded");
       const sentence = v && v.last_diff
         ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
         : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
-      return `${name}: ${sentence}`;
+      // The «changed» measure counts a window, so it says where the window starts (Q814 = b: observed here, never the planet's past).
+      const window_ = since ? " " + osmCompTf("Changes observed here since {since}.", { since: ooIsoDate(since) }) : "";
+      return `${name}: ${sentence}${window_}`;
     }
     function _osmGeogShare(raw, n) { return n > 0 ? `${fmtNum(raw / n * 100, 1)} %` : "—"; }
     // The figures of the level in view: {rows: [{key, name, raw, n}], absent: [{name, why}], vintage: [sentence], note}.
@@ -4025,7 +4033,7 @@
       if (_osmGeogLevel === "countries") {
         for (const a of (_osmGeog.areas || [])) {
           const name = _osmPickLabel(a.alpha3, a.name);
-          out.vintage.push(_osmGeogVintage(name, a.vintage));
+          out.vintage.push(_osmGeogVintage(name, a.vintage, m === "changed" ? a.observed_since : null));
           const raw = (a.values || {})[m];
           if (raw == null) out.absent.push({ name, why: (a.reasons || {})[m] || "" });
           else out.rows.push({ key: (a.alpha2 || "").toLowerCase(), name, raw, n: a.n });
@@ -4113,7 +4121,7 @@
         + `<label>${esc(t("Map by"))} <select data-osm-geog="level">${levelOpts}</select></label>`
         + `<label>${esc(t("Measure"))} <select data-osm-geog="measure">${measureOpts}</select></label>`
         + `<label>${esc(t("Show"))} <select data-osm-geog="form"${_osmGeogMeasure === "places" ? " disabled" : ""}>${formOpts}</select></label></div>`
-        + `<div data-osm-geog-out></div>`;
+        + `<div data-osm-geog-out></div>` + _osmCredit();
       if (host.getAttribute("data-bound") !== "1") {
         host.setAttribute("data-bound", "1");
         // One listener for the host: the controls are rewritten with each render, so none is bound to an element inside it.

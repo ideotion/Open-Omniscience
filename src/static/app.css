@@ -2275,6 +2275,8 @@
 .climate-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; margin: 8px 0; font-size: 13px; }
 .climate-fact { min-width: 0; overflow-wrap: anywhere; }
 .climate-diag { margin: 4px 0 0; padding-inline-start: 18px; }
+.climate-place-table { border-collapse: collapse; margin: 8px 0; width: 100%; max-width: 860px; }
+.climate-place-table th, .climate-place-table td { text-align: start; padding: 6px 8px; border-bottom: 1px solid var(--line, rgba(127,127,127,.25)); vertical-align: top; }
 #climate-station { font-family: var(--mono); text-transform: uppercase; }
 
 /* The Claim Workspace (S05-11 S1): steps in order, each with its method sentence visible. */

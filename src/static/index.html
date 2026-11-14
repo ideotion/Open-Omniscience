@@ -23,6 +23,9 @@
        apply the chosen skin BEFORE first paint so there is no flash of the default.
        Additive, fail-safe and local-only; the default interface is untouched. -->
   <script src="/static/guis/boot.js"></script>
+  <!-- Simple mode (invariant #34, R682): its stylesheet, and the flag read before first paint. -->
+  <link rel="stylesheet" href="/static/simple/simple.css">
+  <script src="/static/simple/boot.js"></script>
 </head>
 <body>
   <a href="#main" class="skip-link">Skip to main content</a>
@@ -143,6 +146,12 @@
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="AI status" data-i18n-dyn>AI</span>
         </div>
+        <!-- Simple mode switch (invariant #34, R682): a second, task-first interface over the same
+             page; remembered on this device. Painted and translated by simple/simple.js. -->
+        <button type="button" class="icon-btn" id="ui-simple-toggle" role="switch" aria-checked="false"
+                aria-label="Simple view" title="Simple view" data-i18n-dyn>
+          <span class="simple-switch-track" aria-hidden="true"><span class="simple-switch-knob"></span></span>
+          <span class="simple-switch-label">Simple</span></button>
         <button class="icon-btn" id="tm-open" data-on-click="openTaskManager()" title="Tasks &amp; system" aria-label="Open the task manager (new tab)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>
         <!-- Collection-speed knob (maintainer ruling 2026-07-23): a gauge icon
@@ -1267,6 +1276,7 @@
         <button type="button" data-tab="usgs">Earthquakes</button>
         <button type="button" data-tab="owid">Emissions &amp; energy</button>
         <button type="button" data-tab="ghcnd">Weather station</button>
+        <button type="button" data-tab="place">Your place</button>
       </nav>
       <div class="card-caveat" id="climate-caveat">Each series is its publisher's own figures, shown with its source, its method and when this machine last fetched it. Nothing here is a forecast, a score or a risk rating. A new fetch stores only values that are new or that the publisher revised: earlier values stay readable, and periods the publisher stopped serving are counted, never deleted.</div>
       <div id="climate-status" class="hint" role="status" aria-live="polite"></div>
@@ -4365,6 +4375,12 @@
   <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>
+  <!-- Simple mode (invariant #34, R682): Preact 10 + hooks + htm, vendored and sha256-pinned
+       (simple/vendor/SHA256SUMS), then the mode itself. Loaded after app-boot.js: it wraps showTab. -->
+  <script src="/static/simple/vendor/preact.min.umd.js"></script>
+  <script src="/static/simple/vendor/hooks.umd.js"></script>
+  <script src="/static/simple/vendor/htm.umd.js"></script>
+  <script src="/static/simple/simple.js"></script>
   <!-- PWA: register the offline shell service worker (item #69). External file (no inline
        script) — best-effort + guarded; it only caches the static shell, never API responses. -->
   <script src="/static/sw-register.js"></script>

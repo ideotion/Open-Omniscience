@@ -323,3 +323,161 @@ def search_anchored(
             return None
         pos = nxt if nxt > start else start + 1
     return None
+
+
+# --------------------------------------------------------------------------- #
+#  The HTML family, shared (audit recheck 2026-11-13, P1/P2)
+# --------------------------------------------------------------------------- #
+# THE SAME MISS A THIRD TIME. The 2026-08-05 fix made the <style>/<script> BLOCK linear in
+# src/analytics/extract.py and left, beside it, ``<!--.*?-->`` (the lazy-closer shape) and the
+# opener ``<(style|script)\b[^>]*>`` searched with ``.search`` (the ``[^X]*X`` shape), both still
+# K*N; and src/ingest/email.py kept all three of the original patterns, on newsletter bodies the
+# person did not write. MEASURED on main ca1ab824: 280 KB of unclosed ``<style>`` 42.7 s in the
+# newsletter strip, 160 KB of ``<!--`` 1.9 s in the article strip, each 4x per doubling. So the
+# HTML family lives HERE, once, and both modules call it.
+
+#: The <style>/<script> opener and its per-tag closers (``</\1\s*>`` as two patterns).
+HTML_STYLE_SCRIPT_OPEN = re.compile(r"<(style|script)\b[^>]*>", re.IGNORECASE | re.DOTALL)
+#: The whole block, exactly the regex this replaces. It is MATCHED (anchored at an opener the walk found),
+#: never searched, so its backreference keeps the regex's own case rules and only the K*N retry loop goes.
+#: A cheap superset of every closer either tag's spellings accept (``re.I`` lets ``s`` match ``ſ`` and ``i``
+#: match ``ı``/``İ``): none after an opener means no spelling of that tag can close any more.
+_HTML_TAG_CLOSE_ANY = {5: re.compile(r"</style", re.IGNORECASE), 6: re.compile(r"</script", re.IGNORECASE)}
+_HTML_STYLE_SCRIPT_BLOCK = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+#: The opener's own fixed prefix (``\b`` included, so a failed attempt fails at the ``[^>]*>``
+#: body and never at the word, which is what makes the strong resync rule sound).
+_HTML_STYLE_SCRIPT_ANCHOR = re.compile(r"<(style|script)\b", re.IGNORECASE)
+_GT_RESYNC = stop_char_resync(">")
+
+
+def find_style_script_opener(text: str, pos: int = 0) -> re.Match[str] | None:
+    """``HTML_STYLE_SCRIPT_OPEN.search(text, pos)``, identical, in one walk."""
+    return search_anchored(text, HTML_STYLE_SCRIPT_OPEN, pos, anchor=_HTML_STYLE_SCRIPT_ANCHOR, resync=_GT_RESYNC)
+
+
+def _backref_key(word: str) -> tuple[str, ...]:
+    """The closers ``</\\1\\s*>`` accepts depend only on this: the regex engine compares a backreference
+    under IGNORECASE character by character through the SIMPLE lowercase mapping. ``str.lower`` is the FULL
+    mapping, which differs here for one letter the opener can match (``İ`` folds to ``i`` simply, to ``i̇``
+    in full); ``ſ`` and ``ı`` keep their own class (an Opus read of PR #1949 measured all three, and the first
+    draft's dict lookup raised KeyError on ``<scrıpt>``). At most a few hundred keys exist, so a dead key per
+    spelling keeps the walk linear."""
+    return tuple("i" if c == "\u0130" else c.lower() for c in word)
+
+
+def strip_style_script(text: str, repl: str = " ") -> str:
+    r"""``re.sub(r"<(style|script)\b[^>]*>.*?</\1\s*>", repl, text, flags=I|S)``, byte-identical, linear.
+
+    Not :func:`strip_blocks`, and the reason is a case that function gets wrong for this family:
+    the opener's ``[^>]*`` crosses ``<``, so ``<style <script>x</script>`` matches the opener
+    ``<style <script>``; when ``style`` has no closer, ``strip_blocks`` resumes AFTER that match and
+    never sees the ``<script>`` block inside it, which the regex removes. A seeded differential found
+    it (``tests/test_html_strips_linear.py``). Here the family comes from the ANCHOR, so a dead
+    family's opener costs one anchor step and a live one's opener is matched only when it can be
+    used:
+
+    * the regex's opener ends at the FIRST ``>`` after the anchor (``[^>]`` cannot hold one), and its
+      lazy body ends at the first closer after that: two literal-ish searches;
+    * no ``>`` after an anchor means no later opener can complete either: stop;
+    * no closer for a family after one of its openers means none after any later one: the family is
+      dead, and its later anchors are stepped over.
+
+    Every live search either removes a block (the scan jumps past its closer) or kills a family, so
+    the walk is linear in ``text``. A "family" is one SPELLING's backreference class (:func:`_backref_key`),
+    because ``</\1`` accepts different closers for ``style`` and ``ſtyle``; a tag-wide superset search kills
+    every spelling of a tag at once in the ordinary case. HONEST WORST CASE: a document that spells the
+    opener every possible way, each followed by a closer that only a superset accepts, pays one full
+    failed match per spelling (at most 48 for style and 192 for script); measured 0.31 s per failed match
+    at the 36 MiB newsletter cap, so about 75 s there, against hours for the K*N regex.
+    """
+    out: list[str] = []
+    copied = pos = 0
+    dead: set[tuple[str, ...]] = set()
+    dead_tags: set[int] = set()
+    while True:
+        a = _HTML_STYLE_SCRIPT_ANCHOR.search(text, pos)
+        if a is None:
+            break
+        family = _backref_key(a.group(1))
+        tag = len(family)  # 5 is style, 6 is script, whatever the spelling
+        if family in dead or tag in dead_tags:
+            pos = a.end()
+            continue
+        gt = text.find(">", a.end())
+        if gt < 0:
+            break
+        if _HTML_TAG_CLOSE_ANY[tag].search(text, gt + 1) is None:
+            dead_tags.add(tag)
+            pos = a.end()
+            continue
+        block = _HTML_STYLE_SCRIPT_BLOCK.match(text, a.start())
+        if block is None:
+            dead.add(family)
+            pos = a.end()
+            continue
+        out.append(text[copied : a.start()])
+        out.append(repl)
+        copied = pos = block.end()
+    if not out:
+        return text
+    out.append(text[copied:])
+    return "".join(out)
+
+
+def strip_html_comments(text: str, repl: str = " ") -> str:
+    """``re.sub(r"<!--.*?-->", repl, text, flags=S)``, byte-identical, linear, in literal scans.
+
+    One family: the first ``<!--`` with no ``-->`` after it ends the walk, since no later one can close.
+    Not an HTML sanitiser (CodeQL's "--!>" rule): the output is plain text that is stored and shown
+    escaped, and it must stay what the regex gave (a browser also ends a comment at ``--!>``)."""
+    out: list[str] = []
+    copied = 0
+    while True:
+        start = text.find("<!--", copied)
+        if start < 0:
+            break
+        end = text.find("-->", start + 4)
+        if end < 0:
+            break
+        out.append(text[copied:start])
+        out.append(repl)
+        copied = end + 3
+    if not out:
+        return text
+    out.append(text[copied:])
+    return "".join(out)
+
+
+def has_html_comment(text: str) -> bool:
+    """``re.search(r"<!--.*?-->", text, flags=S) is not None`` in two literal scans: a closed
+    comment exists exactly when some ``-->`` follows the FIRST ``<!--``."""
+    i = text.find("<!--")
+    return i >= 0 and text.find("-->", i + 4) >= 0
+
+
+def strip_html_tags(text: str, repl: str = " ") -> str:
+    """``re.sub(r"<[^>]+>", repl, text)``, byte-identical, linear, in literal scans.
+
+    A ``<`` opens a tag when the next character exists and is not ``>``; the tag ends at the first ``>``
+    after it. ``<>`` fails at its ``<`` and the walk resumes at its ``>``; no ``>`` left means nothing more
+    can match. No regex, so no engine retry loop to reason about."""
+    out: list[str] = []
+    copied = pos = 0
+    n = len(text)
+    while True:
+        start = text.find("<", pos)
+        if start < 0 or start + 1 >= n:
+            break
+        if text[start + 1] == ">":
+            pos = start + 1
+            continue
+        end = text.find(">", start + 1)
+        if end < 0:
+            break
+        out.append(text[copied:start])
+        out.append(repl)
+        copied = pos = end + 1
+    if not out:
+        return text
+    out.append(text[copied:])
+    return "".join(out)
