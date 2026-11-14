@@ -209,6 +209,12 @@ is a later step for the atomicity reason in §3.1.
      same seam for `article_mentioned_places`, `article_entities` and `article_index_stamps`.
      `columnar.py`'s DuckDB read of a SQLite view has to be verified on the operator's build
      before it moves.
+   - **Slice 2 (2026-11-14, lane V):** the three remaining raw-SQL readers outside the writers,
+     `keyword_growth.py`, `spell_index.py` and `serve_gate.py`, read `keyword_mentions_all`; the
+     query plans are unchanged (same index, checked with EXPLAIN QUERY PLAN). What still names the
+     table on purpose: the writers, `day_counts.py`'s triggers, the table-size diagnostic, the
+     slow-query and benchmark probes, and `columnar.py` (operator-gated). Steps 1–4 wait on §8's
+     measurements on the field VM.
 1. **Head + seal**, with the catalog, the per-keyword summaries and the counter fold; sealing
    manual at first.
 2. **Tombstones**, and re-index/delete of an article in a sealed segment.

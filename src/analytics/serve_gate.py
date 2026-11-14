@@ -56,7 +56,8 @@ def change_token(
     from sqlalchemy import func
 
     from src.analytics.corpus_epoch import CORPUS_EPOCH_KEY
-    from src.database.models import Article, DerivedMeta, KeywordMention, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Article, DerivedMeta, Source
 
     try:
         raw = (
@@ -70,7 +71,7 @@ def change_token(
             epoch = 0
         token: list[int] = [
             epoch,
-            int(session.query(func.max(KeywordMention.id)).scalar() or 0),
+            int(session.query(func.max(KeywordMentionRead.id)).scalar() or 0),
         ]
         if articles:
             token.append(int(session.query(func.max(Article.id)).scalar() or 0))
