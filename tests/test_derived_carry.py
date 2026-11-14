@@ -1329,7 +1329,7 @@ def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monke
     shutil.copyfile(backup, planted)
     con = sqlite3.connect(planted)
     try:
-        aid = con.execute("SELECT id FROM articles WHERE hash = 'h0001'").fetchone()[0]
+        aid, lang = con.execute("SELECT id, language FROM articles WHERE hash = 'h0001'").fetchone()
         top = con.execute(
             "SELECT MAX(count) FROM keyword_mentions WHERE article_id = ? AND count > 0", (aid,)
         ).fetchone()[0]
@@ -1340,7 +1340,10 @@ def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monke
         con.execute(
             "INSERT INTO keywords (term, normalized_term, language, frequency, is_ngram,"
             " ngram_size, is_entity, mention_count, article_count)"
-            " VALUES ('the', 'the', 'en', 0, 0, 1, 0, 0, 0)"
+            " VALUES ('the', 'the', ?, 0, 0, 1, 0, 0, 0)",
+            # In the article's own language (R698): a row of another language cannot take
+            # its mention, so the carry would refuse the article and leave it to a re-index.
+            (lang,),
         )
         kid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
         con.execute(
