@@ -13,6 +13,7 @@ so a clean current session is provably distinguishable from "logging is broken".
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import logging
 
 import src.monitoring.errorlog as errorlog
@@ -24,9 +25,12 @@ def _fresh(monkeypatch, tmp_path):
     errorlog._installed = False
     errorlog._http_last.clear()  # reset the cross-test HTTP-error throttle state
     # Detach any handler a prior test/install left on the root logger.
+    # Matched by class NAME and module, not isinstance: a handler built from an earlier copy of the module's class is still this
+    # log's handler (it writes through the same module globals), and an isinstance test would leave it attached to count every
+    # record twice.
     root = logging.getLogger()
     for h in list(root.handlers):
-        if isinstance(h, errorlog._JsonlErrorHandler):
+        if type(h).__name__ == "_JsonlErrorHandler" and type(h).__module__ == errorlog.__name__:
             root.removeHandler(h)
 
 
@@ -173,7 +177,19 @@ def test_http_error_never_raises(monkeypatch, tmp_path):
 
 
 def test_module_imports_clean():
-    importlib.reload(errorlog)  # no import-time side effects
+    """Executing the module's source attaches nothing to the root logger (no import-time side effects).
+
+    It runs a SEPARATE copy of the module instead of ``importlib.reload``: a reload swaps the classes inside the one module object
+    every other test and module holds, so a handler an earlier test had installed stopped being an instance of
+    ``errorlog._JsonlErrorHandler``, survived ``_fresh`` and counted every later record twice (random order, seed 1111: the two
+    htmldate filter tests read 2 problems for 1)."""
+    root = logging.getLogger()
+    before = list(root.handlers)
+    spec = importlib.util.find_spec(errorlog.__name__)
+    assert spec is not None and spec.loader is not None
+    copy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(copy)
+    assert root.handlers == before
 
 
 def test_htmldate_cache_clear_noise_is_filtered_out(monkeypatch, tmp_path):

@@ -113,6 +113,10 @@ def _stub_client(captured: dict) -> VllmClient:
     def _handler(request: httpx.Request) -> httpx.Response:
         import json
 
+        if request.url.path == "/api/tags":  # R688: the identity reads a real vLLM server answers
+            return httpx.Response(404)
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "m", "owned_by": "vllm"}]})
         captured.update(json.loads(request.content))
         return httpx.Response(
             200,

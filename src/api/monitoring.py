@@ -14,7 +14,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.api.cross_site import refuse_cross_site_get
 from src.api.ingestion import get_fetcher
 from src.database.models import Source
 from src.database.session import get_db
@@ -26,7 +25,7 @@ from src.monitoring.health import check_source
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
 
-@router.get("/health", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/health")
 def sources_health(
     limit: int = Query(25, ge=1, le=200, description="Max sources to probe in one call"),
     db: Session = Depends(get_db),

@@ -35,6 +35,7 @@ truth; a cold/missing rollup means the seam falls back to the live query.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -53,6 +54,8 @@ _LOCK = threading.Lock()
 _BUILD_LOCK = threading.Lock()
 _STATE: dict = {
     "con": None,
+    # The served connection's DuckDB offload folder (``rollup_serve._spill_setting``): ``None`` when it has none.
+    "spill": None,
     "built_at": 0.0,
     "rows": 0,
     "bind": None,
@@ -149,29 +152,53 @@ def _build_and_swap() -> None:
             _LOG.info("map serve: build skipped (%s)", skip.get("reason"))
             return
 
-        con = columnar.connect(passphrase=None)  # offline -> in-memory (never a file)
-        if con is None:
-            return
-        with session_scope() as s:
-            # Token BEFORE the build (conservative: rows landing DURING the build compare
-            # "changed" next check -> one extra rebuild, never a silently-missed one).
-            token = serve_gate.change_token(s, articles=True, sources=True)
-            columnar.build_source_coverage(con, s)
-            rows = con.execute("SELECT COUNT(*) FROM source_coverage").fetchone()[0]
-            built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
-        with _LOCK:
-            old = _STATE["con"]
-            _STATE["con"] = con
-            _STATE["built_at"] = time.time()
-            _STATE["rows"] = int(rows)
-            _STATE["bind"] = built_bind
-            _STATE["token"] = token
-            _STATE["pending"] = False
-            if old is not None:
-                try:
-                    old.close()  # safe: serves hold _LOCK, so none is mid-query here
-                except Exception:  # noqa: BLE001
-                    pass
+        # In-memory, so no store file; DuckDB's offload follows the keyword rollup's rule (none for an encrypted corpus,
+        # a per-connection folder under the data directory for a plaintext one), never its default ``.tmp`` beside the
+        # working directory, which it writes in plaintext whatever the corpus (OPEN_QUEUE, the rollup memory fix (1)).
+        from src.analytics import rollup_serve
+
+        spill = rollup_serve._spill_setting()
+        con = None
+        served = False
+        try:
+            con = columnar.connect(passphrase=None, spill=spill)
+            if con is None:
+                return
+            with session_scope() as s:
+                # Token BEFORE the build (conservative: rows landing DURING the build compare
+                # "changed" next check -> one extra rebuild, never a silently-missed one).
+                token = serve_gate.change_token(s, articles=True, sources=True)
+                columnar.build_source_coverage(con, s)
+                rows = con.execute("SELECT COUNT(*) FROM source_coverage").fetchone()[0]
+                built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+            if spill and rollup_serve._corpus_encrypted():
+                # The library was encrypted while this build ran: its offload folder holds plaintext derived data, so it is not
+                # served (closed and removed below) and the next check builds again with no offload.
+                with _LOCK:
+                    _STATE["pending"] = True
+                _LOG.info("map serve: the library was encrypted during the build; not served, rebuilding without offload")
+                return
+            with _LOCK:
+                old = _STATE["con"]
+                old_spill = _STATE.get("spill")
+                _STATE["con"] = con
+                _STATE["spill"] = spill or None
+                _STATE["built_at"] = time.time()
+                _STATE["rows"] = int(rows)
+                _STATE["bind"] = built_bind
+                _STATE["token"] = token
+                _STATE["pending"] = False
+                served = True
+                if old is not None:
+                    with contextlib.suppress(Exception):
+                        old.close()  # safe: serves hold _LOCK, so none is mid-query here
+            rollup_serve._remove_spill(old_spill)  # the retired connection's folder, closed above; deleted outside the lock
+        finally:
+            if not served:  # a failed or empty build: this connection is never served, so neither it nor its folder may leak
+                if con is not None:
+                    with contextlib.suppress(Exception):
+                        con.close()
+                rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
         _LOG.info("map serve: built in-memory source_coverage (%s rows)", rows)
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
         log_failure(_LOG, "map serve: background build failed", exc, level=logging.WARNING)

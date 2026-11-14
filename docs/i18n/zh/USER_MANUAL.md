@@ -2844,7 +2844,7 @@ FUTURE_DEVELOPMENTS §6 禁止使用单一的自动化信任/质量评分（它�
 | 方法与路径 | 用途 |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | 你撰写的注释 |
-| `GET /api/annotations/export` | 你的注释的签名、可移植包 |
+| `POST /api/annotations/export` | 你的注释的签名、可移植包 |
 | `POST /api/annotations/import` | 验证并存储导入的包（无效则拒绝） |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | 信任网络 |
 | `GET /api/annotations/for?target=` | 透明聚合——谁断言了什么 |

@@ -225,6 +225,19 @@ def test_full_text_is_reported_per_artifact_and_follows_the_annexes_flag():
     assert full("evidence")["present"] is True
     assert full("annexes", full_text=True)["present"] is True
     assert full("annexes", full_text=False)["present"] is False
+    assert full("annexes")["present"] is False, "R703: annexes carry no full text unless asked"
+
+
+def test_the_routes_default_to_an_excerpt_only_bundle():
+    """R703, at the HTTP boundary: a caller that sends no ``full_text`` gets excerpts,
+    from the annexes route and from the enumeration that describes it."""
+    import inspect
+
+    from src.api import bulletin as api
+
+    for fn in (api.annexes, api.export_privacy_route):
+        default = inspect.signature(fn).parameters["full_text"].default
+        assert getattr(default, "default", default) is False, fn.__name__
 
 
 def test_the_full_text_item_states_the_publishers_terms_question_without_answering_it():

@@ -500,7 +500,14 @@ def _worker_compute(
             content or "", title=title or "", language=language or "en"
         )
         score, label = score_article(content, sentiment_lang)
-        return article_id, terms, score, label, None, _extract_www(content, language, www_ctx)
+        # R697: dates take the article's OWN language, the fourth slot of the context, never the
+        # extractor's ``or "en"`` stoplist pick in ``language``. It was the one path that differed:
+        # the inline store, the collector and the ingest precompute all hand ``extract_dates``
+        # ``article.language``, so an untagged article got English month and numeric-order rules
+        # only when the re-index ran in the pool. A context without the slot means unknown (None):
+        # the extractor then uses only its language-neutral patterns rather than guessing.
+        date_language = www_ctx[3] if www_ctx and len(www_ctx) > 3 else None
+        return article_id, terms, score, label, None, _extract_www(content, date_language, www_ctx)
     except Exception as exc:  # noqa: BLE001 - isolate one bad article, never the batch
         return article_id, [], None, None, record_text(exc), None
 

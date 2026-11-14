@@ -436,7 +436,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 La corrélation renvoie un vrai coefficient + une valeur p + n calculés par scipy (Pearson/Spearman),
 avec une mise en garde « corrélation ≠ causalité » ; si le recouvrement est trop faible → `insufficient_data`.
 
-**Surveillance.** `GET /api/monitoring/health` effectue de vrais contrôles
+**Surveillance.** `POST /api/monitoring/health` effectue de vrais contrôles
 d'accessibilité (via le collecteur éthique) ; `GET /api/monitoring/anomalies` signale
 les pics de volume d'articles par z-score. **E-mail :** `POST /api/sources/{id}/ingest-email`
 (IMAP) intègre les messages dans le même corpus consultable.
@@ -480,7 +480,7 @@ Modèle complet, modèle de menace et mises en garde relatives à la vie privée
   confirmé (erreur réseau, délai dépassé, 5xx, ou un 401/403 restreint), l'URL n'est
   **pas** récupérée.
 - Un intervalle minimal par hôte est imposé (en respectant `Crawl-delay`).
-- Un seul chemin de récupération, un User-Agent qui s'identifie, uniquement du HTML pour les articles — aucun contournement brut.
+- Un seul chemin de récupération, un User-Agent qui s'identifie (en mode protégé, un User-Agent générique, sauf pour les requêtes d'API et de dumps vers les serveurs de Wikimedia), uniquement du HTML pour les articles — aucun contournement brut.
 - L'extraction utilise trafilatura ; si aucun véritable corps d'article n'est trouvé, rien n'est stocké
   (aucune ligne inventée « No Title / No Content »).
 - Chaque article stocké porte sa provenance : source, URL d'origine, URL canonique,

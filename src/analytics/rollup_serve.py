@@ -494,6 +494,13 @@ def _build_inmemory_and_swap() -> dict | None:
             with contextlib.suppress(Exception):
                 con.close()
             _remove_spill(spill)  # after the close: DuckDB holds its files open until then
+    if spill and _corpus_encrypted():
+        # The library was encrypted while this build ran: its offload folder holds plaintext derived data, so the connection is
+        # not served. Closed, folder removed; the next request builds again with no offload. Not a stop: no hold is kept.
+        with contextlib.suppress(Exception):
+            con.close()
+        _remove_spill(spill)
+        return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
     with _LOCK:
         old = _STATE["con"]
         _STATE["con"] = con
@@ -632,19 +639,31 @@ def _refresh_persisted_build() -> bool | None:
                     _void_built_epoch(con)
                     raise
                 rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+                # An in-memory rollup served until now (the persisted store has only just become available) is retired here, under the
+                # lock serves hold, so none is mid-query: left open it held up to DuckDB's whole memory limit until the process ended, and
+                # its offload folder stayed on disk (open-on-main row 25).
+                bind = s.get_bind()  # read before the first write: a raise below this point would leave a half-recorded store
+                retired = _STATE["con"] if _STATE["con"] is not con else None
+                retired_spill, _STATE["spill"] = _STATE.get("spill"), None
                 _STATE["con"] = con
                 _STATE["persisted"] = True
                 _STATE["built_at"] = time.time()
                 _STATE["rows"] = int(rows)
-                _STATE["bind"] = s.get_bind()
+                _STATE["bind"] = bind
                 _STATE["token"] = token
                 _STATE["pending"] = False
+                if retired is not None:
+                    with contextlib.suppress(Exception):
+                        retired.close()
+                _remove_spill(retired_spill)  # after the close: DuckDB holds its files open until then
     except Exception:
-        if opened_now:  # release the file handle so the next attempt can reopen it cleanly
-            try:
+        with _LOCK:
+            recorded = _STATE["con"] is con
+        # Release the file handle so the next attempt can reopen it cleanly -- unless the store was already recorded as serving (the
+        # session's closing commit raised after the swap): closing it then would leave every serve and refresh on a closed connection.
+        if opened_now and not recorded:
+            with contextlib.suppress(Exception):
                 con.close()
-            except Exception:  # noqa: BLE001
-                pass
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
     return True
@@ -805,6 +824,8 @@ _WALL_REASONS = ("duckdb-limit", "build-failed")
 
 #: The in-memory build's answer when the engine is off (``OO_COLUMNAR=0``): a setting, not a stop, so no hold is kept for it.
 ENGINE_OFF = "engine-off"
+#: The in-memory build's answer when the library was encrypted while it ran with an offload folder: not served, no hold kept.
+ENCRYPTED_DURING_BUILD = "encrypted-during-build"
 
 #: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
 #: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
@@ -1055,6 +1076,7 @@ def _corpus_encrypted() -> bool:
 #: Set once this process has swept the folders a PREVIOUS process with the same pid left behind (a container
 #: restarts as pid 1 every time). After that, this pid's folders are live connections' and are never swept.
 _OWN_SPILL_SWEPT = False
+_SPILL_LOCK = threading.Lock()
 
 
 def _sweep_spill_folders(root) -> None:
@@ -1090,7 +1112,7 @@ def _remove_spill(path: str | None) -> None:
 
 
 def _spill_setting() -> str:
-    """DuckDB's offload directory for the in-memory build: ``""`` (none) for an encrypted corpus, else a NEW
+    """DuckDB's offload directory for an in-memory build (the keyword rollup, the map serve, both benchmarks): ``""`` (none) for an encrypted corpus, else a NEW
     folder under the data directory for this connection alone. The folders of processes that are gone are
     swept in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must
     not stay."""
@@ -1100,15 +1122,18 @@ def _spill_setting() -> str:
 
         global _OWN_SPILL_SWEPT
         root = data_dir() / "duckdb_tmp"
-        if root.is_dir():
-            _sweep_spill_folders(root)
-        _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
-        if encrypted:
-            return ""
-        root.mkdir(parents=True, exist_ok=True)
-        mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-        mine.mkdir()
-        return str(mine)
+        # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
+        # sweep running beside another caller's new folder of this pid would remove a live connection's folder.
+        with _SPILL_LOCK:
+            if root.is_dir():
+                _sweep_spill_folders(root)
+            _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
+            if encrypted:
+                return ""
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+            mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
+            return str(mine)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
         return ""
 
@@ -1449,10 +1474,11 @@ def _build_and_swap() -> str:
                 ran = False
                 outcome = "declined"
                 return outcome
-            if stopped is not None and stopped.get("reason") == ENGINE_OFF:
-                # The engine is off: no build ran and none can. A setting is not a stop, so no hold is kept (it would outlive the setting).
+            if stopped is not None and stopped.get("reason") in (ENGINE_OFF, ENCRYPTED_DURING_BUILD):
+                # The engine is off (no build ran and none can), or the library was encrypted under the build (it is not served and the
+                # next request builds with no offload). Neither is a stop, so no hold is kept (it would outlive the setting or refuse the rebuild).
                 with _LOCK:
-                    _STATE["last_skip"] = {**stopped, "source": "engine"}
+                    _STATE["last_skip"] = {**stopped, "source": "engine" if stopped["reason"] == ENGINE_OFF else "encryption"}
                 ran = False
                 outcome = "declined"
                 return outcome

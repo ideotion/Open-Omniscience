@@ -20,7 +20,6 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.api.cross_site import refuse_cross_site_get
 from src.database.models import WikiPage, WikiRevision
 from src.database.session import get_db
 from src.monitoring.secret_scrub import http_detail, log_failure, record_text
@@ -497,7 +496,7 @@ def dumps_list() -> dict:
     return {"downloads": get_manager().list()}
 
 
-@router.get("/dumps/probe", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/dumps/probe")
 def dumps_probe(wiki: str, kind: str = "pages-articles-multistream") -> dict:
     """Read the CURRENT published dump size for ONE edition.
 
@@ -515,7 +514,7 @@ def dumps_probe(wiki: str, kind: str = "pages-articles-multistream") -> dict:
     return reading.to_dict()
 
 
-@router.get("/dumps/sizes", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/dumps/sizes")
 def dumps_sizes(
     wikis: str,
     kind: str = "pages-articles-multistream",

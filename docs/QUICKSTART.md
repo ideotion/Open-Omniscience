@@ -434,7 +434,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Correlation returns a real coefficient + p-value + n from scipy (Pearson/Spearman),
 with a "correlation ≠ causation" caveat; too little overlap → `insufficient_data`.
 
-**Monitoring.** `GET /api/monitoring/health` performs real reachability
+**Monitoring.** `POST /api/monitoring/health` performs real reachability
 checks (through the ethical fetcher); `GET /api/monitoring/anomalies` flags
 article-volume spikes by z-score. **Email:** `POST /api/sources/{id}/ingest-email`
 (IMAP) folds messages into the same searchable corpus.
@@ -478,7 +478,7 @@ Full model, threat model, and privacy caveats: [USER_MANUAL.md](USER_MANUAL.md).
   confirmed (network error, timeout, 5xx, or a restricted 401/403), the URL is
   **not** fetched.
 - A per-host minimum interval is enforced (honouring `Crawl-delay`).
-- One fetch path, an identifying User-Agent, HTML only for articles — no raw bypass.
+- One fetch path, an identifying User-Agent (in protected mode a generic one, except in API and dump requests to Wikimedia's servers), HTML only for articles — no raw bypass.
 - Extraction uses trafilatura; if no real article body is found, nothing is stored
   (no fabricated "No Title / No Content" rows).
 - Every stored article carries provenance: source, original URL, canonical URL,

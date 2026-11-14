@@ -213,7 +213,8 @@ def test_the_state_endpoint_never_discloses_the_path(drive) -> None:
     from src.api.unlock import allowed_while_locked, data_volume_state
 
     out = data_volume_state()
-    assert set(out) == {"watched", "phase", "seconds_left"}
+    assert set(out) == {"watched", "phase", "seconds_left", "data_folder_scope"}
+    assert set(out["data_folder_scope"]) == {"broad", "reason"}  # R711's notice: a reason code, never the path
     assert str(drive) not in json.dumps(out)
     assert allowed_while_locked("/api/system/data-volume", "locked")
     assert allowed_while_locked("/api/system/data-volume/close-now", "locked")
