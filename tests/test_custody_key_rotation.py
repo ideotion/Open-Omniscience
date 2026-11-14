@@ -194,7 +194,7 @@ def test_the_route_and_the_cli_name_the_rotation(tmp_path):
         r = c.post("/api/custody/verify", json={"bundle": bundle, "accept_unendorsed_rotation": True}).json()
         assert r["verified"] is True and "record's word" in r["notes"][0]
     p = tmp_path / "b.json"
-    p.write_text(json.dumps(bundle))
+    p.write_text(json.dumps(bundle), encoding="utf-8")
     cli = [sys.executable, str(ROOT / "scripts/verify_custody.py"), str(p)]
     assert subprocess.run(cli, capture_output=True, text=True).returncode == 1
     out = subprocess.run([*cli, "--accept-unendorsed-rotation"], capture_output=True, text=True)
