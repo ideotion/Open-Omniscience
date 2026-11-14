@@ -576,6 +576,80 @@ def test_the_ps1_text_has_the_mutex_the_replace_and_a_row_per_attempt():
     assert "WriteAllLines($exitRecord" not in t and "WriteAllLines($stopRecord" not in t and "WriteAllLines($stderrRecord" not in t
 
 
+
+# --- a row written outside the lock says so (item 66 follow-up, 2026-11-14) --------------------------------------------------------------------
+# Run 43552997010 (core-only shard 3, on #1967's head) left launcher_exits.jsonl with 24 lines and 7 of the 8 rows. The one trim keeps the newest 20
+# and fires above 40 lines on the 39-line seed, so 24 = 20 + 4 means it read 42 lines: an append took the file to 41 WITHOUT trimming, which under
+# the mutex cannot happen (every locked append trims when over 40). So a writer went around the mutex, or a trim threw and was swallowed, and a row
+# was lost. Every one of those paths was silent, so the red could not say which ran. Each now writes one line in fixed words on stderr, which
+# _logs() puts in the race tests' failure message; the cause itself is NOT yet isolated (no PowerShell where it was looked at).
+
+_UNLOCKED_SAID = "launcher record: a row was appended without the lock: "
+_NOT_WRITTEN_SAID = "launcher record: a row could not be appended after 5 tries and was not written"
+
+
+def _function_body(text: str, name: str) -> str:
+    start = text.index(f"function {name}(")
+    nxt = text.find("\nfunction ", start + 1)
+    return text[start:nxt if nxt != -1 else len(text)]
+
+
+def test_every_write_around_the_lock_and_every_failed_trim_is_said():
+    t = LAUNCH_PS1.read_text(encoding="utf-8")
+    body = _function_body(t, "Add-RowTrimmed")
+    assert "return (Add-RowText" not in body, "Add-RowTrimmed appends outside the lock only through Add-RowUnlocked, which says so"
+    assert body.count("Add-RowUnlocked $Path $text") == 4, "the four ways around the lock: no mutex, a wait that threw (twice), a fallback wait run out"
+    assert _NOT_WRITTEN_SAID in body, "a row the launcher could not append is said, not dropped in silence"
+    unlocked = _function_body(t, "Add-RowUnlocked")
+    assert _UNLOCKED_SAID.rstrip(": ") in unlocked and _NOT_WRITTEN_SAID in unlocked
+    trim = _function_body(t, "Limit-Rows")
+    assert "} catch { }\n    if (Test-Path -LiteralPath $tmp)" not in trim and "a trim failed and the file was left as it was" in trim
+    assert "a deferred row was appended without the lock: no lock could be made" in t
+    assert "a deferred row was appended without the lock: waiting for its lock failed" in t
+    assert "catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { } }" not in t, "the deferred child's wait no longer fails in silence"
+
+
+def _one_ps_launcher(tmp_path: Path, text: str) -> tuple[Path, int, str]:
+    copy = tmp_path / "w.ps1"
+    copy.write_text(text, encoding="utf-8")
+    data = tmp_path / "data"
+    (data / "diagnostics").mkdir(parents=True)
+    env, token = _token_env(tmp_path)
+    [(p, marker)] = _start_ps_launchers(tmp_path, copy, data, env, 1)
+    p.wait(timeout=120)
+    end = time.monotonic() + WRITERS_END_WAIT_S
+    while _writers_alive(token) and time.monotonic() < end:
+        time.sleep(0.1)
+    return data / "diagnostics" / "launcher_exits.jsonl", int(marker.read_text(encoding="utf-8")), (tmp_path / "0.err").read_text(encoding="utf-8", errors="replace")
+
+
+@_needs_pwsh
+def test_a_row_appended_without_the_lock_is_written_and_said(tmp_path):
+    """Red before: with no mutex to be had, the row was appended and nothing said the lock had been skipped."""
+    pytest.importorskip("psutil")
+    t = LAUNCH_PS1.read_text(encoding="utf-8")
+    made = "return New-Object System.Threading.Mutex($false, $name)"
+    assert t.count(made) == 1
+    f, pid, err = _one_ps_launcher(tmp_path, t.replace(made, "return $null"))
+    assert sum(1 for r in _rows(f)[0] if r.get("pid") == pid) == 1, f"the row is still written, once ({err[-400:]})"
+    assert _UNLOCKED_SAID + "no lock could be made for the file" in err, err[-400:]
+
+
+@_needs_pwsh
+def test_a_row_that_cannot_be_appended_is_said_not_dropped_in_silence(tmp_path):
+    """Red before: a launcher whose append failed five times returned $false to a [void] and its exit row was gone without a word."""
+    pytest.importorskip("psutil")
+    data = tmp_path / "data"
+    (data / "diagnostics" / "launcher_exits.jsonl").mkdir(parents=True)  # a directory where the file goes: every append fails
+    copy = tmp_path / "w.ps1"
+    copy.write_text(LAUNCH_PS1.read_text(encoding="utf-8"), encoding="utf-8")
+    env, token = _token_env(tmp_path)
+    [(p, _)] = _start_ps_launchers(tmp_path, copy, data, env, 1)
+    p.wait(timeout=120)
+    err = (tmp_path / "0.err").read_text(encoding="utf-8", errors="replace")
+    assert _NOT_WRITTEN_SAID in err, err[-400:]
+
+
 # --- what the change leaves behind, and what keeps it from going back (R173 confirmations) -------------------------------------------------
 
 @posix_only
