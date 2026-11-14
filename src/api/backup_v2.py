@@ -35,6 +35,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from src.backup import restore_marker
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import (
     MergeError,
@@ -232,6 +233,7 @@ def legacy_restore(body: LegacyRestoreBody) -> dict:
 
 
 @storage_events.run_refusals_net("import", via="single-file", refused_as=((HTTPException, "not-a-file"),))
+@restore_marker.marked  # R712: an export refuses to start or resume while this runs (src/backup/restore_marker.py)
 def restore_legacy_path(
     path: str,
     passphrase: str | None,
@@ -835,7 +837,9 @@ def _is_export_destination(dirname: str) -> bool:
         target = Path(dirname).resolve()
     except OSError:
         return False
-    for st in (get_volume_manager().status(), get_folder_manager().status()):
+    from src.backup.export_job import get_export_manager
+
+    for st in (get_export_manager().status(), get_volume_manager().status(), get_folder_manager().status()):
         if st.get("mode") != "backup" or not st.get("dest"):
             continue
         try:
@@ -893,6 +897,107 @@ def export_summary_write(body: ExportSummaryBody) -> dict:
     except OSError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc, f"Cannot write {SUMMARY_NAME}: ")) from exc
     return {"summary_path": str(path), "facts": facts}
+
+
+# --------------------------------------------------------------------------- #
+#  R701: the export as ONE server-side job (src/backup/export_job.py). The page
+#  starts it and reads its status; a reload re-attaches to it. The older phase
+#  routes above (/v2/volumes/start, /folder/start) stay for the advanced panel
+#  only, with the guards they have today (R713).
+# --------------------------------------------------------------------------- #
+class ExportStartBody(BaseModel):
+    parent: str
+    corpus: bool = True
+    categories: list[str] = []
+    inside: bool = False
+    passphrase: str = ""
+    # Q218 = a: default ON here too, so a caller that never went through the dialog gets
+    # the ruled behaviour.
+    verify_after_write: bool = True
+
+
+class ExportResumeBody(BaseModel):
+    # The dated folder to resume (after a restart the page names it); empty = the
+    # export this process last ran.
+    dir: str = ""
+    # Only for a resume of the corpus phase; the large-data copy needs none.
+    passphrase: str = ""
+    verify_after_write: bool | None = None
+
+
+@router.post("/export/start")
+def export_job_start(body: ExportStartBody) -> dict:
+    """Start ONE export: allocate the dated folder, record the request, run the corpus
+    volumes, check they are a finished backup of THIS folder, then copy the large-data
+    files into it -- all server-side (R701). 400 on a request that cannot run; 409 while
+    an export already runs."""
+    from src.backup.export_job import get_export_manager
+
+    # The passphrase typed into this request is not held by the process: what escapes the block is converted.
+    with scrub_and_reraise(_LOG, "backup export start failed", body.passphrase):
+        try:
+            return get_export_manager().start(
+                body.parent,
+                corpus=body.corpus,
+                categories=body.categories,
+                inside=body.inside,
+                passphrase=body.passphrase,
+                verify_after_write=body.verify_after_write,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
+
+
+@router.get("/export/status")
+def export_job_status() -> dict:
+    """The export job's phase, its counts and its folder (R701) -- never a secret."""
+    from src.backup.export_job import get_export_manager
+
+    return get_export_manager().status()
+
+
+@router.post("/export/pause")
+def export_job_pause() -> dict:
+    """Pause the running phase; Resume continues it in the same dated folder."""
+    from src.backup.export_job import get_export_manager
+
+    return get_export_manager().pause()
+
+
+class ExportCancelBody(BaseModel):
+    # The dated folder of a paused or failed export to cancel from its record (after a
+    # restart the page names it); empty = the export this process runs or last ran.
+    dir: str = ""
+
+
+@router.post("/export/cancel")
+def export_job_cancel(body: ExportCancelBody | None = None) -> dict:
+    """Cancel the running phase (a cancelled corpus phase removes its partial volume set),
+    or a paused or failed export at once, from its record, so it stops offering a resume."""
+    from src.backup.export_job import get_export_manager
+
+    return get_export_manager().cancel((body.dir if body else "") or None)
+
+
+@router.post("/export/resume")
+def export_job_resume(body: ExportResumeBody) -> dict:
+    """Resume a paused or unfinished export in ITS OWN folder, from the phase its request
+    record names (R701). Never allocates a second folder. 400 when the corpus phase is to
+    be resumed without the passphrase, or the folder is not an export; 409 when one runs
+    or nothing is left to do."""
+    from src.backup.export_job import get_export_manager
+
+    with scrub_and_reraise(_LOG, "backup export resume failed", body.passphrase):
+        try:
+            return get_export_manager().resume(
+                body.dir or None, passphrase=body.passphrase, verify_after_write=body.verify_after_write
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
 
 
 class ImportQueueItem(BaseModel):

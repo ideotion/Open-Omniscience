@@ -22,7 +22,7 @@ from typing import Any
 # Module-level, not lazy: _on_prog fires once per merged article (~700k times on
 # a large import), and even a sys.modules lookup does not belong on that path.
 # runlog imports nothing but stdlib at module scope, so this cannot cycle.
-from src.backup import runlog
+from src.backup import restore_marker, runlog
 from src.backup.newsletter_export import NewsletterFilterRefused
 from src.monitoring import storage_events
 
@@ -610,6 +610,7 @@ class VolumeBackupManager:
             self._start_worker(self._thread)
             return self.status()
 
+    @restore_marker.marked  # R712: an export refuses to start or resume while this runs
     def _run_restore(
         self,
         srcp,
@@ -1180,6 +1181,21 @@ class VolumeBackupManager:
                 return
             self._pause_requested = True
         self._stop.set()
+
+    def forget_paused(self, dest: str) -> None:
+        """A PAUSED backup of ``dest`` that its owner (the backup export, R701) has cancelled
+        reads ``cancelled`` from now on, so nothing offers to resume it. Nothing else changes:
+        not a running job, not another folder's, not a restore or a verify."""
+        with self._lock:
+            if (
+                self._state == "paused"
+                and self._mode == "backup"
+                and self._dest is not None
+                and not self._alive()
+                and self._dest_key(self._dest) == self._dest_key(dest)
+            ):
+                self._state = "cancelled"
+                self._pause_requested = False
 
     def _cleanup_partial(self, destp: Path) -> None:
         # A cancelled FIRST build vanishes entirely (never mistakable for a good

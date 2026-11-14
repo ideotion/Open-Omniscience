@@ -39,18 +39,21 @@ def test_export_panel_node_suite() -> None:
 
 
 def test_the_dated_folder_is_allocated_once_and_reaches_both_phases():
+    from tests.js_source_helper import python_function_source
+
     run = function_body(_APP, "_uxRun")
-    assert "/api/backup/export-folder" in run, "the dated folder is never allocated"
-    # The destination box is the PARENT; `dest` is the allocated folder, and it is what
-    # both phase starts are given. A phase computing its own name would give two folders
-    # whenever an export crosses a minute boundary.
+    # R701: the export is ONE server-side job, and the job allocates the folder ONCE and
+    # hands that one path to both phases. The destination box is the PARENT.
     assert 'const parent = (document.getElementById("ux-dest").value || "").trim();' in run
-    # The allocation also carries what the export was asked for (the re-walk's J-1), so
-    # the server records it in the folder beside the backup.
-    assert "parent, corpus: wantCorpus, categories: blobs, inside }" in run
-    assert run.count("/api/backup/export-folder") == 1, "the folder is allocated more than once"
-    assert "{ dest, passphrase: pass" in run, "the volumes phase does not get the folder"
-    assert "JSON.stringify({ dest, categories: blobs })" in run, (
+    # The start also carries what the export was asked for (the re-walk's J-1), so the
+    # server records it in the folder beside the backup.
+    assert "parent, corpus: wantCorpus, categories: blobs, inside," in run
+    assert run.count("/api/backup/export/start") == 1
+    assert "/api/backup/export-folder" not in run
+    job = (_ROOT / "src/backup/export_job.py").read_text(encoding="utf-8")
+    assert python_function_source(job, "start").count("allocate_export_folder(") == 1
+    assert "vol.start_backup(\n                dest," in python_function_source(job, "_run_volumes")
+    assert "fold.start(\n                dest," in python_function_source(job, "_run_folder"), (
         "the large-data phase does not get the same folder"
     )
 
@@ -59,15 +62,17 @@ def test_a_resume_re_enters_the_folder_it_paused_in():
     """A resumable job that re-reads its inputs instead of carrying them is where the
     extra state quietly drops: re-reading the destination box would allocate a SECOND
     dated folder and orphan the volumes already written into the first."""
-    assert "async function _uxRun(btn, resumeDir)" in _APP
-    run = function_body(_APP, "_uxRun")
-    assert "let dest = resumeDir || null;" in run
-    assert "if (!dest) {" in run, "a resume must skip the allocation, not repeat it"
+    from tests.js_source_helper import python_function_source
+
+    # R701: a resume names the folder and the SERVER continues there; it never allocates.
     resume = function_body(_APP, "_uxResume")
-    assert '_uxRun(document.getElementById("ux-run"), _uxExportDir)' in resume
-    # …and after a page reload the folder comes back from the job manager's own dest.
+    assert 'const body = { dir: _uxExportDir || "" };' in resume
+    assert '"/api/backup/export/resume"' in resume
+    job = (_ROOT / "src/backup/export_job.py").read_text(encoding="utf-8")
+    assert "allocate_export_folder" not in python_function_source(job, "resume")
+    # …and after a page reload the folder comes back from the export job's own dest.
     recover = function_body(_APP, "_uxShowLastCompletedExportSummary")
-    assert "_uxExportDir = shown.dest || null;" in recover
+    assert "_uxExportDir = dest;" in recover and "const dest = live ? s.dest : _uxLastExportDir();" in recover
 
 
 def test_the_verify_choice_is_re_supplied_on_every_start_including_a_resume():
@@ -88,19 +93,16 @@ def test_the_verify_control_is_present_and_checked_by_default():
 
 
 def test_the_summary_is_written_last_and_a_failure_is_not_a_failed_backup():
-    run = function_body(_APP, "_uxRun")
-    i_corpus = run.index("/api/backup/v2/volumes/start")
-    i_folder = run.index("/api/backup/folder/start")
-    # The completion (and the summary POST inside it) is ONE helper since W1, shared with
-    # a resumed large-data copy, which used to end without writing the file at all.
-    i_summary = run.index("_uxFinishExport(")
-    assert i_corpus < i_folder < i_summary, (
-        "BACKUP_SUMMARY.md must be written after BOTH phases, so it can carry the "
-        "verify verdict instead of promising one"
-    )
-    assert "_uxFinishExport(" in function_body(_APP, "_uxResume"), (
-        "a resumed large-data copy must end on the same completion as a straight run"
-    )
+    # R701: the page waits for the ONE export job to end (both phases, server-side) and
+    # only then runs the completion, which writes the summary -- so BACKUP_SUMMARY.md is
+    # written after BOTH phases and can carry the verify verdict instead of promising one.
+    watch = function_body(_APP, "_uxWatchExport")
+    assert watch.index("_uxPoll(") < watch.index("_uxFinishExport(")
+    assert 's.state === "paused"' in watch, "a paused export must not run the completion"
+    for fn in ("_uxRun", "_uxResume"):
+        assert "_uxWatchExport(" in function_body(_APP, fn), (
+            f"{fn} must end on the same completion as a straight run"
+        )
     finish = function_body(_APP, "_uxFinishExport")
     # The summary POST has its OWN try/catch: the bytes are on the drive and verified by
     # then, so a failure here degrades to a named note beside a completion line that
