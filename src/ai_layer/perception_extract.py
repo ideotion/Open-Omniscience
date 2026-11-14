@@ -405,7 +405,7 @@ def bind_gate_to_model(gate: dict[str, dict], report: dict | None, model: str | 
     one model could license ``who`` storage for another that was never measured. That is
     not hypothetical for the model the catalogue once prioritised: Mistral-7B scored a
     **94.7% hallucination rate on "who" extraction** in a field instance's live
-    perception-eval (700k-article instance ``1fba378c``, recorded in
+    perception-eval run, on the 700k-article instance ``1fba378c``, recorded in
     ``docs/ledger/OPEN_QUEUE.md``, HARDWARE DIAGNOSTICS COMPARISON 2026-07-26). That run's
     own gate refused it correctly; this closes the path where a report from a DIFFERENT
     model would have licensed it with no rate shown beside it.
