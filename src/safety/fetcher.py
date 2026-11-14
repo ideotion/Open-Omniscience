@@ -34,6 +34,7 @@ from src.ingest import (
     kill_switch_active,
 )
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+from src.ingest.ssrf_guard import BlockedConnectTarget, connect_scope
 from src.monitoring.secret_scrub import record_text
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
 
@@ -285,6 +286,15 @@ def keeps_descriptive_agent(url: str) -> bool:
     return True
 
 
+class ConnectTargetRefused(requests.exceptions.RequestException):
+    """A guarded session's socket was about to reach a non-public address (the connect-time SSRF guard, ``src.ingest.ssrf_guard``).
+
+    A ``RequestException`` so every caller that already handles "this request failed" handles it, and NOT a ``ConnectionError``: nothing
+    reached the target, and a retry would ask again for the same refused address (the ``RedirectRefused`` reasoning). The text is the
+    guard's own sentence (the address and port refused), written through ``record_text``.
+    """
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -368,7 +378,23 @@ class GuardedSession(requests.Session):
             request.headers["User-Agent"] = (
                 self.protected_agent if keeps_descriptive_agent(request.url or "") else GENERIC_USER_AGENT
             )
-        return super().send(request, **kwargs)
+        # The connect-time SSRF guard (NET-01), which until 2026-11-14 only the EthicalFetcher entered (OPEN_QUEUE 2026-09-17, finding
+        # (1)): every address a lookup ANSWERS with and every address a socket is HANDED, on this thread for this request, must be
+        # public, so a name resolving to 127.0.0.1, a LAN address or 169.254.169.254 is refused before a byte is sent. Here and not in
+        # ``request``: ``requests`` calls ``send`` for the first request AND for every redirect hop (``resolve_redirects``), each hop
+        # in its own scope, and ``kwargs["proxies"]`` is the mapping that request is actually sent through (the environment already
+        # merged in, and rebuilt per hop), so a loopback proxy is allowed by its exact address and port and nothing else on the
+        # machine is. ``OO_SSRF_CONNECT_GUARD=0`` stands it down, the EthicalFetcher's flag. Installed on every request, as
+        # ``_guarded_redirect_get`` does it (an ``if installed: return``), so a test that restored the real socket calls cannot
+        # leave the guard silently absent.
+        from src.ingest.airplane import ensure_connect_guard_installed
+
+        ensure_connect_guard_installed()
+        try:
+            with connect_scope(enabled=True, proxies=kwargs.get("proxies"), prechecked=False):
+                return super().send(request, **kwargs)
+        except BlockedConnectTarget as exc:
+            raise ConnectTargetRefused(record_text(exc, typed=False)) from None
 
     def _send(self, method, url, *args, **kwargs) -> requests.Response:
         """The transport decision, taken AFTER the kill switch: airplane mode is the
