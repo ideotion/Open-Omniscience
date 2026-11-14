@@ -1522,8 +1522,8 @@
     function _toneChip(a) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!a || !a.sentiment_label) return "";
-      const c = a.sentiment_label === "positive" ? "var(--ok)"
-        : (a.sentiment_label === "negative" ? "var(--err)" : "var(--muted)");
+      const c = a.sentiment_label === "positive" ? "var(--ok-text)"
+        : (a.sentiment_label === "negative" ? "var(--err-text)" : "var(--muted)");
       const sc = (a.sentiment_score != null) ? " " + Number(a.sentiment_score).toFixed(2) : "";
       return ` <span style="color:${c};font-size:.85em" title="${esc(t("Tone (VADER, English-only) — a signal, not a verdict."))}">${esc(t(a.sentiment_label))}${esc(sc)}</span>`;
     }
@@ -3357,7 +3357,7 @@
       body.ui_lang = _uiLangCode();
       try {
         const r = await api("/api/llm/bulk/queue", { method: "POST", body: JSON.stringify(body) });
-        if (r.paused) toast(t("Queued. The queue is paused by a restart: press Resume to carry it on."), "ok");
+        if (r.paused) toast(t("Queued. The queue is paused: press Resume to carry it on."), "ok");
         else toast(r.ahead ? `${t("Queued")} (${r.ahead} ${t("ahead")})` : t("Started."), "ok");
       } catch (e) { toast((e && e.message) || t("error"), "err"); }
       _bulkRefresh();
@@ -3400,7 +3400,7 @@
       const tally = `(${job.stored || 0} ${t("stored")} · ${job.skipped || 0} ${t("skipped")} · ${job.failed || 0} ${t("failed")})`;
       let state = "";
       if (job.state === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
-      else if (job.state === "paused") state = `<span class="chip">${esc(t("Paused"))}</span> <span class="muted">${esc(tally)}</span>`;
+      else if (job.state === "paused") state = `<span class="chip"${job.error ? ` title="${esc(job.error)}"` : ""}>${esc(t("Paused"))}</span> <span class="muted">${esc(tally)}</span>`;
       else if (job.state === "running") {
         const head = job.total ? `${job.done || 0}/${job.total}` : t("starting…");
         state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t(job.stopping ? "Stopping…" : "Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
@@ -3422,7 +3422,7 @@
         const paused = _bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "paused");
         html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
           + `<div class="hint" style="margin-bottom:6px">${esc(t("The queue runs on the server: you can close this tab or the browser and it goes on. Stop a run here or in the task manager."))}</div>`
-          + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused by a restart. Resume carries on where it stopped, without redoing an article."))}</span>`
+          + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused. Resume carries on where it stopped, without redoing an article."))}</span>`
               + `<button class="tiny" data-on-click="bulkQueueResume()">${esc(t("Resume"))}</button></div>` : "")
           + _bulkQueue.map(_bulkJobLine).join("")
           + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")

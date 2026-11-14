@@ -486,6 +486,28 @@ if [ "${OO_EPHEMERAL:-}" != "1" ] && command -v awk >/dev/null 2>&1 && command -
     fi
     [ -n "$STDERR_RECORD" ] || STDERR_PIDFILE=""
 fi
+# THE STOP TRAPS EXIST BEFORE THE SERVER DOES (R674, 13 Nov, measured). They were set a few lines AFTER the server was started, so a TERM or HUP
+# that reached this launcher in between found no trap: bash took the signal's default action and died at once, the EXIT trap did not run, nothing
+# was forwarded and the server was left running with no window and no stop row. A launcher made to pause there for a moment reproduces it exactly
+# (tests/test_launcher_signals.py::test_a_stop_in_the_instant_the_server_starts_is_forwarded): CI met it once, on a loaded runner, as a launcher that
+# died of SIGTERM one second after a stop it should have waited out. Now HUP and TERM are trapped first. A stop that arrives before SERVER holds the
+# server's pid (the start is a fork, and the trap can run before `SERVER=$!`) is remembered in STOP_SIGNAL and carried out once the pid is known.
+# INT keeps its own trap below, set where it always was: it is not forwarded, and the terminal's Ctrl-C reaches the server by itself.
+STOP_REQUESTED=0
+STOP_SIGNAL=""
+SERVER=""
+PANEL=""
+oo_stop() {
+    STOP_REQUESTED=1
+    if [ -n "$SERVER" ]; then
+        record_stop "$1"
+        kill "$SERVER" 2>/dev/null || true
+    else
+        STOP_SIGNAL="$1"
+    fi
+}
+trap 'STOP_REQUESTED=1; oo_stop HUP' HUP  # STOP_REQUESTED=1 also here: the S0.2 guards read this first trap line for it
+trap 'STOP_REQUESTED=1; oo_stop TERM' TERM
 if [ -n "${MALLOC_ARENA_MAX:-}" ]; then
     if [ -n "$STDERR_RECORD" ]; then
         env MALLOC_ARENA_MAX="$MALLOC_ARENA_MAX" open-omniscience 2> >(trap '' INT HUP TERM PIPE; exec tee >(stderr_filter "$STDERR_BOOT") >&2) &
@@ -500,7 +522,13 @@ else
     fi
 fi
 SERVER=$!
-# A failed write here (disk full, a pid file that is not ours) must never end the launcher: this line runs before its traps exist.
+# a stop that arrived while the server was being started, before its pid was known: carried out now. Once only: oo_stop forwards nothing while
+# SERVER is empty, and from here on SERVER is set, so a later stop takes oo_stop's direct path.
+if [ -n "$STOP_SIGNAL" ]; then
+    record_stop "$STOP_SIGNAL"
+    kill "$SERVER" 2>/dev/null || true
+fi
+# A failed write here (disk full, a pid file that is not ours) must never end the launcher.
 [ -z "$STDERR_PIDFILE" ] || { printf '%s\n' "$SERVER" > "$STDERR_PIDFILE"; } 2>/dev/null || true
 SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # Stop the server when this launcher exits (window closed / Ctrl-C).
@@ -520,10 +548,7 @@ SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # launcher WAITS for the server to end, so its own exit comes after the server's teardown and carries the server's status.
 # KNOWN RESIDUAL (R168, no fix): a bare `kill -INT <launcher pid>` is not a terminal's Ctrl-C. Nothing sends the server a SIGINT then, and INT is not
 # forwarded, so the launcher waits and the server keeps running; stop it with TERM or HUP (forwarded) or close the window. Recorded in docs/ledger/OPEN_QUEUE.md.
-STOP_REQUESTED=0
-PANEL=""
-trap 'STOP_REQUESTED=1; record_stop HUP; kill "$SERVER" 2>/dev/null || true' HUP
-trap 'STOP_REQUESTED=1; record_stop TERM; kill "$SERVER" 2>/dev/null || true' TERM
+# (HUP and TERM are trapped above, before the server starts: R674.)
 trap 'STOP_REQUESTED=1; record_stop INT' INT
 trap 'kill "$SERVER" 2>/dev/null || true; [ -z "$PANEL" ] || kill "$PANEL" 2>/dev/null || true' EXIT
 

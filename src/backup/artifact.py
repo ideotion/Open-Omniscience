@@ -751,7 +751,17 @@ def read_volume_backup(
     staging.mkdir(parents=True, exist_ok=False)
     temp_zip = staging / "_reassembled.zip"
     stage_a_timings: dict[str, float] = {}
+    # This staging holds decrypted volumes and then the plaintext corpus: marked as a live job's while this runs, and
+    # carrying its owner's marker, so a crash's leftover is removed at the next start rather than a day later (R686).
+    from src.backup.stream_backup import (
+        register_active_staging,
+        unregister_active_staging,
+        write_owner_marker,
+    )
+
+    register_active_staging(staging)
     try:
+        write_owner_marker(staging)
         t0 = time.monotonic()
         # ``should_stop`` (ruling item 15): reassembly is one of an import's longest
         # phases, so a Stop must reach it. An abort raises VolumeStopped; the except
@@ -778,6 +788,8 @@ def read_volume_backup(
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+    finally:
+        unregister_active_staging(staging)
 
 
 # --------------------------------------------------------------------------- #

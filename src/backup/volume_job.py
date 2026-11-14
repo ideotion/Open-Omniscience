@@ -739,19 +739,6 @@ class VolumeBackupManager:
                 resume_after_exclusive_operation,
             )
 
-            was_paused = False
-            try:
-                was_paused = pause_for_exclusive_operation()
-            except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-                log_failure(
-                    _LOG,
-                    "pausing background collection for the restore failed",
-                    exc,
-                    passphrase,
-                    corpus_passphrase,
-                    level=logging.WARNING,
-                )
-
             # The user-visible phase TOTAL for this restore: our own manager phases
             # plus run_restore's own plan for these exact flags. Computed, never a
             # constant -- run_restore's plan legitimately differs by commit /
@@ -769,6 +756,23 @@ class VolumeBackupManager:
                 if stage_name not in _restore_plan:
                     return 0
                 return len(_RESTORE_MANAGER_PHASES) + _restore_plan.index(stage_name) + 1
+
+            # The claim is taken LAST, right before the ``try`` whose ``finally`` gives it back (R383, security read of B3 delta 3): the hold
+            # is counted, so a claim stranded by a raise in between would keep collection off until the app restarts.
+            was_paused = False
+            # R383: the claim this restore takes on the scheduler's hold, so its resume releases exactly that one (the hold is counted)
+            hold_claim: list[bool] = []
+            try:
+                was_paused = pause_for_exclusive_operation(claim=hold_claim)
+            except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+                log_failure(
+                    _LOG,
+                    "pausing background collection for the restore failed",
+                    exc,
+                    passphrase,
+                    corpus_passphrase,
+                    level=logging.WARNING,
+                )
 
             try:
                 self._on_prog({
@@ -1004,7 +1008,7 @@ class VolumeBackupManager:
                     cleanup_staging(staged)
             finally:
                 try:
-                    resume_after_exclusive_operation(was_paused)
+                    resume_after_exclusive_operation(was_paused, claim=hold_claim)
                 except Exception as exc:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
                     log_failure(
                         _LOG,

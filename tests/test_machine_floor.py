@@ -14,6 +14,9 @@ import pytest
 from src.config import machine_floor as MF
 from tests.js_source_helper import read_static
 
+# A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
+pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
+
 _SRC = Path(__file__).resolve().parents[1] / "src"
 
 
@@ -67,7 +70,7 @@ def test_the_override_is_read_from_the_documented_environment_variable(monkeypat
 def test_an_unmeasurable_machine_is_a_third_state_and_is_never_refused(monkeypatch):
     """Refusing on a measurement nobody made is the fabricated-failure mirror of
     the fabricated pass — and on a core install psutil is simply absent."""
-    monkeypatch.setattr(MF, "_mem_readings", lambda: (None, None))
+    monkeypatch.setattr(MF, "_mem_reading", lambda: {"total_mb": None, "available_mb": None})
     v = MF.machine_floor(override=False)
     assert v["below"] is None, "unmeasurable must not collapse into False"
     assert v["declines"] is False
@@ -77,7 +80,7 @@ def test_an_unmeasurable_machine_is_a_third_state_and_is_never_refused(monkeypat
 def test_a_partial_reading_still_judges_on_what_it_has(monkeypatch):
     """One readable half is evidence; discarding it would decline less on exactly
     the machines that can least afford the scan."""
-    monkeypatch.setattr(MF, "_mem_readings", lambda: (3379.0, None))
+    monkeypatch.setattr(MF, "_mem_reading", lambda: {"total_mb": 3379.0, "available_mb": None})
     v = MF.machine_floor(override=False)
     assert v["below"] is True
     assert "unreadable available" in v["reason"]
@@ -115,7 +118,7 @@ def test_the_need_method_states_every_term_it_used():
 
 
 def test_an_unmeasurable_available_makes_affordability_a_third_state(monkeypatch):
-    monkeypatch.setattr(MF, "_mem_readings", lambda: (None, None))
+    monkeypatch.setattr(MF, "_mem_reading", lambda: {"total_mb": None, "available_mb": None})
     b = MF.scan_budget(1000, override=False)
     assert b["affordable"] is None, "'we could not tell' is not 'no'"
     assert "skipped" not in b

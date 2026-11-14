@@ -44,10 +44,11 @@ function extractConst(name) {
 const CLIMATE = [
   "climateText", "climateParamLabel", "climateSeriesLabel", "climateUnitLabel", "_climateWhen", "_climateFact",
   "climateFactsHtml", "climateDiagnosticsHtml", "climateSeriesNote", "climateStationOk",
+  "climatePlaceDefaults", "climatePlaceRound", "climatePlaceProblem", "climatePlaceVarLabel", "climatePlaceResultHtml",
 ];
 const src =
   extractConst("esc") + "\n" + extractConst("_LTR_ISOLATE") + "\n" + extract("_ltrIsolate") + "\n" +
-  extract("fmtNum") + "\n" + extract("ooIsoDateTime") + "\n" +
+  extract("fmtNum") + "\n" + extract("ooRoundPlace") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" + extract("ooLtrIsolate") + "\n" +
   "var window = {};\nvar document = { documentElement: { dir: \"ltr\" } };\n" +
   CLIMATE.map(extract).join("\n") + "\n" +
   "module.exports = {" + CLIMATE.join(", ") + "};";
@@ -90,6 +91,9 @@ const unit = (over) => Object.assign({
   const link = /<a\b[^>]*>([\s\S]*?)<\/a>/.exec(h);
   assert.ok(link, "the source page is a link");
   assert.strictEqual(visible(link[1]), unit().source_page, "the link's visible text is the full URL (#6)");
+  // #6 extended: the local preview opens first; the link is never a bare shortcut out.
+  assert.ok(/data-on-click="ooPrevent\(event\);openLinkPreview\(/.test(link[0]), link[0]);
+  assert.ok(!/target="_blank"/.test(link[0]), "no bare outbound link: " + link[0]);
   assert.ok(visible(h).includes("NASA GISS, public domain"), "the licence is named");
   noJunk(h, "never fetched");
 }
@@ -164,5 +168,46 @@ for (const sid of ["gistemp.monthly", "gistemp.annual_jd", "nsidc.sea_ice_extent
 }
 assert.strictEqual(R.climateParamLabel("gistemp", "NH", t), "Northern hemisphere");
 assert.strictEqual(R.climateParamLabel("nsidc", "S", t), "Antarctic");
+
+
+// ---- Your place (R675) ----
+// The browser rounds exactly as the server does, so the consent popup names what is sent.
+assert.strictEqual(R.climatePlaceRound("48.85661"), 48.9);
+assert.strictEqual(R.climatePlaceRound(2.35222), 2.4);
+assert.ok(Object.is(R.climatePlaceRound(-0.04), 0), "no -0 in the popup");
+// A tie goes UP, as the server's round_place does (tests/test_weather_context_r683.py pins the same values).
+assert.strictEqual(R.climatePlaceRound(0.25), 0.3);
+assert.strictEqual(R.climatePlaceRound(-0.25), -0.2);
+assert.strictEqual(R.climatePlaceRound(7.75), 7.8);
+// The window ends a week ago and spans 30 days, from today's UTC date.
+assert.deepStrictEqual(R.climatePlaceDefaults(new Date(Date.UTC(2026, 10, 13, 23, 0))), {start: "2026-10-08", end: "2026-11-06"});
+// Every query the server would refuse is refused here in words, before any popup.
+const today = new Date(Date.UTC(2026, 10, 13));
+const okQ = {lat: "48.85", lon: "2.35", start: "2026-10-01", end: "2026-10-30"};
+assert.strictEqual(R.climatePlaceProblem(okQ, today, t), "");
+for (const [over, word] of [[{lat: ""}, "latitude"], [{lat: "abc"}, "latitude"], [{lat: "91"}, "Latitude"], [{lon: "-181"}, "Longitude"],
+  [{end: "2026-09-01"}, "before"], [{start: "2024-01-01"}, "366"], [{start: "1939-12-31", end: "1940-01-05"}, "1940"], [{end: "2026-11-20"}, "past"], [{start: "x"}, "first"]]) {
+  const why = R.climatePlaceProblem(Object.assign({}, okQ, over), today, t);
+  assert.ok(why && why.includes(word), JSON.stringify(over) + " -> " + why);
+}
+// The result: units, a sign, the years used, a missing value said with its reason, markup escaped, no verdict word.
+{
+  const d = {results: [
+    {variable: "temperature_2m_max", kind: "mean", unit: "°C", value: 1.24, window_value: 21.3, baseline_value: 20.06, years_used: 29, years_excluded: 1},
+    {variable: "precipitation_sum", kind: "sum", unit: "mm", value: 140, window_value: 70, baseline_value: 50, years_used: 30, years_excluded: 0},
+    {variable: "temperature_2m_min", value: null, reason: "<b>2 of 3 window days have no value</b>"},
+  ], license: "Open-Meteo open data, CC BY 4.0", provenance: {window: {fetched_at: "2026-11-13T10:00:00+00:00"}, baseline: {}}};
+  const h = R.climatePlaceResultHtml(d, t, tf), v = visible(h);
+  assert.ok(v.includes("+1.2 °C") && v.includes("140% of the average") && v.includes("29 of 30 years used") && v.includes("1 excluded for a missing day"), v);
+  assert.ok(v.includes("Not computed") && v.includes("2 of 3 window days have no value") && !h.includes("<b>2 of 3"), "a reason is text: " + h);
+  assert.ok(v.includes("2026-11-13 10:00 UTC") && v.includes("not recorded"), "fetch times as recorded, never invented: " + v);
+  assert.ok(v.includes("CC BY 4.0"), "the licence is named");
+  assert.ok(!VERDICTS.test(v), "a verdict word in " + v);
+  noJunk(h, "place result");
+  assert.ok(visible(R.climatePlaceResultHtml(Object.assign({}, d, {kept: false}), t, tf)).includes("could not be kept"), "an unkept result says so");
+  assert.ok(!v.includes("could not be kept"), "a kept result does not");
+  assert.ok(visible(R.climatePlaceResultHtml(Object.assign({}, d, {results: [Object.assign({}, d.results[0], {window_in_baseline_period: true})]}), t, tf)).includes("part of the average"));
+}
+assert.strictEqual(R.climatePlaceResultHtml(null, t, tf), "");
 
 console.log("climate renderers: all checks passed");

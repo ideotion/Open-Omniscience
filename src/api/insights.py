@@ -3169,14 +3169,14 @@ def insights_who(
     country = country_param(country)  # both forms in (S05-02 S2); never a guess
     key = _ckey("who", entity_class=entity_class, days=days, country=country,
                 limit=limit, min_articles=min_articles)
-    return _deadlined(db, key, lambda: q.who_aggregate(
+    return _deadlined(db, key, lambda: _computed(q.who_aggregate(
         db,
         entity_class=entity_class,
         days=days,
         country=country,
         limit=limit,
         min_articles=min_articles,
-    ))
+    )))
 
 
 @router.get("/where")
@@ -3402,6 +3402,18 @@ def _observatory_member_labels(payload, db: Session, tl: str | None):
     return out
 
 
+def _computed(payload: object) -> object:
+    """The list routes' answer with the moment it was computed (R685: a list says when it was made).
+
+    Stamped INSIDE the cached compute, so a cache hit carries the time the scan actually ran, not
+    the time it was served. A non-dict answer (a degraded payload) passes through untouched."""
+    if isinstance(payload, dict):
+        from datetime import UTC, datetime
+
+        return {**payload, "computed_at": datetime.now(UTC).isoformat(timespec="seconds")}
+    return payload
+
+
 @router.get("/source-laundering")
 def insights_source_laundering(
     min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),
@@ -3418,9 +3430,9 @@ def insights_source_laundering(
 
     key = _ckey("source-laundering", min_sources=min_sources, min_articles=min_articles,
                 days=days, limit=limit)
-    return _deadlined(db, key, lambda: find_source_laundering(
+    return _deadlined(db, key, lambda: _computed(find_source_laundering(
         db, min_sources=min_sources, min_articles=min_articles, days=days, limit=limit
-    ))
+    )))
 
 
 @router.get("/recycled-claims")
@@ -3441,13 +3453,13 @@ def insights_recycled_claims(
 
     key = _ckey("recycled-claims", recent_days=recent_days, lookback_days=lookback_days,
                 min_gap_days=min_gap_days, limit=limit)
-    return _deadlined(db, key, lambda: find_recycled_claims(
+    return _deadlined(db, key, lambda: _computed(find_recycled_claims(
         db,
         recent_days=recent_days,
         lookback_days=lookback_days,
         min_gap_days=min_gap_days,
         max_clusters=limit,
-    ))
+    )))
 
 
 @router.get("/headline-body-mismatch")
@@ -3466,9 +3478,9 @@ def insights_headline_body_mismatch(
     return _deadlined(
         db,
         _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit),
-        lambda: find_headline_body_mismatch(
+        lambda: _computed(find_headline_body_mismatch(
             db, recent_days=recent_days, d_min=d_min, max_items=limit
-        ),
+        )),
     )
 
 
@@ -3488,9 +3500,9 @@ def insights_manufactured_emergence(
     return _deadlined(
         db,
         _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit),
-        lambda: find_manufactured_emergence(
+        lambda: _computed(find_manufactured_emergence(
             db, recent_days=recent_days, min_sources=min_sources, max_items=limit
-        ),
+        )),
     )
 
 
@@ -3510,7 +3522,7 @@ def insights_flooded_topics(
     return _deadlined(
         db,
         _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit),
-        lambda: find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit),
+        lambda: _computed(find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit)),
     )
 
 
@@ -3532,9 +3544,9 @@ def insights_copypasta(
     return _deadlined(
         db,
         _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit),
-        lambda: find_copypasta(
+        lambda: _computed(find_copypasta(
             db, recent_days=recent_days, k=k, min_sources=min_sources, max_items=limit
-        ),
+        )),
     )
 
 

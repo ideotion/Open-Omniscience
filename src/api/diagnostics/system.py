@@ -106,11 +106,13 @@ def elections_coverage_floor() -> dict:
     list of facts, never a score, and it carries its own caveat."""
     from src.civic.calendar_report import country_tier_report
     from src.civic.coverage_floor import floor_coverage, load_floor
-    from src.events.catalog import load_events
+    from src.events.catalog import layered_events
 
-    today = date.today()  # one clock for both halves, so a request that spans midnight cannot split them
-    out = floor_coverage(today)
-    out["tier_report"] = country_tier_report(load_events(), set(load_floor()["countries"]), today)
+    today = date.today()  # one clock for every half, so a request that spans midnight cannot split them
+    events, snapshot = layered_events(today)  # one read, so the snapshot line and the tables agree
+    out = floor_coverage(today, events=events)
+    out["tier_report"] = country_tier_report(events, set(load_floor()["countries"]), today)
+    out["snapshot"] = snapshot
     return out
 
 
