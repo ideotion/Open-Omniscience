@@ -128,9 +128,16 @@ def corpus_language_shares(session: Session) -> dict[str, float]:
 
     The same key must be used on BOTH sides of the comparison; see
     ``normalize_target``. Two modules publishing the same quantity under different
-    bucket keys is the defect this pair now forecloses."""
+    bucket keys is the defect this pair now forecloses.
+
+    QUARANTINE (R101): an article quarantined as "not an article" is left out, so the lever does not steer on
+    nav-soup. ``article_counts_by_language`` (``src/database/snapshots.py``), the feed that describes this
+    quantity, leaves them out by the same filter, so the two keep describing one corpus."""
+    from src.analytics.quarantine_scope import not_quarantined
+
     rows = (
         session.query(Article.language, func.count(Article.id))
+        .filter(not_quarantined(Article.id))
         .group_by(Article.language)
         .all()
     )

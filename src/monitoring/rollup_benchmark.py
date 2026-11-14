@@ -47,7 +47,8 @@ def _live_windowed(session: Session, start, *, scan_bound=_UNBOUNDED):
     leaves out every row committed after it, on purpose, so a live side that keeps counting them on a corpus
     the scrape is still writing to differs from the rollup by exactly the new rows; bounded, it compares like
     with like (the 2026-10-16 run: 8,814 "mismatches", every one a row newer than the build)."""
-    clause = "observed_on IS NOT NULL"
+    # R101: the rollup leaves quarantined articles out, so the live side it is timed and compared against does too.
+    clause = "observed_on IS NOT NULL AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
     params: dict = {}
     if scan_bound is not _UNBOUNDED:
         from src.analytics.columnar import live_bound_clause
