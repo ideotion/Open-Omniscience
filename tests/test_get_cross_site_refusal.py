@@ -21,29 +21,7 @@ from src.api.cross_site import refuse_cross_site_get
 
 # (module, full path of the GET route in that module's own router)
 GUARDED = [
-    ("src.api.diagnostics.performance", "/api/diagnostics/performance"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/benchmark"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/rollup-benchmark"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/llm-bench"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/llm-throughput"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/ai-activity-selftest"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/llm-throughput-selftest"),
-    ("src.api.diagnostics.performance", "/api/diagnostics/source-coverage-benchmark"),
-    ("src.api.diagnostics.evals", "/api/diagnostics/ir-eval-selftest"),
-    ("src.api.diagnostics.evals", "/api/diagnostics/perception-eval-selftest"),
-    ("src.api.diagnostics.evals", "/api/diagnostics/keyword-triage-selftest"),
-    ("src.api.diagnostics.evals", "/api/diagnostics/recursive-loop"),
-    ("src.api.diagnostics.evals", "/api/diagnostics/search-timing-selftest"),
-    ("src.api.diagnostics.bundle", "/api/diagnostics/debug-bundle"),
-    ("src.api.diagnostics.bundle", "/api/diagnostics/all"),
     ("src.api.diagnostics.scan_estimate", "/api/diagnostics/all-job/estimate"),
-    ("src.api.diagnostics.corpus", "/api/diagnostics/bulletin-language-selftest"),
-    ("src.api.diagnostics.corpus", "/api/diagnostics/power-profile-selftest"),
-    ("src.api.diagnostics.keywords", "/api/diagnostics/keyword-selftest"),
-    ("src.api.diagnostics.ai", "/api/diagnostics/qualification-assist-selftest"),
-    ("src.api.diagnostics.sources", "/api/diagnostics/source-audit-selftest"),
-    ("src.api.diagnostics.source_tags", "/api/diagnostics/source-tags-selftest"),
-    ("src.api.signals", "/api/signals/fdr-selftest"),
     ("src.api.custody", "/api/custody/export"),
     # served_file_response appends to diagnostics/runs.jsonl (+ .lock); the volume route also makes a directory, the parts route touches its set
     ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/download"),
@@ -61,6 +39,29 @@ MOVED_TO_POST = [
     ("src.api.wiki", "/api/wiki/dumps/sizes"),  # up to 12 HEADs to the dump host
     ("src.api.geo", "/api/geo/downloads/size"),  # one HEAD to the OSM mirror
     ("src.api.annotations", "/api/annotations/export"),  # signs the bundle; the first export creates the annotation signing key
+    # the heavy diagnostics: minutes of CPU, memory or local-model time, or a fixture self-test run on demand (R278 F1/P2)
+    ("src.api.diagnostics.performance", "/api/diagnostics/performance"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/benchmark"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/rollup-benchmark"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/llm-bench"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/llm-throughput"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/ai-activity-selftest"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/llm-throughput-selftest"),
+    ("src.api.diagnostics.performance", "/api/diagnostics/source-coverage-benchmark"),
+    ("src.api.diagnostics.evals", "/api/diagnostics/ir-eval-selftest"),
+    ("src.api.diagnostics.evals", "/api/diagnostics/perception-eval-selftest"),
+    ("src.api.diagnostics.evals", "/api/diagnostics/keyword-triage-selftest"),
+    ("src.api.diagnostics.evals", "/api/diagnostics/recursive-loop"),
+    ("src.api.diagnostics.evals", "/api/diagnostics/search-timing-selftest"),
+    ("src.api.diagnostics.bundle", "/api/diagnostics/debug-bundle"),
+    ("src.api.diagnostics.bundle", "/api/diagnostics/all"),
+    ("src.api.diagnostics.corpus", "/api/diagnostics/bulletin-language-selftest"),
+    ("src.api.diagnostics.corpus", "/api/diagnostics/power-profile-selftest"),
+    ("src.api.diagnostics.keywords", "/api/diagnostics/keyword-selftest"),
+    ("src.api.diagnostics.ai", "/api/diagnostics/qualification-assist-selftest"),
+    ("src.api.diagnostics.sources", "/api/diagnostics/source-audit-selftest"),
+    ("src.api.diagnostics.source_tags", "/api/diagnostics/source-tags-selftest"),
+    ("src.api.signals", "/api/signals/fdr-selftest"),
 ]
 
 
@@ -117,9 +118,9 @@ def test_a_request_with_no_origin_still_reaches_the_handler() -> None:
     from src.api.main import app
 
     with TestClient(app, base_url="http://127.0.0.1:8000") as client:
-        r = client.get("/api/signals/fdr-selftest")
+        r = client.get("/api/diagnostics/all-job/estimate")
         same = client.get(
-            "/api/signals/fdr-selftest",
+            "/api/diagnostics/all-job/estimate",
             headers={"Origin": "http://127.0.0.1:8000", "Sec-Fetch-Site": "same-origin"},
         )
     assert r.status_code == 200

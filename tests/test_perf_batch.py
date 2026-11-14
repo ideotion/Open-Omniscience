@@ -489,7 +489,7 @@ def test_near_dup_memo_returns_equal_isolated_results():
 # --------------------------------------------------------------------------- #
 def test_performance_report_carries_real_evidence(client, seeded):
     client.get("/api/database/stats")  # ensure at least one measured request
-    r = client.get("/api/diagnostics/performance")
+    r = client.post("/api/diagnostics/performance")
     assert r.status_code == 200
     assert "attachment" in r.headers.get("content-disposition", "")
     body = r.json()
@@ -529,7 +529,7 @@ def test_performance_report_says_so_when_the_keyword_export_is_declined(client, 
         bundle_mod, "ram_declined_reason", lambda name, **_k: f"{name} declined for the test"
     )
     monkeypatch.setattr(perf_mod, "keyword_log", lambda **_k: ran.append(1))
-    rows = client.get("/api/diagnostics/performance").json()["data"]["selftest"]["results"]
+    rows = client.post("/api/diagnostics/performance").json()["data"]["selftest"]["results"]
     row = [x for x in rows if x["probe"] == "keyword_export_streamed"]
     assert len(row) == 1 and "declined for the test" in row[0]["skipped"]
     assert "ms" not in row[0] and "bytes" not in row[0] and ran == []
@@ -548,7 +548,7 @@ def test_performance_report_carries_the_gate_reading_for_the_keyword_export_prob
     monkeypatch.setattr("src.database.maintenance._available_mb", lambda: 64.0)
     monkeypatch.setattr("src.database.maintenance._read_memory_floor_mb", lambda: 256.0)
     monkeypatch.setitem(bundle_mod._MEMBER_NEED_ESTIMATORS, "keyword-log-digest.json", lambda _db, _avail=None: 900.0)
-    st = client.get("/api/diagnostics/performance").json()["data"]["selftest"]
+    st = client.post("/api/diagnostics/performance").json()["data"]["selftest"]
     gate = st["keyword_export_gate"]
     assert gate["decision"] == "declined" and gate["need_mb"] == 900.0
     assert gate["total_mb"] == 512.0 and gate["available_mb"] == 64.0
@@ -572,7 +572,7 @@ def test_the_performance_report_carries_no_passphrase_in_the_error_texts_it_writ
 
     monkeypatch.setattr(capacity, "state_report", _boom)
     monkeypatch.setattr("src.api.database.database_stats", _boom)
-    data = client.get("/api/diagnostics/performance").json()["data"]
+    data = client.post("/api/diagnostics/performance").json()["data"]
     reason = data["collection"]["learned_concurrency"]
     rows = [x for x in data["selftest"]["results"] if x["probe"] == "database_stats"]
     assert reason["available"] is False and rows and all("error" in x for x in rows)
@@ -583,6 +583,6 @@ def test_the_performance_report_carries_no_passphrase_in_the_error_texts_it_writ
 
 
 def test_performance_report_selftest_can_be_skipped(client):
-    body = client.get("/api/diagnostics/performance?selftest=false").json()
+    body = client.post("/api/diagnostics/performance?selftest=false").json()
     assert body["data"]["selftest"]["ran"] is False
     assert body["data"]["selftest"]["results"] == []

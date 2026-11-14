@@ -411,7 +411,7 @@
       "lunarTestTerm", "maintAction", "maintLoadFurniture", "maintStart", "mbAnchorGrade", "mbAnchorKind",
       "mbAnchorsLoad", "mbAnchorsSave", "mbBuildBatch", "mbRun", "memoryGuardResume", "migrateOllamaStore", "mmExpand", "mmLevel",
       "mmView", "ooBodyClass", "ooCloseDialog", "ooFolderPicker", "ooFolderPickerUse",
-      "ooMapCloseDetail", "ooOpenUrl", "ooPrevent", "ooPreventStop", "ooStop", "openAnalysisFor",
+      "ooMapCloseDetail", "ooOpenUrl", "ooPostSave", "ooPrevent", "ooPreventStop", "ooStop", "openAnalysisFor",
       "openAnalysisForIds", "openCardCorpus", "openCardCorpusQuery", "openChannelCorpus", "openConceptMap",
       "openConjunctionLensChannel", "openCorpus", "openDoc", "openDraft", "openGuide", "openIdxComparison",
       "openInsightsTrends", "openLinkPreview", "openOsmObjectCard", "openPalette", "openPlaceCard",
@@ -483,6 +483,32 @@
       try { u = new URL(path, location.origin); } catch (e) { return; }
       if (u.origin !== location.origin) return;
       window.open(u.href, "_blank", "noopener");
+    },
+    // A same-origin POST whose answer is saved as a file (R694). The heavy diagnostics (benchmarks, self-tests) were GETs opened
+    // with ooOpenUrl, and any page the person visits can fire a GET; they are POSTs now, so the button posts and saves what comes
+    // back. Same path rule as ooOpenUrl. The name is the server's Content-Disposition filename when it sends one, else the
+    // route's last segment with .json.
+    async ooPostSave(path) {
+      if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return;
+      let u;
+      try { u = new URL(path, location.origin); } catch (e) { return; }
+      if (u.origin !== location.origin) return;
+      const say = (m, kind) => { if (typeof window.toast === "function") window.toast(m, kind); };
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let res;
+      try { res = await fetch(u.href, {method: "POST"}); } catch (e) { say(t("Failed") + ": " + String((e && e.message) || e), "err"); return; }
+      if (!res.ok) { say(t("Failed") + " (" + res.status + ")", "err"); return; }
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="?([^";]+)"?/i.exec(cd);
+      const name = m ? m[1] : (u.pathname.split("/").filter(Boolean).pop() || "result") + ".json";
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
     },
   };
   for (const [k, f] of Object.entries(HELPERS)) ACTIONS[k] = f;

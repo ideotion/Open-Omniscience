@@ -104,8 +104,7 @@ def test_nothing_was_lost_in_the_move():
     # The keyword export became numbered files (the page saves them five to a click), so its link
     # calls downloadKeywordParts rather than ooOpenUrl; it stays where it was. (R123: "Keyword log" and
     # "Last keyword files, again" are gone, "All keywords" is the one left.)
-    clicks = [f"ooOpenUrl('{endpoint}')" for endpoint in (
-        "/api/diagnostics/rollup-benchmark",
+    clicks = ["ooPostSave('/api/diagnostics/rollup-benchmark')"] + [f"ooOpenUrl('{endpoint}')" for endpoint in (
         "/api/signals/flood",
         "/api/signals/bury",
         "/api/insights/lunar-correlation",

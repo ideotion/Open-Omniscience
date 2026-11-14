@@ -3254,7 +3254,7 @@ def test_diagnostics_panel_button_consolidation():
     #     button (maintainer: «one single button»), which saves it among its files.
     assert 'data-on-click="downloadFieldData(this)"' in html
     assert '"/api/diagnostics/source-quality?download=1"' in ui_js
-    assert "ooOpenUrl('/api/diagnostics/rollup-benchmark')" in html
+    assert "ooPostSave('/api/diagnostics/rollup-benchmark')" in html  # a POST since R694
     #   - the 4 statistical-signal reports: on DIFFERENT routers (signals.py/insights.py),
     #     never scanned by the diagnostics-router ratchet and not bundle members --
     #     removing them would strand that data behind no UI at all.
@@ -6629,7 +6629,7 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # The endpoints exist and are downloadable.
     assert '@router.get("/home-cards")' in diag
     assert "card_click_diagnostics" in diag
-    assert '@router.get("/all", dependencies=[Depends(refuse_cross_site_get)])' in diag and "def all_diagnostics(" in diag
+    assert '@router.post("/all")' in diag and "def all_diagnostics(" in diag  # a POST since R694
     # The all-bundle gathers the other logs (each wrapped so one failure can't abort it).
     for member in ("debug-bundle.json", "home-cards.json", "keyword-engine.json"):
         assert member in diag
@@ -7251,19 +7251,13 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
     src.api.diagnostics._DIAG_SIBLING_FILES too, mirroring the runtime coverage report
     exactly (same list, same regex), so the two can never diverge on WHICH files are
     in scope either."""
-    import re
-
     from src.api import diagnostics as _diag
 
     src = diagnostics_source()
-    gets = set(re.findall(r'@router\.get\("([^"]+)"', src))
-    for _fname in _diag._DIAG_SIBLING_FILES:
-        gets |= set(
-            re.findall(
-                r'@router\.get\("([^"]+)"',
-                (_SRC / "api" / _fname).read_text(encoding="utf-8"),
-            )
-        )
+    # every GET, plus the report routes that are POSTs since R694 (the benchmarks, the self-tests, /all, /debug-bundle)
+    gets = _diag.diagnostics_report_routes(
+        src, [(_SRC / "api" / _fname).read_text(encoding="utf-8") for _fname in _diag._DIAG_SIBLING_FILES]
+    )
 
     # endpoint path -> the bundle member filename that carries its payload. Imported from
     # src.api.diagnostics (see the module docstring above) rather than duplicated here.
@@ -7277,7 +7271,9 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
         "manifest's 'excluded' block"
     )
     stale = sorted((set(covered) | set(exempt)) - gets)
-    assert not stale, f"classified paths no longer exist as GET routes: {stale}"
+    assert not stale, f"classified paths no longer exist as GET routes (or R694 report POSTs): {stale}"
+    # each R694 report POST really is a POST in the source (a typo in the set would silently drop it from the comparison)
+    assert {p for p in _diag._DIAG_REPORT_POSTS if f'@router.post("{p}")' in src} == set(_diag._DIAG_REPORT_POSTS)
     members_block = src.split("def _all_diagnostics_members", 1)[1].split("def _", 1)[0]
     # A member is written out in the list, or comes from the slot table (R119) AND is in this build.
     from src.api import diagnostics_slots as _slots
