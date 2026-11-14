@@ -3262,15 +3262,18 @@
     // --- Bulk summarize / translate QUEUE (maintainer 2026-06-21) -------------- //
     // Several batch runs can be QUEUED: start a long translation, keep searching, and
     // queue more from new results — they run ONE AT A TIME (a single local CPU model
-    // can't do them well in parallel). Each job SNAPSHOTS its selection at enqueue, so
-    // it targets the right articles even after you change the search. The active run also
-    // appears in the task manager; this client-side queue manages the pending ones. The
-    // queue lives in a persistent sibling (.bulk-queue) so it survives the config panel
-    // being hidden or the custom-extractor panel reusing the same mount.
-    let _bulkQueue = [];        // jobs, see _bulkSelLabel for the shape
-    let _bulkActive = null;     // the running job (one at a time)
-    let _bulkJobAbort = null;   // its AbortController (the extractor's runs live in _aiRuns)
-    let _bulkJobSeq = 1;
+    // can't do them well in parallel). Each run SNAPSHOTS its selection when it is added,
+    // so it targets the right articles even after you change the search.
+    // THE QUEUE LIVES ON THE SERVER (R600's second PR, src/jobs/llm_bulk_queue.py): it used
+    // to be an array in this tab, so closing the browser lost every run waiting behind the
+    // one in flight. The page now only adds, cancels and reads; the server runs the queue to
+    // its end with the tab closed, shows it in the task manager, and after a restart keeps
+    // it paused until Resume. The queue renders in a persistent sibling (.bulk-queue) so it
+    // survives the config panel being hidden or the custom-extractor panel reusing the mount.
+    let _bulkQueue = [];        // the server's entries, as last read (see _bulkRefresh)
+    let _bulkPaused = false;    // a restart paused the queue: Resume carries it on
+    let _bulkPoll = null;       // the read timer, set only while a run waits or runs
+    let _bulkJobAbort = null;   // kept for the extractor panel's mount sharing (its runs live in _aiRuns)
 
     function _bulkSelLabel(op, body) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3309,6 +3312,7 @@
         </div>
       </div>`;
       _bulkRenderQueue();
+      _bulkRefresh();  // the server's queue, also what an earlier tab (or a restart) left in it
     }
     // Hides the CONFIG panel only — queued/running jobs persist (the maintainer keeps
     // searching while a translation runs). Never cancels work.
@@ -3328,8 +3332,8 @@
       if (mount) mount.style.display = "none";
     }
 
-    // Enqueue a bulk run (snapshot the current selection) and pump the queue.
-    function bulkLlmRun(op, ctx) {
+    // Add a bulk run to the SERVER's queue (snapshot the current selection).
+    async function bulkLlmRun(op, ctx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const p = _bulkParams(ctx);
       const skipEl = $("bulk-skip-" + ctx);
@@ -3351,118 +3355,62 @@
       if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || _uiLangName(); }
       else { body.output_language = _uiLangName(); }
       body.ui_lang = _uiLangCode();
-      const job = { id: _bulkJobSeq++, op, body, label: _bulkSelLabel(op, body),
-        status: "queued", total: 0, done: 0, storedN: 0, skippedN: 0, failedN: 0, todo: null, skip: 0, err: "" };
-      _bulkQueue.push(job);
-      const ahead = _bulkQueue.filter((j) => j.status === "queued").length - 1;
-      toast(_bulkActive ? `${t("Queued")} (${ahead} ${t("ahead")})` : t("Started."), "ok");
-      _bulkRenderQueue();
-      _bulkPump();
-    }
-
-    async function _bulkPump() {
-      if (_bulkActive) return;                       // one model run at a time
-      const job = _bulkQueue.find((j) => j.status === "queued");
-      if (!job) return;
-      _bulkActive = job; job.status = "running";
-      _bulkRenderQueue();
-      // `aiWorking` paints the pill busy NOW. The server would report this run too
-      // (its generate() calls cross the counted seam), but only at the next poll —
-      // and for work the reader just asked for, "within fifteen seconds" is not
-      // feedback. The server signal still covers the case this cannot see: the run
-      // continuing after the tab is closed.
-      try { await aiWorking(() => _bulkRunJob(job)); }
-      finally {
-        _bulkActive = null; _bulkJobAbort = null;
-        loadLlmHealth();                             // a fresh signal of whether Ollama is up
-        _bulkRenderQueue();
-        _bulkPump();                                 // next in line
-      }
-    }
-
-    async function _bulkRunJob(job) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      _bulkJobAbort = ("AbortController" in window) ? new AbortController() : null;
       try {
-        const resp = await fetch("/api/llm/bulk", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(job.body), signal: _bulkJobAbort ? _bulkJobAbort.signal : undefined,
-        });
-        if (!resp.ok || !resp.body) {
-          let detail = "HTTP " + resp.status;
-          try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
-          job.status = "error"; job.err = detail; _bulkRenderQueue(); return;
-        }
-        job.taskId = resp.headers.get("X-OO-Task");
-        if (job.stopping && !(await _stopServerRun(job.taskId))) job.stopping = false;  // Cancel pressed before the response began
-        const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
-        for (;;) {
-          const { done: fin, value } = await reader.read();
-          if (fin) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split("\n"); buf = lines.pop();
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            let o; try { o = JSON.parse(line); } catch (e) { continue; }
-            if (o.event === "start") {
-              job.total = o.total;
-              job.todo = (o.to_process != null) ? o.to_process : o.total;
-              job.skip = Math.max(0, job.total - job.todo);
-            } else if (o.event === "item") {
-              job.done++;
-              if (o.status === "stored") job.storedN++;
-              else if (o.status === "skipped") job.skippedN++;
-              else if (o.status === "failed") job.failedN++;
-            } else if (o.event === "done") {
-              if (o.aborted) {
-                // The end the page's own Cancel asked for; any other abort (the model went away first) keeps its reason.
-                if (job.stopping && o.reason === _STOPPED_REASON) job.status = "cancelled";
-                else { job.status = "error"; job.err = o.reason || t("Stopped"); }
-              } else job.status = "done";
-            }
-            _bulkRenderQueue();
-          }
-        }
-        if (job.status === "running") job.status = job.stopping ? "cancelled" : "done";  // stream ended with no done line
-      } catch (e) {
-        if (e && e.name === "AbortError") { job.status = "cancelled"; }
-        else { job.status = "error"; job.err = (e && e.message) || "error"; }
-      } finally {
-        _bulkRenderQueue();
-      }
+        const r = await api("/api/llm/bulk/queue", { method: "POST", body: JSON.stringify(body) });
+        if (r.paused) toast(t("Queued. The queue is paused: press Resume to carry it on."), "ok");
+        else toast(r.ahead ? `${t("Queued")} (${r.ahead} ${t("ahead")})` : t("Started."), "ok");
+      } catch (e) { toast((e && e.message) || t("error"), "err"); }
+      _bulkRefresh();
     }
 
-    function bulkJobCancel(id) {
-      const job = _bulkQueue.find((j) => j.id === id);
-      if (!job) return;
-      if (job.status === "running") {
-        if (job.stopping) return;  // already asked
-        job.stopping = true;       // the next run starts only once this one has really ended on the server
-        if (job.taskId) _stopServerRun(job.taskId).then((ok) => { if (!ok) job.stopping = false; _bulkRenderQueue(); });
-      }
-      else if (job.status === "queued") { job.status = "cancelled"; }
+    // Read the server's queue and repaint; keep reading while a run waits or runs. The tab's
+    // reads are the only thing it does: closing it changes nothing on the server.
+    async function _bulkRefresh() {
+      try {
+        const d = await api("/api/llm/bulk/queue", { polled: true });
+        _bulkQueue = Array.isArray(d.entries) ? d.entries : [];
+        _bulkPaused = !!d.paused;
+      } catch (e) { /* keep the last read; the next one tries again */ }
       _bulkRenderQueue();
+      const active = !_bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "running");
+      if (active && !_bulkPoll) _bulkPoll = setInterval(_bulkRefresh, 2000);
+      else if (!active && _bulkPoll) { clearInterval(_bulkPoll); _bulkPoll = null; }
     }
-    function bulkJobClearDone() {
-      _bulkQueue = _bulkQueue.filter((j) => j.status === "queued" || j.status === "running");
-      _bulkRenderQueue();
+
+    // Cancel a waiting run, or stop the running one ON THE SERVER after the articles in
+    // flight (what it finished stays stored); the server starts the next run only once it
+    // has really ended.
+    async function bulkJobCancel(id) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api(`/api/llm/bulk/queue/${encodeURIComponent(id)}/cancel`, { method: "POST" }); }
+      catch (e) { toast((e && e.message) || t("error"), "err"); }
+      _bulkRefresh();
+    }
+    async function bulkQueueResume() {
+      try { await api("/api/llm/bulk/queue/resume", { method: "POST" }); } catch (e) { /* the read below shows the state */ }
+      _bulkRefresh();
+    }
+    async function bulkJobClearDone() {
+      try { await api("/api/llm/bulk/queue/clear-finished", { method: "POST" }); } catch (e) { /* idem */ }
+      _bulkRefresh();
     }
 
     function _bulkJobLine(job) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tally = `(${job.storedN} ${t("stored")} · ${job.skippedN} ${t("skipped")} · ${job.failedN} ${t("failed")})`;
+      const tally = `(${job.stored || 0} ${t("stored")} · ${job.skipped || 0} ${t("skipped")} · ${job.failed || 0} ${t("failed")})`;
       let state = "";
-      if (job.status === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
-      else if (job.status === "running") {
-        const head = job.total ? `${job.done}/${job.total}` : t("starting…");
+      if (job.state === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
+      else if (job.state === "paused") state = `<span class="chip"${job.error ? ` title="${esc(job.error)}"` : ""}>${esc(t("Paused"))}</span> <span class="muted">${esc(tally)}</span>`;
+      else if (job.state === "running") {
+        const head = job.total ? `${job.done || 0}/${job.total}` : t("starting…");
         state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t(job.stopping ? "Stopping…" : "Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
-      } else if (job.status === "done") state = `<b>${esc(t("Done."))}</b> <span class="muted">${esc(tally)}</span>`;
-      else if (job.status === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span>`;
-      else if (job.status === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.err)}</span> <span class="muted">${esc(tally)}</span>`;
-      const cancel = (job.status === "queued" || (job.status === "running" && !job.stopping))
-        ? `<button class="ghost tiny" data-on-click="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
+      } else if (job.state === "done") state = `<b>${esc(t("Done."))}</b> <span class="muted">${esc(tally)}</span>`;
+      else if (job.state === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span> <span class="muted">${esc(tally)}</span>`;
+      else if (job.state === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.error || "")}</span> <span class="muted">${esc(tally)}</span>`;
+      const cancel = (job.state === "queued" || job.state === "paused" || (job.state === "running" && !job.stopping))
+        ? `<button class="ghost tiny" data-on-click="bulkJobCancel(${Number(job.id)})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
       return `<div class="row" style="gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
-        <span style="font-weight:600">${esc(job.label)}</span> ${state} ${cancel}</div>`;
+        <span style="font-weight:600">${esc(_bulkSelLabel(job.op, job.body || {}))}</span> ${state} ${cancel}</div>`;
     }
     function _bulkRenderQueue() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3470,8 +3418,12 @@
       if (!conts.length) return;
       let html = "";
       if (_bulkQueue.length) {
-        const anyDone = _bulkQueue.some((j) => j.status === "done" || j.status === "cancelled" || j.status === "error");
+        const anyDone = _bulkQueue.some((j) => j.state === "done" || j.state === "cancelled" || j.state === "error");
+        const paused = _bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "paused");
         html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
+          + `<div class="hint" style="margin-bottom:6px">${esc(t("The queue runs on the server: you can close this tab or the browser and it goes on. Stop a run here or in the task manager."))}</div>`
+          + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused. Resume carries on where it stopped, without redoing an article."))}</span>`
+              + `<button class="tiny" data-on-click="bulkQueueResume()">${esc(t("Resume"))}</button></div>` : "")
           + _bulkQueue.map(_bulkJobLine).join("")
           + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
           + `</div>`;

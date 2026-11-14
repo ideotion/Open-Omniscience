@@ -16,8 +16,9 @@ pinned below, with a mutant that breaks it:
   is otherwise SKIPPED, and a skipped required check counts as passing), must need exactly its matrix job, and must test the result for ``success``;
 * the legs' matrix is ``1..N`` for the N in the table and in the plan step; each leg plans its own files in a step of its own (no ``if``, not advisory)
   straight before pytest, and the pytest line that reads the list is pinned by tests/test_ci_pytest_flags_and_preflight.py;
-* the static steps (lint, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit) run in leg 1 only: a new static step in ``test``
-  that forgot ``if: matrix.shard == 1`` would run three times, so every step of ``test`` that is not on the list of steps every leg needs must say so.
+* the static steps (lint, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit) are the ``static`` job since R668 (they ran in leg 1
+  and made it the run's critical path): ``test`` holds only the steps every leg needs, the ``static`` job runs every gate it took over, blocking and on
+  the same condition as the legs, and the required check ``test`` (``test-all``) needs it and fails unless it is ``success``.
   tests/test_skipped_tests_have_a_ci_job_that_runs_them.py knows that a job whose matrix is complete counts as the whole suite, and only then;
 * each leg keeps its junit report as an artifact (R433), the source of the next cost table: one upload step per job, pinned, on red as well as green, never
   red itself, named per leg and per job, after pytest and before the skip summary (which has to stay the job's last step).
@@ -546,7 +547,7 @@ _PLAN = 'python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/%d --out "$
 #: The junit report each leg's pytest step writes (tests/test_ci_pytest_flags_and_preflight.py pins that step) and the artifact each leg uploads it as (R433).
 _REPORT = "${{ runner.temp }}/junit.xml"
 _ARTIFACT = "junit-%s-shard-${{ matrix.shard }}"
-#: Steps of ``test`` that every leg runs; any other step of it must say ``matrix.shard == 1``.
+#: Steps of ``test`` that every leg runs; any other step belongs in the ``static`` job (R668).
 _EVERY_LEG = (
     "Set up Python",
     "Install the tesseract",
@@ -557,6 +558,61 @@ _EVERY_LEG = (
     "Installed versions",
     "Skipped tests and slowest modules",
 )
+
+
+#: Jobs besides the matrix that an aggregator needs and requires to be `success`, and the variable its step reads each one's result from (R668).
+_ALSO_REQUIRED = {"test-all": ["static"]}
+_ENV_OF = {"static": "STATIC"}
+#: The gates the `static` job took over from leg 1 of `test` (R668): a prefix of each step's name and a piece of its command. Each runs once, blocking.
+_STATIC_GATES = (
+    ("Lint — correctness", "ruff check --select=F,B"),
+    ("Lint — style non-growth ratchet", "scripts/ruff_ratchet.py --max"),
+    ("Planned-work index — blocked or forbidden paths", "--strict"),
+    ("i18n locale completeness", "i18n_report.py --min 100"),
+    ("i18n untranslatable-string ratchet", "--max-untranslatable 0"),
+    ("i18n unkeyed t() call sites", "--max-unkeyed-t-calls 0"),
+    ("i18n unkeyed tf() frames", "--max-unkeyed-tf-frames 0"),
+    ("Migration drift", "alembic check"),
+    ("Type check (mypy, BLOCKING)", "python -m mypy src/"),
+    ("SAST (bandit", "bandit -r src/ -ll"),
+    ("Dependency audit (pip-audit)", "pip-audit"),
+)
+#: The one gate that runs on a condition: the blocked-paths index compares a PR with its base, which a push has none of (as in leg 1 before R668).
+_STATIC_GATE_IF = {"Planned-work index — blocked or forbidden paths": "github.event_name == 'pull_request'"}
+_STATIC_INSTALL = 'python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr,geo]"'
+
+
+def _static_problems(jobs: dict) -> list[str]:
+    """The `static` job (R668): on the legs' condition, blocking, the legs' install line, and every gate it took over present once and blocking."""
+    job = jobs.get("static")
+    if not isinstance(job, dict):
+        return ["static: the job that runs the static checks is missing (R668): lint, planned-work index, i18n, migrations, mypy, bandit and pip-audit would run nowhere"]
+    found: list[str] = []
+    if job.get("if") != _GATE or job.get("needs") != ["changes"] or job.get("continue-on-error"):
+        found.append(f"static: the job must run on every push and every pull request but a docs-only one, and must block (`if: {_GATE}`, `needs: [changes]`, no continue-on-error)")
+    if "strategy" in job:
+        found.append("static: the job must not be a matrix (each gate runs once)")
+    steps = job.get("steps") or []
+    if not any(_STATIC_INSTALL in str(s.get("run") or "") for s in steps):
+        found.append(f"static: the install must be the legs' own line `{_STATIC_INSTALL}` (mypy and pip-audit must see the environment the suite runs on)")
+    for prefix, piece in _STATIC_GATES:
+        mine = [s for s in steps if str(s.get("name") or "").startswith(prefix)]
+        if len(mine) != 1:
+            found.append(f"static: exactly one step named `{prefix}...` expected, found {len(mine)}")
+            continue
+        step = mine[0]
+        if piece not in str(step.get("run") or ""):
+            found.append(f"static: the step `{prefix}...` must run `{piece}`, it runs {step.get('run')!r}")
+        if step.get("continue-on-error"):
+            found.append(f"static: the step `{prefix}...` must block, it says continue-on-error")
+        want_if = _STATIC_GATE_IF.get(prefix)
+        if step.get("if") != want_if:
+            found.append(f"static: the step `{prefix}...` must say {'no `if`' if want_if is None else f'exactly `if: {want_if}`'}, it says {step.get('if')!r}")
+        # the gate's own command line (the index step's `git fetch ... || true` before it is a best-effort fetch, not the gate)
+        gate_lines = [line for line in str(step.get("run") or "").splitlines() if piece in line]
+        if any(re.search(r"\|\|\s*(true|:)(\s|$)|\|\|\s*exit\s+0", line) for line in gate_lines):
+            found.append(f"static: the step `{prefix}...` swallows its own failure (`|| true`): a gate must fail the job")
+    return found
 
 
 def _workflow() -> dict:
@@ -642,16 +698,21 @@ def _wiring_problems(wf: dict, table: dict) -> list[str]:
             found.append(f"{aggregator}: the aggregator must be named exactly `{required}` (the check branch protection requires), it is {aggr.get('name')!r}")
         if aggr.get("if") != "always() && github.event_name != 'schedule'":
             found.append(f"{aggregator}: `if: always() && github.event_name != 'schedule'` expected (without always() a failed leg SKIPS it, and a skipped required check passes), it is {aggr.get('if')!r}")
-        if aggr.get("needs") != [matrix_job, "changes", "docs-checks"]:
-            found.append(f"{aggregator}: must need exactly [{matrix_job}, changes, docs-checks] (the docs-only fast path), it needs {aggr.get('needs')!r}")
+        extra = _ALSO_REQUIRED.get(aggregator, [])
+        if aggr.get("needs") != [matrix_job, *extra, "changes", "docs-checks"]:
+            found.append(f"{aggregator}: must need exactly {[matrix_job, *extra, 'changes', 'docs-checks']} (the docs-only fast path), it needs {aggr.get('needs')!r}")
         if aggr.get("continue-on-error"):
             found.append(f"{aggregator}: must block")
         asteps = aggr.get("steps") or []
         run = "\n".join(str(s.get("run") or "") for s in asteps)
         env = {k: v for s in asteps for k, v in (s.get("env") or {}).items()}
         want_env = {"LEGS": "${{ needs." + matrix_job + ".result }}", "DOCS_ONLY": "${{ needs.changes.outputs.docs_only }}", "DOCS_CHECKS": "${{ needs.docs-checks.result }}"}
+        want_env |= {_ENV_OF[job]: "${{ needs." + job + ".result }}" for job in extra}
         if len(asteps) != 1 or env != want_env or 'test "$LEGS" = "success"' not in run or 'test "$DOCS_ONLY" = "true" && test "$DOCS_CHECKS" = "success"' not in run:
             found.append(f"{aggregator}: one step that takes LEGS from `needs.{matrix_job}.result` and fails unless it is `success` is expected")
+        for job in extra:
+            if f'test "${_ENV_OF[job]}" = "success"' not in run:
+                found.append(f"{aggregator}: its step must fail unless `needs.{job}.result` (${_ENV_OF[job]}) is `success`")
         if any(s.get("continue-on-error") or s.get("if") for s in asteps) or "|| true" in run:
             found.append(f"{aggregator}: its step must not be conditional or advisory")
     # the required names appear once each, on the aggregators
@@ -659,13 +720,13 @@ def _wiring_problems(wf: dict, table: dict) -> list[str]:
     for _, required in _AGGREGATORS.values():
         if names.count(required) != 1:
             found.append(f"the check `{required}` must be the name of exactly one job, it is the name of {names.count(required)}")
-    # the static steps of `test` run in one leg
+    # the legs of `test` run the suite and nothing else; the static steps are the `static` job (R668)
     for step in (jobs.get("test") or {}).get("steps") or []:
         label = str(step.get("name") or "")
         if step.get("uses") or any(label.startswith(p) for p in _EVERY_LEG):
             continue
-        if "matrix.shard == 1" not in str(step.get("if") or ""):
-            found.append(f"test: the step `{label}` runs in all three legs: say `if: matrix.shard == 1` (or add it to _EVERY_LEG in tests/test_ci_shards.py if every leg needs it)")
+        found.append(f"test: the step `{label}` is not one every leg needs: a static step belongs in the `static` job (or add it to _EVERY_LEG in tests/test_ci_shards.py if every leg needs it)")
+    found += _static_problems(jobs)
     for step in (jobs.get("core-only") or {}).get("steps") or []:
         if "matrix.shard" in str(step.get("if") or ""):
             found.append(f"core-only: the step `{step.get('name')}` is conditional on the shard: this job has no static steps, every leg is the same")
@@ -729,9 +790,29 @@ _MUTANTS = {
     "the aggregator is advisory": (lambda j: j["core-only-all"].__setitem__("continue-on-error", True), "must block"),
     "the aggregator goes": (lambda j: j.pop("test-all"), "must be named exactly"),
     "a second job takes the required name": (lambda j: j.__setitem__("dup", {"name": "test", "steps": []}), "must be the name of exactly one job"),
-    "mypy runs in every leg": (lambda j: _step(j, "test", "Type check").pop("if"), "runs in all three legs"),
-    "the ratchet runs in every leg": (lambda j: _step(j, "test", "Lint — style non-growth").pop("if"), "runs in all three legs"),
-    "a new static step runs in every leg": (lambda j: j["test"]["steps"].append({"name": "A new scanner", "run": "echo scan"}), "runs in all three legs"),
+    "mypy moves back into the legs": (lambda j: j["test"]["steps"].append(j["static"]["steps"].pop(j["static"]["steps"].index(_step(j, "static", "Type check")))), "belongs in the `static` job"),
+    "a new static step lands in the legs": (lambda j: j["test"]["steps"].append({"name": "A new scanner", "run": "echo scan"}), "belongs in the `static` job"),
+    "the static job goes": (lambda j: j.pop("static"), "static: the job that runs the static checks is missing"),
+    "the static job turns advisory": (lambda j: j["static"].__setitem__("continue-on-error", True), "static: the job must run on every push"),
+    "the static job skips on every run": (lambda j: j["static"].__setitem__("if", "false"), "static: the job must run on every push"),
+    "the static job becomes a matrix": (lambda j: j["static"].__setitem__("strategy", {"matrix": {"shard": [1, 2]}}), "must not be a matrix"),
+    "the static job installs less": (lambda j: _step(j, "static", "Install").__setitem__("run", 'python -m pip install -e ".[dev]"'), "the legs' own line"),
+    "mypy is dropped": (lambda j: j["static"]["steps"].remove(_step(j, "static", "Type check")), "`Type check (mypy, BLOCKING)...` expected, found 0"),
+    "mypy turns advisory": (lambda j: _step(j, "static", "Type check").__setitem__("continue-on-error", True), "must block, it says continue-on-error"),
+    "bandit stops scanning src": (lambda j: _step(j, "static", "SAST").__setitem__("run", "true"), "must run `bandit -r src/ -ll`"),
+    "the blocking planned-work index is dropped": (lambda j: j["static"]["steps"].remove(_step(j, "static", "Planned-work index — blocked")), "found 0"),
+    "a static step keeps the leg condition": (lambda j: _step(j, "static", "Migration drift").__setitem__("if", "matrix.shard == 1"), "must say no `if`"),
+    "mypy never runs": (lambda j: _step(j, "static", "Type check").__setitem__("if", "false"), "must say no `if`"),
+    "the blocking index runs on pushes only": (lambda j: _step(j, "static", "Planned-work index — blocked").__setitem__("if", "github.event_name == 'push'"), "must say exactly `if:"),
+    "the blocking index loses --strict": (lambda j: _step(j, "static", "Planned-work index — blocked").__setitem__("run", 'python scripts/planned.py --diff "origin/main"'), "must run `--strict`"),
+    "mypy swallows its failure": (lambda j: _step(j, "static", "Type check").__setitem__("run", "python -m mypy src/ || true"), "swallows its own failure"),
+    "the t() gate loses its ceiling": (lambda j: _step(j, "static", "i18n unkeyed t()").__setitem__("run", "python scripts/i18n_report.py"), "must run `--max-unkeyed-t-calls 0`"),
+    "the required check stops needing the static job": (lambda j: j["test-all"].__setitem__("needs", ["test", "changes", "docs-checks"]), "test-all: must need exactly"),
+    "the required check stops reading the static result": (lambda j: j["test-all"]["steps"][0]["env"].pop("STATIC"), "fails unless it is `success`"),
+    "the required check ignores a red static job": (
+        lambda j: j["test-all"]["steps"][0].__setitem__("run", j["test-all"]["steps"][0]["run"].replace('test "$STATIC" = "success"', "true")),
+        'must fail unless `needs.static.result`',
+    ),
     "a core-only step is gated on the shard": (lambda j: _step(j, "core-only", "Boot check").__setitem__("if", "matrix.shard == 1"), "conditional on the shard"),
     "the junit upload is gone": (lambda j: j["test"]["steps"].remove(_upload(j, "test")), "exactly one step that uploads"),
     "the junit upload is gone from core-only": (lambda j: j["core-only"]["steps"].remove(_upload(j, "core-only")), "core-only: exactly one step that uploads"),
@@ -768,8 +849,26 @@ def test_an_aggregator_is_green_only_when_every_leg_succeeded(aggregator, result
     The aggregator's own script is run here with each value, so a loosened comparison (`!= failure`, a prefix match, a swallowed exit code) is caught."""
     steps = _workflow()["jobs"][aggregator]["steps"]
     assert len(steps) == 1
-    done = subprocess.run(["bash", "-e", "-c", steps[0]["run"]], env={**os.environ, "LEGS": result}, capture_output=True, text=True, timeout=60)
+    others = {_ENV_OF[job]: "success" for job in _ALSO_REQUIRED.get(aggregator, [])}
+    done = subprocess.run(["bash", "-e", "-c", steps[0]["run"]], env={**os.environ, **others, "LEGS": result}, capture_output=True, text=True, timeout=60)
     assert (done.returncode == 0) is passes, (aggregator, result, done.returncode, done.stdout, done.stderr)
+    # the same values for each other job the aggregator requires (R668: the static checks), with every leg green
+    for var in others:
+        done = subprocess.run(["bash", "-e", "-c", steps[0]["run"]], env={**os.environ, **others, var: result, "LEGS": "success"}, capture_output=True, text=True, timeout=60)
+        assert (done.returncode == 0) is passes, (aggregator, var, result, done.returncode, done.stdout, done.stderr)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="the aggregator step is a bash script")
+def test_a_red_static_job_is_green_only_on_the_docs_only_fast_path():
+    """R668: on a docs-only pull request the legs and the static job are skipped and docs-checks decides; anywhere else a skipped or red static job is red."""
+    run = _workflow()["jobs"]["test-all"]["steps"][0]["run"]
+    def ok(**env: str) -> bool:
+        base = {"LEGS": "success", "STATIC": "success", "DOCS_ONLY": "false", "DOCS_CHECKS": "skipped"}
+        return subprocess.run(["bash", "-e", "-c", run], env={**os.environ, **base, **env}, capture_output=True, timeout=60).returncode == 0
+    assert ok()
+    assert not ok(STATIC="failure") and not ok(STATIC="skipped") and not ok(STATIC="cancelled")
+    assert ok(LEGS="skipped", STATIC="skipped", DOCS_ONLY="true", DOCS_CHECKS="success")
+    assert not ok(LEGS="skipped", STATIC="skipped", DOCS_ONLY="true", DOCS_CHECKS="failure")
 
 
 def test_a_table_for_another_n_is_named():

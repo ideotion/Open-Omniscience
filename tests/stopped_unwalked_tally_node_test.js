@@ -60,7 +60,7 @@ test("a Stop is said in words after the counts, never as a raw key", () => {
   const {tally} = load("en");
   const line = tally({new: 4, duplicate: 2, stopped_unwalked: 11});
   assert(!line.includes("stopped_unwalked"), "raw key printed: " + line);
-  assert(line === "new: 4, duplicate: 2 · 11 entries not asked for (you stopped collection)", "line: " + line);
+  assert(line === "new: 4, already stored: 2 · 11 entries not asked for (you stopped collection)", "line: " + line);
 });
 
 test("a Stop with nothing walked reads as the sentence alone", () => {
@@ -92,6 +92,19 @@ test("all 12 locales translate the line and keep the count", () => {
     assert(!line.includes("stopped_unwalked") && !/\{\w+\}/.test(line), code + ": " + line);
     if (code !== "en") assert(!line.includes("entries not asked for"), code + " untranslated: " + line);
   }
+});
+
+test("the outcome keys are words in every locale; an unknown key is shown as sent (R665)", () => {
+  const en = load("en").tally({stored: 3, duplicate: 12, "ff:dns": 1});
+  assert(en === "new articles stored: 3, already stored: 12, ff:dns: 1", "en: " + en);
+  for (const code of ["ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"]) {
+    const {tally} = load(code);
+    const line = tally({stored: 3, duplicate: 12, fetch_failed: 2, "ff:dns": 1, brand_new_key: 5});
+    assert(!/\bstored\b|\bduplicate\b|fetch_failed/.test(line), code + " left a raw key: " + line);
+    assert(line.includes("ff:dns: 1") && line.includes("brand_new_key: 5"), code + " an unknown key must be shown as sent: " + line);
+    assert(tally({}) !== "nothing new", code + ": 'nothing new' untranslated");
+  }
+  assert(load("en").tally({toString: 2}) === "toString: 2", "an inherited property name is not a known key");
 });
 
 console.log(`\n${passed} passed`);

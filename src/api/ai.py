@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from src.ai_layer import store as ai_store
 from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.api.detached_stream import detached
-from src.api.llm import active_model, get_llm_client
+from src.api.llm import _label_model, active_model, get_llm_client
 from src.database.models import AiCustomPrompt, Article
 from src.database.session import get_db
 from src.database.stand_in import (
@@ -164,9 +164,9 @@ def extract_keywords(
 
     _tok = _bgtasks.register(
         "analytics", f"Extracting AI keywords · {len(work)} article(s)",
-        detail=f"model {model}", total=len(work),
+        detail=f"model {_label_model(model)}", total=len(work),
         label_i18n="Extracting AI keywords · {n} article(s)", label_vars={"n": len(work)},
-        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
+        detail_i18n="model {model}", detail_vars={"model": _label_model(model)}, cancellable=True,
     )
 
     def _stream():
@@ -333,6 +333,16 @@ def report_interface_language(req: InterfaceLangIn) -> dict:
     return {"lang": stored}
 
 
+@router.get("/interface-language")
+def read_interface_language() -> dict:
+    """The interface language a browser last reported, or ``null`` (R665). Read by the terminal panel, which runs with the browser
+    closed and speaks the language the person chose. READ-ONLY: one key of the store, nothing written, measured or fetched; behind the
+    same Origin and lock gates as every API route, so a locked app answers locked and the panel stays in its fallback language."""
+    from src.ai_layer.translation_sweep import interface_lang
+
+    return {"lang": interface_lang()}
+
+
 @router.get("/translation-sweep")
 def translation_sweep_status() -> dict:
     """Both translation sweeps' persisted state and the keyword head's last recorded
@@ -478,9 +488,9 @@ def run_custom_prompt(
 
     _tok = _bgtasks.register(
         "analytics", f"AI: {label} · {len(work)} article(s)",
-        detail=f"model {model}", total=len(work),
+        detail=f"model {_label_model(model)}", total=len(work),
         label_i18n="AI: {label} · {n} article(s)", label_vars={"label": label, "n": len(work)},
-        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
+        detail_i18n="model {model}", detail_vars={"model": _label_model(model)}, cancellable=True,
     )
 
     def _stream():
@@ -679,7 +689,7 @@ def _langdetect_worker(
     from src.jobs.background import Framed
 
     # The English line, plus its keyed frame for the task managers (click-through B19, Q5).
-    ctx.set_progress(done=0, total=estimate_total, detail=Framed(f"model {mdl}", "model {model}", model=mdl))
+    ctx.set_progress(done=0, total=estimate_total, detail=Framed(f"model {_label_model(mdl)}", "model {model}", model=_label_model(mdl)))
 
     while True:
         if ctx.stopping:

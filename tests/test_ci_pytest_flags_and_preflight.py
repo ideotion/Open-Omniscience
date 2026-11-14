@@ -197,13 +197,15 @@ def _flag_problems(workflows: dict[str, dict]) -> list[str]:
 def _preflight_problems(workflow: dict, preflight: str) -> list[str]:
     found: list[str] = []
     job = workflow["jobs"]["test"]
+    # the ruff and mypy gates are the `static` job's since R668 (they ran in leg 1 of `test`); the pytest line is still the legs'
+    static = workflow["jobs"].get("static") or {"steps": []}
     code = _code_lines(preflight)
     for what, marker, command in _TOOLS:
-        if _runs(job, command) != [command]:
-            found.append(f"the `test` job must run `{command}` once; this guard compares preflight.sh's {what} gate against it")
+        if _runs(static, command) != [command]:
+            found.append(f"the `static` job must run `{command}` once; this guard compares preflight.sh's {what} gate against it")
         calls = _calls(code, marker)
         if not calls:
-            found.append(f"preflight.sh must CALL the `test` job's {what} command `{command}` (an echo of it does not run it)")
+            found.append(f"preflight.sh must CALL the `static` job's {what} command `{command}` (an echo of it does not run it)")
         elif any(call != command for call in calls):
             found.append(f"preflight.sh's {what} call must be the job's `{command}` unchanged, it calls {calls!r}")
     mypy_at = [i for i, line in enumerate(code) if "python -m mypy src" in line]
