@@ -118,7 +118,7 @@ GET	/api/events/astronomy/lunar-series	feature	3	Climate (H)	daily lunar-phase s
 GET	/api/events/climate	feature	2	Climate (H)	bundled El Nino episode list with verification status; the ONI subtab could show the episodes
 POST	/api/events/feeds/verify-batch	superseded			manual sweep retired by ruling (comment at app-agenda.js:953)
 POST	/api/geo/downloads/resume	superseded			the task manager resumes a paused region through /api/jobs/{id}/resume
-GET	/api/hazards	feature	2	Map or Climate (L/H)	live USGS + GDACS disaster feed: a network relay with no button and no consent; GDACS alerts are new (USGS quakes are already a Climate dataset)
+POST	/api/hazards	feature	2	Map or Climate (L/H)	live USGS + GDACS disaster feed: a network relay with no button and no consent; GDACS alerts are new (USGS quakes are already a Climate dataset)
 POST	/api/insights/keyword-fold-job/{action}	superseded			the task manager pauses, resumes and cancels the fold through /api/jobs/{job_id}/... (job 'keyword-fold')
 GET	/api/insights/leads-view	feature	2	Home (N)	the Leads with evidence chips (n, independent sources, freshness); browser-gated design, never wired
 GET	/api/insights/reading-diet-by-type	feature	2	Insights (O)	share of the corpus per content channel (news, wiki, law...)
@@ -151,7 +151,7 @@ POST	/api/llm/vllm/start	feature	3	Settings > Models (N)	start vLLM (stop and st
 GET	/api/markets/overview	superseded			Markets reads /api/markets/board
 PUT	/api/markets/rules/{rule_id}	feature	3	Markets (O)	edit an alert rule (create, run and delete exist)
 GET	/api/monitoring/anomalies	feature	3	Insights (O)	days whose article volume deviates from the mean
-GET	/api/monitoring/health	superseded			live reachability check; the source preflight and field data cover it
+POST	/api/monitoring/health	superseded			live reachability check; the source preflight and field data cover it
 GET	/api/newsletters/publisher-preview	feature	2	Settings > Import (N)	which publisher each newsletter would be filed under; the 2026-06-15 ruling pairs auto-attach with an import UI that announces it
 GET	/api/osm/objects/{osm_type}/{osm_id}	unseen			called by openOsmObjectCard (app-analysis.js) as "/api/osm/objects/" + a joined ref; two parameters joined at run time are past the source reader
 GET	/api/osm/search	feature	2	Map (L)	'Places' facet (Q817): named places in the countries read
@@ -211,7 +211,7 @@ GET	/api/stats/sources	feature	3	Statistics (O)	directory of registered statisti
 GET	/api/timemap/range	superseded			the timemap derives its range from its own payload
 GET	/api/watches/{watch_id}/history	feature	2	Insights > Watches (O)	a watch's past evaluations
 POST	/api/wiki/corpus/sync	feature	3	Living sources (I)	backfill watched pages into the corpus (local only)
-GET	/api/wiki/dumps/probe	superseded			single-edition size probe; the dump picker reads /api/wiki/dumps/sizes
+POST	/api/wiki/dumps/probe	superseded			single-edition size probe; the dump picker reads /api/wiki/dumps/sizes
 GET	/api/wiki/lane/analytics	feature	2	Living sources (I)	Q712 analytics 1-3 of the Wikipedia lane
 GET	/api/wiki/lane/counters	feature	3	Living sources (I)	the lane's 72 h run counters
 GET	/api/wiki/lane/sections	feature	2	Living sources (I)	which sections of a page changed between two versions

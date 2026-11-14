@@ -2861,7 +2861,7 @@ Untrusting an author excludes their annotations; removing one deletes them clean
 | Method & path | Purpose |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | your authored annotations |
-| `GET /api/annotations/export` | a signed, portable bundle of your annotations |
+| `POST /api/annotations/export` | a signed, portable bundle of your annotations |
 | `POST /api/annotations/import` | verify + store an imported bundle (refused if invalid) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | the web of trust |
 | `GET /api/annotations/for?target=` | transparent aggregation — who asserted what |

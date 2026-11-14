@@ -1,4 +1,4 @@
-"""A GET that does work on the machine refuses the requests another site's page makes (R278).
+"""A GET that does work on the machine refuses the requests another site's page makes (R278), or is a POST (R694).
 
 The Origin middleware looks only at state-changing methods, so a page the person visits could fire any GET at a loopback address
 with an ``<img src>``: heavy compute (the in-memory rollup benchmark), a live outbound request, a signing key minted. The routes
@@ -44,17 +44,23 @@ GUARDED = [
     ("src.api.diagnostics.sources", "/api/diagnostics/source-audit-selftest"),
     ("src.api.diagnostics.source_tags", "/api/diagnostics/source-tags-selftest"),
     ("src.api.signals", "/api/signals/fdr-selftest"),
-    ("src.api.hazards", "/api/hazards"),
-    ("src.api.monitoring", "/api/monitoring/health"),
-    ("src.api.wiki", "/api/wiki/dumps/probe"),
-    ("src.api.wiki", "/api/wiki/dumps/sizes"),
     ("src.api.custody", "/api/custody/export"),
-    ("src.api.annotations", "/api/annotations/export"),
-    ("src.api.geo", "/api/geo/downloads/size"),
     # served_file_response appends to diagnostics/runs.jsonl (+ .lock); the volume route also makes a directory, the parts route touches its set
     ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/download"),
     ("src.api.diagnostics.bundle", "/api/diagnostics/all-job/volumes/{name}"),
     ("src.api.diagnostics.keyword_parts", "/api/diagnostics/keywords/parts/{set_id}/{name}"),
+]
+
+# Routes that WERE guarded GETs and are POSTs since R694 (R278's proposals adopted): a GET there is answered 405 before any handler
+# runs, so an <img src> from another page does no work at all, and the POST sits behind the Origin middleware like every other
+# state-changing route. (module, full path of the POST route in that module's own router)
+MOVED_TO_POST = [
+    ("src.api.hazards", "/api/hazards"),  # live USGS and GDACS reads
+    ("src.api.monitoring", "/api/monitoring/health"),  # up to 200 sources fetched
+    ("src.api.wiki", "/api/wiki/dumps/probe"),  # one HEAD to the dump host
+    ("src.api.wiki", "/api/wiki/dumps/sizes"),  # up to 12 HEADs to the dump host
+    ("src.api.geo", "/api/geo/downloads/size"),  # one HEAD to the OSM mirror
+    ("src.api.annotations", "/api/annotations/export"),  # signs the bundle; the first export creates the annotation signing key
 ]
 
 
@@ -83,6 +89,28 @@ def test_a_foreign_request_is_refused_before_the_handler_runs(module: str, path:
         r = client.get(path, headers=headers)
     assert r.status_code == 403
     assert "does work on your machine" in r.json()["detail"]
+
+
+@pytest.mark.parametrize(("module", "path"), MOVED_TO_POST)
+def test_each_moved_route_is_one_post_and_no_get(module: str, path: str) -> None:
+    router = importlib.import_module(module).router
+    posts = [r for r in router.routes if getattr(r, "path", None) == path and "POST" in getattr(r, "methods", ())]
+    gets = [r for r in router.routes if getattr(r, "path", None) == path and "GET" in getattr(r, "methods", ())]
+    assert len(posts) == 1, f"{path} is not exactly one POST route of {module}"
+    assert not gets, f"{path} is a GET again in {module}: another site's page can fire a GET, so work there belongs on the POST"
+
+
+@pytest.mark.parametrize(("module", "path"), MOVED_TO_POST)
+def test_a_get_of_a_moved_route_is_refused_and_a_foreign_post_too(module: str, path: str) -> None:
+    from src.api.main import app
+
+    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+        got = client.get(path)
+        foreign = client.post(path, headers={"Origin": "https://evil.example"})
+        null = client.post(path, headers={"Origin": "null"})
+    assert got.status_code == 405, (path, got.status_code)
+    assert foreign.status_code == 403 and null.status_code == 403
+    assert "Cross-origin state-changing request refused" in foreign.json()["detail"]
 
 
 def test_a_request_with_no_origin_still_reaches_the_handler() -> None:
@@ -276,7 +304,8 @@ def test_a_different_port_host_or_scheme_is_still_a_different_server(
 
 
 def test_the_osm_size_read_makes_no_head_for_a_foreign_page_and_one_for_the_own_page(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A-014 (R284): a cross-site GET of ``/api/geo/downloads/size`` reached the outbound HEAD and answered 200."""
+    """A-014 (R284): a cross-site GET of ``/api/geo/downloads/size`` reached the outbound HEAD and answered 200. It is a POST since
+    R694: a GET does nothing, a foreign page's POST is refused by the Origin middleware, the app's own page and a script reach it."""
     from src.api.main import app
     from src.geo import osm_downloads
 
@@ -289,10 +318,12 @@ def test_the_osm_size_read_makes_no_head_for_a_foreign_page_and_one_for_the_own_
 
     monkeypatch.setattr(osm_downloads, "get_manager", lambda: _Manager())
     with TestClient(app, base_url="http://127.0.0.1") as client:
-        foreign = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "cross-site", "Referer": "https://evil.example/x"})
-        no_metadata = client.get("/api/geo/downloads/size?code=planet", headers={"Origin": "https://evil.example"})
-        own = client.get("/api/geo/downloads/size?code=planet&consent=true", headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/"})
-        script = client.get("/api/geo/downloads/size?code=planet&consent=true")
+        img = client.get("/api/geo/downloads/size?code=planet&consent=true", headers={"Sec-Fetch-Site": "cross-site", "Referer": "https://evil.example/x"})
+        foreign = client.post("/api/geo/downloads/size?code=planet&consent=true", headers={"Sec-Fetch-Site": "cross-site", "Referer": "https://evil.example/x"})
+        no_metadata = client.post("/api/geo/downloads/size?code=planet&consent=true", headers={"Origin": "https://evil.example"})
+        own = client.post("/api/geo/downloads/size?code=planet&consent=true", headers={"Sec-Fetch-Site": "same-origin", "Origin": "http://127.0.0.1"})
+        script = client.post("/api/geo/downloads/size?code=planet&consent=true")
+    assert img.status_code == 405
     assert foreign.status_code == 403 and no_metadata.status_code == 403
     assert heads == ["planet", "planet"]
     assert own.status_code == 200 and script.status_code == 200

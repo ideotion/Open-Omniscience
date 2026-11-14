@@ -170,7 +170,7 @@ def signals_alerts(
 
 
 class HazardSnapshotBody(BaseModel):
-    """Records to cache locally (as returned by ``GET /api/hazards``), and/or a refresh flag."""
+    """Records to cache locally (as returned by ``POST /api/hazards``), and/or a refresh flag."""
 
     records: list[dict] = []
 
@@ -189,7 +189,7 @@ def signals_hazards_snapshot(
     """Update the LOCAL hazard snapshot the alert layer reads (NO producer ever fetches).
 
     Two population paths, both honest: post the ``records`` the app already fetched via
-    ``GET /api/hazards`` (a pure local write, zero network here), and/or pass ``refresh=1``
+    ``POST /api/hazards`` (a pure local write, zero network here), and/or pass ``refresh=1``
     to pull the open feeds through the SAME guarded fetcher the hazards relay uses (the
     kill switch refuses it while airplane mode is engaged). A refresh that returns nothing
     (offline / all feeds failed) never overwrites a good snapshot with an empty one —

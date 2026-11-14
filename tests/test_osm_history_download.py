@@ -102,8 +102,8 @@ def test_the_size_route(tmp_path, monkeypatch):
     app = FastAPI()
     app.include_router(router)
     c = TestClient(app)
-    assert c.get("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"}).json()["size_bytes"] == 42
-    assert c.get("/api/geo/downloads/size", params={"code": "atlantis", "consent": "true"}).status_code == 404
+    assert c.post("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"}).json()["size_bytes"] == 42
+    assert c.post("/api/geo/downloads/size", params={"code": "atlantis", "consent": "true"}).status_code == 404
 
 
 def test_the_size_route_refuses_without_consent_and_under_the_kill_switch_before_any_head(tmp_path, monkeypatch):
@@ -123,14 +123,14 @@ def test_the_size_route_refuses_without_consent_and_under_the_kill_switch_before
     app.include_router(router)
     c = TestClient(app)
     for params in ({"code": "planet-history"}, {"code": "planet-history", "consent": "false"}):
-        r = c.get("/api/geo/downloads/size", params=params)
+        r = c.post("/api/geo/downloads/size", params=params)
         assert r.status_code == 400 and "online consent" in r.json()["detail"], r.text
     monkeypatch.setattr(ingest, "kill_switch_active", lambda: True)
-    r = c.get("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"})
+    r = c.post("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"})
     assert r.status_code == 409 and "airplane mode" in r.json()["detail"], r.text
     assert heads == [], "a refused size read still reached the mirror"
     monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
-    assert c.get("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"}).json()["size_bytes"] == 42
+    assert c.post("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"}).json()["size_bytes"] == 42
     assert len(heads) == 1
 
 
