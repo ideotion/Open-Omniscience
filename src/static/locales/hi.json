@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट ("
+  "🛒 Draft (": "🛒 ड्राफ़्ट (",
+  "Backup export": "बैकअप निर्यात",
+  "Cancel export": "निर्यात रद्द करें",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "यह निर्यात रद्द करें? अब तक लिखे गए कॉर्पस वॉल्यूम फ़ोल्डर से हटा दिए जाते हैं; पहले से कॉपी की गई बड़ी फ़ाइलें बनी रहती हैं।",
+  "Could not cancel:": "रद्द नहीं किया जा सका:",
+  "Resume export": "निर्यात फिर से शुरू करें",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "यह निर्यात उसके अपने फ़ोल्डर में, उसी चरण से जारी रहता है जहाँ वह रुका था। कॉर्पस बैकअप फिर से शुरू करने के लिए ऊपर वाला पासफ़्रेज़ चाहिए।",
+  "Enter the passphrase to resume the corpus backup.": "कॉर्पस बैकअप फिर से शुरू करने के लिए पासफ़्रेज़ दर्ज करें।",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "एक बैकअप निर्यात चल रहा है ({job})। कुछ भी आयात नहीं हुआ और आपके कॉर्पस में कुछ नहीं बदला: आयात उस कॉर्पस को बदल देगा जिसे निर्यात पढ़ रहा है। निर्यात को पूरा होने दें, या उसे रोकें, फिर दोबारा आयात करें।"
 }

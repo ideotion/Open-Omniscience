@@ -8704,6 +8704,13 @@ _WRITER_JOBS_REFUSAL = (
     "a background job is writing to your corpus ({jobs}) — nothing was imported, and nothing was written to your corpus. What it "
     "writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again."
 )
+#: R712: a restore refused while a backup export runs (R701's one export job). Its own sentence, because the export does not
+#: WRITE to the corpus -- it reads it -- and the writer sentence above would say otherwise. The page reads it back in the operator's
+#: language (``ooServerText`` in app-core.js; tests/test_export_job.py pins both).
+_EXPORT_RUNNING_REFUSAL = (
+    "a backup export is running ({job}) — nothing was imported, and nothing was written to your corpus. An import would switch the "
+    "corpus the export is reading. Let the export finish, or pause it, then import again."
+)
 #: How long a committing restore waits for the jobs it may stop (``stops_for_restore``) to reach their next safe point.
 _STOP_FOR_RESTORE_S = 30.0
 
@@ -8727,6 +8734,12 @@ def refuse_while_writer_jobs_run() -> None:
     refusal at a later item discards the merges the group was still holding, as any refusal there does: the operator imports again."""
     from src.jobs.background import running_writer_jobs, stop_jobs_for_restore
 
+    # R712: a running backup export refuses the restore and is named, before anything is stopped. It is not a writer (it reads the
+    # corpus), so it is not in the registry's writer list; the volume job already refuses a second volume job, but the export's
+    # large-data phase leaves that manager idle, and the single-file restore never asked it.
+    exporting = export_refusal()
+    if exporting:
+        raise WriterJobsRefused(exporting)
     # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
     blocking = running_writer_jobs(include_stoppable=False)
     if blocking:
@@ -8736,6 +8749,14 @@ def refuse_while_writer_jobs_run() -> None:
     if running:
         start_jobs_stopped_for_restore()  # nothing is imported, so nothing else would start them again
         raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
+
+
+def export_refusal() -> str | None:
+    """The refusal a committing restore raises while a backup export runs (R712), naming it; None when none runs. Never raises."""
+    from src.backup.export_job import running_export_label
+
+    label = running_export_label()
+    return _EXPORT_RUNNING_REFUSAL.format(job=label) if label else None
 
 
 #: The kinds a committing restore stopped (``stops_for_restore``) and has not yet started again (R659).

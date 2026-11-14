@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "Backup export": "Exportación de copia de seguridad",
+  "Cancel export": "Cancelar la exportación",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "¿Cancelar esta exportación? Los volúmenes del corpus ya escritos se eliminan de la carpeta; los archivos grandes ya copiados se conservan.",
+  "Could not cancel:": "No se pudo cancelar:",
+  "Resume export": "Reanudar la exportación",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Continúa esta exportación en su propia carpeta, desde la fase en la que se detuvo. Reanudar la copia del corpus requiere la frase de contraseña de arriba.",
+  "Enter the passphrase to resume the corpus backup.": "Introduce la frase de contraseña para reanudar la copia del corpus.",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Hay una exportación de copia de seguridad en curso ({job}). No se importó nada y nada cambió en tu corpus: una importación sustituiría el corpus que la exportación está leyendo. Deja que la exportación termine, o ponla en pausa, y vuelve a importar."
 }

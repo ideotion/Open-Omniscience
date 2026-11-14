@@ -1984,6 +1984,14 @@
       if (_nf) {
         return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
       }
+      // backup/merge.py _EXPORT_RUNNING_REFUSAL (R712): a restore refused while a backup export runs (R701's one export job). Whole
+      // message only; the job is the registry's own label, translated.
+      const _ex = /^a backup export is running \((.+)\) — nothing was imported, and nothing was written to your corpus\. An import would switch the corpus the export is reading\. Let the export finish, or pause it, then import again\.$/.exec(s.trim());
+      if (_ex) {
+        return tf("A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.", {
+          job: t(_ex[1]),
+        });
+      }
       // backup/merge.py _WRITER_JOBS_REFUSAL (R659): a restore refused while a background job writes to the corpus. Whole message only;
       // the jobs are the registry's own labels, each translated where the page has it, joined by "; ".
       const _wj = /^a background job is writing to your corpus \((.+)\) — nothing was imported, and nothing was written to your corpus\. What it writes during an import would be lost when your corpus is switched\. Let it finish, or stop it if it can be stopped, then import again\.$/.exec(s.trim());

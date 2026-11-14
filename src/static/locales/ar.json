@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "Backup export": "تصدير النسخة الاحتياطية",
+  "Cancel export": "إلغاء التصدير",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "هل تريد إلغاء هذا التصدير؟ تُحذف من المجلد وحدات المجموعة المكتوبة حتى الآن؛ وتبقى ملفات البيانات الكبيرة المنسوخة.",
+  "Could not cancel:": "تعذّر الإلغاء:",
+  "Resume export": "استئناف التصدير",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "يتابع هذا التصدير في مجلده الخاص، من المرحلة التي توقف عندها. يتطلب استئناف نسخ المجموعة عبارة المرور أعلاه.",
+  "Enter the passphrase to resume the corpus backup.": "أدخل عبارة المرور لاستئناف النسخ الاحتياطي للمجموعة.",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "يجري تصدير نسخة احتياطية ({job}). لم يُستورد شيء ولم يتغير شيء في مجموعتك: فالاستيراد سيستبدل المجموعة التي يقرؤها التصدير. دع التصدير ينتهي، أو أوقفه مؤقتًا، ثم أعد الاستيراد."
 }

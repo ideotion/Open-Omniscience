@@ -25,8 +25,11 @@ def test_unified_dialogs_exist():
 
 def test_export_dialog_covers_the_streaming_backup_capabilities():
     # inventory + the two always-works engines the removed panels used
-    for ep in ("/api/backup/inventory", "/api/backup/v2/volumes/start", "/api/backup/folder/start"):
+    # R701: the dialog starts ONE export job, which drives the two engines server-side.
+    for ep in ("/api/backup/inventory", "/api/backup/export/start"):
         assert ep in _APP, ep
+    exp = (Path(__file__).resolve().parents[1] / "src/backup/export_job.py").read_text(encoding="utf-8")
+    assert "vol.start_backup(" in exp and "fold.start(" in exp
     # "Everything" is the default selection: a present category is CHECKED (field ask
     # 2026-07-02) so a backup covers corpus + wiki + maps + models unless unticked.
     #
@@ -238,15 +241,17 @@ def test_backup_poll_is_job_state_as_truth_not_transport_failure():
     assert "MAX_FAILS" in poll and "fails++" in poll
     # only a backend error/cancelled state rejects
     assert 'state === "error"' in poll and 'state === "cancelled"' in poll
+    assert 'state === "failed"' in poll, "the export job's failed state (R701) must end the poll"
     # the START request is ALSO job-state-as-truth: a lost start response consults /status
     # before declaring failure, so a running job never shows a fatal "Backup failed".
     assert "_uxStartThenPoll" in _APP
     starter = _APP[_APP.index("async function _uxStartThenPoll("):]
     starter = starter[: starter.index("\n    }\n")]
     assert "await api(statusUrl)" in starter and "throw e" in starter
-    # every start/resume/verify goes through it (no bare await api(.../start) left)
-    assert "() => api(\"/api/backup/v2/volumes/start\"" in _APP
-    assert "() => api(\"/api/backup/folder/resume\"" in _APP
+    # every start/resume goes through it (no bare await api(.../start) left) -- R701: the
+    # one export job's start and resume
+    assert "() => api(\"/api/backup/export/start\"" in _APP
+    assert "() => api(\"/api/backup/export/resume\"" in _APP
 
 
 def test_backup_pause_resume_and_paused_label_are_wired():
@@ -254,9 +259,9 @@ def test_backup_pause_resume_and_paused_label_are_wired():
     shows the paused label (never "Backup complete")."""
     assert 'id="ux-pause"' in _HTML and "_uxPauseResume" in _APP
     assert "_uxShowPaused" in _APP and "Backup paused." in _APP
-    # pause routes to the live phase's endpoint; resume continues, never re-does finished work
-    assert "/api/backup/v2/volumes/pause" in _APP and "/api/backup/folder/pause" in _APP
-    assert "/api/backup/folder/resume" in _APP
+    # R701: pause and resume address the ONE export job, which pauses its live phase and
+    # resumes it in the same folder, never re-doing finished work
+    assert "/api/backup/export/pause" in _APP and "/api/backup/export/resume" in _APP
 
 
 def test_backup_verify_job_is_wired_into_the_import_dialog():
@@ -332,13 +337,10 @@ def test_reopening_the_export_dialog_recovers_the_last_completed_backup():
     assert "_uxShowLastCompletedExportSummary" in _APP
     fn = _APP[_APP.index("async function _uxShowLastCompletedExportSummary("):]
     fn = fn[: fn.index("\n    }\n")]
-    # checks the same two job kinds the live export run itself populates a status from
-    for ep in ("/api/backup/v2/volumes/status", "/api/backup/folder/status"):
-        assert ep in fn, ep
-    # filtered to a BACKUP job (never showing a restore's or verify's status in the
-    # export dialog), and a paused run is shown as paused, never as complete.
-    assert 's.mode === "backup"' in fn
-    assert '"paused"' in fn and '"done"' in fn
+    # R701: the ONE export job's status (only ever a backup), re-attached when running;
+    # a paused run is shown as paused, never as complete.
+    assert "/api/backup/export/status" in fn
+    assert '"running"' in fn and '"paused"' in fn and '"done"' in fn
     # openUnifiedExport() must actually call it (wiring, not just a dangling helper)
     opener = _APP[_APP.index("async function openUnifiedExport("):]
     opener = opener[: opener.index("\n    }\n")]
@@ -408,12 +410,15 @@ def test_a_corpus_less_export_skips_the_volumes_phase():
     import re
 
     src = _ux_run_src()
-    assert re.search(r"if \(wantCorpus\)\s*\{", src), (
+    from tests.js_source_helper import python_function_source
+
+    # R701: the page sends the choice; the export job plans its phases from it.
+    assert "corpus: wantCorpus" in src
+    job = (Path(__file__).resolve().parents[1] / "src/backup/export_job.py").read_text(encoding="utf-8")
+    start = python_function_source(job, "start")
+    assert re.search(r"\[PHASE_VOLUMES\] if want_corpus else \[\]", start), (
         "the volumes (corpus) phase is not behind the corpus choice"
     )
-    # The volumes start must be INSIDE that branch, not merely near it.
-    branch = src[src.index("if (wantCorpus)"):]
-    assert "/api/backup/v2/volumes/start" in branch.split("if (blobs.length)")[0]
 
 
 def test_the_passphrase_is_required_only_when_the_corpus_is_included():
@@ -441,8 +446,12 @@ def test_the_corpus_data_safety_gate_survives_the_change():
     """Deselecting the corpus must not weaken the gate for the case where it IS selected:
     a corpus the user asked for still cannot be silently skipped behind a success
     message (the 2026-07-14 field defect)."""
-    src = _ux_run_src()
-    for needle in ('s1.state !== "done"', 's1.mode !== "backup"', "_uxSamePath(s1.dest, dest)"):
+    from tests.js_source_helper import python_function_source
+
+    # R701: the gate moved server-side, unchanged: done, backup, THIS folder.
+    job = (Path(__file__).resolve().parents[1] / "src/backup/export_job.py").read_text(encoding="utf-8")
+    src = python_function_source(job, "_run_volumes")
+    for needle in ('state == "done"', 'st.get("mode") == "backup"', '_same_path(str(st["dest"]), dest)'):
         assert needle in src, f"the corpus data-safety gate lost its {needle!r} check"
 
 

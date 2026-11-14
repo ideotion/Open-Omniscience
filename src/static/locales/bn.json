@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "Backup export": "ব্যাকআপ রপ্তানি",
+  "Cancel export": "রপ্তানি বাতিল করুন",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "এই রপ্তানি বাতিল করবেন? এ পর্যন্ত লেখা কর্পাস ভলিউমগুলি ফোল্ডার থেকে সরানো হবে; ইতিমধ্যে কপি করা বড় ফাইলগুলি থাকবে।",
+  "Could not cancel:": "বাতিল করা যায়নি:",
+  "Resume export": "রপ্তানি আবার শুরু করুন",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "এই রপ্তানিটি তার নিজের ফোল্ডারে, যে ধাপে থেমেছিল সেখান থেকে চালিয়ে যায়। কর্পাস ব্যাকআপ আবার শুরু করতে উপরের পাসফ্রেজ লাগবে।",
+  "Enter the passphrase to resume the corpus backup.": "কর্পাস ব্যাকআপ আবার শুরু করতে পাসফ্রেজ লিখুন।",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "একটি ব্যাকআপ রপ্তানি চলছে ({job})। কিছুই আমদানি হয়নি এবং আপনার কর্পাসে কিছুই বদলায়নি: আমদানি সেই কর্পাসটি বদলে দেবে যা রপ্তানি পড়ছে। রপ্তানি শেষ হতে দিন, বা বিরতি দিন, তারপর আবার আমদানি করুন।"
 }

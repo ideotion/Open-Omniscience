@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "Backup export": "Экспорт резервной копии",
+  "Cancel export": "Отменить экспорт",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "Отменить этот экспорт? Уже записанные тома корпуса удаляются из папки; уже скопированные большие файлы остаются.",
+  "Could not cancel:": "Не удалось отменить:",
+  "Resume export": "Продолжить экспорт",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Продолжает этот экспорт в его собственной папке, с того этапа, на котором он остановился. Для продолжения резервного копирования корпуса нужна парольная фраза выше.",
+  "Enter the passphrase to resume the corpus backup.": "Введите парольную фразу, чтобы продолжить резервное копирование корпуса.",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Выполняется экспорт резервной копии ({job}). Ничего не импортировано, и в вашем корпусе ничего не изменилось: импорт заменил бы корпус, который сейчас читает экспорт. Дождитесь окончания экспорта или приостановите его, затем повторите импорт."
 }

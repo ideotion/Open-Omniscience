@@ -19,15 +19,20 @@ GET	/api/article-dates/by-date	feature	2	Agenda (O)	articles that mention a give
 POST	/api/article-dates/index	superseded			backfill of date tags; deduced dates now flow from ingest (invariant 13b)
 POST	/api/article-dates/{tag_id}/confirm	feature	2	Agenda deduced events (O)	a reader confirms a deduced date; deduced dates stay 'never confirmed' without it
 POST	/api/article-dates/{tag_id}/reject	feature	2	Agenda deduced events (O)	a reader rejects a wrongly deduced date
+POST	/api/backup/export-folder	internal		api	R713: the dated folder alone, kept for API callers; the export dialog's one job allocates it itself (POST /api/backup/export/start, R701)
 POST	/api/backup/folder/plan	feature	2	Settings > Backup (B)	'needs X, Y free' shown before a large-data backup starts, not after it fails
 POST	/api/backup/folder/restore	superseded			the unified Import queue restores large data (/api/backup/import-queue/start, kind 'blobs')
+POST	/api/backup/folder/start	internal		api	R713: the large-data copy alone, kept with the guards it has for the advanced panel and API callers; the export dialog runs it inside its one job (/api/backup/export/*, R701)
+GET	/api/backup/folder/status	internal		api	R713: the folder job's own status; the export dialog reads /api/backup/export/status, which carries this job's progress while it runs inside the export (R701)
 POST	/api/backup/folder/verify	feature	2	Settings > Backup (B)	verify a large-data folder backup against its manifest (the volumes backup has a Verify button, this one has none)
+POST	/api/backup/folder/{action}	internal		api	R713: pause, resume and cancel of the folder job alone; the export dialog pauses, resumes and cancels it through /api/backup/export/* (R701)
 POST	/api/backup/import-queue/clear	feature	3	Settings > Backup (B)	forget a finished import run so the dialog starts clean
 POST	/api/backup/legacy/restore	superseded			the unified Import queue restores legacy archives (/api/backup/import-queue/start, kind 'legacy')
 GET	/api/backup/reindex-backlog	superseded			the backlog is read through GET /api/backup/reindex-backlog/resume/status (its 'backlog' key, Q204) and drawn as the task manager's waiting row (jobs.py _reindex_backlog_rows)
 POST	/api/backup/reindex-backlog/resume	superseded			the task manager's waiting row resumes it through POST /api/jobs/reindex-backlog/resume, which calls this handler and also refuses while an import or restore holds the machine
 POST	/api/backup/reindex-backlog/resume/cancel	superseded			the running job is the task manager's own row; its Cancel goes through POST /api/jobs/reindex-resume/cancel (the generic background-job cancel)
 GET	/api/backup/v2/batches	feature	2	Settings > Backup (B)	import history with counts and verification (ruled: history lives in Settings > Backup, Q222 = b)
+POST	/api/backup/v2/volumes/pause	internal		api	R713: pause of the volume job alone; the export dialog pauses it through POST /api/backup/export/pause (R701)
 GET	/api/bulletin/editions/{filename}/ai-plan	feature	3	Agenda > Bulletin (O)	phase 2 plan of a bulletin edition (what a local model would do)
 POST	/api/bulletin/evidence/build	feature	2	Agenda > Bulletin (O)	write a period's evidence archive to a folder
 POST	/api/bulletin/evidence/plan	feature	2	Agenda > Bulletin (O)	size and contents of that archive before writing it

@@ -1002,9 +1002,12 @@ def _registry_writer_kinds() -> set[str]:
 def _import_refusal() -> str | None:
     """The refusal a committing restore would raise now (R659), read without stopping anything; None when it would go ahead."""
     try:
-        from src.backup.merge import _WRITER_JOBS_REFUSAL
+        from src.backup.merge import _WRITER_JOBS_REFUSAL, export_refusal
         from src.jobs.background import running_writer_jobs
 
+        exporting = export_refusal()  # R712: a running backup export refuses an import, named
+        if exporting:
+            return exporting
         running = running_writer_jobs(include_stoppable=False)
     except Exception:  # noqa: BLE001 - the import's own check still refuses; the page then shows the server's sentence
         return None

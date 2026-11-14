@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "Backup export": "Export de sauvegarde",
+  "Cancel export": "Annuler l'export",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "Annuler cet export ? Les volumes du corpus déjà écrits sont supprimés du dossier ; les fichiers volumineux déjà copiés restent.",
+  "Could not cancel:": "Impossible d'annuler :",
+  "Resume export": "Reprendre l'export",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Poursuit cet export dans son propre dossier, à partir de l'étape où il s'est arrêté. Reprendre la sauvegarde du corpus demande la phrase de passe ci-dessus.",
+  "Enter the passphrase to resume the corpus backup.": "Saisissez la phrase de passe pour reprendre la sauvegarde du corpus.",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Un export de sauvegarde est en cours ({job}). Rien n'a été importé et rien n'a changé dans votre corpus : une importation remplacerait le corpus que l'export est en train de lire. Laissez l'export se terminer, ou mettez-le en pause, puis importez à nouveau."
 }

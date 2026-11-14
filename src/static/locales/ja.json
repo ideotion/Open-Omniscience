@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Backup export": "バックアップのエクスポート",
+  "Cancel export": "エクスポートを取り消す",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "このエクスポートを取り消しますか？これまでに書き込まれたコーパスのボリュームはフォルダーから削除されます。コピー済みの大容量ファイルは残ります。",
+  "Could not cancel:": "取り消せませんでした:",
+  "Resume export": "エクスポートを再開",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "このエクスポートを、止まった段階から、それ自身のフォルダーで続けます。コーパスのバックアップを再開するには上のパスフレーズが必要です。",
+  "Enter the passphrase to resume the corpus backup.": "コーパスのバックアップを再開するにはパスフレーズを入力してください。",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "バックアップのエクスポートが実行中です（{job}）。何もインポートされておらず、コーパスは何も変わっていません。インポートすると、エクスポートが読み込んでいるコーパスが入れ替わってしまいます。エクスポートの完了を待つか一時停止してから、もう一度インポートしてください。"
 }

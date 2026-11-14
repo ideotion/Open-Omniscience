@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Backup export": "备份导出",
+  "Cancel export": "取消导出",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "取消此次导出？已写入的语料库卷会从文件夹中删除；已复制的大数据文件会保留。",
+  "Could not cancel:": "无法取消：",
+  "Resume export": "继续导出",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "在其自己的文件夹中、从停止的阶段继续此次导出。继续语料库备份需要上方的口令。",
+  "Enter the passphrase to resume the corpus backup.": "请输入口令以继续语料库备份。",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "一个备份导出正在运行（{job}）。未导入任何内容，您的语料库也未发生任何变化：导入会替换导出正在读取的语料库。请等导出完成或将其暂停，然后再导入。"
 }

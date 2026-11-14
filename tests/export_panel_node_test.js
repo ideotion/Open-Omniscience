@@ -302,18 +302,17 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   assert.ok(/Verifying volumes…/.test(first) && !/\d\/|\/\?/.test(first), "the first report drew a made-up count: " + first);
 }
 
-// --- J1: a reopened dialog shows the LATER export, not the folder job's older one //
+// --- R701: a reopened dialog reads the ONE export job; a running one is re-attached //
 {
-  const PICK = APP.includes("function _uxPickLastExport(") ? extract("_uxPickLastExport") : "";
   const el = () => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {},
                       removeAttribute() {}, setAttribute() {} });
-  async function reopen(statuses, facts) {
-    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
+  async function reopen(status, facts, lastDir) {
+    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el(), "ux-run": el() };
     const calls = [];
+    const watched = [];
     const api = async (url, opts) => {
       calls.push({ url, method: (opts && opts.method) || "GET" });
-      if (url === "/api/backup/v2/volumes/status") return statuses.vol;
-      if (url === "/api/backup/folder/status") return statuses.fold;
+      if (url === "/api/backup/export/status") return status;
       if (url.startsWith("/api/backup/export-summary?dir=")) return facts(decodeURIComponent(url.split("=")[1]));
       if (url === "/api/backup/export-summary") return { summary_path: "/written/BACKUP_SUMMARY.md", facts: facts("POST") };
       throw new Error("unexpected " + url);
@@ -322,64 +321,71 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
       "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
       "function humanBytes(n){return String(n)+' B';}\n" +
-      "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null;\n" +
+      "function ooServerText(s){return String(s);}\n" +
+      "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null, _uxExportIncluded = null;\n" +
       extract("fmtNum") + "\n" +
       "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
       "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
-      extract("_uxSamePath") + "\n" + PICK + "\n" +
+      "function _uxWatchExport(btn){ WATCHED.push({ dir: _uxExportDir, phase: _uxPhase }); }\n" +
+      "function _uxLastExportDir(){ return LAST; }\n" +
+      extract("_uxSamePath") + "\n" +
       extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
       // extract() starts at "function", so the async keyword is put back here.
       "async " + extract("_uxShowLastCompletedExportSummary") + "\n" +
       "module.exports = { run: _uxShowLastCompletedExportSummary, phase: () => _uxPhase, dir: () => _uxExportDir };";
     const mod = { exports: {} };
-    new Function("module", "exports", "DOM", "api", rsrc)(mod, mod.exports, dom, api);
+    new Function("module", "exports", "DOM", "api", "WATCHED", "LAST", rsrc)(mod, mod.exports, dom, api, watched, lastDir || null);
     await mod.exports.run();
-    return { dom, calls, phase: mod.exports.phase(), dir: mod.exports.dir() };
+    return { dom, calls, watched, phase: mod.exports.phase(), dir: mod.exports.dir() };
   }
   const A = "/x/202609262011_OpenOmniscience_Backup", B = "/x/202609262012_OpenOmniscience_Backup";
   const withPath = (d) => ({ ...base, destination: d, summary_path: d + "/BACKUP_SUMMARY.md" });
   (async () => {
-    // Export A carried models (both managers -> A); export B was corpus-only (volumes -> B).
-    const r = await reopen({
-      vol: { mode: "backup", state: "done", dest: B, started_at: 300 },
-      fold: { mode: "backup", state: "done", dest: A, started_at: 100 },
-    }, withPath);
-    assert.ok(r.dom["ux-progress"].innerHTML.includes(B) && !r.dom["ux-progress"].innerHTML.includes(A),
-      "the reopened dialog names the OLDER export: " + r.dom["ux-progress"].innerHTML);
+    // A finished export: the dialog names ITS folder and draws its facts.
+    const r = await reopen({ mode: "backup", state: "done", dest: B, phase: null }, withPath);
+    assert.ok(r.dom["ux-progress"].innerHTML.includes(B), "the reopened dialog does not name the export: " + r.dom["ux-progress"].innerHTML);
     assert.ok(r.calls.some((c) => c.url.includes(encodeURIComponent(B))), "the facts were read for the wrong folder");
     assert.ok(/<span dir="ltr"/.test(r.dom["ux-progress"].innerHTML), "the completion path is not isolated LTR (J3)");
 
-    // One export, both phases: the folder job is the later state of the SAME export.
-    const same = await reopen({
-      vol: { mode: "backup", state: "done", dest: A, started_at: 100 },
-      fold: { mode: "backup", state: "paused", dest: A, started_at: 150 },
-    }, withPath);
-    assert.strictEqual(same.phase, "folder", "a paused large-data phase lost its Resume target");
+    // A RUNNING export (the page was reloaded mid-export) is re-attached, never re-started.
+    const live = await reopen({ mode: "backup", state: "running", dest: A, phase: "folder",
+                                requested: { corpus: true, categories: ["models"] } }, withPath);
+    assert.deepStrictEqual(live.watched, [{ dir: A, phase: "folder" }], "a running export was not re-attached");
+    assert.ok(!live.calls.some((c) => c.method === "POST"), "re-attaching started something");
 
-    // A PAUSED later corpus export must win over an older finished one, or its Resume is lost.
-    const paused = await reopen({
-      vol: { mode: "backup", state: "paused", dest: B, started_at: 300 },
-      fold: { mode: "backup", state: "done", dest: A, started_at: 100 },
-    }, withPath);
-    assert.strictEqual(paused.phase, "volumes", "the later, paused corpus export was hidden behind an older one");
-    assert.strictEqual(paused.dir, B);
+    // A paused large-data phase keeps its Resume target and its folder.
+    const paused = await reopen({ mode: "backup", state: "paused", dest: A, phase: "folder" }, withPath);
+    assert.strictEqual(paused.phase, "folder", "a paused large-data phase lost its Resume target");
+    assert.strictEqual(paused.dir, A);
+    assert.strictEqual(paused.dom["ux-progress"].innerHTML, "PAUSED");
+
+    // After an app restart the job is idle: the last folder's record offers «Resume export».
+    const restarted = await reopen({ mode: "backup", state: "idle", dest: null }, (d) => ({
+      ...withPath(d), requested: { corpus: true, categories: ["models"], inside: false, phase: "folder" },
+      missing: { known: true, corpus: false, categories: ["models"] } }), A);
+    assert.ok(/Backup incomplete →/.test(restarted.dom["ux-progress"].innerHTML), restarted.dom["ux-progress"].innerHTML);
+    assert.ok(/Resume export/.test(restarted.dom["ux-summary"].innerHTML), "the record's unfinished phase offers no resume");
+    // …and a remembered folder whose record says nothing is left is not shown at all.
+    const stale = await reopen({ mode: "backup", state: "idle", dest: null }, (d) => ({ ...withPath(d), requested: { phase: "done" } }), A);
+    assert.strictEqual(stale.dom["ux-progress"].innerHTML, "", "a finished folder from an earlier session was shown as the last export");
 
     // J2: the file is missing on reopen -> it is asked for once, and the panel names it.
-    const missing = await reopen({ vol: { mode: "backup", state: "done", dest: B, started_at: 1 }, fold: null },
+    const missing = await reopen({ mode: "backup", state: "done", dest: B },
       (d) => (d === "POST" ? { ...base, destination: B } : { ...base, destination: B, summary_path: null }));
     assert.ok(missing.calls.some((c) => c.url === "/api/backup/export-summary" && c.method === "POST"),
       "a missing BACKUP_SUMMARY.md was not asked for on reopen");
     assert.ok(/\/written\/BACKUP_SUMMARY\.md/.test(missing.dom["ux-summary"].innerHTML),
       "the recovered summary path is not shown");
 
-    // W1: a large-data copy RESUMED after a pause ends on the same completion as a
-    // straight run -- the "Included:" line, BACKUP_SUMMARY.md written, the facts panel.
-    // It ended on a bare "Backup complete →" line and never wrote the summary file.
+    // W1: an export RESUMED after a pause ends on the same completion as a straight run --
+    // the "Included:" line, BACKUP_SUMMARY.md written, the facts panel (R701: through the
+    // export job's resume, in its own folder).
     {
-      const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
+      const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el(), "ux-run": el(), "ux-cancel": el() };
       const calls = [];
       const api = async (url, opts) => {
-        calls.push({ url, method: (opts && opts.method) || "GET" });
+        calls.push({ url, method: (opts && opts.method) || "GET", body: opts && opts.body ? JSON.parse(opts.body) : null });
+        if (url === "/api/backup/export/resume") return { state: "running" };
         if (url === "/api/backup/export-summary") return { summary_path: A + "/BACKUP_SUMMARY.md", facts: withPath(A) };
         throw new Error("unexpected " + url);
       };
@@ -388,25 +394,30 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
         "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
         "function humanBytes(n){return String(n)+' B';}\n" +
         "function ooServerText(s){return String(s);}\n" +
+        "function toast(){}\n" +
         "var window = {}; var _uxExportDir = DIR, _uxPhase = 'folder', _uxExportFacts = null;\n" +
         extract("fmtNum") + "\n" +
         "var _uxExportIncluded = { corpus: true, blobs: ['models'] };\n" +
         "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
         "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
-        "function _uxRun(){ throw new Error('the folder resume re-ran the whole export'); }\n" +
-        "async function _uxStartThenPoll(start){ await start(); return { state: 'done' }; }\n" +
+        "function _uxRun(){ throw new Error('the resume re-ran the whole export'); }\n" +
+        "function _uxRememberExportDir(){}\n" +
+        "async function _uxStartThenPoll(start){ await start(); return { state: 'done', dest: DIR, requested: { corpus: true, categories: ['models'] } }; }\n" +
         extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
         "async " + extract("_uxFinishExport") + "\n" +
+        "async " + extract("_uxWatchExport") + "\n" +
         "async " + extract("_uxResume") + "\n" +
         "module.exports = { resume: _uxResume };";
       const mod = { exports: {} };
-      const apiAll = async (url, opts) => (url === "/api/backup/folder/resume" ? { ok: true } : api(url, opts));
-      new Function("module", "exports", "DOM", "api", "DIR", wsrc)(mod, mod.exports, dom, apiAll, A);
+      new Function("module", "exports", "DOM", "api", "DIR", wsrc)(mod, mod.exports, dom, api, A);
       await mod.exports.resume(dom["ux-pause"]);
+      const resumed = calls.find((c) => c.url === "/api/backup/export/resume");
+      assert.ok(resumed && resumed.body.dir === A, "the resume does not name the export's own folder: " + JSON.stringify(calls));
+      assert.ok(!("passphrase" in resumed.body), "a large-data resume asked for the passphrase");
       const line = dom["ux-progress"].innerHTML;
-      assert.ok(/Backup complete →/.test(line) && line.includes(A), "the resumed copy did not complete: " + line);
+      assert.ok(/Backup complete →/.test(line) && line.includes(A), "the resumed export did not complete: " + line);
       assert.ok(/Included:/.test(line) && /Corpus/.test(line) && /LLM models/.test(line),
-        "the resumed copy's completion does not say what the backup holds: " + line);
+        "the resumed export's completion does not say what the backup holds: " + line);
       assert.ok(calls.some((c) => c.url === "/api/backup/export-summary" && c.method === "POST"),
         "a resumed export never wrote BACKUP_SUMMARY.md");
       assert.ok(/BACKUP_SUMMARY\.md/.test(dom["ux-summary"].innerHTML) && /Encrypted volumes/.test(dom["ux-summary"].innerHTML),

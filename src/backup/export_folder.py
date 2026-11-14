@@ -55,10 +55,22 @@ BACKUP_FOLDER_TOKEN = "OpenOmniscience"
 #: remembered it had been asked for: the reopened dialog read "Backup complete" over a
 #: folder with no models in it. With the request on the drive beside the backup,
 #: :func:`src.backup.export_summary.export_facts` compares it with what is actually there
-#: and names what is missing. A record, never a gate: nothing reads it to decide what
-#: to write.
+#: and names what is missing.
+#:
+#: R701 MADE IT THE RESUME CURSOR. It used to be "a record, never a gate: nothing reads it
+#: to decide what to write". The export is now ONE server-side job
+#: (:mod:`src.backup.export_job`) and the record carries the phase it is in
+#: (``volumes``, ``folder``, ``done`` or ``cancelled``), so a resume -- in this process
+#: or after a restart -- continues the phase the record names, in THIS folder, and never
+#: allocates a second one. It still holds no secret: a resume of the volumes phase asks
+#: the operator for the passphrase again.
 REQUEST_NAME = "oo-export-request.json"
 REQUEST_SCHEMA = "oo-export-request-1"
+
+#: The phases the record can name (R701). ``volumes`` and ``folder`` are UNFINISHED: the
+#: reopened panel offers «Resume export» for them. ``done`` and ``cancelled`` are not.
+UNFINISHED_PHASES = ("volumes", "folder")
+RECORD_PHASES = (*UNFINISHED_PHASES, "done", "cancelled")
 
 #: ``YYYYMMDDHHMM_OpenOmniscience_Backup``. The suffix is part of the ruled name.
 BACKUP_FOLDER_SUFFIX = "Backup"
@@ -155,6 +167,8 @@ def write_export_request(
     corpus: bool,
     categories: list[str],
     inside: bool = False,
+    phase: str | None = None,
+    verify_after_write: bool | None = None,
 ) -> Path | None:
     """Record, inside a freshly allocated export folder, what the export was asked for.
 
@@ -162,6 +176,11 @@ def write_export_request(
     they ride INSIDE the encrypted artifact rather than being copied beside it, in
     which case no separate copy is owed. Only known categories are kept, in the order
     given, so a stray value from a client can never name a member that does not exist.
+
+    ``phase`` (R701) is where the export job is: see :data:`RECORD_PHASES`. Left out
+    (the older ``/export-folder`` caller), the record names no phase, which reads as
+    unknown rather than finished. ``verify_after_write`` is recorded so a resume after a
+    restart re-applies the choice the export started with; it is a flag, never a secret.
 
     NEVER RAISES. The record is an aid to reporting, not part of the backup: a drive
     that refuses this small write will refuse the volumes a moment later, and that
@@ -182,6 +201,34 @@ def write_export_request(
         "categories": seen,
         "inside": bool(inside) and bool(corpus) and bool(seen),
     }
+    if phase in RECORD_PHASES:
+        record["phase"] = phase
+    if verify_after_write is not None:
+        record["verify_after_write"] = bool(verify_after_write)
+    return _write_record(d, record)
+
+
+def update_export_phase(folder: str | os.PathLike[str], phase: str) -> Path | None:
+    """Move the record's resume cursor to ``phase`` (R701), keeping everything else in it.
+
+    A folder with no readable record gets none: inventing one here would claim to know
+    what the export was asked for. NEVER RAISES, like :func:`write_export_request`.
+    """
+    if phase not in RECORD_PHASES:
+        return None
+    d = Path(folder)
+    p = d / REQUEST_NAME
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict) or raw.get("schema") != REQUEST_SCHEMA:
+        return None
+    raw["phase"] = phase
+    return _write_record(d, raw)
+
+
+def _write_record(d: Path, record: dict[str, Any]) -> Path | None:
     p = d / REQUEST_NAME
     tmp = d / (REQUEST_NAME + ".oopart")
     try:
@@ -213,4 +260,7 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
         "categories": [str(c) for c in cats] if isinstance(cats, list) else [],
         "inside": bool(raw.get("inside")),
         "requested_at": raw.get("requested_at"),
+        # R701: the resume cursor; None for a record written before the export was one job.
+        "phase": raw.get("phase") if raw.get("phase") in RECORD_PHASES else None,
+        "verify_after_write": raw.get("verify_after_write") if isinstance(raw.get("verify_after_write"), bool) else None,
     }

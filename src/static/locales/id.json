@@ -7888,5 +7888,13 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "Backup export": "Ekspor cadangan",
+  "Cancel export": "Batalkan ekspor",
+  "Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay.": "Batalkan ekspor ini? Volume korpus yang sudah ditulis dihapus dari folder; file data besar yang sudah disalin tetap ada.",
+  "Could not cancel:": "Tidak dapat membatalkan:",
+  "Resume export": "Lanjutkan ekspor",
+  "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Melanjutkan ekspor ini di foldernya sendiri, dari fase tempat ia berhenti. Melanjutkan cadangan korpus memerlukan frasa sandi di atas.",
+  "Enter the passphrase to resume the corpus backup.": "Masukkan frasa sandi untuk melanjutkan cadangan korpus.",
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Ekspor cadangan sedang berjalan ({job}). Tidak ada yang diimpor dan tidak ada yang berubah di korpus Anda: impor akan mengganti korpus yang sedang dibaca oleh ekspor. Biarkan ekspor selesai, atau jeda, lalu impor lagi."
 }
