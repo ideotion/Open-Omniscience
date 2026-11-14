@@ -1,4 +1,4 @@
-<!-- id: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Corrections are welcome as a pull request. -->
+<!-- id: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 125 of 125 headings. Corrections are welcome as a pull request. -->
 
 # Open Omniscience — Panduan Pengguna
 
@@ -443,6 +443,44 @@ satu, dan membiarkan Anda menggulir.
 - **Setiap kartu** menampilkan judul, sumber, tanggal, dan **tiga kata kunci teratas milik artikel itu
   sendiri** — kata kunci artikel tersebut, bukan kata kunci dari apa pun yang Anda cari. **Baca selengkapnya**
   membentangkan ringkasan **di tempat**; judul membuka artikel di pembaca lokal.
+
+### 3.0c Tampilan sederhana
+
+**Kegunaannya:** membaca isi korpus Anda tanpa harus mempelajari tiga belas tab terlebih dahulu.
+Tampilan sederhana adalah antarmuka kedua yang berpusat pada tugas, di atas aplikasi yang sama,
+data yang sama, dan aturan keamanan yang sama. Yang dihilangkan adalah layar, bukan informasi:
+setiap angka tetap membawa metode, hitungan, dan peringatannya, hanya satu klik jauhnya.
+
+- **Sakelarnya.** Sakelar **Sederhana** di bilah atas menyalakan dan mematikannya. Pilihan ini
+  hanya diingat di perangkat ini (di peramban ini). Mematikannya mengembalikan antarmuka lengkap
+  persis seperti semula; tidak ada yang diatur ulang atau hilang.
+- **Enam tampilan** menggantikan tab-tab di bilah samping:
+  - **Hari ini**: petunjuk yang menonjol di korpus Anda, topik yang sedang naik, dan
+    keadaan jaringan dengan tombol **Daring**.
+  - **Baca**: artikel Anda sebagai daftar, yang terbaru dahulu atau diacak. Memilih sebuah negara
+    di **Dunia** membatasi daftar itu (dan ringkasannya) pada artikel dari sumber negara tersebut.
+  - **Cari**: pencarian yang sama dengan di tampilan lengkap. Ketik sebuah kata, nama, atau frasa;
+    tanda kutip memberi frasa yang persis dan OR salah satu dari dua kata. **Buka analisis
+    lengkap** membawa pencarian yang sama ke Jelajahi.
+  - **Dunia**: negara-negara asal artikel Anda, diurutkan menurut seberapa banyak liputannya.
+    Negara di sini adalah negara tempat setiap sumber dikatalogkan, tidak pernah tempat sebuah
+    peristiwa terjadi. Satu klik pada sebuah negara membatasi **Baca** dan ringkasannya.
+  - **Angka**: deret pasar dan catatan iklim yang sudah tersimpan di komputer Anda, masing-masing
+    dengan nilai terbarunya dan tanggalnya. Tampilan ini hanya membaca: harga dan catatan iklim
+    diambil, dengan persetujuan Anda, di tampilan lengkap.
+  - **Alat lainnya**: tautan ke setiap tab tampilan lengkap, dan formulir **Tambah sumber**.
+    Alat yang dibuka dari sini menampilkan bilah **Kembali ke tampilan sederhana** yang
+    mengembalikan Anda ke tempat semula, dengan pencarian Anda masih utuh.
+- **Tombol ⓘ.** Setiap kartu dan angka memilikinya. Tombol ini membuka peringatan, metode,
+  hitungan (n), sumber, dan tanggalnya. Tombol ini bekerja dengan papan ketik, sentuhan, dan
+  pembaca layar.
+- **Tanda-tandanya.** Angka yang perlu dilihat dua kali menampilkan tanda kecil di sampingnya,
+  sehingga Anda tahu ⓘ berisi sesuatu yang layak dibuka: **~** perkiraan, **◐** sebagian,
+  **◷** mungkin sudah usang.
+- **Yang tidak pernah berubah.** Tampilan sederhana tidak menyembunyikan satu pun permukaan
+  keamanan aplikasi. Popup persetujuan jaringan, mode pesawat dan keadaan Tor di bilah atas,
+  layar kunci, konfirmasi sebelum apa pun dihapus, pemberitahuan, dan pesan galat semuanya tetap
+  terlihat dan bekerja persis seperti di tampilan lengkap.
 
 ### 3.1 Pencarian
 
