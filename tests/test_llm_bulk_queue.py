@@ -679,11 +679,11 @@ def test_a_run_that_crashes_ends_in_error_and_the_runs_behind_it_go_on(queue, mo
     real_run = lbq.LlmBulkQueue._run
     calls = []
 
-    def _run(self, ctx, entry):
+    def _run(self, ctx, entry, gen0):
         calls.append(entry["id"])
         if len(calls) == 1:
             raise RuntimeError("boom")
-        return real_run(self, ctx, entry)
+        return real_run(self, ctx, entry, gen0)
 
     monkeypatch.setattr(lbq.LlmBulkQueue, "_run", _run)
     _use(monkeypatch, _FakeLlm())

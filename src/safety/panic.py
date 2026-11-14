@@ -29,9 +29,14 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     ``files_wiped`` / ``data_dir`` / ``limit`` preserved for existing callers)."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
+    from src.config.kv_store import kv_invalidate
     from src.database.connect import invalidate_header_cache
     from src.safety.crypto_erase import quick_crypto_erase
 
+    # The store's swap epoch moves BEFORE the wipe too (Lane E follow-up (a)): a settings save made from state read in the old
+    # file (the bulk queue's, with ``expect_swap``) that reaches its check from here on is refused instead of writing a fresh store
+    # file where the wiped one was. The call after the wipe below still clears what was read meanwhile.
+    kv_invalidate()
     try:
         return quick_crypto_erase(confirm=True, data_dir=data_dir)
     finally:

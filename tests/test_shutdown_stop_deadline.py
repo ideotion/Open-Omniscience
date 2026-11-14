@@ -20,7 +20,7 @@ from src.api import llm as llm_api
 from src.jobs import background as bg
 from src.jobs import llm_bulk_queue as lbq
 from tests import test_llm_bulk_queue as _bq
-from tests.test_llm_bulk_queue import _FakeLlm, _seed, _summaries, _use
+from tests.test_llm_bulk_queue import _FakeLlm, _seed, _summaries, _use, _wait
 
 store = _bq.store
 queue = _bq.queue
@@ -158,3 +158,110 @@ def test_the_insights_backlog_stops_between_articles_not_between_batches(monkeyp
     monkeypatch.setattr("src.scheduler.maintenance.note_page_drain", lambda **_kw: None)
     out = ib._drain(_Ctx())
     assert out["ended"] == "stopping" and len(calls) == 3, (out, calls)
+
+
+def test_a_resumed_run_counts_as_its_own_only_what_it_stored_before_the_stop(queue, monkeypatch):
+    """Lane E follow-up (b): a summary another run wrote during the pause is skipped, and is not counted as this run's own."""
+    from datetime import UTC, datetime
+
+    from src.database.models import ArticleAnalysis
+    from src.database.session import session_scope
+
+    fake = _SlowLlm(hang_on=2)
+    _use(monkeypatch, fake)
+    ids = _seed(3)
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids, "skip_existing": False})["entry"]["id"]
+    try:
+        assert fake.started.wait(10)
+        assert lbq.KIND not in bg.stop_all_jobs(5.0)
+    finally:
+        fake.hold.set()
+    assert llm_api.wait_abandoned_generations(lambda: False)
+    assert {e["id"]: e for e in queue.snapshot()["entries"]}[eid]["stored"] == 1
+    with session_scope() as s:  # another run's summary of the second article, written during the pause
+        s.add(ArticleAnalysis(article_id=ids[1], kind="summary", result="theirs", model="m", prompt_version="other",
+                              created_at=datetime.now(UTC)))
+    assert queue.resume() and lbq._JOB.join(15)
+    final = {e["id"]: e for e in queue.snapshot()["entries"]}[eid]
+    assert final["state"] == "done", final
+    assert (final["stored"], final["skipped"]) == (2, 1), final
+    assert [_summaries(a) for a in ids] == [1, 1, 1], "an article was stored twice or skipped"
+
+
+def test_a_stop_during_run_setup_pauses_the_run_before_any_selection_or_model_call(queue, monkeypatch):
+    """The machine probe is the slow part of setup: the stop is looked at right after it, before the selection and the model."""
+    fake = _FakeLlm()
+    probing = threading.Event()
+
+    def _slow_probe():
+        probing.set()
+        time.sleep(1.0)
+        return ("ollama", fake)
+
+    monkeypatch.setattr("src.api.llm.get_llm_client_with_name", _slow_probe)
+    ids = _seed(2)
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
+    assert probing.wait(10)
+    t0 = time.monotonic()
+    assert lbq.KIND not in bg.stop_all_jobs(5.0)
+    assert time.monotonic() - t0 < 2.5
+    assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "paused"
+    assert fake.calls == [] and [_summaries(a) for a in ids] == [0, 0]
+
+
+class _StoppingCtx:
+    stopping = True
+
+    def set_progress(self, **_kw):
+        pass
+
+
+@pytest.mark.parametrize("shutdown", [False, True])
+def test_a_resume_pressed_while_a_stopped_drain_ends_is_kept_unless_the_app_is_shutting_down(queue, monkeypatch, shutdown):
+    """Lane E follow-up: the stopped drain's end used to pause the queue again over a Resume pressed in that instant."""
+    fake = _FakeLlm()
+    _use(monkeypatch, fake)
+    ids = _seed(1)
+    assert queue._load()
+    queue._paused = True
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
+    queue._draining = True  # a stopped drain is ending
+    assert queue.resume()
+    counts = iter([0, 1 if shutdown else 0, 1 if shutdown else 0, 1 if shutdown else 0])
+    monkeypatch.setattr(lbq, "stop_all_count", lambda: next(counts, 1 if shutdown else 0))
+    lbq._drain(_StoppingCtx())
+    if shutdown:
+        assert queue.snapshot()["paused"] is True
+        assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "queued"
+    else:
+        assert _wait(lambda: {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "done"), queue.snapshot()
+        assert lbq._JOB.join(15)
+        assert _summaries(ids[0]) == 1
+
+
+def test_the_streamed_bulk_route_stops_on_its_task_manager_stop_without_waiting_for_the_generation(monkeypatch):
+    """POST /api/llm/bulk (no queue, no ``should_stop``) polls its task-manager Stop while a generation runs, as a queued run does."""
+    import json
+
+    from src.database.session import SessionLocal
+    from src.monitoring import tasks as _tasks
+
+    fake = _SlowLlm()
+    ids = _seed(2)
+    req = llm_api.BulkLLMRequest(op="summarize", model="m", article_ids=ids, skip_existing=False)
+    with SessionLocal() as db:
+        tok, gen, _ = llm_api.prepare_bulk_run(req, db, ("ollama", fake))
+    events: list[dict] = []
+    t = threading.Thread(target=lambda: events.extend(json.loads(line) for line in gen))
+    t.start()
+    try:
+        assert fake.started.wait(10)
+        t0 = time.monotonic()
+        _tasks.request_cancel(tok)
+        t.join(3)
+        assert not t.is_alive() and time.monotonic() - t0 < 2.0, "the Stop waited for the generation"
+        assert events[-1]["event"] == "stopped", events[-1]
+    finally:
+        fake.hold.set()
+    assert llm_api.wait_abandoned_generations(lambda: False)
+    assert [_summaries(a) for a in ids] == [0, 0]

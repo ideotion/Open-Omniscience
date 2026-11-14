@@ -661,7 +661,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/law/adapters/clml.py": 3,
     "src/llm/ollama.py": 11,  # +1 R671: _require_local_model wraps an unreadable /api/tags exactly as list_installed does (record_text)
     "src/llm/vllm_client.py": 5,
-    "src/llm/vllm_lifecycle.py": 1,
+    # src/llm/vllm_lifecycle.py: 0 -- its one site (pip's unpack directory) now raises a fixed phrase "from None" and logs the detail
     "src/safety/crypto.py": 4,
     "src/safety/settings.py": 1,
     "src/services/duckduckgo.py": 1,
