@@ -17,4 +17,6 @@ signature falls behind when the real one grows an argument, and the fault it inj
 `except` swallows. (2) A test of "a raise here is survived" should assert something only the intended fault produces (the
 stub's own message in the log, a counter the stub bumps), not only that the run ended well. (3) To ask whether code ran, use
 `sys.monitoring` with LINE for statements and PY_START for lambdas, and return `DISABLE` everywhere else; never rewrite the
-test file to count.
+test file to count. (4) Key a hit on the stub's own code object, never on file and line: a statement that builds an inline
+lambda shares its line, and counts as "fired" otherwise. Judge only a PASSING test: with the disk nearly full, eight repair tests
+refused with `no-room` before their faults and read as vacuous.

@@ -14,7 +14,7 @@ function and compares the result with the reviewed baseline ``tests/fault_reach_
   baseline with the reason, one line).
 * STALE: a baseline line whose test ran and now fires its fault, or that names a test which no longer exists. Remove it.
 
-Exit 0 when both lists are empty, 1 otherwise, 2 when pytest itself did not run. The report goes to ``--report`` (Markdown). It is a
+Exit 0 when both lists are empty, 1 otherwise, 2 when pytest itself did not run. The report is printed, and also written to ``--report`` when given. It is a
 weekly job (``.github/workflows/fault-reach.yml``) and never a PR gate: the hand reading is the expensive part, and a new fault test then
 gets read once, not on every PR.
 """
@@ -267,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("files", nargs="*", help="test files (default: every candidate file)")
     ap.add_argument("-n", default="auto", help="pytest-xdist workers ('0' for none; default auto)")
-    ap.add_argument("--report", default="fault-reach-report.md")
+    ap.add_argument("--report", default=None, help="also write the Markdown report to this file (it is always printed)")
     ap.add_argument("--basetemp", help="passed to pytest")
     ap.add_argument("--keep", help="copy the plugin's raw results into this folder")
     ap.add_argument("--results", help="judge the raw results kept in this folder instead of running pytest")
@@ -295,7 +295,8 @@ def main(argv: list[str] | None = None) -> int:
         baseline = {k: r for k, r in baseline.items() if k.partition("::")[0] in rels}
     new, stale = compare(v, baseline)
     text = report(v, new, stale, baseline)
-    Path(a.report).write_text(text, encoding="utf-8")
+    if a.report:
+        Path(a.report).write_text(text, encoding="utf-8")
     print(text)
     if a.issue:
         sync_issue(bool(new or stale), text)
