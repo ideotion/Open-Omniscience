@@ -198,7 +198,10 @@ def test_a_pool_that_fails_ahead_is_computed_here_and_counted_once(db, recorded,
     pres = [e for e in recorded if e[0] == "pre"]
     assert all(p[2] == threading.current_thread().name for p in pres), "both windows computed here"
     assert stats["pipelined_windows"] == 0
-    assert stats["precompute"]["by_path"].get("pool_failed") == 1
+    # Counted once, as a fallback, and the redo never asked the pool again (no second "pre" for that window).
+    assert stats["precompute"]["by_path"].get("fallback") == 1
+    assert "pool_failed" not in stats["precompute"]["by_path"]
+    assert [p[1] for p in pres].count(tuple(ids[3:6])) == 0, "window 2 was computed by _serial directly"
 
 
 def test_a_window_read_ahead_is_fetched_again_when_applied(db, recorded, monkeypatch):

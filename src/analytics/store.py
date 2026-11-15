@@ -17,6 +17,7 @@ queries stay single-scan.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 import time
@@ -1823,7 +1824,7 @@ def _reindex_articles_impl(
     import os as _os
     from concurrent.futures import Future, ThreadPoolExecutor
 
-    from src.analytics.reindex_parallel import PoolUnavailable, uses_pool
+    from src.analytics.reindex_parallel import PoolUnavailable, _serial, uses_pool
 
     _pipeline_on = _os.getenv("OO_REINDEX_PIPELINE", "1").strip() != "0"
     _windows = [article_ids[w : w + _PRECOMPUTE_WINDOW] for w in range(0, len(article_ids), _PRECOMPUTE_WINDOW)]
@@ -1856,6 +1857,11 @@ def _reindex_articles_impl(
                 _fut = None
             absent += len(window_ids) - len(articles)
             if not articles:
+                if _fut is not None:
+                    # Every article read ahead is gone: let its pool finish before the next window starts one of its own, so two
+                    # full-width pools never run together. Its result is not used and its figures are not counted.
+                    with contextlib.suppress(Exception):
+                        _fut.result()
                 continue
 
             # Precompute (parallel when it's worth it; falls back to serial in-process on any pool trouble -- see
@@ -1868,9 +1874,15 @@ def _reindex_articles_impl(
                     derivs, _secs = _fut.result()
                     _pipelined_windows += 1
                 except PoolUnavailable:
-                    # Only the path is kept from the failed attempt: the window is counted once, by the serial redo.
-                    _fut_stats = {"by_path": _fut_stats.get("by_path") or {}}
-                    derivs, _secs = _precompute(tasks, _pre_stats)
+                    # Straight to serial, here: asking the pool again would wait out a second pool timeout on a wedged pool
+                    # before the same serial redo. Counted once, as the fallback it is.
+                    _ts = time.monotonic()
+                    derivs = _serial(tasks, extractor)
+                    _secs = time.monotonic() - _ts
+                    _fut_stats = {
+                        "windows": 1, "articles": len(tasks), "seconds": float(_fut_stats.get("seconds") or 0.0) + _secs,
+                        "by_path": {"fallback": 1},
+                    }
                 _fold_pre_stats(_fut_stats)
             else:
                 derivs, _secs = _precompute(tasks, _pre_stats)
