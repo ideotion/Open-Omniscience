@@ -679,12 +679,21 @@ def uses_pool(n_tasks: int, *, extractor, workers: int | None = None) -> bool:
     )
 
 
+class PoolUnavailable(RuntimeError):
+    """Raised by :func:`precompute_batch` with ``serial_fallback=False`` instead of computing serially in this process.
+
+    For a caller that runs the precompute BESIDE other work (the re-index's window computed ahead): a serial redo there would
+    run in this process, in a helper thread, during an apply that holds the write gate. The caller computes it itself instead,
+    when nothing else is running."""
+
+
 def precompute_batch(
     tasks: Sequence[Task],
     *,
     extractor,
     workers: int | None = None,
     stats: dict | None = None,
+    serial_fallback: bool = True,
 ) -> dict[int, ArticleDerivatives]:
     """Compute ``{article_id: ArticleDerivatives}`` for a batch of
     ``(article_id, content, title, language, sentiment_language)`` tuples.
@@ -718,6 +727,8 @@ def precompute_batch(
 
     n_workers = worker_count(workers)
     if not uses_pool(len(tasks), extractor=extractor, workers=workers):
+        if not serial_fallback:
+            raise PoolUnavailable("this window would not run in the pool")
         _t0 = time.monotonic()
         out_serial = _serial(tasks, extractor)
         _note("serial", time.monotonic() - _t0)
@@ -815,6 +826,9 @@ def precompute_batch(
         if pool is not None:
             _abandon_pool(pool)
             pool = None
+        if not serial_fallback:
+            _note("pool_failed", time.monotonic() - _t0)
+            raise PoolUnavailable("the pool failed; this caller computes the window itself") from exc
         out_fb = _serial(tasks, extractor)
         # Charge the WHOLE window (the wasted pool attempt AND the serial redo) to the
         # fallback -- measured from _t0, before the pool was attempted. That total is

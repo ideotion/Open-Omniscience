@@ -64,7 +64,7 @@ def recorded(monkeypatch):
     applied = threading.Condition()
     n_applied = [0]
 
-    def _pre(tasks, *, extractor, workers=None, stats=None):
+    def _pre(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
         events.append(("pre", tuple(t[0] for t in tasks), threading.current_thread().name))
         if threading.current_thread().name.startswith("oo-reindex-ahead"):
             # Proof of overlap, without a race: a window started ahead waits (bounded) until an article is applied while it is
@@ -73,6 +73,8 @@ def recorded(monkeypatch):
                 start = n_applied[0]
                 ok = applied.wait_for(lambda: n_applied[0] > start, timeout=5)
             events.append(("overlapped", ok))
+        if stats is not None:
+            stats["windows"] = stats.get("windows", 0) + 1
         return RP._serial(tasks, extractor)
 
     real_index = S.index_article
@@ -143,26 +145,102 @@ def test_the_switch_turns_it_off(db, recorded, monkeypatch):
     assert all(e[2] == threading.current_thread().name for e in recorded if e[0] == "pre")
 
 
-def test_a_stop_leaves_no_helper_running_and_applies_nothing_past_the_boundary(db, recorded):
+def test_a_stop_is_answered_without_waiting_for_the_window_computed_ahead(db, recorded, monkeypatch):
+    """A Stop at a window boundary returns at once: the window computed ahead is discarded, not waited for (it ends in its own
+    time, at the pool timeout at the latest), and nothing past the boundary is applied."""
     ids = _seed(db, 8)
+    release = threading.Event()
+    fake = RP.precompute_batch
+
+    def _slow_ahead(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
+        if threading.current_thread().name.startswith("oo-reindex-ahead") and tasks[0][0] == ids[6]:
+            release.wait(30)
+        return fake(tasks, extractor=extractor, workers=workers, stats=stats, serial_fallback=serial_fallback)
+
+    monkeypatch.setattr(RP, "precompute_batch", _slow_ahead)
     polls = {"n": 0}
 
     def _stop() -> bool:
         polls["n"] += 1
-        return polls["n"] > 1  # the first window runs, the second boundary stops
+        return polls["n"] > 2  # windows 1 and 2 run; the third boundary stops while window 3 is still computing ahead
 
-    out = S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=4, should_stop=_stop)
-    assert out == {"reindexed": 3, "failed": 0}
-    assert [e[1] for e in recorded if e[0] == "apply"] == ids[:3]
-    assert not [t for t in threading.enumerate() if t.name.startswith("oo-reindex-ahead")]
+    stats: dict = {}
+    try:
+        out = S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=4, should_stop=_stop, stats=stats)
+        assert out == {"reindexed": 6, "failed": 0}
+        assert [e[1] for e in recorded if e[0] == "apply"] == ids[:6]
+        assert stats["pipelined_windows"] == 1, "the discarded window is not counted"
+        assert stats["precompute"]["windows"] == 2
+    finally:
+        release.set()
+    for t in [t for t in threading.enumerate() if t.name.startswith("oo-reindex-ahead")]:
+        t.join(10)
+        assert not t.is_alive()
 
 
-def test_a_failed_apply_still_waits_for_the_window_started_ahead(db, recorded, monkeypatch):
+def test_a_pool_that_fails_ahead_is_computed_here_and_counted_once(db, recorded, monkeypatch):
+    """Ahead, a failed pool never falls back to serial in the helper thread (that would run beside the apply, in the gate hold):
+    it raises, and this thread computes the window itself, between applies."""
     ids = _seed(db, 6)
+    fake = RP.precompute_batch
+
+    def _fails_ahead(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
+        if not serial_fallback:
+            assert threading.current_thread().name.startswith("oo-reindex-ahead")
+            stats.setdefault("by_path", {})["pool_failed"] = 1
+            raise RP.PoolUnavailable("test")
+        return fake(tasks, extractor=extractor, workers=workers, stats=stats)
+
+    monkeypatch.setattr(RP, "precompute_batch", _fails_ahead)
+    stats: dict = {}
+    out = S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=4, stats=stats)
+    assert out == {"reindexed": 6, "failed": 0}
+    pres = [e for e in recorded if e[0] == "pre"]
+    assert all(p[2] == threading.current_thread().name for p in pres), "both windows computed here"
+    assert stats["pipelined_windows"] == 0
+    assert stats["precompute"]["by_path"].get("pool_failed") == 1
+
+
+def test_a_window_read_ahead_is_fetched_again_when_applied(db, recorded, monkeypatch):
+    """The current window's commits expire the objects read ahead; they are fetched again in one query, so an article deleted in
+    between is simply absent rather than an error."""
+    from sqlalchemy import delete
+
+    ids = _seed(db, 6)
+    real_index = S.index_article
+    gone = {"done": False}
+
+    def _index(session, art, **kw):
+        if not gone["done"]:
+            gone["done"] = True
+            session.execute(delete(Article).where(Article.id == ids[4]))
+        return real_index(session, art, **kw)
+
+    monkeypatch.setattr(S, "index_article", _index)
+    stats: dict = {}
+    out = S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=4, stats=stats)
+    assert out == {"reindexed": 5, "failed": 0}
+    assert stats["absent"] == 1
+
+
+def test_an_interrupt_in_the_apply_is_not_held_by_the_window_computed_ahead(db, recorded, monkeypatch):
+    """The interrupt propagates at once; the window computed ahead ends on its own afterwards."""
+    ids = _seed(db, 6)
+
     def _boom(session, art, **kw):
         raise KeyboardInterrupt("an interrupt during the apply")
 
     monkeypatch.setattr(S, "index_article", _boom)
     with pytest.raises(KeyboardInterrupt):
         S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=4)
-    assert not [t for t in threading.enumerate() if t.name.startswith("oo-reindex-ahead")]
+    for t in [t for t in threading.enumerate() if t.name.startswith("oo-reindex-ahead")]:
+        t.join(10)
+        assert not t.is_alive()
+
+
+def test_without_a_serial_fallback_a_window_the_pool_would_not_take_raises():
+    """``serial_fallback=False`` never computes in this process: the caller is running it beside an apply."""
+    tasks = [(1, _TEXT, "t", "en", "en")]
+    with pytest.raises(RP.PoolUnavailable):
+        RP.precompute_batch(tasks, extractor=BaselineExtractor(), workers=0, serial_fallback=False)
+    assert set(RP.precompute_batch(tasks, extractor=BaselineExtractor(), workers=0)) == {1}
