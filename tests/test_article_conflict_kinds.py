@@ -51,10 +51,32 @@ def test_each_kind_is_counted_and_the_totals_stay_what_they_were(tmp_path):
     kinds = counts["_article_conflicts"]
     assert set(kinds) == set(ARTICLE_CONFLICT_KINDS)
     assert kinds == {"whitespace_only": 1, "local_changed": 1, "incoming_changed": 1,
-                     "both_changed": 1}
+                     "both_changed": 1, "unclassified": 0}
     assert sum(kinds.values()) == counts["articles"]["conflict"]
     # the sample is still taken, and the local rows are untouched
     assert {c["hash"] for c in counts["articles"]["conflicts"]} == {h[0], h[1], h[2], h[3]}
     by_hash = {r["hash"]: r["content"] for r in _article_rows(working)}
     assert by_hash[h[1]] == "one two three EDITED" and by_hash[h[0]] == "alpha beta gamma"
 
+
+
+def test_a_body_that_is_not_text_is_counted_and_never_aborts_the_merge(tmp_path):
+    """A BLOB body, or one that is not valid UTF-8, used to be counted in SQL only; the breakdown reads it in
+    Python, so it must decode with replacement rather than raise inside the merge transaction."""
+    import sqlite3
+
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    h = generate_content_hash("body text")
+    _build_corpus(working, [{"domain": "s.example"}], [_art(0, "body text"), _art(1, "other body")])
+    _build_corpus(staged, [{"domain": "s.example"}], [_art(0, "body text"), _art(1, "other body")])
+    con = sqlite3.connect(staged)
+    con.execute("UPDATE articles SET content = ? WHERE hash = ?", (b"body\xff text", h))
+    con.execute("UPDATE articles SET content = CAST(? AS TEXT) WHERE hash = ?",
+                (b"other \xfe body", generate_content_hash("other body")))
+    con.commit()
+    con.close()
+
+    counts, _ = merge_corpus(staged, working, _BATCH_META)
+
+    assert counts["articles"]["conflict"] == 2
+    assert sum(counts["_article_conflicts"].values()) == 2

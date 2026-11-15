@@ -27,7 +27,9 @@ there and is out of scope for this local-first build.
 
 from __future__ import annotations
 
+import os
 import sqlite3
+from contextlib import suppress
 from pathlib import Path
 
 from src.monitoring.secret_scrub import record_text
@@ -101,6 +103,45 @@ def backup_to(dest: Path) -> Path:
     return snapshot_to_plaintext(src, Path(dest))
 
 
+#: The memory map the validation walk asks for. The stdlib driver caps it at 2 GiB whatever is asked; the cap is the
+#: point of asking a fixed figure rather than the file size.
+_VALIDATE_MMAP_BYTES = 2**31 - 2**16
+
+#: One sequential read of the staged file is done in pieces of this size.
+_WARM_CHUNK = 8 * 2**20
+
+
+def _validate_warm_enabled() -> bool:
+    return os.getenv("OO_VALIDATE_WARM", "1") != "0"
+
+
+def _warm_sequentially(path: Path) -> None:
+    """Read ``path`` front to back once, so the page walk that follows finds it in the OS cache.
+
+    ``PRAGMA quick_check`` visits a large file in b-tree order, which on disk is close to random: the field run
+    (2026-11-15, a 10.7 GB staged file on a 7.9 GB machine) read 41 GB in 32 minutes for it. Measured in a
+    sandbox at the same file-to-memory ratio (a 4.06 GB file, the process held to 3 GB of memory, reads held to
+    150 MB/s and 1,500 operations a second): the plain walk took 660 s, a memory map alone 342 s, this read
+    plus the memory map 63 s (27 s of it this read). It changes WHAT IS READ FIRST, never what is checked: the
+    same ``quick_check`` runs on the same file, read-only. Best-effort: a failure here leaves the walk as it
+    was. ``OO_VALIDATE_WARM=0`` turns both off. It does push other files out of the OS cache, which is why it
+    runs only here, on the import's own staged copy."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    except OSError:
+        return
+    try:
+        if hasattr(os, "posix_fadvise"):
+            with suppress(OSError):
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_SEQUENTIAL)
+        while os.read(fd, _WARM_CHUNK):
+            pass
+    except OSError:
+        return
+    finally:
+        os.close(fd)
+
+
 def validate_sqlite_file(path: Path) -> int:
     """Validate ``path`` is a healthy Open Omniscience SQLite DB.
 
@@ -127,6 +168,11 @@ def validate_sqlite_file(path: Path) -> int:
     except sqlite3.Error as exc:  # pragma: no cover - defensive
         raise BackupError(f"cannot open uploaded file as SQLite: {record_text(exc)}") from None
     try:
+        if _validate_warm_enabled():
+            # Same check, read in a cheaper order (P1.3, measured 2026-11-15): see _warm_sequentially.
+            _warm_sequentially(path)
+            with suppress(sqlite3.Error):
+                conn.execute(f"PRAGMA mmap_size={_VALIDATE_MMAP_BYTES}")
         check = conn.execute("PRAGMA quick_check").fetchone()
         if not check or check[0] != "ok":
             raise BackupError(f"integrity check failed: {check[0] if check else 'unknown'}")

@@ -146,3 +146,44 @@ def test_no_module_builds_a_read_only_uri_by_hand() -> None:
         if pattern.search(line)
     ]
     assert not hits, f"build the URI with src.database.read_only_uri.read_only_uri: {hits}"
+
+
+def test_the_validation_walk_reads_the_file_first_and_still_checks_it(tmp_path, monkeypatch):
+    """P1.3: the staged file is read once in order and mapped before ``quick_check``; the check itself is
+    unchanged, a bad file still fails, and ``OO_VALIDATE_WARM=0`` skips the read."""
+    import sqlite3
+
+    from src.backup import sqlite_backup
+    from src.backup.sqlite_backup import BackupError, validate_sqlite_file
+
+    db = tmp_path / "ok.db"
+    con = sqlite3.connect(db)
+    con.executescript("CREATE TABLE sources(id INTEGER PRIMARY KEY); CREATE TABLE articles(id INTEGER PRIMARY KEY);")
+    con.commit()
+    con.close()
+    seen: list = []
+    real = sqlite_backup._warm_sequentially
+    monkeypatch.setattr(sqlite_backup, "_warm_sequentially", lambda p: (seen.append(p), real(p)))
+    assert validate_sqlite_file(db) == 2
+    assert seen == [db]
+
+    monkeypatch.setenv("OO_VALIDATE_WARM", "0")
+    seen.clear()
+    assert validate_sqlite_file(db) == 2
+    assert seen == []
+
+    monkeypatch.delenv("OO_VALIDATE_WARM")
+    bad = tmp_path / "bad.db"
+    raw = bytearray(db.read_bytes())
+    raw[100:4096] = b"\xff" * (4096 - 100)  # wreck the first page's b-tree header
+    bad.write_bytes(bytes(raw))
+    import pytest
+
+    with pytest.raises(BackupError):
+        validate_sqlite_file(bad)
+
+
+def test_warming_a_missing_file_is_silent(tmp_path):
+    from src.backup.sqlite_backup import _warm_sequentially
+
+    _warm_sequentially(tmp_path / "absent.db")  # no exception: best-effort

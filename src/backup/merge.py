@@ -3960,7 +3960,9 @@ def _adopt_article_metadata(con) -> dict:
 #:     lines another way). Harmless; the local copy is kept as always.
 #:   * ``local_changed`` / ``incoming_changed`` / ``both_changed``: that side's body no longer hashes to the
 #:     stored hash, so it was rewritten after it was stored (an in-place cleanup or re-extraction).
-ARTICLE_CONFLICT_KINDS = ("whitespace_only", "local_changed", "incoming_changed", "both_changed")
+#: ``unclassified`` is a pair the breakdown could not place (it is still a conflict). The labels assume one hash
+#: recipe across versions; a pair from a version that hashed differently would read as ``*_changed``.
+ARTICLE_CONFLICT_KINDS = ("whitespace_only", "local_changed", "incoming_changed", "both_changed", "unclassified")
 
 
 def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
@@ -3975,14 +3977,20 @@ def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
 
     kinds = dict.fromkeys(ARTICLE_CONFLICT_KINDS, 0)
     dup = conflict = 0
+    # The comparison is made ONCE per pair (the subquery), and a conflicting pair's values come back as BYTES: a body
+    # stored as a BLOB, or text that is not valid UTF-8, must be counted, never abort the merge on a decode.
     cur = con.execute(
-        "SELECT CASE WHEN m.content = i.content THEN 1 WHEN m.content <> i.content THEN 0 END,"
-        "       CASE WHEN m.content <> i.content THEN i.hash END,"
-        "       CASE WHEN m.content <> i.content THEN i.title END,"
-        "       CASE WHEN m.content <> i.content THEN m.content END,"
-        "       CASE WHEN m.content <> i.content THEN i.content END"
-        " FROM inc.articles i JOIN articles m ON m.hash = i.hash"
+        "SELECT same,"
+        "       CASE WHEN same = 0 THEN CAST(ahash AS BLOB) END, CASE WHEN same = 0 THEN CAST(title AS BLOB) END,"
+        "       CASE WHEN same = 0 THEN CAST(local AS BLOB) END, CASE WHEN same = 0 THEN CAST(incoming AS BLOB) END"
+        " FROM (SELECT CASE WHEN m.content = i.content THEN 1 WHEN m.content <> i.content THEN 0 END AS same,"
+        "              i.hash AS ahash, i.title AS title, m.content AS local, i.content AS incoming"
+        "       FROM inc.articles i JOIN articles m ON m.hash = i.hash)"
     )
+
+    def _text(v) -> str:
+        return v.decode("utf-8", "replace") if isinstance(v, (bytes, bytearray)) else ("" if v is None else str(v))
+
     try:
         for same, ahash, title, local, incoming in cur:
             if same == 1:
@@ -3991,15 +3999,24 @@ def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
             if same is None:
                 continue  # a NULL body (``content`` is NOT NULL in the schema): neither, as before
             conflict += 1
-            if len(samples) < _SAMPLE_LIMIT:
-                samples.append({"hash": ahash, "incoming_title": title, "kept": "local"})
-            if " ".join(local.split()) == " ".join(incoming.split()):
-                kinds["whitespace_only"] += 1
-                continue
-            loc_ok = generate_content_hash(local) == ahash
-            inc_ok = generate_content_hash(incoming) == ahash
-            kinds["both_changed" if not (loc_ok or inc_ok) else "local_changed" if not loc_ok
-                  else "incoming_changed" if not inc_ok else "whitespace_only"] += 1
+            try:
+                h = _text(ahash)
+                if len(samples) < _SAMPLE_LIMIT:
+                    samples.append({"hash": h, "incoming_title": _text(title), "kept": "local"})
+                loc, inc = _text(local), _text(incoming)
+                if " ".join(loc.split()) == " ".join(inc.split()):
+                    kinds["whitespace_only"] += 1
+                    continue
+                loc_ok = generate_content_hash(loc) == h
+                inc_ok = generate_content_hash(inc) == h
+                if loc_ok and inc_ok:
+                    kinds["unclassified"] += 1  # both hash right yet differ beyond whitespace: cannot happen short of a collision
+                elif not (loc_ok or inc_ok):
+                    kinds["both_changed"] += 1
+                else:
+                    kinds["local_changed" if not loc_ok else "incoming_changed"] += 1
+            except Exception:  # noqa: BLE001 - a diagnostic never aborts a merge; the conflict is still counted
+                kinds["unclassified"] += 1
     finally:
         cur.close()
     return dup, conflict, kinds
@@ -4493,6 +4510,8 @@ def _engine_mix(con, plan: dict, key: str, table: str) -> None:
     try:
         rows = _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine ORDER BY 2 DESC")  # noqa: S608  # nosec B608 # two module-local literal table names
     except Exception as exc:  # noqa: BLE001 - a diagnostic never stops a merge
+        if "interrupt" in str(exc).lower():
+            raise  # the operator's Stop (con.interrupt) is never swallowed by a diagnostic
         log_failure(_LOG, "could not count the incoming engine stamps", exc, level=logging.WARNING)
         return
     plan[key] = [[str(e), int(n)] for e, n in rows[:_ENGINE_MIX_TOP]]
