@@ -4,6 +4,9 @@
 Usage:
     python3 scripts/card_quality_report.py oo-field-cards-YYYYMMDD-HHMM.zip [--previous OLDER] [--out DIR]
 
+A file the button cut into numbered pieces (``...-part-001-of-003.zip``) can be given as any one of its pieces: the
+whole set is joined in memory, and a missing piece is named rather than guessed at.
+
 The input is what the Field data button saved (``oo-field-cards-*.zip``), the folder it was
 unzipped into, a deep card audit (``oo-card-audit-*.json``), or a Home cache
 (``briefing_cache.json``). ``--previous`` is the last loop round's input or its
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import io
 import json
 import sys
 import zipfile
@@ -46,7 +50,27 @@ def load_checks():
     return mod
 
 
+def _pieces():
+    """``src/monitoring/field_pieces.py`` loaded by path (stdlib only), like the checks."""
+    if "oo_field_pieces" in sys.modules:
+        return sys.modules["oo_field_pieces"]
+    spec = importlib.util.spec_from_file_location("oo_field_pieces", _HERE.parent / "src" / "monitoring" / "field_pieces.py")
+    if spec is None or spec.loader is None:
+        raise SystemExit("cannot load src/monitoring/field_pieces.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["oo_field_pieces"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _read_members(path: Path) -> dict[str, str]:
+    if _pieces().piece_of(path) is not None:   # one numbered piece: the whole set is joined in memory, or it says what is missing
+        try:
+            _name, data = _pieces().join_set(path)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            return {Path(n).name: z.read(n).decode("utf-8") for n in z.namelist() if n.endswith((".json", ".jsonl"))}
     if path.is_dir():
         return {p.name: p.read_text("utf-8") for p in path.iterdir() if p.is_file() and p.suffix in (".json", ".jsonl")}
     if zipfile.is_zipfile(path):

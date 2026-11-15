@@ -125,6 +125,11 @@ def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path,
     b = dict(a, language="en", evidence={"articles_stored": 7, "attempts": {"qualified": 1}})
     _zip(tmp_path / "one.zip", "aaaa1111", [a, {"domain": "old.example", "tags": []}])
     _zip(tmp_path / "two.zip", "bbbb2222", [b])
+    whole = (tmp_path / "two.zip").read_bytes()            # the button's 200 KB pieces: the set is joined in memory
+    (tmp_path / "two.zip").unlink()
+    cut = len(whole) // 2
+    (tmp_path / "oo-two-part-001-of-002.zip").write_bytes(whole[:cut])
+    (tmp_path / "oo-two-part-002-of-002.zip").write_bytes(whole[cut:])
     _zip(tmp_path / "again.zip", "aaaa1111", [a])          # a second press of the first instance counts once
     (tmp_path / "x-part-001-of-002.zip").write_bytes(b"PK\x03\x04 half a zip")   # a lone piece is reported, not fatal
     out = tmp_path / "out"
@@ -134,6 +139,8 @@ def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path,
     assert row["domain"] == "new.example" and row["instances_n"] == 2 and row["max_articles_stored"] == 40
     assert row["disagreement"] == ["language"] and row["proposal"] == "proposed" and row["already_shipped"] is False
     assert row["attempts"] == {"qualified": 3} and row["tags"] == {"news": 2}, "one count per instance, never per press"
-    assert rep["unreadable"] == ["x-part-001-of-002.zip: BadZipFile"]
+    assert rep["unreadable"] == ["x.zip: pieces 2 of 2 missing"], "an incomplete set is named, never guessed at"
     assert [r for r in rep["rows"] if r["domain"] == "old.example"][0]["already_shipped"] is True
+    docs, bad = psa.collect([tmp_path / "oo-two-part-001-of-002.zip", tmp_path / "oo-two-part-002-of-002.zip"])
+    assert len(docs) == 1 and not bad, "pieces named one by one (a shell glob) are one set, read once"
     assert "Proposed source additions" in (out / "proposed-sources.md").read_text(encoding="utf-8")

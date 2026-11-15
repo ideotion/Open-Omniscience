@@ -1,4 +1,4 @@
-"""TEMPORARY diagnostic: one random article per source in zips of at most 400 KB (2026-11-08; 400 KB since 2026-11-14).
+"""TEMPORARY diagnostic: one random article per source in zips of at most 200 KB (2026-11-08; 400 KB since 2026-11-14, 200 KB since 2026-11-15).
 
 Delete with the diagnostic. Driven on an in-memory database through the builder itself; the
 route's wiring is pinned by test_diagnostics_package_split.
