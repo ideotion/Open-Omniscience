@@ -136,8 +136,9 @@ def _warm_sequentially(path: Path) -> None:
         if hasattr(os, "posix_fadvise"):
             with suppress(OSError):
                 os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_SEQUENTIAL)
-        while os.read(fd, _WARM_CHUNK):
-            pass
+        while True:  # the guard-clause form keeps the back-edge inside the finally (src/utils/interrupts.py)
+            if not os.read(fd, _WARM_CHUNK):
+                break
     except OSError:
         return
     finally:
