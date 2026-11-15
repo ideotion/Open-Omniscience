@@ -555,6 +555,7 @@ class ImportQueueManager:
         can import backups locked with different passphrases while the common case is typed once. Every key is held in
         memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
         scrubbed from every record the run writes."""
+        self._refuse_wrong_backup_passphrases(items, passphrase)
         with self._lock:
             if self._state == "running" and self._thread is not None and self._thread.is_alive():
                 raise RuntimeError("An import is already running.")
@@ -650,6 +651,29 @@ class ImportQueueManager:
                 raise
             return self.status()
 
+    @staticmethod
+    def _refuse_wrong_backup_passphrases(items: list[dict], passphrase: str) -> None:
+        """Refuse the whole run, before anything starts, when a backup's passphrase is certainly wrong.
+
+        A run of many backups commits them in groups (``import_checkpoint_k``): one backup failing on a typo in its own
+        passphrase discards the work of the backups staged with it, which is many minutes per backup on a large import.
+        Checking every backup's key first costs well under a second each (one key derivation and one chunk; the volume
+        is hashed only when the chunk does not open). Only a CERTAIN answer refuses (``backup_passphrase_is_wrong``): a
+        set that cannot be read is left to the restore, which says what is wrong with it."""
+        from src.backup.stream_backup import backup_passphrase_is_wrong
+
+        wrong = [
+            str(raw.get("label") or Path(str(raw.get("path"))).name)
+            for raw in items or []
+            if raw.get("kind") == "corpus" and raw.get("path")
+            and backup_passphrase_is_wrong(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
+        ]
+        if wrong:
+            raise ValueError(
+                "Wrong passphrase for " + ", ".join(wrong) + ": the backup is intact but does not open with the "
+                "passphrase given. Nothing was started; correct it and import again."
+            )
+
     def stop(self) -> None:
         """Stop the run IMMEDIATELY (ruling item 15). The item in flight is cancelled
         through its own manager -- which, for a restore, aborts free and complete
@@ -681,6 +705,14 @@ class ImportQueueManager:
     # -- the run ------------------------------------------------------------ #
     @restore_marker.marked  # R712: an export refuses to start or resume while the queue runs
     def _run(self) -> None:
+        try:
+            self._run_with_keys()
+        finally:
+            # Whatever way the run ends, an error escaping it included, the keys go with it.
+            with self._lock:
+                self._drop_keys()
+
+    def _run_with_keys(self) -> None:
         # ONE exclusive window for the WHOLE queue (ruling item 10): collection goes
         # down once here and comes back up once at the end, instead of flapping
         # between every backup. The per-item restore's own pause nests inside this

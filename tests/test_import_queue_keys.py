@@ -173,3 +173,46 @@ def test_the_key_check_reads_one_chunk_of_a_many_chunk_file(tmp_path):
     enc1 = tmp_path / "s.ooenc"
     encrypt_file(small, enc1, "the right words")
     assert stream_key_opens(enc1, "the right words") is True
+
+
+def test_a_set_whose_passphrase_is_certainly_wrong_is_named_and_nothing_else_is(tmp_path):
+    from src.backup.stream_backup import STREAM_KIND, backup_passphrase_is_wrong
+
+    _vol, m = _one_volume(tmp_path, "the right words")
+    (tmp_path / "volumes.json").write_text(json.dumps({"kind": STREAM_KIND, **m}), encoding="utf-8")
+    assert backup_passphrase_is_wrong(tmp_path, "the wrong words") is True
+    assert backup_passphrase_is_wrong(tmp_path, "the right words") is False
+    assert backup_passphrase_is_wrong(tmp_path / "nowhere", "the wrong words") is False  # unreadable: no verdict
+
+
+def test_the_run_is_refused_before_anything_starts_when_one_backup_key_is_wrong(queue, monkeypatch, tmp_path):
+    """A typo in one backup's own passphrase must not cost the backups staged with it: the whole run is checked first."""
+    import src.backup.stream_backup as SB
+
+    seen: list[tuple[str, str]] = []
+
+    def wrong(path, key):
+        seen.append((path, key))
+        return path == "/b/2"
+
+    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", wrong)
+    with pytest.raises(ValueError, match="Wrong passphrase for two") as err:
+        queue.start(
+            [{"kind": "corpus", "path": "/b/1"}, {"kind": "corpus", "path": "/b/2", "label": "two", "passphrase": "typo words"}],
+            passphrase="shared backup words",
+        )
+    assert "typo words" not in str(err.value)
+    assert seen == [("/b/1", "shared backup words"), ("/b/2", "typo words")]
+    assert queue.status()["state"] == "idle" and queue._vols.calls == []
+    assert queue._secrets() == ()
+
+
+def test_keys_are_dropped_even_when_the_run_itself_raises(queue, monkeypatch):
+    def boom():
+        raise RuntimeError("the run fell over")
+
+    monkeypatch.setattr(queue, "_run_with_keys", boom)
+    queue._passphrase, queue._item_keys = "held words", {"0-corpus": ("own words", "")}
+    with pytest.raises(RuntimeError):
+        queue._run()
+    assert queue._secrets() == ()

@@ -2171,6 +2171,27 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
     )
 
 
+def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
+    """True only when ``src_dir`` is a volume set whose first volume is intact and does not open with ``passphrase``.
+
+    The import queue asks this of every backup before its run starts, so a typo in one backup's passphrase stops the run
+    before anything is merged, rather than failing that backup halfway through and discarding the work of the backups
+    staged with it. Anything this cannot read (no manifest, another kind of set, a damaged volume) answers False: the
+    restore itself reports those, exactly as before."""
+    src = Path(src_dir)
+    try:
+        m = load_manifest(src)
+        if m.get("kind") != STREAM_KIND:
+            return False
+        _require_safe_manifest_names(m)
+        _refuse_a_wrong_backup_passphrase(src, m, passphrase)
+    except EncryptionError:
+        return True
+    except Exception:  # noqa: BLE001 - no verdict: the restore reads the set itself and says what is wrong with it
+        return False
+    return False
+
+
 def read_stream_backup(
     src_dir: Path | str,
     passphrase: str,

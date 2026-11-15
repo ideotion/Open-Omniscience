@@ -1121,6 +1121,7 @@
       const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
       _uxImKeyRows([], [], (x) => x);  // a reopen is a fresh page: no other backup's passphrase fields linger
+      for (const id of ["ux-imp-pass", "ux-imp-corpus-pass"]) { const el = document.getElementById(id); if (el) el.value = ""; }
       document.getElementById("ux-imp-run").disabled = true;
       // ...and the scan's OTHER two parts (2026-09-27 re-walk, I-5). Only a scan sets the
       // trust row, so it stayed up -- a trust statement and its caveat under an empty
