@@ -3952,6 +3952,59 @@ def _adopt_article_metadata(con) -> dict:
     return {"articles_enriched": rows, "by_column": by_group}
 
 
+#: What the article conflict breakdown counts (field 2026-11-15: many "conflicting" articles between backups
+#: made by the operator's own instances). ``Article.hash`` is SHA-256 of the body with its whitespace collapsed
+#: (``generate_content_hash``), so two rows sharing a hash with different bytes can differ in three ways only,
+#: and each points somewhere different:
+#:   * ``whitespace_only``: the bodies are the same text laid out differently (an extractor version that joins
+#:     lines another way). Harmless; the local copy is kept as always.
+#:   * ``local_changed`` / ``incoming_changed`` / ``both_changed``: that side's body no longer hashes to the
+#:     stored hash, so it was rewritten after it was stored (an in-place cleanup or re-extraction).
+ARTICLE_CONFLICT_KINDS = ("whitespace_only", "local_changed", "incoming_changed", "both_changed")
+
+
+def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
+    """``(duplicates, conflicts, breakdown)`` for the incoming articles whose hash this corpus already holds.
+
+    ONE pass over the hash join, as before (import-speed fix 2026-07-30: each pass drags every matched pair's
+    full text through the SQLCipher codec). The equality test stays in SQL, so a duplicate pair hands Python
+    one small integer; only a conflicting pair's two bodies come back, to be classified. The sample of
+    conflicting hashes is taken in the same pass: it used to be a second join with ``LIMIT``, which on a backup
+    with fewer conflicts than the limit read every matched pair's text a second time to find out."""
+    from src.utils.url_utils import generate_content_hash
+
+    kinds = dict.fromkeys(ARTICLE_CONFLICT_KINDS, 0)
+    dup = conflict = 0
+    cur = con.execute(
+        "SELECT CASE WHEN m.content = i.content THEN 1 WHEN m.content <> i.content THEN 0 END,"
+        "       CASE WHEN m.content <> i.content THEN i.hash END,"
+        "       CASE WHEN m.content <> i.content THEN i.title END,"
+        "       CASE WHEN m.content <> i.content THEN m.content END,"
+        "       CASE WHEN m.content <> i.content THEN i.content END"
+        " FROM inc.articles i JOIN articles m ON m.hash = i.hash"
+    )
+    try:
+        for same, ahash, title, local, incoming in cur:
+            if same == 1:
+                dup += 1
+                continue
+            if same is None:
+                continue  # a NULL body (``content`` is NOT NULL in the schema): neither, as before
+            conflict += 1
+            if len(samples) < _SAMPLE_LIMIT:
+                samples.append({"hash": ahash, "incoming_title": title, "kept": "local"})
+            if " ".join(local.split()) == " ".join(incoming.split()):
+                kinds["whitespace_only"] += 1
+                continue
+            loc_ok = generate_content_hash(local) == ahash
+            inc_ok = generate_content_hash(incoming) == ahash
+            kinds["both_changed" if not (loc_ok or inc_ok) else "local_changed" if not loc_ok
+                  else "incoming_changed" if not inc_ok else "whitespace_only"] += 1
+    finally:
+        cur.close()
+    return dup, conflict, kinds
+
+
 def _merge_articles(con, batch_id, results) -> None:
     r = DomainResult()
     _ensure_carry_tables(con)  # an empty plan when the plan step did not run: carry nothing
@@ -3968,19 +4021,8 @@ def _merge_articles(con, batch_id, results) -> None:
     # pair once and is arithmetically identical, NULL content included: a NULL comparison
     # is neither TRUE nor FALSE, so it counted in neither COUNT before and takes the ELSE
     # in both CASEs now.
-    row = _q(
-        con,
-        "SELECT COALESCE(SUM(CASE WHEN m.content = i.content THEN 1 ELSE 0 END), 0),"
-        "       COALESCE(SUM(CASE WHEN m.content <> i.content THEN 1 ELSE 0 END), 0)"
-        " FROM inc.articles i JOIN articles m ON m.hash = i.hash",
-    )[0]
-    r.duplicate, r.conflict = int(row[0]), int(row[1])
-    for row in _q(
-        con,
-        "SELECT i.hash, i.title FROM inc.articles i JOIN articles m ON m.hash = i.hash"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        f" WHERE m.content <> i.content LIMIT {_SAMPLE_LIMIT}",
-    ):
-        r.conflicts.append({"hash": row[0], "incoming_title": row[1], "kept": "local"})
+    r.duplicate, r.conflict, kinds = _tally_article_overlap(con, r.conflicts)
+    results["_article_conflicts"] = kinds
     r.new = _insert_tracked(
         con, batch_id, "articles",
         "INSERT INTO main.articles (url, canonical_url, source_id, title, content,"  # nosec B608 # every fragment is a literal; _WINDOW_MARK is a module constant replaced by a bound-parameter clause, never input
@@ -4440,6 +4482,25 @@ def _stamped_candidates(con, kw_engine: str, www_engine: str | None) -> Iterator
         yield aid, by_half.get(0), by_half.get(1)
 
 
+#: How many distinct incoming engine stamps the carry report lists by name (the rest are summed).
+_ENGINE_MIX_TOP = 10
+
+
+def _engine_mix(con, plan: dict, key: str, table: str) -> None:
+    """``plan[key]``: ``[[stamp, articles], ...]`` for the incoming ``table``, largest first, at most
+    :data:`_ENGINE_MIX_TOP` named, the remainder in ``plan[key + "_other"]``. A stamp is an opaque hash of
+    the engine, never text from an article. Best-effort: a read that fails leaves the key out."""
+    try:
+        rows = _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine ORDER BY 2 DESC")  # noqa: S608  # nosec B608 # two module-local literal table names
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never stops a merge
+        log_failure(_LOG, "could not count the incoming engine stamps", exc, level=logging.WARNING)
+        return
+    plan[key] = [[str(e), int(n)] for e, n in rows[:_ENGINE_MIX_TOP]]
+    other = sum(int(n) for _, n in rows[_ENGINE_MIX_TOP:])
+    if other:
+        plan[key + "_other"] = other
+
+
 def _plan_derived_carry(con, batch_id, results) -> None:
     """Decide which incoming articles' derived rows can be CARRIED (R24).
 
@@ -4502,6 +4563,11 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         plan["reason"] = "this machine's engine identity could not be computed"
         return
     plan["engine"] = local
+    # Which engines the backup's articles were stamped by (field 2026-11-15: five stamps, none this machine's). Counts per
+    # opaque stamp, the ten largest; read before any refusal below so every report that got this far says it.
+    _engine_mix(con, plan, "incoming_engines", "article_index_stamps")
+    if _inc_has_table(con, "article_www_stamps"):
+        _engine_mix(con, plan, "incoming_www_engines", "article_www_stamps")
     # Every carry statement reaches the incoming rows of ONE article through an index led
     # by article_id (the join order is pinned; see the write loop). A backup without one
     # -- taken while a bulk build had its indexes dropped, or damaged -- would turn each
