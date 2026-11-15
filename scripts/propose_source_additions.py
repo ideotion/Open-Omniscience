@@ -20,13 +20,15 @@ robots and terms), and only a reviewed pull request adds it to a catalogue under
 USAGE
     python scripts/propose_source_additions.py FILE_OR_FOLDER [...] --out DIR
 
-A file is a candidate-sources zip (join numbered pieces first: ``cat name-part-*.zip > name.zip``) or the candidates.json
-inside one. A folder is searched for both. Stdlib only, plus the repo's catalogue reader when it can be imported.
+A file is a candidate-sources zip, any one of its numbered pieces (``...-part-001-of-003.zip``: the whole set is joined
+in memory, and a set with a missing piece is reported, never guessed at), or the candidates.json inside one. A folder is searched for both. Stdlib only, plus the repo's catalogue reader when it can be imported.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import io
 import json
 import sys
 import zipfile
@@ -42,34 +44,58 @@ def _doc(raw: bytes | str) -> dict[str, Any] | None:
     return doc if isinstance(doc, dict) and isinstance(doc.get("candidates"), list) else None
 
 
+def _pieces():
+    """``src/monitoring/field_pieces.py`` loaded by path (stdlib only)."""
+    if "oo_field_pieces" in sys.modules:
+        return sys.modules["oo_field_pieces"]
+    spec = importlib.util.spec_from_file_location("oo_field_pieces", ROOT / "src" / "monitoring" / "field_pieces.py")
+    if spec is None or spec.loader is None:
+        raise SystemExit("cannot load src/monitoring/field_pieces.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["oo_field_pieces"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _load(path: Path) -> list[tuple[str, dict[str, Any]]]:
-    """``(instance tag, candidates document)`` pairs read from one zip or json file; an unreadable file raises."""
+    """``(instance tag, candidates document)`` pairs read from one zip, numbered piece set or json file; an unreadable
+    file or an incomplete piece set raises."""
+    if _pieces().piece_of(path) is not None:
+        joined, data = _pieces().join_set(path)
+        return _from_zip(zipfile.ZipFile(io.BytesIO(data)), Path(joined).name)
     if path.suffix == ".zip":
-        with zipfile.ZipFile(path) as z:
-            names = set(z.namelist())
-            if "candidates.json" not in names:
-                return []
-            doc = _doc(z.read("candidates.json"))
-            man = json.loads(z.read("manifest.json")) if "manifest.json" in names else {}
-        return [(str(man.get("instance") or path.name), doc)] if doc else []
+        return _from_zip(zipfile.ZipFile(path), path.name)
     doc = _doc(path.read_text(encoding="utf-8"))
     sibling = path.with_name("manifest.json")   # an extracted zip: its manifest names the instance
     man = json.loads(sibling.read_text(encoding="utf-8")) if sibling.is_file() else {}
     return [(str(man.get("instance") or path.parent.name or path.name), doc)] if doc else []
 
 
+def _from_zip(zf: zipfile.ZipFile, label: str) -> list[tuple[str, dict[str, Any]]]:
+    with zf as z:
+        names = set(z.namelist())
+        if "candidates.json" not in names:
+            return []
+        doc = _doc(z.read("candidates.json"))
+        man = json.loads(z.read("manifest.json")) if "manifest.json" in names else {}
+    return [(str(man.get("instance") or label), doc)] if doc else []
+
+
 def collect(inputs: list[Path]) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
-    """Every readable candidates document, and the files that could not be read (a lone numbered piece, a damaged zip),
+    """Every readable candidates document, and the files that could not be read (a piece set with a piece missing, a damaged zip),
     which are reported and never stop the run."""
     out: list[tuple[str, dict[str, Any]]] = []
     unreadable: list[str] = []
     for p in inputs:
-        files = sorted(p.rglob("*.zip")) + sorted(p.rglob("candidates.json")) if p.is_dir() else [p]
-        for f in files:
+        found = sorted(p.rglob("*.zip")) + sorted(p.rglob("candidates.json")) if p.is_dir() else [p]
+        sets, plain = _pieces().sets_in(found)   # one read per numbered piece set, not one per piece
+        for f in plain + list(sets.values()):
             try:
                 out += _load(f)
             except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError) as exc:
                 unreadable.append(f"{f.name}: {type(exc).__name__}")
+            except ValueError as exc:   # an incomplete numbered piece set: names the missing pieces
+                unreadable.append(str(exc))
     return out, unreadable
 
 

@@ -3146,7 +3146,7 @@
     const FIELD_DATA_EXPORTS = [
       // Sources and articles: the per-source quality bundle (counts, keyword fingerprints, a bounded
       // text sample; private newsletter bodies stay gated), then one stored article per source as
-      // zips of at most 400 KB, walked by the server's cursor header.
+      // zips of at most 200 KB, walked by the server's cursor header.
       {kind: "file", url: "/api/diagnostics/source-quality?download=1", name: "oo-field-{press}-source-quality.zip"},
       {kind: "cursor", url: "/api/diagnostics/source-samples?after=", next: "X-Source-Samples-Next", name: "oo-field-{press}-source-samples-{n}.zip"},
       // Cards (Lane X, 2026-11-14): every Home card as served, its evidence and the card quality checks, one zip.
@@ -3159,9 +3159,9 @@
       {kind: "file", method: "POST", url: "/api/diagnostics/field-candidate-sources", name: "oo-field-{press}-candidate-sources.zip"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
-    // the parts would not upload; every part that did was under 175 KB). A larger file is cut into numbered byte
+    // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte
     // pieces, name-part-001-of-003.zip and so on, which join back by plain concatenation in that order.
-    const FIELD_PART_BYTES = 400 * 1000;
+    const FIELD_PART_BYTES = 200 * 1000;
     // Pieces are saved one at a time with a pause between them: a browser drops or prompts on downloads started in a
     // tight loop, and a lost piece cannot be joined. The number is padded to the width of the count, so a glob sorts them.
     async function _fieldSaveParts(blob, name, pause) {

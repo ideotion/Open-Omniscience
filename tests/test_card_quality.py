@@ -425,6 +425,16 @@ def test_the_script_reports_a_field_file_and_compares_two_rounds(tmp_path):
     assert "## Findings, ranked" in md and "`kind_never_seen`" in md and "Compared with the previous round" in md
     # the previous round may also be handed in as its own JSON report
     assert mod.main([str(second), "--previous", str(reports[0]), "--out", str(out)]) == 0
+    # the button's 200 KB pieces: any one piece stands for the joined set, and a missing piece is named
+    whole = second.read_bytes()
+    third = len(whole) // 3 + 1
+    pieces = [tmp_path / f"r3-part-{k:03d}-of-003.zip" for k in (1, 2, 3)]
+    for k, p in enumerate(pieces):
+        p.write_bytes(whole[k * third:(k + 1) * third])
+    assert mod.load_input(pieces[1])["cards"] == mod.load_input(second)["cards"]
+    pieces[2].unlink()
+    with pytest.raises(SystemExit, match="pieces 3 of 3 missing"):
+        mod.load_input(pieces[0])
 
 
 def test_template_words_do_not_make_two_cards_near_identical():

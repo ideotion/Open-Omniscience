@@ -53,13 +53,14 @@ from src.database.session import get_db
 from ._base import router
 
 #: The cap on one zip, the Field data button's FIELD_PART_BYTES. Each part is sent back by hand through a chat upload; on
-#: 2026-11-14 about half the parts would not upload, and every one that did was under 175 KB, so 400 KB (was 4 MB).
+#: 2026-11-14 about half the parts would not upload, and every one that did was under 175 KB, so 400 KB (was 4 MB); 200 KB since 2026-11-15 (maintainer: «the loop has to
+#: limit itself to 200kb files»).
 #: Margin below is held back for the central directory and the compressed manifest (its rows are counted as written).
-SAMPLE_ZIP_MAX_BYTES = 400 * 1000
-_RESERVE_BYTES = 40 * 1000
+SAMPLE_ZIP_MAX_BYTES = 200 * 1000
+_RESERVE_BYTES = 20 * 1000
 #: One article's text is cut here, in UTF-8 bytes (and marked), so a single huge page cannot push a zip past the cap: the
 #: first source of a part is always admitted, and its text compresses to well under this.
-_TEXT_MAX_BYTES = 200 * 1000
+_TEXT_MAX_BYTES = 100 * 1000
 #: Sources are read in batches of this many ids; one zip keeps reading batches until it is full or the set ends, so a long
 #: run of never-collected sources no longer makes a part of its own (the 2026-11-14 press made five such parts in a row).
 _BATCH = 5000
@@ -230,7 +231,7 @@ def source_samples(
     seed: int = Query(20261108),
     db: Session = Depends(get_db),
 ) -> Response:
-    """ONE zip (<= 400 KB) holding one randomly chosen article per source for the next run of sources
+    """ONE zip (<= 200 KB) holding one randomly chosen article per source for the next run of sources
     after ``after``; ``X-Source-Samples-Next`` carries the cursor for the next call (empty = done).
     Plain ``def`` -> threadpool. Read-only."""
     data, nxt, covered, total = build_sample_zip(
