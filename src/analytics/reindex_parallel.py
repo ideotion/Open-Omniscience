@@ -598,7 +598,7 @@ def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
             cur[0] = (t[0], t0, len(t[1] or ""), i)
             d = _compute_one(extractor, t[0], t[1], t[2], t[3], t[4])
             www_ctx = t[5] if len(t) > 5 else None
-            if www_ctx and d.error is None:
+            if www_ctx:  # an article whose keyword half failed is redone inline whole, so this result is then simply unused
                 # When/where/who OUTSIDE the write window, as the pool does. This path runs
                 # before ``index_article`` takes the gate, so the work leaves the gate rather
                 # than moving at equal cost (C16's reasoning, now true here too: the live
@@ -833,7 +833,8 @@ def precompute_batch(
             pool = None
         if not serial_fallback:
             _note("pool_failed", time.monotonic() - _t0)
-            raise PoolUnavailable("the pool failed; this caller computes the window itself") from exc
+            # ``from None``: the failure is already logged above, scrubbed; the caller only needs to know it happened.
+            raise PoolUnavailable("the pool failed; this caller computes the window itself") from None
         out_fb = _serial(tasks, extractor)
         # Charge the WHOLE window (the wasted pool attempt AND the serial redo) to the
         # fallback -- measured from _t0, before the pool was attempted. That total is
