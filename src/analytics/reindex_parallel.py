@@ -531,11 +531,10 @@ def _compute_one(
     try:
         terms = extractor.extract(content or "", title=title or "", language=language or "en")
         score, label = score_article(content, sentiment_lang)
-        # DELIBERATELY NOT precomputed on the serial path. Serial means "one core",
-        # which is the situation pooled WWW exists to escape; doing it here would
-        # move the same work from one place to another at identical cost, and the
-        # caller's inline path already handles www=None correctly. Keeping it out
-        # also keeps this function the byte-identical reference the fallback needs.
+        # ``www`` is left to the CALLER of this function: ``_serial`` adds it when the
+        # task carries a context, ``compute_derivatives_with_www`` for the collector.
+        # Keeping it out keeps this function the byte-identical reference for terms and
+        # sentiment, and ``www=None`` still means "extract inline" downstream.
         return ArticleDerivatives(article_id, terms, score, label)
     except Exception as exc:  # noqa: BLE001 - one bad article's precompute must not abort the batch
         log_failure(_LOG, f"precompute failed for article {article_id}", exc, level=logging.WARNING)
@@ -592,7 +591,18 @@ def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
         for i, t in enumerate(tasks, 1):
             t0 = time.monotonic()
             cur[0] = (t[0], t0, len(t[1] or ""), i)
-            out[t[0]] = _compute_one(extractor, t[0], t[1], t[2], t[3], t[4])
+            d = _compute_one(extractor, t[0], t[1], t[2], t[3], t[4])
+            www_ctx = t[5] if len(t) > 5 else None
+            if www_ctx and d.error is None:
+                # When/where/who OUTSIDE the write window, as the pool does. This path runs
+                # before ``index_article`` takes the gate, so the work leaves the gate rather
+                # than moving at equal cost (C16's reasoning, now true here too: the live
+                # re-index rate measured 2026-11-15 spent ~37% of each window extracting
+                # inline under the gate). Dates take the article's own language, the fourth
+                # slot (R697), exactly as ``_worker_compute``.
+                date_language = www_ctx[3] if len(www_ctx) > 3 else None
+                d.www = _extract_www(t[1], date_language, www_ctx)
+            out[t[0]] = d
             cur[0] = None
             took = time.monotonic() - t0
             if took >= _SLOW_ARTICLE_WARN_S:
@@ -657,6 +667,18 @@ def compute_derivatives_with_www(
     return d
 
 
+def uses_pool(n_tasks: int, *, extractor, workers: int | None = None) -> bool:
+    """Whether :func:`precompute_batch` would hand ``n_tasks`` tasks to the process pool (before any fallback).
+
+    The ONE answer to that question, so a caller that plans around it (the re-index pipelines the next window's precompute only
+    when the work runs in other processes) cannot drift from the function that decides it."""
+    return (
+        worker_count(workers) > 1
+        and n_tasks >= _MIN_PARALLEL_BATCH
+        and getattr(extractor, "name", None) in _RECONSTRUCTIBLE_EXTRACTORS
+    )
+
+
 def precompute_batch(
     tasks: Sequence[Task],
     *,
@@ -695,17 +717,13 @@ def precompute_batch(
         by[path] = by.get(path, 0) + 1
 
     n_workers = worker_count(workers)
-    extractor_name = getattr(extractor, "name", None)
-    if (
-        n_workers <= 1
-        or len(tasks) < _MIN_PARALLEL_BATCH
-        or extractor_name not in _RECONSTRUCTIBLE_EXTRACTORS
-    ):
+    if not uses_pool(len(tasks), extractor=extractor, workers=workers):
         _t0 = time.monotonic()
         out_serial = _serial(tasks, extractor)
         _note("serial", time.monotonic() - _t0)
         return out_serial
 
+    extractor_name = getattr(extractor, "name", None)
     gazetteer = getattr(extractor, "gazetteer", None)
     n_workers = min(n_workers, len(tasks))
     chunksize = max(1, len(tasks) // (n_workers * 4))

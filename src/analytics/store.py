@@ -1692,6 +1692,7 @@ def _reindex_articles_impl(
 
     _pre_stats: dict = {}
     _load_s = _pre_s = _apply_s = 0.0
+    _pre_wait_s = 0.0  # seconds this thread actually waited for a precompute
     # apply_s is the serial 94% of a re-index (field logs 2026-07-31: 758 s of an
     # 806 s run) and, like prepare_staged before it, was ONE opaque number. It is
     # two unrelated costs: staging each article (keyword lookups, mention rows,
@@ -1703,19 +1704,9 @@ def _reindex_articles_impl(
     # function, beside ``reindexed``/``failed`` — see the note there.)
     _t_all = time.monotonic()
 
-    for w_start in range(0, len(article_ids), _PRECOMPUTE_WINDOW):
-        # Cooperative stop (field ruling 2026-07-29 item 15): a POST-SWAP import
-        # Stop must be able to reach the re-index, which is by far the longest
-        # remaining phase -- a Stop that could not would be a button that does
-        # nothing for hours. Checked at the WINDOW boundary, which is the one
-        # place with no accumulated-but-uncommitted work: the previous window's
-        # _apply_window has already flushed, so nothing a batch-mate contributed
-        # can be lost here (the standing mid-batch-rollback-discards-siblings
-        # lesson). Returning early leaves done < total, so the caller does NOT
-        # stamp the batch complete and its durable cursor resumes exactly here.
-        if should_stop is not None and should_stop():
-            break
-        window_ids = article_ids[w_start : w_start + _PRECOMPUTE_WINDOW]
+    def _load_window(window_ids: list[int]) -> tuple[list[Article], list[Task], dict[int, str]]:
+        """Read one window's articles and build its tasks. ALWAYS on the calling thread: it uses the session."""
+        nonlocal absent, _load_s
         articles: list[Article] = []
         _t0 = time.monotonic()
         # ONE query per chunk instead of one per article. ``session.get`` is a PK
@@ -1747,7 +1738,7 @@ def _reindex_articles_impl(
         absent += len(window_ids) - len(articles)
         _load_s += time.monotonic() - _t0
         if not articles:
-            continue
+            return articles, [], {}
 
         # Precompute (parallel when it's worth it; always falls back to serial
         # in-process on any pool trouble -- see reindex_parallel's docstring).
@@ -1796,13 +1787,85 @@ def _reindex_articles_impl(
             content_by_id[art.id] = body
         _load_s += time.monotonic() - _t0
 
-        _t0 = time.monotonic()
-        derivs = precompute_batch(tasks, extractor=extractor, workers=workers, stats=_pre_stats)
-        _pre_s += time.monotonic() - _t0
+        return articles, tasks, content_by_id
 
-        _t0 = time.monotonic()
-        _apply_window(articles, derivs, content_by_id)
-        _apply_s += time.monotonic() - _t0
+    def _precompute(tasks: list[Task]) -> tuple[dict[int, ArticleDerivatives], float]:
+        _t = time.monotonic()
+        out = precompute_batch(tasks, extractor=extractor, workers=workers, stats=_pre_stats)
+        return out, time.monotonic() - _t
+
+    # PIPELINED PRECOMPUTE (R723, 2026-11-15). The loop was strictly load -> precompute -> apply, so the pool sat idle for the
+    # whole apply and the writer sat idle for the whole precompute. When the next window's precompute runs in the POOL, it is
+    # started before this window is applied, in a helper thread that only waits on the worker processes, and the apply runs
+    # meanwhile. Only then: a serial precompute would run in this process, take the GIL from an apply that holds the write gate,
+    # and lengthen every hold the collector waits behind. Loading stays here, on the session's own thread, and windows are still
+    # APPLIED strictly in order, so the resume cursor's count-to-id mapping is unchanged. At most one window is ahead.
+    # OO_REINDEX_PIPELINE=0 switches it off.
+    import os as _os
+    from concurrent.futures import Future, ThreadPoolExecutor
+
+    from src.analytics.reindex_parallel import uses_pool
+
+    _pipeline_on = _os.getenv("OO_REINDEX_PIPELINE", "1").strip() != "0"
+    _windows = [article_ids[w : w + _PRECOMPUTE_WINDOW] for w in range(0, len(article_ids), _PRECOMPUTE_WINDOW)]
+    # The next window, already loaded, and its precompute when one was started ahead: (articles, tasks, content_by_id, future|None).
+    _ahead: tuple[list[Article], list[Task], dict[int, str], Future | None] | None = None
+    _ahead_pool: ThreadPoolExecutor | None = None
+    _pipelined_windows = 0
+    try:
+        for _wi, window_ids in enumerate(_windows):
+            # Cooperative stop (field ruling 2026-07-29 item 15): a POST-SWAP import
+            # Stop must be able to reach the re-index, which is by far the longest
+            # remaining phase -- a Stop that could not would be a button that does
+            # nothing for hours. Checked at the WINDOW boundary, which is the one
+            # place with no accumulated-but-uncommitted work: the previous window's
+            # _apply_window has already flushed, so nothing a batch-mate contributed
+            # can be lost here (the standing mid-batch-rollback-discards-siblings
+            # lesson). Returning early leaves done < total, so the caller does NOT
+            # stamp the batch complete and its durable cursor resumes exactly here.
+            # A window loaded ahead may have its precompute in flight; a stop simply leaves it, and the ``finally`` waits for it.
+            if should_stop is not None and should_stop():
+                break
+            if _ahead is not None:
+                articles, tasks, content_by_id, _fut = _ahead
+                _ahead = None
+            else:
+                articles, tasks, content_by_id = _load_window(window_ids)
+                _fut = None
+            if not articles:
+                continue
+
+            # Precompute (parallel when it's worth it; always falls back to serial in-process on any pool trouble -- see
+            # reindex_parallel's docstring). ``content_by_id`` is kept so the DB-apply pass reuses the already-decompressed text.
+            # A window started ahead counts the seconds it RAN, not the seconds this thread waited for it: with the overlap,
+            # precompute_s + apply_s may exceed wall_s, and ``pipelined_windows`` says how often.
+            _t0 = time.monotonic()
+            if _fut is not None:
+                derivs, _secs = _fut.result()
+            else:
+                derivs, _secs = _precompute(tasks)
+            _pre_s += _secs
+            _pre_wait_s += time.monotonic() - _t0
+
+            # Start the NEXT window before applying this one, when its precompute will run in the pool.
+            if _pipeline_on and _wi + 1 < len(_windows):
+                n_art, n_tasks, n_content = _load_window(_windows[_wi + 1])
+                _n_fut = None
+                if n_art and uses_pool(len(n_tasks), extractor=extractor, workers=workers):
+                    if _ahead_pool is None:
+                        _ahead_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oo-reindex-ahead")
+                    _n_fut = _ahead_pool.submit(_precompute, n_tasks)
+                    _pipelined_windows += 1
+                _ahead = (n_art, n_tasks, n_content, _n_fut)
+
+            _t0 = time.monotonic()
+            _apply_window(articles, derivs, content_by_id)
+            _apply_s += time.monotonic() - _t0
+    finally:
+        if _ahead_pool is not None:
+            # Waits for a window started ahead (a stop, or an exception in the apply): its pool is bounded by the pool timeout,
+            # and a helper left running past this function would race the next caller for the same worker processes.
+            _ahead_pool.shutdown(wait=True)
 
     # The END of the exclusive drain, which is where R22 says the reconcile belongs. The
     # marker closes ONLY on a sweep that reports `complete` -- a budgeted pass that
@@ -1823,6 +1886,10 @@ def _reindex_articles_impl(
             "wall_s": round(elapsed, 3),
             "load_s": round(_load_s, 3),
             "precompute_s": round(_pre_s, 3),
+            # R723: with the next window precomputed during this one's apply, the seconds the writer WAITED for a precompute,
+            # and how many windows were started ahead. precompute_s minus precompute_wait_s is the work the overlap hid.
+            "precompute_wait_s": round(_pre_wait_s, 3),
+            "pipelined_windows": _pipelined_windows,
             "apply_s": round(_apply_s, 3),
             # The split of apply_s. They do not sum to it: the remainder is the
             # per-article bookkeeping between them, and calling that out is the

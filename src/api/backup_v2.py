@@ -1108,7 +1108,13 @@ def reindex_backlog_status() -> dict:
 
 
 def _accumulate(
-    run: dict, st: dict, *, commit_batch: int | None, idle: bool, hold_target_s: float | None = None
+    run: dict,
+    st: dict,
+    *,
+    commit_batch: int | None,
+    idle: bool,
+    hold_target_s: float | None = None,
+    workers: int | None = None,
 ) -> None:
     """Fold ONE batch's ``reindex_articles`` stats into the run-level accumulator.
 
@@ -1155,6 +1161,12 @@ def _accumulate(
         run[k] = int(run.get(k, 0)) + int(st.get(k, 0) or 0)
     if st.get("longest_batch_s") is not None:
         run["longest_batch_s"] = max(float(run.get("longest_batch_s", 0.0)), float(st["longest_batch_s"]))
+    if workers is not None:
+        # R723: which worker counts produced these seconds, like the widths and targets. A precompute window smaller than the
+        # pool's floor still runs serially, which precompute_by_path says.
+        seen = set(run.get("workers_seen") or ())
+        seen.add(int(workers))
+        run["workers_seen"] = sorted(seen)
     if hold_target_s is not None:
         targets = set(run.get("hold_target_seen") or ())
         targets.add(float(hold_target_s))
@@ -1205,6 +1217,8 @@ def _drain_metrics(run: dict) -> dict | None:
         out["longest_batch_s"] = round(float(run["longest_batch_s"]), 3)
     if run.get("hold_target_seen"):
         out["hold_target_seen"] = list(run["hold_target_seen"])
+    if run.get("workers_seen"):
+        out["workers_seen"] = list(run["workers_seen"])
     if run.get("precompute_by_path"):
         out["precompute_by_path"] = dict(run["precompute_by_path"])
     wall = float(run.get("wall_s") or 0.0)
@@ -1229,11 +1243,13 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     """
     from src.analytics.corpus_epoch import bump_corpus_epoch
     from src.analytics.counter_deferral import is_deferral_open, open_deferral
+    from src.analytics.reindex_parallel import all_cores_worker_count, worker_count
     from src.analytics.store import finish_deferral
     from src.backup.merge import (
         default_reindex_commit_batch,
         import_reindex_commit_batch,
         reindex_backlog,
+        reindex_collecting_hold_target_s,
         reindex_flush_policy,
         reindex_hold_target_s,
         reindex_imported_articles,
@@ -1357,9 +1373,10 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     # for: collection off, then drain. Unknown is never idle: any failure to read the
     # scheduler answers False and the conservative default applies.
     #
-    # Workers are LEFT ALONE on purpose (audit §9.1 step 3). This machine is write-bound,
-    # not CPU-bound; adding cores to the precompute would only fill the apply queue
-    # faster, and the worker count is the knob whose effect the A/B still has to measure.
+    # WORKERS (R723, 2026-11-15, amending R21 for this drain only). They were left alone while the worker count was an open A/B
+    # question (audit §9.1 step 3); the field's live re-index rate answered it: the precompute, not the write, was most of each
+    # window. So an idle collector gets every core, as the restore's own re-index already does when it owns the machine, and a
+    # running one gets today's default. OO_REINDEX_WORKERS still outranks both (worker_count reads it first).
     def _collector_idle() -> bool:
         try:
             from src.scheduler.runner import get_scheduler
@@ -1455,9 +1472,21 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # PUBLISHED beside the seconds it produced, and the audit's own operator
             # step sets OO_REINDEX_COMMIT_BATCH=200 -- so a reporter that assumed the
             # default's default would print "1" for a run committing in 200s.
-            commit_batch = (
-                import_reindex_commit_batch() if idle else default_reindex_commit_batch()
-            )
+            # R724 (2026-11-15, amending R21 for this drain only): a running collector no longer means one article per commit. The
+            # batch takes the import's width too, bounded by a shorter hold target (2 s), and the collector still wins the gate: a
+            # queued writer ends the batch after 1 s, as for every writer. A collecting target of 0 (or a general one of 0) is
+            # the old rule, width from OO_REINDEX_COMMIT_BATCH and no policy. The wider of the two widths, so an operator who set
+            # OO_REINDEX_COMMIT_BATCH above 200 is never narrowed.
+            if idle:
+                hold_target = reindex_hold_target_s()
+                commit_batch = import_reindex_commit_batch()
+            else:
+                hold_target = reindex_collecting_hold_target_s()
+                commit_batch = (
+                    max(import_reindex_commit_batch(), default_reindex_commit_batch())
+                    if hold_target > 0 else default_reindex_commit_batch()
+                )
+            workers = all_cores_worker_count() if idle else None
             # Deferral rides the SAME exclusivity signal as the commit width: a batch
             # that is not exclusive keeps maintaining its counters inline, and the marker
             # (if an earlier batch opened one) simply stays open until the final
@@ -1467,7 +1496,6 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # has held the gate for the hold target or another writer is queued behind it, so a save from the UI never waits for
             # 200 articles. Resolved here, per batch, beside the width, for the same reason: the operator may change the knob
             # between batches, and the value used is PUBLISHED with the seconds it produced.
-            hold_target = reindex_hold_target_s()
             flush_policy = reindex_flush_policy(hold_target)
             st: dict = {}
             guard_stopped = {"stopped": False}
@@ -1475,6 +1503,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                 res = reindex_imported_articles(
                     bid,
                     commit_batch=commit_batch,
+                    workers=workers,
                     defer_counters=defer,
                     should_flush=flush_policy,
                     stats=st,
@@ -1504,7 +1533,11 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             )
             out["articles_reindexed"] += int(res.get("reindexed") or 0)
             out["articles_failed"] += int(res.get("failed") or 0)
-            _accumulate(run, st, commit_batch=commit_batch, idle=idle, hold_target_s=hold_target)
+            _accumulate(
+                run, st, commit_batch=commit_batch, idle=idle, hold_target_s=hold_target,
+                # The count that RAN, resolved the way precompute_batch resolves it (the env var first), never the request.
+                workers=worker_count(workers),
+            )
             ctx.set_metrics(_drain_metrics(run))
             if guard_stopped["stopped"]:
                 queue.insert(0, b)
