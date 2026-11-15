@@ -4507,14 +4507,12 @@ _ENGINE_MIX_TOP = 10
 def _engine_mix(con, plan: dict, key: str, table: str) -> None:
     """``plan[key]``: ``[[stamp, articles], ...]`` for the incoming ``table``, largest first, at most
     :data:`_ENGINE_MIX_TOP` named, the remainder in ``plan[key + "_other"]``. A stamp is an opaque hash of
-    the engine, never text from an article. Best-effort: a read that fails leaves the key out."""
-    try:
-        rows = _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine ORDER BY 2 DESC")  # noqa: S608  # nosec B608 # two module-local literal table names
-    except Exception as exc:  # noqa: BLE001 - a diagnostic never stops a merge
-        if "interrupt" in str(exc).lower():
-            raise  # the operator's Stop (con.interrupt) is never swallowed by a diagnostic
-        log_failure(_LOG, "could not count the incoming engine stamps", exc, level=logging.WARNING)
-        return
+    the engine, never text from an article. A table without an ``engine`` column leaves the key out."""
+    cols = {r[1] for r in _q(con, f"PRAGMA inc.table_info({table})")}  # nosec B608 # two module-local literal table names
+    if "engine" not in cols:
+        return  # a stamps table without its engine column: nothing to name
+    # No try: an error here (the operator's Stop included) is the merge's own, as for any other statement it runs.
+    rows = _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine ORDER BY 2 DESC")  # noqa: S608  # nosec B608 # two module-local literal table names
     plan[key] = [[str(e), int(n)] for e, n in rows[:_ENGINE_MIX_TOP]]
     other = sum(int(n) for _, n in rows[_ENGINE_MIX_TOP:])
     if other:
