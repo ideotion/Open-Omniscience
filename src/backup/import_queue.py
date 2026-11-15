@@ -958,7 +958,7 @@ class ImportQueueManager:
             from src.database.session import session_scope
 
             with session_scope() as session:
-                self._tuned = optimize_after_bulk(session)
+                self._tuned = optimize_after_bulk(session, should_stop=self._stop.is_set)
         except Exception as exc:  # noqa: BLE001 - tuning is never load-bearing
             log_failure(_LOG, "post-import tuning pass failed", exc, *self._secrets(), level=logging.WARNING)
         finally:

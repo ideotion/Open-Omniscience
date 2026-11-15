@@ -71,3 +71,52 @@ def test_optimize_after_bulk_is_best_effort_without_fts():
         out = optimize_after_bulk(s)
         assert out["fts"] is False  # graceful: no FTS table to optimize
         assert out["planner"] is True  # planner optimize needs no FTS
+
+
+def _segments(s) -> int:
+    from sqlalchemy import text as _t
+
+    return int(s.execute(_t("SELECT count(DISTINCT segid) FROM article_fts_idx")).scalar() or 0)
+
+
+def _many_segments(n_batches=30):
+    eng = _engine()
+    ensure_fts(eng)
+    Session = sessionmaker(bind=eng, future=True)
+    with Session() as s:
+        from sqlalchemy import text as _t
+
+        s.execute(_t("INSERT INTO article_fts(article_fts, rank) VALUES ('automerge', 0)"))
+        s.add(Source(name="S", domain="x.test"))
+        s.commit()
+        for b in range(n_batches):  # one commit per batch: one new segment each, automerge off
+            for i in range(5):
+                k = b * 5 + i
+                s.add(Article(url=f"u{k}", canonical_url=f"u{k}", source_id=1, title=f"T{k}",
+                              content=f"inflation report {k} word{k}", hash=f"h{k}", language="en"))
+            s.commit()
+    return Session
+
+
+def test_the_bounded_merge_reaches_one_segment_like_optimize():
+    """The 2026-11-15 change: steps of a negative-count 'merge' instead of one 'optimize' that held the writer gate
+    for half an hour on a field import. Same end state, one segment, and search unchanged."""
+    from src.database.fts import merge_fts_segments
+
+    Session = _many_segments()
+    with Session() as s:
+        assert _segments(s) > 1
+        assert merge_fts_segments(s, budget_s=60) is True
+        assert _segments(s) == 1
+        assert len(search_ids(s, "inflation") or []) == 150
+
+
+def test_the_bounded_merge_stops_when_asked_and_does_nothing_on_a_zero_budget():
+    from src.database.fts import merge_fts_segments
+
+    Session = _many_segments()
+    with Session() as s:
+        before = _segments(s)
+        assert merge_fts_segments(s, budget_s=0) is False
+        assert merge_fts_segments(s, budget_s=60, should_stop=lambda: True) is False
+        assert _segments(s) == before
