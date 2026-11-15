@@ -1120,6 +1120,8 @@
       document.getElementById("ux-imp-last").innerHTML = "";
       const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
+      _uxImKeyRows([], [], (x) => x);  // a reopen is a fresh page: no other backup's passphrase fields linger
+      for (const id of ["ux-imp-pass", "ux-imp-corpus-pass"]) { const el = document.getElementById(id); if (el) el.value = ""; }
       document.getElementById("ux-imp-run").disabled = true;
       // ...and the scan's OTHER two parts (2026-09-27 re-walk, I-5). Only a scan sets the
       // trust row, so it stayed up -- a trust statement and its caveat under an empty
@@ -1487,6 +1489,7 @@
         // A passphrase is needed for the encrypted corpus AND for legacy archives.
         const needsPass = corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0);
         document.getElementById("ux-imp-pass-row").style.display = needsPass ? "block" : "none";
+        _uxImKeyRows(corpus, f.legacy_backup || [], ltr);
         // The Q701-note toggle: offered only when this scan found something that CAN
         // carry a scraping history. `needsPass` is the same predicate for the same
         // reason -- a corpus or legacy archive -- but it is read separately here so a
@@ -1572,7 +1575,8 @@
       // The volume corpus is ALWAYS encrypted -> a passphrase is required. A legacy
       // single-file archive may be plaintext, so its passphrase is optional here;
       // an encrypted one with an empty/wrong passphrase fails loudly at the backend.
-      if (corpus.length && cb("ux-i-corpus") && !pass) {
+      const corpusPass = (document.getElementById("ux-imp-corpus-pass") || {}).value || "";
+      if (corpus.length && cb("ux-i-corpus") && !pass && corpus.some((c) => !_uxImOwnKeys(c.path).passphrase)) {
         toast(t("Enter the passphrase to restore the corpus."), "err"); return;
       }
       // Each volume set lives in its OWN folder (the scan returns the exact dir the
@@ -1585,10 +1589,10 @@
       // shown, so an unseen control can never speak for the operator.
       const trust = _uxImTrust();
       if (corpus.length && cb("ux-i-corpus")) {
-        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust });
+        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust, ..._uxImOwnKeys(c.path) });
       }
       if (legacy.length && cb("ux-i-legacy")) {
-        for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name, trust_fetch_history: trust });
+        for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name, trust_fetch_history: trust, ..._uxImOwnKeys(lg.path) });
       }
       if (blobRoots.length && cb("ux-i-blobs")) {
         for (const br of blobRoots) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: br.categories });
@@ -1635,7 +1639,7 @@
       const bgBtn = document.getElementById("ux-imp-bg");
       if (bgBtn) bgBtn.style.display = "";
       try {
-        await api("/api/backup/import-queue/start", { method: "POST", body: JSON.stringify({ items, passphrase: pass }) });
+        await api("/api/backup/import-queue/start", { method: "POST", body: JSON.stringify({ items, passphrase: pass, corpus_passphrase: corpusPass }) });
       } catch (e) {
         btn.disabled = false;
         if (bgBtn) bgBtn.style.display = "none";
@@ -1644,6 +1648,48 @@
       }
       if (progEl) progEl.textContent = "";
       _uxImWatchQueue();
+    }
+
+    // ONE RUN, MANY BACKUPS, ANY PASSPHRASES (2026-11-15). The two fields above the list are typed once and used for
+    // every backup; a backup locked with others gets its own pair here. An empty field means "the one above". The keys
+    // are read at the click and sent once; the server keeps them in memory for the run and never stores them.
+    function _uxImKeyRows(corpus, legacy, ltr) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = document.getElementById("ux-imp-keys-rows");
+      const wrap = document.getElementById("ux-imp-keys-each");
+      if (!box || !wrap) return;
+      const all = corpus.map((c) => ({ path: c.path, name: _uxImLabel(c.path, t("Corpus backup")), corpus: true }))
+        .concat(legacy.map((lg) => ({ path: lg.path, name: lg.name, corpus: false })));
+      box.innerHTML = "";
+      wrap.open = false;
+      wrap.style.display = all.length > 1 ? "" : "none";
+      if (all.length < 2) return;
+      for (const b of all) {
+        const row = document.createElement("div");
+        const same = esc(t("Same as above"));
+        const corpusField = b.corpus
+          ? `<input type="password" autocomplete="off" class="ux-imp-own-corpus" placeholder="${same}" aria-label="${esc(t("Corpus passphrase"))}" title="${esc(t("Corpus passphrase"))}" style="flex:1;min-width:8em">`
+          : "";
+        row.innerHTML = `<div>${ltr(b.name)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">`
+          + `<input type="password" autocomplete="off" class="ux-imp-own-pass" placeholder="${same}" aria-label="${esc(t("Backup passphrase"))}" title="${esc(t("Backup passphrase"))}" style="flex:1;min-width:8em">`
+          + corpusField + "</div>";
+        row.dataset.path = b.path;
+        box.appendChild(row);
+      }
+    }
+
+    // The keys a backup gave of its own in the list above: {passphrase?, corpus_passphrase?}, empty fields left out.
+    function _uxImOwnKeys(path) {
+      for (const row of document.querySelectorAll("#ux-imp-keys-rows > div")) {
+        if (row.dataset.path !== path) continue;
+        const own = {};
+        const p = row.querySelector(".ux-imp-own-pass");
+        const c = row.querySelector(".ux-imp-own-corpus");
+        if (p && p.value) own.passphrase = p.value;
+        if (c && c.value) own.corpus_passphrase = c.value;
+        return own;
+      }
+      return {};
     }
 
     // A backup set's folder name is its most useful identity (the maintainer's six

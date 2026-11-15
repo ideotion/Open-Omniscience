@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import os as _os
 import re
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
@@ -1185,7 +1186,65 @@ def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
     return "skipped"
 
 
-def optimize_after_bulk(session: Session) -> dict:
+#: Pages one bounded merge step may write: a fraction of a second of the writer gate each. The count is POSITIVE on
+#: purpose. A negative count merges toward one segment like ``'optimize'``, but measured on SQLite 3.53 and SQLCipher
+#: (2026-11-15), a write to the index between its steps abandons the partial merge and the segment count GROWS (15 to 34
+#: segments in 400 steps with one article insert per step; a review run hit FTS5's 2000-segment cap, which fails the
+#: collector's own inserts). A positive count is SQLite's incremental merge, made to run between writes: it merges a
+#: level once it holds ``usermerge`` segments and leaves a handful, and interleaved writes do not undo it.
+_FTS_MERGE_STEP_PAGES = 2000
+
+
+def _fts_merge_budget_s() -> float:
+    """How long one tuning pass may spend merging the search index (OO_FTS_MERGE_BUDGET_S, default 300 s; 0 = no
+    merge). Whatever is left stays correct, only less merged, and the next bulk pass carries on from there."""
+    try:
+        return max(0.0, float(_os.getenv("OO_FTS_MERGE_BUDGET_S", "300")))
+    except (TypeError, ValueError):
+        return 300.0
+
+
+def merge_fts_segments(
+    session: Session, *, budget_s: float, should_stop: Callable[[], bool] | None = None, max_steps: int | None = None
+) -> bool:
+    """Merge the ``article_fts`` index in bounded steps, each in its own short hold of the writer gate.
+
+    Measured on a field import (2026-11-15): one FTS5 ``'optimize'`` held the writer gate for more than 32 minutes after
+    the last backup, and the post-import re-index could not start until it let go. SQLite's incremental ``'merge'``
+    (positive page count, see :data:`_FTS_MERGE_STEP_PAGES` for why not negative) stops after that many pages, so the
+    gate is given back between steps, other writers go in between without undoing the work, and the pass
+    ends at ``budget_s`` or at ``should_stop``. SQLite's own rule says when it is finished: a step that changes fewer
+    than two rows found nothing left to merge. Returns True when nothing was left to merge: a few segments per level
+    may remain, which is the state SQLite's own automerge keeps between writes, rather than the single segment of
+    ``'optimize'``."""
+    from src.database.writer import connection_first, write_lock
+
+    if budget_s <= 0:
+        return False
+    deadline = time.monotonic() + budget_s
+    steps = 0
+    while True:
+        if should_stop is not None and should_stop():
+            return False
+        if max_steps is not None and steps >= max_steps:
+            return False
+        steps += 1
+        if time.monotonic() >= deadline:
+            return False
+        connection_first(session)
+        with write_lock():
+            # total_changes() is per connection, so both reads are made inside one step, on the connection that ran it.
+            before = int(session.execute(text("SELECT total_changes()")).scalar() or 0)
+            session.execute(
+                text("INSERT INTO article_fts(article_fts, rank) VALUES ('merge', :n)"), {"n": _FTS_MERGE_STEP_PAGES}
+            )
+            after = int(session.execute(text("SELECT total_changes()")).scalar() or 0)
+            session.commit()
+        if after - before < 2:
+            return True
+
+
+def optimize_after_bulk(session: Session, *, should_stop: Callable[[], bool] | None = None) -> dict:
     """Tuning pass after a BULK write (a whole-corpus re-index or a large article
     import) — keyword-engine Phase 1.4. Two cheap, gated, SQLite-only steps:
 
@@ -1212,11 +1271,9 @@ def optimize_after_bulk(session: Session) -> dict:
     from src.database.writer import connection_first, write_lock
 
     try:
-        connection_first(session)  # the connection, then the gate; a pool timeout is a skipped tuning step, as the gate's would be
-        with write_lock():
-            session.execute(text("INSERT INTO article_fts(article_fts) VALUES ('optimize')"))
-            session.commit()
-        out["fts"] = True
+        # Bounded and stoppable steps rather than one 'optimize' that held the gate for half an hour on a large index
+        # (merge_fts_segments). "fts" stays what it was: whether the index ended up fully merged.
+        out["fts"] = merge_fts_segments(session, budget_s=_fts_merge_budget_s(), should_stop=should_stop)
     except Exception as exc:  # noqa: BLE001 - a tuning step must never break the caller
         session.rollback()
         log_failure(_LOG, "FTS5 optimize failed", exc, level=logging.WARNING)

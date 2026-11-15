@@ -109,6 +109,7 @@ from src.safety.crypto import (
     decrypt_stream,
     encrypt_bytes,
     encrypt_stream_to_hashed,
+    stream_key_opens,
 )
 
 _LOG = logging.getLogger("backup.stream")
@@ -2139,6 +2140,58 @@ def _crosscheck_envelope(env_bytes: bytes, vman: dict[str, Any]) -> dict[str, An
 # --------------------------------------------------------------------------- #
 #  Read / restore staging
 # --------------------------------------------------------------------------- #
+def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: str) -> None:
+    """Refuse a wrong backup passphrase in seconds, before the checksum pass reads the whole set.
+
+    Until this check a wrong passphrase was found only when the reassembly decrypted the first volume, AFTER every volume
+    of the set had been hashed: on a large set, many minutes to learn about a typo, and in a queue of backups, that many
+    minutes per backup. The check opens the first chunk of the first volume the first member uses. When it opens, the key
+    is right. When it does not, the volume's checksum against the manifest tells the two causes apart: a volume whose
+    bytes are exactly the ones the backup wrote and still does not open was locked with another passphrase, so the
+    restore stops here and says so. A volume that is damaged or missing gives no verdict and the restore goes on, so the
+    checksum pass and parity recovery deal with it exactly as before: this check never refuses a set that the full path
+    could have restored."""
+    vol_by_name = {v.get("name"): v for v in m.get("volumes") or []}
+    first = next((v for mm in m.get("members") or [] for v in mm.get("volumes") or [] if v in vol_by_name), None)
+    if first is None:
+        return
+    path = src / first
+    if not path.is_file():
+        return
+    try:
+        if stream_key_opens(path, passphrase):
+            return
+    except (EncryptionError, OSError):
+        return  # an unreadable header is damage, not a key: the checksum pass reports it
+    if _sha256_file(path) != vol_by_name[first].get("sha256"):
+        return
+    raise EncryptionError(
+        "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "
+        "but does not open with the passphrase given. Nothing was read past that volume and nothing was changed."
+    )
+
+
+def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
+    """True only when ``src_dir`` is a volume set whose first volume is intact and does not open with ``passphrase``.
+
+    The import queue asks this of every backup before its run starts, so a typo in one backup's passphrase stops the run
+    before anything is merged, rather than failing that backup halfway through and discarding the work of the backups
+    staged with it. Anything this cannot read (no manifest, another kind of set, a damaged volume) answers False: the
+    restore itself reports those, exactly as before."""
+    src = Path(src_dir)
+    try:
+        m = load_manifest(src)
+        if m.get("kind") != STREAM_KIND:
+            return False
+        _require_safe_manifest_names(m)
+        _refuse_a_wrong_backup_passphrase(src, m, passphrase)
+    except EncryptionError:
+        return True
+    except Exception:  # noqa: BLE001 - no verdict: the restore reads the set itself and says what is wrong with it
+        return False
+    return False
+
+
 def read_stream_backup(
     src_dir: Path | str,
     passphrase: str,
@@ -2174,6 +2227,9 @@ def read_stream_backup(
     # single most expensive step on a big encrypted corpus), and finalize is
     # the manifest signature + per-member hash re-check.
     stage_a_timings: dict[str, float] = {}
+    t0 = time.monotonic()
+    _refuse_a_wrong_backup_passphrase(src, m, passphrase)
+    stage_a_timings["passphrase_check"] = round(time.monotonic() - t0, 3)
     t0 = time.monotonic()
     status = verify_volume_set(src)
     if status["bad"]:
