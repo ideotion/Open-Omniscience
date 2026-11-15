@@ -125,7 +125,9 @@ def _warm_sequentially(path: Path) -> None:
     plus the memory map 63 s (27 s of it this read). It changes WHAT IS READ FIRST, never what is checked: the
     same ``quick_check`` runs on the same file, read-only. Best-effort: a failure here leaves the walk as it
     was. ``OO_VALIDATE_WARM=0`` turns both off. It does push other files out of the OS cache, which is why it
-    runs only here, on the import's own staged copy."""
+    runs only here, on the import's own staged copy. With the map, a READ ERROR on the staged file during the
+    walk ends the process (a signal) where it used to refuse the import; the live store is untouched at this point
+    either way, and ``OO_VALIDATE_WARM=0`` is the switch for a staging folder on an unreliable drive."""
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
     except OSError:

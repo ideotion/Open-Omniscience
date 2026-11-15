@@ -3977,7 +3977,8 @@ def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
 
     kinds = dict.fromkeys(ARTICLE_CONFLICT_KINDS, 0)
     dup = conflict = 0
-    # The comparison is made ONCE per pair (the subquery), and a conflicting pair's values come back as BYTES: a body
+    # The comparison is made ONCE per pair (``LIMIT -1 OFFSET 0`` keeps SQLite from flattening the subquery, which would
+    # copy the CASE into every output column -- checked with EXPLAIN), and a conflicting pair's values come back as BYTES: a body
     # stored as a BLOB, or text that is not valid UTF-8, must be counted, never abort the merge on a decode.
     cur = con.execute(
         "SELECT same,"
@@ -3985,7 +3986,7 @@ def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
         "       CASE WHEN same = 0 THEN CAST(local AS BLOB) END, CASE WHEN same = 0 THEN CAST(incoming AS BLOB) END"
         " FROM (SELECT CASE WHEN m.content = i.content THEN 1 WHEN m.content <> i.content THEN 0 END AS same,"
         "              i.hash AS ahash, i.title AS title, m.content AS local, i.content AS incoming"
-        "       FROM inc.articles i JOIN articles m ON m.hash = i.hash)"
+        "       FROM inc.articles i JOIN articles m ON m.hash = i.hash LIMIT -1 OFFSET 0)"
     )
 
     def _text(v) -> str:
@@ -4002,7 +4003,7 @@ def _tally_article_overlap(con, samples: list) -> tuple[int, int, dict]:
             try:
                 h = _text(ahash)
                 if len(samples) < _SAMPLE_LIMIT:
-                    samples.append({"hash": h, "incoming_title": _text(title), "kept": "local"})
+                    samples.append({"hash": h, "incoming_title": None if title is None else _text(title), "kept": "local"})
                 loc, inc = _text(local), _text(incoming)
                 if " ".join(loc.split()) == " ".join(inc.split()):
                     kinds["whitespace_only"] += 1
