@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "3931d68c7fc03713f7162d662be57755a69fc4c55f6f11bb1b24a6086fc06348",
+  "digest": "1a1ba7fdeb9c5ee6a10546d289b5f781d7749d8d6f3736ca6a89ae356595e13e",
   "log": [
     {
       "version": 1,
@@ -79,6 +79,12 @@
       "digest": "3931d68c7fc03713f7162d662be57755a69fc4c55f6f11bb1b24a6086fc06348",
       "kind": "same",
       "note": "Scheduling only: the serial precompute computes when/where/who before the write gate (the same extraction, arguments and R697 language as the pool and the inline path), the re-index computes the next window while writing the current one, and the drain's workers and commit width change; the rows index_article writes are identical"
+    },
+    {
+      "version": 3,
+      "digest": "1a1ba7fdeb9c5ee6a10546d289b5f781d7749d8d6f3736ca6a89ae356595e13e",
+      "kind": "same",
+      "note": "Scheduling only: the serial precompute computes when/where/who before the write gate from the same text, extractors and arguments as the inline path (the raw content column for an article kept compressed, the anchor, country and R697 language), the re-index computes the next window while writing the current one, and the drain's workers and commit width change; the rows index_article writes are identical"
     }
   ]
 }

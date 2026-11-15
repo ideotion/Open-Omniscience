@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "4f8361cefb8ecabf676e769fb0903713352777ca310d7d32edaf8dcb7edc39d6",
+  "digest": "5c375b11269ee08538f617f32ab459930ba9cfdcb9d5256d73ec64424542bfde",
   "log": [
     {
       "version": 1,
@@ -37,6 +37,12 @@
       "digest": "4f8361cefb8ecabf676e769fb0903713352777ca310d7d32edaf8dcb7edc39d6",
       "kind": "same",
       "note": "Scheduling only: the serial precompute now computes when/where/who before the write gate with the same extractors and arguments as the pool and the inline path (anchor, country, R697 date language); the rows written are identical"
+    },
+    {
+      "version": 1,
+      "digest": "5c375b11269ee08538f617f32ab459930ba9cfdcb9d5256d73ec64424542bfde",
+      "kind": "same",
+      "note": "Scheduling only: precomputed when/where/who now reads the same text as the inline store (the raw content column, which differs for an article kept compressed) with the same extractors and arguments; the rows written are identical"
     }
   ]
 }

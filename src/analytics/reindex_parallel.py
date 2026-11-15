@@ -464,6 +464,11 @@ def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
     from datetime import date as _date
 
     country, anchor_iso, today_iso = (list(www_ctx) + [None, None, None])[:3]
+    # The fifth slot, when present, is the text the STORE's own inline path would read (``article.content``), which differs from
+    # the keyword text for an article kept compressed: the inline store reads the raw column there. Extracting from it keeps the
+    # precomputed rows identical to the inline ones, which the engine pin and the derived carry both rely on.
+    if len(www_ctx) > 4 and www_ctx[4] is not None:
+        content = www_ctx[4]
     try:
         from src.timemap.dateextract import extract_dates
         from src.timemap.entextract import extract_entities

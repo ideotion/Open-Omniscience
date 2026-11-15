@@ -247,3 +247,21 @@ def test_without_a_serial_fallback_a_window_the_pool_would_not_take_raises():
     with pytest.raises(RP.PoolUnavailable):
         RP.precompute_batch(tasks, extractor=BaselineExtractor(), workers=0, serial_fallback=False)
     assert set(RP.precompute_batch(tasks, extractor=BaselineExtractor(), workers=0)) == {1}
+
+
+def test_a_compressed_article_gets_the_same_places_and_entities_as_the_inline_store(db, monkeypatch):
+    """The inline store reads ``article.content`` for places, entities and dates; for an article kept compressed that column is
+    not the keyword text. The precompute reads the same column (the context's fifth slot), so its rows match the inline ones."""
+    from src.timemap.whostore import ArticleEntity
+
+    ids = _seed(db, 1)
+    art = db.get(Article, ids[0])
+    monkeypatch.setattr(Article, "get_content", lambda self: _TEXT + " The World Health Organization met in Geneva.")
+    stats: dict = {}
+    S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=0, stats=stats)
+    pre = sorted((e.name, e.entity_class) for e in db.query(ArticleEntity).filter_by(article_id=art.id))
+    monkeypatch.setattr(RP, "_extract_www", lambda *_a, **_k: None)  # inline extraction only
+    S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=0)
+    inline = sorted((e.name, e.entity_class) for e in db.query(ArticleEntity).filter_by(article_id=art.id))
+    assert pre == inline
+    assert ("World Health Organization", "organization") not in pre, "the inline store never saw the decompressed text"

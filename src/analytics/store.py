@@ -1775,6 +1775,9 @@ def _reindex_articles_impl(
                 # keyword stoplist pick. Read after _resolve_known_language, which clears a
                 # tag the script refutes.
                 art.language,
+                # The text the inline store reads for places and entities (``article.content``), handed over only when it is
+                # not the keyword text: an article kept compressed. See reindex_parallel._extract_www.
+                None if (art.content or "") == body else (art.content or ""),
             )
             if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
