@@ -82,20 +82,22 @@ def _from_zip(zf: zipfile.ZipFile, label: str) -> list[tuple[str, dict[str, Any]
 
 
 def collect(inputs: list[Path]) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
-    """Every readable candidates document, and the files that could not be read (a piece set with a piece missing, a damaged zip),
-    which are reported and never stop the run."""
+    """Every readable candidates document, and the files that could not be read (a piece set with a piece missing, a
+    damaged zip), which are reported and never stop the run. Pieces are grouped across ALL inputs, so a shell glob of
+    the pieces reads their set once."""
     out: list[tuple[str, dict[str, Any]]] = []
     unreadable: list[str] = []
+    found: list[Path] = []
     for p in inputs:
-        found = sorted(p.rglob("*.zip")) + sorted(p.rglob("candidates.json")) if p.is_dir() else [p]
-        sets, plain = _pieces().sets_in(found)   # one read per numbered piece set, not one per piece
-        for f in plain + list(sets.values()):
-            try:
-                out += _load(f)
-            except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError) as exc:
-                unreadable.append(f"{f.name}: {type(exc).__name__}")
-            except ValueError as exc:   # an incomplete numbered piece set: names the missing pieces
-                unreadable.append(str(exc))
+        found += sorted(p.rglob("*.zip")) + sorted(p.rglob("candidates.json")) if p.is_dir() else [p]
+    sets, plain = _pieces().sets_in(found)   # one read per numbered piece set, however the pieces were named
+    for f in plain + list(sets.values()):
+        try:
+            out += _load(f)
+        except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError) as exc:
+            unreadable.append(f"{f.name}: {type(exc).__name__}")
+        except ValueError as exc:   # an incomplete numbered piece set: names the missing pieces
+            unreadable.append(str(exc))
     return out, unreadable
 
 
@@ -169,7 +171,7 @@ def to_markdown(rep: dict[str, Any]) -> str:
         "",
     ]
     if rep.get("unreadable"):
-        lines += [f"Not read (join numbered pieces first, or the file is damaged): {', '.join(rep['unreadable'])}", ""]
+        lines += [f"Not read (a numbered piece is missing, or the file is damaged): {', '.join(rep['unreadable'])}", ""]
     lines += [
         "| Domain | Instances | Articles | Tags | Language | Country | Disagree | Shipped now |",
         "|---|---|---|---|---|---|---|---|",

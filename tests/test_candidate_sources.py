@@ -141,4 +141,6 @@ def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path,
     assert row["attempts"] == {"qualified": 3} and row["tags"] == {"news": 2}, "one count per instance, never per press"
     assert rep["unreadable"] == ["x.zip: pieces 2 of 2 missing"], "an incomplete set is named, never guessed at"
     assert [r for r in rep["rows"] if r["domain"] == "old.example"][0]["already_shipped"] is True
+    docs, bad = psa.collect([tmp_path / "oo-two-part-001-of-002.zip", tmp_path / "oo-two-part-002-of-002.zip"])
+    assert len(docs) == 1 and not bad, "pieces named one by one (a shell glob) are one set, read once"
     assert "Proposed source additions" in (out / "proposed-sources.md").read_text(encoding="utf-8")
