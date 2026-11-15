@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "90e4f903db23eacdbdced3b2476eafadd308e22086f877f27190cf86cd5934ba",
+  "digest": "4f8361cefb8ecabf676e769fb0903713352777ca310d7d32edaf8dcb7edc39d6",
   "log": [
     {
       "version": 1,
@@ -31,6 +31,12 @@
       "digest": "90e4f903db23eacdbdced3b2476eafadd308e22086f877f27190cf86cd5934ba",
       "kind": "same",
       "note": "Only a docstring in src/analytics/reindex_parallel.py changed (terminate_live_pools now describes the R689 shutdown order); no row index_article writes can change."
+    },
+    {
+      "version": 1,
+      "digest": "4f8361cefb8ecabf676e769fb0903713352777ca310d7d32edaf8dcb7edc39d6",
+      "kind": "same",
+      "note": "Scheduling only: the serial precompute now computes when/where/who before the write gate with the same extractors and arguments as the pool and the inline path (anchor, country, R697 date language); the rows written are identical"
     }
   ]
 }

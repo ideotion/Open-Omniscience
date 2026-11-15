@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "aba0cc9620f33c95b93bd2fe54ab4717c1e93fcf05cd4c2083e52b1853ad6f81",
+  "digest": "3931d68c7fc03713f7162d662be57755a69fc4c55f6f11bb1b24a6086fc06348",
   "log": [
     {
       "version": 1,
@@ -73,6 +73,12 @@
       "digest": "aba0cc9620f33c95b93bd2fe54ab4717c1e93fcf05cd4c2083e52b1853ad6f81",
       "kind": "same",
       "note": "PR #1972: datestore.articles_for_date also returns each tag's id for the Agenda's confirm and reject, and sentiment.py gains a comment-only perf pointer; the rows index_article writes are unchanged"
+    },
+    {
+      "version": 3,
+      "digest": "3931d68c7fc03713f7162d662be57755a69fc4c55f6f11bb1b24a6086fc06348",
+      "kind": "same",
+      "note": "Scheduling only: the serial precompute computes when/where/who before the write gate (the same extraction, arguments and R697 language as the pool and the inline path), the re-index computes the next window while writing the current one, and the drain's workers and commit width change; the rows index_article writes are identical"
     }
   ]
 }
