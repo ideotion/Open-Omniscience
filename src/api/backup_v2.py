@@ -1019,11 +1019,25 @@ class ImportQueueItem(BaseModel):
     # first-launch answer. A `bool = True` default here would make every caller that
     # omits the field assert a choice it never made.
     trust_fetch_history: bool | None = None
+    # THIS backup's own keys, when they differ from the run's (below). Empty means "use the run's". Held in memory by the
+    # queue for the run and never stored with the item.
+    passphrase: str = ""
+    corpus_passphrase: str = ""
 
 
 class ImportQueueBody(BaseModel):
     items: list[ImportQueueItem]
+    # The run's default keys, typed once for a folder of backups that share them: the backups' passphrase, and the
+    # store passphrase of the instance that made them (only when it differs from this instance's and the backup's).
     passphrase: str = ""
+    corpus_passphrase: str = ""
+
+    def secrets(self) -> tuple[str, ...]:
+        """Every key this request carries, for the scrub of anything it says back."""
+        keys = [self.passphrase, self.corpus_passphrase]
+        for item in self.items:
+            keys.extend((item.passphrase, item.corpus_passphrase))
+        return tuple(k for k in keys if k)
 
 
 @router.post("/import-queue/start")
@@ -1031,15 +1045,18 @@ def import_queue_start(body: ImportQueueBody) -> dict:
     """Queue an import run and begin it. 409 if one is already in flight."""
     from src.backup.import_queue import get_import_queue
 
-    with scrub_and_reraise(_LOG, "import queue start failed", body.passphrase):
+    keys = body.secrets()
+    with scrub_and_reraise(_LOG, "import queue start failed", *keys):
         try:
             return get_import_queue().start(
-                [i.model_dump() for i in body.items], passphrase=body.passphrase
+                [i.model_dump() for i in body.items],
+                passphrase=body.passphrase,
+                corpus_passphrase=body.corpus_passphrase,
             )
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", *keys)) from None
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", *keys)) from None
 
 
 @router.get("/import-queue/status")

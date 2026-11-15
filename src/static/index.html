@@ -3899,7 +3899,15 @@
       <p class="muted" id="ux-imp-status" style="margin-top:8px"></p>
       <div id="ux-imp-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
       <div id="ux-imp-pass-row" style="margin-top:6px;display:none"><label for="ux-imp-pass">Passphrase (to decrypt the corpus backup)</label>
-        <input id="ux-imp-pass" type="password" style="width:100%"></div>
+        <input id="ux-imp-pass" type="password" autocomplete="off" style="width:100%">
+        <label for="ux-imp-corpus-pass" style="display:block;margin-top:6px">Corpus passphrase of the instance that made the backups (only if it differs from this one's)</label>
+        <input id="ux-imp-corpus-pass" type="password" autocomplete="off" style="width:100%">
+        <!-- One run, many backups (2026-11-15): the two fields above are typed once for every backup;
+             a backup locked with other passphrases gets its own here, filled in by the scan. -->
+        <details id="ux-imp-keys-each" style="margin-top:6px;display:none"><summary>Different passphrases for some backups</summary>
+          <p class="hint" style="margin:4px 0">Leave a field empty to use the passphrase above.</p>
+          <div id="ux-imp-keys-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+        </details></div>
       <progress id="ux-imp-bar" style="width:100%;margin-top:8px;display:none"></progress>
       <div id="ux-imp-progress" class="hint" style="margin-top:4px"></div>
       <!-- The RUN: one row per item, each with its own identity, state and elapsed time.
