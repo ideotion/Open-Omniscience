@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "1a1ba7fdeb9c5ee6a10546d289b5f781d7749d8d6f3736ca6a89ae356595e13e",
+  "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
   "log": [
     {
       "version": 1,
@@ -85,6 +85,12 @@
       "digest": "1a1ba7fdeb9c5ee6a10546d289b5f781d7749d8d6f3736ca6a89ae356595e13e",
       "kind": "same",
       "note": "Scheduling only: the serial precompute computes when/where/who before the write gate from the same text, extractors and arguments as the inline path (the raw content column for an article kept compressed, the anchor, country and R697 language), the re-index computes the next window while writing the current one, and the drain's workers and commit width change; the rows index_article writes are identical"
+    },
+    {
+      "version": 3,
+      "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
+      "kind": "same",
+      "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
     }
   ]
 }

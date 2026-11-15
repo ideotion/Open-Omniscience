@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "5c375b11269ee08538f617f32ab459930ba9cfdcb9d5256d73ec64424542bfde",
+  "digest": "fa03695a69597f665054b1c2b8cb406064b07a4e32de3fde0c853d6bf633aac0",
   "log": [
     {
       "version": 1,
@@ -43,6 +43,12 @@
       "digest": "5c375b11269ee08538f617f32ab459930ba9cfdcb9d5256d73ec64424542bfde",
       "kind": "same",
       "note": "Scheduling only: precomputed when/where/who now reads the same text as the inline store (the raw content column, which differs for an article kept compressed) with the same extractors and arguments; the rows written are identical"
+    },
+    {
+      "version": 1,
+      "digest": "fa03695a69597f665054b1c2b8cb406064b07a4e32de3fde0c853d6bf633aac0",
+      "kind": "same",
+      "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
     }
   ]
 }
