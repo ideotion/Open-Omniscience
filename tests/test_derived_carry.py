@@ -495,6 +495,9 @@ def test_a_foreign_engine_carries_nothing(backup, tmp_path, monkeypatch):
     out = _restore(foreign, target, tmp_path / "w.db", carry=True, monkeypatch=monkeypatch)
     assert out["counts"]["_derived_carry"]["stamped"] == 0
     assert out["counts"]["keyword_mentions"]["new"] == 0
+    # the report names the stamps the backup DID carry, so a refusal can be traced to an engine
+    mix = out["counts"]["_derived_carry"]["incoming_engines"]
+    assert len(mix) == 1 and mix[0][0].endswith("x") and mix[0][1] == len(_ARTICLES)
 
 
 def test_the_switch_turns_the_carry_off(backup, tmp_path, monkeypatch):
