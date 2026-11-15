@@ -1045,8 +1045,7 @@ def import_queue_start(body: ImportQueueBody) -> dict:
     """Queue an import run and begin it. 409 if one is already in flight."""
     from src.backup.import_queue import get_import_queue
 
-    keys = body.secrets()
-    with scrub_and_reraise(_LOG, "import queue start failed", *keys):
+    with scrub_and_reraise(_LOG, "import queue start failed", *body.secrets()):
         try:
             return get_import_queue().start(
                 [i.model_dump() for i in body.items],
@@ -1054,9 +1053,9 @@ def import_queue_start(body: ImportQueueBody) -> dict:
                 corpus_passphrase=body.corpus_passphrase,
             )
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=http_detail(exc, "", *keys)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", *body.secrets())) from None
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", *keys)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", *body.secrets())) from None
 
 
 @router.get("/import-queue/status")

@@ -710,6 +710,25 @@ def _secret_attribute(node: ast.AST) -> tuple[str, str] | None:
 #: ``*secrets``.
 _SECRET_TUPLES = {"secrets": "secrets"}
 
+#: Methods that return EVERY key their object holds, as a tuple (2026-11-15): the import queue's ``self._secrets()`` (the
+#: run's two default keys and each backup's own) and the queue route's ``body.secrets()`` (every key in the request). A
+#: function that calls one holds the keys; handed on starred (``*self._secrets()``) it names every one of them, so it
+#: covers whatever else the function reads. ``_keys_for`` returns the pair one item uses, out of the same store: a
+#: function that calls it holds keys too, and only ``_secrets()`` covers them.
+_SECRET_TUPLE_METHODS = {"_secrets", "secrets"}
+_SECRET_HOLDING_METHODS = _SECRET_TUPLE_METHODS | {"_keys_for"}
+_EVERY = "every key the object holds"
+
+
+def _is_a_secret_tuple_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _SECRET_TUPLE_METHODS
+        and not node.args
+        and not node.keywords
+    )
+
 
 def _is_the_secret(node: ast.AST) -> bool:
     """Whether ``node`` IS the secret as the run holds it: a name it goes by, an attribute it is kept in
@@ -717,7 +736,11 @@ def _is_the_secret(node: ast.AST) -> bool:
     any other call, not any other name. A secret handed on STARRED (``*secrets_``, a tuple of them; ``*secrets`` where the run
     journal holds the tuple its caller names) is the secret."""
     if isinstance(node, ast.Starred):
-        return (isinstance(node.value, ast.Name) and node.value.id in _SECRET_TUPLES) or _is_the_secret(node.value)
+        return (
+            (isinstance(node.value, ast.Name) and node.value.id in _SECRET_TUPLES)
+            or _is_a_secret_tuple_call(node.value)
+            or _is_the_secret(node.value)
+        )
     return (isinstance(node, ast.Name) and node.id in _SECRET_NAMES) or _secret_attribute(node) is not None
 
 
@@ -741,6 +764,10 @@ class _Held:
                 names.add(_SECRET_TUPLES[n.arg])
             elif isinstance(n, ast.Name) and n.id in _SECRET_NAMES:
                 names.add(_SECRET_NAMES[n.id])
+            elif (
+                isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _SECRET_HOLDING_METHODS
+            ):
+                names.add(_EVERY)
             else:
                 found = _secret_attribute(n)
                 if found:
@@ -755,6 +782,8 @@ class _Held:
         if isinstance(node, ast.Starred):
             if isinstance(node.value, ast.Name) and node.value.id in _SECRET_TUPLES:
                 return _SECRET_TUPLES[node.value.id]
+            if _is_a_secret_tuple_call(node.value):
+                return _EVERY
             return self.key_of(node.value)
         if isinstance(node, ast.Name):
             return _SECRET_NAMES[node.id]
@@ -765,6 +794,8 @@ class _Held:
         """Whether ``args`` (the secret arguments of a call of :data:`_SCRUBBING_CALLS_OVER_SECRETS`) are all secrets and,
         between them, name every secret the function holds."""
         named = {self.key_of(a) for a in args if _is_the_secret(a)}
+        if _EVERY in named:  # a tuple of every key the object holds covers whatever else the function reads
+            return all(_is_the_secret(a) for a in args)
         # A function that holds no secret is covered by a call that names none (the process's own are taken out of every
         # text); one that holds a secret is covered only by a call that names every one it holds.
         return (bool(args) or not self.keys) and all(_is_the_secret(a) for a in args) and self.keys <= named
@@ -1193,6 +1224,16 @@ _TWO_OBJECTS = (
 
 #: Each way a caught exception can reach a text, as the function the guard must flag.
 _WAYS_THAT_LEAK = {
+    # --- the import queue's tuple of every key (2026-11-15): holding it makes the function read, naming it right covers it
+    "a function that holds the queue's keys and writes the exception by hand": _guarded(
+        _NAMED, "err = str(exc)", head="def check(self):\n    self._secrets()"
+    ),
+    "a key pair from _keys_for, the exception written by hand": _guarded(
+        _NAMED, "err = f'{exc}'", head="def check(self, item):\n    key = self._keys_for(item)"
+    ),
+    "the tuple of every key, not starred": _guarded(
+        _NAMED, "err = exception_text(exc, self._secrets())", head="def check(self):"
+    ),
     "its text in an f-string": _guarded(_NAMED, "err = f'failed: {exc}'"),
     "str() of it": _guarded(_NAMED, "err = str(exc)"),
     "its arguments": _guarded(_NAMED, "err = exc.args[0]"),
@@ -1355,6 +1396,10 @@ _WAYS_THAT_LEAK = {
 
 #: What the guard must leave alone, as the function it is asked about and the calls it must count as routed.
 _WAYS_THAT_ARE_FINE = {
+    "the shared helper, given every key the queue holds starred": (
+        _guarded(_NAMED, "err = exception_text(exc, *self._secrets())", head="def check(self, item):\n    key = self._keys_for(item)"),
+        1,
+    ),
     "the helper, given the passphrase": (_guarded(_NAMED, "err = _exception_text(exc, passphrase)"), 1),
     "the shared helper, given a tuple of the secrets starred": (
         _guarded(_NAMED, "err = exception_text(exc, *secrets_)", head="def check(ctx, secrets_):"),
