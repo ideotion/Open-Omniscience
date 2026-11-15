@@ -723,7 +723,8 @@ def precompute_batch(
         _note("serial", time.monotonic() - _t0)
         return out_serial
 
-    extractor_name = getattr(extractor, "name", None)
+    # A str here: uses_pool() above only answers True for a name in _RECONSTRUCTIBLE_EXTRACTORS.
+    extractor_name: str = str(getattr(extractor, "name", ""))
     gazetteer = getattr(extractor, "gazetteer", None)
     n_workers = min(n_workers, len(tasks))
     chunksize = max(1, len(tasks) // (n_workers * 4))
