@@ -1186,8 +1186,12 @@ def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
     return "skipped"
 
 
-#: Pages one bounded merge step may write (an FTS5 ``'merge'`` with a NEGATIVE count merges every segment, as
-#: ``'optimize'`` does, but stops after about this many leaf pages): a fraction of a second of the writer gate each.
+#: Pages one bounded merge step may write: a fraction of a second of the writer gate each. The count is POSITIVE on
+#: purpose. A negative count merges toward one segment like ``'optimize'``, but measured on SQLite 3.53 and SQLCipher
+#: (2026-11-15), a write to the index between its steps abandons the partial merge and the segment count GROWS (15 to 34
+#: segments in 400 steps with one article insert per step; a review run hit FTS5's 2000-segment cap, which fails the
+#: collector's own inserts). A positive count is SQLite's incremental merge, made to run between writes: it merges a
+#: level once it holds ``usermerge`` segments and leaves a handful, and interleaved writes do not undo it.
 _FTS_MERGE_STEP_PAGES = 2000
 
 
@@ -1200,23 +1204,31 @@ def _fts_merge_budget_s() -> float:
         return 300.0
 
 
-def merge_fts_segments(session: Session, *, budget_s: float, should_stop: Callable[[], bool] | None = None) -> bool:
+def merge_fts_segments(
+    session: Session, *, budget_s: float, should_stop: Callable[[], bool] | None = None, max_steps: int | None = None
+) -> bool:
     """Merge the ``article_fts`` index in bounded steps, each in its own short hold of the writer gate.
 
     Measured on a field import (2026-11-15): one FTS5 ``'optimize'`` held the writer gate for more than 32 minutes after
-    the last backup, and the post-import re-index could not start until it let go. A merge with a negative page count
-    reaches the same single segment (checked against ``'optimize'`` on a test index) but stops after
-    :data:`_FTS_MERGE_STEP_PAGES`, so the gate is given back between steps, other writers go in between, and the pass
+    the last backup, and the post-import re-index could not start until it let go. SQLite's incremental ``'merge'``
+    (positive page count, see :data:`_FTS_MERGE_STEP_PAGES` for why not negative) stops after that many pages, so the
+    gate is given back between steps, other writers go in between without undoing the work, and the pass
     ends at ``budget_s`` or at ``should_stop``. SQLite's own rule says when it is finished: a step that changes fewer
-    than two rows found nothing left to merge. Returns True when the index was merged completely."""
+    than two rows found nothing left to merge. Returns True when nothing was left to merge: a few segments per level
+    may remain, which is the state SQLite's own automerge keeps between writes, rather than the single segment of
+    ``'optimize'``."""
     from src.database.writer import connection_first, write_lock
 
     if budget_s <= 0:
         return False
     deadline = time.monotonic() + budget_s
+    steps = 0
     while True:
         if should_stop is not None and should_stop():
             return False
+        if max_steps is not None and steps >= max_steps:
+            return False
+        steps += 1
         if time.monotonic() >= deadline:
             return False
         connection_first(session)
@@ -1224,7 +1236,7 @@ def merge_fts_segments(session: Session, *, budget_s: float, should_stop: Callab
             # total_changes() is per connection, so both reads are made inside one step, on the connection that ran it.
             before = int(session.execute(text("SELECT total_changes()")).scalar() or 0)
             session.execute(
-                text("INSERT INTO article_fts(article_fts, rank) VALUES ('merge', :n)"), {"n": -_FTS_MERGE_STEP_PAGES}
+                text("INSERT INTO article_fts(article_fts, rank) VALUES ('merge', :n)"), {"n": _FTS_MERGE_STEP_PAGES}
             )
             after = int(session.execute(text("SELECT total_changes()")).scalar() or 0)
             session.commit()

@@ -98,17 +98,61 @@ def _many_segments(n_batches=30):
     return Session
 
 
-def test_the_bounded_merge_reaches_one_segment_like_optimize():
-    """The 2026-11-15 change: steps of a negative-count 'merge' instead of one 'optimize' that held the writer gate
-    for half an hour on a field import. Same end state, one segment, and search unchanged."""
+def test_the_bounded_merge_leaves_a_handful_of_segments_and_search_unchanged():
+    """The 2026-11-15 change: bounded incremental 'merge' steps instead of one 'optimize' that held the writer gate for
+    half an hour on a field import."""
     from src.database.fts import merge_fts_segments
 
     Session = _many_segments()
     with Session() as s:
-        assert _segments(s) > 1
+        before = _segments(s)
+        assert before > 6
         assert merge_fts_segments(s, budget_s=60) is True
-        assert _segments(s) == 1
+        assert _segments(s) <= 6
         assert len(search_ids(s, "inflation") or []) == 150
+
+
+def test_writes_between_merge_steps_never_fragment_the_index():
+    """The regression a review measured on the first cut (negative counts, 2026-11-15): an article written between
+    steps abandoned the partial merge, and the segment count grew without bound (4 to 122 segments here, in 300 steps
+    of 4 pages with one article after each). The incremental steps stay a handful under the same interleaving."""
+    import random
+    import string
+
+    import src.database.fts as fts_mod
+    from src.database.fts import merge_fts_segments
+
+    rnd = random.Random(3)
+
+    def doc():
+        return "inflation " + " ".join("".join(rnd.choices(string.ascii_lowercase, k=6)) for _ in range(40))
+
+    eng = _engine()
+    ensure_fts(eng)
+    Session = sessionmaker(bind=eng, future=True)
+    with Session() as s:
+        s.add(Source(name="S", domain="x.test"))
+        s.commit()
+        k = 0
+        for _b in range(40):
+            for _i in range(10):
+                k += 1
+                s.add(Article(url=f"u{k}", canonical_url=f"u{k}", source_id=1, title="t", content=doc(),
+                              hash=f"h{k}", language="en"))
+            s.commit()
+        old = fts_mod._FTS_MERGE_STEP_PAGES
+        fts_mod._FTS_MERGE_STEP_PAGES = 4
+        try:
+            for _j in range(300):  # one small step, then one article: a collector writing beside the merge
+                merge_fts_segments(s, budget_s=60, max_steps=1)
+                k += 1
+                s.add(Article(url=f"u{k}", canonical_url=f"u{k}", source_id=1, title="t", content=doc(),
+                              hash=f"h{k}", language="en"))
+                s.commit()
+        finally:
+            fts_mod._FTS_MERGE_STEP_PAGES = old
+        assert _segments(s) <= 20
+        assert len(search_ids(s, "inflation") or []) == 700
 
 
 def test_the_bounded_merge_stops_when_asked_and_does_nothing_on_a_zero_budget():
