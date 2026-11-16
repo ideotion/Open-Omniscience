@@ -59,8 +59,10 @@ def _rows(root: Path) -> list[dict]:
 
 
 @posix_only
-@pytest.mark.parametrize(("sig", "name"), [(signal.SIGTERM, "SIGTERM"), (signal.SIGHUP, "SIGHUP")])
-def test_a_forwarded_stop_leaves_its_row_before_the_server_is_told(tmp_path, sig, name):
+# by name: signal.SIGHUP does not exist on Windows, where reading it here would fail the module's collection
+@pytest.mark.parametrize("name", ["SIGTERM", "SIGHUP"])
+def test_a_forwarded_stop_leaves_its_row_before_the_server_is_told(tmp_path, name):
+    sig = getattr(signal, name)
     root, proc, pid = _launch(tmp_path)
     try:
         os.kill(proc.pid, sig)

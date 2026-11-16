@@ -130,8 +130,11 @@ _CHILD = textwrap.dedent(
 )
 
 
-@pytest.mark.parametrize("mode,sig", [("abort", signal.SIGABRT), ("kill", signal.SIGKILL)])
-def test_file_survives_a_killed_process(tmp_path, mode, sig):
+# Signals by name: signal.SIGKILL does not exist on Windows, and reading it here would fail the whole module's collection there.
+@pytest.mark.skipif(sys.platform == "win32", reason="a POSIX signal death (returncode -SIGABRT / -SIGKILL)")
+@pytest.mark.parametrize("mode,sig_name", [("abort", "SIGABRT"), ("kill", "SIGKILL")])
+def test_file_survives_a_killed_process(tmp_path, mode, sig_name):
+    sig = getattr(signal, sig_name)
     path = tmp_path / "d" / ni.FILE_NAME
     p = subprocess.run(
         [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(_ROOT)!r})\n" + _CHILD, str(path), mode],

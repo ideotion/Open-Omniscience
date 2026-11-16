@@ -170,6 +170,7 @@ def write_export_request(
     inside: bool = False,
     phase: str | None = None,
     verify_after_write: bool | None = None,
+    lanes: bool = False,
 ) -> Path | None:
     """Record, inside a freshly allocated export folder, what the export was asked for.
 
@@ -201,6 +202,8 @@ def write_export_request(
         "corpus": bool(corpus),
         "categories": seen,
         "inside": bool(inside) and bool(corpus) and bool(seen),
+        # R729: the living-source stores ride inside the corpus artifact, so only with it.
+        "lanes": bool(lanes) and bool(corpus),
     }
     if phase in RECORD_PHASES:
         record["phase"] = phase
@@ -231,6 +234,7 @@ def update_export_phase(folder: str | os.PathLike[str], phase: str) -> Path | No
         "corpus": req["corpus"],
         "categories": list(req["categories"]),
         "inside": req["inside"] and req["corpus"] and bool(req["categories"]),
+        "lanes": req["lanes"] and req["corpus"],
         "phase": phase,
     }
     if req["verify_after_write"] is not None:
@@ -338,6 +342,8 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
         "corpus": bool(raw.get("corpus")),
         "categories": known,
         "inside": bool(raw.get("inside")),
+        # R729; absent (False) in a record written before the living-source stores could ride.
+        "lanes": raw.get("lanes") is True,
         "requested_at": raw["requested_at"][:64] if isinstance(raw.get("requested_at"), str) else None,
         # R701: the resume cursor; None for a record written before the export was one job.
         "phase": raw.get("phase") if raw.get("phase") in RECORD_PHASES else None,
