@@ -65,19 +65,29 @@ def test_the_notice_survives_later_saves_until_dismissed(store):
     S.save_settings({"collect_rate_mode": "target"}, replace_damaged=True)
     S.save_settings({"collect_rate_mode": "maximum"}, replace_damaged=True)
     assert S.load_settings().repair_notice["written_off"]
-    S.save_settings({"repair_notice": {}}, replace_damaged=True)
+    at = S.load_settings().repair_notice["at"]
+    S.save_settings({"repair_notice": {"at": "2000-01-01T00:00:00+00:00"}}, replace_damaged=True)
+    assert S.load_settings().repair_notice["at"] == at, "a stale Dismiss cleared a newer notice"
+    S.save_settings({"repair_notice": {"at": at}}, replace_damaged=True)
     assert S.load_settings().repair_notice == {}
+
+
+def test_a_dismiss_on_the_save_that_repairs_keeps_the_new_notice(store):
+    S.save_settings({"repair_notice": {"at": ""}}, replace_damaged=True)
+    assert S.load_settings().repair_notice["written_off"]
 
 
 def test_a_notice_cannot_be_written_only_cleared(store):
     S.save_settings({"collect_rate_mode": "target"}, replace_damaged=True)
     with pytest.raises(S.SchedulerSettingsError):
         S.save_settings({"repair_notice": {"reset": ["export_dir"]}}, replace_damaged=True)
+    with pytest.raises(S.SchedulerSettingsError):
+        S.save_settings({"repair_notice": {}}, replace_damaged=True)
 
 
 def test_a_save_of_readable_settings_leaves_no_notice(store):
     S.save_settings({"collect_rate_mode": "target"}, replace_damaged=True)
-    S.save_settings({"repair_notice": {}})
+    S.save_settings({"repair_notice": {"at": S.load_settings().repair_notice["at"]}})
     S.save_settings({"collect_rate_mode": "maximum"})
     assert S.load_settings().repair_notice == {}
 
@@ -99,7 +109,8 @@ def test_the_config_route_carries_the_notice_and_its_dismiss(store):
     with pytest.raises(HTTPException) as err:
         api.scheduler_update_config(api.SchedulerConfigUpdate(repair_notice={"at": "x", "reset": ["export_dir"]}))
     assert err.value.status_code == 400
-    assert api.scheduler_update_config(api.SchedulerConfigUpdate(repair_notice={}))["repair_notice"] == {}
+    at = api._config_payload()["repair_notice"]["at"]
+    assert api.scheduler_update_config(api.SchedulerConfigUpdate(repair_notice={"at": at}))["repair_notice"] == {}
 
 
 def test_the_ui_draws_the_notice_where_the_retired_line_is():

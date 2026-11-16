@@ -864,7 +864,9 @@ def _coerce_retired_mode(value) -> str:
 
 # Fields that are bookkeeping rather than a choice: a repair resetting them is nothing the
 # operator has to check, so the notice does not count them.
-_REPAIR_NOTICE_UNCOUNTED = frozenset({"repair_notice", "retired_mode", "wiki_lane_default_seen"})
+_REPAIR_NOTICE_UNCOUNTED = frozenset(
+    {"repair_notice", "retired_mode", "wiki_lane_default_seen", "wiki_lane_wizard_done"}
+)
 
 
 def _coerce_repair_notice(value) -> dict:
@@ -1007,10 +1009,18 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         current.retired_mode = ""
     if "repair_notice" in updates and updates["repair_notice"] is not None:
         # Dismiss only, for the same reason as ``retired_mode``: a caller must not be able
-        # to write a notice for a repair that never ran.
-        if updates["repair_notice"] != {}:
-            raise SchedulerSettingsError("repair_notice can only be cleared (set to {})")
-        current.repair_notice = {}
+        # to write a notice for a repair that never ran. The dismiss names the notice it was
+        # shown (its ``at``) and clears only that one: a Dismiss clicked on a stale panel, or
+        # on the very save that found the store unreadable again, must not clear a NEWER
+        # notice nobody has read yet. A mismatch is not an error: the answer carries the
+        # newer notice, so the panel draws it.
+        ask = updates["repair_notice"]
+        if not isinstance(ask, dict) or set(ask) != {"at"} or not isinstance(ask["at"], str):
+            raise SchedulerSettingsError(
+                "repair_notice can only be dismissed, as {\"at\": <the notice's at>}"
+            )
+        if not reset and current.repair_notice.get("at") == ask["at"]:
+            current.repair_notice = {}
     for key in (
         "auto_run_market_rules",
         "auto_refresh_stat_subscriptions",

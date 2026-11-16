@@ -1016,10 +1016,14 @@
       if (others) lines.push(tf("{n} other settings are back at their defaults.", {n: others}));
       return lines;
     }
+    // The notice the panel last drew: a Dismiss clears THAT one only (the server compares
+    // its `at`), so a stale panel can never clear a newer repair nobody has read.
+    let _repairShownAt = "";
     function renderSettingsRepair(c) {
       const box = $("sch-repaired"), txt = $("sch-repaired-text");
       if (!box || !txt) return;
       const lines = settingsRepairLines(c && c.repair_notice);
+      _repairShownAt = lines.length ? String(c.repair_notice.at || "") : "";
       box.hidden = !lines.length;
       txt.textContent = lines.join(" ");
     }
@@ -1040,7 +1044,7 @@
       btn.disabled = true;
       try {
         renderSettingsRepair(await api("/api/scheduler/config",
-          {method: "PUT", body: JSON.stringify({repair_notice: {}})}));
+          {method: "PUT", body: JSON.stringify({repair_notice: {at: _repairShownAt}})}));
       } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
       finally { btn.disabled = false; }
     }
