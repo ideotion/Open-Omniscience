@@ -342,17 +342,11 @@ def statement_budget(db: Session, requested: object) -> tuple[float | None, str]
     ``skipped-budget``. ``requested`` is checked for type because the bundle calls this endpoint
     function directly, and a parameter it does not pass arrives as FastAPI's ``Query`` object.
     """
-    import time
-
-    from src.database.maintenance import _DEADLINE_KEY
+    from src.database.maintenance import deadline_left_s
 
     if isinstance(requested, (int, float)) and not isinstance(requested, bool) and requested > 0:
         return float(requested), "requested"
-    try:
-        at = db.info.get(_DEADLINE_KEY)
-    except Exception:  # noqa: BLE001 - a stub session with no .info
-        at = None
-    left = None if at is None else float(at) - time.monotonic()
+    left = deadline_left_s(db)  # the one reader of the enclosing deadline (``None`` for none, a stub session included)
     if left is not None and left > 0:
         return left, "enclosing-deadline"
     return None, "default"
