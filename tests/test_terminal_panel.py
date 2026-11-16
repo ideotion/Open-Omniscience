@@ -420,6 +420,62 @@ def _read_until(fd: int, needle: bytes, secs: float) -> bytes:
     return buf
 
 
+def _wait_reading(proc: subprocess.Popen, master: int, secs: float) -> tuple[int, bytes]:
+    """``proc.wait(secs)`` that keeps reading the terminal meanwhile; returns (exit code, what was read).
+
+    A pty holds little (about a kilobyte on macOS, far more on Linux), and a process that writes to a full one blocks: the curses
+    teardown and the launcher's last lines then wait on a reader that is itself waiting for the exit, and the wait runs out. Every
+    real-panel and launcher test went red that way on macOS shard 3 once its hang was gone (row 95's follow-up). Raises
+    ``TimeoutExpired`` like ``wait`` when the process outlives ``secs``.
+    """
+    buf = b""
+    end = time.monotonic() + secs
+    while proc.poll() is None:
+        left = end - time.monotonic()
+        if left <= 0:
+            raise subprocess.TimeoutExpired(proc.args, secs)
+        try:
+            if select.select([master], [], [], min(0.1, left))[0]:
+                chunk = os.read(master, 65536)
+                if not chunk:  # macOS: the end of the terminal; nothing more to read, so just wait
+                    return proc.wait(timeout=max(0.0, end - time.monotonic())), buf
+                buf += chunk
+        except OSError:  # Linux: EIO once every writer closed the terminal
+            return proc.wait(timeout=max(0.0, end - time.monotonic())), buf
+    return proc.returncode, buf
+
+
+@posix_only
+def test_a_writer_that_fills_the_terminal_ends_under_the_reading_wait_and_not_under_a_plain_one():
+    """The mechanism behind _wait_reading, shown where every platform shows it: 1 MB is more than any pty holds, so the writer
+    blocks until someone reads. A plain wait runs out; the reading wait sees it end."""
+    import pty
+
+    def start():
+        master, slave = pty.openpty()
+        proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdout.write('x' * 1_000_000); sys.stdout.flush()"],
+                                stdin=subprocess.DEVNULL, stdout=slave, stderr=subprocess.DEVNULL, start_new_session=True)
+        os.close(slave)
+        return proc, master
+
+    proc, master = start()
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            proc.wait(timeout=2)
+    finally:
+        proc.kill()
+        proc.wait()
+        os.close(master)
+    proc, master = start()
+    try:
+        rc, out = _wait_reading(proc, master, 30)
+        assert rc == 0 and len(out) >= 100_000
+    finally:
+        with contextlib.suppress(OSError):
+            proc.kill()
+        os.close(master)
+
+
 @posix_only
 @pytest.mark.skipif(P.curses is None, reason="no curses")
 def test_the_real_panel_draws_its_log_and_no_key_closes_it(server):
@@ -441,7 +497,7 @@ def test_the_real_panel_draws_its_log_and_no_key_closes_it(server):
         assert proc.poll() is None, "no key closes the panel"
         assert not [s for s in _H.seen if s["m"] == "POST"], "drawing the panel and pressing keys must post nothing"
         proc.send_signal(signal.SIGINT)
-        assert proc.wait(timeout=15) == 0
+        assert _wait_reading(proc, master, 15)[0] == 0
     finally:
         with contextlib.suppress(OSError):
             proc.kill()
@@ -468,7 +524,7 @@ def test_the_real_panel_ends_on_sigint_and_when_its_server_ends(server):
             else:
                 sleeper.kill()
                 sleeper.wait()
-            assert proc.wait(timeout=15) == 0
+            assert _wait_reading(proc, master, 15)[0] == 0
         finally:
             with contextlib.suppress(OSError):
                 proc.kill()
@@ -566,7 +622,7 @@ def test_the_launcher_starts_the_panel_with_its_server_pid_on_a_terminal(tmp_pat
         # A TERM to the launcher still stops the server AT ONCE with the panel running (a foreground panel would hold the trap back).
         t0 = time.monotonic()
         proc.send_signal(signal.SIGTERM)
-        rc = proc.wait(timeout=20)
+        rc, _ = _wait_reading(proc, master, 20)
         assert time.monotonic() - t0 < 10
         assert rc == 143
         assert not P.pid_alive(int(server_pid))
@@ -587,7 +643,7 @@ def test_a_closed_panel_leaves_the_launcher_holding_the_server_and_its_status(tm
         assert proc.poll() is None, "closing the panel must not end the launcher or the app"
         server_pid = int((tmp_path / "server.pid").read_text(encoding="utf-8").strip())
         os.kill(server_pid, signal.SIGTERM)  # a stop from outside, as the in-app power button is
-        assert proc.wait(timeout=20) == 143
+        assert _wait_reading(proc, master, 20)[0] == 143
     finally:
         _drain(master)
         with contextlib.suppress(OSError):
@@ -607,7 +663,7 @@ def test_no_panel_without_a_terminal_or_when_turned_off(tmp_path, case):
         time.sleep(1.5)
         assert not (tmp_path / "panel.args").exists()
         proc.send_signal(signal.SIGTERM)
-        assert proc.wait(timeout=20) == 143
+        assert _wait_reading(proc, master, 20)[0] == 143
     finally:
         _drain(master)
         with contextlib.suppress(OSError):
@@ -693,8 +749,9 @@ def test_a_server_ending_while_the_log_is_shown_ends_the_panel_cleanly(server):
         assert b"Press any key to return" in out
         sleeper.kill()
         sleeper.wait()
-        assert proc.wait(timeout=15) == 0
-        tail = _read_until(master, b"could not start", 1)
+        rc, tail = _wait_reading(proc, master, 15)
+        assert rc == 0
+        tail += _read_until(master, b"could not start", 1)
         assert b"could not start" not in tail
     finally:
         with contextlib.suppress(OSError):
@@ -884,7 +941,7 @@ def test_a_quiet_server_keeps_its_panel_and_it_says_so(monkeypatch):
         _Quiet.quiet = False
         assert b"answers again" in _read_until(master, b"answers again", 30)
         proc.send_signal(signal.SIGINT)
-        assert proc.wait(timeout=15) == 0
+        assert _wait_reading(proc, master, 15)[0] == 0
     finally:
         with contextlib.suppress(OSError):
             proc.kill()
@@ -919,7 +976,7 @@ def test_the_server_messages_view_returns_on_any_key(server):
         assert b"Stop app" in _read_until(master, b"Stop app", 10), "back in the panel after one key, no Enter"
         assert proc.poll() is None
         proc.send_signal(signal.SIGINT)
-        assert proc.wait(timeout=15) == 0
+        assert _wait_reading(proc, master, 15)[0] == 0
     finally:
         with contextlib.suppress(OSError):
             proc.kill()
@@ -1122,7 +1179,7 @@ def test_the_real_panel_speaks_the_language_the_browser_reported(server):
         out = _read_until(master, b"La collecte tourne", 20)
         assert b"La collecte tourne" in out, out[-2000:]
         proc.send_signal(signal.SIGINT)
-        assert proc.wait(timeout=15) == 0
+        assert _wait_reading(proc, master, 15)[0] == 0
     finally:
         with contextlib.suppress(OSError):
             proc.kill()
