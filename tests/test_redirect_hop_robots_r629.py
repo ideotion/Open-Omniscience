@@ -51,7 +51,7 @@ from src.ingest import (
     clear_kill_switch,
 )
 from src.ingest.crawl import CrawlConfig, crawl_source
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.ingest.sitemap import discover_sitemap_urls
 from src.monitoring.secret_scrub import record_text
@@ -991,7 +991,7 @@ def test_a_hop_to_an_empty_path_is_checked_as_the_root_its_request_asks_for(tmp_
     with pytest.raises(RobotsDisallowed) as caught:
         _fetch(f, f"{A}/start")
     text = record_text(caught.value, typed=False)
-    assert text == f"robots.txt disallows {B}{tail} {_NOTE}", text  # the address as written
+    assert text == f"robots.txt disallows {failure_url(f'{B}{tail}')} {_NOTE}", text  # as a report writes it (R734: query values masked, fragment dropped)
     assert s.asked_of("b.example") == [f"{B}/robots.txt"]
 
 
