@@ -113,7 +113,7 @@ import sys
 from collections.abc import Callable
 from typing import Any, cast
 
-from src.ingest import kill_switch_active
+from src.ingest import dns_stale, kill_switch_active
 from src.ingest.egress_window import any_window_open, socket_exempt_here
 from src.ingest.ssrf_guard import (
     check_connect_target,
@@ -353,7 +353,19 @@ def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
         if _airplane_armed and kill_switch_active() and _is_localhost_name(host):
             infos = _localhost_in_process(args, kwargs)
         else:
-            infos = _orig_getaddrinfo(host, *args, **kwargs)
+            try:
+                infos = _orig_getaddrinfo(host, *args, **kwargs)
+            except socket.gaierror as exc:
+                # Row 72 (field test 2026-11-14): a resolver that cannot answer FOR A MOMENT
+                # gets the last good answer for a Wikimedia name, if one is recent. It is
+                # handed to check_resolution below like any fresh answer, so it sits behind
+                # the SSRF guard and never in front of it (src/ingest/dns_stale.py).
+                remembered = dns_stale.recall(host, args, kwargs, temporary=exc.errno == socket.EAI_AGAIN)
+                if remembered is None:
+                    raise
+                infos = remembered
+            else:
+                dns_stale.remember(host, args, kwargs, infos)
     # The SSRF half checks the ANSWER, not the question: inside a guarded fetch a
     # name that resolves to an internal address is refused here, which is the
     # only place a destination lookup performed by a library that then hands the
