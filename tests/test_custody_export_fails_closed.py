@@ -226,8 +226,11 @@ def test_a_cut_log_with_a_tail_re_signed_by_another_key_is_refused_even_unpinned
         b["head_signature"] = forger.signer.sign(canonical_bytes(b["head"]))
     ok, issues = verify_export(b)
     assert not ok and issues[0].startswith("head signature invalid")
-    # and with the signer relabelled to B, the key change is named
+    # and with the signer relabelled to B (both halves: row 46 holds the printed signer to the head's whole identity),
+    # the key change is named
     b["signer"] = {**b["signer"], "ed25519_pub": b["head_signature"]["ed25519"]["pub"]}
+    if b["head_signature"].get("algorithm") == "hybrid":
+        b["signer"]["ml_dsa_pub"] = b["head_signature"]["ml_dsa"]["pub"]
     ok, issues = verify_export(b)
     assert not ok and issues[0].startswith("the signing key changes at seq 3 with no key-rotation record")
 
