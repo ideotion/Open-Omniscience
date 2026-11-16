@@ -396,9 +396,9 @@ def test_the_fetcher_hands_the_monitor_nothing_it_shows_raw(tmp_path, monkeypatc
 
 def test_control_fetch_started_keeps_an_ordinary_url_as_it_came():
     m = ActivityMonitor()
-    tok = m.fetch_started("https://example.org:8443/feed?x=1")
+    tok = m.fetch_started("https://example.org:8443/feed?page=1")
     m.fetch_bytes(10, tok)
-    assert m.snapshot()["current_fetch"]["url"] == "https://example.org:8443/feed?x=1"
+    assert m.snapshot()["current_fetch"]["url"] == "https://example.org:8443/feed?page=1"
     assert [r["host"] for r in m.per_host_rates()] == ["example.org:8443"]
     assert m.inflight_hosts() == 1
 
@@ -464,7 +464,7 @@ def test_duckduckgo_url_parsing_lines(caplog, cred):
     assert d._clean_url(bad) is None  # the redirect unwrap (unparseable) and the validation line
     assert d._extract_domain(bad) == ""
     assert d._clean_url(f"ftp://{_USERINFO if cred else ''}files.example/x") is None  # the non-http(s) line
-    assert d._unwrap_search_redirect(f"https://{_USERINFO if cred else ''}duckduckgo.com/l/?x=1") is None  # no target
+    assert d._unwrap_search_redirect(f"https://{_USERINFO if cred else ''}duckduckgo.com/l/?page=1") is None  # no target
     target = f"ftp://{_USERINFO if cred else ''}files.example/y"
     assert d._unwrap_search_redirect(f"https://duckduckgo.com/l/?uddg={target}") is None  # a target that is not http(s)
     assert d._resolve_url("/rss", bad) is None
@@ -476,7 +476,7 @@ def test_duckduckgo_url_parsing_lines(caplog, cred):
         f"URL validation failed for {shown!r}: ",
         f"domain extraction failed for {shown!r}: ",
         f"URL rejected (non-http(s) scheme): {'ftp://' + m + 'files.example/x'!r}",
-        f"redirect unwrap: no uddg target in {'https://' + m + 'duckduckgo.com/l/?x=1'!r}",
+        f"redirect unwrap: no uddg target in {'https://' + m + 'duckduckgo.com/l/?page=1'!r}",
         f"redirect unwrap: target is not an absolute http(s) URL: {'ftp://' + m + 'files.example/y'!r}",
         f"URL resolve failed for '/rss' on {shown + '/'!r}: ",
         f"URL resolve failed for {'//' + m + 'cdn.example/rss'!r} on {shown + '/'!r}: ",

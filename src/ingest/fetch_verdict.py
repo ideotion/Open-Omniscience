@@ -223,9 +223,10 @@ def without_private_query(text: str) -> str:
 
 
 def failure_url(url: str) -> str:
-    """The URL as the fetcher writes it into its failure sentence ("request error for <url>: ..."): the userinfo masked and every
-    whitespace character percent-encoded (its UTF-8 bytes), the query of a :data:`PRIVATE_QUERY_HOSTS` request withheld (R683), nothing
-    else changed. NEVER raises.
+    """The URL as the fetcher writes it into its failure sentence ("request error for <url>: ...") and as every log line, report, field
+    data file and diagnostics bundle writes an address (R734): the userinfo masked, every query value masked except an allowlisted
+    harmless one and the fragment dropped (``src.database.address_mask``), every whitespace character percent-encoded (its UTF-8 bytes),
+    the query of a :data:`PRIVATE_QUERY_HOSTS` request withheld (R683), nothing else changed. NEVER raises.
 
     A caller's URL can hold spaces (a feed item's link, a redirect target) and the reader above takes the URL token as everything up to
     the first whitespace, so a raw space let the rest of a link be read as our own words (R616). ``\\s`` here is the reader's ``\\S``
@@ -233,10 +234,19 @@ def failure_url(url: str) -> str:
     and the sentence is stored, served and shown, so the userinfo is replaced by :data:`USERINFO_MASK` first (R620; the span is
     :func:`_userinfo_span`'s). A URL that cannot be read is written as :data:`UNREADABLE_URL`, never as it came. The request itself is
     unchanged: requests quotes the URL it sends on its own, and sends the credentials it carries."""
+    return _written_url(url, query_masked=True)
+
+
+def _written_url(url: str, *, query_masked: bool) -> str:
+    """:func:`failure_url`'s work; ``query_masked=False`` is R637's form for the UI's own answers (:func:`shown_url`). NEVER raises."""
     try:
         span = _userinfo_span(url)
         if span is not None:
             url = url[: span[0]] + USERINFO_MASK + url[span[1] :]
+        if query_masked:
+            from src.database.address_mask import masked_address
+
+            url = masked_address(url)
         url = _private_query_withheld(url)
         return _WHITESPACE_RE.sub(lambda m: "".join(f"%{b:02X}" for b in m.group().encode("utf-8", "surrogatepass")), url)
     except Exception:  # noqa: BLE001 - a failure sentence is written from inside a failure; a URL it cannot read is withheld whole
@@ -275,6 +285,16 @@ def shown_url(url: str | None) -> str | None:
     written, as :func:`_userinfo_span` reads it; neither can be fetched (the fetcher refuses a URL whose scheme is not http(s)
     or that has no host before any request, and its refusal sentence writes it through :func:`failure_url` the same way, R620's
     stated limit). NEVER raises."""
+    if not url:
+        return url
+    return _written_url(url, query_masked=False)
+
+
+def reported_url(url: str | None) -> str | None:
+    """A stored address as a report, a field data file, a diagnostics bundle or a log line writes it (R734): :func:`failure_url`'s
+    form, its userinfo masked, every query value but an allowlisted harmless one masked, its fragment dropped. ``None`` and ``""``
+    stay what they are. The UI's own answers use :func:`shown_url` instead (an edit form sends the shown address back). NEVER
+    raises."""
     if not url:
         return url
     return failure_url(url)
@@ -331,6 +351,18 @@ def _origin(url: str) -> tuple[str, str] | None:
     scheme = parts.scheme.lower()
     key = _readable_host_key(parts.netloc, scheme) if parts.netloc else None
     return (scheme, key) if scheme and key else None
+
+
+def address_secrets(url: str) -> tuple[str, ...]:
+    """Every secret ``url`` can carry, for a scrub to take out of an exception's text that quotes it in its own words: the
+    credentials (:func:`userinfo_secrets`) and, under R734, the query values :func:`failure_url` masks
+    (``src.database.address_mask.query_secrets``, each at least four characters, the scrub's floor). NEVER raises."""
+    try:
+        from src.database.address_mask import query_secrets
+
+        return tuple(dict.fromkeys(userinfo_secrets(url) + query_secrets(url)))
+    except Exception:  # noqa: BLE001 - written from inside a failure; no secret is better than a raise that replaces it
+        return userinfo_secrets(url)
 
 
 def userinfo_secrets(url: str) -> tuple[str, ...]:

@@ -91,12 +91,13 @@ def _row_dict(obj: Any, shown: dict[str, Callable[[Any], Any]] | None = None) ->
 
 def _shown_source_columns() -> dict[str, Callable[[Any], Any]]:
     """A source's columns that carry its feed address, each with what writes it as the app shows it (the independent read's M1 on
-    R637): the address with its userinfo as ``***@`` (``shown_url``, the answers' form) and a kept pre-R628 key the same way
-    (``shown_feed_key``). Imported here, on a request, as the rest of this slice's work is."""
+    R637), and since R734 as a report writes it: the address with its userinfo as ``***@`` and its query's values masked but for an
+    allowlisted harmless one (``reported_url``) and a kept pre-R628 key the same way (``shown_feed_key``). Imported here, on a
+    request, as the rest of this slice's work is."""
     from src.database.feed_key import shown_feed_key
-    from src.ingest.fetch_verdict import shown_url
+    from src.ingest.fetch_verdict import reported_url
 
-    return {"rss_url": shown_url, "feed_key": shown_feed_key}
+    return {"rss_url": reported_url, "feed_key": shown_feed_key}
 
 
 def _pick(db: Session, source_id: int, seed: int) -> tuple[Article | None, int]:
