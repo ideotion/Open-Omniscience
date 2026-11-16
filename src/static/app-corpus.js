@@ -2144,7 +2144,7 @@
               // dashChartSvg uses to keep a flush-minimum bar visible; it marks the
               // true value and never invents height.
               return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${hgt.toFixed(1)}" fill="${col}" opacity="0.72">${tip(pt)}</rect>`
-                + (hgt < 2 ? `<rect x="${x0.toFixed(1)}" y="${(by - 1).toFixed(1)}" width="${bwc}" height="2" fill="${col}"/>` : "");
+                + (hgt < 2 ? `<rect x="${x0.toFixed(1)}" y="${(by - 1).toFixed(1)}" width="${bwc}" height="2" fill="${col}">${tip(pt)}</rect>` : "");
             }).join("");
         const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
           + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`
@@ -2153,7 +2153,7 @@
             ? `<text x="${padL}" y="${h - 3}" font-size="8" fill="var(--muted)">${esc(dt(real[0].date))}</text>`
               + (real.length > 1 ? `<text x="${w - padR}" y="${h - 3}" text-anchor="end" font-size="8" fill="var(--muted)">${esc(dt(real[real.length - 1].date))}</text>` : "")
             : "");
-        const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + nReal + (nReal < n ? " (" + (n - nReal) + " gaps)" : ""))}" style="display:block">${gr}${body}</svg>`;
+        const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + nReal + (nReal < n ? " (" + (n - nReal) + " gaps)" : ""))}" style="display:block;direction:ltr">${gr}${body}</svg>`;
         const oc = p.term != null ? `data-on-click='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
         const head = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">`
           + `<a href="#" ${oc} title="${esc(t("Open this keyword's own analysis window"))}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.label || "")}</a>`

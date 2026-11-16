@@ -230,4 +230,16 @@ test("every drawn mark answers a hover with its date and count, in both modes", 
   assert(titles === SPARSE, `a dense panel needs a hover target per real point (${SPARSE}), got ${titles}`);
 });
 
+test("a measured zero's 2px cap answers the hover too (the main bar is 0 px tall)", () => {
+  const svg = smallMultiplesSvg([{label: "en", points: dense([3, 0, 5])}]);
+  assert(/height="2"[^>]*><title>2026-07-02 · 0<\/title><\/rect>/.test(svg), svg);
+});
+
+test("the panel svg keeps a left-to-right axis under an rtl page (Arabic)", () => {
+  // An svg inherits the page's direction, and under rtl every text-anchor flips, so the
+  // dates and the max were drawn past the viewBox edges and clipped (measured, getBBox).
+  const svg = smallMultiplesSvg([{label: "en", points: dense([1, 7, 3])}]);
+  assert(/<svg[^>]*style="[^"]*direction:ltr/.test(svg), svg);
+});
+
 console.log(`\n${passed} passed`);
