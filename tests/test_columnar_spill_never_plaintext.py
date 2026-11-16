@@ -88,8 +88,9 @@ def test_the_persisted_config_encrypts_what_it_spills_from_the_temporary_catalog
     """The persisted store is opened by ``_persisted_config`` with the bundled httpfs LOADed. httpfs is not bundled
     here, so DuckDB's built-in module stands in (allowed for writes on 1.4.x; on later versions only under
     ``force_mbedtls_unsafe``): what is under test is whether a spill from the TEMPORARY catalog is encrypted at all."""
-    cfg = dict(columnar._persisted_config(), memory_limit="40MB", threads=1)
-    con = duckdb.connect(config=cfg)
+    spill = work / "spill"  # the app names the folder (row 48); the watch below reads everything under the working directory
+    spill.mkdir()
+    con = duckdb.connect(config=columnar._persisted_config(spill=str(spill), snapshot=_SNAP))
     try:
         with contextlib.suppress(duckdb.Error):  # 1.4.x: the option does not exist and the built-in module writes
             con.execute("SET force_mbedtls_unsafe = true")
@@ -103,7 +104,8 @@ def test_the_persisted_config_encrypts_what_it_spills_from_the_temporary_catalog
             assert (found, raised) == ([], None)
             found, raised = _watched(con, work, f"SELECT s FROM {table} ORDER BY s DESC")
             assert (found, raised) == ([], None)
-        assert any(p.is_file() for p in (work / ".tmp").rglob("*")), "the engine spilled: the files above were really read"
+        assert any(p.is_file() for p in spill.rglob("*")), "the engine spilled: the files above were really read"
+        assert not (work / ".tmp").exists()
     finally:
         con.close()
 
