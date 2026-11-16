@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import distinct, func
+from sqlalchemy import func
 
 EMERGENCE_CAVEAT = (
     "A term with almost no prior history appeared suddenly across many distinct sources, "
@@ -69,21 +69,27 @@ def find_manufactured_emergence(
     anchor_lo = r_start - timedelta(days=anchor_lookback_days)
 
     def _article_counts(lo, hi, keep):
-        from sqlalchemy import select
+        """``{keyword_id: distinct articles in [lo, hi)}`` for the keywords ``keep`` accepts.
 
-        from src.database.query import grouped_counts
+        Read as many SHORT statements, one day of one key range each (``windowed_group_counts``), never one GROUP BY
+        over the whole five weeks: on a field corpus that one statement was a reader open for minutes, and a running
+        statement is a reader no WAL checkpoint can pass (field test 2026-11-14 row 58: this producer ran 1,239 s while
+        the log grew to 2.81 GB). Counting ROWS per day is the distinct-article count: ``keyword_mentions`` holds one
+        row per (keyword, article) (the unique ``ix_mention_keyword_article``) and that row has the article's one
+        ``observed_on``, so an article is counted on exactly one day and the days sum exactly."""
+        from src.database.query import windowed_group_counts
 
-        kept, _groups = grouped_counts(
+        kept, _groups = windowed_group_counts(
             session,
-            select(KeywordMentionRead.keyword_id, func.count(distinct(KeywordMentionRead.article_id)))
-            .where(
-                KeywordMentionRead.observed_on >= lo,
-                KeywordMentionRead.observed_on < hi,
-                # the mentions kept for a lost article: a stand-in is no article, so it is neither a "recent article" of a keyword nor a source
-                not_a_stand_in_article_id(KeywordMentionRead.article_id),
-            )
-            .group_by(KeywordMentionRead.keyword_id),
-            keep,
+            key=KeywordMentionRead.keyword_id,
+            day=KeywordMentionRead.observed_on,
+            rowid=KeywordMentionRead.id,
+            value=func.count(KeywordMentionRead.id),
+            lo=lo,
+            hi=hi,
+            keep=keep,
+            # the mentions kept for a lost article: a stand-in is no article, so it is neither a "recent article" of a keyword nor a source
+            where=(not_a_stand_in_article_id(KeywordMentionRead.article_id),),
         )
         return kept
 
