@@ -72,7 +72,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from src.database.models import Article, LawDocument
+from src.database.models import Article, LawDocument, LawRevision
 from src.monitoring.secret_scrub import record_text
 from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
 
@@ -95,6 +95,19 @@ CHROME_MARKERS: tuple[str, ...] = (
 _RE_EXTRACT_PREFIX = "re-read with"
 
 _MAX_LISTED = 200  # bounded output; the totals are always exact
+
+#: A recorded revision whose size moved by at most this many characters against the previous
+#: revision (``delta_bytes`` is a length in characters, whatever its name). Field data
+#: (2026-11-08, five legislation.gov.uk documents) showed every poll ending in "changed (+0
+#: bytes)" or "(+1 bytes)": a new revision each time, for a text whose size did not move. A
+#: real amendment can be that small too, so this is a COUNT and an excerpt for a reader to
+#: judge, never a verdict and never a filter on what the tracker records.
+SMALL_REVISION_CHARS = 16
+
+#: The latest small revision's stored diff is quoted up to this many characters, so the
+#: next field report shows WHAT changed (a counter, a date, a token in the page chrome)
+#: without a live fetch. Law text is public; the cap keeps the report bounded.
+_SMALL_DIFF_EXCERPT_CHARS = 600
 
 
 def _residue_in(text: str | None) -> list[str]:
@@ -126,11 +139,32 @@ def law_ingest_report(session: Session) -> dict:
         for url, published in rows:
             dated[urls[url]] = published
 
+    # Revision counts per document in one grouped query; the newest small revision's diff
+    # is read only for the documents that have one (bounded by the per-document cap).
+    from sqlalchemy import case, func
+
+    # Only a revision measured against the PREVIOUS one: a first capture records 0 against
+    # nothing, and a "baseline"/legacy row measures drift from the first capture, which can
+    # come back near zero after large changes in between.
+    small = (LawRevision.diff_basis == "previous") & (
+        func.abs(func.coalesce(LawRevision.delta_bytes, SMALL_REVISION_CHARS + 1)) <= SMALL_REVISION_CHARS
+    )
+    rev_counts: dict[int, tuple[int, int]] = {
+        doc_id: (int(total), int(n_small or 0))
+        for doc_id, total, n_small in session.query(
+            LawRevision.document_id,
+            func.count(LawRevision.id),
+            func.sum(case((small, 1), else_=0)),
+        ).group_by(LawRevision.document_id)
+    }
+
     per_document: list[dict] = []
     re_extracted = 0
     with_residue = 0
     marker_counts: dict[str, int] = {}
     never_checked = 0
+    with_small_revisions = 0
+    small_revisions_total = 0
 
     from src.api.law import _verdict_of  # the ONE classification, reused (never a 2nd guess)
 
@@ -151,7 +185,28 @@ def law_ingest_report(session: Session) -> dict:
             with_residue += 1
             for m in markers:
                 marker_counts[m] = marker_counts.get(m, 0) + 1
+        n_revisions, n_small = rev_counts.get(d.id, (0, 0))
+        if n_small:
+            with_small_revisions += 1
+            small_revisions_total += n_small
         if len(per_document) < _MAX_LISTED:
+            latest_small_diff = None
+            if n_small:
+                newest = (
+                    session.query(LawRevision.delta_bytes, LawRevision.diff, LawRevision.observed_at)
+                    .filter(LawRevision.document_id == d.id)
+                    .filter(small)
+                    .order_by(LawRevision.id.desc())
+                    .first()
+                )
+                if newest is not None:
+                    diff_text = newest.diff or ""
+                    latest_small_diff = {
+                        "delta_bytes": newest.delta_bytes,
+                        "observed_at": newest.observed_at.isoformat() if newest.observed_at else None,
+                        "diff_excerpt": diff_text[:_SMALL_DIFF_EXCERPT_CHARS],
+                        "diff_truncated": len(diff_text) > _SMALL_DIFF_EXCERPT_CHARS,
+                    }
             per_document.append(
                 {
                     "id": d.id,
@@ -167,6 +222,9 @@ def law_ingest_report(session: Session) -> dict:
                     ),
                     "last_status": d.last_status,
                     "verdict": verdict,
+                    "revisions": n_revisions,
+                    "small_revisions": n_small,
+                    "latest_small_revision": latest_small_diff,
                     "last_checked_at": (
                         d.last_checked_at.isoformat() if d.last_checked_at is not None else None
                     ),
@@ -181,6 +239,9 @@ def law_ingest_report(session: Session) -> dict:
         "with_chrome_residue": with_residue,
         "chrome_markers_found": dict(sorted(marker_counts.items())),
         "stored_publication_dates": len(dated),
+        "with_small_revisions": with_small_revisions,
+        "small_revisions": small_revisions_total,
+        "small_revision_chars": SMALL_REVISION_CHARS,
         "strip_version": BOILERPLATE_STRIP_VERSION,
         "per_document": per_document,
         "listed": len(per_document),
@@ -197,7 +258,12 @@ def law_ingest_report(session: Session) -> dict:
             "published_at, which should be zero once each document has synced once, "
             "because the only date available was the day we polled the page. "
             "`chrome_markers_found` counts occurrences of a fixed vocabulary of observed "
-            "page chrome in the stored body."
+            "page chrome in the stored body. "
+            "`revisions` counts the recorded revisions of each document; `small_revisions` "
+            "those measured against the previous revision whose length moved by at most "
+            "`small_revision_chars` characters (a first capture is never one), and "
+            "`latest_small_revision` quotes the newest one's stored diff (capped) so a "
+            "reader can see what changed without fetching the page."
         ),
         "caveat": (
             "Chrome residue is NOT evidence that the strip stage did not run: the strip "
@@ -210,7 +276,10 @@ def law_ingest_report(session: Session) -> dict:
             "is not recorded anywhere. A `verdict` of error, deferred, robots_blocked, "
             "empty or never_checked says its last check stored no fresh body, so it is a "
             "CANDIDATE for still holding pre-strip text, never proof: a document that healed "
-            "long ago and fails today reads the same."
+            "long ago and fails today reads the same. A small revision is not a "
+            "verdict either: a real amendment can move a text by a byte, and a page whose "
+            "chrome carries a counter or a date records a revision on every poll; the "
+            "quoted diff is there so a reader can tell which."
         ),
     }
 
