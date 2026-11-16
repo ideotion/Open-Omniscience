@@ -689,7 +689,7 @@ def _close_plaintext_serves() -> None:
 
         rec = close_serves_after_encryption()
         if rec.get("busy"):
-            _LOG.warning("encrypt in place: a columnar serve was in use and stays open until its next rebuild (%s)", rec["busy"])
+            _LOG.info("encrypt in place: a columnar serve was in use and is closed as soon as it is free (%s)", rec["busy"])
     except Exception as exc:  # noqa: BLE001 - the encryption itself has succeeded; this cleanup must not turn it into a failure
         log_failure(_LOG, "encrypt in place: could not close the columnar serves", exc, level=logging.WARNING)
 

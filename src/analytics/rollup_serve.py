@@ -501,37 +501,48 @@ def _build_inmemory_and_swap() -> dict | None:
             con.close()
         _remove_spill(spill)
         return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
+    refused = False
     with _LOCK:
-        old = _STATE["con"]
-        _STATE["con"] = con
-        _STATE["persisted"] = False
-        _STATE["built_at"] = time.time()
-        _STATE["rows"] = int(rows)
-        _STATE["bind"] = built_bind
-        _STATE["token"] = token
-        _STATE["pending"] = False
-        _STATE["last_build"] = {
-            "at": time.time(), "build_s": round(time.monotonic() - build_started, 1),
-            "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
-            "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
-            "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
-            "shard_checkpoints": tally.get("shard_checkpoints"), "shard_checkpoint_secs": tally.get("shard_checkpoint_secs"),
-            "shard_checkpoint_failures": tally.get("shard_checkpoint_failures"),
-            "shard_checkpoint_first_failure": tally.get("shard_checkpoint_first_failure"),
-            "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
-            "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
-            # what the finished rollup was asked before it was served, and what that cost (R157)
-            "serve_check": canary,
-            # whether the rollup was stored compressed before it was asked, and why not when it was not (R164)
-            "compact": compact,
-        }
-        old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
-        if old is not None:
-            try:
-                old.close()  # safe: serves hold _LOCK, so none is mid-query here
-            except Exception:  # noqa: BLE001
-                pass
-        _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
+        # Again under the lock the encryption's close takes (open-on-main row 50): a build that passed the check above just
+        # before the library was encrypted would otherwise swap in, after that close, a connection whose folder holds plaintext.
+        if spill and _corpus_encrypted():
+            refused = True
+        else:
+            old = _STATE["con"]
+            _STATE["con"] = con
+            _STATE["persisted"] = False
+            _STATE["built_at"] = time.time()
+            _STATE["rows"] = int(rows)
+            _STATE["bind"] = built_bind
+            _STATE["token"] = token
+            _STATE["pending"] = False
+            _STATE["last_build"] = {
+                "at": time.time(), "build_s": round(time.monotonic() - build_started, 1),
+                "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
+                "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
+                "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
+                "shard_checkpoints": tally.get("shard_checkpoints"), "shard_checkpoint_secs": tally.get("shard_checkpoint_secs"),
+                "shard_checkpoint_failures": tally.get("shard_checkpoint_failures"),
+                "shard_checkpoint_first_failure": tally.get("shard_checkpoint_first_failure"),
+                "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
+                "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
+                # what the finished rollup was asked before it was served, and what that cost (R157)
+                "serve_check": canary,
+                # whether the rollup was stored compressed before it was asked, and why not when it was not (R164)
+                "compact": compact,
+            }
+            old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
+            if old is not None:
+                try:
+                    old.close()  # safe: serves hold _LOCK, so none is mid-query here
+                except Exception:  # noqa: BLE001
+                    pass
+            _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
+    if refused:
+        with contextlib.suppress(Exception):
+            con.close()
+        _remove_spill(spill)
+        return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
     return None
 
@@ -598,6 +609,7 @@ def _refresh_persisted_build() -> bool | None:
     with _LOCK:
         con = _STATE["con"] if _STATE["persisted"] else None
     opened_now = con is None
+    new_spill = ""  # the offload folder of a connection opened by THIS call (a cached one keeps the folder recorded with it)
     if opened_now:
         # The dispatcher chose this path a moment ago. The passphrase is read ONCE here and nothing is opened without it: ``columnar.open_store``
         # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
@@ -606,7 +618,17 @@ def _refresh_persisted_build() -> bool | None:
             return _persisted_declined("no-passphrase")  # gone since the verdict: declined; the next verdict re-reads the setting
         if not columnar.secure_crypto_available():
             return _persisted_declined("no-secure-backend")
-        opened = columnar.open_store(passphrase)  # opens the persisted file; the opener REPORTS which store it opened
+        # The persisted connection's own offload folder, under the data directory, removed with the connection (row 48): never DuckDB's
+        # default ``.tmp`` beside the working directory. Handed to the persisted connection ONLY; an in-memory store handed back instead
+        # does not get it (its offload would not be encrypted), and the folder goes with the decline below.
+        new_spill = _persisted_spill_setting()
+        if not new_spill:
+            _LOG.warning("rollup serve: no offload folder for the persisted store; a refresh past its memory limit fails instead")
+        try:
+            opened = columnar.open_store(passphrase, persisted_spill=new_spill or None)
+        except BaseException:
+            _remove_spill(new_spill)  # the opener raised (its own in-memory fallback failed): nothing holds the folder
+            raise
         con = opened.con
         if opened.kind != "persisted":
             # An in-memory store was handed back (the encryption gate failed, or the persisted open raised) or the engine is off: not the store
@@ -616,6 +638,7 @@ def _refresh_persisted_build() -> bool | None:
                     con.close()
                 except Exception:  # noqa: BLE001 - closing a store that is not wanted must not turn a decline into a failure
                     pass
+            _remove_spill(new_spill)
             return _persisted_declined(opened.fallback_reason or "engine-off")
     if con is None:
         return _persisted_declined("engine-off")  # a store cached in ``_STATE`` is never None here; this narrows the type and refuses the impossible
@@ -644,7 +667,12 @@ def _refresh_persisted_build() -> bool | None:
                 # its offload folder stayed on disk (open-on-main row 25).
                 bind = s.get_bind()  # read before the first write: a raise below this point would leave a half-recorded store
                 retired = _STATE["con"] if _STATE["con"] is not con else None
-                retired_spill, _STATE["spill"] = _STATE.get("spill"), None
+                # The folder recorded is the serving connection's: the retired one's goes with it, a cached persisted one keeps its own.
+                retired_spill = _STATE.get("spill") if retired is not None or opened_now else None
+                if opened_now:
+                    _STATE["spill"] = new_spill or None
+                elif retired is not None:
+                    _STATE["spill"] = None
                 _STATE["con"] = con
                 _STATE["persisted"] = True
                 _STATE["built_at"] = time.time()
@@ -664,6 +692,7 @@ def _refresh_persisted_build() -> bool | None:
         if opened_now and not recorded:
             with contextlib.suppress(Exception):
                 con.close()
+            _remove_spill(new_spill)  # after the close: DuckDB holds its files open until then
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
     return True
@@ -1079,9 +1108,82 @@ _OWN_SPILL_SWEPT = False
 _SPILL_LOCK = threading.Lock()
 
 
+#: A folder is made after its process started; it counts as ORPHANED (its pid reused by a later process) only when it is older than
+#: that process's start by more than this, so clock resolution (psutil reads a start time in 1/100 s ticks on Linux) never
+#: makes a live process's own folder look older than the process.
+_SPILL_START_SLACK_S = 2.0
+
+
+#: Each offload folder holds this file, locked (``flock``) by the process that made it for as long as the folder is its own: the
+#: sweep's proof of life where there is one (POSIX). The lock goes with the process however it ends, so neither a reused pid
+#: nor a clock step can make a live folder look orphaned, or an orphan look live (open-on-main row 51).
+_OWNER_FILE = ".owner"
+#: The open, locked owner file of each folder this process made (folder path -> descriptor), closed by ``_remove_spill``.
+_SPILL_OWNERS: dict[str, int] = {}
+
+
+#: The prefix of a folder being made: the sweep reads a folder only once it carries its ``<pid>-`` name, which it gets only
+#: after its owner file is locked, so no sweep ever finds an owner-less folder that is in fact live.
+_STAGING_PREFIX = "new-"
+
+
+def _hold_owner_lock(folder) -> int | None:
+    """Lock ``folder``'s owner file for this process and return the descriptor that holds it (POSIX; elsewhere ``None``)."""
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    fd = os.open(folder / _OWNER_FILE, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _owner_alive(folder) -> bool | None:
+    """Whether a live process holds ``folder``'s owner lock: ``True``, ``False``, or ``None`` when the folder has no owner file
+    (made before the lock existed, or off POSIX) or the lock cannot be tried (on Linux NFS, ``flock`` is emulated with POSIX
+    locks and an exclusive lock on a read-only descriptor fails: the sweep then falls back to the pid rule)."""
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    try:
+        fd = os.open(folder / _OWNER_FILE, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        except OSError:
+            return None
+        return False
+    finally:
+        os.close(fd)
+
+
+def _folder_time(path) -> float:
+    """When ``path`` was made, as well as the filesystem can say: its birth time where there is one, else the EARLIER of its
+    change and modification times (entries added later only move those forward, which can only keep a folder, never drop one)."""
+    st = path.stat()
+    birth = getattr(st, "st_birthtime", None)
+    return float(birth) if birth else min(st.st_mtime, st.st_ctime)
+
+
 def _sweep_spill_folders(root) -> None:
     """Remove the offload folders of processes that are gone (and nothing else): the folders are named
-    ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any."""
+    ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any.
+
+    A pid that is alive is not proof the folder is its own: the pid may have been reused by a later process (open-on-main
+    row 51), which would keep a plaintext folder a crashed build left behind for as long as that process lives. The owner
+    lock (:func:`_owner_alive`) decides where the folder has one. A folder without one keeps the pid rule, and a live pid
+    keeps its folder only while the folder is not older than the process (start times can move with a clock step on Linux,
+    which is why the lock comes first); a folder made BEFORE the process started is orphaned and goes. When the start time
+    cannot be read the folder is KEPT (a live process may be using it) and reported."""
     import shutil
 
     global _OWN_SPILL_SWEPT
@@ -1091,49 +1193,127 @@ def _sweep_spill_folders(root) -> None:
         return  # no way to tell a live process from a dead one: leave them
     mine = os.getpid()
     for child in root.iterdir():
+        if child.name.startswith(_STAGING_PREFIX) and child.is_dir():
+            # A folder that was being made: nothing was ever offloaded into it. Its maker is gone when its pid is.
+            # One of THIS pid is an earlier process's (a container restarts as pid 1), unless its lock is held.
+            staged = child.name[len(_STAGING_PREFIX):].split("-", 1)[0]
+            if not staged.isdigit():
+                continue
+            if int(staged) == mine:
+                if not _OWN_SPILL_SWEPT and _owner_alive(child) is not True:
+                    shutil.rmtree(child, ignore_errors=True)
+            elif not psutil.pid_exists(int(staged)) and _owner_alive(child) is not True:
+                # (a held lock: its maker lives in another pid namespace sharing this data directory)
+                shutil.rmtree(child, ignore_errors=True)
+            continue
         head = child.name.split("-", 1)[0]
         if not (child.is_dir() and head.isdigit()):
             continue
         pid = int(head)
         if pid == mine:
-            if not _OWN_SPILL_SWEPT:
+            # An earlier process with this pid (a container restarts as pid 1) left it, unless its lock is held: then another
+            # live process, in another pid namespace sharing this data directory, owns it.
+            if not _OWN_SPILL_SWEPT and _owner_alive(child) is not True:
                 shutil.rmtree(child, ignore_errors=True)
-        elif not psutil.pid_exists(pid):
+            continue
+        alive = _owner_alive(child)
+        if alive is not None:  # the owner lock answers: held means a live owner, free means none, whatever the pid now is
+            if not alive:
+                shutil.rmtree(child, ignore_errors=True)
+            continue
+        # No owner file (a folder made before the lock existed, or off POSIX): the pid and its start time decide.
+        if not psutil.pid_exists(pid):
             shutil.rmtree(child, ignore_errors=True)
+            continue
+        try:
+            started = psutil.Process(pid).create_time()
+            made = _folder_time(child)
+        except psutil.NoSuchProcess:
+            shutil.rmtree(child, ignore_errors=True)  # it ended between the two reads
+            continue
+        except Exception as exc:  # noqa: BLE001 - unreadable start time (access denied, a zombie): keep it, say so
+            _LOG.warning("rollup serve: kept offload folder %s: cannot tell whether process %s owns it (%s)",
+                         child.name, pid, type(exc).__name__)
+            continue
+        if made < started - _SPILL_START_SLACK_S:
+            shutil.rmtree(child, ignore_errors=True)  # older than the process holding its pid: a reused pid's orphan
     _OWN_SPILL_SWEPT = True
 
 
 def _remove_spill(path: str | None) -> None:
-    """Remove ONE connection's offload folder, after that connection is closed."""
+    """Remove ONE connection's offload folder, after that connection is closed, and let go of its owner lock."""
     if path:
         import shutil
 
+        fd = _SPILL_OWNERS.pop(str(path), None)
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                os.close(fd)
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _spill_folder(*, make: bool) -> str:
+    """Sweep the offload folders of processes that are gone, then (``make``) a NEW owner-only folder under the data
+    directory for one connection alone. Raises when the folder cannot be made; the two callers below turn that into
+    "no offload". The sweep runs whether or not a folder is made: one a plaintext build left before the corpus was
+    encrypted is exactly what must not stay."""
+    import shutil
+
+    from src.paths import data_dir
+
+    global _OWN_SPILL_SWEPT
+    root = data_dir() / "duckdb_tmp"
+    # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
+    # sweep running beside another caller's new folder of this pid would remove a live connection's folder.
+    with _SPILL_LOCK:
+        if root.is_dir():
+            _sweep_spill_folders(root)
+        _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
+        if not make:
+            return ""
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name == "posix":
+            # mkdir's mode applies only to a folder it creates: one an older version made with the default mask is tightened
+            # here (open-on-main row 52). A failure is not fatal: each connection's own folder below is 0700 regardless.
+            with contextlib.suppress(OSError):
+                os.chmod(root, 0o700)
+        name = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        staging = root / (_STAGING_PREFIX + name)
+        staging.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
+        fd = None
+        try:
+            fd = _hold_owner_lock(staging)
+            mine = staging.rename(root / name)  # only now visible to a sweep, already locked
+        except BaseException:
+            if fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+            shutil.rmtree(staging, ignore_errors=True)  # a folder no lock vouches for is not handed out
+            raise
+        if fd is not None:
+            _SPILL_OWNERS[str(mine)] = fd
+        return str(mine)
+
+
 def _spill_setting() -> str:
-    """DuckDB's offload directory for an in-memory build (the keyword rollup, the map serve, both benchmarks): ``""`` (none) for an encrypted corpus, else a NEW
-    folder under the data directory for this connection alone. The folders of processes that are gone are
-    swept in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must
-    not stay."""
+    """DuckDB's offload directory for an IN-MEMORY build (the keyword rollup, the map serve, both benchmarks): ``""``
+    (none) for an encrypted corpus, since an in-memory connection's offload is not encrypted, else a NEW folder under
+    the data directory for this connection alone. Never for the persisted store: that is :func:`_persisted_spill_setting`."""
     encrypted = _corpus_encrypted()
     try:
-        from src.paths import data_dir
+        return _spill_folder(make=not encrypted)
+    except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
+        return ""
 
-        global _OWN_SPILL_SWEPT
-        root = data_dir() / "duckdb_tmp"
-        # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
-        # sweep running beside another caller's new folder of this pid would remove a live connection's folder.
-        with _SPILL_LOCK:
-            if root.is_dir():
-                _sweep_spill_folders(root)
-            _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
-            if encrypted:
-                return ""
-            root.mkdir(mode=0o700, parents=True, exist_ok=True)
-            mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-            mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
-            return str(mine)
+
+def _persisted_spill_setting() -> str:
+    """DuckDB's offload directory for the PERSISTED encrypted store only: a NEW folder under the data directory even
+    though the corpus is encrypted, because that connection runs with ``temp_file_encryption`` on
+    (``columnar._persisted_config``), so what it offloads is written under an ephemeral key. ``""`` when no folder can
+    be made (then no offload: a refresh past the memory limit fails instead). The caller records it in ``_STATE``
+    with the connection and removes it when the connection is closed (row 48). Never for an in-memory connection."""
+    try:
+        return _spill_folder(make=True)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
         return ""
 

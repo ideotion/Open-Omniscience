@@ -164,3 +164,14 @@ def test_a_map_build_that_the_library_was_encrypted_under_is_not_served(monkeypa
     with pytest.raises(Exception):  # noqa: B017 - DuckDB's class for "connection already closed" differs across versions
         seen[0]["con"].execute("SELECT 1")
     assert not any((tmp_path / "duckdb_tmp").glob("*")), "the plaintext offload folder outlived the encryption"
+
+
+def test_a_map_build_encrypted_only_by_the_swap_is_refused_under_the_swap_lock(monkeypatch, db, seen, tmp_path, clean_map_state):
+    """Open-on-main row 50: plaintext at the folder's choice and at the check after the build, encrypted when the swap takes the lock."""
+    answers = iter([False, False])
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: next(answers, True))
+    monkeypatch.setitem(map_serve._STATE, "pending", False)
+    _map_build(monkeypatch, db)
+    assert seen[0]["spill"], "the build did not start with an offload folder"
+    assert map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None and map_serve._STATE["pending"] is True
+    assert not any((tmp_path / "duckdb_tmp").glob("*")), "the plaintext offload folder outlived the encryption"
