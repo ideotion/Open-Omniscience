@@ -42,7 +42,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     _FINISHED_LIST: ("bulkJobClearDone",),
     _JOB: (
         "_uxPauseResume", "bulkJobCancel", "bulletinNarrateStop", "cancelP0Validation", "cancelPull", "dumpFtsCancel", "jobCancel", "maintAction", "mbRun",
-        "pauseDump", "pauseOsm", "qualifyBulkCancel", "rebuildStop", "releaseRunCancel", "runAiCheck", "schedulerStop", "stopVllm",
+        "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "runAiCheck", "schedulerStop", "stopVllm",
         "toggleAiCoordinator", "unattendedStop",
     ),
     _CURATION: (

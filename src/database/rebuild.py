@@ -353,8 +353,8 @@ def _check_copy(copy: Path, target: Path) -> dict[str, Any]:
         rows = 0
         for name in tables:
             quoted = '"' + name.replace('"', '""') + '"'
-            n_old = int(old.execute(f"SELECT count(*) FROM {quoted}").fetchone()[0])  # nosec B608 - a name from sqlite_master, quoted
-            n_new = int(new.execute(f"SELECT count(*) FROM {quoted}").fetchone()[0])  # nosec B608 - a name from sqlite_master, quoted
+            n_old = int(old.execute(f"SELECT count(*) FROM {quoted}").fetchone()[0])  # nosec B608 # a name from sqlite_master, quoted
+            n_new = int(new.execute(f"SELECT count(*) FROM {quoted}").fetchone()[0])  # nosec B608 # a name from sqlite_master, quoted
             if n_old == n_new:
                 rows += n_old
                 continue
