@@ -108,6 +108,14 @@ def _base_lang(lang: str | None) -> str:
     return (lang or "unknown").split("-")[0].lower()
 
 
+def _cohort_lang(stated: str | None, deduced: str | None) -> str | None:
+    """The language an article is judged with: the one its page or source STATED, else the one the
+    offline detector deduced at indexing (``Article.detected_language``), else none. Field report
+    2026-11-14 (row 66) counted 7,016 articles in the "unknown" cohort, where only the stated tag was
+    read and a language the detector had deduced was never used."""
+    return (stated or "").strip() or (deduced or "").strip() or None
+
+
 def _chunks(seq: list[int], n: int = _IN_CHUNK):
     for i in range(0, len(seq), n):
         yield seq[i : i + n]
@@ -294,7 +302,8 @@ def collect_article_stats(
 
     # The article pass first when scoped: its ids are what bound the mention aggregate.
     art_q = session.query(
-        Article.id, Article.word_count, Article.language, Article.source_id, Article.url
+        Article.id, Article.word_count, Article.language, Article.source_id, Article.url,
+        Article.detected_language,
     ).filter(Article.quarantined.isnot(True))
     if since is not None:
         art_q = art_q.filter(Article.created_at >= since)
@@ -348,12 +357,12 @@ def collect_article_stats(
             _tick()
 
     stats: list[ArticleStat] = []
-    for aid, wc, lang, sid, url in (art_rows if art_rows is not None else art_q):
+    for aid, wc, lang, sid, url, deduced in (art_rows if art_rows is not None else art_q):
         _tick()
         if audited_ids is not None and (sid is None or int(sid) not in audited_ids):
             continue
         total, distinct, mx = agg.get(int(aid), (0, 0, 0))
-        base = _base_lang(lang)
+        base = _base_lang(_cohort_lang(lang, deduced))
         unseg = base in UNSEGMENTED
         stats.append(
             ArticleStat(
@@ -916,7 +925,10 @@ def build_sample_records(
             "url": art.url,
             "title": art.title,
             "word_count": int(art.word_count) if art.word_count is not None else None,
-            "language": _base_lang(art.language),
+            "language": _base_lang(_cohort_lang(art.language, art.detected_language)),
+            # True when no page or source stated it and the offline detector deduced it (field report
+            # 2026-11-14 row 66): the deduced language is never written over the stated one.
+            "language_deduced": not (art.language or "").strip() and bool((art.detected_language or "").strip()),
             "external_link_count": ext_links,
             "selection_method": sorted(sample_methods[int(art.id)]),
             "is_newsletter": is_newsletter,
