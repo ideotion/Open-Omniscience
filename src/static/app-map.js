@@ -2007,7 +2007,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const d = {
         coverage: t("Countries shaded by a measured dimension of your corpus — no data stays un-shaded, never zero. No score."),
-        stories: t("Location-based events extracted from your corpus, by type. Deduced, never a verdict — click a place to open its corpus."),
+        stories: t("Location-based events extracted from your corpus, by type. Deduced from text — click a place to open its corpus."),
         places: t("The places your articles mention — what the corpus is about. Deduced from text, never confirmed."),
         servers: t("Where the servers we reached are located (offline geo) — a CDN edge / anycast host, not the publisher's origin; unavailable over Tor."),
       };

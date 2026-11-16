@@ -287,6 +287,64 @@ def _marker_wants_refresh(payload: dict) -> bool:
     return last is None or _monotonic() - last >= _MARKER_RETRY_S
 
 
+# A feed OLDER than this, over a corpus that has grown by at least ``_STALE_GROWTH_MIN`` articles since it was made, is
+# refreshed on a Home poll, under the same three conditions as the marker repair (headroom, the scheduler's whole-corpus work
+# not running, ``_MARKER_RETRY_S`` after the last refresh finished). Field test 2026-11-14 (report 4.3, row 64): the cache on
+# two instances was 12-13 h old, because the growth threshold (10% of the corpus) is about 20,000 articles on a 200,000-article
+# corpus, more than a day of collection at the measured 9-14 articles a minute, and the pass-tail refresh runs once a pass
+# (about a day) and gave up four to seven times per instance behind the housekeeping lane. Three hours, so a Home that is open
+# while collection runs shows cards at most a few hours old, at the cost of one whole-corpus read about every three hours
+# while it is open. ``OO_BRIEFING_MAX_AGE_S`` sets it; 0 turns the cause off.
+_MAX_AGE_DEFAULT_S = 3 * 3600.0
+
+
+def _max_age_s() -> float:
+    import os
+
+    raw = os.getenv("OO_BRIEFING_MAX_AGE_S", "")
+    try:
+        value = float(raw) if raw.strip() else _MAX_AGE_DEFAULT_S
+    except ValueError:
+        return _MAX_AGE_DEFAULT_S
+    return value if value == value and value >= 0 else _MAX_AGE_DEFAULT_S  # NaN or negative: the default
+
+
+def _feed_age_s(payload: dict) -> float | None:
+    """Seconds since the feed was made, or None when its ``generated_at`` is absent or unreadable (never a guess)."""
+    raw = payload.get("generated_at")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        made = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if made.tzinfo is None:
+        made = made.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - made).total_seconds()
+
+
+def _age_wants_refresh(payload: dict, *, count) -> bool:
+    """True when the feed is older than ``_max_age_s()``, the corpus grew by ``_STALE_GROWTH_MIN`` articles since, and a
+    refresh is allowed right now. ``count`` is the caller's once-per-request article count (``get_briefing``'s
+    ``_count_once``), so this cause adds no count of its own."""
+    limit = _max_age_s()
+    if limit <= 0:
+        return False
+    age = _feed_age_s(payload)
+    if age is None or age < limit:
+        return False
+    cached = payload.get("article_count")
+    if not isinstance(cached, int) or count() - cached < _STALE_GROWTH_MIN:
+        return False
+    # The log's pause: ``_bg_refresh`` would stand aside at once, and this cause stays true for the whole pause, so
+    # every Home poll would start a thread that does nothing.
+    if _log_pinned() or not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
+        return False
+    with _refresh_lock:
+        last = _marker_retry["at"]
+    return last is None or _monotonic() - last >= _MARKER_RETRY_S
+
+
 def _stoplist_fingerprint() -> str | None:
     """The shipped stoplist's fingerprint, or None when it cannot be read (never raises)."""
     try:
@@ -808,6 +866,7 @@ def get_briefing(
         _feed_outdated(session, cached, count=_count_once)  # a servable prior shape, or a corpus that grew
         or _marker_wants_refresh(cached)
         or _stoplist_wants_refresh(cached)
+        or _age_wants_refresh(cached, count=_count_once)
     )
     need_recompute = force or cached is None or stale
     if need_recompute and background:
@@ -816,7 +875,7 @@ def get_briefing(
         payload = cached
     elif need_recompute:
         if stale:
-            _LOG.info("briefing cache is stale (corpus grew, an older cache shape, a stop marker to repair, or a new stoplist); recomputing")
+            _LOG.info("briefing cache is stale (corpus grew, an older cache shape, a stop marker to repair, a new stoplist, or an old feed over a grown corpus); recomputing")
         payload = refresh_briefing(session)
     else:
         payload = cached
