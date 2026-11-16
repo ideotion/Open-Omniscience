@@ -7235,6 +7235,7 @@
   "robots-disallowed": "被 robots.txt 禁止",
   "robots-unavailable": "robots.txt 不可用",
   "robots.txt could not be read": "robots.txt 无法读取",
+  "robots.txt not readable": "无法读取 robots.txt",
   "rss": "rss",
   "running": "运行中",
   "running for": "已运行",

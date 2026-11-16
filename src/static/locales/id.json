@@ -7235,6 +7235,7 @@
   "robots-disallowed": "diblokir oleh robots.txt",
   "robots-unavailable": "robots.txt tidak tersedia",
   "robots.txt could not be read": "robots.txt tidak terbaca",
+  "robots.txt not readable": "robots.txt tidak terbaca",
   "rss": "rss",
   "running": "berjalan",
   "running for": "berjalan selama",

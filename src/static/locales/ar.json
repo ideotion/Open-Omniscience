@@ -7235,6 +7235,7 @@
   "robots-disallowed": "محظور بموجب robots.txt",
   "robots-unavailable": "robots.txt غير متاح",
   "robots.txt could not be read": "تعذّرت قراءة robots.txt",
+  "robots.txt not readable": "تعذّرت قراءة robots.txt",
   "rss": "rss",
   "running": "قيد التشغيل",
   "running for": "يعمل منذ",

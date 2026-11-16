@@ -7235,6 +7235,7 @@
   "robots-disallowed": "robots.txt で禁止",
   "robots-unavailable": "robots.txt 利用不可",
   "robots.txt could not be read": "robots.txt を読めない",
+  "robots.txt not readable": "robots.txt を読めません",
   "rss": "rss",
   "running": "実行中",
   "running for": "実行時間",

@@ -7235,6 +7235,7 @@
   "robots-disallowed": "robots.txt দ্বারা অবরুদ্ধ",
   "robots-unavailable": "robots.txt অনুপলব্ধ",
   "robots.txt could not be read": "robots.txt পড়া যায়নি",
+  "robots.txt not readable": "robots.txt পড়া যায়নি",
   "rss": "rss",
   "running": "চলছে",
   "running for": "চলছে",

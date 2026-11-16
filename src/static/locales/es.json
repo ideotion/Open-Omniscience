@@ -7235,6 +7235,7 @@
   "robots-disallowed": "bloqueado por robots.txt",
   "robots-unavailable": "robots.txt no disponible",
   "robots.txt could not be read": "no se pudo leer el robots.txt",
+  "robots.txt not readable": "robots.txt ilegible",
   "rss": "rss",
   "running": "en ejecución",
   "running for": "en ejecución durante",

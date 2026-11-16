@@ -7235,6 +7235,7 @@
   "robots-disallowed": "запрещено robots.txt",
   "robots-unavailable": "robots.txt недоступен",
   "robots.txt could not be read": "robots.txt не читается",
+  "robots.txt not readable": "robots.txt не прочитан",
   "rss": "rss",
   "running": "выполняется",
   "running for": "выполняется уже",

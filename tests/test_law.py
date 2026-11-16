@@ -486,7 +486,18 @@ def test_verdict_of_classifies_last_status_honestly():
 
     assert _verdict_of(None) == "never_checked"
     assert _verdict_of("fetch error: robots.txt disallows https://x.test/a") == "robots_blocked"
-    assert _verdict_of("robots.txt for x.test could not be determined; refusing to fetch") == "robots_blocked"
+    # robots.txt that could not be READ is not the host's rule (field test 2026-11-14 row 72): its own verdict, so the
+    # Law tab never says a publisher forbids a document because a lookup failed on this machine.
+    assert _verdict_of("robots.txt for x.test could not be determined; refusing to fetch") == "robots_unread"
+    assert (
+        _verdict_of(
+            "fetch error: robots.txt for https://laws-lois.justice.gc.ca could not be determined (unreachable); refusing to fetch"
+        )
+        == "robots_unread"
+    )
+    assert _verdict_of("fetch error: robots.txt for https://x.test could not be determined (refused); refusing to fetch") == "robots_unread"
+    # The disallow keeps its verdict even when the address itself names the other case's words.
+    assert _verdict_of("fetch error: robots.txt disallows https://x.test/a robots.txt could not be determined") == "robots_blocked"
     assert _verdict_of("fetch error: timed out") == "error"
     assert _verdict_of("error: boom") == "error"
     assert _verdict_of("no usable text extracted") == "empty"
