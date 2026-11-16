@@ -404,3 +404,56 @@ def test_the_endpoint_refuses_under_the_kill_switch_with_a_named_409(monkeypatch
         assert "wikidata" in detail.lower(), "the refusal must say what it did not reach"
     finally:
         clear_kill_switch()
+
+
+# --------------------------------------------------------------------------- #
+# Row 71 (field test 2026-11-14): a bare Q-id name is SHOWN as the domain
+# --------------------------------------------------------------------------- #
+def test_a_bare_qid_name_is_shown_as_its_domain():
+    from src.catalog.qid_labels import source_label
+
+    assert source_label("Q11858063", "epari.fi") == "epari.fi"
+    assert source_label(" q11858063 ", "epari.fi") == "epari.fi"
+    assert source_label("Epari", "epari.fi") == "Epari"
+    assert source_label("Q42 Douglas Adams", "x.test") == "Q42 Douglas Adams", "a name that carries a label is a name"
+    assert source_label("Q11858063", None) == "Q11858063", "with no domain, the identifier is all there is"
+
+
+def test_the_sources_list_counts_candidates_and_carries_the_shown_name(tmp_path):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.api.main import app
+    from src.database.models import Base, Source
+    from src.database.session import get_db
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add_all([
+            Source(name="Q11858063", domain="epari.fi", enabled=True),
+            Source(name="Q138512322", domain="parish.example", enabled=False),
+            Source(name="Outlet", domain="outlet.test", enabled=False),
+        ])
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            d = client.get("/api/catalog/sources").json()
+            assert d["total"] == 3 and d["candidates"] == 2
+            shown = {r["domain"]: r["display_name"] for r in d["sources"]}
+            assert shown["epari.fi"] == "epari.fi" and shown["outlet.test"] == "Outlet"
+            assert {r["domain"]: r["name"] for r in d["sources"]}["epari.fi"] == "Q11858063", "the stored name is unchanged"
+            assert client.get("/api/catalog/sources?enabled=true").json()["candidates"] == 0
+    finally:
+        app.dependency_overrides.clear()

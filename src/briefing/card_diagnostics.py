@@ -28,6 +28,11 @@ from src.monitoring.secret_scrub import record_text
 _QUOTED = re.compile(r'[“"]([^”"]{2,})[”"]')
 
 
+#: Card types whose button opens something other than an article set (field test 2026-11-14 row 64: the source-candidates
+#: card counts CANDIDATES, and the text search of its key loaded 0 articles behind a card saying ~300).
+_OPENS_ELSEWHERE: dict[str, str] = {"recipe_source_candidates": "Settings → Advanced → Sources (the candidates)"}
+
+
 def card_seed_query(card: dict) -> str:
     title = card.get("title") or ""
     m = _QUOTED.search(title)
@@ -81,7 +86,13 @@ def card_click_diagnostics(session) -> dict:
             "has_article_ids": has_ids,
             "article_ids_n": len(ids),
         }
-        if has_ids:
+        if ctype in _OPENS_ELSEWHERE:
+            # Not an article set at all: the card counts something else and its button opens that (app-home.js).
+            rec["click"] = {"mode": "view", "opens": _OPENS_ELSEWHERE[ctype]}
+            rec["hard_linked"] = False
+            rec["mismatch"] = False
+            rec["verdict"] = f"not an article set → opens {_OPENS_ELSEWHERE[ctype]}"
+        elif has_ids:
             rec["click"] = {"mode": "exact", "opens": "openAnalysisForIds", "loads_n": len(ids)}
             rec["hard_linked"] = True
             rec["mismatch"] = False
@@ -127,9 +138,9 @@ def card_click_diagnostics(session) -> dict:
                 rec["verdict"] = f"search-fallback → text search {seed!r} loads {search_n} (card n={n})"
             soft += 1
 
-        bt = by_type.setdefault(ctype, {"total": 0, "hard_linked": 0, "search_fallback": 0, "mismatched": 0})
+        bt = by_type.setdefault(ctype, {"total": 0, "hard_linked": 0, "search_fallback": 0, "mismatched": 0, "view": 0})
         bt["total"] += 1
-        bt["hard_linked" if has_ids else "search_fallback"] += 1
+        bt["view" if ctype in _OPENS_ELSEWHERE else ("hard_linked" if has_ids else "search_fallback")] += 1
         if rec["mismatch"]:
             bt["mismatched"] += 1
         out.append(rec)
@@ -152,6 +163,7 @@ def card_click_diagnostics(session) -> dict:
             "hard_linked": hard,
             "search_fallback": soft,
             "mismatched": mismatched,
+            "view": sum(1 for r in out if r["click"]["mode"] == "view"),
         },
         "by_type": by_type,
         "cards": out,
@@ -160,7 +172,9 @@ def card_click_diagnostics(session) -> dict:
             "hard-linked = the card carries article_ids → openAnalysisForIds over its EXACT set. "
             "search-fallback = no article_ids → openAnalysisFor(seed) runs a TEXT SEARCH of the "
             "card's seed term. A search-fallback whose live FTS count differs wildly from the "
-            "card's own n means the click LOSES the card's corpus (the 'no hard linking' bug)."
+            "card's own n means the click LOSES the card's corpus (the 'no hard linking' bug). "
+            "view = the card counts something that is not an article set (source candidates) and its button "
+            "opens that view, so it is neither hard-linked nor a search; total = hard_linked + search_fallback + view."
         ),
         "caveat": (
             "search-fallback counts are the live FTS match for the seed term; a large mismatch "

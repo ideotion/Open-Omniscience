@@ -557,6 +557,7 @@ def test_newsletters_import_endpoint_zero_network(monkeypatch):
     parsed + anonymised + stored under ONE dedicated, DISABLED newsletter source, with
     an honest tally — and the WHOLE request path opens NO socket (the binding invariant:
     N files => 0 sockets; a tracker pixel/link is never followed)."""
+    import ipaddress
     import socket
 
     from fastapi.testclient import TestClient
@@ -564,13 +565,46 @@ def test_newsletters_import_endpoint_zero_network(monkeypatch):
     from src.api.main import app
     from src.database.models import SessionLocal
 
+    # What is forbidden is a socket that leaves the machine: a connect to, or a name resolution of, anything but loopback. Replacing
+    # ``socket.socket`` outright (what this test did until row 93) forbade the event loop's OWN loopback plumbing as well, and on Windows
+    # that hung the whole shard: the request waited on the loop for 30 minutes until the job's cap cancelled it (job 133057809613;
+    # named by the hang watchdog in run 43803278424). An attempt is RECORDED as well as refused, because a refusal raised on a
+    # worker thread can be swallowed there; the assertion below reads the record on this thread.
+    attempts: list[str] = []
     real_socket = socket.socket
+    real_getaddrinfo = socket.getaddrinfo
 
-    def _forbidden(*a, **k):  # any outbound socket during import is a bug
-        raise AssertionError("the .eml import path opened a network socket")
+    def _loopback(host) -> bool:
+        if host in (None, "localhost"):
+            return True
+        try:
+            return ipaddress.ip_address(str(host).split("%")[0]).is_loopback
+        except ValueError:
+            return False
+
+    class _NoOutboundSocket(real_socket):
+        def _refuse_remote(self, address):
+            if self.family in (socket.AF_INET, socket.AF_INET6) and not _loopback(address[0]):
+                attempts.append(f"connect {address!r}")
+                raise OSError("the .eml import path opened a network connection")
+
+        def connect(self, address):
+            self._refuse_remote(address)
+            return super().connect(address)
+
+        def connect_ex(self, address):
+            self._refuse_remote(address)
+            return super().connect_ex(address)
+
+    def _no_remote_resolution(host, *a, **k):
+        if not _loopback(host):
+            attempts.append(f"resolve {host!r}")
+            raise socket.gaierror("the .eml import path resolved a network name")
+        return real_getaddrinfo(host, *a, **k)
 
     with TestClient(app) as c:
-        monkeypatch.setattr(socket, "socket", _forbidden)
+        monkeypatch.setattr(socket, "socket", _NoOutboundSocket)
+        monkeypatch.setattr(socket, "getaddrinfo", _no_remote_resolution)
         try:
             r = c.post(
                 "/api/newsletters/import",
@@ -582,7 +616,9 @@ def test_newsletters_import_endpoint_zero_network(monkeypatch):
             )
         finally:
             monkeypatch.setattr(socket, "socket", real_socket)
+            monkeypatch.setattr(socket, "getaddrinfo", real_getaddrinfo)
 
+    assert attempts == [], attempts  # N files => 0 outbound sockets, 0 name resolutions
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["source"] == "Imported newsletters (.eml)"

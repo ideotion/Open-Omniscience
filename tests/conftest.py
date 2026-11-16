@@ -919,3 +919,72 @@ def no_cgroup_limit(monkeypatch):
         "cgroup_available_mb",
         lambda *a, **k: {"available_mb": None, "limit_mb": None, "min_limit_mb": None, "source": None, "unreadable": False},
     )
+
+
+# A TEST THAT HANGS NAMES ITSELF, AND A SLOW ONE IS LISTED (row 93). The portability legs ran one test that never returned on Windows: the
+# log stopped on a row of dots at 23% and the job was cancelled at its 60-minute cap 30 minutes later, with nothing saying which test it
+# was. With ``OO_TEST_HANG_LIMIT_S`` set (the portability job sets it), every test is given that many seconds for setup, call and
+# teardown together; past it, faulthandler's own watchdog thread (C code, so it fires even when the hung code holds the GIL) writes
+# every thread's traceback, under a "Timeout" line, to ``OO_TEST_HANG_REPORT`` after the line naming the test, and ends the process.
+# The file is emptied after every test that returns, so after a run it holds nothing (a clean end), the name alone (the run was
+# stopped from OUTSIDE while that test ran, by the job's cap or a cancel), or the name and the tracebacks (that test hung). The CI step
+# after the tests prints which. ``OO_TEST_SLOW_S`` lists every test that took longer than that, as it ends, in ``OO_TEST_SLOW_REPORT``:
+# written line by line, so a leg cancelled at its cap still says where its time went (a ``--durations`` table prints only at the end).
+# Unset, nothing is armed and nothing is written. The variables are taken OUT of the environment once read: a test that runs pytest in a
+# child process from the same folder would otherwise open the same two files and empty the parent's record (so a run with ``-n``
+# arms nothing in its workers: the portability legs run in one process).
+_WORKER_SUFFIX = ("." + os.environ["PYTEST_XDIST_WORKER"]) if os.environ.get("PYTEST_XDIST_WORKER") else ""
+_HANG_LIMIT_S = float(os.environ.pop("OO_TEST_HANG_LIMIT_S", "") or 0)
+_HANG_REPORT_PATH = (os.environ.pop("OO_TEST_HANG_REPORT", "") or "test-hang-report.txt") + _WORKER_SUFFIX
+_SLOW_S = float(os.environ.pop("OO_TEST_SLOW_S", "") or 0)
+_SLOW_REPORT_PATH = (os.environ.pop("OO_TEST_SLOW_REPORT", "") or "test-slow-report.txt") + _WORKER_SUFFIX
+_HANG_DEADLINE: list[float] = []  # the running test's deadline on the monotonic clock, while one runs
+_HANG_REPORT = None
+_SLOW_REPORT = None
+if _HANG_LIMIT_S > 0:
+    import faulthandler as _faulthandler
+
+    _HANG_REPORT = open(_HANG_REPORT_PATH, "w", encoding="utf-8")  # noqa: SIM115 - held open for the run: faulthandler writes to it
+if _SLOW_S > 0:
+    _SLOW_REPORT = open(_SLOW_REPORT_PATH, "w", encoding="utf-8")  # noqa: SIM115 - held open for the run, one line per slow test
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    if _HANG_REPORT is None and _SLOW_REPORT is None:
+        return (yield)
+    import time as _time
+
+    if _HANG_REPORT is not None:
+        _HANG_REPORT.seek(0)
+        _HANG_REPORT.truncate()
+        _HANG_REPORT.write(f"Running (limit {_HANG_LIMIT_S:g} s): {item.nodeid}\n\n")
+        _HANG_REPORT.flush()
+        _faulthandler.dump_traceback_later(_HANG_LIMIT_S, exit=True, file=_HANG_REPORT)
+        _HANG_DEADLINE[:] = [_time.monotonic() + _HANG_LIMIT_S]
+    started = _time.monotonic()
+    try:
+        return (yield)
+    finally:
+        took = _time.monotonic() - started
+        if _HANG_REPORT is not None:
+            _HANG_DEADLINE.clear()
+            _faulthandler.cancel_dump_traceback_later()
+            _HANG_REPORT.seek(0)
+            _HANG_REPORT.truncate()  # empty after a test that returned
+        if _SLOW_REPORT is not None and took >= _SLOW_S:
+            _SLOW_REPORT.write(f"{took:8.1f} s  {item.nodeid}\n")
+            _SLOW_REPORT.flush()
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_exception_interact(node, call, report):
+    """pytest's own faulthandler plugin cancels THE process's one faulthandler timer whenever a setup or call phase fails (its
+    ``pytest_exception_interact``, there for ``--pdb``), which would leave a test that fails and then hangs in its teardown (a fixture
+    joining a thread the failure left running) unwatched until the job's cap. This runs after it and re-arms the timer for what is left
+    of the test's time."""
+    if _HANG_REPORT is None or not _HANG_DEADLINE:
+        return
+    import time as _time
+
+    _faulthandler.dump_traceback_later(max(1.0, _HANG_DEADLINE[0] - _time.monotonic()), exit=True, file=_HANG_REPORT)
