@@ -175,6 +175,7 @@
   "A place name extracted from article text, placed at a gazetteer coordinate.": "Название места, извлечённое из текста статьи и размещённое по координате из географического справочника.",
   "A place they mention": "Упомянутое в них место",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "Снимок в открытом виде хранится как запасной выход — удалите его после успешной разблокировки.",
+  "Encrypting does not wipe the disk: the earlier plaintext file and temporary files are deleted, not overwritten, so their contents may stay recoverable from the disk. Only full-disk encryption protects them.": "Шифрование не стирает диск: прежний незашифрованный файл и временные файлы удаляются, а не перезаписываются, поэтому их содержимое может оставаться восстановимым с диска. Защищает их только полное шифрование диска.",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "Вероятность из собственной модели Викимедиа для оценки качества правок — не измерение именно этой правки и не суждение этого приложения. Необязательно и отключено по умолчанию, если вы сами не запросили это.",
   "A promised date has arrived: {date}": "Обещанная дата наступила: {date}",
   "A public key identifying this install, if editions were signed.": "Открытый ключ, идентифицирующий эту установку, если бы выпуски подписывались.",

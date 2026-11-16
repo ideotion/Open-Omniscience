@@ -175,6 +175,7 @@
   "A place name extracted from article text, placed at a gazetteer coordinate.": "从文章文本中提取的地名，按地名词典坐标定位。",
   "A place they mention": "文章提及的地点",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "保留一份明文快照作为后路 — 成功解锁后请删除它。",
+  "Encrypting does not wipe the disk: the earlier plaintext file and temporary files are deleted, not overwritten, so their contents may stay recoverable from the disk. Only full-disk encryption protects them.": "加密不会擦除磁盘：之前的明文文件和临时文件只是被删除而非被覆写，因此其内容仍可能从磁盘上恢复。只有全盘加密能保护它们。",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "来自维基媒体自有编辑质量模型的一个概率，既不是对这次编辑的度量，也不是本应用做出的判断。可选，除非你主动要求，否则默认关闭。",
   "A promised date has arrived: {date}": "承诺的日期已到：{date}",
   "A public key identifying this install, if editions were signed.": "如果对各期进行签名，用于识别本安装的公钥。",

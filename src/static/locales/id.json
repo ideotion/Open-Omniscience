@@ -175,6 +175,7 @@
   "A place name extracted from article text, placed at a gazetteer coordinate.": "Nama tempat yang diekstrak dari teks artikel, ditempatkan pada koordinat gazetteer.",
   "A place they mention": "Tempat yang mereka sebut",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "Snapshot teks polos disimpan sebagai jalan keluar darurat — hapus setelah berhasil membuka kunci.",
+  "Encrypting does not wipe the disk: the earlier plaintext file and temporary files are deleted, not overwritten, so their contents may stay recoverable from the disk. Only full-disk encryption protects them.": "Enkripsi tidak menghapus isi disk: file teks polos sebelumnya dan file sementara hanya dihapus, tidak ditimpa, sehingga isinya mungkin masih bisa dipulihkan dari disk. Hanya enkripsi seluruh disk yang melindunginya.",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "Sebuah probabilitas dari model kualitas-suntingan milik Wikimedia sendiri, bukan pengukuran suntingan ini dan bukan penilaian oleh aplikasi ini. Opsional, dan nonaktif kecuali Anda memintanya.",
   "A promised date has arrived: {date}": "Tanggal yang dijanjikan telah tiba: {date}",
   "A public key identifying this install, if editions were signed.": "Kunci publik yang mengidentifikasi instalasi ini, jika edisi ditandatangani.",

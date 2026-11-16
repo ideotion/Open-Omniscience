@@ -175,6 +175,7 @@
   "A place name extracted from article text, placed at a gazetteer coordinate.": "लेख के पाठ से निकाला गया स्थान नाम, गजेटियर निर्देशांक पर रखा गया।",
   "A place they mention": "उनमें उल्लिखित कोई स्थान",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "एक सादा-पाठ स्नैपशॉट बच निकलने के रास्ते के रूप में रहता है — सफल अनलॉक के बाद इसे हटा दें।",
+  "Encrypting does not wipe the disk: the earlier plaintext file and temporary files are deleted, not overwritten, so their contents may stay recoverable from the disk. Only full-disk encryption protects them.": "एन्क्रिप्शन डिस्क को मिटाता नहीं है: पहले वाली बिना एन्क्रिप्शन की फ़ाइल और अस्थायी फ़ाइलें हटाई जाती हैं, उन पर दोबारा लिखा नहीं जाता, इसलिए उनकी सामग्री डिस्क से वापस पाई जा सकती है। केवल पूरी डिस्क का एन्क्रिप्शन उन्हें सुरक्षित रखता है।",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "विकिमीडिया के अपने संपादन-गुणवत्ता मॉडल से मिली एक संभावना, न कि इस संपादन का मापन और न ही इस ऐप का कोई निर्णय। वैकल्पिक, और जब तक आपने इसे नहीं माँगा, बंद रहता है।",
   "A promised date has arrived: {date}": "वादे की तारीख़ आ गई: {date}",
   "A public key identifying this install, if editions were signed.": "एक सार्वजनिक कुंजी जो इस इंस्टॉल की पहचान करती, यदि अंकों पर हस्ताक्षर होते।",

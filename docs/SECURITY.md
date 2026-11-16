@@ -290,6 +290,14 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   wrong-passphrase rate-limiting: an attacker who can brute-force already has the file and
   works offline, so backoff would only punish the honest fat-finger user; the honest lever
   is passphrase length, which the create flow guides.
+- **Encrypting in place, or removing a file, is not wiping the disk** (open-on-main row 86). When a plaintext corpus is
+  encrypted in place, the earlier plaintext file and the app's temporary files written while it was plaintext (the
+  analytics offload folders under `duckdb_tmp`, SQLite's own temp files) are deleted, never overwritten: the app closes
+  the serves that hold them and removes their folders (`src/scheduler/release.py`), and nothing it can do from a file
+  system API reaches the blocks those files occupied. Until the disk reuses them, their plaintext may be recoverable from
+  a seized disk, exactly as an old database's freed pages are. Only full-disk encryption covers that; the encrypt panel
+  says so beside its escape-hatch note (×12). The panic wipe's full rewrite overwrites what is still a file, and the same
+  limit applies to what is not.
 - **A crash of the running app leaves no core dump where the platform allows it** (2026-10-06; by platform below). Once the store is unlocked its passphrase and key are in
   the memory of the process that opened it, and a native crash (SIGSEGV, SIGABRT, SIGBUS) asks the kernel to write that
   memory out as a core dump, to a file or to a program that keeps it for weeks (systemd-coredump, apport, abrt). So every

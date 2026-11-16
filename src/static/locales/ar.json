@@ -175,6 +175,7 @@
   "A place name extracted from article text, placed at a gazetteer coordinate.": "اسم مكان مُستخرَج من نص المقال، مُوضَع عند إحداثيات من معجم جغرافي.",
   "A place they mention": "مكان تذكره",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "تُحفظ لقطة نصية واضحة كمخرج طوارئ — احذفها بعد نجاح الفتح.",
+  "Encrypting does not wipe the disk: the earlier plaintext file and temporary files are deleted, not overwritten, so their contents may stay recoverable from the disk. Only full-disk encryption protects them.": "التشفير لا يمسح القرص: الملف السابق غير المشفّر والملفات المؤقتة تُحذف ولا يُكتب فوقها، لذا قد يبقى محتواها قابلاً للاسترجاع من القرص. وحده تشفير القرص بالكامل يحميها.",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "احتمال من نموذج جودة التعديلات الخاص بويكيميديا نفسها، وليس قياسًا لهذا التعديل وليس حكمًا من هذا التطبيق. اختياري، ومُعطَّل ما لم تطلبه.",
   "A promised date has arrived: {date}": "حلّ موعد موعود: {date}",
   "A public key identifying this install, if editions were signed.": "مفتاح عام يعرّف هذا التثبيت، لو كانت الإصدارات موقّعة.",

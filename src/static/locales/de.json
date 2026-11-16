@@ -175,6 +175,7 @@
   "A place name extracted from article text, placed at a gazetteer coordinate.": "Ein aus dem Artikeltext extrahierter Ortsname, an einer Gazetteer-Koordinate platziert.",
   "A place they mention": "Ein Ort, den sie erwähnen",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "Ein Klartext-Snapshot bleibt als Notausstieg erhalten — löschen Sie ihn nach erfolgreichem Entsperren.",
+  "Encrypting does not wipe the disk: the earlier plaintext file and temporary files are deleted, not overwritten, so their contents may stay recoverable from the disk. Only full-disk encryption protects them.": "Die Verschlüsselung löscht die Festplatte nicht: Die frühere unverschlüsselte Datei und temporäre Dateien werden gelöscht, nicht überschrieben, daher kann ihr Inhalt auf der Festplatte wiederherstellbar bleiben. Nur eine vollständige Festplattenverschlüsselung schützt sie.",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "Eine Wahrscheinlichkeit aus Wikimedias eigenem Modell zur Bearbeitungsqualität — keine Messung dieser Bearbeitung und kein Urteil dieser App. Optional, und aus, sofern Sie es nicht angefordert haben.",
   "A promised date has arrived: {date}": "Ein angekündigtes Datum ist da: {date}",
   "A public key identifying this install, if editions were signed.": "Ein öffentlicher Schlüssel, der diese Installation identifiziert, falls Ausgaben signiert würden.",

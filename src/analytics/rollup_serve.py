@@ -650,6 +650,14 @@ def _refresh_persisted_build() -> bool | None:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
+                if opened_now and not _persist_passphrase():
+                    # The key was cleared while the store opened outside the lock: the clearing's close found nothing of it to close,
+                    # and recorded now it would keep the cleared key inside DuckDB until the next rebuild (open-on-main row 85). A clearing
+                    # from here on finds the lock held and closes this connection once free.
+                    with contextlib.suppress(Exception):
+                        con.close()
+                    _remove_spill(new_spill)
+                    return _persisted_declined("no-passphrase")
                 columnar.refresh_keyword_daily(
                     con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
                 )
