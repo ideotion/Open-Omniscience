@@ -58,6 +58,7 @@ MARGIN_BYTES = 256 * 1024 * 1024
 #: under-asks for a store whose pages are nearly empty.
 SIZE_FACTOR = 1.10
 #: How long the work already in flight on the library may take to finish before the rebuild refuses, naming it (seconds).
+PARTIAL_MIN_AGE_S = 600.0  # a partial younger than this may be one a rebuild is writing; the next look removes it
 QUIESCE_S = 180.0
 
 #: What the operator answered to "back up first?" (R702): the rebuild refuses without one of these.
@@ -136,7 +137,8 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
     if target is None:
         return []
     pattern = _kept_pattern(target)
-    out = []
+    out: list[dict[str, Any]] = []
+    found: list[tuple[tuple[int, int], dict[str, Any]]] = []
     try:
         entries = list(os.scandir(target.parent))
     except OSError:
@@ -148,14 +150,22 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
         try:
             if not entry.is_file(follow_symlinks=False):
                 continue
-            size = entry.stat(follow_symlinks=False).st_size
+            st = entry.stat(follow_symlinks=False)
+            size = st.st_size
             made = datetime.strptime(m.group(1), STAMP_FORMAT).replace(tzinfo=UTC).isoformat(timespec="seconds")
         except (OSError, ValueError):
             continue  # a stamp that is not a real date is a name this module never gave
         if _same_file(Path(entry.path), target):
             continue  # a second name of the LIVE library (a rebuild cut between the link and the swap): not a kept copy
-        out.append({"name": entry.name, "bytes": int(size), "made_at": made})
-    return sorted(out, key=lambda k: k["made_at"], reverse=True)
+        found.append(((st.st_dev, st.st_ino), {"name": entry.name, "bytes": int(size), "made_at": made}))
+    # two names of ONE file (a crash between the link and the swap, then a later rebuild) are listed once, under the older
+    # name, so the room they take is counted once and "freed" is true of the removal
+    seen: set[tuple[int, int]] = set()
+    for file_id, row in sorted(found, key=lambda f: str(f[1]["made_at"])):
+        if file_id not in seen:
+            seen.add(file_id)
+            out.append(row)
+    return sorted(out, key=lambda k: str(k["made_at"]), reverse=True)
 
 
 def remove_kept_copy(name: str) -> dict[str, Any]:
@@ -190,6 +200,8 @@ def sweep_partials(target: Path | None = None) -> int:
         if not pattern.fullmatch(entry.name) or entry.is_symlink():
             continue
         with contextlib.suppress(OSError):
+            if time.time() - entry.stat(follow_symlinks=False).st_mtime < PARTIAL_MIN_AGE_S:
+                continue  # a copy being written right now (a rebuild that started after the check above): never its own
             os.unlink(entry.path)
             gone += 1
     return gone
@@ -334,8 +346,10 @@ def _words_of(refusal: Declined) -> str:
 def _check_copy(copy: Path, target: Path) -> dict[str, Any]:
     """The new file proves itself before it is switched in: it opens through ``connect()`` with no page size given, reads the new
     settings back, passes ``quick_check``, and has the old file's schema and the same number of rows in every table."""
-    from src.database.connect import connect
+    from src.database.connect import connect, is_encrypted_file
 
+    if is_encrypted_file(copy) is not is_encrypted_file(target):
+        raise Declined("copy-check", "the new file is not encrypted the way the library is, so nothing was switched")
     want = target_settings()
     new = connect(str(copy), check_same_thread=False, timeout=30)
     old = connect(str(target), check_same_thread=False, timeout=30)
@@ -405,6 +419,11 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
             raise Declined("no-backup-answer", "the rebuild starts only once you have said whether you made a backup first")
         if target is None or is_encrypted_file(target) is None:
             raise Declined("no-library", "there is no library file to rebuild")
+        if target.is_symlink():
+            raise Declined(
+                "library-is-a-link",
+                "the library's name is a link to a file elsewhere; the switch would replace the link itself, so nothing was started",
+            )
         if not gate_enabled():
             raise Declined(
                 "write-gate-off",
@@ -428,6 +447,7 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
             _quiet(stopping)
             with write_lock():
                 watch = repair._Probe(target)  # opened BEFORE the copy reads its first row
+                origin = _identity(target)  # the FILE the probe watches: a library replaced under its name is not one it can see
                 try:
                     progress(FRAME_COPYING, mb=_mb(now["bytes_in_use"]))
                     t0 = time.monotonic()
@@ -445,7 +465,7 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
                     if stopping():
                         raise Stopped("the rebuild was stopped before the switch")  # the last point a stop can take effect
                     progress(FRAME_SWITCHING)
-                    switched = _switch(target, partial, kept, watch)
+                    switched = _switch(target, partial, kept, watch, origin)
                 finally:
                     watch.close()
         report["outcome"] = "rebuilt"
@@ -507,7 +527,17 @@ def _quiet(stopping: Any) -> None:
         raise Declined("writer-busy", "another job is still writing to the library (" + ", ".join(held) + f") after waiting {QUIESCE_S:.0f} s" + foreign_note(held))
 
 
-def _switch(target: Path, finished: Path, kept: Path, watch: Any) -> bool:
+def _identity(path: Path) -> tuple[int, int, bool | None]:
+    """The file under ``path`` (device, inode) and whether it is encrypted at rest. The probe's data version answers for the file
+    it opened only: if another path (Encrypt, a restore) put a different file under the name, the probe never moves, so the
+    switch also compares this, taken when the probe was opened, with the file there at the swap."""
+    from src.database.connect import is_encrypted_file
+
+    st = os.stat(path)
+    return (st.st_dev, st.st_ino, is_encrypted_file(path))
+
+
+def _switch(target: Path, finished: Path, kept: Path, watch: Any, origin: tuple[int, int, bool | None]) -> bool:
     """Give the old file its second name, then put the new file in its place inside the one swap window. Returns True once the
     library IS the new file (the caller then keeps both names)."""
     from src.backup.merge import swap_in_corpus
@@ -532,6 +562,9 @@ def _switch(target: Path, finished: Path, kept: Path, watch: Any) -> bool:
         raise Stopped("the app is shutting down")
     if refused is not None:
         raise Declined(refused, "a reader kept the library's log open, so it could not be folded before the switch; nothing was switched")
+    replaced = _replaced_since(target, origin)
+    if replaced:
+        raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
     before = repair.fingerprint(target)
     taken = linked = False
     try:
@@ -555,6 +588,8 @@ def _switch(target: Path, finished: Path, kept: Path, watch: Any) -> bool:
             failed = type(exc).__name__
         if failed is not None:  # raised outside the handler, so the keyed connection's error is not carried as the context
             raise Declined("writer-busy", f"another connection kept the library's write lock, so it could not be told whether it was written to ({failed})")
+        if _replaced_since(target, origin):
+            raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
         if moved or repair.fingerprint(target) != before:
             raise Declined("saved-during-the-copy", "something was saved to the library while it was copied, so nothing was switched; start the rebuild again")
         watch.close()
@@ -577,6 +612,20 @@ def _switch(target: Path, finished: Path, kept: Path, watch: Any) -> bool:
         except Exception as exc:  # noqa: BLE001 - the TYPE only: these run on the keyed engine
             _LOG.warning("database rebuild: a step after the switch failed (%s)", type(exc).__name__)
     return True
+
+
+_REPLACED_WORDS = (
+    "another step (encrypting the library, or a restore) put a different file under the library's name while it was copied, "
+    "so nothing was switched; start the rebuild again"
+)
+
+
+def _replaced_since(target: Path, origin: tuple[int, int, bool | None]) -> bool:
+    """Whether the file now under ``target`` is not the one the copy was made from (an unreadable name counts as replaced)."""
+    try:
+        return _identity(target) != origin
+    except OSError:
+        return True
 
 
 def _kv_invalidate() -> None:

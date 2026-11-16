@@ -764,6 +764,7 @@ def copy_at_current_settings(src: Path | str, dest: Path | str, *, should_stop=N
         conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
         attach, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ''", "page_size"
     try:
+        conn.execute("PRAGMA temp_store = MEMORY")  # a sorter or temp table spilled to disk would be plaintext, whatever the build
         conn.execute(attach, (str(dest_p),))
         conn.execute(f"PRAGMA rebuilt.{size_pragma} = {int(_FRESH_PAGE_SIZE)}")
         conn.execute(f"PRAGMA rebuilt.auto_vacuum = {int(_FRESH_AUTO_VACUUM)}")

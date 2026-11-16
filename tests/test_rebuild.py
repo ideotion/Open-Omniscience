@@ -17,6 +17,8 @@ app's schema) and pin, one test each:
 from __future__ import annotations
 
 import os
+import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -170,6 +172,9 @@ def test_a_rebuild_gives_the_current_settings_keeps_every_row_and_keeps_the_old_
     assert "init_db" in engine and engine.index("init_db") > engine.index("dispose")
     assert rebuild.last_report()["outcome"] == "rebuilt"
     assert H.KEY not in repr(report) and H.KEY not in repr(rebuild.status())
+    from src.database.connect import is_encrypted_file
+
+    assert is_encrypted_file(live) is encrypted and is_encrypted_file(kept) is encrypted, "encrypted at rest exactly as it was"
 
 
 def test_the_status_says_what_would_change_and_lists_the_kept_copy(tmp_path, monkeypatch, key_held, engine):
@@ -362,8 +367,16 @@ def test_unfinished_copies_are_swept_by_their_whole_name_only(tmp_path, monkeypa
     theirs = ["live.rebuild-20261114T101010Z.db", "other.rebuild-20261114T101010Z.db.partial", "live.rebuild-x.db.partial", "notes.partial"]
     for n in ours + theirs:
         (tmp_path / n).write_bytes(b"y")
+        _age(tmp_path / n)
+    young = "live.rebuild-20261116T101010Z.db.partial"
+    (tmp_path / young).write_bytes(b"being written by a rebuild that started after the running check")
     assert rebuild.sweep_partials() == len(ours)
-    assert _names(tmp_path) == {"live.db", *theirs}
+    assert _names(tmp_path) == {"live.db", young, *theirs}, "a partial younger than PARTIAL_MIN_AGE_S may be one being written"
+
+
+def _age(path: Path) -> None:
+    old = time.time() - rebuild.PARTIAL_MIN_AGE_S - 60
+    os.utime(path, (old, old))
 
 
 def test_no_sweep_while_a_rebuild_runs(tmp_path, monkeypatch, no_key):
@@ -555,3 +568,75 @@ def test_a_volume_export_or_restore_refuses_while_a_rebuild_runs(tmp_path, monke
         with pytest.raises(RuntimeError, match="rebuilt"):
             mgr._reap_or_reject(what)
     mgr._reap_or_reject("verify")  # a verification reads the backup files only
+
+
+# --------------------------------------------------------------------------- #
+#  the second read's findings (2026-11-16)
+# --------------------------------------------------------------------------- #
+def test_a_library_replaced_under_its_name_during_the_copy_is_not_switched_over(tmp_path, monkeypatch, key_held, engine):
+    """Encrypt (or a restore) can put a NEW file under the library's name while the copy runs: the probe watches the old file
+    and never moves, so the switch compares the file's identity with the one taken when the probe opened."""
+    live = _live(tmp_path, monkeypatch, encrypted=True)
+    real = rebuild._check_copy
+
+    def check_then_replace(copy, target):
+        out = real(copy, target)
+        twin = tmp_path / "twin.db"
+        shutil.copy2(live, twin)
+        os.replace(twin, live)  # same bytes, a different file: what an encrypt-in-place swap leaves under the name
+        return out
+
+    monkeypatch.setattr(rebuild, "_check_copy", check_then_replace)
+    replaced = H.sha(live)
+    with pytest.raises(rebuild.Declined) as caught:
+        rebuild.run("have_backup")
+    assert caught.value.code == "replaced-during-the-copy", rebuild.last_report().get("reason_text")
+    assert H.sha(live) == replaced and _settings(live)["page_size"] == 4096, "the file now under the name is left exactly as it is"
+    assert not [n for n in _names(tmp_path) if ".rebuild-" in n or ".pre-rebuild-" in n]
+
+
+def test_a_copy_not_encrypted_like_the_library_fails_its_check(tmp_path, monkeypatch, key_held):
+    from src.database import connect as connect_mod
+
+    live = _live(tmp_path, monkeypatch, encrypted=True)
+    monkeypatch.setattr(connect_mod, "is_encrypted_file", lambda p: Path(p) == live)
+    with pytest.raises(rebuild.Declined) as caught:
+        rebuild._check_copy(tmp_path / "copy.db", live)
+    assert caught.value.code == "copy-check" and "encrypted" in caught.value.detail
+
+
+def test_a_library_whose_name_is_a_link_is_refused_before_anything_is_written(tmp_path, monkeypatch, key_held, engine):
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    store = _live(real, monkeypatch, encrypted=True)
+    link = tmp_path / "live.db"
+    os.symlink(store, link)
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (link, link.name) if key == FILE_CORPUS else (None, None))
+    before = _frozen(real)
+    with pytest.raises(rebuild.Declined) as caught:
+        rebuild.run("have_backup")
+    assert caught.value.code == "library-is-a-link"
+    assert link.is_symlink() and _frozen(real) == before and _names(tmp_path) == {"elsewhere", "live.db"}
+
+
+def test_two_names_of_one_kept_file_are_listed_once(tmp_path, monkeypatch, no_key):
+    live = tmp_path / "live.db"
+    live.write_bytes(b"x")
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (live, live.name) if key == FILE_CORPUS else (None, None))
+    first = tmp_path / "live.pre-rebuild-20261101T080000Z.db"
+    first.write_bytes(b"a" * 10)
+    os.link(first, tmp_path / "live.pre-rebuild-20261114T080000Z.db")
+    assert [k["name"] for k in rebuild.kept_copies()] == [first.name], "one file, counted once, under its older name"
+
+
+def test_encrypting_the_library_is_refused_while_a_rebuild_runs(monkeypatch):
+    from fastapi import HTTPException
+
+    from src.api import unlock
+
+    monkeypatch.setattr(unlock, "app_lock_state", lambda: "unlocked-plaintext")
+    monkeypatch.setattr(rebuild.REBUILD_JOB, "status", lambda: {"state": "running"})
+    body = unlock.EncryptBody(passphrase="p" * 20, confirm="p" * 20, consent=True)
+    with pytest.raises(HTTPException) as caught:
+        unlock.encrypt_db(body)
+    assert caught.value.status_code == 409 and "rebuilt" in caught.value.detail
