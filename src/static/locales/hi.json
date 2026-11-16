@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट ("
+  "🛒 Draft (": "🛒 ड्राफ़्ट (",
+  "year inferred": "वर्ष अनुमानित",
+  "Year inferred from the publication date in {k} of {n}.": "{n} में से {k} में वर्ष प्रकाशन तिथि से अनुमानित।",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "यहाँ पाठ में वर्ष नहीं दिया गया है: यह लेख की प्रकाशन तिथि के सबसे निकट का वर्ष है (उससे 183 दिन पहले या 92 दिन बाद तक)।"
 }

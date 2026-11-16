@@ -122,7 +122,7 @@ def test_store_uses_article_anchor_and_language(tmp_path):
                 title="Anchored forms",
                 hash="hx",
                 language="fr",
-                content="La réunion était hier. Le sommet ouvre le 15 septembre. Vote le 11/06/2026.",
+                content="La réunion était hier. Le sommet ouvre le 15 juillet. Vote le 11/06/2026.",
                 published_at=datetime(2024, 6, 10, tzinfo=UTC),  # the anchor
                 created_at=datetime.now(UTC),
             )
@@ -131,7 +131,7 @@ def test_store_uses_article_anchor_and_language(tmp_path):
         added = datestore.store_for_article(db, db.get(Article, 1), today=TODAY)
         dates = {t["date"] for t in datestore.for_article(db, 1)}
         assert "2024-06-09" in dates  # "hier" resolved against the publication date
-        assert "2024-09-15" in dates  # "15 septembre" — year filled from the anchor
+        assert "2024-07-15" in dates  # "15 juillet" — year filled from the anchor (inside R727's 92 days ahead)
         assert "2026-06-11" in dates  # "11/06/2026" read as DMY because language=fr
         assert added >= 3
 

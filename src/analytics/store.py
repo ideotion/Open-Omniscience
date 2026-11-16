@@ -1751,6 +1751,8 @@ def _reindex_articles_impl(
         # the optional when/where/who opt-in, and a full re-index appends it while a
         # keywords-only one does not. Without this, the element type is inferred from
         # whichever branch appends first and the other is rejected.
+        from src.timemap.dateextract import publication_anchor
+
         tasks: list[Task] = []
         content_by_id: dict[int, str] = {}
         _t0 = time.monotonic()
@@ -1765,10 +1767,11 @@ def _reindex_articles_impl(
             # on a 25-50 KB body versus ~36 ms for the keyword half, so leaving it
             # inline capped the whole re-index at ~2-3 articles/sec no matter how
             # many workers were running.
-            observed = art.published_at or art.created_at
+            # R727: the date anchor is the trustworthy publication date only (never the storing time).
+            _anchor = publication_anchor(art.published_at, art.created_at)
             www_ctx = (
                 art.country,
-                observed.date().isoformat() if observed else None,
+                _anchor.isoformat() if _anchor else None,
                 None,  # `today`: the store's own default, never a worker's clock
                 # R697: the date language is the article's OWN column, the value the inline
                 # store and the ingest precompute pass; `lang or "en"` below is only the

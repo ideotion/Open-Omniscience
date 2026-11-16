@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "year inferred": "বছর অনুমিত",
+  "Year inferred from the publication date in {k} of {n}.": "{n}টির মধ্যে {k}টিতে বছর প্রকাশের তারিখ থেকে অনুমিত।",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "এখানে লেখায় বছর দেওয়া নেই: বছরটি নিবন্ধের প্রকাশের তারিখের সবচেয়ে কাছের বছর (তার ১৮৩ দিন আগে বা ৯২ দিন পর পর্যন্ত)।"
 }

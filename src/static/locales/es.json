@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "year inferred": "año deducido",
+  "Year inferred from the publication date in {k} of {n}.": "Año deducido de la fecha de publicación en {k} de {n}.",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "El texto no da el año aquí: es el año más cercano a la fecha de publicación del artículo (hasta 183 días antes o 92 días después)."
 }

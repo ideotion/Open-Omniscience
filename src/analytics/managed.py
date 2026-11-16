@@ -75,7 +75,11 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
 # Mn, so the tokenizer shatters a Thai run into mark-bounded fragments (verified) —
 # a stoplist cannot fix missing segmentation, so it is honestly UNSEGMENTED, not
 # no_stoplist. (vi is syllable-segmented, a milder case kept as no_stoplist.)
-UNSEGMENTED: frozenset[str] = frozenset({"zh", "ja", "th"})
+# km (Khmer), lo (Lao), my (Burmese) and bo (Tibetan) added 2026-11-16 (field test 2026-11-14 row 62):
+# the same space-less writing (a space separates phrases, not words; Tibetan separates SYLLABLES with
+# the tsheg), and no segmenter ships for any of them, so a token is a phrase or a syllable, never a
+# word. They had been reported no_stoplist, which reads as "a stoplist would fix it".
+UNSEGMENTED: frozenset[str] = frozenset({"zh", "ja", "th", "km", "lo", "my", "bo"})
 
 
 def normalize_lang(lang: str | None) -> str:

@@ -246,7 +246,8 @@ def test_sl_bs_listopad_rulings():
 # ---- regression: the fixes never widen what the anchored path may claim ---- #
 
 def test_anchored_no_year_forms_still_work():
-    assert _dates("The meeting is on 11 September.", "en") == [("2026-09-11", "day")]
+    # R727: 11 September is 93 days after ANCHOR, one past the 92-day forward window.
+    assert _dates("The meeting is on 11 September.", "en", anchor=date(2026, 8, 1)) == [("2026-09-11", "day")]
     assert _dates("La réunion a eu lieu le 11 juin.", "fr") == [("2026-06-11", "day")]
 
 

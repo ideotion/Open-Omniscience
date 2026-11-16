@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "year inferred": "tahun disimpulkan",
+  "Year inferred from the publication date in {k} of {n}.": "Tahun disimpulkan dari tanggal terbit pada {k} dari {n}.",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "Teks tidak menyebut tahun di sini: tahunnya adalah yang paling dekat dengan tanggal terbit artikel (hingga 183 hari sebelum atau 92 hari sesudahnya)."
 }

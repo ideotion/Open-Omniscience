@@ -48,30 +48,43 @@ from src.utils.markup_blocks import (
 )
 from src.utils.safe_yaml import load_safe_yaml
 
-# A word token: starts with a (unicode) letter, may contain letters, marks,
-# apostrophes and hyphens. Digits-only / punctuation tokens are ignored.
-# Indic combining marks (Unicode category Mn/Mc): dependent vowel signs (matras),
-# the virama, anusvara/visarga/candrabindu, nukta. Python's stdlib `\w` does NOT
-# match these (they're Marks, not alphanumerics), so "सरकार" used to split at the ा
-# matra into "सरक"+"र" — Hindi/Bengali keywords were mangled, not merely unstoplisted
-# (field test 2026-06-22). Allowing them ONLY as word CONTINUATIONS is additive: no
-# Latin/Cyrillic/Greek/Arabic token uses these codepoints, so those scripts are
-# byte-unchanged. (Other Indic/Thai scripts have the same need but are out of scope —
-# zh/ja stay unsegmented regardless.)
-_DEVANAGARI_MARKS = "ऀ-ःऺ-ॏ॑-ॗॢॣ"
-_BENGALI_MARKS = "ঁ-ঃ়া-্ৗৢৣ"
-# Arabic-script combining marks (harakat/tashkeel, superscript alef, Quranic signs):
-# category Mn — NOT matched by \w, so a *diacritized* Persian/Urdu/Arabic word would
-# split at a mark exactly like the Devanagari matra bug. Allowed ONLY as word
-# CONTINUATIONS, which is additive: undiacritized text (the common news case — the
-# fa/ur samples tokenise whole with or without this) is byte-unchanged; this only
-# JOINS a token a mark would otherwise split, never splits one. Defined with \u
-# escapes in a NORMAL string (the literal mark glyphs are hard to embed) then
-# interpolated into the raw char class, mirroring the Devanagari/Bengali ranges.
-_ARABIC_MARKS = "ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۤۧۨ-ۭ"
-_WORD_RE = re.compile(
-    rf"[^\W\d_][\w'’\-{_DEVANAGARI_MARKS}{_BENGALI_MARKS}{_ARABIC_MARKS}]*", re.UNICODE
-)
+
+# A word token: starts with a (unicode) letter, may contain letters, digits, combining
+# marks, apostrophes and hyphens. Digits-only / punctuation tokens are ignored.
+# COMBINING MARKS (Unicode category Mn/Mc/Me): dependent vowel signs (matras), the
+# virama, anusvara/visarga/candrabindu, nukta, harakat. Python's stdlib `\w` does NOT
+# match them (they are Marks, not alphanumerics), so "सरकार" used to split at the ा
+# matra into "सरक"+"र" (field test 2026-06-22). That fix listed Devanagari, Bengali
+# and Arabic marks only, and the 2026-11-14 field test measured the rest: Tamil,
+# Telugu, Gujarati, Kannada, Malayalam, Gurmukhi, Odia, Myanmar and Khmer keywords
+# were fragments (bbc Tamil's top keyword was அவர, cut at the virama of அவர்). So the
+# class is now EVERY combining mark the interpreter's Unicode tables know (the tables
+# are an engine input already: engine_identity hashes unidata_version), the rule
+# topic_tagging adopted under R690(1). Allowed ONLY as word CONTINUATIONS, which is
+# additive: a mark never starts a token and never splits one, it only JOINS a token a
+# mark used to cut. Text with no combining mark is byte-unchanged.
+def _mark_class() -> str:
+    """Every combining mark (Mn, Mc, Me) as compact ``re`` character-class ranges.
+
+    Scans planes 0-2 and plane 14 (the variation selectors supplement): no other plane holds a
+    mark in any Unicode version, and the walk stays a few tens of milliseconds at import.
+    """
+    import unicodedata
+
+    ranges: list[tuple[int, int]] = []
+    for cp in (*range(0x30000), *range(0xE0000, 0xE1000)):
+        if unicodedata.category(chr(cp))[0] == "M":
+            if ranges and ranges[-1][1] == cp - 1:
+                ranges[-1] = (ranges[-1][0], cp)
+            else:
+                ranges.append((cp, cp))
+    return "".join(
+        (f"\\U{a:08x}" if a == b else f"\\U{a:08x}-\\U{b:08x}") for a, b in ranges
+    )
+
+
+_COMBINING_MARKS = _mark_class()
+_WORD_RE = re.compile(rf"[^\W\d_][\w'’\-{_COMBINING_MARKS}]*", re.UNICODE)
 
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80

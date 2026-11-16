@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "year inferred": "年は推定",
+  "Year inferred from the publication date in {k} of {n}.": "{n}件中{k}件で年を公開日から推定。",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "本文に年がありません。記事の公開日に最も近い年です（公開日の183日前から92日後まで）。"
 }

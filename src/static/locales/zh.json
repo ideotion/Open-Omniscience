@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "year inferred": "年份为推断",
+  "Year inferred from the publication date in {k} of {n}.": "{n} 篇中有 {k} 篇的年份由发布日期推断。",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "此处原文未给出年份：取最接近文章发布日期的年份（发布日期前 183 天至后 92 天内）。"
 }

@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "year inferred": "السنة مستنتجة",
+  "Year inferred from the publication date in {k} of {n}.": "السنة مستنتجة من تاريخ النشر في {k} من {n}.",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "لا يذكر النص السنة هنا: هي السنة الأقرب إلى تاريخ نشر المقال (حتى 183 يومًا قبله أو 92 يومًا بعده)."
 }

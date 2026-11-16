@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft ("
+  "🛒 Draft (": "🛒 Draft (",
+  "year inferred": "year inferred",
+  "Year inferred from the publication date in {k} of {n}.": "Year inferred from the publication date in {k} of {n}.",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after)."
 }

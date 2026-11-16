@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
+  "version": 4,
+  "digest": "4d959077190b9fe3c5afc2cc0962a6f55580c97b02535f8a1ed79c4784c5b60a",
   "log": [
     {
       "version": 1,
@@ -91,6 +91,12 @@
       "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
       "kind": "same",
       "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
+    },
+    {
+      "version": 4,
+      "digest": "4d959077190b9fe3c5afc2cc0962a6f55580c97b02535f8a1ed79c4784c5b60a",
+      "kind": "bump",
+      "note": "Field test 2026-11-14 rows 62-63: the keyword tokenizer keeps every combining mark (Tamil, Telugu, Gujarati, Kannada, Malayalam, Gurmukhi, Odia, Myanmar, Khmer words were cut at vowel signs); km/lo/my/bo are reported unsegmented; dates read the Bengali year-first form, resolve a year-less date only within 183 days before or 92 days after publication (R727), mark an inferred year in the tag's provenance, and anchor only on a trustworthy publication date"
     }
   ]
 }

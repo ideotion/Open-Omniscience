@@ -382,8 +382,8 @@ class ArticleBatch:
           * ``extract_locations`` gets ``a.country`` (None on this path, as
             ``_article_row`` sets no country -- the same None the inline
             ``whostore.store_places_for_article`` reads off the article).
-          * the anchor is ``a.published_at or a.created_at``, as
-            ``store_for_article`` computes it; ``today`` stays the store's own
+          * the anchor is ``publication_anchor(a.published_at, a.created_at)``
+            (R727), as ``store_for_article`` computes it; ``today`` stays the store's own
             default.
 
         THE SURROGATE KEY IS NEGATIVE. These rows have no id until the flush, so
@@ -408,6 +408,7 @@ class ArticleBatch:
         from src.analytics.extract import get_extractor
         from src.analytics.reindex_parallel import compute_derivatives_with_www
         from src.analytics.store import _resolve_known_language
+        from src.timemap.dateextract import publication_anchor
 
         if os.getenv("OO_NO_INDEX") == "1":
             return {}
@@ -415,7 +416,7 @@ class ArticleBatch:
         out: dict = {}
         for i, (e, a) in enumerate(to_store):
             lang = _resolve_known_language(a, e.text)
-            observed = a.published_at or a.created_at
+            anchor = publication_anchor(a.published_at, a.created_at)  # R727, as store_for_article
             out[_pk(i)] = compute_derivatives_with_www(
                 extractor,
                 _pk(i),
@@ -425,7 +426,7 @@ class ArticleBatch:
                 sentiment_language=lang,
                 date_language=a.language,
                 country=a.country,
-                anchor_iso=observed.date().isoformat() if observed else None,
+                anchor_iso=anchor.isoformat() if anchor else None,
             )
         return out
 

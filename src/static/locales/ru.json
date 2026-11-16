@@ -8018,5 +8018,8 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "year inferred": "год выведен",
+  "Year inferred from the publication date in {k} of {n}.": "Год выведен из даты публикации в {k} из {n}.",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "Год в тексте не указан: взят год, ближайший к дате публикации статьи (до 183 дней до неё или 92 дней после)."
 }
