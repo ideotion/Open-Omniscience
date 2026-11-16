@@ -18,7 +18,12 @@ from pathlib import Path
 import pytest
 
 from src.custody import signing
-from src.custody.log import ACCEPTED_UNENDORSED_NOTE, CustodyAction, CustodyLog, verify_export_report
+from src.custody.log import (
+    ACCEPTED_UNENDORSED_NOTE,
+    CustodyAction,
+    CustodyLog,
+    verify_export_report,
+)
 from src.custody.signing import HybridSigner
 
 ROOT = Path(__file__).resolve().parents[1]

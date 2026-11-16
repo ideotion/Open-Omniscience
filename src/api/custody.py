@@ -14,6 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.custody import signing
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import (
     ACCEPTED_UNENDORSED_NOTE,
@@ -31,7 +32,6 @@ from src.custody.settings import (
     load_settings,
     save_settings,
 )
-from src.custody import signing
 from src.custody.signing import HybridSigner, PostQuantumUnavailable, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
