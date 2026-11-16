@@ -3406,9 +3406,9 @@ def source_type_facets(session) -> dict:
     the channel), NEVER a quality/credibility score. Counts only. A source whose channel
     was never asserted (NULL/blank source_type — e.g. a restore-merged or wikidata-
     untyped source) is bucketed HONESTLY under ``SOURCE_TYPE_UNTYPED``, never relabelled
-    as the default 'news'. PERF: a GROUP BY over articles joined to the small sources
-    table on source_type — index-friendly, never reads article content (no codec
-    decrypt); Article.source_id is NOT NULL, so every article is counted exactly once.
+    as the default 'news'. PERF: counted per source from the covering index ``idx_article_feed_scan``
+    alone (``source_article_counts``), never an article row, then folded onto the small
+    sources table; Article.source_id is NOT NULL, so every article is counted exactly once.
     """
     # QUARANTINED articles are excluded here for the same reason the docstring
     # below gives: ``_query_articles`` applies this condition ALWAYS, not as an

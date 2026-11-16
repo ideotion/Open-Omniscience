@@ -150,11 +150,33 @@ def test_the_plans_never_read_an_article_row(s, sql):
 
 
 def test_the_old_plans_did_read_rows(s):
-    # the negative twin: the plain statements the fallback runs are the slow plans this change avoids,
+    # the negative twin: the statements the fallback runs are the slow plans this change avoids,
     # so the INDEXED BY is what makes the difference (on a store without statistics, as the field's are)
-    for sql in (sac._ALL_TIME_UNQUARANTINED_FALLBACK, sac._SINCE_FALLBACK):
-        steps = [p for p in _plan(s, sql, since="2026-01-01") if "articles" in p]
+    for stmt in (sac._fallback_unquarantined(), sac._fallback_since(SINCE)):
+        sql = str(stmt.compile(s.get_bind(), compile_kwargs={"literal_binds": True}))
+        steps = [p for p in _plan(s, sql) if "articles" in p]
         assert any("COVERING INDEX" not in p for p in steps), steps
+
+
+def test_the_functions_run_the_forced_plans_on_a_store_that_has_the_indexes(s):
+    # what the functions EXECUTE, not only the constants: a broken index check would fall back to the slow
+    # plan silently, with every count still right (the independent read's finding)
+    assert sac._have(s, "idx_article_feed_scan") is True
+    assert sac._have(s, "idx_article_source_id", "idx_article_created_at") is True
+    assert sac._have(s, "idx_article_feed_scan", "no_such_index_here") is False
+    seen: list[str] = []
+
+    def _spy(conn, cursor, statement, *args):
+        seen.append(statement)
+
+    sa.event.listen(s.get_bind(), "before_cursor_execute", _spy)
+    try:
+        sac.unquarantined_counts_by_source(s)
+        sac.counts_by_source_since(s, SINCE)
+    finally:
+        sa.event.remove(s.get_bind(), "before_cursor_execute", _spy)
+    counted = [q for q in seen if "count(*)" in q and "sqlite_master" not in q]
+    assert len(counted) == 2 and all("INDEXED BY" in q for q in counted), counted
 
 
 @pytest.mark.parametrize("index", ["idx_article_feed_scan", "idx_article_source_id", "idx_article_created_at"])
