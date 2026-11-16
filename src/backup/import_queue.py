@@ -355,6 +355,9 @@ class _CheckpointGroup:
     #: Their artifact digests, so a duplicate later in the SAME group is skipped
     #: rather than merged twice -- the live corpus cannot answer that question yet.
     digests: set[str] = field(default_factory=set)
+    #: R729: the lane members of held items, merged into the live lanes when the group
+    #: commits (``(item id, held_lanes)``), never before -- the corpus is not live until then.
+    held_lanes: list[tuple[str, dict]] = field(default_factory=list)
 
     @property
     def working(self) -> Path:
@@ -1128,6 +1131,9 @@ class ImportQueueManager:
         group = self._release_group()
         if group is None:
             return
+        # The corpus of every held item is live now, so their living sources merge now,
+        # before the group's directory (which holds their members) goes.
+        self._merge_held_lanes(group)
         shutil.rmtree(group.dir, ignore_errors=True)
         if not group.item_ids:
             return
@@ -1143,6 +1149,35 @@ class ImportQueueManager:
         # what the run says it imported.
         for it in landed:
             self._persist_held_report(it, committed_by)
+
+    def _merge_held_lanes(self, group: _CheckpointGroup) -> None:
+        """Merge the held items' lane members (R729). Never raises; each item's report
+        says what its lanes did, and a lane that does not merge stays owed for a re-import."""
+        if not group.held_lanes:
+            return
+        try:
+            from src.backup.lane_merge import merge_staged_lanes, record_lane_outcome
+            from src.database.connect import get_passphrase
+        except Exception as exc:  # noqa: BLE001 - the commit stands whatever the lanes do
+            _LOG.warning("could not merge the held living sources (%s)", type(exc).__name__)
+            return
+        by_id = {str(it.get("id")): it for it in self._items}
+        for item_id, held in group.held_lanes:
+            item = by_id.get(item_id)
+            if item is None:
+                continue
+            try:
+                backup_key, corpus_key = self._keys_for(item)
+                living = merge_staged_lanes(
+                    Path(str(held.get("dir"))), held.get("members") or [], [corpus_key, get_passphrase(), backup_key]
+                )
+                record_lane_outcome(held.get("digest"), living)
+                summary = item.get("summary")
+                rep = summary.get("report") if isinstance(summary, dict) else None
+                if isinstance(rep, dict):
+                    rep["living_sources"] = living  # what _persist_held_report writes
+            except Exception as exc:  # noqa: BLE001 - one item's lanes never cost the commit
+                log_failure(_LOG, "merging a held backup's living sources failed", exc, *self._secrets(), level=logging.WARNING)
 
     # -- the persisted record (2026-09-26, I7) -------------------------------- #
     def _run_stamp(self, item: dict) -> dict:
@@ -1223,6 +1258,8 @@ class ImportQueueManager:
                     group.item_ids.append(str(item.get("id")))
                     if summary.get("source_digest"):
                         group.digests.add(str(summary["source_digest"]))
+                    if isinstance(summary.get("held_lanes"), dict):
+                        group.held_lanes.append((str(item.get("id")), summary["held_lanes"]))
             return
         if item.get("kind") == "legacy":
             # The legacy path returns run_restore's report itself.
@@ -1355,6 +1392,8 @@ class ImportQueueManager:
             "held": bool(summary.get("held")),
             "source_digest": summary.get("source_digest"),
         }
+        if isinstance(summary.get("held_lanes"), dict):
+            out["held_lanes"] = summary["held_lanes"]
         # An artifact already merged completes in milliseconds with no report. Say so
         # explicitly: a fast, empty success is otherwise indistinguishable from a
         # failure that produced nothing, and the queue's own log is where the

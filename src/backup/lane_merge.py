@@ -863,8 +863,44 @@ def deferred_report(lane_members: Iterable[Any]) -> dict[str, Any]:
                 "state": "deferred",
                 "reason": (
                     "the corpus from this backup is waiting for the rest of its import group, so its "
-                    "living sources were not merged yet; importing this backup again merges them"
+                    "living sources merge when the group is saved; if it is not saved, importing "
+                    "this backup again merges them"
                 ),
             }
         )
     return {"lanes": lanes, "method": METHOD, "newly_followed": 0}
+
+
+def hold_lane_members(
+    staging_dir: Path, lane_members: Iterable[Any], group_dir: Path, digest: str | None
+) -> dict[str, Any] | None:
+    """Keep a held item's lane members beside the import queue's working copy. Never raises.
+
+    The staging tree is deleted when the item ends, but the corpus it brought reaches the
+    live store only when the group commits, so the members are copied into the group's own
+    directory (which the stale-staging janitor reclaims if this process dies) and merged
+    then. Only ENCRYPTED members are kept: the group directory promises an orphan is
+    encrypted whenever the corpus is, and a plaintext one stays owed for a re-import.
+    """
+    import shutil
+
+    kept: list[dict[str, Any]] = []
+    try:
+        dest = Path(group_dir) / "lanes" / (str(digest or "")[:32] or f"item-{time.monotonic_ns()}")
+        for entry in lane_members or ():
+            kind = valid_member(entry)
+            if kind is None or kind not in MERGEABLE_KINDS or not entry.get("sqlcipher"):
+                continue
+            src = Path(staging_dir) / member_name(kind)
+            if not src.is_file():
+                continue
+            target = dest / member_name(kind)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+            kept.append(dict(entry))
+    except OSError as exc:
+        _LOG.warning("could not keep a held backup's living sources for its group (%s)", type(exc).__name__)
+        return None
+    if not kept:
+        return None
+    return {"dir": str(dest), "members": kept, "digest": digest}

@@ -300,7 +300,7 @@ def test_the_import_report_says_what_the_living_sources_added(tmp_path, monkeypa
     rows = {r["filename"]: r for r in import_reports.list_import_reports()}
     assert rows[path2.name]["lanes_owed"] == 1
     md = import_reports.render_import_report_markdown({"outcome": "committed", "living_sources": held})
-    assert "importing this backup again merges them" in md
+    assert "importing this backup again merges them" in md and "when the group is saved" in md
 
 
 def test_the_export_request_records_the_living_sources_and_a_resume_keeps_them(tmp_path):
@@ -529,3 +529,42 @@ def test_the_merge_keeps_the_pages_with_text_count_equal_to_the_rows(machines, t
     with store.lane_session("wiki") as s:
         (ed,) = s.execute(select(WikiWarmEdition)).scalars()
         assert (ed.edition, ed.pages_with_text, ed.texts_fetched) == ("en", 1, 0)
+
+
+def test_held_lanes_merge_when_the_import_group_commits(machines, tmp_path, monkeypatch):
+    """R729 amendment (coordinator 2026-11-16): the mass-import path holds corpora on a
+    working copy; their lanes wait beside it and merge when the group commits, never before."""
+    from src.backup import import_queue
+    from src.backup.import_queue import ImportQueueManager, _CheckpointGroup
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    shutil.copy2(snap, staging / "lanes" / "wiki.db")
+    entry = {"name": "lanes/wiki.db", "kind": "wiki", "sqlcipher": True}
+    group_dir = tmp_path / ".restore-group"
+    # A plaintext member is never kept beside the working copy: it stays owed.
+    assert lane_merge.hold_lane_members(staging, [dict(entry, sqlcipher=False)], group_dir, "dg") is None
+    held = lane_merge.hold_lane_members(staging, [entry], group_dir, "dg")
+    assert held and Path(held["dir"]).is_relative_to(group_dir)
+    shutil.rmtree(staging)  # the item's staging is gone by the time its group commits
+    lane_merge.record_lane_outcome("dg", lane_merge.deferred_report([entry]))
+    assert lane_merge.lanes_pending("dg")
+
+    before = _snapshot_state()
+    mgr = ImportQueueManager(state_path=tmp_path / "queue.json")
+    item = {"id": "i1", "summary": {"report": {"held": True, "living_sources": {"lanes": []}}}}
+    mgr._items = [item]
+    monkeypatch.setattr(import_queue, "log_failure", lambda *a, **k: None)
+    # Discarded group: nothing merges, the lanes stay owed.
+    mgr._merge_held_lanes(_CheckpointGroup(dir=group_dir))
+    assert _snapshot_state() == before
+    group = _CheckpointGroup(dir=group_dir)
+    group.held_lanes.append(("i1", held))
+    mgr._merge_held_lanes(group)
+    living = item["summary"]["report"]["living_sources"]
+    assert living["lanes"][0]["state"] == "merged", living
+    assert _snapshot_state() != before
+    assert not lane_merge.lanes_pending("dg")
