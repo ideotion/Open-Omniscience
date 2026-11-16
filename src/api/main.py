@@ -1002,6 +1002,13 @@ def _allowed_hosts() -> set[str]:
     return _LOOPBACK_HOST_NAMES | _operator_hosts()
 
 
+def _source_label(name: str | None, domain: str | None) -> str:
+    """The shown name of a source (row 71): see :func:`src.catalog.qid_labels.source_label`, imported when used."""
+    from src.catalog.qid_labels import source_label
+
+    return source_label(name, domain)
+
+
 @app.middleware("http")
 async def _host_header_guard(request: Request, call_next):
     if _host_without_port(request.headers.get("host", "")) not in _allowed_hosts():
@@ -1610,7 +1617,8 @@ def _structured_filters(
     if source:
         # EVERY source of that name: names are not unique once a source is (domain, feed), and ``.first()`` answered with
         # an arbitrary one of them and silently dropped the others' articles. A typo still 404s.
-        named_ids = [sid for (sid,) in session.query(Source.id).filter(Source.name == source)]
+        # A source whose name is only a Wikidata id is SHOWN by its domain (row 71), so the shown label finds it too.
+        named_ids = [sid for (sid,) in session.query(Source.id).filter(or_(Source.name == source, Source.domain == source))]
         if not named_ids:
             raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
         filters.append(Article.source_id.in_(named_ids))
@@ -1783,7 +1791,7 @@ def _article_row(
         "title": a.title,
         "url": a.url,
         "canonical_url": a.canonical_url,
-        "source": src.name if src else "Unknown",
+        "source": _source_label(src.name, src.domain) if src else "Unknown",
         # Descriptive ingestion channel (wikipedia/newsletter/statistics/web) derived
         # from the source -- a filterable label, never a quality/credibility verdict.
         "provenance": provenance_of(src.domain if src else None, src.source_type if src else None),
@@ -2694,7 +2702,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             "title": a.title,
             "url": a.url,
             "canonical_url": a.canonical_url,
-            "source": a.source.name if a.source else "Unknown",
+            "source": _source_label(a.source.name, a.source.domain) if a.source else "Unknown",
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "language": a.language,
             "content": a.content,
@@ -2749,7 +2757,18 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     def _row(label: str, value: str | None) -> str:
         return f"<div class='mrow'><span>{label}</span><b>{value}</b></div>" if value else ""
 
-    src_name = _html.escape(a.source.name) if a.source else None
+    # Row 71: a name that is only a Wikidata identifier reads as the domain, the identifier on hover.
+    from src.catalog.qid_labels import looks_like_bare_qid as _looks_like_bare_qid
+
+    src_name = (
+        (
+            f"<span title='{_html.escape(a.source.name)}'>{_html.escape(a.source.domain)}</span>"
+            if _looks_like_bare_qid(a.source.name) and a.source.domain
+            else _html.escape(a.source.name)
+        )
+        if a.source
+        else None
+    )
     # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
     # source's (by registrable domain, as the quarantine host-mismatch report compares them: a source's own subdomain is its
     # site). Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
@@ -3036,9 +3055,27 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         .all()
     )
     cite_items = []
+    furniture_items = []
+    # Row 68: a link most of THIS outlet's articles carry is its page furniture (an app badge, a subscription link), not a
+    # citation; it is listed apart, with the counts that put it there (src/analytics/link_furniture.py).
+    try:
+        from src.analytics.link_furniture import outlet_link_shares
+
+        shares = outlet_link_shares(db, a.source_id, [ln.normalized_url for ln in links[:40]])
+    except Exception as exc:  # noqa: BLE001 - the reader never fails for the furniture count; every link is then listed
+        log_failure(logger, "outlet furniture count failed in reader", exc, level=logging.WARNING)
+        shares = {"source_articles": None, "carried_by": {}, "furniture": set(), "method": ""}
     for ln in links[:40]:
         safe_ln = safe_href(ln.url)
         if not safe_ln:
+            continue
+        if ln.normalized_url in shares["furniture"]:
+            f_host = _html.escape((safe_ln.split("//", 1)[-1].split("/", 1)[0]).replace("www.", ""))
+            furniture_items.append(
+                f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{f_host}</a>"
+                f"<span class='muted'> · on {shares['carried_by'].get(ln.normalized_url, 0)} of this source's "
+                f"{shares['source_articles']} articles</span></li>"
+            )
             continue
         indeg = (
             db.query(func.count(func.distinct(ArticleLink.article_id)))
@@ -3059,11 +3096,21 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{label}</a>"
             f"<span class='muted'> · {host}</span> {shared}</li>"
         )
+    furniture_html = (
+        f"<details class='cites-furniture'><summary class='muted' title='{_html.escape(shares['method'])}'>"
+        f"{len(furniture_items)} link(s) that most of this source's articles carry (its page furniture) "
+        "are not counted as citations</summary><ul>"
+        + "".join(furniture_items)
+        + "</ul></details>"
+        if furniture_items
+        else ""
+    )
     cites_html = (
-        "<section class='cites'><h2>Sources this article cites</h2><ul>"
-        + "".join(cite_items)
-        + "</ul></section>"
-        if cite_items
+        "<section class='cites'><h2>Sources this article cites</h2>"
+        + ("<ul>" + "".join(cite_items) + "</ul>" if cite_items else "")
+        + furniture_html
+        + "</section>"
+        if cite_items or furniture_items
         else ""
     )
 

@@ -624,3 +624,108 @@ def test_the_readers_external_link_confirm_goes_through_the_i18n_engine():
             assert key in cat, (f.stem, key)
             if f.stem != "en":
                 assert cat[key] != key, f"{f.stem}: {key!r} is untranslated"
+
+
+def test_an_outlets_page_furniture_is_listed_apart_from_its_citations(tmp_path):
+    """Row 68: a link most of one outlet's articles carry (apps.apple.com on 494 of 495) is not a citation."""
+    from src.analytics.link_furniture import FURNITURE_MIN_ARTICLES
+    from src.database.session import get_db
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'fu.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    badge = "https://apps.apple.com/app/outlet"
+    report = "https://agency.example/report"
+    n = FURNITURE_MIN_ARTICLES
+    with Sess() as s:
+        s.add(Source(name="Outlet", domain="outlet.test"))
+        s.commit()
+        s.add_all(
+            [
+                Article(
+                    url=f"https://outlet.test/{i}", canonical_url=f"https://outlet.test/{i}", source_id=1,
+                    title=f"Story {i}", content="Body.", hash=f"h{i}", language="en", created_at=datetime.now(UTC),
+                )
+                for i in range(1, n + 1)
+            ]
+        )
+        s.commit()
+        s.add_all(
+            [ArticleLink(article_id=i, url=badge, normalized_url=badge, link_type="external") for i in range(1, n + 1)]
+            + [ArticleLink(article_id=1, url=report, normalized_url=report, link_text="the report", link_type="external")]
+        )
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/articles/1/view").text
+            cites = body.split("Sources this article cites", 1)[1]
+            listed, furniture = cites.split("cites-furniture", 1)
+            assert "agency.example" in listed and "apps.apple.com" not in listed
+            assert "apps.apple.com" in furniture
+            assert f"on {n} of this source's {n} articles" in furniture
+            assert "1 link(s) that most of this source's articles carry" in furniture
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_a_small_outlet_has_no_furniture(tmp_path):
+    from src.analytics.link_furniture import outlet_link_shares
+
+    engine = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True)
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, future=True)() as s:
+        s.add(Source(name="Tiny", domain="tiny.test"))
+        s.add(Article(url="https://tiny.test/1", canonical_url="https://tiny.test/1", source_id=1, title="t",
+                      content="b", hash="t1", language="en", created_at=datetime.now(UTC)))
+        s.add(ArticleLink(article_id=1, url="https://x.example/", normalized_url="https://x.example/", link_type="external"))
+        s.commit()
+        got = outlet_link_shares(s, 1, ["https://x.example/"])
+        assert got["source_articles"] == 1 and got["furniture"] == set()
+
+
+def test_the_reader_shows_the_domain_for_a_source_named_only_by_a_wikidata_id(tmp_path):
+    """Row 71 (report 7.3): the epari.fi article read "Q11858063" as its source."""
+    from src.database.session import get_db
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add(Source(name="Q11858063", domain="epari.fi"))
+        s.commit()
+        s.add(Article(url="https://epari.fi/a", canonical_url="https://epari.fi/a", source_id=1, title="T",
+                      content="Body.", hash="q1", language="fi", created_at=datetime.now(UTC)))
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/articles/1/view").text
+            assert "<span title='Q11858063'>epari.fi</span>" in body
+            rows = client.get("/api/articles").json()
+            rows = rows["results"] if isinstance(rows, dict) else rows
+            assert rows[0]["source"] == "epari.fi"
+    finally:
+        app.dependency_overrides.clear()
