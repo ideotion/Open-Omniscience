@@ -97,7 +97,7 @@ def test_a_qubes_vm_is_recognised_by_its_kernel_or_marker_not_only_dom0s_file(mo
     assert forensics._qubes_kind() is None
 
     marker = tmp_path / "marker-vm"
-    marker.write_text("")
+    marker.write_text("", encoding="utf-8")
     monkeypatch.setattr(forensics, "_QUBES_VM_MARKER", marker)
     assert forensics._qubes_kind() == "vm"
 
