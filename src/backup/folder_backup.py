@@ -300,6 +300,35 @@ def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
 # --------------------------------------------------------------------------- #
 # Copy + restore (atomic, idempotent, skip-if-present)
 # --------------------------------------------------------------------------- #
+def _write_manifest_atomically(path: Path, text: str) -> None:
+    """Write the folder backup's manifest through a temp file, fsync and rename (audit recheck P5).
+
+    Written in place, a crash mid-write left the folder backup with no readable manifest, and
+    the previous one already gone; now a reader sees the old manifest or the new one, whole."""
+    import secrets
+
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}{_PART_SUFFIX}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    try:  # the rename itself is durable only once its directory is (POSIX; not available on Windows)
+        fd = os.open(path.parent, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def _atomic_copy(
     src: Path,
     dst: Path,
@@ -479,7 +508,7 @@ def write_folder_backup(
         # is tamper-EVIDENCE against a drive, never trust in an origin -- which is why
         # every name->path field is still traversal-guarded before anything is touched.
         manifest["signature"] = _sign_folder_manifest(manifest)
-        (root / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        _write_manifest_atomically(root / MANIFEST_NAME, json.dumps(manifest, indent=2))
     return {
         "dest": str(root),
         "files": len(items),
@@ -981,10 +1010,11 @@ def verify_folder_backup(
 # --------------------------------------------------------------------------- #
 # The pausable job (one giant copy at a time, visible in the task manager)
 # --------------------------------------------------------------------------- #
+import contextlib  # noqa: E402  (kept local to the job section)
 import threading  # noqa: E402  (kept local to the job section)
 import time  # noqa: E402  (same)
 
-from src.backup import runlog  # noqa: E402  (same, beside the manager it serves)
+from src.backup import restore_marker, runlog  # noqa: E402  (same, beside the manager it serves)
 from src.monitoring import storage_events  # noqa: E402  (same)
 
 #: The storage-events journal's kind for each mode: a folder ``backup`` is an ``export`` there, a ``restore`` an ``import``. (The run
@@ -1122,10 +1152,23 @@ class FolderBackupManager:
         """Validate + preflight, then launch the worker. Raises ValueError on a bad
         destination / insufficient free space; RuntimeError if one is already running.
         ``_items``/``_targets`` are test seams (the production path collects them)."""
-        with self._lock, storage_events.run_refusals_net(
+        # R712 (Plan's ruling): a large-data restore -- the import queue's ``blobs`` item and
+        # /folder/restore alike -- is refused for the WHOLE time a backup export runs, in every
+        # phase, naming it. Checked under the shared restore marker's lock, which the export's
+        # own check-and-go holds too, so neither can start past the other; the worker then
+        # holds the marker itself (``_run_restore``).
+        gate = restore_marker.LOCK if mode == "restore" else contextlib.nullcontext()
+        with gate, self._lock, storage_events.run_refusals_net(
             _RUN_OF.get(mode, ""), via="folder", refused_as=storage_events.NOT_A_FOLDER if mode in ("restore", "verify") else ()
         ):
             what = _RUN_OF.get(mode, "")  # "" for a mode that is not one: the journal records no refusal for a kind it does not have
+            if mode == "restore":
+                from src.backup.merge import export_refusal
+
+                exporting = export_refusal()
+                if exporting:
+                    storage_events.run_refused(what, "export-running", via="folder")
+                    raise RuntimeError(exporting)
             if self._alive():
                 storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
@@ -1235,6 +1278,7 @@ class FolderBackupManager:
             finally:
                 storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
+    @restore_marker.marked  # R712: an export refuses to start or resume while this runs
     def _run_restore(self, srcp: Path, _items: list[BackupItem], cats: list[str]) -> None:
         with runlog.run("folder-import", label=srcp.name, dest=str(srcp), categories=cats):
             # No free-space figure: the files go to the live folders of each category, which can be on several volumes, and one number
@@ -1340,6 +1384,19 @@ class FolderBackupManager:
         with self._lock:
             self._cancelled = True
         self._stop.set()
+
+    def forget_paused(self, dest: str) -> None:
+        """A PAUSED copy into ``dest`` that its owner (the backup export, R701) has cancelled
+        reads ``cancelled`` from now on, so nothing offers to resume it. Nothing else changes."""
+        with self._lock:
+            if self._state != "paused" or self._mode != "backup" or self._dest is None or self._alive():
+                return
+            try:
+                same = Path(self._dest).resolve() == Path(dest).resolve()
+            except OSError:
+                same = False
+            if same:
+                self._state = "cancelled"
 
     def status(self) -> dict:
         with self._lock:

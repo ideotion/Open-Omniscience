@@ -358,7 +358,7 @@ def test_a_failed_tuning_pass_never_fails_the_run(queue, monkeypatch):
     by the time it runs, so a failure here must not turn a good run into a failed one."""
     monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
 
-    def _boom(session):
+    def _boom(session, **_kw):
         raise RuntimeError("optimize exploded")
 
     monkeypatch.setattr("src.database.fts.optimize_after_bulk", _boom)
@@ -382,7 +382,7 @@ def test_a_stop_skips_the_tuning_pass(queue, monkeypatch):
     queue2 = ImportQueueManager(state_path=queue._path().with_name("q2.json"))
     monkeypatch.setattr(queue2, "_run_corpus", lambda item, *, hold=False: queue2._stop.set())
     called: list[int] = []
-    monkeypatch.setattr("src.database.fts.optimize_after_bulk", lambda s: called.append(1) or {})
+    monkeypatch.setattr("src.database.fts.optimize_after_bulk", lambda s, **_kw: called.append(1) or {})
     queue2.start([{"kind": "corpus", "path": "/b/one"}])
     _drain(queue2)
     assert called == [], "no index merge after a Stop"
@@ -395,7 +395,7 @@ def test_the_tuning_pass_reports_itself_instead_of_freezing_the_bar(queue, monke
     seen: list[dict] = []
     monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
 
-    def _slow(session):
+    def _slow(session, **_kw):
         seen.append(dict(queue.status()))
         return {"fts": True, "planner": True}
 

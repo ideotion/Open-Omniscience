@@ -46,20 +46,23 @@
     }
     // The reader's honest statement of what it was given (informed consent, x12 through OOI18N.tf; the frame translates, the
     // numbers and the language's own name do not). `wanted` is the UI language, `served` what X-OO-Doc-Lang says came back.
-    //  - served = an own-language draft: its language, "machine-drafted, English is authoritative" and the translated-of-total
-    //    figure in sections. The figure is computed from the two documents AFTER they are loaded; with no English text to count
+    // R721 (2026-11-14): native review of Help is dropped, and EVERY reader, English included, is told the text was written by
+    // AI. That sentence opens every banner; it replaced the old "machine-drafted ... improve it" wording, never sits beside it.
+    //  - served = an own-language draft: the AI sentence, its language, "English is authoritative" and the translated-of-total
+    //    figure in headings. The figure is computed from the two documents AFTER they are loaded; with no English text to count
     //    against (`total` null) the figure is ABSENT with that reason, never a guessed number.
-    //  - served = English for a non-English reader: no draft exists, and the reader is told why the page is not in their language.
-    //  - English reader, English document: no banner.
+    //  - served = English for a non-English reader: the AI sentence, then why the page is not in their language.
+    //  - English reader, English document: the AI sentence alone.
     function docBannerHtml(wanted, served, done, total, language) {
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const box = (kind, text) => `<div class="hint doc-banner" data-doc-banner="${kind}" role="note" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px"><span>${esc(text)}</span></div>`;
-      if (!wanted || wanted === "en") return "";
+      const ai = tf("This help text was written by AI and may contain mistakes.", {});
+      const box = (kind, text) => `<div class="hint doc-banner" data-doc-banner="${kind}" role="note" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px"><span>${esc(text ? ai + " " + text : ai)}</span></div>`;
+      if (!wanted || wanted === "en") return box("ai", "");
       if (served === "en") return box("fallback", tf("This document has no draft in this language yet ({language}), so the English original is shown.", { language }));
       if (total == null || done == null) {
-        return box("draft", tf("Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page.", { language }));
+        return box("draft", tf("Translation ({language}): how much of this document is translated could not be measured here. The English original is authoritative.", { language }));
       }
-      return box("draft", tf("Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page.", { language, done: Math.min(done, total), total }));
+      return box("draft", tf("Translation ({language}): {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative.", { language, done: Math.min(done, total), total }));
     }
     // `anchor` (2026-09-09) is optional and additive: the omnibar's Help-content group
     // knows which HEADING a hit sits under, and landing at the top of a 3,000-line manual

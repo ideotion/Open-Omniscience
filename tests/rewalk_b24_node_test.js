@@ -54,10 +54,11 @@ function table(lang) {
   return TABLE[lang];
 }
 let LANG = "en";
+// The shipped t()/tf(), plural forms included (2026-11-14), over the active language's table.
+const ENGINE = require("./i18n_engine_node.js").engine;
 const OOI18N = {
-  t: (s) => { const v = table(LANG)[s]; return v == null ? s : v; },
-  tf: (s, vars) => String(OOI18N.t(s)).replace(/\{(\w+)\}/g,
-    (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m),
+  t: (s) => ENGINE(table(LANG), () => LANG).t(s),
+  tf: (s, vars) => ENGINE(table(LANG), () => LANG).tf(s, vars),
   current: () => LANG,
 };
 const T = (lang, s) => { const v = table(lang)[s]; return v == null ? s : v; };
@@ -65,7 +66,7 @@ const T = (lang, s) => { const v = table(lang)[s]; return v == null ? s : v; };
 // ---------------------------------------------------------------- the sandbox
 const NAMES = [
   // app-core
-  "ooLabelHtml", "ooLabelText", "ooListJoin",
+  "ooLabelHtml", "ooLabelText", "ooListJoin", "_tfn",
   // app-analysis
   "commodityOverlaySvg", "_anPriceHtml", "_anLensSuffix", "commoditiesForTerm",
   "renderAnTrend", "_anCtlLabel", "drawAnTrend", "renderAnMindmap",
@@ -244,8 +245,9 @@ GROUPS.u6 = () => {
   for (const [lang, html] of [["en", en], ["ar", ar]]) {
     assert.ok(/style="[^"]*direction:\s*ltr/.test(svgTag(html)),
       `[${lang}] the chart svg does not pin direction:ltr, so rtl flips every anchor`);
-    const frame = T(lang, "Price × coverage: {prices} price points, {coverage} coverage points");
-    const aria = frame.replace("{prices}", "3").replace("{coverage}", "2");
+    // The keyed frame, plural forms chosen by {prices} (2026-11-14).
+    const aria = ENGINE(lang === "en" ? {} : table(lang), () => lang)
+      .tf("Price × coverage: {prices} price points, {coverage} coverage points", { prices: "3", coverage: "2" });
     assert.ok(svgTag(html).includes(`aria-label="${esc(aria)}"`),
       `[${lang}] the aria-label is not the keyed frame: ${svgTag(html)}`);
   }
@@ -492,7 +494,12 @@ GROUPS.n7 = () => {
   for (const [big, w] of [[false, 680], [true, 1100]]) {
     const html = mindmap(big, THREE);
     const svg = svgTag(html);
-    assert.ok(svg.includes(`min-width:${w}px`),
+    // The floor in px is at least the map's own width AND at least its viewBox width, so one
+    // viewBox unit is never drawn below one px (lane N round 2: the radial viewBox now grows
+    // to hold labels pushed out along their arm, so it can be wider than W).
+    const minW = Number((svg.match(/min-width:(\d+(?:\.\d+)?)px/) || [])[1]);
+    const vbW = Number(((svg.match(/viewBox="([^"]+)"/) || [])[1] || "").split(/\s+/)[2]);
+    assert.ok(minW >= w && minW >= vbW,
       `big=${big}: the map can be drawn below its own scale (labels of 5-7 px at 375 px): ${svg}`);
     assert.ok(/<div class="an-mm-box[^"]*" style="overflow:auto;max-width:100%/.test(html),
       `big=${big}: the map has no box of its own to scroll in`);

@@ -61,7 +61,7 @@ function load(dom) {
     "var api = async function () { return {}; };\n" +
     // collaborators that are not what is under test
     "function _uxImResetRunView() {} function _uxImLastLine() {}\n" +
-    "function _uxImCheckpointNote() {} function _uxImReattach() {}\n" +
+    "function _uxImCheckpointNote() {} function _uxImReattach() {} function _uxImKeyRows() {}\n" +
     extract("_uxImTrustRow") + "\n" +
     extract("_uxImTrust") + "\n" +
     extract("openUnifiedImport") + "\n" +

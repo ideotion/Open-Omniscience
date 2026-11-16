@@ -297,6 +297,29 @@ def _stoplist_fingerprint() -> str | None:
         return None
 
 
+def _stoplist_differs(payload: dict) -> bool:
+    """True when the cards were made under another shipped stoplist than the one shipped now (an unreadable list never counts)."""
+    current = _stoplist_fingerprint()
+    return current is not None and payload.get("stoplist") != current
+
+
+def _feed_outdated(session, payload: dict, *, count=None) -> bool:
+    """An older cache shape, or a corpus that has grown past the stale threshold since the feed was made. ``count`` (a
+    zero-argument callable) supplies the article count, and is only called when the shape is current."""
+    if payload.get("version") != CACHE_VERSION:
+        return True
+    return _is_cache_stale(session, payload, current=count() if count is not None else None)
+
+
+def feed_is_current(session, payload: dict) -> bool:
+    """Home's own staleness test without its repair throttles: the feed is in the current cache shape, the corpus has
+    not grown past the stale threshold since it was made, and it was made under the stoplist shipped now. A stop marker
+    (``kept_reason`` / ``incomplete_reason``) or ``stopped_producers`` does not make it outdated; a reader of such a feed
+    says it is partial. Used by readers that would otherwise rerun every producer (the all-diagnostics leads-quality
+    member), so they and Home cannot drift apart."""
+    return not _feed_outdated(session, payload) and not _stoplist_differs(payload)
+
+
 def _stoplist_wants_refresh(payload: dict) -> bool:
     """True when the cards were made under another shipped stoplist and a refresh is allowed now.
 
@@ -305,8 +328,7 @@ def _stoplist_wants_refresh(payload: dict) -> bool:
     marker repair's own throttle, so a refresh that keeps ending early (``kept_reason``) is
     retried every ``_MARKER_RETRY_S``, never on every Home poll. A cache written before this
     field existed has none and is refreshed once."""
-    current = _stoplist_fingerprint()
-    if current is None or payload.get("stoplist") == current:
+    if not _stoplist_differs(payload):
         return False
     if not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
         return False
@@ -436,6 +458,63 @@ def refresh_briefing(session, on_progress=None) -> dict:
             _marker_retry["at"] = _monotonic()
 
 
+#: The producer whose cards a saved watch's firing becomes (``producers.watch_matches``, catalog label "A watch matched"): the kind
+#: of card Home names as missing when the watch pass is stopped at its bound (R695).
+_WATCH_PRODUCER = "watch_matches"
+
+
+def _evaluate_watches_bounded(session) -> bool:
+    """Evaluate the saved watches under the producers' bound; True when the pass was stopped at it (R695, item 32's residual).
+
+    The pass runs before the producers so a watch that just crossed its threshold surfaces in the same refresh, and it was the one
+    part of the refresh R666 left unbounded: its reads hold the write-ahead log's read mark like a producer's. It now runs under
+    :data:`PRODUCER_DEADLINE_S` (not armed under an enclosing deadline, which bounds the whole refresh). ``statement_deadline``
+    cannot cut Python between statements, so the loop also asks the deadline before each watch: a pass that ran past the bound
+    stops at the next watch. Only a pass that left watches unevaluated is reported as stopped; one whose last watch ran past the
+    bound reached every watch, and its cards are all there (unlike a producer's, nothing is dropped), so Home is not told any are
+    missing. The pass's writes are flushed after the deadline has exited, so none is interrupted; the firings it recorded before
+    a stop are kept, and the watches it did not reach stay unstamped and are evaluated by the next refresh. A watch problem never
+    blocks the briefing."""
+    from src.briefing.registry import _is_memory_short, _is_statement_timeout, _producer_deadline
+
+    armed = timed_out = finished = False
+    began = time.monotonic()
+    try:
+        from src.analytics.watches import evaluate_watches
+
+        with _producer_deadline(session, PRODUCER_DEADLINE_S) as bound:
+            armed = bool(bound)
+            began = time.monotonic()
+            evaluate_watches(session, flush=False)
+        finished = True
+    except Exception as exc:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
+        timed_out = armed and _is_statement_timeout(type(exc)) and not _is_memory_short(type(exc))
+        if not armed and _is_statement_timeout(type(exc)) and not _is_memory_short(type(exc)):
+            # An ENCLOSING deadline (a diagnostics member) ran out: a stop, not a failure; that deadline's owner reports it.
+            _LOG.info("watch evaluation stopped by an enclosing deadline; the watches it did not reach are evaluated next refresh")
+        elif not timed_out:
+            log_failure(_LOG, "watch evaluation failed; briefing continues", exc, level=logging.WARNING)
+    took = time.monotonic() - began
+    if finished or timed_out:
+        # Outside the deadline, so no write is interrupted: the firings and stamps the pass made are written whole. A pass that
+        # failed for any other reason (a memory stop among them) is not flushed here; what it left pending is written by the
+        # producer loop's opening commit, as before R695.
+        try:
+            session.flush()
+        except Exception as exc:  # noqa: BLE001 - see above
+            log_failure(_LOG, "watch evaluation could not be written; briefing continues", exc, level=logging.WARNING)
+            # A failed flush leaves the session unusable for the producers that follow; if the rollback fails too, they report it.
+            with contextlib.suppress(Exception):
+                session.rollback()
+    if timed_out:
+        _LOG.warning(
+            "watch evaluation stopped after %.0f s (bound %.0f s); the watches it did not reach are evaluated next refresh",
+            took, PRODUCER_DEADLINE_S,
+        )
+        return True
+    return False
+
+
 def _refresh_briefing(session, on_progress=None) -> dict:
     """The body of :func:`refresh_briefing`.
 
@@ -445,12 +524,7 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     # The convergence WATCH engine is ON by default (ruling #3): evaluate saved watches
     # BEFORE producing cards, so a watch that just crossed its threshold surfaces in
     # this very refresh. Local-only; a watch problem must never block the briefing.
-    try:
-        from src.analytics.watches import evaluate_watches
-
-        evaluate_watches(session)
-    except Exception as exc:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
-        log_failure(_LOG, "watch evaluation failed; briefing continues", exc, level=logging.WARNING)
+    watches_stopped = _evaluate_watches_bounded(session)
     # Which feed was on disk when this run STARTED: a refresh that lands while this one runs
     # must not be overwritten with the feed it just replaced, and only a read taken before the
     # run can tell (two reads taken after it cannot).
@@ -463,9 +537,10 @@ def _refresh_briefing(session, on_progress=None) -> dict:
     # Home is the one place the lane-only cards are made for (Q823: no bulletin carries them).
     # Item 32: each producer is bounded (PRODUCER_DEADLINE_S) and the log latch is asked between producers, so one producer can
     # no longer hold the write-ahead log's read mark for hours while the log fills the disk.
+    timings: list[dict] = []
     produced, stats = run_all_bounded(
         session, on_progress=on_progress, lanes=True, memory_stop=True,
-        producer_deadline_s=PRODUCER_DEADLINE_S, log_pin_stop=True, run_last=run_last,
+        producer_deadline_s=PRODUCER_DEADLINE_S, log_pin_stop=True, run_last=run_last, timings=timings,
     )
     cards = [c.to_dict() for c in produced]
 
@@ -540,12 +615,21 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         # makes the cache stale, because a newly hidden word would otherwise stay in a title.
         "stoplist": _stoplist_fingerprint(),
         "cards": _sorted(cards),
+        # Each producer's time and outcome on this refresh, and which producer made each card, for the card quality check
+        # (Lane X). A map beside the cards rather than a key inside them: the cards keep Card.to_dict's shape.
+        "producer_timings": timings,
+        "card_producers": {
+            str(getattr(c, "id", "")): getattr(c, "produced_by", "") for c in produced if getattr(c, "produced_by", "")
+        },
     }
     if stats.get("truncated"):
         # A feed that is missing the producers the run never reached says so, in the cache
         # and in the view: a short feed must not read as a complete one.
         payload["incomplete_reason"] = stop_reason
     stopped = [str(p.get("name")) for p in stats.get("stopped_producers") or [] if p.get("name")]
+    if watches_stopped and _WATCH_PRODUCER not in stopped:
+        # R695: the watch pass stopped at the same bound, so the firings it did not reach are missing from this feed's watch cards.
+        stopped.append(_WATCH_PRODUCER)
     if stopped:
         # Item 32: the producers stopped by their own bound, BY NAME, so Home can say which kinds of card this feed is missing.
         # Deliberately not an ``incomplete_reason``: that marker asks for an automatic repair every _MARKER_RETRY_S, and a
@@ -554,6 +638,7 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         payload["producer_deadline_s"] = PRODUCER_DEADLINE_S
     _write_cache(payload)
     _LOG.info("briefing refreshed: %d cards", len(cards))
+    record_card_self_check(payload)
     # Warm the heavy whole-corpus read cache (top / trending / map) in this same
     # background pass, so the Home + Insights surfaces are instant and never trigger
     # a cold multi-second aggregation in the UI (perf, field report 2026-06-18).
@@ -568,6 +653,35 @@ def _refresh_briefing(session, on_progress=None) -> dict:
         except Exception as exc:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
             log_failure(_LOG, "insights cache warm failed; briefing continues", exc, level=logging.WARNING)
     return payload
+
+
+_self_check_lock = threading.Lock()
+
+
+def _self_check_path() -> Path:
+    return _cache_path().with_name("card_quality_selfcheck.jsonl")
+
+
+def record_card_self_check(payload: dict) -> None:
+    """The recurring card self-check: the cheap card quality checks over the feed just written, one line kept in
+    ``card_quality_selfcheck.jsonl`` beside the cache (newest 200). The Field data button carries the history; nothing
+    is shown on Home. Pure work over the cards in memory (no corpus read), and never fatal to the feed."""
+    try:
+        from src.briefing.card_audit import check_trigger
+        from src.briefing.card_quality import append_history, self_check
+        from src.briefing.registry import producers
+
+        per_card = {
+            str(c.get("id")): {"arithmetic": check_trigger(c.get("trigger"))}
+            for c in payload.get("cards") or [] if isinstance(c, dict)
+        }
+        record = self_check(payload, registered=[n for n, _p in producers()], per_card=per_card)
+        path = _self_check_path()
+        with _self_check_lock:  # two overlapping refreshes must not each drop the other's line
+            lines = path.read_text("utf-8").splitlines() if path.exists() else []
+            atomic_replace(path, "\n".join(append_history(lines, record)) + "\n", encoding="utf-8", fsync=False)
+    except Exception as exc:  # noqa: BLE001 - a quality check must never break the feed it checks
+        log_failure(_LOG, "card self-check not recorded; briefing continues", exc, level=logging.WARNING)
 
 
 def _write_cache(payload: dict) -> None:
@@ -689,9 +803,9 @@ def get_briefing(
             _counted.append(_article_count(session))
         return _counted[0]
 
+    # The first two causes are ``feed_is_current``'s, which readers that reuse this feed apply too (unthrottled there).
     stale = cached is not None and (
-        cached.get("version") != CACHE_VERSION  # a servable prior shape: recompute once
-        or _is_cache_stale(session, cached, current=_count_once())
+        _feed_outdated(session, cached, count=_count_once)  # a servable prior shape, or a corpus that grew
         or _marker_wants_refresh(cached)
         or _stoplist_wants_refresh(cached)
     )

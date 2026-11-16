@@ -1031,8 +1031,8 @@
       } else {
         html += clusters.map((c, i) => {
           const voice = c.single_source
-            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
-            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+            ? _tfn("{n} near-identical copies from one source = one voice", { n: c.size })
+            : _tfn("{n} near-identical copies across {m} sources = effectively one voice", { n: c.size, m: c.distinct_sources });
           const ex = (c.members || []).slice(0, 6).map((m) =>
             `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
             + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
@@ -1111,7 +1111,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const n = document.querySelectorAll("#an-related .an-rel-pick:checked").length;
       const el = $("an-rel-selcount");
-      if (el) el.textContent = n ? t("{n} selected").replace("{n}", n) : "";
+      if (el) el.textContent = n ? _tfn("{n} selected", { n: n }) : "";
     }
     async function branchSelectedRelated() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1226,7 +1226,7 @@
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
       const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
-        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:false})">${esc(t("Map"))}</button>`
+        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:false})">${esc(t("Mind-map"))}</button>`
         + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" data-on-click="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
         // Offered only when the term IS in a ring the corpus carries more than one form
         // of: a Concept view over a single language is a straight line drawn as though
@@ -1337,6 +1337,7 @@
         centreBox();
         return;
       }
+      let anView = null;   // the radial map's own extent once labels have moved out
       if (_anMM.cloud) {
         // Word cloud SECOND view: golden-angle spiral by size, no edges.
         [center, ...neighbours].sort((a, b) => (b.size || 1) - (a.size || 1)).forEach((n, i) => {
@@ -1345,11 +1346,43 @@
         });
       } else {
         // Radial tree: centre → arms → ALWAYS outward (deterministic, no cross-tangle).
+        // NO LABEL IS DRAWN ON TOP OF ANOTHER (the journalist walk 2026-09-30, 4g: 13
+        // overlapping pairs at the top and bottom of the ring, where 24 centred labels
+        // share the least width). A label reads AWAY from the centre (left of a node on
+        // the left half, right of it on the right), and a label that would still touch
+        // one already placed moves further out along its OWN arm, so the tree stays
+        // radial and nothing crosses. The largest neighbours are placed first and keep
+        // the ring. The box grows to hold whatever moved out.
         center._x = cx; center._y = cy;
-        neighbours.forEach((n, i) => {
+        const lpOf = (n) => (typeof kwLabelParts === "function")
+          ? kwLabelParts(Object.assign({term: n.label || n.id}, n)) : {shown: n.label || n.id, tag: ""};
+        const boxOf = (n, x, y) => {
+          const lp = lpOf(n), fs = fsOf(n);
+          const w = Math.max(String(lp.shown || "").length * fs * 0.58, String(lp.tag || "").length * fs * 0.3) + 4;
+          const h = fs * (lp.tag ? 2.1 : 1.25);
+          const left = n._anchor === "end" ? x - 6 - w : n._anchor === "start" ? x + 6 : x - w / 2;
+          return {l: left, r: left + w, t: y - fs * 0.65, b: y - fs * 0.65 + h};
+        };
+        const hit = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+        const placed = [boxOf(center, cx, cy)];
+        const order = neighbours.map((n, i) => [n, i]);   // already largest first
+        for (const [n, i] of order) {
           const ang = (i / neighbours.length) * 2 * Math.PI - Math.PI / 2;
-          n._x = cx + R * Math.cos(ang); n._y = cy + R * Math.sin(ang);
-        });
+          const ca = Math.cos(ang), sa = Math.sin(ang);
+          n._anchor = ca > 0.2 ? "start" : ca < -0.2 ? "end" : "middle";
+          let r = R, bx = null;
+          for (let step = 0; step < 12; step++) {
+            bx = boxOf(n, cx + r * ca, cy + r * sa);
+            if (!placed.some((q) => hit(q, bx))) break;
+            r += fsOf(n) * 1.1;
+          }
+          // the box recorded is the one at the radius drawn, also when all 12 tries collided
+          n._x = cx + r * ca; n._y = cy + r * sa; bx = boxOf(n, n._x, n._y); placed.push(bx);
+        }
+        const ext = placed.reduce((e, q) => ({l: Math.min(e.l, q.l), r: Math.max(e.r, q.r),
+          t: Math.min(e.t, q.t), b: Math.max(e.b, q.b)}), {l: 0, r: W, t: 0, b: H});
+        anView = [Math.floor(ext.l - 8), Math.floor(ext.t - 8),
+          Math.ceil(ext.r - ext.l + 16), Math.ceil(ext.b - ext.t + 16)];
         edges = neighbours.map((n) =>
           `<line stroke="var(--border)" stroke-width="1.4" x1="${cx}" y1="${cy}"`
           + ` x2="${n._x.toFixed(1)}" y2="${n._y.toFixed(1)}"></line>`).join("");
@@ -1372,17 +1405,26 @@
           ? `<text text-anchor="middle" dominant-baseline="central" y="${(fs * 0.95).toFixed(1)}"`
             + ` font-size="${Math.max(8, fs * 0.5).toFixed(1)}" fill="var(--muted)">${esc(lp.tag)}</text>`
           : "";
-        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn>${title}`
-          + `<text text-anchor="middle" dominant-baseline="central" font-size="${fs.toFixed(1)}"`
+        const anc = (n.id !== center.id && n._anchor && !_anMM.cloud) ? n._anchor : "middle";
+        const dx = anc === "start" ? 6 : anc === "end" ? -6 : 0;
+        const dot = (anc !== "middle")
+          ? `<circle r="2.5" fill="var(--accent)"></circle>` : "";
+        const tagA = tag && anc !== "middle"
+          ? tag.replace('text-anchor="middle"', `text-anchor="${anc}" x="${dx}"`) : tag;
+        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn>${title}${dot}`
+          + `<text text-anchor="${anc}" x="${dx}" dominant-baseline="central" font-size="${fs.toFixed(1)}"`
           + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(lp.shown || n.label || n.id)}</text>`
-          + `${tag}</g>`;
+          + `${tagA}</g>`;
       };
       const nodesSvg = drawNode(center) + neighbours.map(drawNode).join("");
       const desc = _anMM.cloud
         ? t("Word cloud: keywords sized by shared-article volume; no links.")
         : t("Radial map: the seed keyword at the centre, its strongest relatives outward.");
+      // The viewBox follows the labels that moved out; its floor in px is its own width, so a
+      // column narrower than that scrolls the picture rather than shrinking the words (N-7).
+      const vb = anView || [0, 0, W, H];
       host.innerHTML = controls + boxOpen
-        + `<svg viewBox="0 0 ${W} ${H}" width="${svgW}" style="background:var(--panel2);max-width:none;${svgMin}`
+        + `<svg viewBox="${vb.join(" ")}" width="${svgW}" style="background:var(--panel2);max-width:none;min-width:${Math.max(W, vb[2])}px;`
         + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>` + boxClose
         + `<div class="hint muted" style="margin-top:6px">${esc(desc)} `
         + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method ? t(g.method) : "")} ${esc(g.caveat ? t(g.caveat) : "")}</div>`;
@@ -1449,7 +1491,7 @@
           const b = document.createElement("span");
           b.className = "pill"; b.style.marginInlineStart = "6px"; b.style.cursor = "default";
           b.textContent = "≈" + sz;
-          b.title = t(_AN_DUP_PILL).replace("{n}", sz);
+          b.title = _tfn(_AN_DUP_PILL, { n: sz });
           a.after(b);
           badges.push({ el: b, size: sz });
           flagged++;
@@ -1458,7 +1500,7 @@
         if (flagged) {
           note = document.createElement("div");
           note.className = "card-caveat"; note.style.marginTop = "6px";
-          note.textContent = t(_AN_DUP_NOTE).replace("{n}", flagged);
+          note.textContent = _tfn(_AN_DUP_NOTE, { n: flagged });
           host.appendChild(note);
         }
         // Retained so a language switch can repaint these IN PLACE. Both strings are
@@ -1755,11 +1797,11 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!_anDupBadges) return;
       (_anDupBadges.badges || []).forEach(({ el, size }) => {
-        if (el && el.isConnected) el.title = t(_AN_DUP_PILL).replace("{n}", size);
+        if (el && el.isConnected) el.title = _tfn(_AN_DUP_PILL, { n: size });
       });
       const note = _anDupBadges.note;
       if (note && note.isConnected && _anDupBadges.flagged) {
-        note.textContent = t(_AN_DUP_NOTE).replace("{n}", _anDupBadges.flagged);
+        note.textContent = _tfn(_AN_DUP_NOTE, { n: _anDupBadges.flagged });
       }
     }
     // Registered in app-boot's ONE `oo:langchange` listener (never a second listener:
@@ -2244,7 +2286,7 @@
         const label = k ? ooLangCell(k) : `<span class="muted">${esc(t("Language not recorded"))}</span>`;
         // A group of ONE read "spa 1 articles" (N14): a count of one takes the singular
         // key, the one form every locale has (there are no CLDR plural rules here).
-        const count = (n === 1 ? t("{n} article") : t("{n} articles")).replace("{n}", n);
+        const count = _tfn(n === 1 ? "{n} article" : "{n} articles", { n: n });
         // The list view's cards are not table rows, so its heading is not one either.
         if (cards) {
           return `<div class="an-lang-group"><b>${label}</b> <span class="muted">${esc(count)}</span></div>`
@@ -2330,7 +2372,7 @@
         if (a.top_keyword) {
           const tied = (a.top_keyword_tied_n || 1) > 1;
           const tip = tied
-            ? t("{n} keywords are tied at this count in this article — this is one of them, not a winner.").replace("{n}", a.top_keyword_tied_n)
+            ? _tfn("{n} keywords are tied at this count in this article — this is one of them, not a winner.", { n: a.top_keyword_tied_n })
             : t("This article's most-mentioned keyword, counted when it was indexed.");
           top = `<span title="${esc(tip)}">${esc(a.top_keyword)}`
             + ` <span class="muted">×${a.top_keyword_count}</span>`
@@ -3190,7 +3232,7 @@
     // "12 articles" as ONE keyed frame, the singular taking its own key -- not a count
     // welded to a translated plural noun (the same class as the label colons, N-5).
     function _synthCountLabel(t, n) {
-      return t(n === 1 ? "{n} article" : "{n} articles").replace("{n}", n);
+      return _tfn(n === 1 ? "{n} article" : "{n} articles", { n: n });
     }
     function _synthAsMarkdown() {
       const t = _synthT(); const r = _synthData; if (!r) return "";

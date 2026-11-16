@@ -243,6 +243,22 @@ def encrypt_stream_to_hashed(
     return consumed, h.hexdigest()
 
 
+def _open_stream_header(fin, passphrase: str) -> tuple[AESGCM, bytes, int]:
+    """Read an OOENC2 header from ``fin`` and derive its key: ``(cipher, nonce prefix, sealed chunk size)``."""
+    header = fin.read(_HEADER2_LEN)
+    if len(header) < _HEADER2_LEN or header[:8] != _MAGIC2:
+        raise EncryptionError("not an Open Omniscience streaming (OOENC2) file")
+    try:
+        n, r, p = struct.unpack(">III", header[8:20])
+        salt, prefix = header[20:36], header[36:43]
+        chunk_size = struct.unpack(">I", header[43:47])[0]
+    except struct.error as exc:
+        raise EncryptionError("truncated or malformed encrypted header") from exc
+    if not (_CHUNK_MIN <= chunk_size <= _CHUNK_MAX):
+        raise EncryptionError("malformed encrypted file (bad chunk size)")
+    return AESGCM(_derive(_key_bytes(passphrase), salt, n, r, p)), prefix, chunk_size + _TAG
+
+
 def decrypt_stream(
     src: str | os.PathLike[str],
     write,
@@ -257,19 +273,7 @@ def decrypt_stream(
     extended stream -- never silently yields a partial archive."""
     total = 0
     with open(src, "rb") as fin:
-        header = fin.read(_HEADER2_LEN)
-        if len(header) < _HEADER2_LEN or header[:8] != _MAGIC2:
-            raise EncryptionError("not an Open Omniscience streaming (OOENC2) file")
-        try:
-            n, r, p = struct.unpack(">III", header[8:20])
-            salt, prefix = header[20:36], header[36:43]
-            chunk_size = struct.unpack(">I", header[43:47])[0]
-        except struct.error as exc:
-            raise EncryptionError("truncated or malformed encrypted header") from exc
-        if not (_CHUNK_MIN <= chunk_size <= _CHUNK_MAX):
-            raise EncryptionError("malformed encrypted file (bad chunk size)")
-        aes = AESGCM(_derive(_key_bytes(passphrase), salt, n, r, p))
-        block = chunk_size + _TAG
+        aes, prefix, block = _open_stream_header(fin, passphrase)
         counter = 0
         prev = fin.read(block)
         while True:
@@ -288,6 +292,24 @@ def decrypt_stream(
                 break
             prev = cur
     return total
+
+
+def stream_key_opens(src: str | os.PathLike[str], passphrase: str) -> bool:
+    """Whether ``passphrase`` opens the FIRST chunk of an OOENC2 file, reading only the header and that chunk.
+
+    A quick key check before a long pass, never a verification of the file: True says the key is right for this
+    file, False says the first chunk's tag failed (a wrong key, or a damaged first chunk -- the caller tells the two
+    apart, for example by the file's checksum). A malformed header raises :class:`EncryptionError` as
+    :func:`decrypt_stream` does. Nothing decrypted is kept."""
+    with open(src, "rb") as fin:
+        aes, prefix, block = _open_stream_header(fin, passphrase)
+        first = fin.read(block)
+        final = not fin.read(1)  # a one-chunk file seals its only chunk as the final one
+    try:
+        aes.decrypt(_chunk_nonce(prefix, 0, final), first, None)
+    except InvalidTag:
+        return False
+    return True
 
 
 def decrypt_file(

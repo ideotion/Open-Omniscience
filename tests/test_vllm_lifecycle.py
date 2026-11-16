@@ -911,7 +911,9 @@ def test_a_journal_write_failure_never_breaks_the_install(monkeypatch):
     # than an empty history reading as "no attempts were ever made".
     bounds = V.install_history_bounds()
     assert bounds["recording"] != "enabled"
-    assert "simulated read-only data dir" in (bounds["recording_stopped_reason"] or "")
+    # A fixed phrase reaches the status answer; the exception's own words stay in the log.
+    assert bounds["recording_stopped_reason"] == "the install-attempt journal could not be written (see the log)"
+    assert "simulated read-only data dir" not in (bounds["recording_stopped_reason"] or "")
 
 
 def test_the_retention_cap_actually_bounds_the_journal_file():

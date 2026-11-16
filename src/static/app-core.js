@@ -600,6 +600,15 @@
     // page, but it makes the helper untestable outside one and breaks the
     // moment this runs in a module scope. Same behaviour, no ambient
     // assumption.
+    // _tfn(): tf() for a template whose count chooses a plural form (2026-11-14). The same
+    // lookup as OOI18N.tf, reachable from any file (the older call sites define tf locally),
+    // with the same placeholder fallback when the engine is absent.
+    function _tfn(template, vars) {
+      const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
+      if (i18n && i18n.tf) return i18n.tf(template, vars);
+      return String(template).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? String(vars[k]) : m));
+    }
+
     function _failMsg(template, err) {
       const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
       const F = (i18n && i18n.tf)
@@ -976,6 +985,24 @@
         } catch (_e) { /* best-effort local settings write; never block the guide */ }
       }
     }
+    // Where the reader starts (R682, R710 = b): a first run shows both views with NOTHING
+    // preselected, so simple mode is only ever the reader's own pick; a re-run starts from the
+    // view in use. Applied on closing the guide, any way it closes; no pick changes nothing.
+    function _gwRenderStart() {
+      // "done" is cleared by the Settings re-run toggle, so the first run is told apart by whether
+      // a start was ever picked. A peek at a full-view tool still counts as simple mode.
+      const inSimple = !!(window.ooSimple && window.ooSimple.mode() !== "full");
+      const want = inSimple ? "simple" : (_guideState().start ? "full" : null);
+      document.querySelectorAll('#guide-wizard input[name="gw-start"]').forEach((i) => { i.checked = want !== null && i.value === want; });
+    }
+    function _gwApplyStart() {
+      const pick = document.querySelector('#guide-wizard input[name="gw-start"]:checked');
+      const s = window.ooSimple;
+      if (!pick || !s) return;
+      const st = _guideState(); st.start = pick.value; _guideSave(st);
+      if (pick.value === "simple" && s.mode() !== "simple") s.enter();
+      else if (pick.value === "full" && s.mode() !== "full") s.leave();
+    }
     function _gwRenderDepth() {
       const stored = (typeof getUi === "function") ? getUi().depth : null;
       const want = ["essentials", "standard", "full"].includes(stored) ? stored : "standard";
@@ -989,7 +1016,7 @@
     }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;
-      _gwIdx = 0; _gwPaint();
+      _gwIdx = 0; _gwRenderStart(); _gwPaint();   // the start choice is set once per opening, so Back keeps a pick
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       else dlg.setAttribute("open", "");
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
@@ -1015,6 +1042,7 @@
       _gwApplyDepth();
       if (markDone !== false) { const s = _guideState(); s.done = true; _guideSave(s); }
       try { dlg.close(); } catch { dlg.removeAttribute("open"); }
+      _gwApplyStart();   // after the dialog closes, so the view swap never happens under a modal
       _syncRerunGuide();
     }
     // The Settings "Re-run the first-launch guide" toggle is the user-VISIBLE
@@ -1059,7 +1087,10 @@
         // The first-run reader is told WHERE the first result will appear (lane N): the
         // collector starts by itself, so without this the guide closed on an empty Home
         // with nothing saying what to do next. No time is promised: it depends on the network.
-        toast(t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
+        const startSimple = !!document.querySelector('#guide-wizard input[name="gw-start"][value="simple"]:checked');
+        toast(startSimple
+          ? t("Collecting now. The first articles appear in Read as they arrive, then in Today.")
+          : t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
         // Once online the background collector runs continuously on its own (only
         // airplane mode stops it) — no manual seed/ingest step or progress card needed.
         closeGuide(true);
@@ -1983,6 +2014,31 @@
       const _nf = /^The backup without newsletters was stopped: the clean copy of your corpus could not be made \((.+)\)\. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead\.$/.exec(s.trim());
       if (_nf) {
         return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
+      }
+      // backup/export_job.py (R701): the export's OWN fixed sentences -- its data-safety gate,
+      // its refusals -- each translated whole. Kept here as a local list so every harness that
+      // lifts this function carries it; tests/test_export_job.py pins it to the Python constants.
+      const _OO_EXPORT_FIXED = [
+        "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.",
+        "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.",
+        "Resuming the corpus backup needs the passphrase again.",
+        "Nothing to resume: this export is not paused or unfinished.",
+        "A backup export is already running.",
+        "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.",
+        "This export's record names no large-data category this app knows, so there is nothing to copy.",
+        "This folder is not a dated export folder.",
+        "This folder carries no export request, so what is left to do there is not known.",
+        "The export stopped on an internal error.",
+        "The export stopped unexpectedly before it finished.",
+      ];
+      if (_OO_EXPORT_FIXED.includes(s.trim())) return t(s.trim());
+      // backup/merge.py _EXPORT_RUNNING_REFUSAL (R712): a restore refused while a backup export runs (R701's one export job). Whole
+      // message only; the job is the registry's own label, translated.
+      const _ex = /^a backup export is running \((.+)\) — nothing was imported, and nothing was written to your corpus\. An import would switch the corpus the export is reading\. Let the export finish, or pause it, then import again\.$/.exec(s.trim());
+      if (_ex) {
+        return tf("A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.", {
+          job: t(_ex[1]),
+        });
       }
       // backup/merge.py _WRITER_JOBS_REFUSAL (R659): a restore refused while a background job writes to the corpus. Whole message only;
       // the jobs are the registry's own labels, each translated where the page has it, joined by "; ".
@@ -3218,8 +3274,8 @@
       _loadBannerFactor = factor;
       if (factor > 1) {
         toast(
-          t("The server is busy — refreshing every {s}s until it recovers.")
-            .replace("{s}", String(Math.round(intervalMs / 1000))),
+          _tfn("The server is busy — refreshing every {s}s until it recovers.",
+            { s: String(Math.round(intervalMs / 1000)) }),
           "warn");
       } else if (prev > 1) {
         toast(t("The server recovered — refreshing at the usual rate again."), "ok");

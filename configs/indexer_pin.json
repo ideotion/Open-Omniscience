@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "digest": "036161fddf109394bdabf7e9d6a4491d85479f784958acf4c53db7e49cdee01c",
+  "version": 3,
+  "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
   "log": [
     {
       "version": 1,
@@ -55,6 +55,42 @@
       "digest": "036161fddf109394bdabf7e9d6a4491d85479f784958acf4c53db7e49cdee01c",
       "kind": "same",
       "note": "R101 merged onto R699/R697: index_article skips a quarantined article's counter delta and reads its flag from idx_article_quarantined; the mention and date rows it writes are those of version 2"
+    },
+    {
+      "version": 3,
+      "digest": "22d3fc7d948d94e6adde7f655cb96e3ec9ae4fede6bd1288d425db6240f209aa",
+      "kind": "bump",
+      "note": "R698: a keyword row in one language never takes another language's mention (extraction, fold and restore carry); row 31: a re-extraction removes this extractor's unjudged candidate date tags it no longer finds and relabels the ones it finds again. Old rows converge only after a re-index."
+    },
+    {
+      "version": 3,
+      "digest": "5f2e67167027836c4a6ab9699515eded39866e2a4ae791fc176f0aa1509107d5",
+      "kind": "same",
+      "note": "Only a docstring in src/analytics/reindex_parallel.py changed (terminate_live_pools now describes the R689 shutdown order); no row index_article writes can change."
+    },
+    {
+      "version": 3,
+      "digest": "aba0cc9620f33c95b93bd2fe54ab4717c1e93fcf05cd4c2083e52b1853ad6f81",
+      "kind": "same",
+      "note": "PR #1972: datestore.articles_for_date also returns each tag's id for the Agenda's confirm and reject, and sentiment.py gains a comment-only perf pointer; the rows index_article writes are unchanged"
+    },
+    {
+      "version": 3,
+      "digest": "3931d68c7fc03713f7162d662be57755a69fc4c55f6f11bb1b24a6086fc06348",
+      "kind": "same",
+      "note": "Scheduling only: the serial precompute computes when/where/who before the write gate (the same extraction, arguments and R697 language as the pool and the inline path), the re-index computes the next window while writing the current one, and the drain's workers and commit width change; the rows index_article writes are identical"
+    },
+    {
+      "version": 3,
+      "digest": "1a1ba7fdeb9c5ee6a10546d289b5f781d7749d8d6f3736ca6a89ae356595e13e",
+      "kind": "same",
+      "note": "Scheduling only: the serial precompute computes when/where/who before the write gate from the same text, extractors and arguments as the inline path (the raw content column for an article kept compressed, the anchor, country and R697 language), the re-index computes the next window while writing the current one, and the drain's workers and commit width change; the rows index_article writes are identical"
+    },
+    {
+      "version": 3,
+      "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
+      "kind": "same",
+      "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
     }
   ]
 }

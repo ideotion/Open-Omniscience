@@ -479,7 +479,80 @@
       finally { btn.disabled = false; }
     }
 
-    async function loadMarkets() { loadDashboard(); loadMineralsSupply(); }
+    async function loadMarkets() { loadDashboard(); loadMineralsSupply(); paintMktRipple(); }
+
+    // COVERAGE THAT MOVES WITH A COMMODITY (Lane M's routes list: GET
+    // /api/signals/supply-chain-ripple had no button; Home shows at most a couple of these
+    // as Leads, and this is the full list behind them). Pairs of a tracked commodity and a
+    // frequent topic whose daily SHARE of coverage rises and falls together, FDR-corrected
+    // across every pair tested. Co-occurrence, never causation: the short caveat is visible
+    // (R685), the long one and the method are in the hovers, both keyed x12 already.
+    // ON DEMAND: the scan correlates every commodity against every frequent topic, so it
+    // runs when the reader asks, never on every visit to Markets. The payload is kept, so a
+    // language switch repaints from it without a fetch (app-boot's oo:langchange).
+    let _mktRipple = null, _mktRippleSeq = 0;
+    const _MKT_RIPPLE_NOTES = {
+      "window shorter than min_days": "The window is too short to compare daily coverage.",
+      "no tracked commodity resolves to a keyword": "No tracked commodity matches a keyword in your corpus yet.",
+      "no frequent candidate topic in the window": "No topic was covered often enough in this window to compare.",
+      "no comparable commodity/topic pair": "No commodity and topic were both covered by enough distinct sources to compare.",
+    };
+    async function mktRippleLoad(btn) {
+      const seq = ++_mktRippleSeq;
+      if (btn) btn.disabled = true;
+      _mktRipple = {loading: true};
+      paintMktRipple();
+      let next;
+      try { next = {d: await api("/api/signals/supply-chain-ripple")}; }
+      catch (e) { next = {error: e.message}; }
+      if (seq !== _mktRippleSeq) return;  // a later request owns the panel and its state
+      _mktRipple = next;
+      if (btn) btn.disabled = false;
+      paintMktRipple();
+    }
+    function mktRippleOpen(i) {
+      const it = (((_mktRipple || {}).d || {}).items || [])[i];
+      if (!it || typeof openAnalysisForIds !== "function") return;
+      openAnalysisForIds(it.article_ids || [], `${it.commodity} · ${it.keyword}`);
+    }
+    function paintMktRipple() {
+      const host = $("mkt-ripple"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const st = _mktRipple || {}, d = st.d || null;
+      const longCaveat = d && d.caveat ? t(d.caveat) : "";
+      const head = `<h2 style="font-size:14px;margin:0 0 4px"${d && d.method ? ` title="${esc(t(d.method))}"` : ""}>${esc(t("Coverage that moves with a commodity"))}</h2>`
+        + `<p class="card-caveat" style="margin:0 0 6px"${longCaveat ? ` title="${esc(longCaveat)}"` : ""}>${esc(t("Coverage moving together, never proof that one causes the other."))}</p>`
+        + `<button class="secondary" data-on-click="mktRippleLoad(this)"${st.loading ? " disabled" : ""}>${esc(t(d ? "Look again" : "Look for co-moving coverage"))}</button>`;
+      let body = "";
+      if (st.loading) body = `<div class="hint">${esc(t("Comparing daily coverage…"))}</div>`;
+      else if (st.error != null) body = `<div class="hint">${esc(tf("Could not compare coverage: {error}", {error: st.error}))}</div>`;
+      else if (d) {
+        const items = d.items || [];
+        const tested = esc(tf("Pairs tested: {tests} · passed the correction: {passed} · shown: {shown} · window: {days} days",
+          {tests: d.tests || 0, passed: d.survivors != null ? d.survivors : items.length, shown: items.length, days: d.window_days || 0}));
+        if (!items.length) {
+          const why = d.note ? t(_MKT_RIPPLE_NOTES[d.note] || d.note)
+            : t("No pair co-moves strongly enough once the false-discovery correction is applied.");
+          body = `<div class="hint">${esc(why)}</div><div class="hint muted">${tested}</div>`;
+        } else {
+          const rows = items.map((it, i) =>
+            `<tr><td data-i18n-dyn>${esc(it.commodity)}</td><td data-i18n-dyn>${esc(it.keyword)}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.correlation == null ? "—" : fmtNum(it.correlation, 2)))}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.fdr_qvalue == null ? "—" : (it.fdr_qvalue < 0.001 ? "< 0.001" : fmtNum(it.fdr_qvalue, 3))))}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(it.distinct_sources_commodity || 0))} / ${esc(String(it.distinct_sources_keyword || 0))}</td>`
+            + `<td><button class="ghost" data-on-click="mktRippleOpen(${i})" title="${esc(t("At most 300 articles. Where the two topics share none, these are the commodity's own articles in the window."))}">${esc(tf("Articles: {n}", {n: it.n_articles || 0}))}</button></td></tr>`).join("");
+          body = `<div style="overflow:auto"><table class="data"><thead><tr>`
+            + `<th>${esc(t("Commodity"))}</th><th>${esc(t("Topic"))}</th>`
+            + `<th style="text-align:right" title="${esc(t("Pearson correlation of the two daily shares of coverage, from -1 to +1."))}">r</th>`
+            + `<th style="text-align:right" title="${esc(t("The false-discovery rate at which this pair would still be kept (Benjamini-Hochberg, across every pair tested)."))}">q</th>`
+            + `<th style="text-align:right" title="${esc(t("Distinct sources carrying the commodity / the topic in the window."))}">${esc(t("Sources"))}</th>`
+            + `<th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint muted">${tested}</div>`;
+        }
+      }
+      host.innerHTML = `<div class="an-panel">${head}${body ? `<div style="margin-top:6px">${body}</div>` : ""}</div>`;
+    }
 
     // S5.1: the USGS Mineral Commodity Summaries SUPPLY surface — production / reserves /
     // net-import-reliance for minerals (rare earths) that have NO free spot-price source.
@@ -852,10 +925,8 @@
     // must be pre-translated here).
     function _chartAria(label, n, a, b, lo, hi) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return t9("Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}")
-        .replace("{label}", label || t9("Value")).replace("{n}", String(n))
-        .replace("{a}", String(a)).replace("{b}", String(b))
-        .replace("{lo}", String(lo)).replace("{hi}", String(hi));
+      return _tfn("Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}",
+        { label: label || t9("Value"), n: String(n), a: String(a), b: String(b), lo: String(lo), hi: String(hi) });
     }
     function _chartSrTable(rows, label) {
       // rows: [{date, value}]; capped so a dense series can't bloat the DOM (the
@@ -976,6 +1047,16 @@
       if (isFinite(gapMs) && gapMs < 864e5) return iso.slice(0, 16).replace("T", " ");   // YYYY-MM-DD HH:MM
       if (isFinite(gapMs) && gapMs < 32 * 864e5) return iso.slice(0, 10);                 // YYYY-MM-DD: two points under a month apart can share one
       return _msLabel(ms, spanMs);
+    }
+    // The start of the calendar unit _msLabel names for this span (UTC, as the label is):
+    // the nearest midnight for a day label, the nearest first of the month for a month label.
+    function _msTickSnap(ms, spanMs) {
+      const days = spanMs / 864e5;
+      if (!isFinite(ms) || !isFinite(days) || days <= 2) return ms;
+      if (days <= 92) return Math.round(ms / 864e5) * 864e5;
+      const d = new Date(ms), y = d.getUTCFullYear(), m = d.getUTCMonth();
+      const a = Date.UTC(y, m, 1), b = Date.UTC(y, m + 1, 1);
+      return (ms - a <= b - ms) ? a : b;
     }
     function _msLabel(ms, spanMs) {
       const iso = new Date(ms).toISOString();
@@ -1830,6 +1911,9 @@
     // covers the host that is not laid out yet (a hidden tab), which used to have a
     // one-shot observer of its own. A hidden host (width 0) keeps its drawing until it is
     // seen again.
+    // A chart fills its card: a 900 px cap left a dead strip on the right of a 1105 px card
+    // (the journalist walk 2026-09-30, 4h). The 1600 px cap (here and in ooChart) only stops a
+    // very wide screen stretching a short series into a ribbon; a caller that wants less passes maxWidth.
     function _ooChartWatch(el, drawnW) {
       if (typeof ResizeObserver !== "function") return;
       let timer = null;
@@ -1837,7 +1921,7 @@
         const w = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
         if (!w) return;
         const [series, o] = el._ooChartArgs || [[], {}];
-        const want = Math.max(120, Math.min(w, (o && o.maxWidth) || 900));
+        const want = Math.max(120, Math.min(w, (o && o.maxWidth) || 1600));
         if (drawnW && Math.abs(want - drawnW) < 4) return;
         clearTimeout(timer);
         timer = setTimeout(() => {
@@ -1862,7 +1946,7 @@
       // guessing a size that will overflow.
       const avail = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
       if (!avail) { _ooChartWatch(el, 0); return; }
-      const W = Math.max(120, Math.min(avail, opts.maxWidth || 900));
+      const W = Math.max(120, Math.min(avail, opts.maxWidth || 1600));
       const H = opts.height || 220, padL = 52, padR = 10, padT = 10, padB = 24;
       const wrap = document.createElement("div");
       const cv = document.createElement("canvas");
@@ -1925,6 +2009,7 @@
       const tMin = Math.min(...all.map(s => s.pts[0].t)), tMax = Math.max(...all.map(s => s.pts[s.pts.length - 1].t));
       const span0 = Math.max(tMax - tMin, 1);
       let t0 = tMin, t1 = tMax, pinned = null, pinnedS = null;
+      let hovP = null, hovS = null, hovRaf = 0;   // the point under the pointer, marked on the canvas
       const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
       // The last stack `draw()` computed, so the hover can report a band's OWN value
       // rather than the cumulative height the reader is pointing at -- the cumulative
@@ -2145,7 +2230,13 @@
         const winFmt = (ms) => _msLabel(ms, Math.max(t1 - t0, 1));
         const seenT = new Set();
         for (let g = 0; g <= nTicks; g++) {
-          const ms = t0 + (t1 - t0) * g / nTicks;
+          // A label names a calendar unit (a day, a month), so it sits at the START of that
+          // unit, not at an even fraction of the window: an even fraction put "2026-08-03"
+          // a third of a day off its own midnight and spaced the labels 245, 135, 273 px
+          // apart (the journalist walk 2026-09-30, 4f). A boundary outside the window is
+          // not drawn; the minute-level labels of a short window keep the even spacing.
+          const ms = _msTickSnap(t0 + (t1 - t0) * g / nTicks, Math.max(t1 - t0, 1));
+          if (ms < t0 || ms > t1) continue;
           const lab = winFmt(ms);
           if (seenT.has(lab)) continue;
           seenT.add(lab);
@@ -2347,6 +2438,36 @@
           ctx.moveTo(xb, padT); ctx.lineTo(xb, H - padB);
           ctx.stroke();
         }
+        // THE HOVERED POINT IS MARKED WHERE THE POINTER IS (the journalist walk 2026-09-30, 4c):
+        // the exact reading lives in the line under the legend, so without a mark on the
+        // canvas the reader had to look away from the point to read it. A filled ring on the
+        // nearest real point plus its value beside it; the line below keeps the full reading
+        // (series, unit, date). Nothing is drawn between points: the mark sits on a measured one.
+        if (hovP && hovS && !(pinned && pinned === hovP)) {
+          const hBand = (stacked && hovS) ? stk.bands.find((b) => b.s.label === hovS.label) : null;
+          const hAt = hBand ? hBand.pts.find((q) => q.t === hovP.t) : null;
+          const hx = Xof(hovP.t), hy = hAt
+            ? Yof(vt(hAt.hi))
+            : Yof(vt(opts.indexed && hovS ? pv(hovS, hovP) : hovP.v));
+          if (isFinite(hx) && isFinite(hy) && hx >= padL - 1 && hx <= W - padR + 1) {
+            const hcol = hovS.color && hovS.color.startsWith("var(") ? cssVar(hovS.color.slice(4, -1)) : (hovS.color || cssVar("--accent"));
+            ctx.strokeStyle = cssVar("--muted"); ctx.globalAlpha = 0.5;
+            ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, H - padB); ctx.stroke(); ctx.globalAlpha = 1;
+            ctx.fillStyle = cssVar("--panel2"); ctx.strokeStyle = hcol; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(hx, hy, 4.5, 0, 7); ctx.fill(); ctx.stroke(); ctx.lineWidth = 1;
+            const lab = fmtV(hovP.v) + (hovS.unit ? " " + hovS.unit : "");
+            ctx.font = "bold 11px sans-serif";
+            const tw = ctx.measureText(lab).width;
+            const right = hx + 8 + tw + 6 <= W - padR;
+            const lx = right ? hx + 8 : hx - 8 - tw - 6;
+            const ly = Math.max(padT + 1, Math.min(hy - 20, H - padB - 18));
+            ctx.fillStyle = cssVar("--panel"); ctx.globalAlpha = 0.92;
+            ctx.fillRect(lx, ly, tw + 6, 16); ctx.globalAlpha = 1;
+            ctx.fillStyle = cssVar("--fg"); ctx.textAlign = "left";
+            ctx.fillText(lab, lx + 3, ly + 12);
+            ctx.font = "10px sans-serif";
+          }
+        }
         if (pinned) {
           // IN A STACK THE MARK GOES WHERE THE BAND WAS DRAWN. `pinned.v` is the series'
           // OWN value -- which is what the readout reports, and is correct there -- but
@@ -2393,7 +2514,7 @@
             `${esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${n}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
         }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
-          elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
+          elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; hovP = null; hovS = null; draw(); };
           elm.addEventListener("click", elm._oo);
         });
       }
@@ -2441,6 +2562,7 @@
       const brushing = (ev) => canBrush && (brushMode || ev.shiftKey);
       cv.addEventListener("pointerdown", (ev) => {
         cv.setPointerCapture(ev.pointerId);
+        hovP = null; hovS = null;
         if (brushing(ev)) {
           bFrom = msAt(ev.clientX); bTo = bFrom;
           dragX = ev.clientX; dragT = null;   // dragT null is what marks this a brush
@@ -2490,6 +2612,12 @@
           }
           readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""}${ix}${st} \u00b7 ${fmtT(b.p.t)}`;
         }
+        // Mark the hovered point on the canvas, one redraw per animation frame at most.
+        const nb = b ? b.p : null;
+        if (nb !== hovP) {
+          hovP = nb; hovS = b ? b.s : null;
+          if (!hovRaf) hovRaf = requestAnimationFrame(() => { hovRaf = 0; draw(); });
+        }
       });
       cv.addEventListener("pointerup", (ev) => {
         const wasBrush = dragX != null && dragT == null && bFrom != null;
@@ -2511,6 +2639,7 @@
       });
       cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; pinnedS = null; draw(); });
       cv.addEventListener("pointerleave", () => {
+        if (hovP) { hovP = null; hovS = null; draw(); }
         if (!pinned && dragX == null && !emptyState && bFrom == null && !brushMode) readout.textContent = idleHint;
       });
       draw();
@@ -2772,7 +2901,7 @@
            <label>${esc(t("From"))} <input type="date" class="ts-from"></label>
            <label>${esc(t("To"))} <input type="date" class="ts-to"></label>
          </div>
-         <div class="ts-bar" tabindex="-1">
+         <div class="ts-bar" tabindex="-1" role="group" aria-label="${esc(t("Date range"))}">
            <div class="ts-track"></div><div class="ts-sel"></div>
            <div class="ts-handle ts-h-from" role="slider" tabindex="0"
                 aria-label="${esc(t("From"))}"></div>

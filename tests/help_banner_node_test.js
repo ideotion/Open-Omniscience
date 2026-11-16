@@ -3,7 +3,8 @@
 // Open Omniscience - Global Intelligence Platform for Investigative Journalism
 // Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 //
-// What is guarded is a set of refusals a diff does not show: an English reader gets NO banner; a non-English reader who is
+// What is guarded is a set of refusals a diff does not show: EVERY reader, English included, is told the text was written by
+// AI (R721, 2026-11-14; it replaced the English reader's empty banner and the old "machine-drafted" wording); a non-English reader who is
 // served the English original is told why (the mixed-language-document lesson), not left to guess; a figure that could not be
 // measured is ABSENT with its reason, never a guessed number; a draft with more headings than the English is never "more than
 // complete"; and the language's own name is escaped. EXTRACTED from the shipped module, not re-typed.
@@ -54,14 +55,23 @@ const text = (html) => { const m = /<span>([^<]*)<\/span>/.exec(html); return m 
   assert.strictEqual(bare.docSections(null), 0);
 }
 
-// --- an English reader reading English draws nothing ------------------------ //
-assert.strictEqual(bare.docBannerHtml("en", "en", null, null, "English"), "");
-assert.strictEqual(bare.docBannerHtml("", "en", null, null, ""), "");
+// --- every reader is told the text was written by AI (R721) --------------- //
+const AI = "This help text was written by AI and may contain mistakes.";
+for (const html of [bare.docBannerHtml("en", "en", null, null, "English"), bare.docBannerHtml("", "en", null, null, "")]) {
+  assert.ok(html.includes('data-doc-banner="ai"'), html);
+  assert.strictEqual(text(html), AI, "the English reader's note is the AI sentence alone: " + html);
+}
+for (const html of [bare.docBannerHtml("fr", "fr", 8, 17, "Français"), bare.docBannerHtml("fr", "fr", null, 17, "Français"),
+                    bare.docBannerHtml("ja", "en", null, null, "日本語")]) {
+  assert.ok(text(html).startsWith(AI + " "), "the AI sentence must open every banner: " + html);
+  assert.strictEqual(text(html).split(AI).length, 2, "the AI sentence must appear once: " + html);
+  assert.ok(!/Machine-drafted|native|better wording/i.test(text(html)), "the old review wording came back: " + html);
+}
 
 // --- a draft states its language, the authority and the figure, in a named unit
 {
   const out = text(bare.docBannerHtml("fr", "fr", 8, 17, "Français"));
-  assert.ok(/Machine-drafted translation \(Français\)/.test(out), out);
+  assert.ok(/Translation \(Français\)/.test(out), out);
   assert.ok(/8 of the 17 headings/.test(out), "the figure is missing or in no unit: " + out);
   assert.ok(/English original is authoritative/.test(out), out);
   assert.ok(bare.docBannerHtml("fr", "fr", 8, 17, "Français").includes('data-doc-banner="draft"'));
@@ -72,7 +82,7 @@ assert.ok(/17 of the 17 headings/.test(text(bare.docBannerHtml("fr", "fr", 23, 1
 
 // --- an unmeasurable figure is absent WITH its reason, never a number ------- //
 for (const [done, total] of [[8, null], [null, 17], [null, null]]) {
-  const out = text(bare.docBannerHtml("fr", "fr", done, total, "Français"));
+  const out = text(bare.docBannerHtml("fr", "fr", done, total, "Français")).slice(AI.length);
   assert.ok(/could not be measured/.test(out), "no reason given: " + out);
   assert.ok(!/\d/.test(out), "a number was drawn without a measurement: " + out);
 }
@@ -92,9 +102,9 @@ for (const [done, total] of [[8, null], [null, 17], [null, null]]) {
 
 // --- the frame translates and the data does not (OOI18N.tf in the loop) ----- //
 {
-  const map = { "This document has no draft in this language yet ({language}), so the English original is shown.": "Pas de version {language} pour l'instant." };
+  const map = { "This help text was written by AI and may contain mistakes.": "Écrit par une IA.", "This document has no draft in this language yet ({language}), so the English original is shown.": "Pas de version {language} pour l'instant." };
   const tr = load({ OOI18N: { tf: (s, v) => (map[s] || s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) } });
-  assert.ok(text(tr.docBannerHtml("fr", "en", null, null, "Français")).startsWith("Pas de version Français pour"), "the frame was not looked up");
+  assert.ok(text(tr.docBannerHtml("fr", "en", null, null, "Français")).startsWith("Écrit par une IA. Pas de version Français pour"), "the frame was not looked up");
 }
 
 // --- the unit is the same one the translated-documents guard counts --------- //

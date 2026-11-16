@@ -17,7 +17,6 @@ gates payload and the locale files) is pinned here from the shipped sources them
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from pathlib import Path
@@ -33,6 +32,7 @@ from tests.js_source_helper import (
     read_static,
     strip_comments,
 )
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
@@ -40,7 +40,7 @@ _LOCALES = _STATIC / "locales"
 
 
 def _locales() -> dict[str, dict]:
-    out = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in _LOCALES.glob("*.json")}
+    out = {p.stem: load_locale(p) for p in _LOCALES.glob("*.json")}
     assert len(out) == 12, f"expected 12 locale files, found {len(out)}"
     return out
 

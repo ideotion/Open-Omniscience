@@ -140,12 +140,14 @@ def test_perception_extract_gate_reads_the_saved_live_eval_report(monkeypatch):
     # under "report" (report["report"]["by_language"], not report["by_language"]).
     monkeypatch.setattr(
         "src.ai_layer.perception_job.last_perception_eval_live_report",
-        lambda: {"report": {"by_language": {"en": {
+        lambda: {"model": "stub:test", "report": {"by_language": {"en": {
             "who": {"hallucination_rate": 0.0},
             "where": {"hallucination_rate": 0.0},
             "when": {"hallucination_rate": 0.0},
         }}}},
     )
+    # R704: the gate is the measurement of the model that would extract.
+    monkeypatch.setattr("src.ai_layer.perception_extract_job._stored_extract_model", lambda: "stub:test")
     resp = d.perception_extract_gate()
     body = json.loads(bytes(resp.body))
     assert body["en"]["active"] is True
@@ -212,7 +214,7 @@ def test_perception_extract_job_status_reports_a_genuine_error_after_a_permanent
     monkeypatch.setattr(pe_job_mod, "_PERCEPTION_EXTRACT_BACKOFF_BASE_S", 0.01)
     monkeypatch.setattr(pe_job_mod, "_PERCEPTION_EXTRACT_BACKOFF_CAP_S", 0.02)
 
-    gate_report = {"report": {"by_language": {"en": {
+    gate_report = {"model": "stub:test", "report": {"by_language": {"en": {
         "who": {"hallucination_rate": 0.0},
         "where": {"hallucination_rate": 0.0},
         "when": {"hallucination_rate": 0.0},

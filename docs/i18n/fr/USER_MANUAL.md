@@ -1,4 +1,4 @@
-<!-- fr: AI-drafted translation of docs/USER_MANUAL.md (2026-11-13, R677), not yet reviewed by a native speaker; the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Improve it with a pull request; corrections by native speakers are welcome. -->
+<!-- fr: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 125 of 125 headings. Corrections are welcome as a pull request. -->
 
 # Open Omniscience — Manuel d'utilisation
 
@@ -515,6 +515,49 @@ des articles, l'un après l'autre, et vous laisse faire défiler.
   mots-clés propres à l'article** — les mots-clés de cet article, pas ceux de ce que vous
   avez recherché. **Lire la suite** déplie le résumé **sur place** ; le titre ouvre
   l'article dans le lecteur local.
+
+### 3.0c Vue simple
+
+**À quoi elle sert :** lire ce que contient votre corpus sans apprendre d'abord treize
+onglets. La vue simple est une seconde interface, organisée par tâche, sur la même
+application, les mêmes données et les mêmes règles de sécurité. Elle retire des écrans, pas
+des informations : chaque chiffre garde sa méthode, son effectif et sa mise en garde à un
+clic.
+
+- **L'interrupteur.** L'interrupteur **Simple** de la barre supérieure l'active et la
+  désactive. Ce choix n'est mémorisé que sur cet appareil (dans ce navigateur). La
+  désactiver rétablit l'interface complète exactement telle qu'elle était ; rien n'est
+  réinitialisé ni perdu.
+- **Six vues** remplacent les onglets de la barre latérale :
+  - **Aujourd'hui** : les Pistes qui ressortent de votre corpus, les sujets en hausse, et
+    l'état du réseau avec un bouton **Passer en ligne**.
+  - **Lire** : vos articles sous forme de liste, les plus récents d'abord ou mélangés.
+    Choisir un pays dans **Monde** restreint la liste (et son résumé) aux articles des
+    sources de ce pays.
+  - **Rechercher** : la même recherche que dans la vue complète. Tapez un mot, un nom ou
+    une expression ; les guillemets donnent une expression exacte et OR l'un ou l'autre
+    mot. **Ouvrir l'analyse complète** emmène la même recherche dans Explorer.
+  - **Monde** : les pays d'où viennent vos articles, classés selon leur couverture. Un pays
+    est ici celui sous lequel chaque source est cataloguée, jamais le lieu où une histoire
+    s'est produite. Un clic sur un pays restreint **Lire** et son résumé.
+  - **Chiffres** : les séries de marché et les relevés climatiques déjà stockés sur votre
+    ordinateur, chacun avec sa valeur la plus récente et sa date. Cette vue ne fait que
+    lire : les prix et les relevés climatiques sont récupérés, avec votre consentement,
+    dans la vue complète.
+  - **Plus d'outils** : un lien vers chaque onglet de la vue complète, et le formulaire
+    **Ajouter une source**. Un outil ouvert d'ici affiche une barre **Revenir à la vue
+    simple** qui vous ramène là où vous étiez, votre recherche toujours en place.
+- **Le bouton ⓘ.** Chaque carte et chaque chiffre en porte un. Il ouvre la mise en garde,
+  la méthode, l'effectif (n), la source et la date. Il fonctionne au clavier, au toucher et
+  avec les lecteurs d'écran.
+- **Les marques.** Un chiffre qui mérite un second regard affiche une petite marque à côté,
+  pour que vous sachiez que le ⓘ contient quelque chose qui vaut d'être ouvert : **~**
+  approximatif, **◐** partiel, **◷** peut-être dépassé.
+- **Ce qui ne change jamais.** La vue simple ne masque aucune des surfaces de sécurité de
+  l'application. La fenêtre de consentement réseau, le mode avion et l'état de Tor dans la
+  barre supérieure, l'écran de verrouillage, la confirmation avant toute suppression, les
+  avis et les messages d'erreur restent tous visibles et fonctionnent exactement comme
+  dans la vue complète.
 
 ### 3.1 Recherche
 

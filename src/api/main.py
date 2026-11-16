@@ -609,6 +609,14 @@ async def lifespan(app: FastAPI):
         arm_exit_disposal()  # a stop that skips the lifespan's shutdown still closes the jobs out and disposes, at exit
     except Exception as exc:  # noqa: BLE001 - never blocks a start
         log_failure(logger, "could not reset the shutdown's job refusal", exc, level=logging.WARNING)
+    # The same for the repair's stop flag: an earlier shutdown in this process raised it, and from here on a stop is THIS start's. Done
+    # here, before the boot thread exists, and never at the repair step: a quit during the start-up check must still stop the repair.
+    try:
+        from src.database import repair as _repair
+
+        _repair.reset_for_start()
+    except Exception as exc:  # noqa: BLE001 - never blocks a start
+        log_failure(logger, "could not reset the repair's stop", exc, level=logging.WARNING)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
     # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
@@ -657,6 +665,14 @@ async def lifespan(app: FastAPI):
         _persist = data_dir_persistence()
         if _persist.get("at_risk") is True:
             logger.warning("data-dir persistence: %s", _persist.get("note"))
+        # R711: a data folder shared with other files (a home folder, a drive root...) is said at every start; both pages show
+        # it too (data-volume.js), because an emergency wipe there removes only the app's own files.
+        from src.paths import data_dir as _scope_dir
+        from src.safety.data_scope import startup_warning
+
+        _scope_note = startup_warning(_scope_dir())
+        if _scope_note:
+            logger.warning("data folder: %s", _scope_note)
     except Exception as exc:  # noqa: BLE001 - forensics must never block startup
         log_failure(logger, "could not stamp the session sentinel", exc, level=logging.WARNING)
 
@@ -779,6 +795,10 @@ async def lifespan(app: FastAPI):
     # hold a passphrase). NOT covered: the backup import queue, the .eml import manager, the re-index managers and the backup threads, which
     # are not registry jobs and keep their own stops; nor the request-bound AI streams (the streamed POST /api/llm/bulk, ai.py's extract and
     # prompt runs), which stop at their next line once the server drops the connection and may still commit the article they are on. Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
+    # The repair of a damaged library file IS a registry job, registered ``cancellable=False`` because its switch must never be cut
+    # halfway and a late finish must not read as cancelled. It is stopped by its own flag, which ``_stop_database_check`` above raised
+    # before this wait (its copy ends at the next batch); this wait then covers it like any other job, and a repair still running past
+    # the deadline stops before its swap once the database is closed to jobs below (R689).
     try:
         from src.jobs.background import stop_all_jobs
 
@@ -805,7 +825,9 @@ async def lifespan(app: FastAPI):
     shutdown_checkpoint: dict | None = None
     try:
         # its own phase: the step can take as long as the write-back (about 90 s for 1.4 GB, where a service manager's stop timeout is about
-        # as long), and a death inside it must not read as a death "during shutdown" with the previous step as its last word
+        # as long), and a death inside it must not read as a death "during shutdown" with the previous step as its last word. The 90 s is an
+        # unreproduced field observation: a 1.57 GB appended log checkpointed in 3.2 s on a fast cloud disk on 2026-11-14 (item (a) of
+        # docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md)
         from src.monitoring.forensics import record_shutdown_phase
 
         record_shutdown_phase("writing-back")
@@ -3807,12 +3829,20 @@ def _panic_cli(*, force: bool) -> None:
 
     target = data_dir()
     if not force:
-        ans = input(f"Irreversibly wipe ALL data under {target}? Type 'wipe' to confirm: ")
+        ans = input(f"Irreversibly wipe the app's data under {target}? Type 'wipe' to confirm: ")
         if ans.strip().lower() != "wipe":
             print("Aborted.")
             return
     report = panic_wipe(confirm=True)
     print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    if report.get("scope") == "app-only":
+        # R711: a folder the app does not own keeps everything that is not the app's, and the folder itself.
+        print(f"The data folder is not the app's own ({report.get('scope_reason')}): only the app's files were removed; "
+              f"{len(report.get('left_untouched') or [])} other entries and the folder were left.")
+        if report.get("left_common_names"):
+            print("Also left, because the name is common and may be yours: " + ", ".join(report["left_common_names"]))
+    if report.get("after_erase_failures"):
+        print("The erase completed; these steps after it failed: " + ", ".join(report["after_erase_failures"]))
     print(report["limit"])
 
 
@@ -3992,6 +4022,18 @@ def _serve() -> None:
             print(notice_text())
     except Exception:  # noqa: BLE001 - a notice must never break startup
         pass
+    # R711: in the terminal too, before the server starts, for an operator who launched from one.
+    try:
+        from src.paths import data_dir as _scope_dir
+        from src.safety.data_scope import startup_warning
+
+        _scope_note = startup_warning(_scope_dir())
+        if _scope_note:
+            import sys as _sys
+
+            print(f"WARNING: {_scope_note}", file=_sys.stderr)
+    except Exception:  # noqa: BLE001 - a notice must never break startup
+        pass
 
     # Preconfigure the database on first run so a fresh install is immediately
     # usable (the curated catalog is seeded only when the sources table is empty).
@@ -4059,7 +4101,8 @@ def _serve() -> None:
     install_stop_signal_cleanup()
     # A graceful-shutdown deadline (S0.2). Without one, uvicorn waits indefinitely for
     # in-flight requests -- and this app has requests that legitimately run for
-    # minutes (a cold alerts compute measured 558 s in the field). A logout SIGTERM
+    # minutes (a cold alerts compute measured 558 s in the field: an unreproduced field
+    # observation, store size and date not recorded; docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md, item (b)). A logout SIGTERM
     # arriving during one of those left the app waiting until logind SIGKILLed it,
     # which skips the lifespan shutdown entirely and reads as a crash on the next
     # boot. 30 s is long enough for an ordinary request and short enough to lose the

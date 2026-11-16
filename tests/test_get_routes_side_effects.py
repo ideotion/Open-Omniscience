@@ -76,9 +76,10 @@ from src.safety.file_lock import temp_name
 # install (no [analysis] extra) mounts 3 fewer GETs, because the commodity, statistical-analysis and article-similarity routes are
 # disabled there: 464, reproduced by blocking numpy/pandas/scipy/sklearn/statsmodels (R283: a floor states both install profiles).
 # 2026-11-14 (R694, R278's proposals adopted): 6 egress/key-minting GETs and 21 heavy diagnostics GETs became POSTs, and the count
-# measured on that tree is the floor now: 461 full, 458 Core-only (the same 3 analysis routes apart).
-_OPERATIONS_FLOOR_FULL = 461
-_OPERATIONS_FLOOR_CORE_ONLY = 458
+# measured on that tree is the floor now: 461 full, 458 Core-only (the same 3 analysis routes apart). Then the custody export (F2)
+# became a POST too: 460 full, 457 Core-only.
+_OPERATIONS_FLOOR_FULL = 460
+_OPERATIONS_FLOOR_CORE_ONLY = 457
 
 
 def _analysis_extra_installed() -> bool:
@@ -106,6 +107,8 @@ _AMBIENT_FILES = frozenset(
         "vitals_history.json",  # the vitals sampler's history
         "storage_events.json",
         "briefing_cache.json",  # derived: the briefing refresh thread writes it whenever a request started one
+        "card_quality_selfcheck.jsonl",  # the same refresh's card self-check, one line beside that cache (newest 200)
+        ".oo-instance-id",  # the data folder's random tag (src/paths.instance_tag), made once by the first export that names it
     }
 )
 # The lazy rollup build (R308). With the `[columnar]` extra (duckdb) the first demand for a rollup builds it in a daemon thread, BY DESIGN
@@ -139,19 +142,26 @@ _AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|oo-boot-slow
 
 # Route -> (files it may create or change, thread names it may start, reason). A route can appear only if the effect was
 # MEASURED on 2026-10-27; the reason says why it is acceptable or names the finding that routes it.
-# The heavy diagnostics (/all, /debug-bundle, the llm thread-pool self-tests, recursive-loop) left this table when they became POSTs (R694).
+# The heavy diagnostics (/all, /debug-bundle, the llm thread-pool self-tests, recursive-loop) and the custody export (F2) left this table
+# when they became POSTs (R694); the custody reads (settings, an item's entries, verify) open what exists and never mint a key.
 _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
-    "/api/custody/export": (
-        frozenset({"custody_log.db", "custody_log.db-wal", "custody_log.db-shm", "custody_ed25519.pem"}), frozenset(),
-        "FINDING F2 (routed to RC2, R278): the first export creates the custody signing key and writes the custody log",
-    ),
     "/api/articles": (
         frozenset({"search_timing_browse.jsonl"}), frozenset(),
         "appends one timing line to the local search-timing log (bounded, never transmitted)",
     ),
     "/api/briefing": (frozenset(), frozenset({"oo-briefing-refresh"}), "starts the briefing refresh in a daemon thread: derived data, de-duplicated by its slot"),
     "/api/scheduler/activity": (frozenset(), frozenset({"oo-plan-preview"}), "computes the plan preview in a daemon thread: derived, cached by its key"),
-    "/api/diagnostics/keyword-engine": (frozenset({"keyword-coverage.json"}), frozenset(), "writes the keyword coverage record it reports"),
+    "/api/diagnostics/keyword-engine": (
+        frozenset({"keyword-coverage.json", "keyword-generic-terms.json"}), frozenset(),
+        "writes the keyword coverage record it reports, and K5's generic-term list date and size (R706)",
+    ),
+    "/api/diagnostics/dates": (
+        frozenset({"date-extraction-coverage.json"}), frozenset(),
+        "writes K7's whole-corpus date coverage record (R706); a filtered run writes nothing",
+    ),
+    "/api/diagnostics/source-audit": (
+        frozenset({"source-audit-status.json"}), frozenset(), "writes K8's status-count record (R706)",
+    ),
 }
 # Routes allowed to attempt a LOOPBACK connect (the local model servers: Ollama 11434, vLLM 8001). Nothing else may open a socket,
 # and no route may reach a non-loopback address with the kill switch engaged.
@@ -615,7 +625,8 @@ def test_every_finding_route_refuses_a_cross_site_request():
     from src.api.main import app
 
     routes = sorted(p for p, (_f, _t, reason) in _ROUTES.items() if reason.startswith("FINDING") and p not in _FINDINGS_NOT_YET_GUARDED)
-    assert routes, "no FINDING row left to pin"
+    if not routes:
+        return  # since R694 every finding GET is a POST (none is left to guard); a FINDING row measured later is pinned here again
     with TestClient(app, raise_server_exceptions=False) as client:
         bad = {}
         for path in routes:

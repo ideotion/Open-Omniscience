@@ -31,7 +31,99 @@ LEADS_QUALITY_CAVEAT = (
 )
 
 
-def leads_quality_report(session, *, budget_s: float | None = None) -> dict:
+def _row(c) -> dict:
+    """One card's row. ``c`` is a Card, or a cached card dict wrapped so the same leads.py helpers read it."""
+    from src.briefing.leads import _distinct_outlets, is_major
+
+    return {
+        "type": c.type,
+        "key": c.key,
+        "bucket": c.bucket,
+        "title": c.title,
+        "n": c.n,
+        "distinct_outlets": _distinct_outlets(c),
+        "article_ids_count": len(c.article_ids or []),
+        "signal": c.signal,
+        "major": is_major(c),
+    }
+
+
+def _fresh_home_feed(session) -> dict | None:
+    """Home's cached feed when Home's own freshness test (``service.feed_is_current``: current cache shape, corpus not
+    grown past the stale threshold, same shipped stoplist) passes, else ``None``. A feed carrying a stop marker or
+    stopped producers passes and is reported as partial."""
+    from src.briefing.service import _read_cache, feed_is_current
+
+    payload = _read_cache()
+    if not payload or not isinstance(payload.get("cards"), list):
+        return None
+    if not feed_is_current(session, payload):
+        return None
+    return payload
+
+
+def _report_from_home_feed(payload: dict) -> dict:
+    from types import SimpleNamespace
+
+    rows = []
+    for d in payload["cards"]:
+        if not isinstance(d, dict):
+            continue
+        c = SimpleNamespace(
+            type=d.get("type"), key=d.get("key"), bucket=d.get("bucket"), title=d.get("title"),
+            n=d.get("n"), article_ids=d.get("article_ids"), signal=d.get("signal"),
+            evidence=d.get("evidence") or [],
+        )
+        rows.append(_row(c))
+    generated_at = payload.get("generated_at")
+    note = (
+        f"Read from Home's cached feed, computed at {generated_at}, instead of running every card producer again: "
+        "it passes Home's own freshness test (the same cache shape, the same shipped stoplist, and a corpus that has "
+        "not grown past the stale threshold since). The rows are every card in that feed, including any dismissed on "
+        "Home and the one lane-only producer's card (osm_tag_completeness) that a fresh run of this report leaves "
+        "out, in Home's order. For a fresh producer pass, call /api/diagnostics/leads-quality on its own."
+    )
+    caveat = LEADS_QUALITY_CAVEAT
+    partial = False
+    if payload.get("incomplete_reason"):
+        partial = True
+        caveat += (
+            " PARTIAL: Home's last refresh stopped before every producer had run, so cards from the producers it "
+            f"did not reach are absent here ({payload['incomplete_reason']})."
+        )
+    if payload.get("kept_reason"):
+        partial = True
+        caveat += (
+            " KEPT: this is the earlier feed Home kept because its last refresh stopped "
+            f"({payload['kept_reason']}), so it can be older than the corpus suggests."
+        )
+    stopped = [str(x.get("name") if isinstance(x, dict) else x) for x in payload.get("stopped_producers") or []]
+    if stopped:
+        partial = True
+        caveat += (
+            " PARTIAL: these producers were stopped at their own time bound on Home's last refresh, so their cards "
+            f"are absent here: {', '.join(stopped)}."
+        )
+    out = {
+        "schema": SCHEMA,
+        "count": len(rows),
+        "cards": rows,
+        "source": "home-cache",
+        "feed_generated_at": generated_at,
+        "source_note": note,
+        "bundle_note": note,
+        "producers_run": None,
+        "producers_total": None,
+        "truncated": partial,
+        "method": LEADS_QUALITY_METHOD,
+        "caveat": caveat,
+    }
+    if stopped:
+        out["stopped_producers"] = stopped
+    return out
+
+
+def leads_quality_report(session, *, budget_s: float | None = None, prefer_home_cache: bool = False) -> dict:
     """The bounded, real-facts export described in the module docstring.
 
     ``budget_s`` caps how long the underlying producer pass may run. It exists because
@@ -41,31 +133,30 @@ def leads_quality_report(session, *, budget_s: float | None = None) -> dict:
     :func:`~src.briefing.registry.run_all_bounded`). A truncated pass is reported AS
     truncated, with the count -- a partial feed labelled partial is a usable
     measurement, an unbounded one is a hung export.
+
+    ``prefer_home_cache`` (the all-diagnostics member, row 18 of the 2026-11-14 list): when Home's
+    cached feed is fresh, report from it instead of running every producer again. The same bundle
+    runs the producers in card-audit and in the bulletin, and this pass alone measured 86 s on a
+    200k-article corpus. The report says which source it used (``source``), and in plain words
+    why; with no fresh feed it runs the producers as before (``source: "producer-pass"``).
     """
     import time
 
-    from src.briefing.leads import _distinct_outlets, is_major
     from src.briefing.registry import run_all_bounded
+
+    if prefer_home_cache:
+        try:
+            payload = _fresh_home_feed(session)
+            if payload is not None:
+                return _report_from_home_feed(payload)
+        except Exception:  # noqa: BLE001 - an unreadable or malformed cache falls back to the producer pass
+            pass
 
     cards, stats = run_all_bounded(
         session,
         deadline=(time.monotonic() + budget_s) if budget_s else None,
     )
-    rows = []
-    for c in cards:
-        rows.append(
-            {
-                "type": c.type,
-                "key": c.key,
-                "bucket": c.bucket,
-                "title": c.title,
-                "n": c.n,
-                "distinct_outlets": _distinct_outlets(c),
-                "article_ids_count": len(c.article_ids or []),
-                "signal": c.signal,
-                "major": is_major(c),
-            }
-        )
+    rows = [_row(c) for c in cards]
     caveat = LEADS_QUALITY_CAVEAT
     if stats["truncated"]:
         # Said in the payload, not only in a log: a reader comparing two exports must be
@@ -81,6 +172,7 @@ def leads_quality_report(session, *, budget_s: float | None = None) -> dict:
         "schema": SCHEMA,
         "count": len(rows),
         "cards": rows,
+        "source": "producer-pass",
         "producers_run": stats["producers_run"],
         "producers_total": stats["producers_total"],
         "truncated": stats["truncated"],

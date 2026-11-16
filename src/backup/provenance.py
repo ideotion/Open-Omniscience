@@ -195,7 +195,7 @@ def provenance_tag(session: Any, table: str, row_id: int) -> dict | None:
     )
     row = session.execute(
         text(
-            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 - table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, and the key and stamp columns are module literals
+            f"SELECT {sel} FROM {table} r"  # noqa: S608  # nosec B608 # table is validated as a key of PRODUCER_COLUMNS by producer_tag_sql above, and the key and stamp columns are module literals
             f" LEFT JOIN merged_rows m ON m.table_name = :t AND {on}"
             f" LEFT JOIN merge_batches b ON b.id = m.batch_id{fresh} WHERE r.rowid = :id"
             " ORDER BY b.id DESC LIMIT 1"

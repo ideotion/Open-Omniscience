@@ -267,7 +267,7 @@ def _corpus_stats(corpus_snapshot: Path) -> dict:
         ]
         counts = {}
         for t in tables:
-            counts[t] = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608  # nosec B608 - identifier from the fixed member map, never input
+            counts[t] = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608  # nosec B608 # identifier from the fixed member map, never input
         leaves = [
             hashlib.sha256(canonical_bytes({"id": rid, "hash": h})).hexdigest()
             for rid, h in conn.execute("SELECT id, hash FROM articles ORDER BY id")
@@ -352,7 +352,7 @@ def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> Non
     for i in range(0, len(ids), 900):
         chunk = ids[i : i + 900]
         q = ",".join("?" * len(chunk))
-        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 - table/col validated against _SAFE_TABLE; values are bound params
+        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 # table/col validated against _SAFE_TABLE; values are bound params
 
 
 def _drop_newsletter_articles(db_path: Path) -> int:
@@ -396,7 +396,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     cur = con.cursor()
     marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
     src_ids = [r[0] for r in cur.execute(
-        f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
+        f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 # marks is only ?-placeholders; domains are bound params
     # SINCE THE WRITE-PATH AUTO-ATTACH (Q1151) THE BUCKET IS NO LONGER THE WHOLE SET, and
     # getting this wrong is a PRIVACY regression, not a counting one: a user who unticks
     # "include newsletters" would have every AUTO-ATTACHED newsletter body written into the
@@ -413,7 +413,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     if src_ids:
         sq = ",".join("?" * len(src_ids))
         art_ids += [r[0] for r in cur.execute(
-            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
+            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 # sq is only ?-placeholders; ids are bound params
     if has_col:
         art_ids += [r[0] for r in cur.execute(
             "SELECT id FROM articles WHERE newsletter_attached_via IS NOT NULL")]
@@ -424,7 +424,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     for t in tables:
         if t == "articles" or not _SAFE_TABLE.match(t):
             continue
-        cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 - t validated against _SAFE_TABLE (from the schema, not input)
+        cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 # t validated against _SAFE_TABLE (from the schema, not input)
         if "article_id" in cols:
             _delete_in(cur, t, "article_id", art_ids)
     _delete_in(cur, "articles", "id", art_ids)
@@ -559,8 +559,8 @@ def _build_backup_zip(
     tmp_dir: Path, *, include_keys: bool, include_newsletters: bool
 ) -> tuple[Path, dict]:
     """Collect members, build + Ed25519-sign the manifest, and write the oo-backup-2 ZIP
-    into ``tmp_dir``. Returns (zip_path, signed envelope). Shared by the single-file
-    backup (write_backup_v2) and the volume-set backup (write_volume_backup)."""
+    into ``tmp_dir``. Returns (zip_path, signed envelope). Shared by
+    write_backup_v2 (no product caller, A-022) and the volume-set backup (write_volume_backup)."""
     from src.reporting.evidence import (
         canonical_bytes,
         load_or_create_signing_key,
@@ -622,7 +622,11 @@ def _build_backup_zip(
 def write_backup_v2(
     dest: Path, passphrase: str | None = None, *, include_newsletters: bool = True
 ) -> dict:
-    """Build a complete oo-backup-2 artifact at ``dest`` (the SINGLE-FILE path).
+    """Build a complete oo-backup-2 artifact at ``dest`` as ONE zip file (A-022).
+
+    No product path calls it any more: the app's backups are the volume set
+    (:func:`write_volume_backup`, run by ``src/backup/volume_job.py``). It stays for ``scripts/country_migration_evidence.py``
+    and the tests, and every reader still accepts the single-file artifacts it wrote.
 
     ``passphrase`` set -> the ZIP is wrapped in the OOENC1 envelope and the
     signing keys ARE included; plaintext (no passphrase) -> keys are EXCLUDED
@@ -795,12 +799,40 @@ def read_volume_backup(
 # --------------------------------------------------------------------------- #
 #  Read / stage
 # --------------------------------------------------------------------------- #
+_EXTRACT_CHUNK = 1024 * 1024
+#: What one member, and one directory level of its path, cost on disk beyond their bytes (a block and an inode, rounded up).
+_ENTRY_OVERHEAD = 4096
+#: Far beyond any backup the app writes (a few files, plus the public files an artifact may carry), far below what fills a disk.
+_MAX_MEMBERS = 200_000
+_MAX_DEPTH = 64
+
+
 def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
-    """Extract with zip-slip protection: every member must resolve inside staging."""
+    """Extract with zip-slip protection and a bound on what is written (audit recheck P3).
+
+    Every member must resolve inside staging. The free-space preflight before staging can only
+    see the archive, and a zip's members may inflate far beyond it (a 204 KB zip was measured
+    inflating to 200 MiB), so the sum of the DECLARED sizes is preflighted here, before a byte is
+    written; and since a declared size can lie, each member is then copied by hand and refused
+    the moment it yields more than it declared. Bytes are not all a member costs: each one, and each
+    directory level of its path, also takes a block and an inode, so a few hundred empty members
+    nested hundreds of levels deep wrote 705 MiB from a 737 KB zip whose declared sum was 203 bytes.
+    So each member and each level of its path is charged ``_ENTRY_OVERHEAD`` too, and the member
+    count and path depth are capped. Together these keep a crafted or damaged backup from filling
+    the data disk the live store writes to."""
     root = staging.resolve()
-    for info in zf.infolist():
+    infos = zf.infolist()
+    if len(infos) > _MAX_MEMBERS:
+        raise ArtifactError(f"artifact has {len(infos)} members, more than any backup carries ({_MAX_MEMBERS})")
+    targets: list[tuple[zipfile.ZipInfo, Path]] = []
+    needed = 0
+    for info in infos:
         name = info.filename
-        if Path(name).is_absolute() or ".." in Path(name).parts:
+        parts = Path(name).parts
+        if len(parts) > _MAX_DEPTH:
+            raise ArtifactError(f"member path in artifact is {len(parts)} levels deep, more than any backup carries")
+        needed += max(0, info.file_size) + _ENTRY_OVERHEAD * len(parts)
+        if Path(name).is_absolute() or ".." in parts:
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
         target = (staging / name).resolve()
         # Containment must be checked with ``is_relative_to``, never a string prefix
@@ -809,7 +841,23 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
         # string prefix without being contained.
         if not target.is_relative_to(root):
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
-    zf.extractall(staging)
+        targets.append((info, target))
+    preflight_free_space(staging, needed, what="restore")
+    for info, target in targets:
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        left = info.file_size
+        with zf.open(info) as src, open(target, "wb") as dst:
+            while True:
+                chunk = src.read(min(_EXTRACT_CHUNK, left + 1))
+                if not chunk:
+                    break
+                if len(chunk) > left:
+                    raise ArtifactError(f"member {info.filename!r} is larger than the size it declares")
+                left -= len(chunk)
+                dst.write(chunk)
 
 
 def read_artifact(
@@ -846,7 +894,8 @@ def read_artifact(
 
     # H3 disk-space preflight: the members are extracted to the staging filesystem; the
     # corpus DB (the bulk) is stored uncompressed in the zip, so the extracted size is at
-    # least the (decrypted) blob size. Refuse loudly before staging on a full disk.
+    # least the (decrypted) blob size. Refuse loudly before staging on a full disk. This is
+    # only a floor: _safe_extract preflights the members' declared sizes and bounds each one.
     root = staging_root or data_dir()
     preflight_free_space(root, len(blob), what="restore")
 

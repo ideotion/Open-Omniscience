@@ -30,6 +30,7 @@ anywhere, including at module load.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 APP_DIRNAME = "open-omniscience"
@@ -117,6 +118,52 @@ def data_dir() -> Path:
         chosen = _ensure(base / APP_DIRNAME)
     _memo = (key, chosen)
     return chosen
+
+
+#: The file in the data folder that holds its instance tag (see ``instance_tag``).
+INSTANCE_ID_FILE = ".oo-instance-id"   # app-specific, like .oos-volume: a shared folder can hold a generic "instance_id" of its own
+_INSTANCE_LOCK = threading.Lock()
+
+
+def instance_tag() -> str:
+    """Eight hex characters that tell this data folder's exports apart from another instance's, without saying anything about it.
+
+    The Field data button puts it in every file name and manifest it saves (2026-11-14: the maintainer runs several
+    instances, each with its own ``OO_DATA_DIR`` and port, and sends their files back together). It is RANDOM, made once
+    and kept in the data folder's ``.oo-instance-id`` file: a hash of the folder's path would be reversible by guessing
+    (``/home/<a common name>/...`` has few candidates and eight hex characters are 32 bits), a random value carries no
+    information at all. A copied data folder keeps its tag, which is right: it is the same corpus. A folder that cannot
+    be written answers ``"no-id"`` rather than fail an export, and so does a ``.oo-instance-id`` that is not a regular
+    file (a symlink, a folder, a FIFO): it is never followed or replaced, and its exports cannot be told apart by tag."""
+    import re
+    import secrets
+    import stat
+
+    with _INSTANCE_LOCK:   # two exports at once on a new folder must not each make (and name files with) their own tag
+        try:
+            path = data_dir() / INSTANCE_ID_FILE
+        except OSError:   # an unplugged data drive (DataVolumeMissing): the export says so itself
+            return "no-id"
+        try:
+            # only a regular file is read: a FIFO would block here, holding the lock for every later export
+            if not stat.S_ISREG(path.lstat().st_mode):
+                return "no-id"
+            with path.open("rb") as fh:
+                tag = fh.read(64).decode("ascii", "replace").strip()   # a capped read: the file is 9 bytes when it is ours
+            if re.fullmatch(r"[0-9a-f]{8}", tag):
+                return tag
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return "no-id"
+        tag = secrets.token_hex(4)
+        try:
+            from src.safety.file_lock import atomic_replace
+
+            atomic_replace(path, tag + "\n", encoding="ascii")
+        except OSError:
+            return "no-id"
+        return tag
 
 
 def diagnostics_dir() -> Path:
