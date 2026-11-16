@@ -914,6 +914,8 @@ class ExportStartBody(BaseModel):
     # Q218 = a: default ON here too, so a caller that never went through the dialog gets
     # the ruled behaviour.
     verify_after_write: bool = True
+    # R729: carry the living-source stores (Wikipedia lane first) inside the corpus artifact.
+    lanes: bool = False
 
 
 class ExportResumeBody(BaseModel):
@@ -943,6 +945,7 @@ def export_job_start(body: ExportStartBody) -> dict:
                 inside=body.inside,
                 passphrase=body.passphrase,
                 verify_after_write=body.verify_after_write,
+                lanes=body.lanes,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None

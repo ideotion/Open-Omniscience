@@ -855,8 +855,12 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
                 f"{key} has been retired and can no longer be set. {_RETIRED_KEYS[key]}"
             )
     reset: list[str] = []
+    # The lane state BEFORE this save, so a change of it can be recorded with its time
+    # (field test 2026-11-14 row 73). ``None`` when the stored value could not be read.
+    wiki_state_before: str | None = None
     try:
         current = load_settings(strict=True)  # an unreadable store refuses; it does not save the defaults over it
+        wiki_state_before = current.wiki_lane_state
     except _DamagedSchedulerSettingsError:
         if not replace_damaged:
             raise
@@ -868,6 +872,9 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         kv_invalidate(_KV_KEY)
         try:
             current = load_settings(strict=True)
+            # Repaired in the meantime: the stored state is readable again, so a change of
+            # it is measured against that and not recorded as a replacement.
+            wiki_state_before = current.wiki_lane_state
         except _DamagedSchedulerSettingsError:
             current = SchedulerSettings()
             reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
@@ -1031,4 +1038,16 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
     from src.config.kv_store import kv_set_json
 
     kv_set_json(_KV_KEY, payload)
+    if current.wiki_lane_state != wiki_state_before:
+        from src.wiki.lane_state_record import note_change
+
+        note_change(
+            wiki_state_before,
+            current.wiki_lane_state,
+            by=(
+                "settings-replacement"
+                if wiki_state_before is None and updates.get("wiki_lane_state") is None
+                else "settings-save"
+            ),
+        )
     return current

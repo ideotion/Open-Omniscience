@@ -902,11 +902,13 @@ def test_keep_names_the_worktree_even_when_the_run_ends_in_a_named_stop(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
-@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP])
-def test_a_terminated_run_removes_its_scratch_worktree(clean_repo: Path, tmp_path: Path, sig: signal.Signals) -> None:
+# by name, so collection does not read signal.SIGHUP where it does not exist (Windows); the test itself is skipped there
+@pytest.mark.parametrize("sig_name", ["SIGTERM", "SIGHUP"])
+def test_a_terminated_run_removes_its_scratch_worktree(clean_repo: Path, tmp_path: Path, sig_name: str) -> None:
     """A closed terminal (SIGHUP) or a ``kill`` (SIGTERM) in the middle of a step: Python would die at once and leave the worktree, its directory
     and its entry. The script runs as a real process in a copy of itself inside the throwaway repository (it finds its repository from its own
     location), waiting in a test that never returns."""
+    sig = getattr(signal, sig_name)
     repo = clean_repo
     started = tmp_path / "started"
     git(repo, "checkout", "-q", "-b", "feature")

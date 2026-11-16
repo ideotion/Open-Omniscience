@@ -124,22 +124,47 @@ def test_every_member_names_the_categories_its_tick_exports(db, monkeypatch):
             assert m["categories"] == [], f"{m['key']} is snapshotted and names folder categories"
 
 
-def test_a_member_that_cannot_be_exported_yet_says_SO_and_says_WHY(db, monkeypatch):
+def test_a_member_that_cannot_be_exported_yet_says_SO_and_says_WHY(db, monkeypatch, tmp_path):
     """A disabled row with no explanation reads as a bug.
 
-    The lane member exists so its size is visible; its export format is S04-04's, and
-    until then the honest state is "present, not covered here" with the reason beside
-    it — never a tick that quietly writes nothing.
+    With no living-source store this build can carry, the honest state is "nothing to
+    carry" with the reason beside it -- never a tick that quietly writes nothing.
     """
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(inv, "_blob_totals", lambda: {})
     monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
     out = inv.backup_inventory(db)
     lanes = out["lanes"]
     assert lanes["exportable"] is False
-    assert lanes["not_exportable_reason"], "a member is disabled with no reason given"
+    assert lanes["not_exportable_reason"] == inv.LANES_ABSENT
     for m in out["members"]:
         if not m.get("exportable", True):
             assert m.get("not_exportable_reason"), f"{m['key']} is disabled silently"
+
+
+def test_a_lane_this_build_cannot_carry_yet_is_named_with_its_size(db, monkeypatch, tmp_path):
+    """R729: only the stores this build can merge back ride; another present one is listed
+    in ``waiting`` with its real size and the row says why it is not carried."""
+    from src.versioned import store as lane_store
+
+    monkeypatch.setattr(inv, "_blob_totals", lambda: {})
+    monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
+    lane_store.dispose_all()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    try:
+        lane_store.create_lane("law")
+        lanes = inv.backup_inventory(db)["lanes"]
+        assert lanes["exportable"] is False and lanes["not_exportable_reason"] == inv.LANES_WAITING
+        assert set(lanes["waiting"]) == {"law"} and lanes["waiting"]["law"]["bytes"] > 0
+        assert lanes["count"] == 0
+        lane_store.create_lane("wiki")
+        lanes = inv.backup_inventory(db)["lanes"]
+        assert lanes["exportable"] is True and lanes["note"] == inv.LANES_NOTE
+        assert set(lanes["breakdown"]) == {"wiki"} and set(lanes["waiting"]) == {"law"}
+        assert lanes["bytes"] == lane_store.lane_file_bytes("wiki")
+    finally:
+        lane_store.dispose_all()
 
 
 def test_an_ABSENT_lane_is_left_out_rather_than_reported_as_zero_bytes(db, monkeypatch, tmp_path):
@@ -215,6 +240,8 @@ def test_every_not_exportable_reason_is_a_caveat_keyed_in_all_12_locales(monkeyp
         for m in inv.backup_inventory(None)["members"]
         if m.get("not_exportable_reason")
     }
+    # Every sentence the Living sources row can show, whichever state this machine is in.
+    reasons |= {inv.LANES_ABSENT, inv.LANES_WAITING, inv.LANES_NOTE}
     assert reasons, "no member carries a reason any more -- this guard guards nothing"
     root = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
     for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
