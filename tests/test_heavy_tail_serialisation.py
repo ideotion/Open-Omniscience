@@ -166,3 +166,114 @@ def test_a_lane_that_gives_up_says_so_rather_than_reporting_a_run(monkeypatch, s
     finally:
         sched._heavy_tail_lock.release()
     assert sched._last_lane_result == {"skipped": "another heavy tail consumer is running"}
+
+
+def test_a_briefing_refresh_that_gives_up_runs_when_the_lane_ends(monkeypatch, sched):
+    """Field test 2026-11-14 row 64: the refresh gave up behind the lane four to seven times per instance and a pass
+    lasts about a day, so each give-up left Home a day old. A give-up is now owed, and the lane runs it as it ends."""
+    _stub_scope(monkeypatch)
+    monkeypatch.setenv("OO_HEAVY_TAIL_WAIT_S", "0.1")
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
+    lane_running, lane_release, refreshed = threading.Event(), threading.Event(), threading.Event()
+
+    def _lane(_session, _fetcher, _settings):
+        lane_running.set()
+        lane_release.wait(10)
+        return {"ok": True}
+
+    monkeypatch.setattr("src.scheduler.runner.run_housekeeping_lane", _lane)
+    monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda _s: refreshed.set())
+
+    sched._kick_housekeeping_lane()
+    assert lane_running.wait(3), "the lane never started"
+    sched._refresh_briefing_async()
+    sched._briefing_thread.join(HANG_GUARD_S)
+    assert not refreshed.is_set(), "the refresh ran beside the lane"
+    assert sched._heavy_tail_waits == 1 and sched._briefing_owed is True
+
+    lane_release.set()
+    sched._lane_thread.join(HANG_GUARD_S)
+    assert refreshed.wait(HANG_GUARD_S), "the owed refresh was not started when the lane ended"
+    sched._briefing_thread.join(HANG_GUARD_S)
+    assert sched._briefing_owed is False
+
+
+def test_nothing_is_owed_after_a_refresh_that_ran(monkeypatch, sched):
+    """The negative twin: a lane ending after an ordinary refresh starts nothing."""
+    _stub_scope(monkeypatch)
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
+    runs: list[int] = []
+    monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda _s: runs.append(1))
+    monkeypatch.setattr("src.scheduler.runner.run_housekeeping_lane", lambda *_a: {"ok": True})
+
+    sched._refresh_briefing_async()
+    sched._briefing_thread.join(HANG_GUARD_S)
+    sched._kick_housekeeping_lane()
+    sched._lane_thread.join(HANG_GUARD_S)
+    assert runs == [1] and sched._briefing_owed is False
+
+
+@pytest.mark.parametrize("held_by", ["exclusive", "stop", "log"])
+def test_an_owed_refresh_waits_out_a_hold_a_stop_or_the_log_pause(monkeypatch, sched, held_by):
+    """A restore holding the machine, a Stop, or the log's pause: nothing is started and the refresh stays owed."""
+    started: list[int] = []
+
+    def _start():
+        started.append(1)
+        return True
+
+    monkeypatch.setattr(sched, "_refresh_briefing_async", _start)
+    monkeypatch.setattr(sched, "holds_exclusive", lambda: held_by == "exclusive")
+    monkeypatch.setattr("src.scheduler.runner._log_pause_in_force", lambda: held_by == "log")
+    if held_by == "stop":
+        sched._stop.set()
+    sched._briefing_owed = True
+    sched._run_owed_briefing()
+    assert started == [] and sched._briefing_owed is True
+    monkeypatch.setattr(sched, "holds_exclusive", lambda: False)
+    monkeypatch.setattr("src.scheduler.runner._log_pause_in_force", lambda: False)
+    sched._stop.clear()
+    sched._run_owed_briefing()
+    assert started == [1] and sched._briefing_owed is False
+
+
+def test_an_owed_refresh_that_could_not_start_stays_owed(monkeypatch, sched):
+    """The independent read's interleaving: the lane ends while the thread that gave up still holds the briefing lock,
+    so the start is refused; the refresh must stay owed, and that thread starts it as it ends."""
+    monkeypatch.setattr("src.scheduler.runner._log_pause_in_force", lambda: False)
+    sched._briefing_owed = True
+    sched._briefing_bg_lock.acquire()  # the giver, not yet out of its finally
+    try:
+        sched._run_owed_briefing()
+        assert sched._briefing_owed is True, "the owed refresh was dropped when its start was refused"
+    finally:
+        sched._briefing_bg_lock.release()
+
+
+def test_the_giver_starts_the_owed_refresh_when_the_lane_ended_first(monkeypatch, sched):
+    _stub_scope(monkeypatch)
+    monkeypatch.setenv("OO_HEAVY_TAIL_WAIT_S", "0.1")
+    monkeypatch.setattr("src.scheduler.runner._log_pause_in_force", lambda: False)
+    refreshed = threading.Event()
+    monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda _s: refreshed.set())
+    sched._heavy_tail_lock.acquire()  # a lane that holds the lock ...
+    real_acquire = sched._acquire_heavy_tail
+    calls: list[str] = []
+
+    def _give_up_then_lane_ends(who):
+        calls.append(who)
+        got = real_acquire(who)
+        if len(calls) == 1:  # the first refresh gives up behind the lane ...
+            assert got is False
+            sched._heavy_tail_lock.release()  # ... which ends (its owed call finds nothing owed yet) before this thread's finally
+        return got
+
+    monkeypatch.setattr(sched, "_acquire_heavy_tail", _give_up_then_lane_ends)
+    sched._refresh_briefing_async()
+    first = sched._briefing_thread
+    first.join(HANG_GUARD_S)
+    assert sched._briefing_thread is not first, "the giver did not start the owed refresh"
+    sched._briefing_thread.join(HANG_GUARD_S)
+    assert refreshed.is_set() and sched._briefing_owed is False
