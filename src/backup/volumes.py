@@ -164,15 +164,29 @@ def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
         st = p.lstat()
     except FileNotFoundError:
         raise VolumeError(f"no volume manifest ({MANIFEST_NAME}) in {out_dir}") from None
+    except OSError as exc:  # the folder is a file, a link loop, unreadable: a refusal, never a bare OSError
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} cannot be examined ({type(exc).__name__})") from None
     if not _stat.S_ISREG(st.st_mode):
         raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file (a link or a device is never read)")
     if st.st_size > MANIFEST_MAX_BYTES:
         raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
-    fd = os.open(p, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
-    with os.fdopen(fd, "rb") as fh:
-        if not _stat.S_ISREG(os.fstat(fh.fileno()).st_mode):  # swapped after the lstat: refused, never read
+    try:
+        fd = os.open(p, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError as exc:  # swapped for a link after the lstat (ELOOP), or gone: refused
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} cannot be opened ({type(exc).__name__})") from None
+    try:
+        # Checked on the raw descriptor, before any file object exists, so a refusal still closes it (a directory swapped in
+        # after the lstat opens on Linux and would make fdopen raise with the descriptor left open).
+        if not _stat.S_ISREG(os.fstat(fd).st_mode):
             raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file")
-        raw = fh.read(MANIFEST_MAX_BYTES + 1)
+        if hasattr(os, "set_blocking"):
+            os.set_blocking(fd, True)  # O_NONBLOCK only guarded the open against a FIFO; a regular file reads blocking
+        with os.fdopen(fd, "rb", closefd=False) as fh:
+            raw = fh.read(MANIFEST_MAX_BYTES + 1)
+    except OSError as exc:
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} cannot be read ({type(exc).__name__})") from None
+    finally:
+        os.close(fd)
     if len(raw) > MANIFEST_MAX_BYTES:
         raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
     m = json.loads(raw.decode("utf-8"))

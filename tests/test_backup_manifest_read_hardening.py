@@ -114,3 +114,71 @@ def test_an_already_merged_backup_under_an_old_passphrase_never_stops_the_start(
         ImportQueueManager._refuse_wrong_backup_passphrases(
             [{"kind": "corpus", "path": str(merged), "passphrase": "old words", "force": True}], "new words"
         )
+
+
+@pytest.mark.parametrize("case", ["lanes-owed", "question-raises"])
+def test_a_backup_the_run_would_open_again_still_has_its_key_tried(tmp_path, monkeypatch, case):
+    """The two directions where a skip would bring back the late failure (the second security read): a merged backup whose
+    living-source lanes are still owed is opened again by the run (R729), and a question that raises is not "already merged"."""
+    import src.backup.lane_merge as LM
+    import src.backup.merge as MG
+    import src.backup.stream_backup as SB
+    from src.backup.import_queue import ImportQueueManager
+
+    merged = _manifest(tmp_path / "merged")
+    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", lambda p, k: True)
+    monkeypatch.setattr(MG, "find_completed_import", lambda d: {"batch_id": 7, "imported_at": "x"} if d else None)
+    if case == "lanes-owed":
+        monkeypatch.setattr(MG, "artifact_source_digest", lambda p: "d" * 64)
+        monkeypatch.setattr(LM, "lanes_pending", lambda d: True)
+    else:
+
+        def _raises(p):
+            raise OSError("unreadable")
+
+        monkeypatch.setattr(MG, "artifact_source_digest", _raises)
+        monkeypatch.setattr(LM, "lanes_pending", lambda d: False)
+    with pytest.raises(ValueError, match="Wrong passphrase for merged"):
+        ImportQueueManager._refuse_wrong_backup_passphrases(
+            [{"kind": "corpus", "path": str(merged), "passphrase": "old words"}], "new words"
+        )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="creating a symbolic link needs a privilege on Windows")
+def test_a_folder_that_cannot_be_examined_is_a_volume_refusal(tmp_path):
+    """The first security read: a folder that is a file (ENOTDIR) or a link loop (ELOOP) raised a bare OSError."""
+    not_a_folder = tmp_path / "file"
+    not_a_folder.write_text("x", encoding="utf-8")
+    with pytest.raises(VolumeError, match="cannot be examined"):
+        load_manifest(not_a_folder)
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    with pytest.raises(VolumeError):
+        load_manifest(loop)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not open a directory as a file")
+def test_a_directory_swapped_in_after_the_check_is_refused_and_its_descriptor_closed(tmp_path, monkeypatch):
+    """The first security read: a directory swapped in after the lstat opens on Linux, and fdopen then raised with the
+    descriptor left open. The raw descriptor is checked first and always closed."""
+    import os as _os
+
+    import src.backup.volumes as V
+
+    folder = _manifest(tmp_path / "set")
+    real_open, closed, opened = _os.open, [], []
+
+    def _swap_then_open(path, flags, *a):
+        target = Path(path)
+        target.unlink()
+        target.mkdir()
+        fd = real_open(path, flags & ~getattr(_os, "O_NOFOLLOW", 0), *a)
+        opened.append(fd)
+        return fd
+
+    real_close = _os.close
+    monkeypatch.setattr(V.os, "open", _swap_then_open)
+    monkeypatch.setattr(V.os, "close", lambda fd: closed.append(fd) or real_close(fd))
+    with pytest.raises(VolumeError, match="not a regular file"):
+        load_manifest(folder)
+    assert opened and closed == opened
