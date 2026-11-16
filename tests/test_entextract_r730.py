@@ -161,10 +161,11 @@ def test_the_finnish_genitive_reads_long_vowels_and_consonant_gradation(monkeypa
         "Asiasta kertoi Pekka Virtanen eilen.", language="fi")["people"]}
 
 
-@pytest.mark.parametrize("text, name", [
-    ("President Biden On Monday said the talks would resume.", "Biden"),
-    ("The talks were led, said Mr Smith\nThe next day it rained.", "Smith"),
-    ("Kansleri Chancellor Olaf\nScholz arrived.", "Olaf"),
+@pytest.mark.parametrize("text", [
+    "Prime Minister Resigns\nThe coalition collapsed.",
+    "President Warns\nMarkets fell sharply after the speech.",
+    "Senator Says In Interview that the vote is close.",
 ])
-def test_an_honorific_name_keeps_its_first_word_when_the_second_is_not_a_name(text, name):
-    assert name in {e["name"] for e in extract_entities(text, language="en")["people"]}
+def test_a_title_case_headline_after_an_honorific_is_not_a_person(text):
+    people = {e["name"] for e in extract_entities(text, language="en")["people"]}
+    assert not people & {"Resigns", "Warns", "Says", "Resigns The", "Warns Markets", "Says In"}

@@ -221,19 +221,16 @@ def extract_entities(text: str, *, limit: int = 6, language: str | None = None) 
     org_words = {w.lower() for o in orgs.values() for w in o["name"].split()}
     people: dict[str, dict] = {}
 
-    def _add_person(name: str, m: re.Match, note: str, *, trim: bool = False) -> None:
-        broken = lang in _FUNCTION_WORD_LANGS and "\n" in text[m.start(1):m.end(m.lastindex or 1)]
-        tokens = name.split()
-        if trim and len(tokens) == 2 and (broken or tokens[1].lower() in function_words):
-            # The honorific rule takes an OPTIONAL second word: when that word is a function word or sits after a
-            # line break ("President Biden On Monday", "Mr Smith\nThe next day"), the name is the first word alone.
-            tokens, broken = tokens[:1], False
-        name = " ".join(tokens)
+    def _add_person(name: str, m: re.Match, note: str) -> None:
+        name = " ".join(name.split())
         key = name.lower()
-        if any(w.lower() in org_words for w in tokens):
+        if any(w.lower() in org_words for w in name.split()):
             return  # claimed by an organization — never double-classed
-        if broken:
-            return  # R730: a headline break between two capitalised words ("Afrika\nFör"), not a name
+        if lang in _FUNCTION_WORD_LANGS and "\n" in text[m.start(1):m.end(m.lastindex or 1)]:
+            # R730: a headline break between two capitalised words ("Afrika\nFör"), not a name. The whole candidate
+            # goes, never its first word alone: after an honorific that word is as often a Title-Case headline verb
+            # ("President Warns\nMarkets fell") as a name (measured on the third review, 2026-11-16).
+            return
         if lang and _person_rejected(name.split(), lang, function_words):
             return  # R730: a place genitive, a demonym or a function word, not a name
         if key in people:
@@ -247,7 +244,7 @@ def extract_entities(text: str, *, limit: int = 6, language: str | None = None) 
             }
 
     for m in _PERSON_HONORIFIC_RE.finditer(text):
-        _add_person(m.group(1), m, "deduced: name following an honorific/title", trim=True)
+        _add_person(m.group(1), m, "deduced: name following an honorific/title")
     for m in _PERSON_SHAPE_RE.finditer(text):
         _add_person(
             f"{m.group(1)} {m.group(2)}", m,

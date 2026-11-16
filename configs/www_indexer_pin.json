@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "digest": "9c767eb6911a369847f20bcac79bd6506c4bd8c5342e759b30569b3cad1866ec",
+  "digest": "f25756dfbf6d136bded984b0f44059e90cd6566f03d063a4e904019629c37227",
   "log": [
     {
       "version": 1,
@@ -67,6 +67,12 @@
       "digest": "9c767eb6911a369847f20bcac79bd6506c4bd8c5342e759b30569b3cad1866ec",
       "kind": "same",
       "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): third-review R730 fixes (Finnish genitive reads long vowels and consonant gradation; an honorific's function-word or line-broken second word is trimmed instead of the name dropped; tai/kun leave the Finnish list)."
+    },
+    {
+      "version": 2,
+      "digest": "f25756dfbf6d136bded984b0f44059e90cd6566f03d063a4e904019629c37227",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): the honorific trim is withdrawn after the fourth read showed it kept headline verbs; candidates across a line break are dropped whole again."
     }
   ]
 }
