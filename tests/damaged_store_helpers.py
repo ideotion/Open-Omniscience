@@ -93,17 +93,74 @@ def open_store(path: Path, *, key: str | None = None):
 
 
 def leaf_pages(path: Path, table: str, kind: str = "leaf") -> list[int]:
-    """The pages of ``table`` of a PLAINTEXT store (``kind``: ``leaf`` or ``internal``), through ``dbstat``."""
+    """The pages of ``table`` of a PLAINTEXT store (``kind``: ``leaf`` or ``internal``), through ``dbstat``, or where the SQLite
+    build has none (python.org's macOS build: no SQLITE_ENABLE_DBSTAT_VTAB) by reading the b-tree off the file itself, in the
+    same order ``dbstat`` gives (a page, then its children left to right). ``test_damaged_store_helpers`` holds the two equal on
+    a build that has both, so the damaged-page tests run on every OS rather than failing or skipping where dbstat is absent."""
     con = sqlite3.connect(path)
     try:
-        return [p for p, t in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name=?", (table,)) if t == kind]
-    except sqlite3.OperationalError:
-        reason = "this SQLite build has no dbstat virtual table (SQLITE_ENABLE_DBSTAT_VTAB)"
-        if os.getenv("CI"):
-            pytest.fail(reason + " -- the damaged-page tests must run in CI")
-        pytest.skip(reason)
+        # the schema tree is named sqlite_master or sqlite_schema in dbstat depending on the SQLite version: either name finds it
+        names = ("sqlite_schema", "sqlite_master") if table in ("sqlite_schema", "sqlite_master") else (table, table)
+        rows = con.execute("SELECT pageno, pagetype FROM dbstat WHERE name IN (?, ?)", names)
+        return [p for p, t in rows if t == kind]
+    except sqlite3.OperationalError as exc:
+        if "dbstat" not in str(exc):  # only a build without the table falls back; a locked or damaged file stays an error
+            raise
     finally:
         con.close()
+    return btree_pages(path, table, kind)  # after the close, so no connection of ours holds the file
+
+
+_LEAF_TYPES = {0x0D, 0x0A}  # a table leaf, an index leaf
+_INTERIOR_TYPES = {0x05, 0x02}  # a table interior page, an index interior page
+
+
+def btree_pages(path: Path, name: str, kind: str = "leaf") -> list[int]:
+    """The ``kind`` pages of the b-tree named ``name`` of a PLAINTEXT store, read from the file format (sqlite.org/fileformat2):
+    the root page from the schema, then each interior page's children (the 4-byte left child of every cell, then the right-most
+    pointer at header offset 8). Overflow and free pages are not b-tree pages and are not returned, as in ``dbstat``."""
+    if kind not in ("leaf", "internal"):
+        raise ValueError(kind)
+    con = sqlite3.connect(path)
+    try:
+        if name in ("sqlite_schema", "sqlite_master"):
+            root = 1
+        else:
+            row = con.execute("SELECT rootpage FROM sqlite_schema WHERE name=?", (name,)).fetchone()
+            if row is None or not row[0]:
+                return []
+            root = int(row[0])
+    finally:
+        con.close()
+    wal = Path(str(path) + "-wal")
+    # the walk reads the main file only: a log still holding pages would make it read the tree as it was before them
+    assert not wal.exists() or wal.stat().st_size == 0, f"{wal} holds pages not yet in the file; checkpoint before walking"
+    data = path.read_bytes()
+    page_size = int.from_bytes(data[16:18], "big")
+    page_size = 65536 if page_size == 1 else page_size
+    out: list[int] = []
+
+    def walk(page: int) -> None:
+        start = (page - 1) * page_size
+        head = start + (100 if page == 1 else 0)
+        ptype = data[head]
+        if ptype in _LEAF_TYPES:
+            if kind == "leaf":
+                out.append(page)
+            return
+        if ptype not in _INTERIOR_TYPES:
+            raise AssertionError(f"page {page} of {name!r} is not a b-tree page (type {ptype:#04x})")
+        if kind == "internal":
+            out.append(page)
+        cells = int.from_bytes(data[head + 3 : head + 5], "big")
+        pointers = head + 12
+        for i in range(cells):
+            cell = start + int.from_bytes(data[pointers + 2 * i : pointers + 2 * i + 2], "big")
+            walk(int.from_bytes(data[cell : cell + 4], "big"))
+        walk(int.from_bytes(data[head + 8 : head + 12], "big"))
+
+    walk(root)
+    return out
 
 
 def overwrite_pages(path: Path, pages: list[int], page_size: int) -> None:
