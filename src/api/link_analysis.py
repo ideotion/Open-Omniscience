@@ -220,52 +220,42 @@ def _shared_links(db: Session, ids: list[int], *, min_citations: int, limit: int
     # five outlets is five paths that merely happen to share this origin.
     # OUTLETS, not feeds: two feeds of one site are one voice (row J, R146).
     outlet = outlet_expr(Article.source_id, Source.outlet_id, unhealed=outlets_unhealed(db))
-    wanted = set(candidates)
-    per_url: dict[str, dict[str, Any]] = {}
-    # Read from the ARTICLE side (the id set, through the covering (article_id, normalized_url) index) and keep only the
-    # candidate URLs: going in by URL instead reads every link of every popular URL in the whole corpus.
+    owner: dict[int, tuple[int | None, Any]] = {}
     for i in range(0, len(ids), 500):
-        for nu, aid, sid, out_key, raw, text in (
-            db.query(ArticleLink.normalized_url, ArticleLink.article_id, Article.source_id, outlet,
-                     ArticleLink.url, ArticleLink.link_text)
-            .join(Article, Article.id == ArticleLink.article_id)
+        for aid, sid, out_key in (
+            db.query(Article.id, Article.source_id, outlet)
             .outerjoin(Source, Source.id == Article.source_id)
+            .filter(Article.id.in_(ids[i : i + 500]))
+            .all()
+        ):
+            owner[int(aid)] = (sid, out_key)
+    wanted = set(candidates)
+    carriers: dict[str, set[int]] = {}
+    # Read from the ARTICLE side, two narrow columns through the covering (article_id, normalized_url) index, and keep
+    # only the candidate URLs: going in by URL instead reads every link of every popular URL in the whole corpus.
+    for i in range(0, len(ids), 500):
+        for nu, aid in (
+            db.query(ArticleLink.normalized_url, ArticleLink.article_id)
             .filter(ArticleLink.article_id.in_(ids[i : i + 500]), ArticleLink.normalized_url.isnot(None))
             .all()
         ):
-            if nu not in wanted:
-                continue
-            row = per_url.setdefault(str(nu), {"carriers": {}, "url": None, "text": None})
-            row["carriers"][int(aid)] = (sid, out_key)
-            # The same sample the grouped query took before (its max), so a row reads as it did.
-            if raw is not None and (row["url"] is None or raw > row["url"]):
-                row["url"] = raw
-            if text is not None and (row["text"] is None or text > row["text"]):
-                row["text"] = text
-    furniture = furniture_pairs(
-        db, ((sid, nu) for nu, row in per_url.items() for sid, _ in row["carriers"].values())
-    )
+            if nu in wanted:
+                carriers.setdefault(str(nu), set()).add(int(aid))
+    furniture = furniture_pairs(db, ((owner.get(a, (None, None))[0], nu) for nu, aids in carriers.items() for a in aids))
     kept: list[dict] = []
     apart: list[dict] = []
-    for nu, row in per_url.items():
-        citing = {a: v for a, v in row["carriers"].items() if (v[0], nu) not in furniture}
-        n_all = len(row["carriers"])
-        n_furniture = n_all - len(citing)
-        n_cit = len(citing)
-        n_src = len({v[1] for v in citing.values()})
-        base = {
-            "normalized_url": nu,
-            "sample_url": row["url"],
-            "link_text": row["text"],
-            "domain": registrable_domain(nu),
-        }
+    for nu, aids in carriers.items():
+        citing = [a for a in aids if (owner.get(a, (None, None))[0], nu) not in furniture]
+        n_all, n_cit = len(aids), len(citing)
+        n_src = len({owner.get(a, (None, None))[1] for a in citing})
+        base = {"normalized_url": nu, "domain": registrable_domain(nu)}
         if n_cit >= min_citations:
             kept.append(
                 {
                     **base,
                     "citations": n_cit,
                     "citing_sources": n_src,
-                    "furniture_carriers": n_furniture,
+                    "furniture_carriers": n_all - n_cit,
                     # A MACHINE-READABLE verdict, never prose: the caller renders it in the
                     # reader's own language. "distinct_sources" holds ONLY when every citing
                     # article comes from a different outlet -- one outlet citing a page twice
@@ -275,13 +265,25 @@ def _shared_links(db: Session, ids: list[int], *, min_citations: int, limit: int
                 }
             )
         else:
-            outlets_carrying = {v[1] for a, v in row["carriers"].items() if a not in citing}
-            apart.append({**base, "carried_by": n_all, "furniture_carriers": n_furniture,
-                          "citations": n_cit, "furniture_outlets": len(outlets_carrying)})
+            apart.append({**base, "carried_by": n_all, "furniture_carriers": n_all - n_cit, "citations": n_cit,
+                          "furniture_outlets": len({owner.get(a, (None, None))[1] for a in aids if a not in citing})})
     # Ties by URL, so the cut at ``limit`` does not depend on scan order.
-    kept.sort(key=lambda x: (-x["citations"], x["normalized_url"]))
-    apart.sort(key=lambda x: (-x["carried_by"], x["normalized_url"]))
-    return kept[:limit], apart[:limit]
+    kept = sorted(kept, key=lambda x: (-x["citations"], x["normalized_url"]))[:limit]
+    apart = sorted(apart, key=lambda x: (-x["carried_by"], x["normalized_url"]))[:limit]
+    # The sample address and link text, read only for the rows shown -- the same max() the grouped query took before.
+    shown = [r["normalized_url"] for r in kept + apart]
+    samples: dict[str, tuple[Any, Any]] = {}
+    for i in range(0, len(shown), 500):
+        for nu, raw, text in (
+            db.query(ArticleLink.normalized_url, func.max(ArticleLink.url), func.max(ArticleLink.link_text))
+            .filter(ArticleLink.article_id.in_(ids), ArticleLink.normalized_url.in_(shown[i : i + 500]))
+            .group_by(ArticleLink.normalized_url)
+            .all()
+        ):
+            samples[str(nu)] = (raw, text)
+    for r in kept + apart:
+        r["sample_url"], r["link_text"] = samples.get(r["normalized_url"], (None, None))
+    return kept, apart
 
 
 @router.get("/articles-by-link")

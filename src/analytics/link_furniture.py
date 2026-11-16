@@ -38,10 +38,6 @@ METHOD = (
 # Bind parameters per IN list: well under SQLite's limit, so a large corpus never fails the query.
 _CHUNK = 500
 
-# (database, source id, its article count) -> that source's furniture {url: carried}. Bounded; oldest entry leaves first.
-_SOURCE_CACHE: dict[tuple[str, int, int], dict[str, int]] = {}
-_SOURCE_CACHE_MAX = 4096
-
 
 def is_furniture(carried: int, source_articles: int) -> bool:
     """THE rule, in one place: carried by at least :data:`FURNITURE_SHARE` of a source with enough stored articles."""
@@ -74,7 +70,8 @@ def source_furniture(session: Session, source_id: int, source_articles: int) -> 
     Read from the source's side (its articles, then the covering ``(article_id, normalized_url)`` index), which costs the
     source's own links; asking from the URL side instead costs every link of every popular URL in the corpus, and
     measured ~400 times slower on a synthetic 500 k-link corpus (1.6 s per 500 URLs against 3.7 ms per source).
-    Remembered per (database, source, article count): a new article changes the count, so the answer is read again.
+    Read afresh on every call, never remembered across requests: a cache keyed on the source and its article count
+    could answer for another database at the same address, or miss links committed after the article (review read).
     """
     from math import ceil
 
@@ -82,15 +79,9 @@ def source_furniture(session: Session, source_id: int, source_articles: int) -> 
 
     if source_articles < FURNITURE_MIN_ARTICLES:
         return {}
-    bind = session.get_bind()
-    engine: Any = getattr(bind, "engine", bind)  # a Connection carries its Engine; the URL (password masked) names the database
-    key = (str(engine.url), int(source_id), int(source_articles))
-    hit = _SOURCE_CACHE.get(key)
-    if hit is not None:
-        return hit
     need = ceil(FURNITURE_SHARE * source_articles)
     n = func.count(func.distinct(ArticleLink.article_id))
-    found = {
+    return {
         str(u): int(c)
         for u, c in session.query(ArticleLink.normalized_url, n)
         .join(Article, Article.id == ArticleLink.article_id)
@@ -100,10 +91,6 @@ def source_furniture(session: Session, source_id: int, source_articles: int) -> 
         .all()
         if u and is_furniture(int(c), source_articles)
     }
-    if len(_SOURCE_CACHE) >= _SOURCE_CACHE_MAX:
-        _SOURCE_CACHE.pop(next(iter(_SOURCE_CACHE)))
-    _SOURCE_CACHE[key] = found
-    return found
 
 
 def furniture_pairs(session: Session, pairs: Iterable[tuple[int | None, str | None]]) -> dict[tuple[int, str], tuple[int, int]]:
