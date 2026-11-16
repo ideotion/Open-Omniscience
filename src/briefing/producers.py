@@ -285,21 +285,40 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
 # --------------------------------------------------------------------------- #
 #  Rising now — trending keywords/entities (composes /api/insights/trending)
 # --------------------------------------------------------------------------- #
-def _recent_spread(session, keyword_id: int, *, window_days: int, end: date | None, outlets: OutletMap) -> tuple[int, int]:
-    """``(articles, outlets)`` carrying a keyword in the recent window ``trending`` compares, quarantined articles left
-    out (R101). The window is ``trending``'s own: ``[end - window_days, end)``, ``end`` defaulting to the end of today."""
+def _recent_spread(
+    session, keyword_id: int, *, window_days: int, end: date | None, outlets: OutletMap
+) -> tuple[set[int], int]:
+    """``(article ids, outlets)`` carrying a keyword in the recent window ``trending`` compares, quarantined articles (R101)
+    and lost-article stand-ins left out. The window is ``trending``'s own: ``[end - window_days, end)``, ``end`` defaulting
+    to the end of today.
+
+    It reads the mention's own denormalised ``source_id`` and never joins ``articles``: that join drags whole article rows
+    through the codec (the trap ``models.py`` measures), once per candidate term. Only a mention written before
+    ``source_id`` existed (NULL) is looked up on its article, by primary key."""
+    from src.analytics.quarantine_scope import not_quarantined
+
     w_end = (date.today() + timedelta(days=1)) if end is None else end
     rows = (
-        session.query(KeywordMentionRead.article_id, Article.source_id)
-        .join(Article, Article.id == KeywordMentionRead.article_id)
+        session.query(KeywordMentionRead.article_id, KeywordMentionRead.source_id)
         .filter(KeywordMentionRead.keyword_id == keyword_id)
         .filter(KeywordMentionRead.observed_on >= w_end - timedelta(days=window_days))
         .filter(KeywordMentionRead.observed_on < w_end)
-        .filter(Article.quarantined.isnot(True))
+        .filter(not_quarantined(KeywordMentionRead.article_id))  # R101
+        .filter(not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .distinct()
         .all()
     )
-    return len({a for a, _ in rows}), len({outlets.key(sid) for _, sid in rows})
+    by_article: dict[int, int | None] = {}
+    for aid, sid in rows:
+        if aid is None:
+            continue
+        if sid is not None or aid not in by_article:
+            by_article[aid] = sid
+    missing = [aid for aid, sid in by_article.items() if sid is None]
+    if missing:
+        for aid, sid in session.query(Article.id, Article.source_id).filter(Article.id.in_(missing)):
+            by_article[aid] = sid
+    return set(by_article), len({outlets.key(sid) for sid in by_article.values() if sid is not None})
 
 
 def rising_now(session, *, as_of: date | None = None) -> list[Card]:
@@ -320,18 +339,19 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
     scanned = data.get("scanned", 0)
     outlets = OutletMap(session)
     cards: list[Card] = []
-    held: list[tuple[dict, int, int, list]] = []
+    held: list[tuple[dict, int, set[int], int]] = []
     for term in data.get("terms", []):
         if len(cards) >= _MAX_RISING:
             break
         kw = resolve_keyword(session, term["term"])
         if kw is None:
             continue
-        n_articles, n_outlets = _recent_spread(session, kw.id, window_days=7, end=as_of, outlets=outlets)
-        rows = _articles_for_term(session, kw.id, days=14, limit=6, end=as_of)
+        recent_ids, n_outlets = _recent_spread(session, kw.id, window_days=7, end=as_of, outlets=outlets)
+        n_articles = len(recent_ids)
         if n_articles < RISING_MIN_ARTICLES or n_outlets < RISING_MIN_OUTLETS:
-            held.append((term, n_articles, n_outlets, rows))
+            held.append((term, kw.id, recent_ids, n_outlets))
             continue
+        rows = _articles_for_term(session, kw.id, days=14, limit=6, end=as_of)
         ci = rate_ratio_interval(
             term["recent"], term["prior"], window_days=7, baseline_days=30
         )
@@ -410,7 +430,7 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
             )
         )
     if not cards and held:
-        cards.append(_rising_held_card(held, scanned=scanned, note=note))
+        cards.append(_rising_held_card(session, held, scanned=scanned, note=note, as_of=as_of))
     return cards
 
 
@@ -423,17 +443,24 @@ def _rising_floor_frame() -> dict:
     )
 
 
-def _rising_held_card(held: list[tuple[dict, int, int, list]], *, scanned: int, note: list[dict]) -> Card:
+def _rising_held_card(
+    session, held: list[tuple[dict, int, set[int], int]], *, scanned: int, note: list[dict], as_of: date | None
+) -> Card:
     """R732's honest state: terms DID rise, but each in too few articles or outlets to be shown as rising. Never a
-    relaxed threshold. It opens the articles those terms came from, so the reader can see what the narrow ones were."""
-    ids = sorted({a.id for _, _, _, rows in held for a, _ in rows})
+    relaxed threshold. It opens the recent articles those terms came from, so the reader can see what the narrow ones
+    were; ``n`` is that article set, so the card never links more articles than its ``n``."""
+    shown = held[:_MAX_RISING]
+    ids = sorted({aid for _, _, recent, _ in held for aid in recent})
+    rows: list = []
+    for _, kw_id, _, _ in shown:  # evidence rows only for the terms the card names, read once the card is certain
+        rows.extend(_articles_for_term(session, kw_id, days=7, limit=2, end=as_of))
     math_rows = [
         ("Terms that rose but stayed below the floor", str(len(held))),
         ("Floor: articles / outlets in the last 7 days", f"≥ {RISING_MIN_ARTICLES} / ≥ {RISING_MIN_OUTLETS}"),
         ("Terms scanned to pick the top few", f"{scanned} → {_MAX_RISING}"),
         (
             "Narrow terms (recent mentions · articles / outlets)",
-            "; ".join(f"“{term['term']}” {term['recent']} · {arts} / {outs}" for term, arts, outs, _ in held[:_MAX_RISING]),
+            "; ".join(f"“{term['term']}” {term['recent']} · {len(recent)} / {outs}" for term, _, recent, outs in shown),
         ),
     ]
     return Card(
@@ -442,8 +469,8 @@ def _rising_held_card(held: list[tuple[dict, int, int, list]], *, scanned: int, 
             title=[frame("Nothing is rising across outlets yet")],
             summary=[
                 frame(
-                    "{n} terms rose, but each in fewer than {articles} articles or {outlets} outlets, so none is "
-                    "shown as rising.",
+                    "Terms that rose: {n}. Each came from fewer than {articles} articles or {outlets} outlets, so "
+                    "none is shown as rising.",
                     n=len(held), articles=RISING_MIN_ARTICLES, outlets=RISING_MIN_OUTLETS,
                 )
             ],
@@ -466,18 +493,19 @@ def _rising_held_card(held: list[tuple[dict, int, int, list]], *, scanned: int, 
             "min_articles": RISING_MIN_ARTICLES,
             "min_outlets": RISING_MIN_OUTLETS,
             "terms": [
-                {"term": term["term"], "recent": term["recent"], "articles": arts, "outlets": outs}
-                for term, arts, outs, _ in held
+                {"term": term["term"], "recent": term["recent"], "articles": len(recent), "outlets": outs}
+                for term, _, recent, outs in held
             ],
         },
         trigger=_trigger(
             "Some words did rise in your collection, but each one in too few articles or outlets to count as a "
             "story moving.",
-            math_rows,
+        math_rows,
         ),
-        evidence=_evidence_from_articles([r for _, _, _, rows in held for r in rows][:6]),
-        n=len(held),
-        key="rising-held",
+        evidence=_evidence_from_articles(rows[:6]),
+        n=len(ids),
+        # the held terms name the state, so dismissing one "nothing rising" never hides the next, different one
+        key="rising-held:" + ",".join(sorted(term["normalized"] for term, _, _, _ in held)),
         article_ids=ids,
     )
 
