@@ -118,6 +118,20 @@ def test_waiting_until_ignores_unreadable_records():
     assert pageviews.waiting_until({"waiting": {"day": "2026-11-15", "until": "nope"}}, want) is None
     got = pageviews.waiting_until({"waiting": {"day": "2026-11-15", "until": "2026-11-16T01:00:00+00:00"}}, want)
     assert got == datetime(2026, 11, 16, 1, tzinfo=UTC)
+    # A naive time is read as UTC, so comparing it with an aware now never raises.
+    naive = pageviews.waiting_until({"waiting": {"day": "2026-11-15", "until": "2026-11-16T01:00:00"}}, want)
+    assert naive == datetime(2026, 11, 16, 1, tzinfo=UTC)
+
+
+def test_a_404_that_keeps_coming_for_days_is_a_warning(store, monkeypatch, caplog):
+    from src.wiki.hotset import pageview_kv_key
+
+    store[pageview_kv_key("en")] = {"day": "2000-01-01", "titles": ["A"], "rows": [], "n": 1}
+    _fetcher(monkeypatch, [_not_published()])
+    with caplog.at_level(logging.DEBUG, logger="wiki.service"):
+        service._refresh_one_pageview_top(SimpleNamespace(session=object()))
+    hits = [r for r in caplog.records if "not published yet" in r.getMessage()]
+    assert len(hits) == 1 and hits[0].levelno == logging.WARNING
 
 
 class _Response:

@@ -872,6 +872,9 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         kv_invalidate(_KV_KEY)
         try:
             current = load_settings(strict=True)
+            # Repaired in the meantime: the stored state is readable again, so a change of
+            # it is measured against that and not recorded as a replacement.
+            wiki_state_before = current.wiki_lane_state
         except _DamagedSchedulerSettingsError:
             current = SchedulerSettings()
             reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})

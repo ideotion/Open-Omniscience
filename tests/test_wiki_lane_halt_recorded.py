@@ -58,6 +58,22 @@ def test_the_damaged_settings_replacement_names_its_own_door(kv, monkeypatch):
     assert rec["state"] == "halted" and rec["from"] is None and rec["by"] == "settings-replacement"
 
 
+def test_a_replacement_that_finds_the_settings_repaired_records_nothing(kv, monkeypatch):
+    calls = {"n": 0}
+
+    def repaired(strict=False):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise S._DamagedSchedulerSettingsError("damaged")
+        return S.SchedulerSettings(wiki_lane_state="halted")
+
+    monkeypatch.setattr(S, "load_settings", repaired)
+    monkeypatch.setattr("src.config.kv_store.kv_invalidate", lambda key: None, raising=False)
+    kv[R.STATE_CHANGE_KEY] = {"from": "running", "state": "halted", "at": "2026-11-10T00:00:00+00:00", "by": "settings-save"}
+    S.save_settings({"crawl_per_pass": 3}, replace_damaged=True)
+    assert R.last_change()["at"] == "2026-11-10T00:00:00+00:00"
+
+
 def test_a_failed_record_never_fails_the_save(kv, monkeypatch):
     monkeypatch.setattr(S, "load_settings", _current("running"))
     real = kv_store.kv_set_json

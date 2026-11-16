@@ -9,6 +9,12 @@ lane says. The setting says halted; only this record says since when. Written by
 ``src.scheduler.settings.save_settings`` and read by the soak reading and the scheduler
 status. It lives in the corpus key-value store, beside the settings and not in them, so
 it is never a field a caller could set.
+
+WHAT IT CANNOT SEE: a state written another way (a backup restore of the settings row)
+leaves no record of its own, and the record is a second write after the settings write,
+so a crash between the two loses it. Readers pair a record only with the SAME state and
+say "not recorded" otherwise, which means a restored halt can be dated by an earlier
+halt's record; the soak reading's caveat says so.
 """
 
 from __future__ import annotations

@@ -115,15 +115,18 @@ def waiting_until(blob: Any, want_day: Any) -> Any:
     ignored, so a new day is always asked for once, and an unreadable record is no wait
     at all: the cost of being wrong that way is one request.
     """
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     waiting = (blob or {}).get("waiting") if isinstance(blob, dict) else None
     if not isinstance(waiting, dict) or waiting.get("day") != want_day.isoformat():
         return None
     try:
-        return datetime.fromisoformat(str(waiting.get("until")))
+        until = datetime.fromisoformat(str(waiting.get("until")))
     except ValueError:
         return None
+    # A naive time (a hand-edited or restored record) is read as UTC, the only zone this
+    # module writes, so comparing it with an aware "now" can never raise.
+    return until if until.tzinfo is not None else until.replace(tzinfo=UTC)
 
 
 def project_for(edition: str) -> str:

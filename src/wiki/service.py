@@ -268,8 +268,12 @@ def _refresh_one_pageview_top(client: Any) -> str | None:
             first = until is None
             retry_at = now + timedelta(seconds=NOT_PUBLISHED_RETRY_SECONDS)
             kv_set_json(key, {**blob, "waiting": {"day": want.isoformat(), "until": retry_at.isoformat()}})
+            # A list that has not arrived for days is no longer "not yet": a 404 that keeps
+            # coming (a removed edition, a changed path) is raised to a WARNING once a day
+            # rather than staying a calm INFO forever.
+            stale = last is not None and (want - last).days > 2
             _LOG.log(
-                logging.INFO if first else logging.DEBUG,
+                (logging.WARNING if stale else logging.INFO) if first else logging.DEBUG,
                 "the %s top-1,000 for %s is not published yet; asking again after %s",
                 edition,
                 want,

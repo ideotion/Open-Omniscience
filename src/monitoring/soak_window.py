@@ -585,7 +585,9 @@ def _not_running(state: str | None, *, now: datetime | None = None) -> dict[str,
         "caveat": (
             "Not a gap in the change log yet: a resume continues from the stored position, and "
             "if the source no longer holds that stretch the lane records a retention gap then. "
-            "Until then, nothing in this stretch was asked for."
+            "Until then, nothing in this stretch was asked for. The start is the app's record of the "
+            "last settings save that set this state; a state restored from a backup is not recorded "
+            "on its own and may be dated by an earlier record of the same state."
         ),
     }
     since = None
