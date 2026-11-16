@@ -2419,7 +2419,9 @@ def backup_manifest_refusal(src_dir: Path | str) -> str | None:
         _require_safe_manifest_names(m)
         _require_each_volume_read_once(m, src)
     except VolumeError as exc:
-        return str(exc)
+        from src.monitoring.secret_scrub import record_text
+
+        return record_text(exc)  # a volume name and why (the restore's own sentence), scrubbed as every record is
     except Exception:  # noqa: BLE001 - a manifest of an unexpected shape: the restore reports it
         return None
     return None
