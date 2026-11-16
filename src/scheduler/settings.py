@@ -442,6 +442,20 @@ def _coerce_list(value) -> list[str]:
 
 
 
+def _last_known_wiki_lane_state() -> str | None:
+    """The lane's last recorded state, or ``None`` when the app holds no record of it.
+
+    Read from the app's own record of the last change (``src.wiki.lane_state_record``). A
+    damaged row is never parsed for it: half-read text is not evidence. The caller keeps
+    only a state that does LESS network work than running (see the replacement below).
+    """
+    from src.wiki.lane_state_record import last_change
+
+    change = last_change()
+    state = change.get("state") if change else None
+    return str(state) if state in WIKI_LANE_STATES else None
+
+
 #: The Wikipedia lane's three persistent states (Q702's NOTE). A CLOSED vocabulary:
 #: the four verbs the note names are TRANSITIONS between these, not states of their
 #: own -- "start" and "resume" both arrive at ``running``, and conflating the verb
@@ -879,11 +893,50 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
             current = SchedulerSettings()
             reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
             # A replacement never starts network work the user's save did not ask for: what it does not supply is written OFF.
+            written_off: list[str] = []
             for off in _ONLINE_OFF_ON_REPLACE:
                 if updates.get(off) is None:
                     setattr(current, off, False)
+                    written_off.append(off)
             if updates.get("wiki_lane_state") is None:
-                current.wiki_lane_state = "halted"
+                # ROW 92 (field test 2026-11-14): this wrote ``halted`` every time, silently.
+                # A recorded HALTED or STOPPED lane now keeps that state, and its record (with
+                # its start) is left as it is. A lane last known RUNNING is still paused, on
+                # purpose, and that pause is recorded as the repair's: the replacement starts
+                # from the defaults, so the lane's editions (all twelve) and its storage budget
+                # (150 GB) are back at values the operator may have narrowed, and running on
+                # them would widen what they chose without their word. Running is never taken
+                # from a record either, because a record can be stale (a backup restore writes
+                # no record), and a stale record must fail toward LESS network work.
+                known = _last_known_wiki_lane_state()
+                was_running = known == "running"
+                if known in ("halted", "stopped"):
+                    current.wiki_lane_state = str(known)
+                    wiki_state_before = known
+                else:
+                    current.wiki_lane_state = "halted"
+                    written_off.append("wiki_lane_state")
+                reset = [r for r in reset if r != "wiki_lane_state"]
+            else:
+                was_running = False
+            current.written_off_fields = written_off  # type: ignore[attr-defined]
+            # LOUD, because nothing on screen says it yet: the reset list reaches the route's
+            # answer, and an operator reading the log is told what stopped and why.
+            _LOG.warning(
+                "the stored scheduler settings were unreadable and were replaced by a save; "
+                "these switches were written OFF so a repair starts no network work: %s; "
+                "the Wikipedia lane is %s (%s)",
+                ", ".join(written_off) or "none",
+                current.wiki_lane_state,
+                (
+                    "as it was"
+                    if "wiki_lane_state" not in written_off
+                    else "paused by the repair: it was running, and its editions and storage budget were reset to "
+                    "the defaults, so check them before resuming it"
+                    if was_running
+                    else "paused by the repair: its last state was not recorded"
+                ),
+            )
     current.reset_fields = reset  # type: ignore[attr-defined]
 
     # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a
