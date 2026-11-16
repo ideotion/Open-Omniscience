@@ -94,12 +94,18 @@ from src.ingest.fetch_verdict import (
 )
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
+from src.ingest.page_notices import is_code_title, strip_leading_nav, strip_notices
 from src.utils.url_utils import (
     canonicalize_url,
     fetched_host,
     generate_content_hash,
     url_v1_canonical,
 )
+
+
+# The floor extract_article holds a body to (its _MIN_BODY_CHARS; kept apart because only extract_article may be
+# imported from that module): what is left after the notices and a menu run go must still clear it.
+MIN_BODY_CHARS = 200
 
 
 class IngestResult(str, Enum):
@@ -206,6 +212,26 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
             return IngestOutcome(
                 fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="body was only page furniture"
             )
+        # Server error dumps, "requires JavaScript" and Flash player notices (field report 2026-11-14,
+        # row 66): their LINES go, and a page that was little else is not an article. A counted
+        # outcome with its reason, like every other non-article skip.
+        doc.text, notices = strip_notices(doc.text)
+        if notices and len(doc.text.strip()) < MIN_BODY_CHARS:
+            kinds = ", ".join(f"{kind} x{n}" for kind, n in sorted(notices.items()))
+            logging.getLogger(__name__).info(
+                "skipping non-article (page_notice) from %s: %s", source.domain, failure_url(fetched.final_url)
+            )
+            return IngestOutcome(
+                fetched.requested_url, IngestResult.NON_ARTICLE,
+                detail=f"body was only page notices ({kinds}), not article text",
+            )
+        doc.text, _ = strip_leading_nav(doc.text, keep_min_chars=MIN_BODY_CHARS)
+        if is_code_title(doc.title):
+            # A title that is JavaScript is no title: store none rather than code. The body is judged as usual.
+            logging.getLogger(__name__).info(
+                "dropped a code title from %s: %s", source.domain, failure_url(fetched.final_url)
+            )
+            doc.title = None
 
     # Stop non-articles (nav / index / tag / tool / consent-wall pages) at the door — the
     # source-quality recall-gap fix. High-precision + reversible (OO_SKIP_NON_ARTICLES=0 disables);
@@ -214,7 +240,7 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
     if skip_non_articles_enabled():
         verdict = classify_non_article(
             fetched.final_url, title=doc.title, text=doc.text, word_count=len(doc.text.split()),
-            language=doc.language or source.language,
+            language=doc.language or source.language, door=True,
         )
         if verdict is not None:
             logging.getLogger(__name__).info(
