@@ -72,7 +72,7 @@ def _serialize(r: MarketExtractionRule) -> dict:
     return {
         "id": r.id,
         "source_id": r.source_id,
-        "source_name": r.source.name if r.source else None,
+        "source_name": r.source.display_name if r.source else None,
         "category": r.category,
         "symbol": r.symbol,
         "label": r.label,

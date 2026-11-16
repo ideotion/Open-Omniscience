@@ -20,6 +20,7 @@ What this file pins:
 from __future__ import annotations
 
 import ast
+import errno
 import json
 import re
 import time
@@ -1045,8 +1046,8 @@ def _unreadable(monkeypatch, method: str, needle: str = "UNREADABLE") -> None:
 
 def test_a_path_the_system_cannot_examine_ends_the_start_in_a_refusal_record_and_the_error_is_raised_on_unchanged(journal):
     with pytest.raises(OSError) as caught, se.run_path_checked("import", via="single-file"):
-        raise OSError(36, f"File name too long: /home/someone/{MARKER}")
-    assert caught.value.errno == 36, "the caller sees the error it saw before the record existed"
+        raise OSError(errno.ENAMETOOLONG, f"File name too long: /home/someone/{MARKER}")
+    assert caught.value.errno == errno.ENAMETOOLONG, "the caller sees the error it saw before the record existed"
     event = _only("run_import")
     assert (event["outcome"], event["ran"], event["via"], event["error"]) == ("refused", False, "single-file", "OSError")
     assert event["reason"] == se.RUN_REFUSALS["path-unreadable"] and "open" not in event
@@ -1127,8 +1128,8 @@ def test_no_word_of_the_error_is_read_and_a_class_that_was_not_handed_over_is_no
 
 def test_an_oserror_that_leaves_a_start_is_a_path_that_could_not_be_examined(journal):
     with pytest.raises(OSError) as caught, se.run_refusals_net("verify", via="volume-set"):
-        raise OSError(36, f"File name too long: /home/someone/{MARKER}")
-    assert caught.value.errno == 36
+        raise OSError(errno.ENAMETOOLONG, f"File name too long: /home/someone/{MARKER}")
+    assert caught.value.errno == errno.ENAMETOOLONG
     event = _only("run_verify")
     assert (event["outcome"], event["error"], event["reason"]) == ("refused", "OSError", se.RUN_REFUSALS["path-unreadable"])
     _nothing_secret_anywhere(journal, MARKER, "someone", "too long")

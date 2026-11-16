@@ -1861,6 +1861,23 @@ def run_qualification_pass(
     judged = [s for s in candidates if s.id in per]
     no_evidence = [s for s in candidates if s.id not in per]
 
+    # R728 A, inside judging: a candidate whose recent pages were answered by another site is HELD
+    # (an off-site attempt row, ``disqualified``), whatever its extraction looks like -- a casino page
+    # extracts cleanly. It is taken out of the extraction verdict so it gets exactly one attempt row.
+    from src.catalog import off_site as _off_site
+
+    held_off_site: list[tuple[int, str]] = []
+    # A source that was qualified before (held as such, or re-admitted and then undone) keeps that standing
+    # when a re-check holds it again: confirming the pair then re-admits it rather than requeueing it.
+    _prior_versions = _off_site.latest_attempt_versions(session, [int(s.id) for s in judged])
+    _was_qualified = (_off_site.CRITERIA_VERSION, _off_site.CONFIRMED_CRITERIA_VERSION)
+    for s in list(judged):
+        finding = _off_site.evaluate(session, int(s.id), s.domain)
+        candidate = not (s.status == STATUS_QUALIFIED or _prior_versions.get(int(s.id)) in _was_qualified)
+        if _off_site.hold(session, s, finding, now=now, candidate=candidate):
+            held_off_site.append((int(s.id), str(finding.other_site)))
+            judged.remove(s)
+
     # The label follows the cohort ACTUALLY used, not the plan: a caller's provider (the bulk
     # job freezes once per run) may have frozen under a different plan than this pass read.
     sampled = frozen.get("sample_articles") is not None
@@ -1886,6 +1903,12 @@ def run_qualification_pass(
     # and the odd slot of an odd budget changes hands.
     if forced:
         record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
+    # R728 B: the reversible mark on a held candidate's off-site articles, after the hold is committed.
+    # The hold queued them in its own transaction, so a failure here leaves them owed, never lost.
+    off_site_marked = 0
+    if held_off_site:
+        off_site_marked, _failed = _off_site.apply_pending_marks(
+            session, source_ids=[sid for sid, _site in held_off_site], now=now)
 
     for sid in tally.get("qualified_ids", []):
         try:
@@ -1901,6 +1924,9 @@ def run_qualification_pass(
         # were not attempted, so they are first in line next pass.
         "deferred": deferred,
         "no_evidence": len(no_evidence),
+        # R728: candidates held because their recent pages came from another site, and the articles marked for it.
+        "off_site_held": len(held_off_site),
+        "off_site_articles_marked": off_site_marked,
         # Reported apart because they answer different questions: "is the backlog draining"
         # and "is the recurrent verification actually running". One number cannot say both,
         # and it was precisely the absence of the second that hid a ladder that never ran.
