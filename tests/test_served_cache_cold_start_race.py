@@ -102,3 +102,50 @@ def test_the_kick_reports_the_start_of_the_compute_already_running():
         with served_cache._LOCK:
             served_cache._RECOUNT_STARTED.pop(_KEY, None)
         lock.release()
+
+
+def test_a_held_build_lock_always_has_a_start_beside_it(monkeypatch):
+    """The lock and the start change together: no poll can find the lock taken and the start missing. Checked by patching the
+    lock's release to look at the table at the instant of release, in the real background thread."""
+    seen = []
+    lock = served_cache._build_lock(_KEY)
+
+    class _Watched:
+        def acquire(self, blocking=True):
+            got = lock.acquire(blocking)
+            if got:
+                seen.append(("acquired", served_cache._LOCK.locked()))
+            return got
+
+        def release(self):
+            seen.append(("released", served_cache._LOCK.locked(), _KEY in served_cache._RECOUNT_STARTED))
+            lock.release()
+
+    monkeypatch.setattr(served_cache, "_build_lock", lambda key: _Watched())
+    monkeypatch.setattr(served_cache.threading, "Thread", _ThreadThatFinishesInsideStart)
+    s = SessionLocal()
+    try:
+        served_cache.cached(_KEY, _compute, s, ttl_s=60, cold_payload=_cheap)
+    finally:
+        s.close()
+    assert seen == [("acquired", True), ("released", True, False)], seen
+
+
+def test_a_compute_that_ended_without_storing_is_started_again_not_reported_as_running_since_nothing(monkeypatch):
+    kicks = []
+    real_kick = served_cache._kick_background_refresh
+
+    def _first_kick_finds_one_just_ended(key, compute):
+        kicks.append(key)
+        if len(kicks) == 1:
+            return None  # the compute this poll found running ended, and stored nothing
+        return real_kick(key, compute)
+
+    monkeypatch.setattr(served_cache, "_kick_background_refresh", _first_kick_finds_one_just_ended)
+    monkeypatch.setattr(served_cache.threading, "Thread", _ThreadThatFinishesInsideStart)
+    s = SessionLocal()
+    try:
+        out = served_cache.cached(_KEY, _compute, s, ttl_s=60, cold_payload=_cheap)
+    finally:
+        s.close()
+    assert len(kicks) == 2 and out["pending"] is True and out["pending_since"], (kicks, out)

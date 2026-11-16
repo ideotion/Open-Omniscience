@@ -273,9 +273,13 @@ def _kick_background_refresh(key: str, compute) -> float | None:
     answered a cold poll "computing" with no start time (``pending_since: null``, seen on CI, run 43808845357).
     """
     lock = _build_lock(key)
-    if not lock.acquire(blocking=False):
-        return _recount_started(key)  # a rebuild for this key is already running
+    # The build lock and the recorded start change together, under ``_LOCK``, here and where the compute ends: a lock that is
+    # held always has a start beside it, so a poll that finds the lock taken never reads "running, since nothing". Taking
+    # the build lock without waiting while ``_LOCK`` is held cannot deadlock (the inline path's order, build lock then
+    # ``_LOCK``, never waits on ``_LOCK`` while another thread waits on it for the build lock).
     with _LOCK:
+        if not lock.acquire(blocking=False):
+            return _RECOUNT_STARTED.get(key)  # a rebuild for this key is already running
         started = time.time()
         _RECOUNT_STARTED[key] = started
 
@@ -289,7 +293,7 @@ def _kick_background_refresh(key: str, compute) -> float | None:
         finally:
             with _LOCK:
                 _RECOUNT_STARTED.pop(key, None)
-            lock.release()
+                lock.release()
 
     try:
         threading.Thread(target=_run, name=f"served-cache-{key}", daemon=True).start()
@@ -297,7 +301,7 @@ def _kick_background_refresh(key: str, compute) -> float | None:
         # A thread that never started must not look in flight, nor hold the lock.
         with _LOCK:
             _RECOUNT_STARTED.pop(key, None)
-        lock.release()
+            lock.release()
         raise
     return started
 
@@ -360,6 +364,9 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
                 later = change_probe()
                 return _decorate(done, ttl_s=ttl_s, cached=True, now=time.time(),
                                  verified=later is not None and later == done["probe"])
+            # It ended without storing (it failed, or its payload was not to be kept): start one again, so this answer is
+            # "computing" with a real start, as on any other cold poll.
+            started = _kick_background_refresh(key, compute)
         out = _decorate(
             {"payload": cold_payload(session), "built_at": time.time()},
             ttl_s=ttl_s, cached=False, now=time.time(), verified=False, recount_started=started,
