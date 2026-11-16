@@ -38,37 +38,6 @@ half-width (item 33 (a)).
 - Item 33 has (a) to (j); (h) and (j) were added with their merges (#1748, #1751).
 - A group marked PENDING is read from its open PR head and changes on a re-run until it merges.
 
-## Help documents
-
-Translated Help documents served by Help in that language (the English original is authoritative).
-To act: read the draft beside the English document, correct it with a pull request, and when a native
-speaker has read it, replace "not yet reviewed by a native speaker" in its opening comment.
-
-| Language | File | Coverage (from its opening comment) | Native-reviewed |
-|---|---|---|---|
-| ar | `docs/i18n/ar/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| ar | `docs/i18n/ar/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| bn | `docs/i18n/bn/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| bn | `docs/i18n/bn/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| de | `docs/i18n/de/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| de | `docs/i18n/de/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| es | `docs/i18n/es/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| es | `docs/i18n/es/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| fr | `docs/i18n/fr/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| fr | `docs/i18n/fr/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| hi | `docs/i18n/hi/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| hi | `docs/i18n/hi/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| id | `docs/i18n/id/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| id | `docs/i18n/id/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| ja | `docs/i18n/ja/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| ja | `docs/i18n/ja/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| pt | `docs/i18n/pt/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| pt | `docs/i18n/pt/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| ru | `docs/i18n/ru/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| ru | `docs/i18n/ru/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-| zh | `docs/i18n/zh/QUICKSTART.md` | the whole document, 17 of 17 headings | no |
-| zh | `docs/i18n/zh/USER_MANUAL.md` | the whole document, 124 of 124 headings | no |
-
 ## 33a: Law coverage floor (C-L1)
 
 Recorded: item 33 (a). PR #1710, merge `743fb4cc2`. 28 new keys.

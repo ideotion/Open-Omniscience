@@ -54,11 +54,13 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
-    "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     # R689 (1): ``_await_unless_stopped`` hands a queued generation's exception from its thread to the waiting caller, which
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
     "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
+    # R695: ``_deadline_stopped(exc)`` answers whether a caught error is a statement deadline's stop: an isinstance test, then the
+    # driver text compared to the one fixed word ``interrupted``; it stores nothing and logs nothing, and the two callers only re-raise
+    "src/analytics/watches.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},
     "src/analytics/rollup_serve.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # ``_library_replaced(exc)`` walks the exception's ``__cause__``/``__context__`` chain for the generation guard's class; it reads no text, stores nothing and logs nothing
     # RobotsUnavailable's own ``cause`` word, not an exception; and ``_carries_airplane_refusal(exc)`` (R620), which walks the exception's
     # ``__cause__``/``__context__``/``args``/``MaxRetryError.reason`` links for the guard's class: it reads no text, stores nothing and logs
@@ -289,6 +291,12 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_copy_and_swap', 'report["failure"] = f"{exc.where}: {exc.reason}"'): 2,
         ('_swap', 'raise Declined("writer-busy", str(busy)) from busy'): 2,
         ('_swap', 'if refusal.code == "saved-during-the-copy":'): 1,
+        # ``_fixed_failure`` rebuilds the error a failed repair raises from words of ours: it reads the class, ``SalvageFailed``'s own
+        # fixed fields and an int errno (its words come from ``os.strerror``), never the driver's text.
+        ('_fixed_failure', 'return salvage.SalvageFailed(exc.where, exc.reason)'): 2,
+        ('_fixed_failure', 'if isinstance(exc, OSError) and isinstance(exc.errno, int):'): 1,
+        ('_fixed_failure', 'return type(exc)(exc.errno, os.strerror(exc.errno))  # the system\'s own words for the number, never the text it came with'): 2,
+        ('run', 'replacement = _fixed_failure(exc, failure)'): 1,
     },
     'src/database/salvage.py': {
         ('Salvage._is_corrupt', 'return damage.corruption_of(exc) is not None'): 1,
@@ -671,7 +679,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/law/adapters/clml.py": 3,
     "src/llm/ollama.py": 11,  # +1 R671: _require_local_model wraps an unreadable /api/tags exactly as list_installed does (record_text)
     "src/llm/vllm_client.py": 7,  # +2 R688: server_kind chains the connection error when the server does not answer its /api/tags or /v1/models read
-    "src/llm/vllm_lifecycle.py": 1,
+    # src/llm/vllm_lifecycle.py: 0 -- its one site (pip's unpack directory) now raises a fixed phrase "from None" and logs the detail
     "src/safety/crypto.py": 4,
     "src/safety/settings.py": 1,
     "src/services/duckduckgo.py": 1,
@@ -1003,7 +1011,9 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_concurrent', 'out.append(ConcurrentResult(ok=False, error=exc))'): 1,
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
-        ('run_concurrent', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
+        ('run_concurrent._worker', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
+        # a BaseException kept as the object and raised again on the caller's thread, never made into a text
+        ('run_concurrent._worker', 'raised.append(exc)'): 1,
     },
     'src/llm/installer.py': {
         # failure_words returns "HTTP <status>" or the exception's class name and nothing of its text (tests/test_session_host_list.py pins it)
@@ -1318,6 +1328,8 @@ def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_ha
     kept = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if has)
     assert kept == Counter(
         {
+            ("src/api/backup_v2.py", "export_job_resume"): 2,  # R701: the export's 400 and 409, as safety.encrypted_backup does
+            ("src/api/backup_v2.py", "export_job_start"): 2,
             ("src/api/diagnostics/p0.py", "p0_validation_start"): 1,
             ("src/api/diagnostics/release_run.py", "release_run_resume"): 1,
             ("src/api/diagnostics/release_run.py", "release_run_start"): 1,

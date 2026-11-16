@@ -113,15 +113,32 @@ def test_tasks_without_www_context_still_work_unchanged():
     assert all(v.www is None for v in out.values()), "no context asked, none computed"
 
 
-def test_the_serial_path_leaves_www_to_the_caller():
-    """Serial means one core, which is the situation pooled WWW exists to escape.
-    Doing it here would move identical work from one place to another; the caller's
-    inline path already handles ``www=None`` correctly."""
+def test_the_serial_path_computes_www_outside_the_write_window():
+    """The serial path runs BEFORE ``index_article`` takes the write gate, so when a task
+    carries a context it computes when/where/who there, exactly as the pool does, rather
+    than leaving it to be extracted inline under the gate (the 2026-11-15 live re-index
+    measured ~37% of each window spent there). The result must equal what the pool
+    worker computes for the same task, dates in the article's own language (R697)."""
     from src.analytics.extract import BaselineExtractor
+    from src.analytics.reindex_parallel import _extract_www
 
-    tasks = [(i, _TEXT, "t", "en", "en", ("fr", "2024-09-01", None)) for i in range(3)]
+    ctx = ("fr", "2024-09-01", None, "cs")
+    tasks = [(i, _TEXT, "t", "en", "en", ctx) for i in range(3)]
     out = precompute_batch(tasks, extractor=BaselineExtractor(), workers=0)
-    assert all(v.www is None for v in out.values())
+    want = _extract_www(_TEXT, "cs", ctx)
+    assert want is not None and "__www_error__" not in want
+    assert all(v.www == want for v in out.values())
+
+
+def test_the_serial_path_reads_no_date_language_from_a_short_context():
+    """A three-slot context (no language slot) means the language is UNKNOWN: dates get
+    ``None``, never the extractor's ``or "en"`` pick (R697)."""
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.reindex_parallel import _extract_www
+
+    ctx = ("fr", "2024-09-01", None)
+    out = precompute_batch([(1, _TEXT, "t", "en", "en", ctx)], extractor=BaselineExtractor(), workers=0)
+    assert out[1].www == _extract_www(_TEXT, None, ctx)
 
 
 def test_a_mixed_batch_does_not_raise():
@@ -136,6 +153,7 @@ def test_a_mixed_batch_does_not_raise():
     ]
     out = precompute_batch(tasks, extractor=BaselineExtractor(), workers=0)
     assert set(out) == {1, 2}
+    assert out[1].www is not None and out[2].www is None
 
 
 # --------------------------------------------------------------------------- #
@@ -473,6 +491,13 @@ def test_available_ram_reads_MemAvailable_not_MemTotal(tmp_path, monkeypatch):
         "builtins.open",
         lambda p, *a, **k: real_open(meminfo, *a, **k) if p == "/proc/meminfo" else real_open(p, *a, **k),
     )
+    # The figure is also bounded by the cgroup this process runs in (R302), which is read live: on a loaded runner the
+    # container's own headroom was 604 MiB and won, so the test failed by load and not by the reading it is about (open-on-main
+    # row 55). That bound has its own tests; here the cgroup sets no limit, so only the meminfo reading decides.
+    from src.config import cgroup_memory
+
+    monkeypatch.setattr(cgroup_memory, "cgroup_available_mb", lambda *a, **k: {
+        "available_mb": None, "limit_mb": None, "min_limit_mb": None, "source": None, "unreadable": False})
     assert M._available_ram_mb() == 10261176 // 1024  # MemAvailable, not the 16 GB MemTotal
 
 

@@ -31,7 +31,6 @@ The Home renderer that consumes the frames is proven in tests/card_frames_node_t
 from __future__ import annotations
 
 import ast
-import json
 import re
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -41,6 +40,7 @@ import pytest
 
 from src.briefing.card import Card, CardSchemaError, frame, frames_text, numeric_frames
 from tests.js_source_helper import object_literal
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -50,7 +50,7 @@ _HOLE = re.compile(r"\{(\w+)\}")
 
 
 def _locale(lang: str) -> dict[str, str]:
-    return json.loads((_LOCALES / f"{lang}.json").read_text("utf-8"))
+    return load_locale(_LOCALES / f"{lang}.json")
 
 
 @pytest.fixture(scope="module")

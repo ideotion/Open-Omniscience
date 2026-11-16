@@ -51,14 +51,17 @@ const code = [
   "const _els = {}; function $(id){ return _els[id] || (_els[id] = {id, textContent: '', innerHTML: '', hidden: false, children: [], style: {}}); }",
   "var window = {};",
   "var OOI18N;",
+  "function _fmtBytes(n){ return n + ' B'; } function ooIsoDate(s){ return String(s || '').slice(0, 10); }",
   line("let _bulExcludeSections"), line("let _bulExcludeStories"), line("let _bulFile"),
-  line("let _bulGate"), line("const _bulMsgs"),
+  line("let _bulGate"), line("const _bulMsgs"), line("let _bulFullText"), line("let _bulNarrating"), line("let _bulStopAsked"), line("let _bulEvPlan"),
   "const _BUL_CADENCE_LABEL = {};",
   ...["_bulT", "_bulTf", "_bulSay", "_bulPaintMsg", "_bulRepaint", "_bulPaintGate",
-      "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulStoryTermsHtml", "_bulRender", "_bulPaintPrivacy"].map(extract),
+      "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulStoryTermsHtml", "_bulFullTextHint", "_bulRender", "_bulPaintPrivacy",
+      "_bulPrivacyHtml", "_bulEvKey", "_bulEvReady", "_bulPaintEvidence"].map(extract),
   "module.exports = {",
   "  $, _bulSay, _bulRender, _bulRepaint, _bulPaintPrivacy,",
   "  setState(s){ _bulFile = s.file; _bulView = s.view; _bulPrivacyData = s.privacy; _bulEditions = s.editions; },",
+  "  setEvidence(d){ _bulEvPlan = {d, cadence: 'weekly', dest: '/x'}; },",
   "  setLang(map){ OOI18N = window.OOI18N = { t: (s) => (map[s] == null ? s : map[s]),",
   "    tf: (s, v) => String(map[s] == null ? s : map[s]).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) }; },",
   "};",
@@ -84,6 +87,11 @@ B._bulSay("bulletin-status", "Could not build: {error}", { error: "boom" });
 B._bulSay("bul-pub", "Downloaded: the report and {n} annexed article(s).", { n: 2 });
 B._bulRender(view);
 B._bulPaintPrivacy();
+const EV_CAVEAT = "Plain text: your corpus is encrypted, this archive is not. It holds the full text of every article "
+  + "in the period. Keep it where you keep the corpus; it is not meant to be shared.";
+B.setEvidence({ articles: 3, destination_writable: true, period: { start: "2026-11-02", last_day: "2026-11-08" }, privacy: privacy.d });
+B._bulRepaint();
+assert.ok(B.$("bul-ev-out").innerHTML.includes(esc(EV_CAVEAT)), "the evidence caveat was not drawn");
 assert.strictEqual(B.$("bulletin-status").textContent, "Could not build: boom");
 assert.ok(B.$("bulletin-review").innerHTML.includes("Rising concepts"),
   "the section is named by its raw slug, not the heading the document prints");
@@ -100,12 +108,17 @@ assert.strictEqual(B.$("bul-pub").textContent,
   "the Review panel's status line was lost or stayed English");
 const html = B.$("bulletin-review").innerHTML;
 for (const key of ["Rising concepts", "Across channels", "Report only", "Publish", "Preview",
-                   "Download report + annexes", "no rising concepts to attribute for this period"]) {
+                   "Download report + annexes", "no rising concepts to attribute for this period",
+                   // R703: the full-text opt-in and the default (excerpt) hint beside it.
+                   "Include each article's full text in the annexes",
+                   "The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. Each carries the article's details and an excerpt."]) {
   assert.ok(fr[key] && fr[key] !== key, "fr.json has no real translation of " + JSON.stringify(key));
   assert.ok(html.includes(esc(fr[key])), "the Review did not repaint " + JSON.stringify(key) + " in French");
 }
 assert.ok(html.includes(esc(fr[REVIEW_CAVEAT])), "the review caveat is still English after the switch");
 assert.ok(!html.includes("Rising concepts") && !html.includes("rising concepts"), "an English heading survived: " + html);
+assert.ok(fr[EV_CAVEAT] && B.$("bul-ev-out").innerHTML.includes(esc(fr[EV_CAVEAT])),
+  "the evidence archive's plaintext caveat is still English after the switch");
 assert.ok(B.$("bul-privacy").innerHTML.includes(esc(fr[PRIV_WHAT])),
   "the privacy enumeration (consent text) is still English after the switch");
 

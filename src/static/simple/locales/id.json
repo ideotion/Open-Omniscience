@@ -141,6 +141,11 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "Harga diimpor di tampilan lengkap dengan persetujuan Anda; tidak ada yang diambil di sini. Setiap kartu menampilkan nilai tersimpan terbaru dan tanggalnya.",
   "A price can be old: read its date.": "Harga bisa saja lama: lihat tanggalnya.",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Catatan yang diterbitkan, diambil dengan persetujuan Anda di tampilan lengkap. Jumlahnya mencakup setiap revisi dari penerbit.",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Pencarian menyembunyikan artikel yang ditahan sampai sumbernya diperiksa, jadi daftar suatu negara bisa lebih pendek daripada jumlahnya di sini."
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Pencarian menyembunyikan artikel yang ditahan sampai sumbernya diperiksa, jadi daftar suatu negara bisa lebih pendek daripada jumlahnya di sini.",
+  "Looking for leads in your corpus…": "Mencari petunjuk di korpus Anda…",
+  "Language": "Bahasa",
+  "Any language": "Bahasa apa saja",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Angkanya memakai bahasa yang dinyatakan setiap sumber, hanya atas artikel terbaru. Filter juga menemukan artikel yang bahasanya terdeteksi dari teksnya, jadi angka bisa berbeda dari hasil.",
+  "Articles counted": "Artikel yang dihitung"
  }
 }

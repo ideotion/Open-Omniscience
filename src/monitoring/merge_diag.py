@@ -228,7 +228,7 @@ def window_facts(db_path: str | os.PathLike[str] | None = None) -> dict[str, Any
         con = connect(path)
         try:
             row = con.execute(
-                "SELECT COUNT(*), AVG(n) FROM (SELECT LENGTH(CAST(COALESCE(content,'') AS BLOB))"  # nosec B608 - the only interpolation is _SAMPLE_ROWS, a module-level int constant; no caller input reaches this string
+                "SELECT COUNT(*), AVG(n) FROM (SELECT LENGTH(CAST(COALESCE(content,'') AS BLOB))"  # nosec B608 # the only interpolation is _SAMPLE_ROWS, a module-level int constant; no caller input reaches this string
                 " + LENGTH(CAST(COALESCE(title,'') AS BLOB)) AS n FROM articles"
                 f" ORDER BY id DESC LIMIT {int(_SAMPLE_ROWS)})"
             ).fetchone()

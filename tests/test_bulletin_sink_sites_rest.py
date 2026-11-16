@@ -123,7 +123,7 @@ def test_the_annexes_keep_the_class_of_each_failure_in_the_bundle_and_log_it_scr
     monkeypatch.setattr("src.bulletin.articles.article_analyses", _raise)
     monkeypatch.setattr("src.bulletin.articles.article_bodies", _raise)
     monkeypatch.setattr(annexes, "concepts_markdown", _raise)
-    out = annexes.build_annexes(_Poisoned(), _edition())
+    out = annexes.build_annexes(_Poisoned(), _edition(), full_text=True)  # the body-reading path (R703: opt-in)
     text = _zip_text(out["data"])
     _class_only(text)
     assert "This list could not be computed (RuntimeError)" in text, "the privacy note names the class"
@@ -621,7 +621,7 @@ def test_a_publish_that_cannot_be_stamped_or_an_archive_that_cannot_be_written_t
 
     monkeypatch.setattr("src.bulletin.evidence.build_evidence_archive", _os_raise)
     monkeypatch.setattr("src.bulletin.facts.layer_a", lambda *_a, **_k: {})
-    told = _told(api.post(f"/api/bulletin/evidence/build?cadence=weekly&dest={tmp_path}"), 500)
+    told = _told(api.post(f"/api/bulletin/evidence/build?cadence=weekly&dest={tmp_path}&plaintext_ack=true"), 500)
     assert "could not write the archive" in told and WORDS in told
 
 

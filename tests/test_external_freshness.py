@@ -151,8 +151,8 @@ def test_urllib3_range_in_pyproject_matches_the_registry_and_keeps_its_ceiling()
 
 def test_the_lockfile_pins_urllib3_inside_the_range_the_filter_was_read_for():
     """``lockfile-install`` installs ``requirements.lock`` and then the project with ``--no-deps``, so a lock whose urllib3 is outside the
-    pyproject range installs green and runs a release nobody read the log calls of (the ``urllib3-floor`` job installs 2.7.0 by name, not
-    from the lock). The lock's pin is the third place the range is written, and nothing else ties it to the other two."""
+    pyproject range installs green and runs a release nobody read the log calls of (the ``crypto`` job's urllib3 floor venv installs 2.7.0 by
+    name, not from the lock). The lock's pin is the third place the range is written, and nothing else ties it to the other two."""
     entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
     lock = (R.repo_root() / "requirements.lock").read_text(encoding="utf-8")
     pins = re.findall(r"^urllib3==([0-9][0-9.]*)\b", lock, flags=re.MULTILINE)

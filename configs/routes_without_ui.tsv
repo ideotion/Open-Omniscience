@@ -15,23 +15,22 @@ POST	/api/analysis/mann-whitney	internal		api	statistics calculator over posted 
 POST	/api/analysis/t-test/independent	internal		api	statistics calculator over posted numbers ([analysis] extra); programmatic API, no corpus surface
 POST	/api/analysis/t-test/paired	internal		api	statistics calculator over posted numbers ([analysis] extra); programmatic API, no corpus surface
 PUT	/api/annotations/mine/author	feature	3	Home annotations (N)	set the author name shipped with exported annotation bundles; export exists, the name cannot be set
-GET	/api/article-dates/by-date	feature	2	Agenda (O)	articles that mention a given date: a day in the Agenda could open them
 POST	/api/article-dates/index	superseded			backfill of date tags; deduced dates now flow from ingest (invariant 13b)
-POST	/api/article-dates/{tag_id}/confirm	feature	2	Agenda deduced events (O)	a reader confirms a deduced date; deduced dates stay 'never confirmed' without it
-POST	/api/article-dates/{tag_id}/reject	feature	2	Agenda deduced events (O)	a reader rejects a wrongly deduced date
+POST	/api/backup/export-folder	internal		api	R713: the dated folder alone, kept for API callers; the export dialog's one job allocates it itself (POST /api/backup/export/start, R701)
 POST	/api/backup/folder/plan	feature	2	Settings > Backup (B)	'needs X, Y free' shown before a large-data backup starts, not after it fails
 POST	/api/backup/folder/restore	superseded			the unified Import queue restores large data (/api/backup/import-queue/start, kind 'blobs')
+POST	/api/backup/folder/start	internal		api	R713: the large-data copy alone, kept with the guards it has for the advanced panel and API callers; the export dialog runs it inside its one job (/api/backup/export/*, R701)
+GET	/api/backup/folder/status	internal		api	R713: the folder job's own status; the export dialog reads /api/backup/export/status, which carries this job's progress while it runs inside the export (R701)
 POST	/api/backup/folder/verify	feature	2	Settings > Backup (B)	verify a large-data folder backup against its manifest (the volumes backup has a Verify button, this one has none)
+POST	/api/backup/folder/{action}	internal		api	R713: pause, resume and cancel of the folder job alone; the export dialog pauses, resumes and cancels it through /api/backup/export/* (R701)
 POST	/api/backup/import-queue/clear	feature	3	Settings > Backup (B)	forget a finished import run so the dialog starts clean
 POST	/api/backup/legacy/restore	superseded			the unified Import queue restores legacy archives (/api/backup/import-queue/start, kind 'legacy')
 GET	/api/backup/reindex-backlog	superseded			the backlog is read through GET /api/backup/reindex-backlog/resume/status (its 'backlog' key, Q204) and drawn as the task manager's waiting row (jobs.py _reindex_backlog_rows)
 POST	/api/backup/reindex-backlog/resume	superseded			the task manager's waiting row resumes it through POST /api/jobs/reindex-backlog/resume, which calls this handler and also refuses while an import or restore holds the machine
 POST	/api/backup/reindex-backlog/resume/cancel	superseded			the running job is the task manager's own row; its Cancel goes through POST /api/jobs/reindex-resume/cancel (the generic background-job cancel)
 GET	/api/backup/v2/batches	feature	2	Settings > Backup (B)	import history with counts and verification (ruled: history lives in Settings > Backup, Q222 = b)
+POST	/api/backup/v2/volumes/pause	internal		api	R713: pause of the volume job alone; the export dialog pauses it through POST /api/backup/export/pause (R701)
 GET	/api/bulletin/editions/{filename}/ai-plan	feature	3	Agenda > Bulletin (O)	phase 2 plan of a bulletin edition (what a local model would do)
-POST	/api/bulletin/evidence/build	feature	2	Agenda > Bulletin (O)	write a period's evidence archive to a folder
-POST	/api/bulletin/evidence/plan	feature	2	Agenda > Bulletin (O)	size and contents of that archive before writing it
-POST	/api/bulletin/narration/stop	feature	2	Agenda > Bulletin (O)	stop a running narration; it can be started but not stopped from the app
 GET	/api/catalog/columns	internal		api	CSV column reference for programmatic callers; the import dialog states its columns
 POST	/api/commodities/{symbol}/prices/import-csv	feature	3	Markets (O)	import a commodity price series from CSV
 POST	/api/custody/log	internal		api	custody entries are appended by ingest; a manual append is programmatic
@@ -164,7 +163,6 @@ GET	/api/search/spell-index	feature	3	Settings > Maintenance (N)	state of the 'd
 POST	/api/search/spell-index/build	feature	3	Settings > Maintenance (N)	rebuild it
 GET	/api/signals/dismiss-reasons	internal		diagnostics	counts of dismissal reasons, for tuning
 POST	/api/signals/hazards/snapshot	internal		api	population path of the local hazard snapshot
-GET	/api/signals/supply-chain-ripple	feature	2	Markets (O)	commodity vs topic coverage co-movement (correlation, never causation)
 GET	/api/signals/weather-signals	internal		api	derived signal keywords read by producers
 POST	/api/signals/weather-signals/refresh	internal		api	derives those keywords
 POST	/api/sources/batch/disable	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
@@ -206,10 +204,8 @@ DELETE	/api/sources/{source_id}/metadata	superseded			source-group/metadata API 
 GET	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 POST	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 PUT	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
-GET	/api/stats/figures/vintages	feature	2	Statistics (O)	every revision of one published figure
 GET	/api/stats/sources	feature	3	Statistics (O)	directory of registered statistics sources
 GET	/api/timemap/range	superseded			the timemap derives its range from its own payload
-GET	/api/watches/{watch_id}/history	feature	2	Insights > Watches (O)	a watch's past evaluations
 POST	/api/wiki/corpus/sync	feature	3	Living sources (I)	backfill watched pages into the corpus (local only)
 POST	/api/wiki/dumps/probe	superseded			single-edition size probe; the dump picker reads /api/wiki/dumps/sizes
 GET	/api/wiki/lane/analytics	feature	2	Living sources (I)	Q712 analytics 1-3 of the Wikipedia lane

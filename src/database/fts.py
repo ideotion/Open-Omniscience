@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import os as _os
 import re
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
@@ -635,7 +636,7 @@ def _indexed(row: str, col: str) -> str:
     ``article_fts_norm`` row: kept when a segmenter made it, re-folded when only the Arabic
     fold did, the stored text when there is no row. Mirrors ``fts_norm.indexed_values``."""
     return (
-        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "  # nosec B608 - row and col are the literals "old"/"new" and "title"/"content" passed below; _SEGMENTERS is a module int
+        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "  # nosec B608 # row and col are the literals "old"/"new" and "title"/"content" passed below; _SEGMENTERS is a module int
         f"ELSE oo_fts_norm({row}.{col}, n.mask) END "
         f"FROM article_fts_norm n WHERE n.article_id = {row}.id), {row}.{col})"
     )
@@ -653,14 +654,14 @@ _INDEX_NEW = f"""
         FROM (SELECT oo_fts_used(new.title, new.content, oo_fts_caps()) AS m) WHERE m != 0;
         INSERT INTO article_fts(rowid, title, content)
         VALUES (new.id, {_indexed("new", "title")}, {_indexed("new", "content")});
-"""  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
+"""  # nosec B608 # every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
 # Remove ``old``'s entry with exactly the values it was indexed with, then its record.
 _DELETE_OLD = f"""
         INSERT INTO article_fts(article_fts, rowid, title, content)
         VALUES ('delete', old.id, {_indexed("old", "title")}, {_indexed("old", "content")});
         DELETE FROM article_fts_norm WHERE article_id = old.id;
-"""  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
+"""  # nosec B608 # every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
 #: The tokenizer a NEW index is created with (S05-02 S6, R39). ``categories 'L* N* Co M*'`` keeps the combining marks
 #: and vowel signs of Devanagari, Bengali and vocalised Arabic INSIDE a word: under the default categories सरकार indexed
@@ -686,7 +687,7 @@ def _article_fts_ddl(tokenizer: str = FTS_TOKENIZER) -> str:
         content='articles', content_rowid='id',
         {_tokenize_clause(tokenizer)}
     )
-    """  # nosec B608 - the tokenizer is one of this module's two constants, never input
+    """  # nosec B608 # the tokenizer is one of this module's two constants, never input
 
 
 _FTS_DDL = [
@@ -819,7 +820,8 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         - the FTS table was just created here while the store has articles (a schema
           upgrade: the triggers never fired for rows inserted before the table existed), or
         - the table exists but is EMPTY while articles exist (a past rebuild that never
-          completed). Steady-state boots (table present + populated) SKIP the rebuild.
+          completed), or its document count differs from the article count (a partial
+          index, see SCOPE below). Steady-state boots (the two counts agree) SKIP the rebuild.
       * ``"always"`` — force a full rebuild (the explicit re-index / index-repair path).
       * ``"never"`` — ensure only the DDL, never rebuild.
 
@@ -829,28 +831,23 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     and is reported in the log rather than in this value so every existing caller and
     assertion on it keeps reading the same three words.
 
-    SCOPE OF THE BOOT SELF-HEAL (deliberate): the boot path self-heals only a
-    fully-EMPTY index (docsize == 0 while articles exist) — an O(1) probe. It does NOT try to
-    detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one. The way to see a partial one
-    whole is to compare the indexed-row count against the article count, and the boot makes no such
-    comparison: that is a decision, not a measured necessity, and it is left as it was. What was measured
-    (2026-10-27): ``count(1) FROM articles`` is a scan of a covering index (which one is the planner's choice;
-    on the measured store it was ``idx_article_created_at``, about four times the pages of the smallest
-    candidate at 100,000 articles, so the figure is conservative) and took 0.24 to 0.33 s cold on 1,000,000
-    articles (five cold runs, median 0.29 s). LIMITS of that figure: one
-    machine, an encrypted (SQLCipher) store on a virtual disk reading 1.3 GB/s, synthetic Latin
-    text of 1.3 KB per article, nothing above 1 M, the cost follows the NUMBER of articles and not their
-    text, and the plan is the planner's choice, not a promise (``tests/test_fts_status.py`` pins that it is a
-    covering-index scan on the real schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on
-    the current schema and what it timed is not recorded: do not build on it. A
-    partial/corrupt index is UNREACHABLE via normal operation anyway (ingest is an atomic
-    INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
-    re-index never touches article content) — it can arise only from external file corruption
-    (e.g. a torn filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job:
-    it reports a damaged index, an EMPTY one and, while no article has been ingested since, a PARTIAL one whose
-    TAIL is missing (``indexed_documents`` / ``index_state``; the probe it also runs reads the content
-    table and cannot see them), and the explicit re-index job heals it (``rebuild="always"``). It repairs nothing
-    and is operator-initiated: it never runs at boot, and the boot refusal above stands.
+    SCOPE OF THE BOOT SELF-HEAL (deliberate): the boot path rebuilds an index that is EMPTY while articles
+    exist (an O(1) probe) and, since R412 (OPEN_QUEUE 2026-10-27 item 9), one whose document count differs
+    from the article count: a PARTIAL index (a missing head, a hole in the middle, a missing tail) or one
+    holding documents with no article. Both counts follow the NUMBER of rows, never their text:
+    ``count(*) FROM articles`` is a scan of a covering index (which one is the planner's choice; on the
+    measured store it was ``idx_article_created_at``) and took 0.24 to 0.33 s cold on 1,000,000 articles
+    (five cold runs, median 0.29 s, 2026-10-27), and the ``article_fts_docsize`` shadow holds one short row
+    per document. LIMITS of that figure: one machine, an encrypted (SQLCipher) store on a virtual disk reading
+    1.3 GB/s, synthetic Latin text of 1.3 KB per article, nothing above 1 M, and the plan is the planner's
+    choice, not a promise (``tests/test_fts_status.py`` pins that it is a covering-index scan on the real
+    schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on the
+    current schema and what it timed is not recorded: do not build on it. A count cannot see a CORRUPT index
+    whose two counts agree, nor a document indexed from stale text; neither is reachable via normal operation
+    (ingest is an atomic INSERT + trigger; a rebuild is atomic; restore runs a full rebuild in
+    ``verify_copy``; re-index never touches article content), only from external file corruption (e.g. a torn
+    filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job, operator-initiated and never
+    run at boot, and the explicit re-index job heals them (``rebuild="always"``).
 
     No-op for non-SQLite engines (PostgreSQL would use its own tsvector path).
     Safe to call repeatedly; called from ``init_db``.
@@ -899,7 +896,52 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         action = _decide_fts_rebuild(conn, rebuild, existed)
         if action == "rebuilt":
             rebuild_index(conn)
+        elif action == _PARTIAL:
+            action = _heal_partial_index(conn)
     return action
+
+
+#: What ``_decide_fts_rebuild`` answers for a populated index whose document count differs from the article count.
+_PARTIAL = "partial"
+
+
+def _heal_partial_index(conn) -> str:
+    """Rebuild a PARTIAL index at boot under a savepoint; on a database error keep the partial index and boot.
+
+    The count comparison (R412, OPEN_QUEUE 2026-10-27 item 9) finds a partial index on exactly the stores where the
+    file itself may be damaged (a torn copy, a malformed page). A rebuild that then fails on that damage must not make
+    every unlock fail where the boot used to come up with a partial index: the savepoint returns the index to what it
+    was, the log names the error's type, and ``fts_status`` and the explicit re-index job remain the way to see and
+    heal it. Anything that is not a database error (an interrupt, a bug) still propagates."""
+    import sqlite3
+
+    from sqlalchemy.exc import DBAPIError
+
+    _run(conn, "SAVEPOINT oo_fts_partial")
+    try:
+        rebuild_index(conn)
+    except (sqlite3.DatabaseError, DBAPIError) as exc:
+        # SQLite can already have rolled the whole transaction back (a full disk, an I/O error): then there is no
+        # savepoint to return to, and the caller sees the original error rather than a boot on a lost transaction.
+        if not _back_to_savepoint(conn, "oo_fts_partial"):
+            raise
+        _LOG.warning("FTS: the partial index could not be rebuilt at boot (%s); kept as it was", type(exc).__name__)
+        return "skipped"
+    except BaseException:
+        _back_to_savepoint(conn, "oo_fts_partial")
+        raise
+    _run(conn, "RELEASE oo_fts_partial")
+    return "rebuilt"
+
+
+def _back_to_savepoint(conn, name: str) -> bool:
+    """Roll back to and release savepoint ``name``; ``False`` when there is none left to return to."""
+    try:
+        _run(conn, f"ROLLBACK TO {name}")
+        _run(conn, f"RELEASE {name}")
+    except Exception:  # noqa: BLE001 - the caller decides what a lost savepoint means
+        return False
+    return True
 
 
 #: Articles read per step of a full rebuild (one read of each article's text).
@@ -1077,7 +1119,7 @@ def index_articles(con, ids: Sequence[int]) -> int:
         return 0
     rows = _run(
         con,
-        "SELECT id, title, content FROM articles WHERE id IN"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(ids); every id is a bound parameter
+        "SELECT id, title, content FROM articles WHERE id IN"  # noqa: S608  # nosec B608 # the only interpolation is a placeholder count derived from len(ids); every id is a bound parameter
         f" ({','.join('?' * len(ids))})",
         tuple(ids),
     ).fetchall()
@@ -1088,8 +1130,9 @@ def index_articles(con, ids: Sequence[int]) -> int:
 def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
     """Decide whether ``ensure_fts`` should run the corpus-scaled ``'rebuild'``.
 
-    All probes here are CHEAP (``LIMIT 1`` / a shadow-table lookup) — none scans the corpus
-    or reads article content through the codec, so the decision itself is fast even at 5 TB.
+    All probes here are CHEAP (``LIMIT 1`` probes, then one count of each side) — none reads
+    article content through the codec, and the counts follow the number of rows, never their
+    text, so the decision itself stays short at 5 TB (about 0.3 s per million articles cold).
 
     THE EXTERNAL-CONTENT GOTCHA: ``SELECT rowid FROM article_fts`` reads the *content* table
     (``articles``), NOT the index, so it can NEVER tell "is the index populated?" — it
@@ -1122,24 +1165,105 @@ def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
         # risk a corpus-scaled rebuild on a false negative (a false skip only costs a manual
         # re-index; a false rebuild reintroduces the P0.4 slow boot).
         return "skipped"
-    return "rebuilt" if not index_has_docs else "skipped"
+    if not index_has_docs:
+        return "rebuilt"
+    # A populated index is checked WHOLE, not only for emptiness (R412, OPEN_QUEUE 2026-10-27 item 9): every
+    # article is one document (the insert trigger and ``rebuild_index`` both index every row, an empty text
+    # included), so a store whose two counts differ has a hole somewhere -- a missing head, a hole in the middle,
+    # a missing tail or a document left behind -- which ``fts_status`` could only infer from the ends. Both counts
+    # follow the NUMBER of rows, never their text: ``articles`` is counted through a covering index (0.24 to
+    # 0.33 s cold at 1,000,000 articles, median 0.29 s, measured 2026-10-27; the plan is the planner's choice) and
+    # the docsize shadow holds one short row per document. A healthy store pays that once per boot and rebuilds
+    # nothing.
+    articles, documents = conn.execute(
+        text("SELECT (SELECT count(*) FROM articles), (SELECT count(*) FROM article_fts_docsize)")
+    ).one()
+    if articles != documents:
+        _LOG.warning(
+            "FTS: the index holds %d documents for %d articles; rebuilding it whole", documents, articles
+        )
+        return _PARTIAL
+    return "skipped"
 
 
-def optimize_after_bulk(session: Session) -> dict:
+#: Pages one bounded merge step may write: a fraction of a second of the writer gate each. The count is POSITIVE on
+#: purpose. A negative count merges toward one segment like ``'optimize'``, but measured on SQLite 3.53 and SQLCipher
+#: (2026-11-15), a write to the index between its steps abandons the partial merge and the segment count GROWS (15 to 34
+#: segments in 400 steps with one article insert per step; a review run hit FTS5's 2000-segment cap, which fails the
+#: collector's own inserts). A positive count is SQLite's incremental merge, made to run between writes: it merges a
+#: level once it holds ``usermerge`` segments and leaves a handful, and interleaved writes do not undo it.
+_FTS_MERGE_STEP_PAGES = 2000
+
+
+def _fts_merge_budget_s() -> float:
+    """How long one tuning pass may spend merging the search index (OO_FTS_MERGE_BUDGET_S, default 300 s; 0 = no
+    merge). Whatever is left stays correct, only less merged, and the next bulk pass carries on from there."""
+    try:
+        return max(0.0, float(_os.getenv("OO_FTS_MERGE_BUDGET_S", "300")))
+    except (TypeError, ValueError):
+        return 300.0
+
+
+def merge_fts_segments(
+    session: Session, *, budget_s: float, should_stop: Callable[[], bool] | None = None, max_steps: int | None = None
+) -> bool:
+    """Merge the ``article_fts`` index in bounded steps, each in its own short hold of the writer gate.
+
+    Measured on a field import (2026-11-15): one FTS5 ``'optimize'`` held the writer gate for more than 32 minutes after
+    the last backup, and the post-import re-index could not start until it let go. SQLite's incremental ``'merge'``
+    (positive page count, see :data:`_FTS_MERGE_STEP_PAGES` for why not negative) stops after that many pages, so the
+    gate is given back between steps, other writers go in between without undoing the work, and the pass
+    ends at ``budget_s`` or at ``should_stop``. SQLite's own rule says when it is finished: a step that changes fewer
+    than two rows found nothing left to merge. Returns True when nothing was left to merge: a few segments per level
+    may remain, which is the state SQLite's own automerge keeps between writes, rather than the single segment of
+    ``'optimize'``."""
+    from src.database.writer import connection_first, write_lock
+
+    if budget_s <= 0:
+        return False
+    deadline = time.monotonic() + budget_s
+    steps = 0
+    while True:
+        if should_stop is not None and should_stop():
+            return False
+        if max_steps is not None and steps >= max_steps:
+            return False
+        steps += 1
+        if time.monotonic() >= deadline:
+            return False
+        connection_first(session)
+        with write_lock():
+            # total_changes() is per connection, so both reads are made inside one step, on the connection that ran it.
+            before = int(session.execute(text("SELECT total_changes()")).scalar() or 0)
+            session.execute(
+                text("INSERT INTO article_fts(article_fts, rank) VALUES ('merge', :n)"), {"n": _FTS_MERGE_STEP_PAGES}
+            )
+            after = int(session.execute(text("SELECT total_changes()")).scalar() or 0)
+            session.commit()
+        if after - before < 2:
+            return True
+
+
+def optimize_after_bulk(session: Session, *, should_stop: Callable[[], bool] | None = None) -> dict:
     """Tuning pass after a BULK write (a whole-corpus re-index or a large article
     import) — keyword-engine Phase 1.4. Two cheap, gated, SQLite-only steps:
 
-    * FTS5 ``'optimize'`` — merge the external-content FTS index segments that a bulk
-      article load churns into many small b-trees, for faster MATCH queries. DISTINCT
-      from ``PRAGMA optimize``; a near no-op when the index is already merged (e.g.
-      after a keyword-only re-index that never touched ``articles``).
+    * FTS5 incremental ``'merge'`` in bounded steps (:func:`merge_fts_segments`) — merge
+      the external-content FTS index segments that a bulk article load churns into many
+      small b-trees, for faster MATCH queries, giving the writer gate back between steps.
+      It ends with a few segments per level (SQLite's automerge state), not the single
+      segment a full FTS5 ``'optimize'`` would leave. DISTINCT from ``PRAGMA optimize``;
+      a near no-op when nothing is left to merge (e.g. after a keyword-only re-index that
+      never touched ``articles``).
     * ``PRAGMA optimize`` (bounded by ``analysis_limit``) — refresh the query planner's
       statistics after a big ``keyword_mentions`` / ``keywords`` churn so the next
       trending / top / associations queries pick good indexes.
 
     Both are writes (the FTS merge writes the index; ``PRAGMA optimize`` may run ANALYZE),
     so they take the single-writer gate. Best-effort: a tuning failure (incl. a missing
-    FTS table) never breaks the caller. Returns a ``{"fts", "planner"}`` bool tally.
+    FTS table) never breaks the caller. Returns a ``{"fts", "planner"}`` bool tally;
+    ``"fts"`` is True when the merge found nothing left to merge, False when the budget,
+    a stop or a failure ended it first.
 
     (The in-memory READ lever is ``cache_size`` — env ``OO_SQLITE_CACHE_MB``, default
     64 MiB, set per connection in ``session.py``; mmap is unavailable under the SQLCipher
@@ -1152,21 +1276,19 @@ def optimize_after_bulk(session: Session) -> dict:
     from src.database.writer import connection_first, write_lock
 
     try:
-        connection_first(session)  # the connection, then the gate; a pool timeout is a skipped tuning step, as the gate's would be
-        with write_lock():
-            session.execute(text("INSERT INTO article_fts(article_fts) VALUES ('optimize')"))
-            session.commit()
-        out["fts"] = True
+        # Bounded and stoppable steps rather than one 'optimize' that held the gate for half an hour on a large index
+        # (merge_fts_segments). "fts" says whether the merge finished: nothing left to merge, a few segments per level.
+        out["fts"] = merge_fts_segments(session, budget_s=_fts_merge_budget_s(), should_stop=should_stop)
     except Exception as exc:  # noqa: BLE001 - a tuning step must never break the caller
         session.rollback()
-        log_failure(_LOG, "FTS5 optimize failed", exc, level=logging.WARNING)
+        log_failure(_LOG, "FTS5 merge failed", exc, level=logging.WARNING)
     try:
         from src.config.power_profiles import fts_analysis_limit
 
         _analysis_limit = fts_analysis_limit()  # §7 knob: OO_FTS_ANALYSIS_LIMIT, clamped int.
         connection_first(session)  # the commit above gave the connection back
         with write_lock():
-            # nosec B608 - _analysis_limit is a clamped int from power_profiles, never user input;
+            # nosec B608 # _analysis_limit is a clamped int from power_profiles, never user input;
             # PRAGMA does not accept a bound parameter.
             session.execute(text(f"PRAGMA analysis_limit={_analysis_limit}"))  # noqa: S608
             session.execute(text("PRAGMA optimize"))
@@ -1485,7 +1607,7 @@ def field_where(
         cond, p = _field_condition(ff, f"{prefix}{i}", exact)
         params.update(p)
         body = (
-            "SELECT 1 FROM articles a LEFT JOIN sources s ON s.id = a.source_id "  # nosec B608 - `outer` is checked against three literals above; `cond` is built from _FIELD_COLUMNS literals and one bound :param
+            "SELECT 1 FROM articles a LEFT JOIN sources s ON s.id = a.source_id "  # nosec B608 # `outer` is checked against three literals above; `cond` is built from _FIELD_COLUMNS literals and one bound :param
             f"WHERE a.id = {outer} AND {cond}"
         )
         parts.append(("NOT EXISTS (" if ff.negated else "EXISTS (") + body + ")")
@@ -1545,7 +1667,7 @@ def exact_where(parsed: ParsedQuery, *, outer: str, prefix: str = "oox") -> tupl
     if not cond:
         return "", {}
     return (
-        "EXISTS (SELECT 1 FROM articles a WHERE a.id = "  # nosec B608 - `outer` is checked against three literals above; `cond` holds only instr() over two literal columns and bound :params
+        "EXISTS (SELECT 1 FROM articles a WHERE a.id = "  # nosec B608 # `outer` is checked against three literals above; `cond` holds only instr() over two literal columns and bound :params
         f"{outer} AND {cond})",
         params,
     )
@@ -1656,7 +1778,7 @@ def search_ids(
     # the first line of the concatenation, so the marker belongs HERE and not on the
     # enclosing text(...) call, where it silently does nothing.
     sql = (
-        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment and the literal-built `extra` are concatenated; every value is a bound :param
+        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 # only the constant `gate` fragment and the literal-built `extra` are concatenated; every value is a bound :param
         + gate
         + (" AND " + extra if extra else "")
         + " ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
@@ -1727,7 +1849,7 @@ def field_only_where(
         exact=exact, neg=neg,
     )
     return (
-        "EXISTS (SELECT 1 FROM articles a0 WHERE a0.id = articles.id AND "  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+        "EXISTS (SELECT 1 FROM articles a0 WHERE a0.id = articles.id AND "  # nosec B608 # `where` is built by _field_only_sql from literals and bound :params only
         + where + ")",
         params,
     )
@@ -1740,7 +1862,7 @@ def _field_only_ids(session: Session, query, *, limit, exclude_quarantined, expa
         near_default=near_default, exact=exact, neg=neg,
     )
     sql = (
-        "SELECT a0.id FROM articles a0 WHERE "  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+        "SELECT a0.id FROM articles a0 WHERE "  # nosec B608 # `where` is built by _field_only_sql from literals and bound :params only
         + where
         + " ORDER BY a0.published_at DESC, a0.id DESC LIMIT :lim"
     )
@@ -1811,7 +1933,7 @@ def search_total(
                 near_default=near_default, exact=exact, neg=neg,
             )
             row = session.execute(
-                text("SELECT count(*) FROM articles a0 WHERE " + where), fparams  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+                text("SELECT count(*) FROM articles a0 WHERE " + where), fparams  # nosec B608 # `where` is built by _field_only_sql from literals and bound :params only
             ).fetchone()
             return int(row[0]) if row else 0
     gate = _QUARANTINE_GATE if exclude_quarantined else ""
@@ -1819,7 +1941,7 @@ def search_total(
     # `extra` is literal-built, and every value is a bound :param. bandit attributes B608
     # to the first line of the concatenation, so the marker belongs here.
     sql = (
-        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment and the literal-built `extra` are concatenated; the query is a bound :param
+        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 # only the constant `gate` fragment and the literal-built `extra` are concatenated; the query is a bound :param
         + gate
         + (" AND " + extra if extra else "")
     )

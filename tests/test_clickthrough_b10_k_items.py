@@ -214,8 +214,11 @@ def test_the_trend_method_and_window_caveat_the_server_sends_are_keyed_x12():
 def test_the_mind_map_controls_and_its_own_sentences_are_keyed():
     js = read_static("app-analysis.js")
     body = function_body(js, "renderAnMindmap")
-    assert 'esc(t("Map"))' in body and 'esc(t("Cloud"))' in body
-    assert_absent(body, '})">Map</button>', why="the Map button is an English literal")
+    assert 'esc(t("Mind-map"))' in body and 'esc(t("Cloud"))' in body
+    assert_absent(body, '})">Mind-map</button>', why="the Mind-map button is an English literal")
+    # The tree view's button is keyed "Mind-map", as the Analysis tab's own #mm-views toggle is, never the bare "Map": that key
+    # is the geographic Map subtabs' (index.html data-tab="map"), and zh read the mind-map button as 地图 (a map of places).
+    assert_absent(body, 't("Map")', why="the geographic Map key labels the mind-map's tree view")
     assert_absent(body, '})">Cloud</button>', why="the Cloud button is an English literal")
     assert "t(g.method)" in body and "t(g.caveat)" in body
 

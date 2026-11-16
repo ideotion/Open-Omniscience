@@ -1,4 +1,4 @@
-<!-- zh: AI-drafted translation of docs/QUICKSTART.md (2026-11-13, R677), not yet reviewed by a native speaker; the English original is authoritative. Coverage: the whole document, 17 of 17 headings. Improve it with a pull request; corrections by native speakers are welcome. -->
+<!-- zh: Translation of docs/QUICKSTART.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 17 of 17 headings. Corrections are welcome as a pull request. -->
 
 # 快速入门——运行本应用
 

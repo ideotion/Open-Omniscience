@@ -185,7 +185,8 @@ def test_the_queue_drains_once_after_its_window_closes():
 
     from src.backup.import_queue import ImportQueueManager
 
-    src = inspect.getsource(ImportQueueManager._run)
+    # _run_with_keys holds the body since 2026-11-15; _run wraps it only to drop the passphrases however it ends.
+    src = inspect.getsource(ImportQueueManager._run_with_keys)
     assert "start_reindex_drain" in src, "the queue must drain the backlog it created"
     assert src.index("with exclusive_window()") < src.index("start_reindex_drain"), (
         "the drain must start AFTER the exclusive window closes, never inside it"

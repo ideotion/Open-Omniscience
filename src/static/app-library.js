@@ -184,9 +184,8 @@
         const fill = frac <= 0 ? "var(--panel2)"
           : `color-mix(in srgb, var(--accent) ${Math.round(12 + frac * 88)}%, var(--panel2))`;
         const title = `${t(_RHYTHM_DAYS[d])} ${h}:00 — `
-          + t("{total} articles over {occ} occurrence(s), {avg} on average")
-              .replace("{total}", fmtNum(g.total[d][h])).replace("{occ}", String(occ))
-              .replace("{avg}", fmtNum(avg, 1));
+          + _tfn("{total} articles over {occ} occurrence(s), {avg} on average",
+              { total: fmtNum(g.total[d][h]), occ: String(occ), avg: fmtNum(avg, 1) });
         cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="${fill}"`
           + ` stroke="var(--border)" stroke-width="0.4"><title>${esc(title)}</title></rect>`;
       }

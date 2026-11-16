@@ -1732,7 +1732,7 @@ def _after_runs_pause(action, what: str) -> dict:
     """Free the model without losing a run's work (R669): a queued summary or translation run in flight pauses first
     (R689: the generation in flight is dropped and redone on resume), and the release or stop happens once it has. With nothing running the action happens now. A run left
     paused waits for the operator's Resume, which skips every article it already stored."""
-    from src.jobs.llm_bulk_queue import pause_for_backend, wait_paused
+    from src.jobs.llm_bulk_queue import pause_for_backend, release_done, wait_paused
 
     deferred = {
         "deferred": True,
@@ -1743,8 +1743,13 @@ def _after_runs_pause(action, what: str) -> dict:
         if what in _DEFERRED:
             return deferred
     # A run in flight pauses first; a model call a stop abandoned (R689) is waited for too, never freed under.
-    if not pause_for_backend() and not abandoned_generations():
+    paused = pause_for_backend()  # when True, the queue refuses a Resume until release_done() below
+    if not paused and not abandoned_generations():
         return action()
+
+    def _settled() -> None:
+        if paused:
+            release_done()
 
     def _later() -> None:
         try:
@@ -1758,9 +1763,11 @@ def _after_runs_pause(action, what: str) -> dict:
         finally:
             with _DEFERRED_LOCK:
                 _DEFERRED.discard(what)
+            _settled()  # after the action: a Resume pressed meanwhile was refused, never run under the release
 
     with _DEFERRED_LOCK:
         if what in _DEFERRED:
+            _settled()  # the other click's wait covers the run; this one's count is given back
             return deferred
         _DEFERRED.add(what)
     try:
@@ -1768,6 +1775,7 @@ def _after_runs_pause(action, what: str) -> dict:
     except RuntimeError as exc:  # no thread to wait in: the run is pausing, so wait here rather than free it under a generation
         with _DEFERRED_LOCK:
             _DEFERRED.discard(what)
+        _settled()
         log_failure(_LOG, f"ollama {what}: could not wait in the background", exc, level=logging.WARNING)
         raise HTTPException(status_code=409, detail="The run is pausing; try again once it shows paused in the task manager.") from None
     return deferred
@@ -2757,6 +2765,11 @@ def _await_unless_stopped(work, stopped):
     return box.get("value")
 
 
+class BulkRunStopped(Exception):
+    """A queued run's stop came while it was being prepared (resolving the model, selecting the articles): nothing was
+    registered and nothing stored."""
+
+
 def prepare_bulk_run(
     req: BulkLLMRequest,
     db: Session,
@@ -2828,7 +2841,11 @@ def prepare_bulk_run(
     if not work:
         raise HTTPException(status_code=404, detail="No matching articles with content.")
 
-    model = req.model or active_model()
+    # The backend is the one the client was resolved for: asking again would probe the machine a second time (nvidia-smi and the
+    # servers, seconds a stop waits through) and could answer differently (active_model's docstring).
+    model = req.model or active_model(client_backend_name)
+    if should_stop is not None and should_stop():
+        raise BulkRunStopped()
     target = (req.target_language or "English").strip() or "English"
     keep_alive = _effective_keep_alive()
     if op == "summarize":
@@ -3013,15 +3030,14 @@ def prepare_bulk_run(
                         max_workers=concurrency,
                     )
 
-                if should_stop is None:
-                    results = _gen_batch()
-                else:
-                    results = _await_unless_stopped(_gen_batch, _stopped)
-                    if results is None:
-                        # Stopped mid-generation: nothing of this batch is stored; the resume picks the article(s) up again.
-                        yield emit({"event": "stopped", "total": total, "stored": stored,
-                                    "skipped": skipped, "failed": failed})
-                        return
+                # The streamed route (no ``should_stop``) polls its task-manager Stop the same way, so a Stop never waits for a
+                # whole generation there either.
+                results = _await_unless_stopped(_gen_batch, _stopped)
+                if results is None:
+                    # Stopped mid-generation: nothing of this batch is stored; the resume picks the article(s) up again.
+                    yield emit({"event": "stopped", "total": total, "stored": stored,
+                                "skipped": skipped, "failed": failed})
+                    return
                 # Process/store STRICTLY IN ORDER, regardless of which generation
                 # actually finished first — a stored ArticleAnalysis always lines
                 # up with the right article, and the first LLMUnavailable found

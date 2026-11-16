@@ -325,8 +325,10 @@ def test_the_resumed_export_ends_on_the_same_completion_panel():
     """A resumed export ended on a bare "Backup complete" line: no Included line, no
     summary file, no facts panel. Both paths now end through one function."""
     backup = strip_comments(read_static("app-backup.js"))
-    assert_present(function_body(backup, "_uxRun"), "await _uxFinishExport(prog, dest, t);")
-    assert_present(function_body(backup, "_uxResume"), "await _uxFinishExport(")
+    # R701: both end in _uxWatchExport, which runs the one completion.
+    assert_present(function_body(backup, "_uxRun"), "await _uxWatchExport(")
+    assert_present(function_body(backup, "_uxResume"), "await _uxWatchExport(")
+    assert_present(function_body(backup, "_uxWatchExport"), "await _uxFinishExport(")
     fin = function_body(backup, "_uxFinishExport")
     for needle in ("/api/backup/export-summary", "_uxRenderExportPanel(", "_uxExportIncluded"):
         assert_present(fin, needle)

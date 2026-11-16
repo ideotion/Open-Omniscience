@@ -41,10 +41,12 @@
       try {
         const r = await api(`/api/sources/candidates/${id}/${action}`, {method: "POST"});
         toast(action === "promote"
-          ? `Promoted ${r.promoted} (created disabled — enable it below when ready).`
-          : `Dismissed ${r.dismissed}.`);
+          ? _tfn("Promoted {domain} (created disabled — enable it below when ready).", { domain: r.promoted })
+          : _tfn("Dismissed {domain}.", { domain: r.dismissed }));
         loadCandidates(); loadManagedSources();
-      } catch (e) { toast(`${action} failed: ` + e.message, "err"); }
+      } catch (e) {
+        toast(_failMsg(action === "promote" ? "Promote failed: {error}" : "Dismiss failed: {error}", e), "err");
+      }
     }
 
     // Bulk source QUALIFICATION (2026-07-23 field-feedback S1.2): the manual catch-up
@@ -1917,8 +1919,13 @@
       const box = $("ai-backend-box");
       const sel = $("ai-backend-select");
       if (!box) return;
+      // A load that a pick or a save overtook paints NOTHING (row 15): skipping only the select
+      // left it rewriting the "Active backend" line and the override box from the old stored
+      // value. The load that follows every save repaints the whole panel, so nothing is lost.
+      const stale = () => picksAtStart !== _aiBackendPicks || _aiBackendSaving !== 0;
       try {
         const b = await api("/api/llm/backend");
+        if (stale()) return;
         const gpu = b.gpu || {};
         const vllm = b.vllm || {};
         // Ollama is now reported as two INDEPENDENT facts (installed / running), so
@@ -2003,8 +2010,9 @@
           // checkbox that reverses it. The caveat colour is invariant #23's
           // var(--caveat) (AA-verified on all 17 themes).
           hwHtml;
-        if (sel && picksAtStart === _aiBackendPicks && _aiBackendSaving === 0) sel.value = b.stored_override || "auto";
+        if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
+        if (stale()) return;
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
       }
     }
@@ -2482,7 +2490,25 @@
         `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` + keyPill +
         `<div class="muted" style="font-size:12px;margin-top:4px">` +
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
-        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;
+        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>` +
+        // An unreadable settings store is not an unset one: the switches below then show defaults, not the saved choice.
+        (s.store_unreadable ? `<div class="card-caveat" style="margin-top:4px">${esc(_custT(CUST_STORE_UNREADABLE))}</div>` : "");
+    }
+
+    const CUST_STORE_UNREADABLE = "The custody settings could not be read, so automatic logging is off and each new entry is queued " +
+      "until they can be read. The switches below show the defaults, not your saved choice.";
+    const CUST_DRAIN_SETTINGS_UNREADABLE = "Nothing was recorded: the custody settings could not be read, so no entry is signed under " +
+      "guessed preferences. The entries stay queued; try again once the settings can be read.";
+    const CUST_DRAIN_QUEUE_UNREADABLE = "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.";
+    function _custT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    // What a drain could not do, said beside its result: an unread queue or unreadable settings are not "nothing owed".
+    function _custDrainNotes(d) {
+      const runs = [d.drained, d.drained_after_queue].filter(Boolean);
+      const notes = [];
+      if (runs.some((r) => r.settings_unreadable)) notes.push(_custT(CUST_DRAIN_SETTINGS_UNREADABLE));
+      const qerr = runs.find((r) => r.queue_read_error);
+      if (qerr) notes.push(_qualTf(CUST_DRAIN_QUEUE_UNREADABLE, { reason: qerr.queue_read_error }));
+      return notes.join(" ");
     }
 
     // The server's LAST-KNOWN anchoring_mode, tracked so saveCustody() can tell a
@@ -2554,9 +2580,11 @@
           if (rec) rec.style.display = "none";
           return;
         }
+        const notes = _custDrainNotes(d);
         out.textContent = _qualTf("{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
           { n: sc.missing || 0, checked: sc.checked || 0 })
-          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."));
+          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."))
+          + (notes ? " " + notes : "");
         if (rec) rec.style.display = sc.missing ? "" : "none";
       } catch (e) {
         out.textContent = _apiErrorMessage(e);
@@ -2570,7 +2598,8 @@
         // Both drains write owed entries marked late: the gaps a refused drain left queued are written by the FIRST one of the next
         // press (R618), so counting only the second said "Recorded 0" for entries it had just written.
         const n = ((d.drained || {}).recorded || 0) + ((d.drained_after_queue || {}).recorded || 0);
-        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n });
+        const notes = _custDrainNotes(d);
+        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n }) + (notes ? " " + notes : "");
         if (btn) btn.style.display = "none";
       } catch (e) {
         out.textContent = _apiErrorMessage(e);

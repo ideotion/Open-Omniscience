@@ -271,12 +271,12 @@ def search_names(q: str, limit: int = 8) -> dict:
         if not live:
             return empty
         sc, sp = _scope_sql(live)
-        total = s.execute(text(f"SELECT count(*) FROM osm_names WHERE osm_names MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+        total = s.execute(text(f"SELECT count(*) FROM osm_names WHERE osm_names MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 # sc is placeholders built by _scope_sql; values are bound
         # A notable object (a place, an administrative area) leads, then FTS5's own rank. Rank alone is wrong for a name
         # search: BM25 favours the SHORTEST document, and a town carrying its name in five languages is a long one, so on a
         # real extract (Liechtenstein, 2013) a post office called "Vaduz" outranked the capital, which came 16th of 16.
         ids = [r[0] for r in s.execute(
-            text("SELECT osm_names.object_id FROM osm_names JOIN osm_objects o ON o.id = osm_names.object_id "  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+            text("SELECT osm_names.object_id FROM osm_names JOIN osm_objects o ON o.id = osm_names.object_id "  # nosec B608 # sc is placeholders built by _scope_sql; values are bound
                  f"WHERE osm_names MATCH :m AND osm_names.{sc} ORDER BY o.notable DESC, osm_names.rank LIMIT :n"),
             {"m": m, "n": int(limit), **sp},
         )]
@@ -372,9 +372,9 @@ def geocode(q: str, limit: int = 5, facts: bool = False) -> dict:
     with store.lane_session("osm") as s:
         m = _match(tokens, prefix_last=False)
         sc, sp = _scope_sql([c["alpha3"] for c in scope])
-        total = s.execute(text(f"SELECT count(*) FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+        total = s.execute(text(f"SELECT count(*) FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc}"), {"m": m, **sp}).scalar() or 0  # nosec B608 # sc is placeholders built by _scope_sql; values are bound
         hits = s.execute(
-            text(f"SELECT object_id, address, alpha3 FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc} ORDER BY rank LIMIT :n"),  # nosec B608 - sc is placeholders built by _scope_sql; values are bound
+            text(f"SELECT object_id, address, alpha3 FROM osm_addresses WHERE osm_addresses MATCH :m AND {sc} ORDER BY rank LIMIT :n"),  # nosec B608 # sc is placeholders built by _scope_sql; values are bound
             {"m": m, "n": int(limit), **sp},
         ).all()
         rows = {r.id: r for r in s.execute(
