@@ -532,7 +532,7 @@ def test_the_crash_report_names_the_tier_beside_the_peaks_it_bounds():
     assert "OO_COLUMNAR_SERVE" in txt and "chronology.json" in txt, (
         "the line states the tier's default and says where an operator's own choice is recorded"
     )
-    assert "resolved once, when the process started" in txt
+    assert "resolved when the process started and not re-resolved after it" in txt
     assert txt.index("memory tier (small") < txt.index("made of, at 3800.0 MB"), (
         "the tier is read before the memory it bounds"
     )

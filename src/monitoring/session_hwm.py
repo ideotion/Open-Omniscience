@@ -475,6 +475,17 @@ def _memory_budget_reading() -> dict[str, Any]:
         return {"error": type(exc).__name__}
 
 
+def note_memory_budget() -> None:
+    """R731: after the budget moved up, this session's record carries the tier it runs under from now on, with every
+    change, so a death after the change is not read against the start's tier. A session with no record yet keeps none."""
+    reading = _memory_budget_reading()
+    with _LOCK:
+        if not _MARKS:
+            return
+        _MARKS["memory_budget"] = reading
+        _write(dict(_MARKS))
+
+
 def _session_header() -> dict[str, Any]:
     """What identifies this session in its own record, written once at its start: the
     process, when it began, the allocator setting it began with and the memory tier it was

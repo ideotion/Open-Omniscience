@@ -47,12 +47,12 @@ def test_a_sustained_growth_across_a_boundary_raises_the_tier_from_the_lower_rea
     now = mb.budget()
     assert now["tier"] == "medium" and now["columnar_serve_default"] is True
     assert now["duckdb_memory_limit_mb"] == int(5900.0 * 0.15) > boot["duckdb_memory_limit_mb"]
-    assert now["sqlite_cache_mb"] == 16, "the page cache grows: it is read at each new connection"
-    # the pool cannot change on a live engine, so it keeps its boot size, and the totals say so
-    assert (now["db_pool_size"], now["db_max_overflow"]) == (boot["db_pool_size"], boot["db_max_overflow"])
+    # the pool cannot change on a live engine and its boot connections keep their page cache: both stay, and say so
+    assert (now["db_pool_size"], now["db_max_overflow"], now["sqlite_cache_mb"]) == (
+        boot["db_pool_size"], boot["db_max_overflow"], boot["sqlite_cache_mb"])
     assert now["pool_total"] == boot["pool_total"]
-    assert now["worst_case_pool_cache_mb"] == now["pool_total"] * 16
-    assert "Re-resolved while running" in now["reason"] and "keeps the size it was built with" in now["reason"]
+    assert now["worst_case_pool_cache_mb"] == boot["worst_case_pool_cache_mb"]
+    assert "Re-resolved while running" in now["reason"] and "keep the sizes they were built with" in now["reason"]
     logged = [r.getMessage() for r in caplog.records if "re-resolved upward" in r.getMessage()]
     assert len(logged) == 1 and "small" in logged[0] and "medium" in logged[0], "logged once, old and new tier"
     reading = mb.resolved_reading()
@@ -97,6 +97,7 @@ def test_an_operator_value_still_wins_after_a_regrow(machine, monkeypatch):
     assert mb.regrow_check(now_mono=60.0)["to_tier"] == "large"
     b = mb.budget()
     assert b["sqlite_cache_mb"] == 4 and b["overrides"] == {"sqlite_cache_mb": 4}
+    assert b["duckdb_memory_limit_mb"] == int(9000.0 * 0.15), "what is not the operator's still follows the machine"
 
 
 def test_the_switch_keeps_the_boot_budget_for_the_whole_run(machine, monkeypatch):
@@ -127,3 +128,51 @@ def test_the_liveness_thread_runs_the_check():
     src = Path("src/monitoring/session_history.py").read_text(encoding="utf-8")
     loop = src[src.index("def _loop() -> None:"):src.index("def start_liveness")]
     assert "regrow_check()" in loop and loop.index("tick_once()") < loop.index("regrow_check()")
+
+
+def test_a_cgroup_cap_on_the_first_reading_is_never_rounded_up(machine, monkeypatch):
+    """The pending reading was a cgroup limit (a hard cap the kernel kills at): sized from it, it is judged as it is,
+    never rounded up to the GiB above by the tolerance that a hardware reading gets."""
+    mb.budget()
+    readings = iter([(4050.0, "cgroup limit"), (9000.0, "machine")])
+    monkeypatch.setattr(mb, "budget_ram_mb", lambda: next(readings))
+    # 4,050 MiB as hardware would be a nominal 4 GiB (medium); as a cgroup cap it stays small.
+    assert mb.regrow_check(now_mono=0.0) is None
+    assert mb.regrow_check(now_mono=61.0) is None, "the lower reading, a cap, did not cross the boundary"
+    assert mb.budget()["tier"] == "small"
+
+
+def test_the_reading_and_its_moment_are_one_pair(machine):
+    mb.budget()
+    machine["mb"] = 9000.0
+    mb.regrow_check(now_mono=0.0)
+    mb.regrow_check(now_mono=61.0)
+    got = mb.resolved_reading()
+    assert got["tier"] == "large" and got["regrown"][0]["at"] == got["resolved_at"]
+
+
+def test_the_crash_record_and_the_report_carry_the_change(machine, monkeypatch):
+    from src.monitoring import forensics, session_hwm
+
+    mb.budget()
+    machine["mb"] = 9000.0
+    mb.regrow_check(now_mono=0.0)
+    mb.regrow_check(now_mono=61.0)
+    written: list[dict] = []
+    monkeypatch.setattr(session_hwm, "_MARKS", {"pid": 1, "memory_budget": {"tier": "small"}})
+    monkeypatch.setattr(session_hwm, "_write", lambda marks: written.append(marks))
+    session_hwm.note_memory_budget()
+    assert written and written[-1]["memory_budget"]["tier"] == "large"
+    line = " ".join(forensics._render_memory_budget(written[-1]["memory_budget"]))  # noqa: SLF001
+    assert "re-resolved upward while running" in line and "small to large" in line
+    assert "not re-resolved" not in line
+    steady = " ".join(forensics._render_memory_budget({"tier": "small", "total_ram_mb": 3500.0}))  # noqa: SLF001
+    assert "not re-resolved after it" in steady
+
+
+def test_a_session_with_no_record_yet_gets_none_from_the_note(machine, monkeypatch):
+    from src.monitoring import session_hwm
+
+    monkeypatch.setattr(session_hwm, "_MARKS", {})
+    monkeypatch.setattr(session_hwm, "_write", lambda marks: (_ for _ in ()).throw(AssertionError("wrote")))
+    session_hwm.note_memory_budget()

@@ -503,6 +503,8 @@ def pool_config() -> dict:
             "timeout_s": getattr(pool, "_timeout", None),
             "checked_out_now": int(pool.checkedout()) if callable(getattr(pool, "checkedout", None)) else None,
             "tier": b.get("tier"),
+            # R731: the budget may have moved up since; the pool cannot, so it was built under the start's tier.
+            "built_under_tier": ((b.get("regrown") or [{}])[0].get("from_tier") or b.get("tier")),
             "set_by_the_operator": sorted(
                 [k for k in ("db_pool_size", "db_max_overflow") if k in overrides]
                 + (["pool_timeout"] if os.getenv("OO_DB_POOL_TIMEOUT") not in (None, "") else [])

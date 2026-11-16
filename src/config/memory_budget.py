@@ -331,7 +331,7 @@ def _duckdb_threads(tier: str) -> int:
 
 _CACHE: dict[str, Any] | None = None
 #: When, and on how many logical CPUs, the cached budget above was resolved. ``budget()`` resolves
-#: ONCE per process, from the RAM total read at that instant, so the tier is a fact about a
+#: it at start (and ``regrow_check`` again, upward only, R731), from the RAM total read at that instant, so the tier is a fact about a
 #: moment -- and on a virtual machine whose memory is ballooned the total moves afterwards,
 #: so "which moment" is part of the fact. Kept beside the cache and set with it.
 _RESOLVED: dict[str, Any] | None = None
@@ -382,9 +382,9 @@ def reset_for_tests() -> None:
 #   * A tier boundary must be crossed; growth inside one tier changes nothing.
 #   * An operator's explicit value still wins (``resolve_for`` reads the same environment), and ``OO_MEMORY_REGROW=0``
 #     keeps the boot budget for the whole run.
-#   * The connection POOL is never resized: a live engine cannot change it, so the boot pool is carried over and said so.
-#     Everything else is read where it is used, at a safe point: the SQLite page cache at the next new connection, the
-#     DuckDB limit and threads at the next rollup build (a build snapshots its budget once, R147), and whether the
+#   * The connection POOL and its per-connection page cache are never resized: a live engine cannot change the pool, and
+#     its boot connections keep their cache, so both are carried over and said so. Everything else is read where it is
+#     used, at a safe point: the DuckDB limit and threads at the next rollup build (a build snapshots its budget once, R147), and whether the
 #     rollup runs at the next serve.
 #   * Logged once per change with the old and new tier, and kept in ``resolved_reading()`` for the diagnostics.
 REGROW_CONFIRM_S = 60.0
@@ -400,7 +400,7 @@ def regrow_enabled() -> bool:
 def regrow_check(now_mono: float | None = None) -> dict[str, Any] | None:
     """One check of R731's rule; call about once a minute. Returns the change record when the budget moved up, else
     None. Never lowers the tier, never resizes the pool, never raises."""
-    global _CACHE, _RESOLVED
+    global _CACHE
     import logging
     import time
 
@@ -429,18 +429,24 @@ def regrow_check(now_mono: float | None = None) -> dict[str, Any] | None:
         if now - float(pending["mono"]) < REGROW_CONFIRM_S:
             return None  # too soon to count as a second check; the first stays pending
         sized_from = min(float(pending["total"]), float(total))
+        # A cgroup limit on either reading is a hard cap: never round the smaller figure up to a nominal GiB.
+        exact = exact or bool(pending.get("exact"))
         new = resolve_for(sized_from, exact=exact)
         _GROWTH.clear()
         if _TIER_RANK.get(str(new.get("tier")), -1) <= cur_rank:
             return None  # the lower of the two readings did not cross the boundary
         new["total_ram_from"] = total_from
-        # The pool stays as built: it cannot change on a live engine (``session.py``).
-        for key in ("db_pool_size", "db_max_overflow"):
+        # The pool stays as built: it cannot change on a live engine (``session.py``). So does the per-connection page
+        # cache: the pool is LIFO with no recycle on SQLite, so its boot connections keep the cache they opened with, and a
+        # budget that named a larger one would overstate what they hold (resident_pool_cache_mb, collect_perf).
+        for key in ("db_pool_size", "db_max_overflow", "sqlite_cache_mb"):
             new[key] = cur[key]
         new["pool_total"] = int(new["db_pool_size"]) + int(new["db_max_overflow"])
         new["worst_case_pool_cache_mb"] = new["pool_total"] * int(new["sqlite_cache_mb"])
         change = {
             "at": _now_iso(),
+            "resolved_at": None,  # filled below: the same instant, under the name resolved_reading() reads
+            "cores": _cores(),
             "from_tier": cur.get("tier"),
             "to_tier": new.get("tier"),
             "from_total_ram_mb": cur.get("total_ram_mb"),
@@ -452,21 +458,20 @@ def regrow_check(now_mono: float | None = None) -> dict[str, Any] | None:
                 "connection pool keeps its boot size, everything else applies where it is next read"
             ),
         }
+        change["resolved_at"] = change["at"]
         history = list(cur.get("regrown") or []) + [change]
         new["regrown"] = history
         new["reason"] = (
             str(new.get("reason") or "")
             + f" Re-resolved while running: the machine grew from the {change['from_tier']} tier"
             + f" ({change['from_total_ram_mb']} MiB at start) to {change['to_total_ram_mb']} MiB; the connection pool"
-            + " keeps the size it was built with."
+            + " and the page cache keep the sizes they were built with."
         )
-        first = (_RESOLVED or {}).get("first_resolved_at") or (_RESOLVED or {}).get("resolved_at")
-        _RESOLVED = {"resolved_at": change["at"], "cores": _cores(), "first_resolved_at": first}
-        _CACHE = new
+        _CACHE = new  # one reference swap: a lock-free reader sees the old budget or the new one, whole
     logging.getLogger(__name__).warning(
-        "memory budget: re-resolved upward from the %s tier (%s MiB) to the %s tier (%s MiB); pool kept at %s+%s",
+        "memory budget: re-resolved upward from the %s tier (%s MiB) to the %s tier (%s MiB); pool and page cache kept at %s+%s x %s MiB",
         change["from_tier"], change["from_total_ram_mb"], change["to_tier"], change["to_total_ram_mb"],
-        new["db_pool_size"], new["db_max_overflow"],
+        new["db_pool_size"], new["db_max_overflow"], new["sqlite_cache_mb"],
     )
     return change
 
@@ -500,7 +505,11 @@ def resolved_reading() -> dict[str, Any]:
     It is a record of a decision, not a measurement of the machine now: for that, see
     :func:`reading_vs_now`."""
     b = budget()
-    moment = _RESOLVED or {}
+    # R731 never rewrites the start's moment: a change carries its own (``regrown``), inside the ONE budget dict this
+    # read took, so the tier and the moment it is reported with cannot come from two different resolves.
+    start = _RESOLVED or {}
+    changes = b.get("regrown") or []
+    moment = changes[-1] if changes else start
     return {
         "tier": b.get("tier"),
         "total_ram_mb": b.get("total_ram_mb"),
@@ -511,7 +520,7 @@ def resolved_reading() -> dict[str, Any]:
         "resolved_at": moment.get("resolved_at"),
         # R731: when the budget moved up while running, the start's moment and every change (old and new tier). Absent
         # keys, not empty ones, for a process that never re-resolved, so an older record and a steady run read alike.
-        **({"first_resolved_at": moment["first_resolved_at"]} if moment.get("first_resolved_at") else {}),
+        **({"first_resolved_at": start.get("resolved_at")} if changes else {}),
         **({"regrown": b["regrown"]} if b.get("regrown") else {}),
     }
 
@@ -566,7 +575,7 @@ def reading_vs_now() -> dict[str, Any]:
         "method": (
             "resolved: the RAM total psutil reported, or the cgroup memory limit when that is smaller "
             "(total_ram_from says which), when this process first asked for its "
-            "budget (decided from it at start, and again upward only under R731: the connection pool (at start only) and the SQLite page cache, "
+            "budget (decided from it at start, and again upward only under R731: the connection pool and the SQLite page cache (at start only), "
             "unless the operator set them, DuckDB's memory limit, and whether the in-memory "
             "rollup runs by default); now: the same reader, the same tier boundaries, read "
             "at this moment"

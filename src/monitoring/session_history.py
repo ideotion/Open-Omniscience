@@ -961,7 +961,10 @@ def _loop() -> None:
                 # R731: once a minute, whether the machine grew into a higher memory tier (upward only, confirmed twice).
                 from src.config.memory_budget import regrow_check
 
-                regrow_check()
+                if regrow_check() is not None:
+                    from src.monitoring.session_hwm import note_memory_budget
+
+                    note_memory_budget()  # the crash record reads the tier the session ran under from now on
             except Exception as exc:  # noqa: BLE001 - a budget check must never kill the liveness thread
                 log_failure(_LOG, "session ledger: memory tier check failed", exc, level=logging.DEBUG)
         try:
