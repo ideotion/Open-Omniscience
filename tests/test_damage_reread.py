@@ -74,13 +74,11 @@ def _build_store(path: Path, rows: int = 3000, fts: bool = False) -> None:
 
 
 def _leaf_pages(path: Path, table: str) -> list[int]:
-    con = sqlite3.connect(path)
-    try:
-        return [p for p, t in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name=?", (table,)) if t == "leaf"]
-    except sqlite3.OperationalError:
-        pytest.skip("this SQLite build has no dbstat virtual table (SQLITE_ENABLE_DBSTAT_VTAB)")
-    finally:
-        con.close()
+    """The leaf pages of ``table``: through ``dbstat``, or read off the file where the build has none (the macOS lane), so these
+    damage tests run there too rather than skip (``damaged_store_helpers.leaf_pages``, held equal to dbstat by its own test)."""
+    from tests.damaged_store_helpers import leaf_pages
+
+    return leaf_pages(path, table)
 
 
 def _overwrite(path: Path, pages: list[int]) -> None:
