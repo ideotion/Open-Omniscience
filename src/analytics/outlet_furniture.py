@@ -24,10 +24,12 @@ site (and nothing is written, so nothing in the corpus is recomputed):
 
 WHAT THIS DOES NOT CLAIM. "Half of the outlet's recent pages" is a structural fact, not a
 verdict that the text is boilerplate. A single-topic outlet's topic word is also on half its
-pages, and leaving it out of Related only makes Related lean on the other keywords. A story the
-outlet really published twice still shares its own paragraphs, which are on two pages, not on
-half of them, so it is still found, and near-identical pages in the sample (one story updated under new
-URLs, a live blog) count as one page. Too few pages to tell (under ``MIN_SAMPLE`` distinct pages, under
+pages, and leaving it out of Related only makes Related lean on the other keywords. The learning
+can take a story that fills half an outlet's newest pages for its template (content alone cannot
+tell it from a paywall block), so the reader decides per pair: a copy at another outlet keeps
+everything both pages carry unless both outlets learned it, while two updates of that story at
+its own outlet are no longer copies of each other. A story the outlet ran twice is on two pages,
+not half, so it is still found. Too few pages to tell (under ``MIN_SAMPLE`` distinct pages, under
 ``MIN_ARTICLES`` articles) leaves nothing out. The template is learned from the newest pages, so an older
 page made under an earlier template or extractor keeps whatever of that template differs. The caches hold
 a source's sets for half an hour, keyed by the store's engine as well as the source id.
@@ -51,8 +53,6 @@ SAMPLE_BODIES = 20
 MIN_SAMPLE = 8
 #: Sampled pages this similar are one page for the count (an updated story under a new URL, a live blog).
 _SAME_PAGE = 0.7
-#: The share a shingle needs when the pages could only be told apart once a provisional template was removed.
-FALLBACK_SHARE = 0.8
 #: A keyword is judged against its source's articles only from this many articles up.
 MIN_ARTICLES = 10
 #: The source's newest articles a keyword is counted over (an index-only read of their mentions; the
@@ -78,16 +78,18 @@ def repeated_shingles(
 ) -> frozenset[int]:
     """The shingles found on at least ``min_share`` of the DISTINCT pages in ``bodies`` (and on three). Pure.
 
-    Pages that are near-duplicates of each other (one story updated under new URLs, a live blog) count once, so
-    an outlet that ran one story several times does not learn that story as its template. Pages are one page when
-    they are near-identical as whole pages, or when their titles are (``titles``, aligned with ``bodies``; a
-    title most of the sample shares, such as a site name stored for every page, groups nothing).
+    Two passes. A first count over the raw pages gives a provisional template; pages are then one page when what
+    is LEFT of them once it is removed is near-identical, or when their titles are (``titles``, aligned with
+    ``bodies``; a title at least half the sample shares, such as a site name stored for every page, groups
+    nothing). Grouping on what is left matters because a template heavy enough to cause row 67 makes unrelated
+    pages near-identical as a whole (the second independent read), and a paywall block on part of the pages
+    makes those pages one group if they are compared whole (the fourth).
 
-    ONLY WHEN that leaves fewer than ``min_sample`` groups is a template so heavy that it makes unrelated pages
-    near-identical as a whole (row 67's own shape, the second independent read): then the pages are grouped on
-    what is left once a provisional template (a first count over the raw pages) is removed, and a shingle must
-    be on ``FALLBACK_SHARE`` of the groups. A template is on nearly every page; a story that fills half the
-    pages is not learned by that path either (the third read)."""
+    This CAN learn a story that fills half an outlet's newest pages. Content alone cannot tell a paywall block
+    over a short lede from a story under a short update (the fourth read), so the reader decides per pair
+    instead (``src.api.main``'s copies badge, :func:`src.signals.near_dup.near_duplicate_clusters`): a shingle
+    only one page of the pair carries is left out when that page's own source learned it, one both carry only
+    when both sources learned it. A story only its own outlet learned is kept in its copy elsewhere."""
     from src.signals.near_dup import shingles
 
     pairs = [(strip_known(b), (titles[i] if titles and i < len(titles) else "") or "") for i, b in enumerate(bodies) if b and b.strip()]
@@ -99,14 +101,11 @@ def repeated_shingles(
     common = {ti for ti in set(norm) if ti and norm.count(ti) * 2 >= len(norm)}  # a title most pages share says nothing
     title_sets = [shingles(ti, k=3) if len(ti.split()) >= 3 and ti not in common else set() for ti in norm]
     sets = [shingles(t) for t in texts]
-    groups = _groups(sets, title_sets)
-    if len(groups) >= min_sample:
-        return _on_half([set().union(*(sets[i] for i in g)) for g in groups], min_share)
     provisional = _on_half(sets, min_share)
     groups = _groups([st - provisional for st in sets], title_sets)
     if len(groups) < min_sample:
         return frozenset()
-    return _on_half([set().union(*(sets[i] for i in g)) for g in groups], FALLBACK_SHARE)
+    return _on_half([set().union(*(sets[i] for i in g)) for g in groups], min_share)
 
 
 def _groups(sets: list[set[int]], title_sets: list[set[int]]) -> list[list[int]]:

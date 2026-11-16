@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Hashable, Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from random import Random
@@ -283,6 +283,8 @@ def _connected_components(nodes: set[str], edges: set[tuple[str, str]]) -> list[
 # fingerprints the full content + parameters, and results are copied out so a
 # caller can never mutate the cache.
 _MEMO_MAX = 8
+#: The per-pair drop compares every pair exactly; the reader passes 13 docs.
+PAIR_MODE_MAX = 64
 _memo: OrderedDict[bytes, NearDupResult] = OrderedDict()
 
 
@@ -324,7 +326,8 @@ def near_duplicate_clusters(
     bands: int = 32,
     rows: int = 4,
     seed: int = 0,
-    drop_shingles: Mapping[str, Collection[int]] | None = None,
+    group_of: Mapping[str, Hashable] | None = None,
+    group_drop: Mapping[Hashable, Collection[int]] | None = None,
 ) -> NearDupResult:
     """Cluster ``{id: text}`` into near-duplicate groups.
 
@@ -333,44 +336,76 @@ def near_duplicate_clusters(
     *under*-merging, per the §6 "false merges hurt the innocent" rule). ``bands * rows``
     must equal ``num_perm``.
 
-    ``drop_shingles`` maps a doc id to shingles left out of that doc's set before it is
-    signed: the text its outlet repeats on every page (field test 2026-11-14 row 67, see
-    :mod:`src.analytics.outlet_furniture`). A doc with nothing left after the drop is not
-    compared at all: two empty sets have identical sentinel signatures, and would read as
-    copies of each other.
+    ``group_of`` and ``group_drop`` leave out, PER PAIR, the text the pair's outlets repeat on their
+    pages (field test 2026-11-14 row 67, see :mod:`src.analytics.outlet_furniture`): ``group_of``
+    maps a doc id to its group (its source), ``group_drop`` a group to the shingles it repeats. A
+    shingle only one page of the pair carries is left out when that page's own outlet repeats it (a
+    template the copy elsewhere lacks); a shingle both pages carry is left out only when BOTH outlets
+    repeat it. So two pages of one outlet are compared without its template, while a footer or a
+    story one outlet learned never splits or hides its copy at another outlet, and two sister sites
+    sharing one template are not copies of each other through it. A doc without a group drops
+    nothing. Each pair has its own sets, so this mode compares every pair exactly (no MinHash, no
+    LSH) and refuses more than ``PAIR_MODE_MAX`` docs. A pair where either side has nothing left is
+    not compared: two emptied pages are not copies of each other.
     """
     if bands * rows != num_perm:
         raise ValueError(f"bands*rows ({bands * rows}) must equal num_perm ({num_perm})")
 
+    pair_mode = group_of is not None or group_drop is not None
+    if pair_mode and len(docs) > PAIR_MODE_MAX:
+        raise ValueError(f"the per-pair drop compares every pair exactly: at most {PAIR_MODE_MAX} docs, got {len(docs)}")
     drop_key: tuple = ()
-    if drop_shingles is not None:  # a call with a drop never shares a memo entry with one without
-        drop_key = ("drop",) + tuple(sorted((d, tuple(sorted(v))) for d, v in drop_shingles.items() if v))
+    if pair_mode:  # a call with a drop never shares a memo entry with one without
+        groups = dict(group_of or {})
+        drops = {g: frozenset(v) for g, v in (group_drop or {}).items() if v}
+        drop_key = (
+            "pair",
+            tuple(sorted((d, repr(groups[d])) for d in docs if d in groups)),
+            tuple(sorted((repr(g), tuple(sorted(v))) for g, v in drops.items())),
+        )
     key = _fingerprint(docs, (threshold, num_perm, bands, rows, seed, drop_key))
     cached = _memo.get(key)
     if cached is not None:
         _memo.move_to_end(key)
         return _copy_result(cached)
 
-    if drop_shingles is None:
+    edges: set[tuple[str, str]] = set()
+    sims: dict[tuple[str, str], float] = {}
+    if pair_mode:
+        sets = {doc_id: shingles(text) for doc_id, text in docs.items()}
+        none: frozenset[int] = frozenset()
+        both: dict[tuple[str, str], frozenset[int]] = {}
+        ids = sorted(docs)
+        for i, a in enumerate(ids):
+            da = drops.get(groups[a], none) if a in groups else none
+            for b in ids[i + 1 :]:
+                db = drops.get(groups[b], none) if b in groups else none
+                if da is db or da == db:
+                    d2 = da
+                else:
+                    gk = (repr(groups.get(a)), repr(groups.get(b)))
+                    if gk not in both:
+                        both[gk] = da & db
+                    d2 = both[gk]
+                shared = len((sets[a] & sets[b]) - d2)
+                only_a = len((sets[a] - sets[b]) - da)
+                only_b = len((sets[b] - sets[a]) - db)
+                if not (shared + only_a) or not (shared + only_b):
+                    continue
+                s = shared / (shared + only_a + only_b)
+                if s >= threshold:
+                    edges.add((a, b))
+                    sims[(a, b)] = s
+    else:
         signatures = {
             doc_id: minhash_signature(shingles(text), num_perm, seed=seed)
             for doc_id, text in docs.items()
         }
-    else:
-        signatures = {}
-        for doc_id, text in docs.items():
-            kept = shingles(text) - set(drop_shingles.get(doc_id, ()))
-            if kept:  # an emptied doc is left out of pairing (see the docstring)
-                signatures[doc_id] = minhash_signature(kept, num_perm, seed=seed)
-    candidates = _lsh_candidate_pairs(signatures, bands, rows)
-
-    edges: set[tuple[str, str]] = set()
-    sims: dict[tuple[str, str], float] = {}
-    for a, b in candidates:
-        s = jaccard_estimate(signatures[a], signatures[b])
-        if s >= threshold:
-            edges.add((a, b))
-            sims[(a, b)] = s
+        for a, b in _lsh_candidate_pairs(signatures, bands, rows):
+            s = jaccard_estimate(signatures[a], signatures[b])
+            if s >= threshold:
+                edges.add((a, b))
+                sims[(a, b)] = s
 
     clusters: list[DuplicateCluster] = []
     for comp in _connected_components(set(docs), edges):
@@ -388,8 +423,9 @@ def near_duplicate_clusters(
 
     result = NearDupResult(
         method=(
-            f"MinHash({num_perm} perm) + LSH({bands}×{rows} banding); pairs confirmed "
-            f"at Jaccard ≥ {threshold}"
+            f"exact Jaccard over word 5-shingles, each pair without the text its sources repeat; pairs at ≥ {threshold}"
+            if pair_mode
+            else f"MinHash({num_perm} perm) + LSH({bands}×{rows} banding); pairs confirmed at Jaccard ≥ {threshold}"
         ),
         n=len(docs),
         threshold=threshold,

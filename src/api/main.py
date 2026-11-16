@@ -3184,8 +3184,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     related_html = ""
     _furniture_kw: set[int] = set()
     try:
-        from src.database.derived_views import KeywordMentionRead
         from src.analytics.outlet_furniture import outlet_furniture_keywords
+        from src.database.derived_views import KeywordMentionRead
 
         my_kw = [
             r[0]
@@ -3305,18 +3305,23 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
             docs = {str(a.id): ((a.title or "") + "\n" + strip_known(a.get_content() or ""))}
             titles: dict[str, str] = {}
-            source_ids = {a.source_id}
+            source_of = {str(a.id): a.source_id}
             for c in db.query(Article).filter(Article.id.in_(_cand)).all():
                 docs[str(c.id)] = (c.title or "") + "\n" + strip_known(c.get_content() or "")
                 titles[str(c.id)] = c.title or "(untitled)"
-                source_ids.add(c.source_id)
+                source_of[str(c.id)] = c.source_id
             # Field test 2026-11-14 row 67: text a source repeats on half or more of its recent pages is its
-            # template, and twelve unrelated pages of one site read as copies of each other on it. Every doc is
-            # compared without the UNION of the involved sources' repeated shingles, so a wire footer one outlet
-            # carries on every page cannot split its copy from the same item at a small outlet (read-time; nothing
-            # stored). The ingest's own furniture list is stripped on both sides, as in the learning.
-            _repeated = frozenset().union(*(outlet_repeated_shingles(db, sid) for sid in source_ids))
-            res = near_duplicate_clusters(docs, threshold=0.7, drop_shingles=dict.fromkeys(docs, _repeated))
+            # template, and twelve unrelated pages of one site read as copies of each other on it. Each PAIR is
+            # compared without the text its sources repeat: two pages of one source without that source's set, two
+            # pages of different sources without only what BOTH repeat, so a footer or a story one outlet learned
+            # never splits or hides its copy at another (read-time; nothing stored). The ingest's own furniture list
+            # is stripped on every side, as in the learning.
+            res = near_duplicate_clusters(
+                docs,
+                threshold=0.7,
+                group_of={d: sid for d, sid in source_of.items() if sid is not None},
+                group_drop={sid: outlet_repeated_shingles(db, sid) for sid in set(source_of.values()) if sid is not None},
+            )
             mine = next(
                 (cl for cl in res.clusters if str(a.id) in cl.members and len(cl.members) >= 2),
                 None,

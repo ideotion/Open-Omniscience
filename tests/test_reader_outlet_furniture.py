@@ -22,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.analytics import outlet_furniture
 from src.database.models import Article, Base, Source
+from src.signals import near_dup
 from src.signals.near_dup import near_duplicate_clusters, shingles
 
 _TEMPLATE = (
@@ -138,17 +139,27 @@ def test_a_template_that_makes_whole_pages_alike_is_still_learned():
     assert shingles(_HEAVY) <= outlet_furniture.repeated_shingles(pages, titles=[f"Story {i} of the day" for i in range(20)])
 
 
-def test_a_live_blog_on_most_pages_is_one_page_by_its_title():
+def test_a_live_blog_on_most_pages_still_finds_its_copy_elsewhere():
     blog = _story(5, 150)
     bodies = [blog + " " + _story(200 + i, 15) for i in range(12)] + [_story(300 + i, 80) for i in range(8)]
     titles = ["Live: the winter storm hits the coast"] * 12 + [f"Other story number {i}" for i in range(8)]
-    assert not (shingles(blog) & outlet_furniture.repeated_shingles(bodies, titles=titles))
+    learned = outlet_furniture.repeated_shingles(bodies, titles=titles)
+    # A title on most of the sample groups nothing (the site-name guard), so the blog may be learned; the reader's
+    # per-pair rule still finds the blog's copy at an outlet that did not learn it.
+    docs = {"mine": bodies[0], "elsewhere": blog}
+    assert frozenset(docs) in _copies(docs, {"mine": 1, "elsewhere": 2}, {1: learned, 2: frozenset()})
+
+
+def _copies(docs, group_of, group_drop, threshold=0.7):
+    res = near_duplicate_clusters(docs, threshold=threshold, group_of=group_of, group_drop=group_drop)
+    return {frozenset(c.members) for c in res.clusters if len(c.members) >= 2}
 
 
 @pytest.mark.parametrize("titled", ["stamped", "rewritten", "empty"])
-def test_a_story_on_half_the_pages_under_different_titles_is_not_learned(titled):
+def test_a_story_its_outlet_learned_still_finds_its_copy_elsewhere(titled):
     """The third independent read: a story on 10 of the 20 newest pages, each with its own short update and its own
-    title, was learned as the template by the provisional pass, and the reader then hid that story's copy elsewhere."""
+    title, can be learned as that outlet's template (content alone cannot tell it from a paywall block, the fourth
+    read). The reader then decides per pair: the copy at another outlet, which learned nothing, is still found."""
     story = _story(5, 150)
     bodies = [story + " " + _story(200 + i, 15) for i in range(10)] + [_story(300 + i, 80) for i in range(10)]
     head = {
@@ -157,10 +168,23 @@ def test_a_story_on_half_the_pages_under_different_titles_is_not_learned(titled)
         "empty": [""] * 10,
     }[titled]
     titles = head + [f"Other story number {i}" for i in range(10)]
-    assert not (shingles(story) & outlet_furniture.repeated_shingles(bodies, titles=titles))
-    copy = {"mine": bodies[0], "elsewhere": story}
     learned = outlet_furniture.repeated_shingles(bodies, titles=titles)
-    assert any(len(c.members) == 2 for c in near_duplicate_clusters(copy, threshold=0.7, drop_shingles=dict.fromkeys(copy, learned)).clusters)
+    docs = {"mine": bodies[0], "elsewhere": story}
+    assert frozenset(docs) in _copies(docs, {"mine": 1, "elsewhere": 2}, {1: learned, 2: frozenset()})
+
+
+def test_a_paywall_block_on_twelve_of_twenty_pages_is_learned():
+    """The fourth independent read: a paywall block on part of an outlet's pages, over short ledes under their own
+    titles, made those pages copies of each other (row 67 again) when the learning required whole-page groups."""
+    paywall = " ".join(_RND.choice(_VOCAB) + str(_RND.randrange(1000)) for _ in range(250))
+    locked = [_story(400 + i, 25) + "\n" + paywall for i in range(12)]
+    free = [_story(500 + i, 120) for i in range(8)]
+    titles = [f"Locked story {w} today" for w in _VOCAB[:12]] + [f"Free story {w} today" for w in _VOCAB[12:20]]
+    learned = outlet_furniture.repeated_shingles(locked + free, titles=titles)
+    assert len(shingles(paywall) & learned) >= 0.9 * len(shingles(paywall))
+    docs = {f"p{i}": locked[i] for i in range(6)}
+    assert _copies(docs, dict.fromkeys(docs, 1), {1: learned}) == set()
+    assert _copies(docs, dict.fromkeys(docs, 1), {1: frozenset()})  # without it, they are
 
 
 def test_a_title_the_whole_sample_shares_groups_nothing():
@@ -178,34 +202,42 @@ def test_the_ingest_furniture_list_is_applied_first():
     assert shingles(banner) & outlet_furniture.repeated_shingles([b.replace("app ska", "app skall") for b in bodies])
 
 
-def test_a_wire_footer_one_outlet_repeats_does_not_split_its_copy_elsewhere(tmp_path):
-    """The independent read: the drop is the union of the involved sources' text, applied to every doc."""
+def test_a_wire_footer_one_outlet_repeats_does_not_split_its_copy_elsewhere():
+    """The independent read: two pages of different outlets are compared without only what BOTH outlets repeat."""
     footer = " ".join(_VOCAB[:60])
     story = _story(7, 80)
     docs = {"x": story + "\n" + footer, "y": story + "\n" + footer}
-    union = shingles(footer)  # learned at x's outlet only; y's small outlet learned nothing
+    learned = shingles(footer)  # learned at x's outlet only; y's small outlet learned nothing
+    assert frozenset(docs) in _copies(docs, {"x": 1, "y": 2}, {1: learned, 2: frozenset()})
+    assert frozenset(docs) in _copies(docs, {"x": 1, "y": 2}, {1: learned, 2: learned})
+    assert frozenset(docs) in _copies(docs, {"x": 1, "y": 1}, {1: learned})
 
-    def pairs(drop):
-        return any(len(c.members) == 2 for c in near_duplicate_clusters(docs, threshold=0.7, drop_shingles=drop).clusters)
 
-    assert not pairs({"x": union, "y": frozenset()})  # each doc dropping only its own outlet's text splits them
-    assert pairs(dict.fromkeys(docs, union))  # the union, as the reader applies it, keeps the copy
+def test_two_pages_of_one_outlet_sharing_only_its_template_are_not_copies():
+    docs = {"a": _TEMPLATE + " " + _HEAVY + " " + _story(1, 30), "b": _TEMPLATE + " " + _HEAVY + " " + _story(2, 30)}
+    learned = shingles(_TEMPLATE + " " + _HEAVY)
+    assert _copies(docs, {"a": 1, "b": 1}, {1: learned}) == set()
+    assert _copies(docs, {"a": 1, "b": 2}, {1: learned, 2: frozenset()})  # what only one outlet learned is kept
 
 
 def test_a_doc_emptied_by_the_drop_is_never_a_copy():
     docs = {"a": _TEMPLATE, "b": _TEMPLATE, "c": _story(1)}
-    drop = {d: shingles(_TEMPLATE) for d in docs}
-    res = near_duplicate_clusters(docs, threshold=0.7, drop_shingles=drop)
-    assert not any(len(c.members) >= 2 for c in res.clusters)
+    assert _copies(docs, dict.fromkeys(docs, 1), {1: shingles(_TEMPLATE)}) == set()
     assert any(len(c.members) == 2 for c in near_duplicate_clusters(docs, threshold=0.7).clusters)  # without it, they are
 
 
 def test_the_memo_tells_two_drops_apart():
     docs = {"a": _TEMPLATE + " " + _story(1, 12), "b": _TEMPLATE + " " + _story(2, 12)}
     plain = near_duplicate_clusters(docs, threshold=0.5)
-    dropped = near_duplicate_clusters(docs, threshold=0.5, drop_shingles={d: shingles(_TEMPLATE) for d in docs})
     assert any(len(c.members) == 2 for c in plain.clusters)
-    assert not any(len(c.members) >= 2 for c in dropped.clusters)
+    assert _copies(docs, dict.fromkeys(docs, 1), {1: shingles(_TEMPLATE)}, threshold=0.5) == set()
+    assert _copies(docs, {"a": 1, "b": 2}, {1: shingles(_TEMPLATE)}, threshold=0.5)  # other groups, other memo entry
+
+
+def test_the_pair_mode_refuses_more_docs_than_it_compares_exactly():
+    docs = {str(i): _story(i, 10) for i in range(near_dup.PAIR_MODE_MAX + 1)}
+    with pytest.raises(ValueError):
+        near_duplicate_clusters(docs, group_of=dict.fromkeys(docs, 1), group_drop={})
 
 
 def test_furniture_keywords_need_half_the_sources_articles(tmp_path):
