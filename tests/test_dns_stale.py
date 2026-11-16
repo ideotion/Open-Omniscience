@@ -16,7 +16,7 @@ from src.ingest import activate_kill_switch, clear_kill_switch, dns_stale
 from src.ingest import airplane as ap
 from src.ingest.ssrf_guard import BlockedConnectTarget, connect_scope
 
-_PUBLIC = "198.51.100.7"  # documentation range; never dialled here
+_PUBLIC = "208.80.154.224"  # a public address (Wikimedia's); never dialled here
 
 
 def _row(ip: str, port: int = 443) -> tuple:
@@ -66,9 +66,9 @@ def test_a_blip_gets_the_last_good_answer(resolver):
 
 def test_a_fresh_answer_always_wins(resolver):
     script, _ = resolver
-    script += [[_row(_PUBLIC)], [_row("198.51.100.8")]]
+    script += [[_row(_PUBLIC)], [_row("208.80.153.224")]]
     ap._guarded_getaddrinfo("stream.wikimedia.org", 443)
-    assert ap._guarded_getaddrinfo("stream.wikimedia.org", 443) == [_row("198.51.100.8")]
+    assert ap._guarded_getaddrinfo("stream.wikimedia.org", 443) == [_row("208.80.153.224")]
 
 
 @pytest.mark.parametrize("err", [socket.gaierror(socket.EAI_NONAME, "no such name"), socket.gaierror(socket.EAI_FAIL, "x"), OSError("other")])
@@ -89,7 +89,12 @@ def test_other_names_are_never_remembered(resolver):
     assert not dns_stale.applies_to("notwikipedia.org") and dns_stale.applies_to("fr.wikipedia.org.")
 
 
-def test_an_old_answer_is_not_handed_back():
+@pytest.fixture
+def same_network(monkeypatch):
+    monkeypatch.setattr(dns_stale, "_network", lambda now: frozenset({"192.0.2.2"}))
+
+
+def test_an_old_answer_is_not_handed_back(same_network):
     dns_stale.clear()
     dns_stale.remember("en.wikipedia.org", (443,), {}, [_row(_PUBLIC)], now=0.0)
     assert dns_stale.recall("en.wikipedia.org", (443,), {}, temporary=True, now=dns_stale.MAX_AGE_SECONDS - 1)
@@ -97,14 +102,14 @@ def test_an_old_answer_is_not_handed_back():
     dns_stale.clear()
 
 
-def test_a_different_call_shape_is_a_different_answer():
+def test_a_different_call_shape_is_a_different_answer(same_network):
     dns_stale.clear()
     dns_stale.remember("en.wikipedia.org", (443,), {}, [_row(_PUBLIC)], now=0.0)
     assert dns_stale.recall("en.wikipedia.org", (80,), {}, temporary=True, now=1.0) is None
     dns_stale.clear()
 
 
-def test_the_memory_is_bounded():
+def test_the_memory_is_bounded(same_network):
     dns_stale.clear()
     for i in range(dns_stale.MAX_ENTRIES + 10):
         dns_stale.remember(f"x{i}.wikipedia.org", (443,), {}, [_row(_PUBLIC)], now=0.0)
@@ -134,12 +139,78 @@ def test_airplane_mode_refuses_before_the_memory(resolver):
     assert calls == ["en.wikipedia.org"] and dns_stale.status()["served"] == {}
 
 
-def test_a_remembered_answer_still_meets_the_ssrf_guard(resolver):
-    """BEHIND the guard: an answer remembered outside a fetch that is non-public is refused
-    inside one, exactly as a fresh answer would be."""
+def test_a_remembered_answer_still_meets_the_ssrf_guard(resolver, monkeypatch):
+    """BEHIND the guard: even an answer that reached the memory by another route (written in
+    directly here, since remember() now keeps only public answers) is refused inside a fetch
+    when it is non-public, exactly as a fresh answer would be."""
     script, _ = resolver
-    script += [[_row("127.0.0.1")], _again()]
-    ap._guarded_getaddrinfo("en.wikipedia.org", 443)  # outside a fetch: no scope, remembered
+    script += [_again()]
+    monkeypatch.setattr(dns_stale, "_network", lambda now: frozenset({"192.0.2.2"}))
+    import time as _t
+
+    with dns_stale._LOCK:
+        dns_stale._ANSWERS[dns_stale._key("en.wikipedia.org", (443,), {})] = (_t.monotonic(), [_row("127.0.0.1")], frozenset({"192.0.2.2"}))
     with connect_scope(enabled=True, proxies=None) as scope, pytest.raises(BlockedConnectTarget):
         ap._guarded_getaddrinfo("en.wikipedia.org", 443)
     assert scope.refusals == ["127.0.0.1"]
+
+
+def test_a_non_public_answer_is_never_remembered(resolver):
+    script, _ = resolver
+    script += [[_row("10.0.0.5")], _again()]
+    ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+    with pytest.raises(socket.gaierror):
+        ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+    assert dns_stale.status()["remembered"] == 0
+
+
+def test_another_network_gets_no_remembered_answer(resolver, monkeypatch):
+    """EAI_AGAIN is also a resolver's SERVFAIL or REFUSED: a network that blocks these names by
+    DNS must not be ridden over with an answer received on another network."""
+    script, _ = resolver
+    nets = iter([frozenset({"192.0.2.2"}), frozenset({"203.0.113.9"})])
+    monkeypatch.setattr(dns_stale, "_network", lambda now: next(nets))
+    script += [[_row(_PUBLIC)], _again()]
+    ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+    with pytest.raises(socket.gaierror):
+        ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+
+
+def test_an_unknown_network_gets_no_remembered_answer(resolver, monkeypatch):
+    script, _ = resolver
+    monkeypatch.setattr(dns_stale, "_read_network", lambda: None)
+    script += [[_row(_PUBLIC)], _again()]
+    ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+    with pytest.raises(socket.gaierror):
+        ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+
+
+def test_engaging_airplane_mode_empties_the_memory(resolver):
+    script, _ = resolver
+    script += [[_row(_PUBLIC)]]
+    ap._guarded_getaddrinfo("en.wikipedia.org", 443)
+    assert dns_stale.status()["remembered"] == 1
+    activate_kill_switch()
+    clear_kill_switch()
+    assert dns_stale.status()["remembered"] == 0
+
+
+def test_the_network_reading_ignores_hardware_and_loopback_addresses(monkeypatch):
+    from types import SimpleNamespace
+
+    fam = lambda n: SimpleNamespace(name=n)  # noqa: E731
+    fake = SimpleNamespace(
+        net_if_addrs=lambda: {
+            "lo": [SimpleNamespace(family=fam("AF_INET"), address="127.0.0.1")],
+            "eth0": [
+                SimpleNamespace(family=fam("AF_PACKET"), address="aa:bb:cc:dd:ee:ff"),
+                SimpleNamespace(family=fam("AF_INET"), address="192.0.2.2"),
+                SimpleNamespace(family=fam("AF_INET6"), address="fe80::1%eth0"),
+                SimpleNamespace(family=fam("AF_INET6"), address="2001:db8::2"),
+            ],
+        }
+    )
+    import sys
+
+    monkeypatch.setitem(sys.modules, "psutil", fake)
+    assert dns_stale._read_network() == frozenset({"192.0.2.2", "2001:db8::2"})

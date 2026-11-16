@@ -17,6 +17,15 @@ before any lookup. And it sits BEHIND the SSRF guard, never in front of it: a re
 answer goes through ``check_resolution`` exactly as a fresh one does, and the connection is
 then checked at connect time (``check_connect_target``) on the address actually used.
 
+TWO MORE LIMITS, from the two security reads (2026-11-16). Only an answer whose every address
+is PUBLIC is kept, so the memory can never replay an internal address anywhere, a stood-down
+scope included. And an answer is handed back only on the SAME NETWORK it was received on (the
+set of this machine's own interface addresses, read from the kernel's tables, never a network
+call), and the memory is emptied whenever airplane mode engages: ``EAI_AGAIN`` is also what a
+resolver's SERVFAIL or REFUSED becomes, so a network that blocks these names by DNS must not
+be ridden over with an answer from another network. On the same network such a block is
+ridden over for at most :data:`MAX_AGE_SECONDS` after the last good answer, and then honoured.
+
 Memory only, never disk; bounded; a few names; ``OO_DNS_STALE=0`` turns it off.
 """
 
@@ -45,9 +54,63 @@ MAX_ENTRIES: int = 64
 #: or any subdomain of it.
 SUFFIXES: tuple[str, ...] = ("wikipedia.org", "wikimedia.org", "wikidata.org")
 
+#: How long a reading of this machine's own interface addresses is reused, in seconds.
+NETWORK_READ_SECONDS: float = 5.0
+
 _LOCK = threading.Lock()
-_ANSWERS: OrderedDict[tuple[Any, ...], tuple[float, list[Any]]] = OrderedDict()
+_ANSWERS: OrderedDict[tuple[Any, ...], tuple[float, list[Any], frozenset[str] | None]] = OrderedDict()
 _SERVED: dict[str, int] = {}
+_NETWORK: list[Any] = [None, -1e18]  # [the last reading, when it was taken]
+
+
+def _read_network() -> frozenset[str] | None:
+    """This machine's own non-loopback, non-link-local interface addresses, or ``None``.
+
+    The kernel's interface tables through psutil, the reading the network consent popup uses;
+    never a network call. ``None`` (psutil absent or failing) means "network unknown", and an
+    unknown network never matches, so nothing is handed back.
+    """
+    try:
+        import psutil
+
+        out = set()
+        for addrs in psutil.net_if_addrs().values():
+            for a in addrs:
+                if getattr(getattr(a, "family", None), "name", "") not in ("AF_INET", "AF_INET6"):
+                    continue  # a hardware (link-layer) address names a card, not a network
+                ip = str(getattr(a, "address", "") or "").split("%")[0]
+                if not ip or ip.startswith(("127.", "169.254.", "fe80")) or ip == "::1":
+                    continue
+                out.add(ip)
+        return frozenset(out)
+    except Exception:  # noqa: BLE001 - an unreadable network is an unknown one, which never matches
+        return None
+
+
+def _network(now: float) -> frozenset[str] | None:
+    with _LOCK:
+        reading, at = _NETWORK
+        if now - at <= NETWORK_READ_SECONDS:
+            return reading
+    reading = _read_network()
+    with _LOCK:
+        _NETWORK[0], _NETWORK[1] = reading, now
+    return reading
+
+
+def _all_public(infos: Any) -> bool:
+    from src.ingest.ssrf_guard import _as_ip, is_blocked_ip
+
+    seen = False
+    for info in infos:
+        try:
+            ip = _as_ip(info[4][0])
+        except (IndexError, TypeError):
+            return False
+        if ip is None or is_blocked_ip(ip):
+            return False
+        seen = True
+    return seen
 
 
 def enabled() -> bool:
@@ -68,7 +131,7 @@ def _key(host: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Any,
 
 def remember(host: object, args: tuple[Any, ...], kwargs: dict[str, Any], infos: Any, *, now: float | None = None) -> None:
     """Keep a good answer for ``host``. Never raises; an unhashable call shape is skipped."""
-    if not enabled() or not applies_to(host) or not infos:
+    if not enabled() or not applies_to(host) or not infos or not _all_public(infos):
         return
     try:
         key = _key(str(host), args, kwargs)
@@ -76,8 +139,9 @@ def remember(host: object, args: tuple[Any, ...], kwargs: dict[str, Any], infos:
     except TypeError:
         return
     at = time.monotonic() if now is None else now
+    network = _network(at)
     with _LOCK:
-        _ANSWERS[key] = (at, list(infos))
+        _ANSWERS[key] = (at, list(infos), network)
         _ANSWERS.move_to_end(key)
         while len(_ANSWERS) > MAX_ENTRIES:
             _ANSWERS.popitem(last=False)
@@ -106,14 +170,22 @@ def recall(
     at = time.monotonic() if now is None else now
     with _LOCK:
         hit = _ANSWERS.get(key)
-        if hit is None:
-            return None
-        received, infos = hit
-        if at - received > MAX_AGE_SECONDS:
-            del _ANSWERS[key]
-            return None
-        name = key[0]
+    if hit is None:
+        return None
+    received, infos, network = hit
+    if at - received > MAX_AGE_SECONDS:
+        with _LOCK:
+            _ANSWERS.pop(key, None)
+        return None
+    current = _network(at)
+    if network is None or current is None or current != network:
+        # Another network (or an unknown one): its resolver's failure may be its policy.
+        return None
+    name = key[0]
+    with _LOCK:
         first = name not in _SERVED
+        if first and len(_SERVED) >= MAX_ENTRIES:
+            _SERVED.clear()
         _SERVED[name] = _SERVED.get(name, 0) + 1
     _LOG.log(
         logging.INFO if first else logging.DEBUG,
@@ -125,13 +197,15 @@ def recall(
 
 
 def status() -> dict[str, Any]:
-    """How often a remembered answer was handed back, per name, since this process started."""
+    """How often a remembered answer was handed back (before the SSRF check, which may still
+    refuse it), per name, since this process started or was last emptied."""
     with _LOCK:
         return {"enabled": enabled(), "max_age_seconds": MAX_AGE_SECONDS, "served": dict(_SERVED), "remembered": len(_ANSWERS)}
 
 
 def clear() -> None:
-    """Forget everything (tests, and a network change an operator wants followed at once)."""
+    """Forget everything. Called when airplane mode engages, and by tests."""
     with _LOCK:
         _ANSWERS.clear()
         _SERVED.clear()
+        _NETWORK[0], _NETWORK[1] = None, -1e18
