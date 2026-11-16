@@ -29,8 +29,8 @@ outlet really published twice still shares its own paragraphs, which are on two 
 half of them, so it is still found, and near-identical pages in the sample (one story updated under new
 URLs, a live blog) count as one page. Too few pages to tell (under ``MIN_SAMPLE`` distinct pages, under
 ``MIN_ARTICLES`` articles) leaves nothing out. The template is learned from the newest pages, so an older
-page made under an earlier template or extractor keeps whatever of that template differs. The caches are
-keyed by source id for half an hour, so after a restore to another store they can apply for that long.
+page made under an earlier template or extractor keeps whatever of that template differs. The caches hold
+a source's sets for half an hour, keyed by the store's engine as well as the source id.
 """
 
 from __future__ import annotations
@@ -59,8 +59,8 @@ KEYWORD_SAMPLE_ARTICLES = 500
 
 _CACHE_MAX = 64
 _CACHE_TTL_S = 1800.0
-_cache: OrderedDict[int, tuple[float, frozenset[int]]] = OrderedDict()
-_kw_cache: OrderedDict[int, tuple[float, frozenset[int]]] = OrderedDict()
+_cache: OrderedDict[tuple[int, int], tuple[float, frozenset[int]]] = OrderedDict()
+_kw_cache: OrderedDict[tuple[int, int], tuple[float, frozenset[int]]] = OrderedDict()
 _lock = threading.Lock()
 
 
@@ -143,7 +143,7 @@ def outlet_repeated_shingles(db: Session, source_id: int | None, *, now: float |
     from src.database.models import Article
 
     t = time.monotonic() if now is None else now
-    hit = _cached(_cache, int(source_id), t)
+    hit = _cached(_cache, _key(db, source_id), t)
     if hit is not None:
         return hit
     rows = (
@@ -154,7 +154,7 @@ def outlet_repeated_shingles(db: Session, source_id: int | None, *, now: float |
         .all()
     )
     learned = repeated_shingles([r.get_content() for r in rows], titles=[r.title or "" for r in rows])
-    _remember(_cache, int(source_id), t, learned)
+    _remember(_cache, _key(db, source_id), t, learned)
     return learned
 
 
@@ -164,19 +164,25 @@ def clear_cache() -> None:
         _kw_cache.clear()
 
 
-def _cached(cache: OrderedDict[int, tuple[float, frozenset[int]]], source_id: int, t: float) -> frozenset[int] | None:
+def _key(db: Session, source_id: int) -> tuple[int, int]:
+    """A source of THIS store: the engine's identity beside the id, so a store opened after a restore, a swap or
+    an unlock (a new engine) never reads another store's sets for a source with the same number."""
+    return (id(db.get_bind()), int(source_id))
+
+
+def _cached(cache: OrderedDict[tuple[int, int], tuple[float, frozenset[int]]], key: tuple[int, int], t: float) -> frozenset[int] | None:
     with _lock:
-        hit = cache.get(source_id)
+        hit = cache.get(key)
         if hit is not None and t - hit[0] < _CACHE_TTL_S:
-            cache.move_to_end(source_id)
+            cache.move_to_end(key)
             return hit[1]
     return None
 
 
-def _remember(cache: OrderedDict[int, tuple[float, frozenset[int]]], source_id: int, t: float, value: frozenset[int]) -> None:
+def _remember(cache: OrderedDict[tuple[int, int], tuple[float, frozenset[int]]], key: tuple[int, int], t: float, value: frozenset[int]) -> None:
     with _lock:
-        cache[source_id] = (t, value)
-        cache.move_to_end(source_id)
+        cache[key] = (t, value)
+        cache.move_to_end(key)
         while len(cache) > _CACHE_MAX:
             cache.popitem(last=False)
 
@@ -198,7 +204,7 @@ def outlet_furniture_keywords(
     from src.database.models import Article
 
     t = time.monotonic() if now is None else now
-    found = _cached(_kw_cache, int(source_id), t)
+    found = _cached(_kw_cache, _key(db, source_id), t)
     if found is None:
         newest = [
             int(i)
@@ -218,5 +224,5 @@ def outlet_furniture_keywords(
                 .group_by(KeywordMentionRead.keyword_id)
                 .having(func.count(KeywordMentionRead.article_id) >= floor)
             )
-        _remember(_kw_cache, int(source_id), t, found)
+        _remember(_kw_cache, _key(db, source_id), t, found)
     return set(found) if keyword_ids is None else set(found.intersection(keyword_ids))
