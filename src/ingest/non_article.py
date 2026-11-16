@@ -79,6 +79,10 @@ _WALL_PHRASES = (
     "page not found", "access denied", "you don't have permission",
     "this content is not available", "content is no longer available",
     "you have reached your", "to continue reading", "your free articles",
+    # WordPress's untouched default post, stored as an article on four sites in the 8-instance field
+    # test (2026-11-14, report 5.2). The PHP, JavaScript and Flash notices of the same report are
+    # handled at the door (src/ingest/page_notices.py, PR #2056).
+    "this is your first post",
 )
 # The load-bearing guard: a body at/above this many words is a real article, KEPT regardless of
 # URL. The recall-gap non-article pages had ~30-50 extracted words; real articles run far longer.
@@ -127,8 +131,11 @@ _ITEM_ID_PARAM = re.compile(
 # article's slug there with no name and no ``=``. FIELD EVIDENCE (8-instance field test, 2026-11-14,
 # report 5.2): 24haubenin.info stored 899 real articles at such URLs and every one read as the site
 # homepage (listing_url_rate 1.0). Narrow on purpose, like the id rule: the query must be ONE token
-# with no ``=`` or ``&``, at least 12 characters, and at least two hyphens, the shape of a title.
+# with no ``=`` or ``&``, at least 12 characters and three hyphens, the shape of a title, not
+# starting with a tracking or view word.
 _QUERY_SLUG = re.compile(r"^[^\W_][\w-]{11,}$")
+#: First words of query tokens that are tracking or view switches, never a title.
+_NOT_A_SLUG_HEAD = frozenset({"utm", "fbclid", "gclid", "amp", "lang", "ref", "source", "view", "print"})
 
 
 def _has_item_identifier(url: str) -> bool:
@@ -146,7 +153,8 @@ def _has_item_identifier(url: str) -> bool:
     from urllib.parse import unquote
 
     bare = unquote(query).strip()
-    if "=" not in bare and "&" not in bare and bare.count("-") >= 2 and _QUERY_SLUG.match(bare):
+    if ("=" not in bare and "&" not in bare and bare.count("-") >= 3 and _QUERY_SLUG.match(bare)
+            and re.split(r"[-_]", bare, maxsplit=1)[0].lower() not in _NOT_A_SLUG_HEAD):
         return True
     return any(
         _ITEM_ID_PARAM.match(name.strip().lower()) and any(ch.isdigit() for ch in value)

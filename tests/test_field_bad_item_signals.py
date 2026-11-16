@@ -1,4 +1,4 @@
-"""Bad-item signals from the 8-instance field test (2026-11-14, report 5.1 and 5.2; row 65).
+"""Bad-item signals from the 8-instance field test (2026-11-14, report 5.1 and 5.2; row 65, and the WordPress default post of row 66).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -23,7 +23,9 @@ def test_paywall_walls_in_other_languages_are_labelled(text):
 
 
 def test_404_is_a_number_not_a_substring():
-    assert _pre_label("The bridge carried 2404 cars a day.", word_count=200, external_links=0) == []
+    for prose in ("The bridge carried 2404 cars a day.", "Flight AF404 landed.", "It was founded in 404 AD.",
+                  "Hij is al abonnee sinds 1990.", "Hän on ollut jo tilaaja vuosia."):
+        assert _pre_label(prose, word_count=200, external_links=0) == [], prose
     assert _pre_label("Error 404: page gone", word_count=200, external_links=0)
 
 
@@ -44,7 +46,16 @@ def test_a_bare_query_slug_is_an_article_address(url):
 
 @pytest.mark.parametrize("url", [
     "https://24haubenin.info/", "https://x.example/?page=2", "https://x.example/?s=gaza-war-news",
-    "https://x.example/?a-b", "https://x.example/?utm=a-b-c&x=1",
+    "https://x.example/?a-b", "https://x.example/?utm=a-b-c&x=1", "https://x.example/?utm_source-x-y-z",
+    "https://x.example/?fbclid-IwAR0abc-def-ghi", "https://x.example/?amp-page-view-mode",
 ])
 def test_a_homepage_with_a_query_stays_a_homepage(url):
     assert classify_non_article(url) is not None
+
+
+@pytest.mark.parametrize(("text", "phrase"), [
+    ("Welcome to WordPress. This is your first post. Edit or delete it, then start writing!", "this is your first post"),
+])
+def test_field_test_walls(text, phrase):
+    v = classify_non_article("https://x.example/a/b-c-d", text=text, word_count=len(text.split()))
+    assert v is not None and v.signal == "boilerplate_wall" and phrase in v.reason

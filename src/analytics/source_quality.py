@@ -99,25 +99,24 @@ _METRICS = ("mention_density", "type_token", "vocab_sparsity", "single_kw_domina
 # Cheap boilerplate phrases for the heuristic PRE-LABEL (a hint for the analyst, never a verdict).
 _BOILERPLATE_PHRASES = (
     "subscribe to continue", "subscribe now", "enable javascript", "please enable",
-    "page not found", "404", "access denied", "sign in to", "log in to", "create an account",
+    "page not found", "404 not found", "error 404", "access denied", "sign in to", "log in to", "create an account",
     "accept all cookies", "cookie policy", "we use cookies", "consent", "share now", "read more",
     "continue reading", "you have reached your", "for full access", "register to read",
     # Paywall walls in the languages the 8-instance field test (2026-11-14, report 5.1) found them
     # in, English-only until then: Amedia's Norwegian "Allerede abonnent?" on 56 sources, the
-    # Finnish "Vain tilaajille" on 20. The other lines are the same wall in the app's other
-    # catalogue languages. Each is a phrase a wall prints and an article almost never does.
-    "allerede abonnent", "kun for abonnenter", "bli abonnent",          # no / da
-    "redan prenumerant", "endast för prenumeranter",                    # sv
-    "vain tilaajille", "jo tilaaja",                                    # fi
-    "nur für abonnenten", "bereits abonnent",                           # de
-    "réservé aux abonnés", "déjà abonné",                               # fr
-    "solo para suscriptores", "ya eres suscriptor",                     # es
-    "riservato agli abbonati", "sei già abbonato",                      # it
-    "exclusivo para assinantes", "já é assinante",                      # pt
-    "alleen voor abonnees", "al abonnee",                               # nl
+    # Finnish "Vain tilaajille" on 20. The others are the same "for subscribers only" wall in the
+    # app's other catalogue languages; the short "already a subscriber" forms are left out, because
+    # ordinary prose says them too. Every phrase is matched as whole words.
+    "allerede abonnent", "kun for abonnenter",                          # no / da
+    "endast för prenumeranter",                                         # sv
+    "vain tilaajille",                                                  # fi
+    "nur für abonnenten",                                               # de
+    "réservé aux abonnés",                                              # fr
+    "solo para suscriptores",                                           # es
+    "riservato agli abbonati",                                          # it
+    "exclusivo para assinantes",                                        # pt
+    "alleen voor abonnees",                                             # nl
 )
-# "404" is matched as a NUMBER, not a substring: "2404 dead" or a phone number is not an error page.
-_WORD_PHRASES = frozenset({"404"})
 
 
 def _base_lang(lang: str | None) -> str:
@@ -875,9 +874,8 @@ def build_sample_union(
 
 
 def _phrase_hit(phrase: str, low: str) -> bool:
-    if phrase in _WORD_PHRASES:
-        return re.search(rf"(?<!\d){re.escape(phrase)}(?!\d)", low) is not None
-    return phrase in low
+    """Whole words only: "al abonnee" must not fire inside "normaal abonnee", nor "404" inside 2404."""
+    return phrase in low and re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", low) is not None
 
 
 def _word_signals_apply(language: str | None) -> bool:
