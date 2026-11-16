@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
 
 _LOG = logging.getLogger("database.import_dates")
@@ -69,17 +69,12 @@ def clear_import_time_publication_dates(engine: Engine) -> int:
         )]
         if not ids:
             return 0
-        params: dict[str, object] = {f"s{i}": sid for i, sid in enumerate(ids)}
-        params["tol"] = TOLERANCE_HOURS / 24.0
-        in_list = ", ".join(f":s{i}" for i in range(len(ids)))
-        res = conn.execute(
-            text(
-                f"UPDATE articles SET published_at = NULL WHERE source_id IN ({in_list}) "
-                "AND published_at IS NOT NULL AND created_at IS NOT NULL "
-                "AND abs(julianday(published_at) - julianday(created_at)) <= :tol"
-            ),
-            params,
-        )
+        stmt = text(
+            "UPDATE articles SET published_at = NULL WHERE source_id IN :ids "
+            "AND published_at IS NOT NULL AND created_at IS NOT NULL "
+            "AND abs(julianday(published_at) - julianday(created_at)) <= :tol"
+        ).bindparams(bindparam("ids", expanding=True))
+        res = conn.execute(stmt, {"ids": ids, "tol": TOLERANCE_HOURS / 24.0})
         n = int(res.rowcount or 0)
     if n:
         _LOG.info("cleared the import time from published_at on %d imported article(s)", n)
