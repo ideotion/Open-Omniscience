@@ -555,6 +555,7 @@ class ImportQueueManager:
         can import backups locked with different passphrases while the common case is typed once. Every key is held in
         memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
         scrubbed from every record the run writes."""
+        self._refuse_unreadable_backup_manifests(items)
         self._refuse_wrong_backup_passphrases(items, passphrase)
         with self._lock:
             if self._state == "running" and self._thread is not None and self._thread.is_alive():
@@ -650,6 +651,29 @@ class ImportQueueManager:
                 self._save()
                 raise
             return self.status()
+
+    @staticmethod
+    def _refuse_unreadable_backup_manifests(items: list[dict]) -> None:
+        """Refuse the start, before anything runs, when a backup's manifest is one the restore always refuses (row 97).
+
+        A manifest that lists a volume twice, points at a link or names an unsafe path can never import, with any
+        passphrase. Inside a run it fails that backup and discards the backups staged in the same checkpoint group,
+        which is many minutes each on a large import. Here it costs a manifest read and a stat per volume, and the
+        message names each such backup and why, so the run can be started again without it."""
+        from src.backup.stream_backup import backup_manifest_refusal
+
+        refused = []
+        for raw in items or []:
+            if raw.get("kind") != "corpus" or not raw.get("path"):
+                continue
+            reason = backup_manifest_refusal(str(raw["path"]))
+            if reason:
+                refused.append(f"{raw.get('label') or Path(str(raw.get('path'))).name} ({reason})")
+        if refused:
+            raise ValueError(
+                "These backups cannot be imported: " + "; ".join(refused) + ". Nothing was started; remove them from "
+                "the list and import again."
+            )
 
     @staticmethod
     def _refuse_wrong_backup_passphrases(items: list[dict], passphrase: str) -> None:
