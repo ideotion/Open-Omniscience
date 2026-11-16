@@ -555,6 +555,10 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
     # row count.
     out["measured"] = True
     out["service"] = _wiki_service()
+    # Beside the gap history too, where a reader of "no gap" looks (row 73): a held-off
+    # lane says so there instead of reading as a lane that missed nothing.
+    if isinstance(out.get("gaps"), dict) and isinstance(out["service"], dict):
+        out["gaps"]["lane_not_running"] = out["service"].get("not_running")
     return out
 
 
@@ -582,10 +586,68 @@ def _wiki_service() -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - an unreadable setting is absent, not guessed
             status["state"] = None
         status["online"] = not kill_switch_active()
+        status["not_running"] = _not_running(status["state"])
         return status
     except Exception as exc:  # noqa: BLE001 - the service state is a reading, not the block's work
         log_failure(_LOG, "wiki lane service state unreadable", exc, level=logging.DEBUG)
         return {"measured": False, "reason": f"unreadable: {type(exc).__name__}"}
+
+
+def _not_running(state: str | None, *, now: datetime | None = None) -> dict[str, Any] | None:
+    """The stretch the operator's setting has held the lane off, or ``None`` while it runs.
+
+    FIELD TEST 2026-11-14, ROW 73: a lane halted for days read as "0 rows a day, no gap",
+    the same as a lane with nothing to do. A halt is NOT written as a ``versioned_gaps``
+    row, because it is not yet a hole in the change log: a resume continues from the stored
+    cursor, and if the source no longer holds that stretch the stream records a
+    ``retention`` gap then, with the real bounds. What it is, is a named stretch in which
+    the lane was held off on purpose, and this is where it is published, with WHEN and
+    through which door when the app recorded it, and a plain "not recorded" when it did not.
+    """
+    if state in (None, "running"):
+        return None
+    from src.wiki.lane_state_record import last_change as wiki_lane_state_change
+
+    at = now or datetime.now(UTC)
+    change = wiki_lane_state_change()
+    out: dict[str, Any] = {
+        "state": state,
+        "basis": "the operator's setting, and the app's record of when it last changed",
+        "caveat": (
+            "Not a gap in the change log yet: a resume continues from the stored position, and "
+            "if the source no longer holds that stretch the lane records a retention gap then. "
+            "Until then, nothing in this stretch was asked for. The start is the app's record of the "
+            "last settings save that set this state; a state restored from a backup is not recorded "
+            "on its own and may be dated by an earlier record of the same state."
+        ),
+    }
+    since = None
+    if change and change.get("state") == state:
+        try:
+            since = datetime.fromisoformat(str(change.get("at")))
+        except ValueError:
+            since = None
+    if since is None or change is None:
+        out.update(
+            since=None,
+            hours=None,
+            by=None,
+            reason=(
+                "the app did not record when this state began (it was set before this record "
+                "existed, or the record is unreadable); the run clock's idle_now says when the "
+                "lane last showed life"
+            ),
+        )
+        return out
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)
+    out.update(
+        since=since.isoformat(),
+        hours=round(max(0.0, (at - since).total_seconds()) / 3600.0, 1),
+        by=change.get("by"),
+        previous=change.get("from"),
+    )
+    return out
 
 
 def _block(name: str, fn: Any) -> dict[str, Any]:

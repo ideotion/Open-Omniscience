@@ -179,6 +179,7 @@ def _wiki_lane_block() -> dict:
     becomes correct at once.
     """
     from src.scheduler.settings import WIKI_LANE_STATES, load_settings
+    from src.wiki.lane_state_record import last_change as wiki_lane_state_change
     from src.wiki.stream import live_streams
 
     state = getattr(load_settings(), "wiki_lane_state", "running")
@@ -221,6 +222,10 @@ def _wiki_lane_block() -> dict:
         "waiting_on": stream.get("last_failure") if waiting else None,
         "editions_live": sorted({code for editions in live for code in editions}),
         "states": list(WIKI_LANE_STATES),
+        # WHEN the lane left running and through which door (field test 2026-11-14 row
+        # 73), only while it is not running: a lane held off for days must be told apart
+        # from one that is quiet. ``None`` when the app holds no record of the change.
+        "state_change": wiki_lane_state_change() if state != "running" else None,
         **settings_block,
     }
 
