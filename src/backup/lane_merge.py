@@ -651,7 +651,7 @@ _LAW_TRIPLE = (
 )
 
 
-def _corpus_law_links(conn: Any) -> None:
+def _corpus_law_links(conn: Any, *, own_transaction: bool = True) -> None:
     """The live corpus's law links, in two temp tables of the lane connection.
 
     ``law.db`` links into ``corpus.db`` by minted strings (``src/law/lane_models.py``). A
@@ -669,24 +669,31 @@ def _corpus_law_links(conn: Any) -> None:
     conn.execute("DROP TABLE IF EXISTS temp.lm_law_rev")
     conn.execute("CREATE TEMP TABLE lm_law_doc (lane_key TEXT PRIMARY KEY)")
     conn.execute("CREATE TEMP TABLE lm_law_rev (lane_key TEXT PRIMARY KEY, doc_key TEXT NOT NULL)")
+    # The corpus does not make a key unique: a key held by two documents (or a version key
+    # under two documents, one of them unkeyed) names no one document, so it links nothing
+    # rather than an arbitrary one of them.
     with session_scope() as db:
-        docs = db.execute(text("SELECT lane_key FROM law_documents WHERE lane_key IS NOT NULL")).all()
+        docs = db.execute(
+            text("SELECT lane_key FROM law_documents WHERE lane_key IS NOT NULL GROUP BY lane_key HAVING count(*) = 1")
+        ).all()
         revs = db.execute(
             text(
-                "SELECT r.lane_key, d.lane_key FROM law_revisions r JOIN law_documents d ON d.id = r.document_id "
-                "WHERE r.lane_key IS NOT NULL AND d.lane_key IS NOT NULL"
+                "SELECT r.lane_key, max(d.lane_key) FROM law_revisions r JOIN law_documents d ON d.id = r.document_id "
+                "WHERE r.lane_key IS NOT NULL GROUP BY r.lane_key "
+                "HAVING count(DISTINCT r.document_id) = 1 AND count(d.lane_key) = count(*)"
             )
         ).all()
-    conn.executemany("INSERT OR IGNORE INTO temp.lm_law_doc VALUES (?)", [tuple(r) for r in docs])
-    # The corpus does not make a key unique; a version key under two documents names no one
-    # document, so it links nothing rather than an arbitrary one of them.
-    owners: dict[str, set[str]] = {}
-    for rev_key, doc_key in revs:
-        owners.setdefault(str(rev_key), set()).add(str(doc_key))
-    conn.executemany(
-        "INSERT INTO temp.lm_law_rev VALUES (?, ?)",
-        [(k, next(iter(v))) for k, v in owners.items() if len(v) == 1],
-    )
+    if own_transaction:
+        conn.execute("BEGIN")  # the temp database only: no lock on the lane file
+    try:
+        conn.executemany("INSERT OR IGNORE INTO temp.lm_law_doc VALUES (?)", [tuple(r) for r in docs])
+        conn.executemany("INSERT OR IGNORE INTO temp.lm_law_rev VALUES (?, ?)", [tuple(r) for r in revs])
+        if own_transaction:
+            conn.execute("COMMIT")
+    except BaseException:
+        if own_transaction:
+            conn.execute("ROLLBACK")
+        raise
 
 
 def _merge_law(conn: Any, out: dict[str, Any]) -> None:
@@ -694,7 +701,7 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
     if not (_has(conn, "inc", "law_identities") and _has(conn, "inc", "law_document_meta")):
         return
     if not _has(conn, "temp", "lm_law_doc"):  # read before the transaction by merge_lane_file
-        _corpus_law_links(conn)
+        _corpus_law_links(conn, own_transaction=False)
     horizon = {"horizon": _horizon()}
     # A language version this machine lacks and whose document the live corpus holds.
     linked_new = (
@@ -766,7 +773,7 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
     unlinked += int(
         conn.execute(
             f"SELECT count(*) FROM inc.law_document_meta i WHERE {linked_new} "  # noqa: S608  # nosec B608 # a module literal
-            "AND i.identity_id NOT IN (SELECT inc_id FROM temp.lm_lid)"
+            "AND NOT EXISTS (SELECT 1 FROM temp.lm_lid l WHERE l.inc_id = i.identity_id)"
         ).fetchone()[0]
     )
     # The closed vocabularies are the model's own (``src/law/model.py``): a value this build
@@ -787,10 +794,13 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
         source_from="inc.law_document_meta i JOIN temp.lm_lid l ON l.inc_id = i.identity_id",
         overrides={
             "identity_id": "l.loc_id",
-            "language": "lower(i.language)",
-            "translation_kind": f"CASE WHEN i.translation_kind IN ({kinds}) THEN i.translation_kind ELSE 'unrecorded' END",
-            "licence_id": f"CASE WHEN i.licence_id IN ({lics}) THEN i.licence_id ELSE 'unknown' END",
-            "granularity": f"CASE WHEN i.granularity IN ({grains}) THEN i.granularity ELSE 'act' END",
+            # As ``register_document`` writes them: trimmed and lowercased before the check.
+            "language": "coalesce(nullif(lower(trim(i.language)), ''), 'und')",
+            "translation_kind": (
+                f"CASE WHEN lower(trim(i.translation_kind)) IN ({kinds}) THEN lower(trim(i.translation_kind)) ELSE 'unrecorded' END"
+            ),
+            "licence_id": f"CASE WHEN lower(trim(i.licence_id)) IN ({lics}) THEN lower(trim(i.licence_id)) ELSE 'unknown' END",
+            "granularity": f"CASE WHEN lower(trim(i.granularity)) IN ({grains}) THEN lower(trim(i.granularity)) ELSE 'act' END",
             "first_seen_at": "MIN(i.first_seen_at, :horizon)",
             "updated_at": "MIN(i.updated_at, :horizon)",
         },

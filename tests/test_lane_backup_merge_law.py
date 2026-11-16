@@ -193,7 +193,7 @@ def test_a_new_law_joins_with_its_own_identity_and_honest_vocabularies(machines,
         _identity(s, "pad-1")  # shifts the backup's ids away from this machine's
         _identity(s, "pad-2")
         other = _identity(s, "loi-2", issuing_body="Sénat")
-        s.add(LawDocumentMeta(lane_key="k-new", identity_id=other.id, language="FR", translation_kind="Original",
+        s.add(LawDocumentMeta(lane_key="k-new", identity_id=other.id, language=" FR ", translation_kind=" Original",
                               licence_id="made-up-licence", granularity="chapter", title="Loi 2",
                               first_seen_at=datetime(2999, 1, 1, tzinfo=UTC), updated_at=datetime(2999, 1, 1, tzinfo=UTC)))
         loi1 = _identity(s, "loi-1")
@@ -216,7 +216,7 @@ def test_a_new_law_joins_with_its_own_identity_and_honest_vocabularies(machines,
         new = s.scalars(select(LawDocumentMeta).where(LawDocumentMeta.lane_key == "k-new")).one()
         shared = s.scalars(select(LawDocumentMeta).where(LawDocumentMeta.lane_key == "k-shared")).one()
         assert new.identity_id == ident.id and ident.issuing_body == "Sénat"
-        assert (new.language, new.translation_kind, new.licence_id, new.granularity) == ("fr", "unrecorded", "unknown", "act")
+        assert (new.language, new.translation_kind, new.licence_id, new.granularity) == ("fr", "original", "unknown", "act")
         assert new.first_seen_at.year < 2999 and new.updated_at.year < 2999
         # The local row says "official, body not recorded": another provenance's body is not put beside it.
         assert (shared.translation_kind, shared.translated_by, shared.source_authority) == ("official", None, None)
@@ -251,3 +251,15 @@ def test_a_law_member_with_a_view_under_a_law_table_is_refused(machines, tmp_pat
     with pytest.raises(lane_merge.LaneMergeError):
         lane_merge.merge_lane_file("law", snap, [None])
     assert _state() == before
+
+
+def test_a_document_key_the_corpus_holds_twice_links_nothing(machines, tmp_path, corpus):
+    with corpus() as db:
+        db.add(LawDocument(jurisdiction="fr", title="Copie", url="https://law.test/3", lane_key="k-new"))
+        db.commit()
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_document_meta"]["inserted"] == 0
+    assert rep["tables"]["law_document_meta"]["not_linked"] == 2
