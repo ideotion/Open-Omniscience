@@ -1334,24 +1334,42 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
     starts = [0, *rotations]
     ends = [*rotations, len(entries)]
     out: list[PublicIdentity | None] = [None] * len(entries)
+    own_ml = local.ml_dsa_pub
+
+    def _hybrid_ml(entry: CustodyEntry) -> str | None:
+        return _sig_ml_dsa(entry.signature)[1]
+
+    def _is_local_previous(md: dict) -> bool:
+        # The record's previous identity is this installation's own, both halves.
+        return md.get("previous_ed25519_pub") == local.ed25519_pub and md.get("previous_ml_dsa_pub") == own_ml
+
     expected: PublicIdentity | None = local
-    if rotations and local.ml_dsa_pub:
+    if rotations and own_ml:
         last = entries[rotations[-1]]
         md = last.metadata
         if (_records_previous_ml_dsa(md) and md.get("ml_dsa_pub") is None and isinstance(md.get("endorsement"), dict)
-                and _sig_ed25519_pub(last.signature) == local.ed25519_pub):
-            # Post-quantum signing turned off, ENDORSED by the previous identity (both halves): the stretch since is
-            # this installation's Ed25519 key alone, though its old ML-DSA key file is still in the folder.
+                and _sig_ed25519_pub(last.signature) == local.ed25519_pub and _is_local_previous(md)):
+            # Post-quantum signing turned off, ENDORSED by this installation's own identity (both halves): the stretch
+            # since is its Ed25519 key alone, though its ML-DSA key file is still in the folder.
             expected = PublicIdentity(ed25519_pub=local.ed25519_pub, ml_dsa_variant=None, ml_dsa_pub=None)
     for k in range(len(starts) - 1, -1, -1):
         lo, hi = starts[k], ends[k]
         stretch_key = _sig_ed25519_pub(entries[lo].signature) if lo < hi else None
         if expected is None or (stretch_key is not None and stretch_key != expected.ed25519_pub):
             break
+        if expected.ed25519_pub == local.ed25519_pub and expected.ml_dsa_pub not in (None, own_ml):
+            break  # this installation's Ed25519 key beside an ML-DSA key it does not hold: not this installation's
         for i in range(lo, hi):
             out[i] = expected
-        if k == 0:
-            break
+            if expected.ml_dsa_pub and _hybrid_ml(entries[i]) is None and not (chained and any(
+                    _hybrid_ml(entries[j]) == expected.ml_dsa_pub for j in range(i + 1, hi))):
+                # Signed with the Ed25519 half alone where the identity has an ML-DSA half: someone holding the Ed25519
+                # key alone signs exactly that. In a whole log a later entry of the same stretch signed with both
+                # halves commits to it through the hash chain (post-quantum signing turned on before 0.5.1 wrote no
+                # record); in a one-item bundle, whose entries are not linked, nothing does.
+                out[i] = None
+        if k == 0 or out[lo] is None:
+            break  # the record that links this stretch to the one before is not shown to be this installation's
         md = entries[starts[k]].metadata  # the record that opened this stretch
         prev = md.get("previous_ed25519_pub")
         if (_records_previous_ml_dsa(md) and md.get("previous_ml_dsa_pub") is None and isinstance(prev, str)
@@ -1361,6 +1379,13 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
             # goes on, in a one-item bundle too (the key is this installation's current one, not an earlier key that
             # could have leaked and been rotated away from). Turning post-quantum on never makes a bundle "not yours".
             expected = PublicIdentity(ed25519_pub=prev, ml_dsa_variant=None, ml_dsa_pub=None)
+            continue
+        if (_records_previous_ml_dsa(md) and prev == stretch_key and own_ml and _is_local_previous(md)
+                and isinstance(md.get("endorsement"), dict)):
+            # The same Ed25519 key, the post-quantum half changed with this installation's own identity endorsing it
+            # (both halves, checked by the key lineage): the stretch before is this installation's, in a one-item bundle
+            # too, for the same reason.
+            expected = local
             continue
         if not chained:
             break
@@ -1421,17 +1446,10 @@ def describe_export(
         if local
         else []
     )
-    # An entry signed with the Ed25519 half alone where this installation's identity has an ML-DSA half is not shown to be
-    # this installation's by its key: someone holding the Ed25519 key alone signs exactly that. In a whole-log bundle it
-    # is, when a later entry of the same stretch is signed with both halves (that entry's hash chain commits to it:
-    # post-quantum signing turned on before 0.5.1 wrote no record); in a one-item bundle, whose entries are not linked,
-    # it is not.
-    for i, want in enumerate(owns):
-        if want is None or not want.ml_dsa_pub or keyed[i][1] is not None:
-            continue
-        if one_item or not any(owns[j] is want and keyed[j] == (want.ed25519_pub, want.ml_dsa_pub)
-                               for j in range(i + 1, len(owns))):
-            owns[i] = None
+    if local is not None and local.ml_dsa_pub and not (ok and len(parsed) == len(raw)):
+        # A bundle that did not verify gets no chain behind it: an entry signed with the Ed25519 half alone is not shown
+        # to be this installation's when its identity has an ML-DSA half (see ``_own_positions``).
+        owns = [None if keyed[i][1] is None else want for i, want in enumerate(owns)]
     own_everywhere: dict[tuple[str, str | None], bool] = {}
     earlier: set[str] = set()
     for (ed, ml), want in zip(keyed, owns, strict=False):  # ``owns`` is empty when this installation's keys are unread

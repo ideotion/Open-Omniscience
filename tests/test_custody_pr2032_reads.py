@@ -150,3 +150,53 @@ def test_the_item_verify_route_names_an_accepted_key_change(tmp_path, monkeypatc
     monkeypatch.setattr(api, "_read_log", lambda: CustodyLog(db_path=db, create=False))
     r = TestClient(app).get("/api/custody/article:0/verify").json()
     assert r["verified"] and r["accepted_unendorsed"] and r["accepted_unendorsed_note"]
+
+
+# --- the delta reads of the fixes above ------------------------------------------------------------------------------
+
+
+@pqc
+def test_a_log_with_the_installations_ed25519_key_and_another_ml_dsa_key_is_not_yours(tmp_path):
+    """The attacker holds K only, makes its own ML-DSA key M', signs with (K, M'), then turns post-quantum off: the drop
+    record is endorsed by (K, M'), never by this installation's (K, M)."""
+    local = _signer(tmp_path, "k").public_identity()
+    db = str(tmp_path / "forged.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", "other")) as log:
+        _record(log, 3)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", "other", use_pqc=False)) as log:
+        _record(log, 3, 3)
+        bundles = [log.export(), log.export(item_id="article:0")]
+    for b in bundles:
+        for pin in (False, True):
+            d = describe_export(b, local=local, require_signer=pin)
+            assert d["verdict"] == VERDICT_NOT_YOURS and not any(s["yours"] for s in d["signed_by"]), d
+
+
+@pqc
+@pytest.mark.parametrize("flips", [("on", "off"), ("on", "off", "on")])
+def test_the_operators_one_item_bundle_stays_theirs_across_post_quantum_changes(tmp_path, flips):
+    db = str(tmp_path / "c.db")
+    n = 0
+    for flip in flips:
+        with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=flip == "on")) as log:
+            _record(log, 2, n)
+            n += 2
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=flips[-1] == "on")) as log:
+        bundles = [log.export(), log.export(item_id="article:0")]
+    for b in bundles:
+        d = describe_export(b, local=_signer(tmp_path, "k").public_identity())
+        assert d["verified"] and d["verdict"] == VERDICT_YOURS, d
+
+
+@pqc
+def test_a_bundle_that_does_not_verify_calls_no_ed25519_only_entry_yours(tmp_path):
+    with CustodyLog(db_path=str(tmp_path / "c.db"), signer=_signer(tmp_path, "k")) as log:
+        _record(log, 2)
+        b = log.export()
+    with CustodyLog(db_path=str(tmp_path / "f.db"), signer=_signer(tmp_path, "k", "none", use_pqc=False)) as log:
+        _record(log, 2)
+        forged = log.export()
+    b["entries"] = forged["entries"] + b["entries"][1:]
+    d = describe_export(b, local=_signer(tmp_path, "k").public_identity())
+    assert not d["verified"]
+    assert not any(s["yours"] for s in d["signed_by"] if s["ml_dsa_pub"] is None)
