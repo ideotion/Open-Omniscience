@@ -343,8 +343,8 @@ def near_duplicate_clusters(
         raise ValueError(f"bands*rows ({bands * rows}) must equal num_perm ({num_perm})")
 
     drop_key: tuple = ()
-    if drop_shingles:
-        drop_key = tuple(sorted((d, tuple(sorted(v))) for d, v in drop_shingles.items() if v))
+    if drop_shingles is not None:  # a call with a drop never shares a memo entry with one without
+        drop_key = ("drop",) + tuple(sorted((d, tuple(sorted(v))) for d, v in drop_shingles.items() if v))
     key = _fingerprint(docs, (threshold, num_perm, bands, rows, seed, drop_key))
     cached = _memo.get(key)
     if cached is not None:

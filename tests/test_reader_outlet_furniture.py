@@ -106,21 +106,45 @@ def test_twelve_template_pages_are_not_copies_and_a_real_copy_still_is(tmp_path)
     assert first != -1 and related[first:].startswith("/api/articles/13/view"), related
 
 
-def test_repeated_shingles_need_half_the_pages_and_enough_pages():
-    bodies = [_TEMPLATE + " " + _story(i) for i in range(6)]
+def test_repeated_shingles_need_half_the_distinct_pages_and_enough_pages():
+    bodies = [_TEMPLATE + " " + _story(i) for i in range(10)]
     learned = outlet_furniture.repeated_shingles(bodies)
     assert shingles(_TEMPLATE) <= learned
-    assert not (shingles(_story(0)) & learned - shingles(_TEMPLATE))  # one page's story is never learned
-    assert outlet_furniture.repeated_shingles(bodies[:3]) == frozenset()  # three pages cannot tell
-    # a story the outlet ran twice in six pages stays: two is under half
-    twice = bodies[:4] + [_TEMPLATE + " " + _story(0), _TEMPLATE + " " + _story(9)]
+    assert not (shingles(_story(0)) - shingles(_TEMPLATE)) & learned  # one page's story is never learned
+    assert outlet_furniture.repeated_shingles(bodies[:7]) == frozenset()  # seven pages cannot tell
+    # a story the outlet ran twice in ten pages stays: two is under half
+    twice = bodies[:8] + [_TEMPLATE + " " + _story(0), _TEMPLATE + " " + _story(9)]
     assert not (shingles(_story(0)) - shingles(_TEMPLATE)) & outlet_furniture.repeated_shingles(twice)
 
 
+def test_one_story_on_most_of_the_pages_counts_as_one_page():
+    """The independent read: three versions of one story among five pages, or a live blog, are not a template."""
+    story = _story(42, 120)
+    bodies = [story + " update " + str(i) for i in range(6)] + [_story(i) for i in range(100, 108)]
+    assert not (shingles(story) & outlet_furniture.repeated_shingles(bodies))
+
+
 def test_the_ingest_furniture_list_is_applied_first():
-    """A line ``is_furniture`` names never counts as the outlet's own text either way; reusing it keeps one list."""
-    bodies = ["Advertisement\n" + _story(i) for i in range(6)]
-    assert not (shingles("Advertisement") & outlet_furniture.repeated_shingles(bodies))
+    """The ingest's app banner (an hbl.fi line) is on every page, but it is the ingest's list that names it; the
+    learning reads the bodies without it, so the two never disagree (and one list is kept, not two)."""
+    banner = "För att din app ska fortsätta fungera behöver du uppdatera den nu"
+    bodies = [banner + "\n" + _story(i) for i in range(10)]
+    assert not (shingles(banner) & outlet_furniture.repeated_shingles(bodies))
+    assert shingles(banner) & outlet_furniture.repeated_shingles([b.replace("app ska", "app skall") for b in bodies])
+
+
+def test_a_wire_footer_one_outlet_repeats_does_not_split_its_copy_elsewhere(tmp_path):
+    """The independent read: the drop is the union of the involved sources' text, applied to every doc."""
+    footer = " ".join(_VOCAB[:60])
+    story = _story(7, 80)
+    docs = {"x": story + "\n" + footer, "y": story + "\n" + footer}
+    union = shingles(footer)  # learned at x's outlet only; y's small outlet learned nothing
+
+    def pairs(drop):
+        return any(len(c.members) == 2 for c in near_duplicate_clusters(docs, threshold=0.7, drop_shingles=drop).clusters)
+
+    assert not pairs({"x": union, "y": frozenset()})  # each doc dropping only its own outlet's text splits them
+    assert pairs(dict.fromkeys(docs, union))  # the union, as the reader applies it, keeps the copy
 
 
 def test_a_doc_emptied_by_the_drop_is_never_a_copy():
@@ -160,5 +184,7 @@ def test_furniture_keywords_need_half_the_sources_articles(tmp_path):
                 s.add(KeywordMention(keyword_id=3, article_id=i, source_id=1))  # under half
         s.commit()
         assert outlet_furniture.outlet_furniture_keywords(s, 1, [1, 2, 3]) == {1, 2}
+        assert outlet_furniture.outlet_furniture_keywords(s, 1) == {1, 2}  # the whole set, from the cache
+        outlet_furniture.clear_cache()
         assert outlet_furniture.outlet_furniture_keywords(s, 1, [1], min_articles=13) == set()  # too few articles
         assert outlet_furniture.outlet_furniture_keywords(s, None, [1]) == set()
