@@ -131,6 +131,6 @@ def test_the_source_candidates_card_opens_the_candidates_not_a_search(monkeypatc
     # Both renderers take the one helper: the Leads carousel painted its own "Open corpus" text search for this card
     # after the flip card was fixed, so a single grep for the flip card's string passed with the bug still there.
     assert js.count("cardOpensElsewhere(c, ") == 3, "the definition, the flip card and the carousel must both ask cardOpensElsewhere"
-    carousel = js[js.index("function _carPaint()"):]
-    carousel = carousel[: carousel.index("\n    }\n")]
-    assert "cardOpensElsewhere(c, " in carousel
+    from tests.js_source_helper import function_body
+
+    assert "cardOpensElsewhere(c, " in function_body(js, "_carPaint")
