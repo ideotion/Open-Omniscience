@@ -102,7 +102,6 @@ from src.utils.url_utils import (
     url_v1_canonical,
 )
 
-
 # The floor extract_article holds a body to (its _MIN_BODY_CHARS; kept apart because only extract_article may be
 # imported from that module): what is left after the notices and a menu run go must still clear it.
 MIN_BODY_CHARS = 200
@@ -215,8 +214,9 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         # Server error dumps, "requires JavaScript" and Flash player notices (field report 2026-11-14,
         # row 66): their LINES go, and a page that was little else is not an article. A counted
         # outcome with its reason, like every other non-article skip.
-        doc.text, notices = strip_notices(doc.text)
-        if notices and len(doc.text.strip()) < MIN_BODY_CHARS:
+        stripped, notices = strip_notices(doc.text)
+        if notices and len(stripped) < MIN_BODY_CHARS and len(doc.text) - len(stripped) >= len(stripped):
+            # The notices were most of the page and what is left is no body: not an article.
             kinds = ", ".join(f"{kind} x{n}" for kind, n in sorted(notices.items()))
             logging.getLogger(__name__).info(
                 "skipping non-article (page_notice) from %s: %s", source.domain, failure_url(fetched.final_url)
@@ -225,7 +225,21 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
                 fetched.requested_url, IngestResult.NON_ARTICLE,
                 detail=f"body was only page notices ({kinds}), not article text",
             )
-        doc.text, _ = strip_leading_nav(doc.text, keep_min_chars=MIN_BODY_CHARS)
+        if notices and len(stripped) >= MIN_BODY_CHARS:
+            # The notice lines go and the article stays. (A short body whose notice was a small part of it
+            # keeps its text whole: removing the notice must never cut an article into a stub.)
+            logging.getLogger(__name__).info(
+                "removed page notices (%s) from %s: %s",
+                ", ".join(f"{kind} x{n}" for kind, n in sorted(notices.items())),
+                source.domain, failure_url(fetched.final_url),
+            )
+            doc.text = stripped
+        doc.text, nav_entries = strip_leading_nav(doc.text, keep_min_chars=MIN_BODY_CHARS)
+        if nav_entries:
+            logging.getLogger(__name__).info(
+                "removed a leading menu run (%d entries) from %s: %s",
+                nav_entries, source.domain, failure_url(fetched.final_url),
+            )
         if is_code_title(doc.title):
             # A title that is JavaScript is no title: store none rather than code. The body is judged as usual.
             logging.getLogger(__name__).info(

@@ -41,18 +41,30 @@ _PHP_ERROR_RE = re.compile(
 # A stack-trace frame under such an error ("#0 /var/www/core/lib/a.php(123): f()").
 _PHP_FRAME_RE = re.compile(rf"^\s*#\d+\s+(?:{_PHP_FILE}\(\d+\)|\{{main\}}|\[internal function\])", re.IGNORECASE)
 
-# A SHORT line that is a "this page needs JavaScript" notice.
-_JS_NOTICE_PHRASES = (
-    "requires javascript", "javascript is required", "javascript is disabled", "enable javascript",
-    "javascript must be enabled", "needs javascript", "turn on javascript", "javascript enabled to",
-    "without javascript",
+# A line that is, IN FULL, a "this page needs JavaScript" notice: the notice's own wording from the
+# start of the line, a short tail with no clause break (no comma or semicolon), and a word cap. A news
+# sentence that only mentions JavaScript ("The exploit works even when JavaScript is disabled,
+# researchers said") does not start with the notice and is kept.
+_JS_NOTICE_RES = (
+    # "Enable JavaScript to view this site." / "You need to enable JavaScript to run this app."
+    re.compile(r"^(?:please\s+)?(?:you\s+(?:need|have|must)\s+(?:to\s+)?)?(?:enable|turn\s+on|activate|allow)\s+javascript\b[^,;]{0,60}$"),
+    # "LessWrong requires JavaScript to run." / "This site needs JavaScript to work properly."
+    re.compile(r"^[^,;]{1,40}?\s(?:requires|needs)\s+javascript(?:\s+(?:to|in\s+order\s+to)\s+[^,;]{1,40})?$"),
+    # "JavaScript is disabled in your browser." / "JavaScript must be enabled to view this page."
+    re.compile(r"^javascript\s+(?:is\s+(?:required|disabled|not\s+enabled|turned\s+off)|must\s+be\s+(?:enabled|turned\s+on))\b[^,;]{0,60}$"),
+    # The framework template line: "We're sorry but X doesn't work properly without JavaScript enabled."
+    re.compile(r"^we['’]re\s+sorry\s+but\s+[^,;]{1,40}\s+doesn['’]?t\s+work\s+properly\s+without\s+javascript\s+enabled\b[^,;]{0,60}$"),
 )
-_JS_NOTICE_MAX_WORDS = 25
+_JS_NOTICE_MAX_WORDS = 16
 
-# A SHORT line that is a media player's Flash notice ("Update Required: To play the media you will
-# need to either update your browser to a recent version or update your Flash plugin.").
-_FLASH_RE = re.compile(r"\bflash\s+(?:plugin|player|plug-in)\b", re.IGNORECASE)
-_FLASH_VERB_RE = re.compile(r"\b(?:update|install|download|enable|required|need)\b", re.IGNORECASE)
+# A line that is, IN FULL, a media player's Flash notice ("To play the media you will need to either
+# update your browser to a recent version or update your Flash plugin."). "Adobe ended support for
+# Flash Player in 2020, and users no longer need to install it" is a sentence, not the notice.
+_FLASH_NOTICE_RES = (
+    re.compile(r"^(?:to\s+(?:play|view|watch|see|listen\s+to)\b[^,;]{0,120}?\s)?(?:update|install|download|enable|upgrade)\s+(?:the\s+|your\s+)?(?:latest\s+(?:version\s+of\s+)?)?(?:adobe\s+)?flash\s+(?:player|plugin|plug-in)\b[^,;]{0,40}$"),
+    re.compile(r"^you\s+(?:need|must\s+have|will\s+need)\s+(?:to\s+(?:install|update|download|enable)\s+)?(?:the\s+)?(?:latest\s+(?:version\s+of\s+)?)?(?:adobe\s+)?flash\s+(?:player|plugin|plug-in)\b[^,;]{0,60}$"),
+    re.compile(r"^this\s+(?:content|video|media|player|page|site)\s+requires\s+(?:the\s+)?(?:latest\s+)?(?:adobe\s+)?flash\b[^,;]{0,60}$"),
+)
 _FLASH_HEADINGS = frozenset({"update required", "flash required", "flash player required"})
 _FLASH_MAX_WORDS = 40
 
@@ -68,36 +80,47 @@ def notice_kind(line: str) -> str | None:
     if _PHP_ERROR_RE.search(text) or _PHP_FRAME_RE.search(text):
         return "php_error"
     words = len(text.split())
-    low = text.casefold()
-    if words <= _JS_NOTICE_MAX_WORDS and "javascript" in low and any(p in low for p in _JS_NOTICE_PHRASES):
+    low = text.casefold().strip(_EDGE)
+    if words <= _JS_NOTICE_MAX_WORDS and any(r.search(low) for r in _JS_NOTICE_RES):
         return "js_required"
-    if low.strip(_EDGE) in _FLASH_HEADINGS:
+    if low in _FLASH_HEADINGS:
         return "flash_required"
-    if words <= _FLASH_MAX_WORDS and _FLASH_RE.search(text) and _FLASH_VERB_RE.search(text):
+    if words <= _FLASH_MAX_WORDS and any(r.search(low) for r in _FLASH_NOTICE_RES):
         return "flash_required"
     return None
 
 
 def strip_notices(text: str) -> tuple[str, dict[str, int]]:
-    """``(text without notice lines, {kind: lines removed})``. Every other line is kept byte for
-    byte; text without notices comes back identical, with an empty dict."""
+    """``(text without its notice lines, {kind: lines removed})``.
+
+    Only the notice lines at the TOP and the BOTTOM of the body go (a run from either edge; blank
+    lines do not break it), which is where a server prints its error dump and a page its notice. A
+    notice line quoted in the middle of an article (a PHP tutorial showing the warning it explains)
+    is the article's text and stays. Every kept line is byte for byte; text without notices comes
+    back identical, with an empty dict."""
     lines = (text or "").splitlines(keepends=True)
-    kept: list[str] = []
+    kinds = [notice_kind(line) for line in lines]
+    start = 0
+    while start < len(lines) and (kinds[start] is not None or not lines[start].strip()):
+        start += 1
+    end = len(lines)
+    while end > start and (kinds[end - 1] is not None or not lines[end - 1].strip()):
+        end -= 1
     removed: dict[str, int] = {}
-    for line in lines:
-        kind = notice_kind(line)
-        if kind is None:
-            kept.append(line)
-        else:
+    for i, kind in enumerate(kinds):
+        if kind is not None and not (start <= i < end):
             removed[kind] = removed.get(kind, 0) + 1
     if not removed:
         return text, {}
-    return "".join(kept).strip(), removed
+    return "".join(lines[start:end]).strip(), removed
 
 
 NAV_RUN_MIN_LINES = 8   # a byline, a date and a photo credit make three short lines; a menu makes many
 NAV_ENTRY_MAX_CHARS = 25
-_SENTENCE_END = ".!?…:;»\"”’)"
+_SENTENCE_END = ".!?…:;»\"”’)。！？」』；：؟۔।॥"
+NAV_ENTRY_MAX_WORDS = 3   # "Logga in", "Sport", "World news": a poem line or a sentence runs longer
+NAV_ENTRY_MAX_CJK = 8     # a CJK menu entry is a few characters; a CJK sentence without its full stop is not
+_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
 
 
 def _is_nav_entry(line: str) -> bool:
@@ -106,6 +129,9 @@ def _is_nav_entry(line: str) -> bool:
         0 < len(text) <= NAV_ENTRY_MAX_CHARS
         and not text.endswith(tuple(_SENTENCE_END))
         and not any(ch.isdigit() for ch in text)  # a date, a score or a time is data, not a menu entry
+        and not any(ch in ",，、;；" for ch in text)  # a clause break is a sentence, not a menu entry
+        and len(text.split()) <= NAV_ENTRY_MAX_WORDS
+        and not (_CJK_RE.search(text) and len(text) > NAV_ENTRY_MAX_CJK)
     )
 
 
@@ -146,4 +172,8 @@ _CODE_PUNCT = frozenset("{}();=")
 def is_code_title(title: str | None) -> bool:
     if not title:
         return False
-    return bool(_CODE_TOKEN_RE.search(title)) and sum(ch in _CODE_PUNCT for ch in title) >= 3
+    # A statement ends in ";" in every specimen; a headline about code ("JavaScript's => arrow functions
+    # (and why () {} matter)") carries the punctuation but not a statement.
+    return (
+        bool(_CODE_TOKEN_RE.search(title)) and ";" in title and sum(ch in _CODE_PUNCT for ch in title) >= 3
+    )

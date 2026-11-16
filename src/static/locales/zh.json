@@ -6990,7 +6990,7 @@
   "not a recognised country code": "无法识别的国家/地区代码",
   "not a usable edition code": "不是可用的版本代码",
   "not an ISO code": "非 ISO 代码",
-  "not an article (menu or index page)": "不是文章（菜单或索引页）",
+  "not an article (menu, index or notice page)": "不是文章（菜单、索引页或提示页）",
   "not an iCal file": "不是 iCal 文件",
   "not available for {backend}": "不适用于 {backend}",
   "not checked": "未核对",

@@ -6990,7 +6990,7 @@
   "not a recognised country code": "código de país no reconocido",
   "not a usable edition code": "código de edición no utilizable",
   "not an ISO code": "no es un código ISO",
-  "not an article (menu or index page)": "no es un artículo (menú o página índice)",
+  "not an article (menu, index or notice page)": "no es un artículo (menú, página índice o página de aviso)",
   "not an iCal file": "no es un archivo iCal",
   "not available for {backend}": "no disponible para {backend}",
   "not checked": "sin revisar",

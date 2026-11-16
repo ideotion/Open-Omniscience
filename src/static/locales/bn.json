@@ -6990,7 +6990,7 @@
   "not a recognised country code": "অপরিচিত দেশের কোড",
   "not a usable edition code": "ব্যবহারযোগ্য সংস্করণ কোড নয়",
   "not an ISO code": "এটি আইএসও কোড নয়",
-  "not an article (menu or index page)": "নিবন্ধ নয় (মেনু বা সূচি পাতা)",
+  "not an article (menu, index or notice page)": "নিবন্ধ নয় (মেনু, সূচি বা বিজ্ঞপ্তি পাতা)",
   "not an iCal file": "iCal ফাইল নয়",
   "not available for {backend}": "{backend}-এর জন্য উপলব্ধ নয়",
   "not checked": "যাচাই করা হয়নি",

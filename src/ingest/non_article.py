@@ -164,7 +164,7 @@ def classify_non_article(
     if door:
         parsed = urlparse(url)
         door_path = parsed.path.strip("/").lower()
-        if not door_path and not parsed.query:
+        if not door_path and not parsed.query and not parsed.fragment:
             return NonArticleVerdict("url_homepage", "site homepage / front page — no article path")
         if door_path in _FEED_PATHS:
             return NonArticleVerdict("url_utility", f"feed page '/{door_path}', not an article")

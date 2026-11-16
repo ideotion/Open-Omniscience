@@ -61,6 +61,11 @@ def test_each_specimen_line_is_named(line, kind):
     "ending more than two decades in which the plugin shaped how video and games reached the web, "
     "and leaving many archives to update or lose their old interactive works.",
     "The camera's flash went off.",
+    # the Opus read's specimens: news sentences that carry a notice's words
+    "Firefox 140 lets users browse without JavaScript on any site.",
+    "The exploit works even when JavaScript is disabled, researchers said.",
+    "Adobe ended support for Flash Player in 2020, and users no longer need to install it.",
+    "The agency's site requires JavaScript to run, critics said.",
 ])
 def test_a_sentence_that_mentions_them_is_kept(line):
     assert notice_kind(line) is None
@@ -72,6 +77,14 @@ def test_stripping_notices_keeps_the_article_around_them_byte_for_byte():
     assert out == f"{PROSE}\n\nSecond paragraph stays."
     assert removed == {"php_error": 2}
     assert strip_notices(PROSE) == (PROSE, {})
+    # a notice at the bottom goes too
+    assert strip_notices(f"{PROSE}\nLessWrong requires JavaScript to run.") == (PROSE, {"js_required": 1})
+
+
+def test_a_notice_quoted_inside_an_article_stays():
+    # a PHP tutorial shows the warning it explains: mid-body, so it is the article's text
+    text = f"{PROSE}\n{PHP_PLAIN}\n{PROSE}"
+    assert strip_notices(text) == (text, {})
 
 
 def test_a_leading_menu_run_goes_and_a_byline_block_stays():
@@ -89,6 +102,20 @@ def test_a_leading_menu_run_goes_and_a_byline_block_stays():
     assert strip_leading_nav(menu, keep_min_chars=0)[1] == 0
 
 
+@pytest.mark.parametrize("lead", [
+    # CJK sentences end in their own full stop or carry a clause comma
+    "\n".join(["今天上午，市政府召开新闻发布会。"] * 9),
+    # a CJK line without its stop is still longer than a menu entry
+    "\n".join(["市政府召开新闻发布会宣布新政策"] * 9),
+    # a poem at the top of a culture article: its lines run longer than a menu entry
+    "\n".join(["the river keeps its counsel", "under the winter bridge", "and the gulls wheel south",
+                "past the empty harbour", "where the boats lie still", "and nobody comes home",
+                "before the lamps are lit", "on the long quay road", "and the night comes down"]),
+])
+def test_a_leading_run_of_real_lines_is_not_a_menu(lead):
+    assert strip_leading_nav(f"{lead}\n{PROSE}", keep_min_chars=200)[1] == 0
+
+
 @pytest.mark.parametrize("title,code", [
     ("function(){var a=document.createElement('script');a.src='x.js';}", True),
     ("window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);}", True),
@@ -96,6 +123,7 @@ def test_a_leading_menu_run_goes_and_a_byline_block_stays():
     ("Why JavaScript frameworks keep changing (and what to do about it)", False),
     ("Function and form: a review of (re)designs; part 2", False),
     ("Return of the king: the series finale (2003)", False),
+    ("JavaScript's => arrow functions (and why () {} matter)", False),
     (None, False),
 ])
 def test_a_code_title_is_told_from_a_headline(title, code):
@@ -135,6 +163,7 @@ def test_the_door_refuses_a_long_homepage_or_feed_page(url, signal):
     "https://site.com/news/rss-feeds-explained",
     "https://site.com/2026/11/16/feed-the-world-campaign",
     "https://site.com/rss/2026/an-article-under-a-feed-folder",
+    "https://x.com/#/story/12",  # a single-page site addresses its story in the fragment
 ])
 def test_the_door_rule_spares_an_addressed_article(url):
     assert classify_non_article(url, text=LONG, door=True) is None
@@ -176,6 +205,15 @@ def test_an_article_under_an_error_dump_is_kept_without_the_dump(monkeypatch):
     out, doc, staged = _store(monkeypatch, "https://polonia1.tv/wiadomosci/x", title="Tytuł",
                               text=f"{DRUPAL}\n{DRUPAL}\n{LONG}")
     assert out.result is IngestResult.STAGED and doc.text == LONG and staged
+
+
+def test_a_short_brief_that_carries_a_notice_line_is_kept_whole(monkeypatch):
+    from src.ingest.pipeline import IngestResult
+
+    brief = PROSE[:190]
+    text = f"{brief}\nLessWrong requires JavaScript to run."
+    out, doc, staged = _store(monkeypatch, "https://example.com/news/brief", title="Brief", text=text)
+    assert out.result is IngestResult.STAGED and doc.text == text and staged
 
 
 def test_a_code_title_is_stored_as_no_title(monkeypatch):
