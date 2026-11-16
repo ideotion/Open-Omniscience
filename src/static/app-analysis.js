@@ -2727,6 +2727,9 @@
             + `<th style="text-align:right" title="${esc(t("How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent."))}">${esc(t("Citing sources"))}</th>`
             + `<th title="${esc(t("Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement."))}">${esc(t("Independence"))}</th></tr></thead><tbody>${rows}</tbody></table>`
           : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`)
+        // Row 99: an outlet's own footer links (an app badge, a subscription page) are listed apart, with
+        // the counts that put them there -- never dropped from the view without a word.
+        + _anFurnitureHtml(d.furniture_items || [], t)
         // The WHOLE-corpus citation graph as a file (R684, Lane M): /api/links/export.graphml
         // and .json had no button. It sits under this table because that is where a reader
         // looks for links, and its caveat says loudly that it is NOT this analysis's set.
@@ -2738,6 +2741,16 @@
         + `<a class="btnlike tiny" href="/api/links/export.json" download="citation-graph.json">JSON</a>`
         + `<p class="card-caveat" style="margin:4px 0 0">${esc(t("This file covers your whole corpus, not only this analysis: each stored article and the sites it links to. It keeps the 2,000 most-cited sites and at most 2,000 of their articles. Links counted, never a credibility score."))}</p>`
         + `</div>`;
+    }
+    function _anFurnitureHtml(items, t) {
+      if (!items.length) return "";
+      const li = items.map((it) =>
+        `<li>${extLink(it.sample_url || it.normalized_url, esc(it.domain || it.link_text || it.normalized_url), "", "")}`
+        + ` <span class="muted">· ${esc(_tfn("carried by {n} articles", { n: String(it.carried_by) }))}</span></li>`).join("");
+      return `<details class="an-furniture" style="margin-top:8px"><summary class="muted" style="cursor:pointer" `
+        + `title="${esc(t("A link counts as an outlet's page furniture (a footer, app or subscription link) when at least half of the articles stored from that source carry it, and the source has at least 20 stored articles. Measured on your corpus."))}">`
+        + `${esc(_tfn("{n} link(s) that one outlet carries on most of its pages (its page furniture) are not counted as citations", { n: String(items.length) }))}</summary>`
+        + `<ul style="margin:6px 0 0">${li}</ul></details>`;
     }
     function _anSentimentHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
