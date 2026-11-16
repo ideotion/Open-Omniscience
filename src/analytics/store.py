@@ -672,7 +672,7 @@ def _stamp_index_engine(
         )
 
 
-def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country) -> None:
+def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country, language) -> None:
     """Record which www engine, on which inputs, produced this article's places + entities (R415).
 
     An UPSERT and nothing else: the two stores land together inside one savepoint, so
@@ -690,7 +690,7 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
         from src.analytics.engine_identity import www_engine_id, www_inputs_digest
 
         current = www_engine_id()
-        inputs = www_inputs_digest(raw_content=raw_content, country=country)
+        inputs = www_inputs_digest(raw_content=raw_content, country=country, language=language)
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
@@ -738,7 +738,7 @@ def _index_article_www(
         with session.begin_nested():
             www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
             www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"))
-            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country)
+            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country, language=article.language)
         if timings is not None:
             timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
@@ -1118,7 +1118,8 @@ def index_article(
                 )
                 # R415: the www stamp rides the SAME savepoint as the rows it certifies.
                 _stamp_www_engine(
-                    session, article_id, raw_content=article_text(article), country=article.country
+                    session, article_id, raw_content=article_text(article), country=article.country,
+                    language=article.language,
                 )
             if timings is not None:
                 timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www

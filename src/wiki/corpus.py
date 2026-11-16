@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from urllib.parse import quote, unquote
 
 from sqlalchemy.orm import Session
@@ -329,7 +329,8 @@ def sync_page_to_corpus(session: Session, page: WikiPage, *, extractor=None) -> 
         wiki=page.wiki,
         title=page.title,
         plain=plain_from_wikitext(raw),
-        published_at=last_rev_ts or page.last_checked_at,
+        # The last revision's time is a true date of this text; the time we last checked the page is not (R730).
+        published_at=last_rev_ts,
         revid=revid,
         extractor=extractor,
     )
@@ -375,7 +376,7 @@ def upsert_wiki_corpus_article(
             content=plain,
             language=(wiki if wiki in _KNOWN_LANGS else None),
             hash=content_hash,
-            published_at=published_at or datetime.now(UTC),
+            published_at=published_at,  # None when no revision time is known, never the import time (R730)
             source_revision=revision,
         )
         session.add(art)

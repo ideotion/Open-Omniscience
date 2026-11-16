@@ -30,7 +30,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -114,7 +113,9 @@ def ingest_pdf_bytes(
         content=text,
         language=None,  # unknown — the deduced-language pass fills detected_language
         hash=content_hash,
-        published_at=datetime.now(UTC),  # import date (parity with the .eml pipeline)
+        # Not known: a PDF carries no trustworthy publication date, and the import time is not one (R727/R730).
+        # The import time is created_at, which the reader shows as the day the document was captured.
+        published_at=None,
     )
     session.add(art)
     try:

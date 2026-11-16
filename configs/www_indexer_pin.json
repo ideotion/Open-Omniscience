@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "digest": "85d72c457fa4492b25e5fbfcf1f5553836f4a1ae69b543134c7ee7bbc1c0d2fd",
+  "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
   "log": [
     {
       "version": 1,
@@ -55,6 +55,12 @@
       "digest": "85d72c457fa4492b25e5fbfcf1f5553836f4a1ae69b543134c7ee7bbc1c0d2fd",
       "kind": "bump",
       "note": "R730 (field test 2026-11-14 row 70): the entity extractor takes the article's language and, for the languages each rule was tested on, rejects a person candidate holding a function word, a Swedish demonym or a Finnish place genitive, and stops VM/EM/OS/SM/NM/DM as Nordic organisations; the grammar stoplists joined the www digest. Shares the held window with R725/R726 (one step to 2)"
+    },
+    {
+      "version": 2,
+      "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, not merged yet (PR #2031, shared with R725/R726): the second review's R730 fixes (hand-curated function words, a line-break rule, Finnish genitives of Finnish cities of 20,000+ only, language in the www inputs digest) ride the same unmerged step."
     }
   ]
 }

@@ -15,7 +15,6 @@ nature — the notes say which rule fired so a human can judge.
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 
 _MAX_SCAN = 60_000
 
@@ -64,17 +63,44 @@ _DETERMINERS = frozenset("the le la les l' der die das el los las un une una".sp
 # "Tampereen Nokia Arenalla"), and "VM" (världsmästerskap, the world championships) typed
 # as an organisation.
 
-#: Function words: a person-shape candidate with one as a token is rejected. The language's
-#: closed-class grammar list (``get_grammar_stopwords``), never the keyword stoplist's topical
-#: additions. Tested on these languages.
-_FUNCTION_WORD_LANGS = frozenset({"sv", "fi", "da", "nb", "nn", "no", "de", "en", "fr"})
+#: Function words: a person-shape candidate with one as a token is rejected. A HAND-CURATED
+#: closed-class list per tested language (articles, prepositions, conjunctions, pronouns,
+#: auxiliaries), never the stopwords-iso grammar list: that one holds nouns and adjectives that
+#: are common surnames (de Mann, Kurz, Lang, Ende; sv Dag; fi Aina). Left out on purpose, as
+#: names or name parts: name particles (de, la, le, les, du, des, da, di, del, van, von, der,
+#: den, af, al, el), Till, Til, Can, Will, May, Son, Eli, Han, He, An, Ole, Kai, Hans, Ville.
+def _words(spaced: str) -> frozenset[str]:
+    return frozenset(spaced.split())
+
+
+_FUNCTION_WORDS: dict[str, frozenset[str]] = {
+    "sv": _words("och eller men att som för från med på av om i en ett det vi ni jag hon är var har inte när där efter "
+                    "under över mot vid hos utan"),
+    "da": _words("og eller men at som for fra med på om i en et det jeg vi er var har ikke når efter under over mod "
+                    "ved hos uden"),
+    "nb": _words("og eller men at som for fra med på av om i en et ett det jeg vi er var har ikke når etter under "
+                    "over mot ved hos uten"),
+    "fi": _words("ja tai mutta että kun jos on oli ovat ei se ne hän me te tämä joka mikä myös kuin"),
+    "de": _words("und oder aber dass die das dem ein eine einen einem einer im in ist war hat nicht mit zu zum zur auf "
+                    "für bei nach aus über unter vor gegen ohne durch wenn als wie auch noch sich er sie es wir ihr"),
+    "en": _words("the and or but of to in on at for from with by as is was are were has have had not this that these "
+                    "those which who when where after before about into over under it its she we they our their his her"),
+    "fr": _words("et ou mais que qui dont où dans sur pour par avec sans sous chez entre vers est était sont il elle ils "
+                    "elles nous vous ce cette ces un une au aux"),
+}
+_FUNCTION_WORDS["nn"] = _FUNCTION_WORDS["nb"]
+_FUNCTION_WORDS["no"] = _FUNCTION_WORDS["nb"]
+_FUNCTION_WORD_LANGS = frozenset(_FUNCTION_WORDS)
 #: Swedish demonyms in their definite form ("Borgåbon", "Stockholmsborna": the resident(s) of
 #: a place). No Swedish given name or surname ends this way in the test lists.
 _SV_DEMONYM_RE = re.compile(r"(?:bon|borna)$")
-#: Finnish place genitives: the first token of a pair, ending in -n, whose stem is a gazetteer
-#: place ("Tampereen" -> Tampere; a doubled final vowel is the genitive's lengthening). Only
-#: with a gazetteer hit: Johan, Kristian and Stefan are given names in Finland too.
+#: Finnish place genitives: the first token of a pair, ending in -n, whose stem is a FINNISH
+#: gazetteer city of at least :data:`_FI_GENITIVE_MIN_POPULATION` people ("Tampereen" ->
+#: Tampere; a doubled final vowel is the genitive's lengthening). Never any place anywhere:
+#: Simon (Simo, a Finnish municipality of 3,000), Helen (Hel, Poland) and Hassan (Hassa,
+#: Turkey) are names, so a small town or a foreign one never makes a genitive.
 _FI_GENITIVE_RE = re.compile(r"(?:en|n)$")
+_FI_GENITIVE_MIN_POPULATION = 20_000
 #: Two- and three-letter sports-event abbreviations written as capitals in the Nordic
 #: languages (VM world championships, EM European, OS Olympics, SM/NM/DM national
 #: championships): never an organisation, however often repeated ("VM-guld", "VM-historia").
@@ -86,26 +112,15 @@ def _base_language(language: str | None) -> str:
     return (language or "").strip().lower().replace("_", "-").split("-")[0]
 
 
-#: Given names that the grammar lists of the tested languages also hold (measured against a
-#: list of common Nordic, German, French and English given names): Hans (sv/da/nb "his"),
-#: Olli and Kai (fi), Ville (da/nb "would"), Will and May (en), Ernst (de "serious"), Ole (fi).
-#: A name is never rejected for being one of them.
-_NAME_COLLISIONS = frozenset({"hans", "olli", "kai", "ville", "will", "may", "ernst", "ole"})
-
-
-@lru_cache(maxsize=16)
 def _function_words(lang: str) -> frozenset[str]:
-    if lang not in _FUNCTION_WORD_LANGS:
-        return frozenset()
-    from src.services.stopwords import stopwords_manager
-
-    return frozenset(w.lower() for w in stopwords_manager.get_grammar_stopwords(lang)) - _NAME_COLLISIONS
+    return _FUNCTION_WORDS.get(lang, frozenset())
 
 
-def _is_place(name: str) -> bool:
+def _is_fi_city(stem: str) -> bool:
     from src.catalog.cities import cached_index
 
-    return name.strip().lower() in cached_index()["name"]
+    city = cached_index()["pair"].get((stem.strip().lower(), "fi"))
+    return city is not None and (city.population or 0) >= _FI_GENITIVE_MIN_POPULATION
 
 
 def _fi_place_genitive(token: str) -> bool:
@@ -114,7 +129,7 @@ def _fi_place_genitive(token: str) -> bool:
             continue
         if stem[-1:] == stem[-2:-1] and stem[-1:].lower() in "aeiouyäö":
             stem = stem[:-1]  # the genitive lengthens the final vowel: Tamperee -> Tampere
-        if _is_place(stem):
+        if _is_fi_city(stem):
             return True
     return False
 
@@ -194,8 +209,10 @@ def extract_entities(text: str, *, limit: int = 6, language: str | None = None) 
         key = name.lower()
         if any(w.lower() in org_words for w in name.split()):
             return  # claimed by an organization — never double-classed
+        if lang in _FUNCTION_WORD_LANGS and "\n" in text[m.start(1):m.end(m.lastindex or 1)]:
+            return  # R730: a headline break between two capitalised words ("Afrika\nFör"), not a name
         if lang and _person_rejected(name.split(), lang, function_words):
-            return  # R730: a place, a place genitive, a demonym or a function word, not a name
+            return  # R730: a place genitive, a demonym or a function word, not a name
         if key in people:
             people[key]["mentions"] += 1
         else:

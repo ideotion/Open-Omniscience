@@ -215,3 +215,19 @@ def test_space_less_scripts_without_a_segmenter_are_reported_unsegmented():
     assert {"km", "lo", "my", "bo"} <= UNSEGMENTED
     for lang in ("km", "lo", "my", "bo"):
         assert language_status(lang) == "unsegmented"
+
+
+# ---- the /api/keywords text processor keeps script marks, and only those ----------- #
+
+def test_text_processor_keeps_script_marks_and_no_symbol_or_emoji_marks():
+    from src.services.text_processor import TextProcessor
+
+    t = TextProcessor()
+    import unicodedata
+
+    # The processor folds with NFKD, so the expectation is folded too (a Tamil vowel sign decomposes into two marks).
+    assert t.tokenize("அவர் சொன்னார் सरकार") == [unicodedata.normalize("NFKD", w) for w in ("அவர்", "சொன்னார்", "सरकार")]
+    assert t.tokenize("Step 1️⃣ then 2️⃣") == ["step", "then"]  # a keycap emoji is no keyword
+    assert t.tokenize("vector v⃗ and ab᷄cd") == ["vector", "and", "ab", "cd"]  # symbol and Latin-extension marks
+    # The Latin folding is what main does, unchanged (its "naïve" split is older than this fix and not its subject).
+    assert t.tokenize("café naïve") == ["cafe", "nai", "ve"]
