@@ -773,8 +773,18 @@ def _ooservertext_in(lang: str, messages: list[str]) -> list[str]:
         function_source(js, "ooServerText"),
         "process.stdout.write(JSON.stringify(" + json.dumps(messages) + ".map(ooServerText)));",
     ])
-    # On stdin: a whole locale table is past the argv limit.
-    proc = subprocess.run(["node"], input=prog, capture_output=True, text=True, check=False)
+    # In a file: a whole locale table is past the argv limit. It went on node's stdin until row 93, and on Windows that run never
+    # returned (named by the portability legs' hang watchdog, run 43803278424, shard 3): no other node test here feeds stdin, and
+    # every one that passes on Windows runs a file. Written and read as UTF-8 on every OS (Windows' default is the ANSI code page),
+    # and bounded, so a stuck node is a named failure rather than a hang.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "ooservertext.js"
+        script.write_text(prog, encoding="utf-8")
+        proc = subprocess.run(
+            ["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+        )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 

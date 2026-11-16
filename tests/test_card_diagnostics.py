@@ -113,3 +113,24 @@ def test_a_present_cache_names_when_it_was_generated(monkeypatch):
     log = cd.card_click_diagnostics(session=None)
     assert log["cache_present"] is True
     assert "2026-01-02T03:04:05+00:00" in log["basis"]
+
+
+def test_the_source_candidates_card_opens_the_candidates_not_a_search(monkeypatch):
+    """Field test 2026-11-14 row 64: the card counts ~300 CANDIDATES, and the text search of its key loaded 0 articles.
+    Its button now opens Settings -> Advanced -> Sources, so it is a view, never a search-fallback mismatch."""
+    from pathlib import Path
+
+    cards = [{"type": "recipe_source_candidates", "title": "300 source candidates await your review",
+              "bucket": "context", "id": "c9", "n": 300, "key": "source-candidates"}]
+    log = _run(monkeypatch, cards, {"source-candidates": 0})
+    rec = log["cards"][0]
+    assert rec["click"]["mode"] == "view" and rec["mismatch"] is False
+    assert log["summary"]["mismatched"] == 0 and log["summary"]["view"] == 1
+    js = Path("src/static/app-home.js").read_text(encoding="utf-8")
+    assert 'c.type !== "recipe_source_candidates"' in js and "showTab('sources')" in js
+    # Both renderers take the one helper: the Leads carousel painted its own "Open corpus" text search for this card
+    # after the flip card was fixed, so a single grep for the flip card's string passed with the bug still there.
+    assert js.count("cardOpensElsewhere(c, ") == 3, "the definition, the flip card and the carousel must both ask cardOpensElsewhere"
+    from tests.js_source_helper import function_body
+
+    assert "cardOpensElsewhere(c, " in function_body(js, "_carPaint")

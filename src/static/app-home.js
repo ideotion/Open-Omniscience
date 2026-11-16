@@ -1507,6 +1507,15 @@
       if (!_carPaused) _carStart();
     }
 
+    // A card that counts something other than articles opens THAT, in every renderer (the flip card and the Leads
+    // carousel alike): the source-candidates card counts CANDIDATES, and a text search of its key loaded 0 articles
+    // behind a card saying 300 (field test 2026-11-14, row 64). "" when the card is an article set.
+    function cardOpensElsewhere(c, cls) {
+      if (!c || c.type !== "recipe_source_candidates") return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<button class="${esc(cls)}" data-on-click="showTab('sources')" title="${esc(t("Opens Settings → Advanced → Sources, where each candidate shows its evidence. Nothing is fetched or enabled until you decide."))}">${esc(t("Review the candidates"))}</button>`;
+    }
+
     function _carPaint() {
       const face = $("carousel-face"); if (!face || !_carCards.length) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1524,7 +1533,7 @@
         + `<h4${cardTitleTip(c)}>${esc(cardTitle(c))}</h4>`
         + (c.summary ? `<p class="sum">${esc(cardText(c, "summary"))}</p>` : "")
         + caveat
-        + `<div><button class="tiny" data-on-click="${action}">${esc(t("Open corpus"))} ↗</button></div>`
+        + `<div>${cardOpensElsewhere(c, "tiny") || `<button class="tiny" data-on-click="${action}">${esc(t("Open corpus"))} ↗</button>`}</div>`
         + `</div>`;
       const dots = $("carousel-dots");
       if (dots) dots.innerHTML = _carCards.map((_, i) =>
@@ -2015,9 +2024,14 @@
       const _openCorpus = _aIds
         ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))}, ${esc(JSON.stringify(_prov))})`
         : `openCardCorpusQuery(${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))}, ${esc(JSON.stringify(_prov))})`;
-      const openBtn = _aq
-        ? `<button class="lead-open" data-on-click="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
-        : "";
+      // A card about SOURCE CANDIDATES counts candidates, not articles: a text search of its key loaded 0 articles
+      // behind a card saying 300 (field test 2026-11-14, row 64). It opens the candidates themselves instead.
+      const _view = cardOpensElsewhere(c, "lead-open");
+      const openBtn = _view
+        ? _view
+        : (_aq
+          ? `<button class="lead-open" data-on-click="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
+          : "");
       const chip = `<span class="chip">${esc(cardTypeLabel(c.type))}</span>`;
       const _title = cardTitle(c);
       // lead-card-nested-interactive (P1, axe): role="button" tabindex="0" on this

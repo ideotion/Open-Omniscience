@@ -69,7 +69,12 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
         "the caught exception 'cause' is used outside a scrubbing call": 2,
         "the caught exception 'exc' is used outside a scrubbing call": 2,
     },
-    "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
+    "src/ingest/airplane.py": {
+        "a ** mapping handed to a log call can carry exc_info": 1,  # the socks connect's own kwargs
+        # Row 72: ``exc.errno == socket.EAI_AGAIN`` reads a resolver failure's errno to tell a temporary failure from any other; the
+        # boolean goes to dns_stale.recall, and the exception itself is re-raised unchanged. Its words are never read or stored.
+        "the caught exception 'exc' is used outside a scrubbing call": 1,
+    },
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
     "src/ingest/email.py": {"imaplib.IMAP4.error is kept as a name, a log call the scan cannot read": 1},  # imaplib's exception class (R653)
     # the extraction lock: ``_release_frames`` clears the FRAMES of a raising extraction (the exception is handed to it and to the

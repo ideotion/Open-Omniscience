@@ -1015,6 +1015,15 @@ def activate_kill_switch() -> None:
     with _KILL_EPOCH_LOCK:
         _KILL.set()
         _KILL_EPOCH += 1
+    # The resolver-blip memory (src/ingest/dns_stale.py) is emptied too: going offline is
+    # where a network change usually passes, and an answer from the old network must not be
+    # handed back on the new one.
+    try:
+        from src.ingest import dns_stale
+
+        dns_stale.clear()
+    except Exception:  # noqa: BLE001 - going offline must never fail on a cache
+        pass
     # Going offline is a HARD close: an egress window (the consented "install the
     # local AI without starting the collector" exemption) must never outlive the
     # operator's decision to go offline, or the airplane button would stop meaning
