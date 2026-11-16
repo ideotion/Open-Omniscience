@@ -229,3 +229,16 @@ def test_a_folder_under_this_pid_whose_lock_is_held_is_not_taken_for_an_earlier_
     monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
     rollup_serve._sweep_spill_folders(root)
     assert not target.exists()
+
+
+def test_a_staging_folder_under_this_pid_left_by_an_earlier_process_goes_once(root, monkeypatch):
+    """A container restarted as the same pid after a crash mid-staging: the first sweep removes that folder, a later one
+    (when this process may be staging its own) does not."""
+    left = root / f"{rollup_serve._STAGING_PREFIX}{os.getpid()}-abcd1234"
+    left.mkdir()
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", True)
+    rollup_serve._sweep_spill_folders(root)
+    assert left.exists(), "a later sweep took this process's own folder in the making"
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    rollup_serve._sweep_spill_folders(root)
+    assert not left.exists()

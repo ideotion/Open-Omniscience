@@ -1195,8 +1195,14 @@ def _sweep_spill_folders(root) -> None:
     for child in root.iterdir():
         if child.name.startswith(_STAGING_PREFIX) and child.is_dir():
             # A folder that was being made: nothing was ever offloaded into it. Its maker is gone when its pid is.
+            # One of THIS pid is an earlier process's (a container restarts as pid 1), unless its lock is held.
             staged = child.name[len(_STAGING_PREFIX):].split("-", 1)[0]
-            if staged.isdigit() and int(staged) != mine and not psutil.pid_exists(int(staged)):
+            if not staged.isdigit():
+                continue
+            if int(staged) == mine:
+                if not _OWN_SPILL_SWEPT and _owner_alive(child) is not True:
+                    shutil.rmtree(child, ignore_errors=True)
+            elif not psutil.pid_exists(int(staged)):
                 shutil.rmtree(child, ignore_errors=True)
             continue
         head = child.name.split("-", 1)[0]
