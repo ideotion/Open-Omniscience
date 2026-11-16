@@ -20,6 +20,7 @@ from fastapi import HTTPException
 
 import src.config.kv_store as kv_store
 from src.scheduler import settings as S
+from tests.js_source_helper import function_body, function_source, object_literal
 
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -118,20 +119,17 @@ def test_the_ui_draws_the_notice_where_the_retired_line_is():
     js = (_STATIC / "app-sources.js").read_text(encoding="utf-8")
     assert 'id="sch-repaired"' in html and 'data-on-click="dismissSettingsRepair(this)"' in html
     assert html.index('id="sch-repaired"') < html.index('id="sch-retired"')
-    body = js[js.index("function applySchedConfig(") :]
-    assert "renderSettingsRepair(c);" in body[: body.index("\n    }\n")]
+    assert "renderSettingsRepair(c);" in function_body(js, "applySchedConfig")
     # Told once at boot and after the top-bar knob's save, wherever the operator is.
-    boot = js[js.index("async function loadRateMode(") : js.index("async function toggleRateMode(")]
-    knob = js[js.index("async function toggleRateMode(") :]
-    assert "noteSettingsRepair(c)" in boot and "noteSettingsRepair(c)" in knob[:1500]
+    assert "noteSettingsRepair(c)" in function_body(js, "loadRateMode")
+    assert "noteSettingsRepair(c)" in function_body(js, "toggleRateMode")
     on = (_STATIC / "oo-on.js").read_text(encoding="utf-8")
     assert on.count('"dismissSettingsRepair"') == 2
 
 
 def _labels() -> dict:
     js = (_STATIC / "app-sources.js").read_text(encoding="utf-8")
-    block = js[js.index("const _REPAIR_OFF_LABELS = {") : js.index("};", js.index("const _REPAIR_OFF_LABELS"))]
-    return dict(re.findall(r'(\w+): "([^"]+)"', block))
+    return dict(re.findall(r'(\w+): "([^"]+)"', object_literal(js, "_REPAIR_OFF_LABELS")))
 
 
 def test_every_switch_a_repair_writes_off_has_a_label():
@@ -140,7 +138,7 @@ def test_every_switch_a_repair_writes_off_has_a_label():
 
 def test_every_notice_string_is_keyed_in_all_twelve_languages():
     js = (_STATIC / "app-sources.js").read_text(encoding="utf-8")
-    fn = js[js.index("function settingsRepairLines(") : js.index("async function dismissSettingsRepair(")]
+    fn = function_body(js, "settingsRepairLines") + function_body(js, "noteSettingsRepair")
     keys = set(re.findall(r'\b(?:t|tf)\("([^"]+)"', fn)) | set(_labels().values())
     assert len(keys) == 13
     for path in sorted((_STATIC / "locales").glob("*.json")):
@@ -153,8 +151,12 @@ def test_every_notice_string_is_keyed_in_all_twelve_languages():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_lines_are_plain_and_name_each_kind_of_change():
     js = (_STATIC / "app-sources.js").read_text(encoding="utf-8")
-    start = js.index("const _REPAIR_OFF_LABELS = {")
-    code = js[start : js.index("function renderSettingsRepair(")]
+    code = (
+        "const _REPAIR_OFF_LABELS = "
+        + object_literal(js, "_REPAIR_OFF_LABELS")
+        + ";\n"
+        + function_source(js, "settingsRepairLines")
+    )
     script = "const window = {};\n" + code + """
 const show = (n) => console.log(JSON.stringify(settingsRepairLines(n)));
 show({});
