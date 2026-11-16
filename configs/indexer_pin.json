@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "digest": "146e0a1846ba4452ccf3c6cb7d5ef730e18b4046ea71f1062182f1ce780f26fd",
+  "digest": "7e03148b51563d524d4d1c804133cd6631bd2dfbf77a271b7443304075c84556",
   "log": [
     {
       "version": 1,
@@ -115,6 +115,12 @@
       "digest": "146e0a1846ba4452ccf3c6cb7d5ef730e18b4046ea71f1062182f1ce780f26fd",
       "kind": "same",
       "note": "Still INDEXER_VERSION 4, which is not merged yet (PR #2031): the second review's text_processor fix (symbol marks and variation selectors are no script marks) rides the same unmerged step."
+    },
+    {
+      "version": 4,
+      "digest": "7e03148b51563d524d4d1c804133cd6631bd2dfbf77a271b7443304075c84556",
+      "kind": "same",
+      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
     }
   ]
 }

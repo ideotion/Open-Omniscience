@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
+  "digest": "c410a2c941a6aeefaf93bb2c4ea97882d3e162cb4c079d8f7a87a9c73c2309ea",
   "log": [
     {
       "version": 1,
@@ -61,6 +61,12 @@
       "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
       "kind": "same",
       "note": "Still WWW_INDEXER_VERSION 2, not merged yet (PR #2031, shared with R725/R726): the second review's R730 fixes (hand-curated function words, a line-break rule, Finnish genitives of Finnish cities of 20,000+ only, language in the www inputs digest) ride the same unmerged step."
+    },
+    {
+      "version": 2,
+      "digest": "c410a2c941a6aeefaf93bb2c4ea97882d3e162cb4c079d8f7a87a9c73c2309ea",
+      "kind": "same",
+      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
     }
   ]
 }
