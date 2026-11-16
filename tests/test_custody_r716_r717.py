@@ -11,6 +11,7 @@ with no loss or reordering, and nothing else is blocked.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -73,7 +74,7 @@ def test_r716_the_report_and_the_route_never_call_an_unendorsed_acceptance_plain
 def test_r716_the_cli_says_unendorsed_and_exits_4_never_a_plain_verified(tmp_path):
     bundle, _ = _re_created_key_bundle(tmp_path)
     path = tmp_path / "b.json"
-    path.write_text(json.dumps(bundle))
+    path.write_text(json.dumps(bundle), encoding="utf-8")
     cli = [sys.executable, str(ROOT / "scripts" / "verify_custody.py"), str(path)]
     refused = subprocess.run(cli, capture_output=True, text=True, cwd=ROOT)
     assert refused.returncode == 1 and "--accept-unendorsed-rotation" not in refused.stderr
@@ -100,8 +101,9 @@ def test_r716_the_in_app_check_shows_a_warning_not_a_plain_verified():
 def test_r717_settings_shows_the_reason_and_the_fix_in_every_language():
     js = (ROOT / "src" / "static" / "app-ai-tools.js").read_text(encoding="utf-8")
     assert "s.pqc_enabled && !s.pqc_available" in js and "_custT(CUST_PQC_LIBRARY_MISSING)" in js
-    start = js.index('const CUST_PQC_LIBRARY_MISSING = "')
-    english = "".join(part.split('"')[1] for part in js[start:js.index(";", start)].split("+"))
+    decl = re.search(r'CUST_PQC_LIBRARY_MISSING = ((?:\s*"[^"]*"\s*\+?)+);', js)
+    assert decl, "the R717 reason string is declared"
+    english = "".join(re.findall(r'"([^"]*)"', decl.group(1)))
     assert "install the library first and then turn the setting off" in english
     for lang in ("en", "fr", "de", "es", "pt", "ru", "id", "ja", "zh", "hi", "bn", "ar"):
         table = json.loads((ROOT / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))

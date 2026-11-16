@@ -67,7 +67,7 @@ def test_the_printed_signer_must_be_the_heads_both_halves(tmp_path):
 def test_the_cli_prints_the_signed_heads_fields(tmp_path):
     bundle = _bundle(tmp_path)
     path = tmp_path / "b.json"
-    path.write_text(json.dumps(bundle))
+    path.write_text(json.dumps(bundle), encoding="utf-8")
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_custody.py"), str(path)],
                          capture_output=True, text=True, cwd=ROOT)
     assert out.returncode == 0, out.stdout + out.stderr
