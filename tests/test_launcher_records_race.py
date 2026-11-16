@@ -954,8 +954,9 @@ def test_the_mkdir_lock_records_the_pid_of_the_shell_holding_it_without_bashpid(
 
 @posix_only
 def test_a_takeover_does_not_carry_off_a_lock_a_live_launcher_made_between_the_read_and_the_move(tmp_path):
-    """The takeover race of the mkdir lock: launcher A reads a dead owner, the lock is released and made again by a LIVE launcher B, and A's mv moves B's lock. The
-    interleaving is forced by a `mv` that makes B's lock just before the real one runs. A puts it back, runs nothing under it, and defers its row."""
+    """The takeover race of the mkdir lock: launcher A reads a dead owner, the lock is released and made again by a LIVE launcher B. The interleaving is forced by
+    an `ln` that hands the lock to B just before A links its reap mark into it. A reads B under the mark, leaves B's lock where it is (it is never moved, so it is
+    never absent while B holds it: row 100, the old move-and-put-back left it free for an instant and two launchers held it), runs nothing, and defers its row."""
     h, env = _helpers(tmp_path, no_flock=True)
     f = tmp_path / "x.jsonl"
     _seed(f, 3)
@@ -966,10 +967,13 @@ def test_a_takeover_does_not_carry_off_a_lock_a_live_launcher_made_between_the_r
     (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
     live = subprocess.Popen(["sleep", "120"])
     try:
-        script = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; mv() {{ printf "%s\\n" {live.pid} > "{lock}/pid"; command mv "$@"; }}; '
+        script = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; ln() {{ case "$2" in */reap) printf "%s\\n" {live.pid} > "{lock}/pid" ;; esac; command ln "$@"; }}; '
+                  f'mv() {{ case "$1" in *.lock.d) echo "moved $1" >> "{tmp_path}/moves" ;; esac; command mv "$@"; }}; '
                   f'oo_rec_append "{f}" \'{{"pid":5}}\' 0 0')
         subprocess.run(["bash", "-c", script], env=env, check=True, timeout=30)
-        assert lock.is_dir() and (lock / "pid").read_text(encoding="utf-8").strip() == str(live.pid), "the live launcher's lock was put back"
+        assert lock.is_dir() and (lock / "pid").read_text(encoding="utf-8").strip() == str(live.pid), "the live launcher's lock stays where it is"
+        assert not (tmp_path / "moves").exists(), "a lock somebody may hold is never moved"
+        assert not (lock / "reap").exists(), "the taker's mark is gone"
         assert {"pid": 5} not in _rows(f)[0], "and nothing was written under it"
     finally:
         live.kill()
@@ -990,16 +994,18 @@ def test_a_takeover_puts_back_a_lock_whose_owner_has_not_written_its_pid_yet_and
     dead.wait()
     lock.mkdir()
     (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
-    shadow = (f': > "{lock}/pid"' if case == "empty" else f'command mv "{lock}" "{lock}.stash"; mkdir "{lock}"; sleep 100 & printf "%s\\n" $! > "{lock}/pid"')
+    shadow = (f': > "{lock}/pid"' if case == "empty" else f'command mv "{lock}" "{lock}.stash"; command mkdir "{lock}"; sleep 100 & printf "%s\\n" $! > "{lock}/pid"')
     # The shadow runs ONCE (mkdir is atomic): the deferred child is forked from this shell and inherits the `mv` function, so a shadow that fired on every
     # call would, in the child, put a new live lock back between the test's removal of the old one and the child's own takeover, and the row would wait for
     # the stand-in's 100 s (CI, 2026-10-26: two `sleep` orphans where the test starts one).
-    script = f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; mv() {{ if mkdir "{tmp_path}/{case}.shadow" 2>/dev/null; then {shadow}; fi; command mv "$@"; }}; oo_rec_append "{f}" \'{{"pid":6}}\' 0 0'
+    script = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=50; ln() {{ case "$2" in */reap) if command mkdir "{tmp_path}/{case}.shadow" 2>/dev/null; then {shadow}; fi ;; esac; '
+              f'command ln "$@"; }}; oo_rec_append "{f}" \'{{"pid":6}}\' 0 0')
     subprocess.run(["bash", "-c", script], env=env, check=True, timeout=30)
     try:
         assert lock.is_dir(), "the lock a launcher made in between is still there"
         assert not list(lock.glob("*.dead.*")), "the moved lock was not nested inside it"
         assert not list(tmp_path.glob(f"{case}.jsonl.lock.d.dead.*")), "and none was left behind"
+        assert not (lock / "reap").exists(), "the taker's mark is gone"
         assert {"pid": 6} not in _rows(f)[0], "nothing was written under a lock somebody else holds"
     finally:
         pidfile = lock / "pid"
@@ -1039,3 +1045,152 @@ def test_a_summary_row_that_never_arrives_returns_the_rows_there_are(tmp_path):
     f.write_text(json.dumps({"pid": 5, "line": "x"}) + "\n", encoding="utf-8")
     rows = _filter_rows(f, 5, wait_s=0.3)
     assert rows == [{"pid": 5, "line": "x"}], rows
+
+
+@posix_only
+def test_a_reap_mark_left_by_a_taker_that_died_is_cleared_and_the_lock_taken_over(tmp_path):
+    """Row 100's takeover marks the dead owner's lock with a reap file (born with its taker's pid) before it reads the owner again. A taker killed while holding
+    that mark must not keep the lock for ever: a later launcher sees the mark's taker is dead too, clears it, and takes the lock over."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    owner, taker = subprocess.Popen(["true"]), subprocess.Popen(["true"])
+    owner.wait()
+    taker.wait()
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+    (lock / "reap").write_text(f"{taker.pid}\n", encoding="utf-8")
+    subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=200; oo_rec_append "{f}" \'{{"pid":7}}\' 0 0'], env=env, check=True, timeout=30)
+    assert _wait_for(lambda: {"pid": 7} in _rows(f)[0], 30), "the row lands"
+    assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.*")), "and no lock or leftover stays behind"
+
+
+@posix_only
+def test_a_dead_takers_mark_is_cleared_by_one_clearer_at_a_time_and_a_live_takers_mark_never(tmp_path):
+    """The reads of row 100's first fix: two clearers that both read the same dead taker removed the mark one after the other, the second one a LIVE taker's new
+    mark, so two takers moved the lock. A clearer now links "reap.clr" carrying its own pid and removes "reap" only while it is still the same file with the
+    same dead pid. While a live clearer holds "reap.clr" nobody else clears; a dead clearer's "reap.clr" is cleared (never by age); a live taker's mark never is."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    owner, taker, clearer = subprocess.Popen(["true"]), subprocess.Popen(["true"]), subprocess.Popen(["true"])
+    for p in (owner, taker, clearer):
+        p.wait()
+    live = subprocess.Popen(["sleep", "120"])
+    lock = tmp_path / "x.jsonl.lock.d"
+    run = ["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=200; oo_rec_locked "{f}" true; echo "rc=$?"']
+    try:
+        for mark_pid, clr_pid in ((taker.pid, live.pid), (live.pid, None)):
+            lock.mkdir(exist_ok=True)
+            (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+            (lock / "reap").write_text(f"{mark_pid}\n", encoding="utf-8")
+            if clr_pid:
+                (lock / "reap.clr").write_text(f"{clr_pid}\n", encoding="utf-8")
+            r = subprocess.run(run, env=env, capture_output=True, text=True, timeout=30)
+            assert "rc=99" in r.stdout, (mark_pid, r.stdout, r.stderr)
+            assert (lock / "reap").read_text(encoding="utf-8").strip() == str(mark_pid), "the mark was not cleared"
+            assert lock.is_dir() and not list(tmp_path.glob("x.jsonl.lock.d.*")), "and the lock was not moved"
+            assert not [p for p in lock.iterdir() if p.name not in ("pid", "reap", "reap.clr")], "the launcher's own temp files are gone"
+            for p in ("reap.clr", "reap"):
+                (lock / p).unlink(missing_ok=True)
+        # a clearer that died holding "reap.clr": it is cleared, then the dead taker's mark, then the lock is taken over and the command runs
+        lock.mkdir(exist_ok=True)
+        (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+        (lock / "reap").write_text(f"{taker.pid}\n", encoding="utf-8")
+        (lock / "reap.clr").write_text(f"{clearer.pid}\n", encoding="utf-8")
+        r = subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=500; oo_rec_locked "{f}" true; echo "rc=$?"'],
+                           env=env, capture_output=True, text=True, timeout=30)
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.*")), "no lock or leftover stays behind"
+    finally:
+        live.kill()
+        live.wait()
+
+
+@posix_only
+@pytest.mark.parametrize("case", ["move-fails", "owner-alive-again"])
+def test_a_taker_that_does_not_take_the_lock_over_removes_its_own_mark(tmp_path, case):
+    """Under its mark the taker moves the lock only if the owner is STILL dead (a recycled pid is never taken for the dead owner) and only if the move works;
+    in either other case it removes its own mark, so nobody waits behind it for ever, and leaves the lock where it is."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    owner = subprocess.Popen(["true"])
+    owner.wait()
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+    if case == "move-fails":
+        shim = 'mv() { case "$1" in *.lock.d) return 1 ;; esac; command mv "$@"; }; '
+    else:  # the owner's pid reads dead at the first look and alive under the mark
+        shim = (f'oo_pid_alive() {{ if [ "$1" = {owner.pid} ]; then [ -e "{tmp_path}/looked" ] && return 0; : > "{tmp_path}/looked"; return 1; fi; '
+                'kill -0 "$1" 2>/dev/null; }; ')
+    r = subprocess.run(["bash", "-c", f'. "{h}"; {shim}OO_REC_LOCK_WAIT_MS=100; oo_rec_locked "{f}" true; echo "rc=$?"'],
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert "rc=99" in r.stdout, (r.stdout, r.stderr)
+    assert lock.is_dir() and (lock / "pid").read_text(encoding="utf-8").strip() == str(owner.pid), "the lock was not moved"
+    assert [p.name for p in lock.iterdir()] == ["pid"], "and no mark or temp file was left in it"
+
+
+@posix_only
+@pytest.mark.parametrize("links", [True, False], ids=["hard-links", "no-hard-links"])
+def test_eight_launchers_taking_over_one_dead_owners_lock_never_hold_it_two_at_once(tmp_path, links):
+    """Row 100 itself, aimed at the takeover: eight launchers find the same dead owner's lock at once. Every one of them gets the lock in turn, and no two hold
+    it at the same moment (each holder makes an exclusive directory while it holds the lock and says so if somebody else's is already there)."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    for r in range(5):
+        f = tmp_path / f"r{r}.jsonl"
+        owner = subprocess.Popen(["true"])
+        owner.wait()
+        lock = tmp_path / f"r{r}.jsonl.lock.d"
+        lock.mkdir()
+        (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+        held, log = tmp_path / f"held{r}", tmp_path / f"log{r}"
+        body = (f'hold() {{ mkdir "{held}" 2>/dev/null || echo twice >> "{log}"; echo in >> "{log}"; sleep 0.05; rmdir "{held}" 2>/dev/null; }}; '
+                f'. "{h}"; {"" if links else "ln() { return 1; }; "}OO_REC_LOCK_WAIT_MS=20000; oo_rec_locked "{f}" hold; echo "rc=$?" >> "{log}"')
+        procs = [subprocess.Popen(["bash", "-c", body], env=env) for _ in range(8)]
+        for p in procs:
+            p.wait(timeout=60)
+        lines = log.read_text(encoding="utf-8").split()
+        assert "twice" not in lines, f"round {r}: two launchers held the lock at once"
+        assert lines.count("in") == 8 and lines.count("rc=0") == 8, (r, lines)
+        assert not lock.exists() and not list(tmp_path.glob(f"r{r}.jsonl.lock.d.*")), "no lock or leftover stays behind"
+
+
+@posix_only
+def test_where_the_filesystem_has_no_hard_links_a_dead_owners_lock_is_still_taken_over(tmp_path):
+    """The linked reap mark needs hard links, which exFAT and some FUSE and SMB mounts do not have (and the no-flock path is macOS, where a data folder on an
+    exFAT drive is ordinary). There `ln` always fails, and a takeover that only knew the linked mark would never take a dead owner's lock again: every row
+    deferred for ever. With every `ln` failing, the directory mark (same name, born with its pid) takes over: the lock goes, the command runs, nothing is left
+    behind; a dead taker's directory mark is cleared too, and a live taker's is left where it is."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    owner, taker = subprocess.Popen(["true"]), subprocess.Popen(["true"])
+    owner.wait()
+    taker.wait()
+    live = subprocess.Popen(["sleep", "120"])
+    lock = tmp_path / "x.jsonl.lock.d"
+    try:
+        # the last round has hard links: a directory mark left there (after a probe link failed once) is still judged and cleared, never linked into
+        for mark_pid, links in ((None, False), (taker.pid, False), (live.pid, False), (taker.pid, True)):
+            run = ["bash", "-c", f'. "{h}"; {"" if links else "ln() { return 1; }; "}OO_REC_LOCK_WAIT_MS=500; oo_rec_locked "{f}" true; echo "rc=$?"']
+            lock.mkdir()
+            (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+            if mark_pid:
+                (lock / "reap").mkdir()
+                (lock / "reap" / "pid").write_text(str(mark_pid), encoding="utf-8")
+            r = subprocess.run(run, env=env, capture_output=True, text=True, timeout=30)
+            if mark_pid == live.pid:
+                assert "rc=99" in r.stdout, (r.stdout, r.stderr)
+                assert (lock / "reap" / "pid").read_text(encoding="utf-8") == str(live.pid), "a live taker's mark is left where it is"
+                assert sorted(p.name for p in lock.iterdir()) == ["pid", "reap"] and [p.name for p in (lock / "reap").iterdir()] == ["pid"], \
+                    "and nothing of the launcher's is left in the lock or nested in the mark"
+                shutil.rmtree(lock)
+                continue
+            assert "rc=0" in r.stdout, (mark_pid, r.stdout, r.stderr)
+            assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.*")), "no lock or leftover stays behind"
+    finally:
+        live.kill()
+        live.wait()

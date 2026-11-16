@@ -132,10 +132,46 @@ oo_pid_alive() {
     if [ -d /proc/self ]; then [ -d "/proc/$1" ]; else kill -0 "$1" 2>/dev/null; fi
 }
 
+# The takeover mark where the filesystem has no hard links (exFAT, some FUSE and SMB mounts: `ln` always fails there, and without this a dead owner's lock would
+# never be taken over again, every row deferred for ever). The mark has the SAME name, "reap", as the linked one, so the two can never be held at once (a
+# directory cannot be renamed over a file, and a link made into a directory is not that directory): it is a directory born with its taker's pid (made under a
+# temp name, the pid written, then renamed to "reap", which refuses an existing mark), so there is never a mark nobody can judge. A taker whose rename landed
+# INSIDE a mark that appeared meanwhile (how `mv` treats an existing directory) finds its temp name there, and removes only that. A mark whose taker is dead is
+# renamed away and removed. Weaker than the linked mark in one way: two clearers of one dead taker's mark can still remove a live taker's new one between
+# them, which needs a taker to die inside its own few instructions first. That is the cost of a filesystem without links, never paid where links work.
+_oo_rec_reap_dir() {
+    local d="$1" owner="$2" mk="$1/reap" t me p tok
+    tok="${RANDOM:-0}${RANDOM:-0}.$$"
+    if [ ! -e "$mk" ]; then
+        t="$(mktemp -d "$d/reapd.XXXXXX" 2>/dev/null)" || return 0
+        if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID" > "$t/pid" 2>/dev/null || true
+        else sh -c 'echo $PPID' > "$t/pid" 2>/dev/null || true
+        fi
+        me="$(cat "$t/pid" 2>/dev/null || true)"
+        if [ -n "$me" ] && mv "$t" "$mk" 2>/dev/null && [ ! -e "$mk/${t##*/}" ] && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ]; then
+            p="$(cat "$d/pid" 2>/dev/null || true)"
+            case "$p" in ''|*[!0-9]*) p="" ;; esac
+            if [ -n "$p" ] && [ "$p" = "$owner" ] && ! oo_pid_alive "$p" && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ] \
+                && mv "$d" "$d.dead.$tok" 2>/dev/null; then
+                rm -rf "$d.dead.$tok" 2>/dev/null || true
+            elif [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ]; then
+                # given up: renamed away, or removed in place if the rename fails (it is this live taker's, so no clearer touches it meanwhile)
+                if mv "$mk" "$d/reapd.gone.$tok" 2>/dev/null; then rm -rf "$d/reapd.gone.$tok" 2>/dev/null || true; else rm -rf "$mk" 2>/dev/null || true; fi
+            fi
+        fi
+        rm -rf "$t" "$mk/${t##*/}" 2>/dev/null || true
+        return 0
+    fi
+    [ -d "$mk" ] || return 0
+    p="$(cat "$mk/pid" 2>/dev/null || true)"
+    case "$p" in ''|*[!0-9]*) p="" ;; esac
+    if [ -n "$p" ] && ! oo_pid_alive "$p" && mv "$mk" "$d/reapd.gone.$tok" 2>/dev/null; then rm -rf "$d/reapd.gone.$tok" 2>/dev/null || true; fi
+}
+
 # oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run), 98 when no
 # lock can be made at all (CMD did not run), else CMD's own status. With OO_REC_LOCK_FOREVER=1 the wait has no bound (the deferred child).
 oo_rec_locked() {
-    local f="$1" rc=0 d tries owner moved wait_s
+    local f="$1" rc=0 d tries owner moved wait_s tok m _l
     shift
     if command -v flock >/dev/null 2>&1; then
         { : >> "$f.lock"; } 2>/dev/null || return 98
@@ -170,26 +206,74 @@ oo_rec_locked() {
             if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID" > "$d/pid" 2>/dev/null || true
             else sh -c 'echo $PPID' > "$d/pid" 2>/dev/null || true
             fi
+            # A lock renamed away (released, or a dead owner's taken over) is nobody's, but a waiter whose path walk reached it just before the rename can still
+            # create its temp mark in it after the remover listed it, so the remover's rm -rf leaves it behind (seen once in 30 stress runs, 16 Nov). The holder
+            # removes such leftovers: only names a remover makes after the rename, so never a lock anybody holds.
+            for _l in "$d".dead.* "$d".rel.*; do [ ! -d "$_l" ] || rm -rf "$_l" 2>/dev/null || true; done
             "$@" || rc=$?
-            rm -rf "$d" 2>/dev/null || true
+            # released by renaming it away first: a taker's mark made inside it at this moment leaves with it, never keeping the name taken
+            tok="$$.${RANDOM:-0}.${RANDOM:-0}"
+            if mv "$d" "$d.rel.$tok" 2>/dev/null; then rm -rf "$d.rel.$tok" 2>/dev/null || true; else rm -rf "$d" 2>/dev/null || true; fi
             return "$rc"
         fi
         owner="$(cat "$d/pid" 2>/dev/null || true)"
         case "$owner" in ''|*[!0-9]*) owner="" ;; esac
-        # the owner is gone: the lock is taken over. mv is atomic, so of two launchers taking it over only one moves it.
+        # The owner is gone: the lock is taken over, and NEVER by moving it while somebody else may hold it (row 100, 16 Nov: the old takeover moved the
+        # lock out to read who held it and put a live one back, and in the instant it was out a third launcher made the lock, so two held it at once and
+        # a trim's rename dropped the row appended meanwhile: 1 of 8 exit rows lost on Linux CI, mkdir path). Now a taker first makes a REAP mark INSIDE
+        # the lock, then reads the owner again under that mark: the same dead pid means the lock is still the dead owner's, and nothing else can change it
+        # (its owner is dead and every other taker is held off by the mark), so it is renamed away and removed. Any other answer means the lock was
+        # released and made again: the taker removes only its own mark and waits like everybody else. A live holder's lock is never moved.
+        # The mark is a FILE born with its taker's pid in it (written to a unique temp name, then hard-linked to "reap": link is atomic and refuses an
+        # existing name), so there is never a mark without a pid that nobody could judge. A mark whose taker died is cleared by ONE clearer at a time
+        # ("reap.clr", linked the same way and carrying the clearer's pid), and only while "reap" is still that same file with that same dead pid: two
+        # clearers that both read the same dead taker can never remove a live taker's new mark between them, which would let two takers in at once
+        # (the reads of 16 Nov).
         if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
-            # Between reading the owner and the mv the dead owner's lock may have been released and made again by a LIVE launcher: the mv would then carry off a lock
-            # that is held. So what was moved is read again, and a lock whose owner is not the one judged dead is put back, an empty pid file included (a launcher that
-            # has made the directory and not yet written its pid). A dead but different pid put back is harmless: the next pass takes it over. The put-back is made only
-            # while no lock stands (mv into an existing directory would nest the moved one inside it), and a lock made again in the instant between the test and the
-            # mv is the width of two commands, not of the read-to-mv gap.
-            if mv "$d" "$d.dead.$$" 2>/dev/null; then
-                moved="$(cat "$d.dead.$$/pid" 2>/dev/null || true)"
-                if [ "$moved" != "$owner" ] && [ ! -e "$d" ] && mv "$d.dead.$$" "$d" 2>/dev/null; then
-                    rm -rf "$d/${d##*/}.dead.$$" 2>/dev/null || true
+            m="$(mktemp "$d/reap.XXXXXX" 2>/dev/null)" || m=""
+            if [ -n "$m" ] && [ -d "$d/reap" ]; then
+                _oo_rec_reap_dir "$d" "$owner"  # a directory mark is there: only the directory mark's own way judges it (a link made now would land inside it)
+                rm -f "$m" 2>/dev/null || true
+            elif [ -n "$m" ]; then
+                { if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID"; else sh -c 'echo $PPID'; fi; } > "$m" 2>/dev/null || true
+                if [ -s "$m" ] && ln "$m" "$d/reap" 2>/dev/null; then
+                    moved="$(cat "$d/pid" 2>/dev/null || true)"
+                    case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                    # the pid is judged dead again under the mark: a recycled pid that is now a live holder's is never taken for the dead owner
+                    if [ -n "$moved" ] && [ "$moved" = "$owner" ] && ! oo_pid_alive "$moved" && [ "$d/reap" -ef "$m" ] \
+                        && mv "$d" "$d.dead.${m##*.}" 2>/dev/null; then
+                        rm -rf "$d.dead.${m##*.}" 2>/dev/null || true
+                    else
+                        # not taken over (or the move failed): only this taker's own mark goes, never a mark it did not make
+                        [ ! "$d/reap" -ef "$m" ] || rm -f "$d/reap" 2>/dev/null || true
+                    fi
+                elif [ -d "$d/reap" ] || { [ ! -e "$d/reap" ] && [ -s "$m" ] && ! ln "$m" "$m.l" 2>/dev/null; }; then
+                    _oo_rec_reap_dir "$d" "$owner"  # a directory mark, or no hard links here and no mark: the directory mark's own way
                 else
-                    rm -rf "$d.dead.$$" 2>/dev/null || true
+                    rm -f "$m.l" 2>/dev/null || true
+                    # a mark already there: if its taker died holding it, clear it so the next pass takes the lock over
+                    moved="$(head -n 1 "$d/reap" 2>/dev/null || true)"
+                    case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                    if [ -n "$moved" ] && ! oo_pid_alive "$moved"; then
+                        if [ -s "$m" ] && ln "$m" "$d/reap.clr" 2>/dev/null; then
+                            # this clearer's own link to the mark, then the mark judged again through it: the same file, the same pid, still dead (a pid
+                            # recycled to a live taker since the first read is never taken for the dead one)
+                            if ln "$d/reap" "$m.got" 2>/dev/null; then
+                                if [ "$(head -n 1 "$m.got" 2>/dev/null || true)" = "$moved" ] && ! oo_pid_alive "$moved" && [ "$d/reap" -ef "$m.got" ]; then
+                                    rm -f "$d/reap" 2>/dev/null || true
+                                fi
+                                rm -f "$m.got" 2>/dev/null || true
+                            fi
+                            [ ! "$d/reap.clr" -ef "$m" ] || rm -f "$d/reap.clr" 2>/dev/null || true
+                        else
+                            # "reap.clr" carries its clearer's pid like a mark carries its taker's: it goes only once that clearer is dead, never by age
+                            moved="$(head -n 1 "$d/reap.clr" 2>/dev/null || true)"
+                            case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                            if [ -n "$moved" ] && ! oo_pid_alive "$moved"; then rm -f "$d/reap.clr" 2>/dev/null || true; fi
+                        fi
+                    fi
                 fi
+                rm -f "$m" "$m.l" 2>/dev/null || true
             fi
         fi
         if [ "${OO_REC_LOCK_FOREVER:-}" != 1 ]; then
