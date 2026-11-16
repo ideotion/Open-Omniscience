@@ -432,9 +432,9 @@ def _worker_init(extractor_name: str, gazetteer: dict[str, str] | None) -> None:
 def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
     """The PURE half of when/where/who: extraction only, no database.
 
-    ``language`` is consumed by ``extract_dates`` ALONE -- ``extract_locations``
-    and ``extract_entities`` never see it -- and it is load-bearing rather than a
-    hint: the month/weekday tables are language-GATED, so a homograph resolves to
+    ``language`` is consumed by ``extract_dates`` and, since R730, by
+    ``extract_entities`` (its per-language rejects); ``extract_locations`` never sees
+    it. For the dates it is load-bearing rather than a hint: the month/weekday tables are language-GATED, so a homograph resolves to
     a DIFFERENT month per language (measured: "12 listopadu 2024" is 2024-11-12
     under ``cs`` and 2024-10-12 under ``hr``) and a gated weekday resolves to
     nothing at all without its own language. An unknown language REFUSES rather
@@ -464,11 +464,9 @@ def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
     from datetime import date as _date
 
     country, anchor_iso, today_iso = (list(www_ctx) + [None, None, None])[:3]
-    # The fifth slot, when present, is the text the STORE's own inline path would read (``article.content``), which differs from
-    # the keyword text for an article kept compressed: the inline store reads the raw column there. Extracting from it keeps the
-    # precomputed rows identical to the inline ones, which the engine pin and the derived carry both rely on.
-    if len(www_ctx) > 4 and www_ctx[4] is not None:
-        content = www_ctx[4]
+    # R725: the inline stores read the decompressed text too (src.timemap.text.article_text), so the keyword text IS the text
+    # they read and no second copy travels with the task. (Until R725 a fifth slot carried the raw ``content`` column, empty for
+    # an article kept compressed, so the precomputed rows matched the inline path's empty ones.)
     try:
         from src.timemap.dateextract import extract_dates
         from src.timemap.entextract import extract_entities
@@ -482,7 +480,7 @@ def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
                 language=language,
             ),
             "places": extract_locations(content or "", source_country=country),
-            "entities": extract_entities(content or ""),
+            "entities": extract_entities(content or "", language=language),  # R730: the article's own tag
         }
     except Exception as exc:  # noqa: BLE001 - degrades to inline, never to "none found"
         log_failure(_LOG, "pooled when/where/who extraction failed", exc, level=logging.WARNING)

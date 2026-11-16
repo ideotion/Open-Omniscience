@@ -250,13 +250,18 @@ def test_without_a_serial_fallback_a_window_the_pool_would_not_take_raises():
 
 
 def test_a_compressed_article_gets_the_same_places_and_entities_as_the_inline_store(db, monkeypatch):
-    """The inline store reads ``article.content`` for places, entities and dates; for an article kept compressed that column is
-    not the keyword text. The precompute reads the same column (the context's fifth slot), so its rows match the inline ones."""
+    """R725: an article kept compressed leaves ``content`` empty. The inline stores read it through ``get_content()`` now, as the
+    precompute does, so both paths find the article's people and organisations -- and the same ones. (Until R725 both found
+    nothing: the inline stores read the empty column and the precompute was handed that column to match.)"""
     from src.timemap.whostore import ArticleEntity
 
     ids = _seed(db, 1)
     art = db.get(Article, ids[0])
-    monkeypatch.setattr(Article, "get_content", lambda self: _TEXT + " The World Health Organization met in Geneva.")
+    art.content = _TEXT + " The World Health Organization met in Geneva."
+    art.compress_content()
+    art.content = ""
+    db.commit()
+    assert art.compressed_content and art.get_content().endswith("met in Geneva.")
     stats: dict = {}
     S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=0, stats=stats)
     pre = sorted((e.name, e.entity_class) for e in db.query(ArticleEntity).filter_by(article_id=art.id))
@@ -264,4 +269,4 @@ def test_a_compressed_article_gets_the_same_places_and_entities_as_the_inline_st
     S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=0)
     inline = sorted((e.name, e.entity_class) for e in db.query(ArticleEntity).filter_by(article_id=art.id))
     assert pre == inline
-    assert ("World Health Organization", "organization") not in pre, "the inline store never saw the decompressed text"
+    assert ("World Health Organization", "organization") in pre, "the stores read the decompressed text"

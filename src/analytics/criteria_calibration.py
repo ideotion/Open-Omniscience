@@ -48,7 +48,9 @@ SCHEMA = "oo-criteria-calibration-1"
 # the reversibility story. Measured on the 2026-08-23 field corpus: the drop path went
 # from 12 specimens to 8, and the 4 it stopped flagging had function-word densities of
 # 0.28-0.37 (prose), against 0.0 for all 8 it kept.
-CRITERIA_VERSION = "nav-soup-v2"
+# v3 (2026-11-16, R726): the screening reads an article kept compressed (its `content` column is empty, so until now the
+# text signals measured nothing and always kept it). Same rules, new population: the stamp says which generation could see it.
+CRITERIA_VERSION = "nav-soup-v3"
 _DEFAULT_TOP_N = 100
 _DEFAULT_PROSE_GATE_LIMIT = 2000
 
@@ -259,8 +261,12 @@ def calibration_report(
             if a is None:
                 continue  # vanished since the scan (a concurrent delete/prune) -- never invent it
             lang = a.language or a.detected_language
-            density, best_lang = function_word_density(a.content or "", language=lang)
-            punct = sentence_punct_density(a.content or "")
+            try:
+                text = a.get_content()  # R726: the screen read a compressed article's decompressed text; measure that
+            except Exception:  # noqa: BLE001 -- a blob this install cannot read: the screen used the empty column too
+                text = a.content or ""
+            density, best_lang = function_word_density(text, language=lang)
+            punct = sentence_punct_density(text)
             source_name = source_names.get(a.source_id) or f"source #{a.source_id}"
             articles.append({
                 "id": a.id,

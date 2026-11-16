@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "digest": "fa03695a69597f665054b1c2b8cb406064b07a4e32de3fde0c853d6bf633aac0",
+  "version": 2,
+  "digest": "ac7e386efb912de0c46d40bf6bc515b2ad819fe8c0f10db08788c01e78852c7b",
   "log": [
     {
       "version": 1,
@@ -49,6 +49,36 @@
       "digest": "fa03695a69597f665054b1c2b8cb406064b07a4e32de3fde0c853d6bf633aac0",
       "kind": "same",
       "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
+    },
+    {
+      "version": 2,
+      "digest": "85d72c457fa4492b25e5fbfcf1f5553836f4a1ae69b543134c7ee7bbc1c0d2fd",
+      "kind": "bump",
+      "note": "R730 (field test 2026-11-14 row 70): the entity extractor takes the article's language and, for the languages each rule was tested on, rejects a person candidate holding a function word, a Swedish demonym or a Finnish place genitive, and stops VM/EM/OS/SM/NM/DM as Nordic organisations; the grammar stoplists joined the www digest. Shares the held window with R725/R726 (one step to 2)"
+    },
+    {
+      "version": 2,
+      "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, not merged yet (PR #2031, shared with R725/R726): the second review's R730 fixes (hand-curated function words, a line-break rule, Finnish genitives of Finnish cities of 20,000+ only, language in the www inputs digest) ride the same unmerged step."
+    },
+    {
+      "version": 2,
+      "digest": "9c767eb6911a369847f20bcac79bd6506c4bd8c5342e759b30569b3cad1866ec",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): third-review R730 fixes (Finnish genitive reads long vowels and consonant gradation; an honorific's function-word or line-broken second word is trimmed instead of the name dropped; tai/kun leave the Finnish list)."
+    },
+    {
+      "version": 2,
+      "digest": "f25756dfbf6d136bded984b0f44059e90cd6566f03d063a4e904019629c37227",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): the honorific trim is withdrawn after the fourth read showed it kept headline verbs; candidates across a line break are dropped whole again."
+    },
+    {
+      "version": 2,
+      "digest": "ac7e386efb912de0c46d40bf6bc515b2ad819fe8c0f10db08788c01e78852c7b",
+      "kind": "same",
+      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
     }
   ]
 }

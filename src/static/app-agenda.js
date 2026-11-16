@@ -112,8 +112,13 @@
         day: null,
         calendar: "deduced", deduced: true,
         article_ids: e.article_ids || [], n_articles: e.n_articles, n_sources: e.n_sources,
+        // R727: say when some of those articles gave the day and month with no year.
         note: _tfn("Deduced from {n} articles ({s} sources), never confirmed.",
-          { n: e.n_articles, s: e.n_sources }),
+          { n: e.n_articles, s: e.n_sources }) +
+          (e.n_year_inferred > 0
+            ? " " + _tfn("Year inferred from the publication date in {k} of {n}.", { k: e.n_year_inferred, n: e.n_articles })
+            : ""),
+        n_year_inferred: e.n_year_inferred || 0,
       };
     }
     async function loadAgenda() {
@@ -1442,7 +1447,7 @@
         acts.push(`<button type="button" class="tiny secondary" ${busy} data-on-click="agMentionUndo(${id})">${esc(T("Undo"))}</button>`);
       const when = r.published_at ? ` <span class="muted">· ${esc(ooIsoDate(r.published_at))}</span>` : "";
       return `<div class="ag-row" data-tag="${id}"><div class="ag-body">
-        <div><a href="/api/articles/${Number(r.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(r.title || T("(untitled)"))}</a>${when} ${pill}${monthOnly ? ` <span class="pill">${esc(T("names the month only, no day"))}</span>` : ""}</div>
+        <div><a href="/api/articles/${Number(r.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(r.title || T("(untitled)"))}</a>${when} ${pill}${monthOnly ? ` <span class="pill">${esc(T("names the month only, no day"))}</span>` : ""}${r.year_inferred ? ` <span class="pill" title="${esc(T("The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after)."))}">${esc(T("year inferred"))}</span>` : ""}</div>
         ${r.snippet ? `<div class="hint" dir="auto">“${esc(r.snippet)}”</div>` : ""}
         <div style="display:flex;gap:6px;margin-top:4px">${acts.join("")}</div></div></div>`;
     }

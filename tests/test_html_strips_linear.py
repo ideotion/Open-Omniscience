@@ -64,7 +64,8 @@ def _old_strip_markup(text: str) -> str:
 
 
 def _old_clean(text: str) -> str:
-    """TextProcessor.clean_text before 2026-11-13, step for step."""
+    """TextProcessor.clean_text before 2026-11-13, step for step, plus the one deliberate change since (field test
+    2026-11-14 row 62): a script's combining marks stay inside its words (``_SCRIPT_MARKS``)."""
     import html as _html
     import unicodedata
 
@@ -74,7 +75,9 @@ def _old_clean(text: str) -> str:
     text = re.sub(r"https?://\S+|www\.\S+", " ", text)
     text = _OLD_EMAIL.sub(" ", text)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"[^\w\s\-]", " ", text)
+    from src.services.text_processor import _SCRIPT_MARKS
+
+    text = re.sub(rf"[^\w\s\-{_SCRIPT_MARKS}]", " ", text)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if unicodedata.category(c)[0] != "C")
     text = re.sub(r"\s+", " ", text)

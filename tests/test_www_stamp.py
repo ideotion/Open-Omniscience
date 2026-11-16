@@ -55,7 +55,7 @@ def test_a_full_pass_writes_the_www_stamp():
     st = _stamp(s, a.id)
     assert st is not None
     assert st.engine == ei.www_engine_id()
-    assert st.inputs == ei.www_inputs_digest(raw_content=a.content, country=a.country)
+    assert st.inputs == ei.www_inputs_digest(raw_content=a.content, country=a.country, language=a.language)
 
 
 def test_the_keywords_scope_writes_no_www_stamp():
@@ -108,11 +108,13 @@ def test_a_failed_www_savepoint_keeps_the_previous_stamp(monkeypatch):
 
 
 def test_the_www_inputs_digest_reads_each_input():
-    base = ei.www_inputs_digest(raw_content="x", country="DE")
-    assert ei.www_inputs_digest(raw_content="y", country="DE") != base
-    assert ei.www_inputs_digest(raw_content="x", country="FR") != base
-    assert ei.www_inputs_digest(raw_content="x", country="DE") == base
-    assert ei.www_inputs_digest(raw_content=None, country=None) == ei.www_inputs_digest(raw_content="", country="")
+    base = ei.www_inputs_digest(raw_content="x", country="DE", language="de")
+    assert ei.www_inputs_digest(raw_content="y", country="DE", language="de") != base
+    assert ei.www_inputs_digest(raw_content="x", country="FR", language="de") != base
+    assert ei.www_inputs_digest(raw_content="x", country="DE", language=None) != base  # R730: entities read it
+    assert ei.www_inputs_digest(raw_content="x", country="DE", language="de") == base
+    assert ei.www_inputs_digest(raw_content=None, country=None, language=None) == ei.www_inputs_digest(
+        raw_content="", country="", language="")
 
 
 @pytest.mark.parametrize("target", ["configs/cities.yml", "configs/places_gazetteer.yml"])

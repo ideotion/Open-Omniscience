@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
+  "version": 4,
+  "digest": "79a71dfbff949f5f292458f007675f3584668176d1f98f48a7bef3c7dec3aa67",
   "log": [
     {
       "version": 1,
@@ -91,6 +91,42 @@
       "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
       "kind": "same",
       "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
+    },
+    {
+      "version": 4,
+      "digest": "4d959077190b9fe3c5afc2cc0962a6f55580c97b02535f8a1ed79c4784c5b60a",
+      "kind": "bump",
+      "note": "Field test 2026-11-14 rows 62-63: the keyword tokenizer keeps every combining mark (Tamil, Telugu, Gujarati, Kannada, Malayalam, Gurmukhi, Odia, Myanmar, Khmer words were cut at vowel signs); km/lo/my/bo are reported unsegmented; dates read the Bengali year-first form, resolve a year-less date only within 183 days before or 92 days after publication (R727), mark an inferred year in the tag's provenance, and anchor only on a trustworthy publication date"
+    },
+    {
+      "version": 4,
+      "digest": "1e164d4da048a1a0dd3262c9e1a38c27f048b7781386bf000f1baab66c4af3ac",
+      "kind": "same",
+      "note": "Re-record after the version-4 bump of this same PR: a blank line after extract.py's imports (lint), langdetect.SUPPORTED keeps km/lo/my/bo out of detection so deduction is unchanged, and two comments; no row an article gets differs from the version-4 statement"
+    },
+    {
+      "version": 4,
+      "digest": "373d92b7edff87cf00dabde7818c46af2dc3af7390d77fa1bfad074dd386d88d",
+      "kind": "same",
+      "note": "R730 plumbing only: reindex_parallel passes the article's language to extract_entities (www half) and a docstring; text_processor (not an engine file) keeps script marks; no keyword row differs from the version-4 statement"
+    },
+    {
+      "version": 4,
+      "digest": "146e0a1846ba4452ccf3c6cb7d5ef730e18b4046ea71f1062182f1ce780f26fd",
+      "kind": "same",
+      "note": "Still INDEXER_VERSION 4, which is not merged yet (PR #2031): the second review's text_processor fix (symbol marks and variation selectors are no script marks) rides the same unmerged step."
+    },
+    {
+      "version": 4,
+      "digest": "7e03148b51563d524d4d1c804133cd6631bd2dfbf77a271b7443304075c84556",
+      "kind": "same",
+      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
+    },
+    {
+      "version": 4,
+      "digest": "79a71dfbff949f5f292458f007675f3584668176d1f98f48a7bef3c7dec3aa67",
+      "kind": "same",
+      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
     }
   ]
 }

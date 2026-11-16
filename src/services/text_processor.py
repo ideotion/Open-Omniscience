@@ -33,6 +33,37 @@ import unicodedata
 
 from src.utils.markup_blocks import strip_html_tags
 
+#: Marks that belong to no script's words: the Latin and symbol diacritic blocks (combining
+#: diacriticals and their extensions and supplement, the marks for symbols such as the vector
+#: arrow, the half marks) and the variation selectors (U+FE0F turns "1" into the keycap emoji
+#: "1️⃣"). Enclosing marks (Me, the keycap U+20E3) are left out by category.
+_NOT_SCRIPT_MARKS = (
+    (0x0300, 0x036F), (0x1AB0, 0x1AFF), (0x1DC0, 0x1DFF), (0x20D0, 0x20FF), (0xFE20, 0xFE2F),
+    (0xFE00, 0xFE0F), (0xE0100, 0xE01EF),
+)
+
+
+def _script_marks() -> str:
+    """Every combining mark of a script (Mn, Mc) EXCEPT :data:`_NOT_SCRIPT_MARKS`, as
+    ``re`` class ranges (field test 2026-11-14 row 62). ``\\w`` excludes marks, so a Tamil, Telugu,
+    Gurmukhi, Myanmar or Khmer word was split at every vowel sign and virama, here as in the keyword
+    index (where ``analytics.extract`` fixed it). The Latin block is left out on purpose: this
+    processor decomposes with NFKD and has always dropped those accents ("café" -> "cafe"), and that
+    folding is behaviour its callers see; changing it is not this fix."""
+    ranges: list[tuple[int, int]] = []
+    for cp in (*range(0x30000), *range(0xE0000, 0xE1000)):
+        cat = unicodedata.category(chr(cp))
+        if cat not in ("Mn", "Mc") or any(a <= cp <= b for a, b in _NOT_SCRIPT_MARKS):
+            continue
+        if ranges and ranges[-1][1] == cp - 1:
+            ranges[-1] = (ranges[-1][0], cp)
+        else:
+            ranges.append((cp, cp))
+    return "".join((f"\\U{a:08x}" if a == b else f"\\U{a:08x}-\\U{b:08x}") for a, b in ranges)
+
+
+_SCRIPT_MARKS = _script_marks()
+
 
 def _drop_email_token(m: re.Match[str]) -> str:
     """``\\S+@\\S+``'s answer for one whitespace-free run, in one scan of the run.
@@ -64,10 +95,10 @@ class TextProcessor:
         self.email_pattern = re.compile(r"\S+@\S+")
         self.html_tag_pattern = re.compile(r"<[^>]+>")
         self._token_pattern = re.compile(r"\S+")
-        self.special_char_pattern = re.compile(r"[^\w\s\-]")
+        self.special_char_pattern = re.compile(rf"[^\w\s\-{_SCRIPT_MARKS}]")
         self.multiple_space_pattern = re.compile(r"\s+")
         self.leading_trailing_space_pattern = re.compile(r"^\s+|\s+$")
-        self.word_pattern = re.compile(r"[\w\-]+")
+        self.word_pattern = re.compile(rf"[\w\-{_SCRIPT_MARKS}]+")
 
         # Contractions
         self.contractions = {

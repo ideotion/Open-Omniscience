@@ -30,7 +30,10 @@ from src.analytics.managed import MANAGED_LANGUAGES, UNSEGMENTED
 # The languages the app meaningfully knows: managed (have a stoplist) + the unsegmented
 # ones (zh/ja/th — labelled out of "?" even though segmentation is a separate gap). A
 # detected language outside this set is rejected (honest unknown), never force-fit.
-SUPPORTED: frozenset[str] = MANAGED_LANGUAGES | UNSEGMENTED
+# km/lo/my/bo joined UNSEGMENTED on 2026-11-16 for REPORTING only (field test row 62); they
+# are kept out of detection here, so an untagged article in those scripts stays unknown as
+# before -- a change to what deduction labels is its own decision, not a side effect.
+SUPPORTED: frozenset[str] = MANAGED_LANGUAGES | (UNSEGMENTED - {"km", "lo", "my", "bo"})
 
 _MIN_CHARS = 200   # below this, detection is unreliable -> never guess
 _MIN_PROB = 0.90   # confidence floor -> never guess

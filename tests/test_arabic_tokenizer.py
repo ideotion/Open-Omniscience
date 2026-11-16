@@ -2,7 +2,7 @@
 
 Arabic combining marks (harakat/tashkeel, superscript alef) are category Mn, so a
 *diacritized* Persian/Urdu/Arabic word used to split at each mark exactly like the
-Devanagari matra bug. ``_ARABIC_MARKS`` allows them ONLY as word continuations, which
+Devanagari matra bug. The tokenizer (now every combining mark, ``extract._COMBINING_MARKS``) allows them ONLY as word continuations, which
 must be additive: undiacritized text (the common news case) stays byte-identical, and
 no Latin/Cyrillic/Greek token is affected — this proves both.
 """

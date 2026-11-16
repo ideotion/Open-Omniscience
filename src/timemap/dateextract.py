@@ -27,7 +27,7 @@ as provenance, never a confirmed fact. Pure: no I/O, fully unit-tested.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 
 _MONTHS = {
@@ -903,6 +903,14 @@ _YMD_NAME_RE = _month_re(rf"\b(\d{{4}})\.?\s+({_MONTH_SLOT})\.?\s+(\d{{1,2}})(?:
 # March" in another language never fabricates a month. The lookahead ``(?!\s+\d)``
 # yields the day form to _YMD_NAME_RE (day precision).
 _YM_NAME_RE = _month_re(rf"\b(\d{{4}})\.\s+({_MONTH_SLOT})\.?(?!\s+\d)", re.I)
+# Bengali YEAR-FIRST day dates ("১৯৭১ সালের ২৫ মার্চ" = 25 March 1971; field test 2026-11-14 row 63):
+# year, then a year word, then day + month. The year word is the marker -- সালের/সনের ("of the year"),
+# সালে ("in the year"), খ্রিস্টাব্দের/খ্রিষ্টাব্দে(র) ("of the Christian era") -- so a bare number before a
+# date never qualifies. Before this pattern the year was skipped and the anchored no-year path placed
+# "২৫ মার্চ" near the PUBLICATION date (stored 2027-03-25 for 1971). Bengali-script words only, so it
+# needs no language gate: nothing else writes them.
+_BN_YEAR_WORD = r"(?:সালের|সনের|সালে|খ্রিস্টাব্দের|খ্রিষ্টাব্দের|খ্রিস্টাব্দে|খ্রিষ্টাব্দে)"
+_BN_YDM_RE = _month_re(rf"(?<!\d)(\d{{4}})\s*{_BN_YEAR_WORD}\s+{_DAY_PART}({_MONTH_SLOT})", re.I)
 # Month-year with the optional connector CAPTURED: the English homograph months
 # (march/may/august are verbs/nouns too) skip the "of" form — "the march of 2024
 # protesters" must never become March 2024 (miss over invent).
@@ -1009,6 +1017,12 @@ def _be_to_ce(year: int) -> int:
 
 # Plausible window for a *mentioned* date: deep history up to a little ahead of "now".
 _MIN_YEAR, _MAX_AHEAD = 1000, 5
+#: R727 (2026-11-16): the window a date written WITHOUT a year may resolve into, around the
+#: publication date. Back as far as the old symmetric window; ahead about one quarter, because a
+#: news text names an upcoming date weeks ahead far more often than seasons ahead, and a year-less
+#: date beyond that is genuinely ambiguous -- stored as nothing, never as a guess.
+_YEARLESS_BACK_DAYS = 183
+_YEARLESS_AHEAD_DAYS = 92
 # Characters of text scanned. Matches locextract/entextract, the two other
 # extractors in the same when/where/who pass ("bounded, like every scan").
 _MAX_SCAN = 60_000
@@ -1248,6 +1262,7 @@ def _extract(
     range_dmy = _narrowed(_RANGE_DMY_RE, _months)
     range_enum = _narrowed(_RANGE_ENUM_RE, _months)
     ymd_name = _narrowed(_YMD_NAME_RE, _months)
+    bn_ydm = _narrowed(_BN_YDM_RE, _months)
     ym_name = _narrowed(_YM_NAME_RE, _months)
     my = _narrowed(_MY_RE, _months)
     consumed: list[tuple[int, int]] = []  # spans claimed by more specific matches
@@ -1267,6 +1282,13 @@ def _extract(
     # record survives the dedup.
     day_spans: dict[int, list[date]] = {}
 
+    # R727: every date the ANCHORED block below resolves took its year (and for a relative word or a
+    # weekday, its whole position) from the publication date, not from the text. The block flips this
+    # once, and every candidate carries it as ``year_inferred`` so the store and every display can say
+    # so. The explicit loops all run first, so a date ALSO written out with its year keeps False: the
+    # first sighting of a (date, precision) key wins.
+    inferring = False
+
     def add(d: date, precision: str, m: re.Match) -> None:
         if precision == "day":
             day_spans.setdefault(m.start(), []).append(d)
@@ -1277,6 +1299,7 @@ def _extract(
                 "precision": precision,
                 "text": _snippet(text, m.start(), m.end()),
                 "pos": m.start(),
+                "year_inferred": inferring,
             }
 
     # Persian Solar-Hijri (Jalali) dates — converted to Gregorian, fa-gated. Runs
@@ -1400,6 +1423,17 @@ def _extract(
         d = _valid(int(m.group(1)), mon, int(m.group(3)), today) if mon else None
         if d and claim(*m.span()):
             add(d, "day", m)
+    for m in _finditer(bn_ydm, text):  # "১৯৭১ সালের ২৫ মার্চ" (Bengali year-first, named month)
+        mon = _month_of(m.group(4), language)
+        if not mon:
+            continue
+        # Claim on ROUTE, not on success (the Jalali precedent): the year word says this span carries
+        # its own year, so a year we refuse (out of range, invalid day) is skipped, and the claim stops
+        # the anchored no-year path from re-reading "২৫ মার্চ" near the publication date.
+        if claim(*m.span()):
+            d = _valid(int(m.group(1)), mon, int(m.group(2) or m.group(3)), today)
+            if d:
+                add(d, "day", m)
     for m in _CJK_YMD_RE.finditer(text):  # 2024年5月11日 (CJK day)
         d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), _cjk_int(m.group(3)), today)
         if d and claim(*m.span()):
@@ -1479,16 +1513,26 @@ def _extract(
 
     # ---- anchored resolution (needs the article's publication date) -------- #
     if anchor is not None:
+        inferring = True
+
         def nearest_year(month: int, day: int) -> date | None:
+            """R727: the year that puts day+month within ``_YEARLESS_BACK_DAYS`` BEFORE or
+            ``_YEARLESS_AHEAD_DAYS`` AFTER the publication date; the nearer when both qualify;
+            otherwise None -- an unresolvable year stores no date rather than a guess. The window
+            was a symmetric 183 days, which placed "24 March" in a mid-November article in the
+            NEXT March (8-20% of the field test's sampled dates were in the following year)."""
             best = None
             for y in (anchor.year - 1, anchor.year, anchor.year + 1):
                 try:
                     cand = date(y, month, day)
                 except ValueError:
                     continue
-                if best is None or abs((cand - anchor).days) < abs((best - anchor).days):
+                delta = (cand - anchor).days
+                if not (-_YEARLESS_BACK_DAYS <= delta <= _YEARLESS_AHEAD_DAYS):
+                    continue
+                if best is None or abs(delta) < abs((best - anchor).days):
                     best = cand
-            return best if best and abs((best - anchor).days) <= 183 else None
+            return best
 
         # _DM_NOYEAR has TWO possible day groups (the ordinal-of branch vs the
         # standard branch of _DAY_PART); _MD_NOYEAR has one.
@@ -1696,6 +1740,27 @@ def _extract(
         if truncated:
             c["scan_truncated"] = _MAX_SCAN
     return out[:limit], sorted(consumed)
+
+
+def publication_anchor(published_at, created_at=None) -> date | None:
+    """The date a year-less or relative date may be resolved against, or None (R727).
+
+    Only a recorded PUBLICATION date qualifies. ``created_at`` is when this install stored the
+    article, which for an archive, a backup import or a late feed item can be years after the
+    text was written -- resolving "24 March" or "yesterday" against it is a guess dressed as a
+    deduction, so an article with no ``published_at`` gets no anchored dates at all. A
+    ``published_at`` LATER than the day after it was stored is not trustworthy either (a feed
+    stamping a future date, a clock error): it gets None too. ``created_at`` is only that
+    check's reference; without one the published date is taken as given.
+    """
+    if published_at is None:
+        return None
+    pub = published_at.date() if isinstance(published_at, datetime) else published_at
+    if created_at is not None:
+        stored = created_at.date() if isinstance(created_at, datetime) else created_at
+        if (pub - stored).days > 1:
+            return None
+    return pub
 
 
 def extract_dates(

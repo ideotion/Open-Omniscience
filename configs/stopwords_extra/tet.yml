@@ -1,0 +1,27 @@
+# Curated EXTRA stopwords -- Tetum (Tetun, Timor-Leste). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every
+# file here regardless of which one a word lives in -- this split is a readability/maintenance convenience, not a
+# per-language scoping guarantee. See configs/stopwords_extra/PROVENANCE.md (batch tet-2026-11-16) for the evidence
+# and for the words left out because a global entry would hide another language's word.
+stopwords:
+  # batch tet-2026-11-16 (field test 2026-11-14 row 64: iha n~7370, ne'ebé, from one outlet, as "rising" leads)
+  - daudaun
+  - hafoin
+  - hanesan
+  - hodi
+  - hosi
+  - husi
+  - iha
+  - kona-ba
+  - maibe
+  - maibé
+  - ne'e
+  - ne'ebe
+  - ne'ebé
+  - neebe
+  - nebe
+  - nian
+  - ninia
+  - oinsá
+  - tanba
+  - tiha
+  - wainhira

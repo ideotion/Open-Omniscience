@@ -30,6 +30,7 @@ from sqlalchemy import Table, bindparam, delete, func, insert, select, text, upd
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from src.timemap.text import article_text
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
@@ -671,7 +672,7 @@ def _stamp_index_engine(
         )
 
 
-def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country) -> None:
+def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country, language) -> None:
     """Record which www engine, on which inputs, produced this article's places + entities (R415).
 
     An UPSERT and nothing else: the two stores land together inside one savepoint, so
@@ -689,7 +690,7 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
         from src.analytics.engine_identity import www_engine_id, www_inputs_digest
 
         current = www_engine_id()
-        inputs = www_inputs_digest(raw_content=raw_content, country=country)
+        inputs = www_inputs_digest(raw_content=raw_content, country=country, language=language)
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
@@ -725,7 +726,7 @@ def _index_article_www(
     previous rows and the previous stamp, a lock error re-raises for the retry wrapper."""
     www = {"dates": 0, "places": 0, "entities_stored": 0}
     article_id = article.id
-    raw_content, country = article.content, article.country
+    raw_content, country = article_text(article), article.country  # R725: the text the stores read
     try:
         from src.timemap.whostore import store_entities_for_article as _store_ents
         from src.timemap.whostore import store_places_for_article as _store_places
@@ -735,9 +736,9 @@ def _index_article_www(
             _pw = {}
         _t_www = time.monotonic() if timings is not None else 0.0
         with session.begin_nested():
-            www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
-            www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"))
-            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country)
+            www["places"] = _store_places(session, article, precomputed=_pw.get("places"), text=raw_content)
+            www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"), text=raw_content)
+            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country, language=article.language)
         if timings is not None:
             timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
@@ -1110,14 +1111,16 @@ def index_article(
                 _pw = {}
             _t_www = time.monotonic() if timings is not None else 0.0
             with session.begin_nested():
-                www["dates"] = _store_dates(session, article, precomputed=_pw.get("dates"))
-                www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
+                # R725: the stores read the text already decompressed above (``content``), never the column again.
+                www["dates"] = _store_dates(session, article, precomputed=_pw.get("dates"), text=content)
+                www["places"] = _store_places(session, article, precomputed=_pw.get("places"), text=content)
                 www["entities_stored"] = _store_ents(
-                    session, article, precomputed=_pw.get("entities")
+                    session, article, precomputed=_pw.get("entities"), text=content
                 )
                 # R415: the www stamp rides the SAME savepoint as the rows it certifies.
                 _stamp_www_engine(
-                    session, article_id, raw_content=article.content, country=article.country
+                    session, article_id, raw_content=content, country=article.country,
+                    language=article.language,
                 )
             if timings is not None:
                 timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
@@ -1147,7 +1150,7 @@ def index_article(
         certified=www_rewritten,
         inputs=index_inputs_digest(
             text=content,
-            raw_content=article.content,
+            raw_content=content,  # R725: the date/place/entity stores read this same text
             title=article.title,
             language=article.language,
             detected_language=getattr(article, "detected_language", None),
@@ -1751,6 +1754,8 @@ def _reindex_articles_impl(
         # the optional when/where/who opt-in, and a full re-index appends it while a
         # keywords-only one does not. Without this, the element type is inferred from
         # whichever branch appends first and the other is rejected.
+        from src.timemap.dateextract import publication_anchor
+
         tasks: list[Task] = []
         content_by_id: dict[int, str] = {}
         _t0 = time.monotonic()
@@ -1765,19 +1770,17 @@ def _reindex_articles_impl(
             # on a 25-50 KB body versus ~36 ms for the keyword half, so leaving it
             # inline capped the whole re-index at ~2-3 articles/sec no matter how
             # many workers were running.
-            observed = art.published_at or art.created_at
+            # R727: the date anchor is the trustworthy publication date only (never the storing time).
+            _anchor = publication_anchor(art.published_at, art.created_at)
             www_ctx = (
                 art.country,
-                observed.date().isoformat() if observed else None,
+                _anchor.isoformat() if _anchor else None,
                 None,  # `today`: the store's own default, never a worker's clock
                 # R697: the date language is the article's OWN column, the value the inline
                 # store and the ingest precompute pass; `lang or "en"` below is only the
                 # keyword stoplist pick. Read after _resolve_known_language, which clears a
                 # tag the script refutes.
                 art.language,
-                # The text the inline store reads for places and entities (``article.content``), handed over only when it is
-                # not the keyword text: an article kept compressed. See reindex_parallel._extract_www.
-                None if (art.content or "") == body else (art.content or ""),
             )
             if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
