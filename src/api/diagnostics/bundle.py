@@ -491,12 +491,14 @@ def debug_bundle(
         return {
             "articles": int(db.query(func.count(Article.id)).scalar() or 0),
             "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+            "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
+            "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
             # Field test 2026-11-14 row 71: the flat count above read 20k-37k across instances, most of it
             # discovery candidates never enabled. The headline figure is what collection reaches; the
             # other parts say what the rest is (they partition the flat count; ids-as-names overlaps them).
+            # LAST, after the cheap counts: they share one deadline, and a scan that spends it must not
+            # take the counts above with it.
             **_source_split(),
-            "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
-            "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
         }
 
     def _law_docs() -> list:
