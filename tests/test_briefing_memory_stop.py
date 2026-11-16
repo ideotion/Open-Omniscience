@@ -516,3 +516,9 @@ def test_the_age_limit_is_set_by_its_variable(poll, monkeypatch, raw, expected):
 @pytest.mark.parametrize("generated", [None, "", "not a date", 12345])
 def test_an_unreadable_feed_time_is_not_an_age(generated):
     assert service._feed_age_s({"generated_at": generated}) is None
+
+
+def test_the_age_cause_stands_aside_while_the_log_is_paused(poll, monkeypatch):
+    monkeypatch.setattr(service, "_article_count", lambda _s: 200_000 + 100)
+    monkeypatch.setattr(service, "_log_pinned", lambda: True)
+    assert poll(_aged(4, count=200_000)) == 0

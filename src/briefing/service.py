@@ -325,7 +325,8 @@ def _feed_age_s(payload: dict) -> float | None:
 
 def _age_wants_refresh(payload: dict, *, count) -> bool:
     """True when the feed is older than ``_max_age_s()``, the corpus grew by ``_STALE_GROWTH_MIN`` articles since, and a
-    refresh is allowed right now. ``count`` (a zero-argument callable) is asked only when the age already qualifies."""
+    refresh is allowed right now. ``count`` is the caller's once-per-request article count (``get_briefing``'s
+    ``_count_once``), so this cause adds no count of its own."""
     limit = _max_age_s()
     if limit <= 0:
         return False
@@ -335,7 +336,9 @@ def _age_wants_refresh(payload: dict, *, count) -> bool:
     cached = payload.get("article_count")
     if not isinstance(cached, int) or count() - cached < _STALE_GROWTH_MIN:
         return False
-    if not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
+    # The log's pause: ``_bg_refresh`` would stand aside at once, and this cause stays true for the whole pause, so
+    # every Home poll would start a thread that does nothing.
+    if _log_pinned() or not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
         return False
     with _refresh_lock:
         last = _marker_retry["at"]
