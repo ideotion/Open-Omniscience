@@ -51,7 +51,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
 import sqlite3
 import threading
 import time
@@ -782,16 +781,17 @@ def lanes_pending(digest: str | None) -> bool:
 
 
 def _write_pending(update: Any) -> None:
+    from src.safety.file_lock import atomic_replace, file_lock
+
     try:
-        with _PENDING_LOCK:
+        path = _pending_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # The new content depends on the old: the file lock across the read and the replace.
+        with _PENDING_LOCK, file_lock(path):
             cur = _read_pending()
             if not update(cur):
                 return
-            path = _pending_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(cur, sort_keys=True), encoding="utf-8")
-            os.replace(tmp, path)
+            atomic_replace(path, json.dumps(cur, sort_keys=True))
     except OSError as exc:
         _LOG.warning("could not record which living sources are still owed (%s)", type(exc).__name__)
 

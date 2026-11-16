@@ -322,6 +322,7 @@ def test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_t
 _RAW_WRITE_LOCK_SITES: dict[str, tuple[int, str]] = {
     "src/analytics/day_counts.py": (1, "install(): the trigger DDL, run by init_db's ensure_day_counts at launch, unlock and after a swap"),
     "src/backup/country_migration.py": (6, "the app-stopped alpha-3 migration: it holds the file with locking_mode=EXCLUSIVE, the app cannot run"),
+    "src/backup/lane_merge.py": (1, "R729's lane merge: one transaction on a lane file (wiki.db), never the corpus file the repair swaps"),
     "src/backup/merge.py": (4, "the merge into the restore's disposable working copy, never the live file"),
     "src/database/repair.py": (1, "the repair's own probe (_Probe.moved), the read this file tests"),
     "src/database/source_identity.py": (3, "the source-identity DDL steps of init_db (launch, unlock, after a swap): named in this file's docstring"),
