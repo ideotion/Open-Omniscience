@@ -228,6 +228,11 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
     # legitimate addition -- and every later batch has to declare itself HERE rather than be
     # absorbed into a fresh digest, where a genuine accidental drop would hide beside it.
     added_since_migration = frozenset({
+        # batch tet-2026-11-16 (field test 2026-11-14 row 64): Tetum function words that surfaced as "rising" leads
+        # from one outlet; collision review in configs/stopwords_extra/PROVENANCE.md.
+        "daudaun", "hafoin", "hanesan", "hodi", "hosi", "husi", "iha", "kona-ba", "maibe", "maibé", "ne'e",
+        "ne'ebe", "ne'ebé", "neebe", "nebe", "nian", "ninia", "oinsá", "tanba", "tiha", "wainhira",
+        "ne’e", "ne’ebe", "ne’ebé",
         # source-quality export 2026-08-11: contentless English light verbs / quantifiers
         # occupying a top-12 slot in 41.9% of source fingerprints.
         # Evidence + the collision review that REJECTED top/post/show/access/home/right/
