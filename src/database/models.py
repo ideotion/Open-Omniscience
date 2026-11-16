@@ -455,7 +455,8 @@ class Source(Base):
     # index_article (which RE-indexes existing articles -> incrementing there would
     # double-count), nor on any article write: it is RECOUNTED, by the idle-window
     # reconcile and, at the end of every collection pass, by catch_up_source_counters()
-    # for the sources with an article above its watermark (field test 2026-11-14 row 75).
+    # for the sources that gained an article since the last count, by id or by created_at
+    # (field test 2026-11-14 row 75).
     article_count: Mapped[int | None] = mapped_column(Integer)
     counter_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime)
 

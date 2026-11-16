@@ -142,7 +142,11 @@ def test_a_reused_id_below_the_watermark_is_still_counted():
     assert s.get(Source, b.id).article_count == _live(s, b.id) == 2
 
 
-def test_a_catch_up_naming_more_sources_than_one_query_can_bind_still_runs():
+def test_a_catch_up_naming_more_sources_than_one_query_can_bind_still_runs(monkeypatch):
+    """The chunk is shrunk so a small store needs many IN lists; every chunk's sources are counted."""
+    import src.analytics.store as store
+
+    monkeypatch.setattr(store, "_SOURCE_ID_CHUNK", 7)
     s = _session()
     srcs = [_src(s, f"s{i}") for i in range(2000)]
     s.commit()

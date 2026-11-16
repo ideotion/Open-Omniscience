@@ -2717,8 +2717,9 @@ def catch_up_source_counters(session: Session) -> dict:
     window is yielded with ``collect_pass_owns_lock``). On the field instances it had last run
     hours before the export, so every source that kept collecting read low, the Wikipedia
     editions most (their stream adds articles all day). This runs at the end of each collection
-    pass and recounts only the sources with an article above the watermark: a range scan on the
-    article primary key, one indexed count per source it names, one short gated write.
+    pass and recounts only the sources that gained an article since the last count: two indexed
+    range scans (article id, created_at), one indexed count per source they name, one short gated
+    write.
 
     The range has two halves: ids above the watermark, and articles created after the last count
     (less a margin). The second catches a reused id, since ``articles.id`` has no AUTOINCREMENT and
@@ -2774,8 +2775,8 @@ def catch_up_source_counters(session: Session) -> dict:
             session.commit()
         return {**out, "after_id": mark, "up_to_id": top, "start": start}
     except Exception as exc:  # noqa: BLE001 - a pass tail must never break; the idle reconcile still runs
-        session.rollback()
         log_failure(_LOG, "source counter catch-up failed; the idle reconcile still runs", exc, level=logging.WARNING)
+        session.rollback()
         return {"skipped": "error"}
 
 
