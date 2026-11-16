@@ -298,7 +298,8 @@ def test_a_version_this_machine_holds_keeps_its_own_parse_whole(machines, tmp_pa
         ])
         s.commit()
     rep = lane_merge.merge_lane_file("law", snap, [None])
-    assert rep["tables"]["law_provisions"] == {"inserted": 0, "not_linked": 0, "kept_local_parse": 1}
+    # Both backup rows are set aside: art-3, and art-1 whose text differs from this machine's.
+    assert rep["tables"]["law_provisions"] == {"inserted": 0, "not_linked": 0, "kept_local_parse": 2}
     with store.lane_session("law") as s:
         got = sorted((p.address, p.text) for p in s.scalars(select(LawProvision)))
     assert got == [("art-1", "old"), ("art-2", "two")]
@@ -419,3 +420,72 @@ def test_new_version_values_are_copied_only_in_the_shape_the_app_writes(machines
         m = s.scalars(select(LawDocumentMeta).where(LawDocumentMeta.lane_key == "k-new")).one()
         # The licence is a catalogue key or nothing, exactly as register_document takes it.
         assert (m.licence_id, m.source_url, m.title) == ("unknown", None, None)
+
+
+def test_a_law_member_with_a_timestamp_this_build_cannot_read_is_refused(machines, tmp_path, corpus):
+    """Opus read on PR 2: an integer timestamp would break every later read of the row."""
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    before = _state()
+    con = sqlite3.connect(snap)
+    con.execute("UPDATE law_identities SET created_at = 0")
+    con.commit()
+    con.close()
+    with pytest.raises(lane_merge.LaneMergeError):
+        lane_merge.merge_lane_file("law", snap, [None])
+    assert _state() == before
+
+
+def test_a_backup_from_a_build_without_some_columns_still_merges(machines, tmp_path, corpus):
+    """Opus read on PR 2: an override must not read a column the backup does not have."""
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    con = sqlite3.connect(snap)
+    con.execute("ALTER TABLE law_document_meta DROP COLUMN source_authority")
+    con.execute("ALTER TABLE law_identities DROP COLUMN legal_system")
+    con.execute("ALTER TABLE law_provisions DROP COLUMN ordinal")
+    con.commit()
+    con.close()
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_document_meta"]["inserted"] == 1
+    assert rep["tables"]["law_provisions"]["inserted"] == 1
+
+
+def test_a_linked_provision_the_model_could_not_have_stored_is_counted(machines, tmp_path, corpus):
+    a, b, use = machines
+
+    def seed_b(s):
+        _meta(s, "k-shared", _identity(s, "loi-1"))
+        s.add(LawProvision(revision_lane_key="r1", document_lane_key="k-shared", address="a" * 600,
+                           text="x", content_hash="x"))
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_provisions"] == {"inserted": 0, "not_linked": 0, "refused": 1}
+
+
+def test_an_identity_with_whitespace_the_model_collapses_is_not_inserted(machines, tmp_path, corpus):
+    a, b, use = machines
+
+    def seed_b(s):
+        _meta(s, "k-new", _identity(s, "loi\n1"))
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_identities"]["inserted"] == 0
+    assert rep["tables"]["law_document_meta"]["not_linked"] == 1
+
+
+def test_a_version_under_a_document_key_the_corpus_holds_twice_links_no_provision(machines, tmp_path, corpus):
+    with corpus() as db:
+        db.add(LawDocument(jurisdiction="fr", title="Copie", url="https://law.test/4", lane_key="k-shared"))
+        db.commit()
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_provisions"] == {"inserted": 0, "not_linked": 2}

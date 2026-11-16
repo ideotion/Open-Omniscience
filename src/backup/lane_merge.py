@@ -692,6 +692,22 @@ def _law_in(expr: str, name: str, values: Any, params: dict[str, Any]) -> str:
     return f"{expr} IN ({', '.join(keys)})"
 
 
+def _law_fit(overrides: dict[str, str], inc_cols: set[str], derived: set[str], defaults: dict[str, str]) -> dict[str, str]:
+    """Keep an override only where the backup has the column it reads.
+
+    A backup from an older or newer build may lack a column. An override that reads it
+    would fail the whole lane; a NOT NULL column falls back to the model's own default and
+    a nullable one is left out (NULL). ``derived`` overrides read other tables or columns.
+    """
+    out: dict[str, str] = {}
+    for col, expr in overrides.items():
+        if col in derived or col in inc_cols:
+            out[col] = expr
+        elif col in defaults:
+            out[col] = defaults[col]
+    return out
+
+
 def _law_sha256(text: Any) -> str | None:
     if not isinstance(text, str):
         return None
@@ -730,6 +746,9 @@ def _corpus_law_links(conn: Any, *, own_transaction: bool = True) -> None:
                 "HAVING count(DISTINCT r.document_id) = 1 AND count(d.lane_key) = count(*)"
             )
         ).all()
+    # A version links only through a document key that itself names one document.
+    unique_docs = {r[0] for r in docs}
+    revs = [r for r in revs if r[1] in unique_docs]
     if own_transaction:
         conn.execute("BEGIN")  # the temp database only: no lock on the lane file
     try:
@@ -799,7 +818,10 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
             "typeof(i.jurisdiction_alpha3) = 'text' AND length(i.jurisdiction_alpha3) = 3 "
             "AND i.jurisdiction_alpha3 GLOB '[A-Z][A-Z][A-Z]'",
             "typeof(i.document_identity) = 'text' AND length(i.document_identity) BETWEEN 1 AND 256 "
-            "AND i.document_identity = lower(trim(i.document_identity))",
+            "AND i.document_identity = lower(trim(i.document_identity)) "
+            "AND instr(i.document_identity, '  ') = 0 AND instr(i.document_identity, char(9)) = 0 "
+            "AND instr(i.document_identity, char(10)) = 0 AND instr(i.document_identity, char(11)) = 0 "
+            "AND instr(i.document_identity, char(12)) = 0 AND instr(i.document_identity, char(13)) = 0",
             _law_in("i.jurisdiction_level", "v", JURISDICTION_LEVELS, params),
             _law_in("i.doc_type", "d", DOC_TYPES, params),
         )
@@ -816,7 +838,12 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
         conn,
         "law_identities",
         source_from="inc.law_identities i",
-        overrides={k: v for k, v in id_overrides.items() if k in live_cols},
+        overrides=_law_fit(
+            {k: v for k, v in id_overrides.items() if k in live_cols},
+            inc_cols,
+            set(),
+            {"legal_system": "'unknown'", "status": "'unknown'", "created_at": ":horizon"},
+        ),
         where=(
             f"NOT EXISTS (SELECT 1 FROM main.law_identities m WHERE {_LAW_TRIPLE}) AND {well_formed} "  # noqa: S608  # nosec B608 # module-literal clauses, values bound
             f"AND i.id IN (SELECT i.identity_id FROM inc.law_document_meta i WHERE {linked_new})"
@@ -899,7 +926,19 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
         conn,
         "law_document_meta",
         source_from="inc.law_document_meta i JOIN temp.lm_lid l ON l.inc_id = i.identity_id",
-        overrides={k: v for k, v in meta_overrides.items() if k in meta_live},
+        overrides=_law_fit(
+            {k: v for k, v in meta_overrides.items() if k in meta_live},
+            meta_inc,
+            {"identity_id"},
+            {
+                "language": "'und'",
+                "translation_kind": "'unrecorded'",
+                "licence_id": "'unknown'",
+                "granularity": "'act'",
+                "first_seen_at": ":horizon",
+                "updated_at": ":horizon",
+            },
+        ),
         where=linked_new,
         source_alias="i",
         params=params,
@@ -918,6 +957,11 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
             "EXISTS (SELECT 1 FROM main.law_provisions m "
             "WHERE m.revision_lane_key = p.revision_lane_key AND m.address = p.address)"
         )
+        identical = (
+            "EXISTS (SELECT 1 FROM main.law_provisions m WHERE m.revision_lane_key = p.revision_lane_key "
+            "AND m.address = p.address AND m.text = p.text)"
+        )
+        well_shaped = "typeof(p.text) = 'text' AND typeof(p.address) = 'text' AND length(p.address) BETWEEN 1 AND 512"
         p_unlinked = int(
             conn.execute(
                 "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key NOT IN (SELECT lane_key FROM temp.lm_law_rev) "  # noqa: S608  # nosec B608 # module literals
@@ -927,9 +971,18 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
         kept = int(
             conn.execute(
                 "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key IN (SELECT lane_key FROM temp.lm_law_rev) "  # noqa: S608  # nosec B608 # module literals
-                f"AND {local_parse} AND NOT {same_row}"
+                f"AND {local_parse} AND NOT {identical}"
             ).fetchone()[0]
         )
+        # A linked provision of a new version that is not one the model could have stored
+        # (no text, an address outside the column) is counted rather than dropped unseen.
+        refused = int(
+            conn.execute(
+                "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key IN (SELECT lane_key FROM temp.lm_law_rev) "  # noqa: S608  # nosec B608 # module literals
+                f"AND NOT {local_parse} AND NOT ({well_shaped})"
+            ).fetchone()[0]
+        )
+        p_inc = set(_columns(conn, "inc", "law_provisions"))
         # The hash is recomputed from the text: a stored hash that does not match its text
         # would make a changed provision read as unchanged.
         try:
@@ -940,24 +993,28 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
             conn,
             "law_provisions",
             source_from="inc.law_provisions p JOIN temp.lm_law_rev r ON r.lane_key = p.revision_lane_key",
-            overrides={
-                "document_lane_key": "r.doc_key",
-                "content_hash": "oo_law_sha256(p.text)",
-                "ordinal": "CASE WHEN typeof(p.ordinal) = 'integer' THEN p.ordinal ELSE 0 END",
-                "num": _law_checked("num", "p"),
-                "heading": _law_checked("heading", "p"),
-                "created_at": "MIN(p.created_at, :horizon)",
-            },
-            where=(
-                f"NOT {local_parse} AND typeof(p.text) = 'text' "  # noqa: S608  # nosec B608 # module literals
-                "AND typeof(p.address) = 'text' AND length(p.address) BETWEEN 1 AND 512"
+            overrides=_law_fit(
+                {
+                    "document_lane_key": "r.doc_key",
+                    "content_hash": "oo_law_sha256(p.text)",
+                    "ordinal": "CASE WHEN typeof(p.ordinal) = 'integer' THEN p.ordinal ELSE 0 END",
+                    "num": _law_checked("num", "p"),
+                    "heading": _law_checked("heading", "p"),
+                    "created_at": "MIN(p.created_at, :horizon)",
+                },
+                p_inc,
+                {"document_lane_key", "content_hash"},
+                {"ordinal": "0", "created_at": ":horizon"},
             ),
+            where=f"NOT {local_parse} AND {well_shaped}",  # noqa: S608  # nosec B608 # module literals
             source_alias="p",
             params=params,
         )
         tables["law_provisions"] = {"inserted": pn, "not_linked": p_unlinked}
         if kept:
             tables["law_provisions"]["kept_local_parse"] = kept
+        if refused:
+            tables["law_provisions"]["refused"] = refused
     for t in ("lm_lid", "lm_law_doc", "lm_law_rev"):
         conn.execute(f"DROP TABLE IF EXISTS temp.{t}")
 
