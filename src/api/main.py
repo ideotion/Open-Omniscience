@@ -3236,7 +3236,9 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # per-candidate row decrypt); only the small, already-ranked final result set
     # (limit 8) is resolved to titles.
     related_html = ""
+    _furniture_kw: set[int] = set()
     try:
+        from src.analytics.outlet_furniture import outlet_furniture_keywords
         from src.database.derived_views import KeywordMentionRead
 
         my_kw = [
@@ -3245,6 +3247,10 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 KeywordMentionRead.article_id == a.id
             )
         ]
+        # Field test 2026-11-14 row 67: a keyword on half or more of this source's articles is its
+        # template's, not this story's, and ranked unrelated pages of the same site first.
+        _furniture_kw = outlet_furniture_keywords(db, a.source_id, my_kw)
+        my_kw = [k for k in my_kw if k not in _furniture_kw]
         if my_kw:
             ranked = (
                 db.query(
@@ -3280,7 +3286,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 related_html = (
                     '<section><h2>Related in your corpus</h2>'
                     '<p class="muted">Ranked by shared extracted keywords — overlap counts, '
-                    "not a similarity score. All links stay local.</p>"
+                    "not a similarity score. Keywords found on half or more of this source's "
+                    "articles (from 10 articles up) are not counted. All links stay local.</p>"
                     f"<ul>{items}</ul></section>"
                 )
     except Exception as exc:  # noqa: BLE001 - related list is optional, never breaks the reader
@@ -3324,6 +3331,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             for r in db.query(KeywordMentionRead.keyword_id).filter(
                 KeywordMentionRead.article_id == a.id
             )
+            if r[0] not in _furniture_kw  # the template's keywords pick the template's pages (row 67)
         ]
         _cand = (
             [
@@ -3347,12 +3355,27 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             else []
         )
         if _cand:
-            docs = {str(a.id): ((a.title or "") + "\n" + (a.get_content() or ""))}
+            from src.analytics.outlet_furniture import outlet_repeated_shingles, strip_known
+
+            docs = {str(a.id): ((a.title or "") + "\n" + strip_known(a.get_content() or ""))}
             titles: dict[str, str] = {}
+            source_of = {str(a.id): a.source_id}
             for c in db.query(Article).filter(Article.id.in_(_cand)).all():
-                docs[str(c.id)] = (c.title or "") + "\n" + (c.get_content() or "")
+                docs[str(c.id)] = (c.title or "") + "\n" + strip_known(c.get_content() or "")
                 titles[str(c.id)] = c.title or "(untitled)"
-            res = near_duplicate_clusters(docs, threshold=0.7)
+                source_of[str(c.id)] = c.source_id
+            # Field test 2026-11-14 row 67: text a source repeats on half or more of its recent pages is its
+            # template, and twelve unrelated pages of one site read as copies of each other on it. Each PAIR is
+            # compared without the text its sources repeat: two pages of one source without that source's set, two
+            # pages of different sources without only what BOTH repeat, so a footer or a story one outlet learned
+            # never splits or hides its copy at another (read-time; nothing stored). The ingest's own furniture list
+            # is stripped on every side, as in the learning.
+            res = near_duplicate_clusters(
+                docs,
+                threshold=0.7,
+                group_of={d: sid for d, sid in source_of.items() if sid is not None},
+                group_drop={sid: outlet_repeated_shingles(db, sid) for sid in set(source_of.values()) if sid is not None},
+            )
             mine = next(
                 (cl for cl in res.clusters if str(a.id) in cl.members and len(cl.members) >= 2),
                 None,
