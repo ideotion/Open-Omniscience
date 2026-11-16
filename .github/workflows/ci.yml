@@ -914,23 +914,35 @@ jobs:
 
       # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first and why `-r` needs `fE` beside it): a macOS skip count that differs from Linux's is read from this log. No junit report here.
       # A test that does not return within OO_TEST_HANG_LIMIT_S seconds ends the run with every thread's traceback written to
-      # test-hang-report.txt after a line naming it (tests/conftest.py, row 93): a hang costs 10 minutes and names itself, instead of
-      # going silent until the 60-minute cap cancels the leg (job 133057809613: shard 1 on Windows stopped at 23% for 30 minutes).
+      # test-hang-report.txt after a line naming it, and every test slower than OO_TEST_SLOW_S is listed in test-slow-report.txt as it ends
+      # (tests/conftest.py, row 93): a hang costs 10 minutes and names itself, instead of going silent until the 60-minute cap cancels the
+      # leg (job 133057809613: shard 1 on Windows stopped at 23% for 30 minutes), and a leg the cap stops still says where its time went.
       - name: Test (pytest)
         env:
           OO_TEST_HANG_LIMIT_S: "600"
           OO_TEST_HANG_REPORT: test-hang-report.txt
+          OO_TEST_SLOW_S: "20"
+          OO_TEST_SLOW_REPORT: test-slow-report.txt
         run: python -m pytest -q -rsfE @shard.args
 
-      - name: Name the test that hung (if one did)
+      - name: Name a test that hung, and the slow tests
         if: always()
         run: |
-          if [ -s test-hang-report.txt ]; then
+          if [ -s test-hang-report.txt ] && grep -q '^Timeout (' test-hang-report.txt; then
             echo "::error title=A test hung::$(head -n 1 test-hang-report.txt)"
             cat test-hang-report.txt
+          elif [ -s test-hang-report.txt ]; then
+            echo "::warning title=Stopped from outside::the run was stopped (job cap or cancel) while this test ran, before its own limit: $(head -n 1 test-hang-report.txt)"
           else
             echo "No test ran past the hang limit."
           fi
+          if [ -s test-slow-report.txt ]; then
+            echo "Tests slower than ${OO_TEST_SLOW_S:-20} s, slowest first:"
+            sort -rn test-slow-report.txt > test-slow-sorted.txt  # no pipe into head: under pipefail a closed pipe fails the step
+            head -n 60 test-slow-sorted.txt
+          fi
+        env:
+          OO_TEST_SLOW_S: "20"
 
   # SQLCipher driver proof on every OS (gate zero, executed for real): the
   # at-rest encryption batch (PR-E) must not land on wheel inspection alone.

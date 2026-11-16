@@ -26,8 +26,8 @@ def test_the_probe_returns_at_once_unless_asked_to_hang():
 def _run_probe(tmp_path: Path, *, hang: bool) -> tuple[subprocess.CompletedProcess[str], Path, float]:
     report = tmp_path / "hang.txt"
     env = {**os.environ, "OO_TEST_HANG_LIMIT_S": "3", "OO_TEST_HANG_REPORT": str(report), "OO_HANG_PROBE": "1" if hang else "0"}
-    env.pop("PYTEST_XDIST_WORKER", None)
-    env.pop("PYTEST_ADDOPTS", None)
+    for key in ("PYTEST_XDIST_WORKER", "PYTEST_ADDOPTS", "OO_TEST_SLOW_S"):
+        env.pop(key, None)
     started = time.monotonic()
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist", _PROBE],
@@ -41,7 +41,8 @@ def test_a_test_past_the_limit_ends_the_run_and_the_report_names_it_with_its_tra
     assert proc.returncode != 0, proc.stdout + proc.stderr
     text = report.read_text(encoding="utf-8")
     first = text.splitlines()[0]
-    assert first.startswith("Test still running after 3 s, so the run was ended: ") and first.endswith(_PROBE), text
+    assert first == f"Running (limit 3 s): {_PROBE}", text
+    assert "Timeout (" in text, "the CI step tells a hang from a cap by this line, which faulthandler writes only when the limit fires"
     # The traceback reaches the line the test is stuck on, so the report says WHERE, not only which test.
     assert "test_hang_watchdog.py" in text and "test_the_probe_returns_at_once_unless_asked_to_hang" in text.split("\n", 1)[1], text
     assert elapsed < 110, f"the watchdog did not end the run: {elapsed:.0f} s (the probe sleeps 120 s)"
@@ -60,5 +61,20 @@ def test_the_portability_legs_arm_the_watchdog_and_print_its_report():
     limit = float(test_step["env"]["OO_TEST_HANG_LIMIT_S"])
     assert 0 < limit * 3 <= job["timeout-minutes"] * 60, "the hang limit must sit well under the leg's cap, or the cap cancels first and names nothing"
     report = test_step["env"]["OO_TEST_HANG_REPORT"]
-    printer = steps["Name the test that hung (if one did)"]
-    assert printer.get("if") == "always()" and report in printer["run"]
+    printer = steps["Name a test that hung, and the slow tests"]
+    assert printer.get("if") == "always()" and report in printer["run"] and "^Timeout (" in printer["run"]
+    assert test_step["env"]["OO_TEST_SLOW_REPORT"] in printer["run"]
+
+
+def test_slow_tests_are_listed_as_they_end(tmp_path):
+    report = tmp_path / "slow.txt"
+    env = {**os.environ, "OO_TEST_SLOW_S": "0.000001", "OO_TEST_SLOW_REPORT": str(report), "OO_HANG_PROBE": "0"}
+    for key in ("PYTEST_XDIST_WORKER", "PYTEST_ADDOPTS", "OO_TEST_HANG_LIMIT_S"):
+        env.pop(key, None)
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist", _PROBE],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    lines = report.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1 and lines[0].endswith(" s  " + _PROBE), lines
