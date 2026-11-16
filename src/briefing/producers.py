@@ -2157,6 +2157,12 @@ def space_time_convergence(session) -> list[Card]:
                 str(shared),
             ),
         ]
+        furniture_shared = int(c.get("shared_origin_furniture_links") or 0)
+        if furniture_shared:
+            # Row 99: links shared only because one outlet carries them on most of its pages; counted apart, not hidden.
+            math_rows.append(
+                ("Outbound links shared only as one outlet's page furniture (not counted)", str(furniture_shared))
+            )
         cards.append(
             Card(
                 type="space_time_convergence",
@@ -2204,6 +2210,7 @@ def space_time_convergence(session) -> list[Card]:
                     "window_end": c["window_end"],
                     "shared_origin_links": shared,
                     "shared_origin_examples": c["shared_origin_examples"],
+                    "shared_origin_furniture_links": furniture_shared,
                     "source_names": c["source_names"],
                     "clusters_total": found.get("clusters_total", 0),
                 },

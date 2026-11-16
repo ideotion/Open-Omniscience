@@ -998,9 +998,11 @@ class VolumeBackupManager:
                     # lane that fails is left as it was and reported. A lane-less backup has no
                     # members here and this adds nothing to the report.
                     lane_members = getattr(staged, "lane_members", None)
+                    held_lanes: dict[str, Any] | None = None
                     if lane_members:
                         from src.backup.lane_merge import (
                             deferred_report,
+                            hold_lane_members,
                             mark_lanes_owed,
                             merge_staged_lanes,
                             record_lane_outcome,
@@ -1015,7 +1017,13 @@ class VolumeBackupManager:
                             if report.get("held"):
                                 # The corpus sits on the queue's working copy until its group
                                 # commits; lanes written now would outlive a group that fails.
+                                # Their (still encrypted) members wait beside that copy, and
+                                # the queue merges them when the group commits.
                                 report["living_sources"] = deferred_report(lane_members)
+                                if working_copy is not None:
+                                    held_lanes = hold_lane_members(
+                                        staged.staging_dir, lane_members, Path(working_copy).parent, _digest
+                                    )
                             else:
                                 report["living_sources"] = merge_staged_lanes(
                                     staged.staging_dir,
@@ -1053,6 +1061,8 @@ class VolumeBackupManager:
                             # would discard.
                             "source_digest": _digest,
                             "held": bool(report.get("held")),
+                            # R729: where a held item's lane members wait for the group's commit.
+                            **({"held_lanes": held_lanes} if held_lanes else {}),
                         }
                         self._progress = {"phase": "done"}
                     # A HELD item has no corpus to read a backlog from -- its

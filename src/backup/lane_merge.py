@@ -863,8 +863,56 @@ def deferred_report(lane_members: Iterable[Any]) -> dict[str, Any]:
                 "state": "deferred",
                 "reason": (
                     "the corpus from this backup is waiting for the rest of its import group, so its "
-                    "living sources were not merged yet; importing this backup again merges them"
+                    "living sources merge when the group is saved; if it is not saved, importing "
+                    "this backup again merges them"
                 ),
             }
         )
     return {"lanes": lanes, "method": METHOD, "newly_followed": 0}
+
+
+def hold_lane_members(
+    staging_dir: Path, lane_members: Iterable[Any], group_dir: Path, digest: str | None
+) -> dict[str, Any] | None:
+    """Keep a held item's lane members beside the import queue's working copy. Never raises.
+
+    The staging tree is deleted when the item ends, but the corpus it brought reaches the
+    live store only when the group commits, so the members are copied into the group's own
+    directory (which the stale-staging janitor reclaims if this process dies) and merged
+    then. Only ENCRYPTED members are kept: the group directory promises an orphan is
+    encrypted whenever the corpus is, and a plaintext one stays owed for a re-import.
+    """
+    import hashlib
+    import secrets
+    import shutil
+
+    from src.database.connect import is_encrypted_file
+
+    kept: list[dict[str, Any]] = []
+    try:
+        # The digest can come from a backup's own manifest, so it never names a path: the
+        # directory is a hash of it (or a random name), and must resolve inside the group.
+        leaf = hashlib.sha256(str(digest).encode("utf-8")).hexdigest()[:32] if digest else secrets.token_hex(16)
+        root = Path(group_dir).resolve()
+        dest = root / "lanes" / leaf
+        if not dest.resolve().is_relative_to(root):
+            return None
+        for entry in lane_members or ():
+            kind = valid_member(entry)
+            if kind is None or kind not in MERGEABLE_KINDS or not entry.get("sqlcipher"):
+                continue
+            src = Path(staging_dir) / member_name(kind)
+            # The manifest's flag is a claim: the file itself must read as encrypted.
+            if not src.is_file() or is_encrypted_file(src) is not True:
+                continue
+            target = dest / member_name(kind)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+            # Only the fields the merge reads: the rest of a manifest entry is untrusted.
+            kept.append({k: entry[k] for k in ("name", "kind", "sqlcipher", "page_size") if k in entry})
+    except OSError as exc:
+        _LOG.warning("could not keep a held backup's living sources for its group (%s)", type(exc).__name__)
+        return None
+    if not kept:
+        return None
+    return {"dir": str(dest), "members": kept, "digest": digest}
