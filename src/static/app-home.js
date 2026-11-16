@@ -1431,10 +1431,17 @@
         // The card renders exactly as it does in its family (same component, same
         // actions), plus the disclosed reason it leads its family.
         // The ranking line as keyed frames (N-8): an older stored card has only the English.
-        const whyText = (Array.isArray(c.order_explain_i18n) && c.order_explain_i18n.length)
-          ? cardFrames(c.order_explain_i18n) : (c.order_explain || "");
+        const frs = (Array.isArray(c.order_explain_i18n) && c.order_explain_i18n.length) ? c.order_explain_i18n : null;
+        const whyText = frs ? cardFrames(frs) : (c.order_explain || "");
+        // ONE STATEMENT OF THE ORDER PER SCREEN (row 76, R682/R685): every card's line opened
+        // with the same sentence naming the ranking order, and the family caveat under the
+        // Overview states that order once already. The card shows only its own facts ("This
+        // lead: ..."); the whole line, order sentence included, stays in its hover.
+        const _ORDER = "Ranked by a disclosed order (independent sources → sample magnitude → recency), never a score.";
+        const own = frs && frs.length > 1 && frs[0] && frs[0].t === _ORDER ? cardFrames(frs.slice(1))
+          : (!frs && whyText.startsWith(_ORDER + " ") ? whyText.slice(_ORDER.length + 1) : whyText);
         const why = whyText
-          ? `<div class="ov-why" title="${esc(whyText)}">${esc(whyText)}</div>` : "";
+          ? `<div class="ov-why" title="${esc(whyText)}">${esc(own || whyText)}</div>` : "";
         return `<div class="ov-item" style="--fam:${famHue(b.bucket)}">`
           // h3, not h4 (axe heading-order, 2026-09-09). Two things were wrong and
           // one change fixes both: Home's only other visible heading is the h2
