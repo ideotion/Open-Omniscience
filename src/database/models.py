@@ -453,7 +453,9 @@ class Source(Base):
     # GROUP BY -- cheap, sources are few) and stamps counter_reconciled_at so the honesty
     # envelope discloses exact (fresh) vs estimated (stale). NOT maintained in
     # index_article (which RE-indexes existing articles -> incrementing there would
-    # double-count); membership changes on create/delete/reconcile only.
+    # double-count), nor on any article write: it is RECOUNTED, by the idle-window
+    # reconcile and, at the end of every collection pass, by catch_up_source_counters()
+    # for the sources with an article above its watermark (field test 2026-11-14 row 75).
     article_count: Mapped[int | None] = mapped_column(Integer)
     counter_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime)
 

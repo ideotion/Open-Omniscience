@@ -2648,6 +2648,9 @@ def reconcile_source_counters(
                 "scoped_to": 0,
             }
 
+    # The highest article id this count is taken at or above: read BEFORE the count, so an article
+    # added while it runs has a higher id and is picked up by the next catch-up rather than missed.
+    top_id = int(session.query(func.max(Article.id)).scalar() or 0) if wanted is None else None
     counts = session.query(Article.source_id, func.count(Article.id))
     current = session.query(Source.id, Source.article_count)
     if wanted is not None:
@@ -2670,6 +2673,8 @@ def reconcile_source_counters(
         connection_first(session)
         with write_lock():
             session.bulk_update_mappings(Source, rows)
+            if top_id is not None:  # a whole-corpus count covers every article up to here
+                _cursor_set(session, SOURCE_COUNTER_WATERMARK_KEY, top_id)
             session.commit()
 
     return {
@@ -2679,6 +2684,64 @@ def reconcile_source_counters(
         "scope": "scoped" if wanted is not None else "all",
         **({"scoped_to": len(wanted)} if wanted is not None else {}),
     }
+
+
+#: The highest article id every source counter has been recounted over (``derived_meta``).
+SOURCE_COUNTER_WATERMARK_KEY = "source_counter_article_watermark"
+
+
+def catch_up_source_counters(session: Session) -> dict:
+    """Recount ``Source.article_count`` for the sources that gained articles since the last count.
+
+    WHY (field test 2026-11-14, report 5.5, open-on-main row 75): no write path maintains the
+    counter; only :func:`reconcile_source_counters` sets it, and that runs in the scheduler's
+    collector-IDLE window, which a machine that collects continuously almost never gets (the
+    window is yielded with ``collect_pass_owns_lock``). On the field instances it had last run
+    hours before the export, so every source that kept collecting read low, the Wikipedia
+    editions most (their stream adds articles all day). This runs at the end of each collection
+    pass and recounts only the sources with an article above the watermark: a range scan on the
+    article primary key, one indexed count per source it names, one short gated write.
+
+    The first call on a store with no watermark starts from the newest article older than the
+    oldest counter stamp, so it catches up what the idle count missed without recounting every
+    source. Deletions and moves below the watermark are left to the whole-corpus reconcile, which
+    still runs in the idle window and resets the watermark. Never raises; counts only.
+    """
+    from sqlalchemy import func
+
+    try:
+        top = int(session.query(func.max(Article.id)).scalar() or 0)
+        mark = _cursor_get(session, SOURCE_COUNTER_WATERMARK_KEY)
+        start = "watermark"
+        if mark <= 0:
+            oldest = session.query(func.min(Source.counter_reconciled_at)).scalar()
+            if oldest is None:
+                # never counted: the readers count live (a NULL counter), so there is nothing stale yet
+                return {"skipped": "never-reconciled"}
+            mark = int(
+                session.query(func.max(Article.id)).filter(Article.created_at <= oldest).scalar() or 0
+            )
+            start = "oldest-stamp"
+        if top <= mark:
+            return {"sources": 0, "after_id": mark, "start": start}
+        touched = [
+            int(sid)
+            for (sid,) in session.query(Article.source_id)
+            .filter(Article.id > mark, Article.id <= top, Article.source_id.isnot(None))
+            .distinct()
+        ]
+        out = reconcile_source_counters(session, source_ids=touched) if touched else {"sources": 0}
+        from src.database.writer import connection_first, write_lock
+
+        connection_first(session)
+        with write_lock():
+            _cursor_set(session, SOURCE_COUNTER_WATERMARK_KEY, top)
+            session.commit()
+        return {**out, "after_id": mark, "up_to_id": top, "start": start}
+    except Exception as exc:  # noqa: BLE001 - a pass tail must never break; the idle reconcile still runs
+        session.rollback()
+        log_failure(_LOG, "source counter catch-up failed; the idle reconcile still runs", exc, level=logging.WARNING)
+        return {"skipped": "error"}
 
 
 def source_counter_envelope(session: Session, source, *, fresh_within_hours: float = 24.0) -> dict:

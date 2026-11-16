@@ -54,7 +54,10 @@ def test_one_article_per_source_and_a_manifest_row_for_an_empty_source(db):
     man = json.loads(z.read("manifest.json"))
     assert (nxt, covered, total) == (None, 2, 2)
     assert [r["source_id"] for r in man["sources"]] == [1]
-    assert man["sources_without_article"]["rows"] == [[2, "s2.example"]]
+    # field report 2026-11-14 5.4: ids above the shipped catalogue differ across instances, so each row carries the join key
+    assert man["sources_without_article"]["rows"] == [[2, "s2.example", ""]]
+    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key"]
+    assert man["sources"][0]["domain"] == "s1.example" and man["sources"][0]["feed_key"] == ""
     assert man["sources_in_this_zip"] == 2
     from src.paths import instance_tag
 

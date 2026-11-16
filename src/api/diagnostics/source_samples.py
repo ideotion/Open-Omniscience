@@ -162,7 +162,7 @@ def build_sample_zip(
                 data = None
                 row: dict[str, Any] | None = None
                 if art is not None:
-                    row = {"source_id": sid, "domain": src.domain, "name": src.name, "articles_in_source": n}
+                    row = {"source_id": sid, "domain": src.domain, "feed_key": src.feed_key, "name": src.name, "articles_in_source": n}
                     a = _row_dict(art)
                     if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
                         for col in _BODY_COLUMNS:
@@ -182,7 +182,7 @@ def build_sample_zip(
                     data = json.dumps(doc, ensure_ascii=False, default=str).encode("utf-8")
                     row["article_id"] = art.id
                     row["bytes"] = len(data)
-                entry: Any = [sid, src.domain] if row is None else row
+                entry: Any = [sid, src.domain, src.feed_key] if row is None else row
                 row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
                 used = buf.tell() + _RESERVE_BYTES + rows_bytes + row_bytes
                 if (manifest or empty) and used + len(data or b"") > cap:   # empty sources count too: their rows add up
@@ -213,7 +213,9 @@ def build_sample_zip(
             "sources": manifest,
             "sources_without_article": {
                 "note": "no stored article for these sources",
-                "columns": ["source_id", "domain"],
+                # a source id is this instance's own above the shipped catalogue (field report 2026-11-14 5.4):
+                # domain + feed_key is what joins one instance's rows to another's
+                "columns": ["source_id", "domain", "feed_key"],
                 "rows": empty,
             },
         }, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))

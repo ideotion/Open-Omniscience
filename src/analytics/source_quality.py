@@ -1266,6 +1266,8 @@ def build_quality_report_files(
         per_source_keywords.append({
             "source_id": sid,
             "domain": src.domain if src else None,
+            # ids above the shipped catalogue differ between instances; domain + feed_key joins them
+            "feed_key": src.feed_key if src else None,
             "source_type": src.source_type if src else None,
             "top_keywords": [
                 {"term": t["term"], "normalized": t["normalized"], "articles": t["articles"],
@@ -1281,6 +1283,8 @@ def build_quality_report_files(
         per_source_summary.append({
             "source_id": sid,
             "domain": src.domain if src else None,
+            # ids above the shipped catalogue differ between instances; domain + feed_key joins them
+            "feed_key": src.feed_key if src else None,
             "source_type": src.source_type if src else None,
             "country": src.country if src else None,
             "language": src.language if src else None,
