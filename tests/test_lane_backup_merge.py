@@ -404,3 +404,77 @@ def test_the_restore_defers_lanes_while_the_queue_holds_the_corpus():
     assert block.index('report.get("held")') < block.index("merge_staged_lanes(")
     assert "deferred_report(lane_members)" in block and "record_lane_outcome(_digest" in block
     assert "lanes_pending(_digest)" in src
+
+
+def test_owed_lanes_survive_a_kill_and_stop_after_three_attempts(tmp_path, monkeypatch):
+    """Security read 2 on PR 2036: owed before the merge starts; never a full restore forever."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    store.dispose_all()
+    entry = {"name": "lanes/wiki.db", "kind": "wiki"}
+    failed = {"lanes": [{"kind": "wiki", "state": "failed", "reason": "x"}]}
+    lane_merge.mark_lanes_owed("k", [entry])  # ...and the process dies here
+    assert lane_merge.lanes_pending("k") is True
+    lane_merge.record_lane_outcome("k", failed)
+    lane_merge.mark_lanes_owed("k", [entry])
+    lane_merge.record_lane_outcome("k", failed)
+    assert lane_merge.lanes_pending("k") is True
+    lane_merge.mark_lanes_owed("k", [entry])
+    lane_merge.record_lane_outcome("k", failed)
+    assert lane_merge.lanes_pending("k") is False  # third attempt used: skipped like any merged backup
+    # A deferred lane uses up no attempt.
+    for _ in range(5):
+        lane_merge.record_lane_outcome("h", lane_merge.deferred_report([entry]))
+    assert lane_merge.lanes_pending("h") is True
+    lane_merge.mark_lanes_owed("other", [{"name": "lanes/osm.db", "kind": "osm"}])
+    assert lane_merge.lanes_pending("other") is False  # a lane this build cannot merge is never owed
+
+
+def test_a_backup_cannot_win_with_numbers_no_real_reading_reaches(machines, tmp_path):
+    """Security read 2 on PR 2036: future timestamps and unreachable revision ids never win."""
+    import sqlite3
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    dest = staging / "lanes" / "wiki.db"
+    shutil.copy2(snap, dest)
+    con = sqlite3.connect(dest)
+    con.execute("UPDATE versioned_entity_facts SET observed_at = '9999-01-01 00:00:00.000000', value_json = '\"FAKE\"'")
+    con.execute("UPDATE wiki_walk_pages SET walked_at = '9999-01-01 00:00:00.000000', title = 'FAKE'")
+    con.execute(
+        "UPDATE wiki_warm_pages SET latest_revid = 1000000000000001, previous_revid = 1000000000000000, "
+        "wanted_revid = 1000000000000001, latest_text = 'FAKE', previous_text = 'FAKE2'"
+    )
+    con.commit()
+    con.close()
+    rep = lane_merge.merge_staged_lanes(staging, [{"name": "lanes/wiki.db", "kind": "wiki"}], [None])
+    (lane,) = rep["lanes"]
+    assert lane["state"] == "merged", lane
+    assert lane["tables"]["wiki_warm_pages"]["texts_refused"] == 2
+    with store.lane_session("wiki") as s:
+        facts = {f.name: f.value_json for f in s.execute(select(VersionedEntityFact)).scalars()}
+        assert "FAKE" not in facts["length"] and "FAKE" not in facts["qid"]
+        walk = {w.page_id: w for w in s.execute(select(WikiWalkPage)).scalars()}
+        assert walk[10].title == "Old title"
+        assert walk[11].walked_at.year < 9999  # an absent page is stored, at the horizon at most
+        warm = s.execute(select(WikiWarmPage)).scalar_one()
+        assert (warm.latest_text, warm.previous_text) == ("w35", "w10")
+        assert warm.wanted_revid == 35
+
+
+def test_a_plaintext_lane_beside_an_encrypted_corpus_is_never_copied_out_in_the_clear(tmp_path, monkeypatch):
+    """Security read 2 on PR 2036: the snapshot is staged inside the destination folder."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    store.dispose_all()
+    try:
+        store.create_lane("wiki")
+        monkeypatch.setattr(store, "_corpus_is_encrypted", lambda: True)
+        dest = tmp_path / "out" / "lanes" / "wiki.db"
+        with pytest.raises(store.PlaintextLaneRefused):
+            lane_merge.snapshot_lane_for_backup("wiki", dest)
+        assert not dest.exists()
+    finally:
+        store.dispose_all()

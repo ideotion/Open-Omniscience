@@ -1001,12 +1001,17 @@ class VolumeBackupManager:
                     if lane_members:
                         from src.backup.lane_merge import (
                             deferred_report,
+                            mark_lanes_owed,
                             merge_staged_lanes,
                             record_lane_outcome,
                         )
                         from src.database.connect import get_passphrase
 
                         try:
+                            if not report.get("held"):
+                                # Owed from here until the outcome says otherwise: a kill
+                                # mid-merge must not let the next import skip this backup.
+                                mark_lanes_owed(_digest, lane_members)
                             if report.get("held"):
                                 # The corpus sits on the queue's working copy until its group
                                 # commits; lanes written now would outlive a group that fails.

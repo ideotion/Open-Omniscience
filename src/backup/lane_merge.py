@@ -37,10 +37,9 @@ is never written. Idempotent by construction: every insert is guarded by the nat
 every update by a strict comparison, so importing the same backup again changes nothing.
 
 NO PLAINTEXT ON DISK. The staged member keeps the SQLCipher encryption it was exported with
-and is attached with its key; nothing is decrypted into a file. The key is passed the way
-``connect.snapshot_preserving`` passes it (an escaped SQL literal, because ``ATTACH ... KEY``
-takes no bound parameter on every driver build) and is never logged: a failure is reported
-by its class only.
+and is attached with its key; nothing is decrypted into a file. The key is a bound
+parameter of ``ATTACH ... KEY ?`` (as ``connect.snapshot_to_plaintext`` binds it), never SQL
+text, and is never logged: a failure is reported by its class only.
 
 WHICH LANES. ``MERGEABLE_KINDS`` is the list this build can merge, and the export carries
 ONLY those, so a backup never holds a lane its own build could not put back. A lane member
@@ -57,7 +56,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -136,7 +135,6 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
     from src.database.connect import (
         DatabaseLockedError,
         _export,
-        _sql_literal_escape,
         connect,
         get_passphrase,
         is_encrypted_file,
@@ -149,6 +147,15 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
     dest.unlink(missing_ok=True)
     encrypted = bool(is_encrypted_file(src))
     if not encrypted:
+        from src.versioned.store import PlaintextLaneRefused, _corpus_is_encrypted
+
+        if _corpus_is_encrypted():
+            # The snapshot is staged inside the destination folder (a USB stick, say):
+            # a plaintext lane beside an encrypted corpus is never copied there in the clear.
+            raise PlaintextLaneRefused(
+                f"the {kind} lane is stored unencrypted beside an encrypted corpus; it is not "
+                "copied into the backup folder in the clear"
+            )
         snapshot_to_plaintext(src, dest)
         return {"name": member_name(kind), "kind": kind, "sqlcipher": False}
     key = get_passphrase()
@@ -157,7 +164,8 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
     page_size = attach_page_size()
     conn = connect(src, check_same_thread=False)
     try:
-        conn.execute(f"ATTACH DATABASE ? AS snap KEY '{_sql_literal_escape(key)}'", (str(dest),))
+        # The key is a bound parameter, never SQL text.
+        conn.execute("ATTACH DATABASE ? AS snap KEY ?", (str(dest), key))
         conn.execute(f"PRAGMA snap.cipher_page_size = {int(page_size)}")
         _export(conn, "snap")
         conn.execute("DETACH DATABASE snap")
@@ -174,7 +182,7 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     """ATTACH ``path`` as ``inc``, trying each key; refuse by name when none opens it."""
-    from src.database.connect import _sql_literal_escape, is_encrypted_file
+    from src.database.connect import is_encrypted_file
 
     encrypted = is_encrypted_file(path)
     if encrypted is None:
@@ -189,7 +197,7 @@ def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     for key in candidates:
         try:
             # Some driver builds refuse a wrong key at ATTACH, others at the first read.
-            conn.execute(f"ATTACH DATABASE ? AS inc KEY '{_sql_literal_escape(key)}'", (str(path),))
+            conn.execute("ATTACH DATABASE ? AS inc KEY ?", (str(path), key))  # the key is bound, never SQL text
             conn.execute("SELECT count(*) FROM inc.sqlite_master").fetchone()
             return
         except Exception:  # noqa: BLE001 - a wrong key reads as "not a database"; try the next
@@ -263,6 +271,7 @@ def _insert_select(
     overrides: dict[str, str],
     where: str,
     source_alias: str,
+    params: dict[str, Any] | None = None,
 ) -> int:
     """``INSERT INTO main.<table>`` the columns both files have (minus ``id``), each read as
     ``<alias>.<col>`` unless ``overrides`` gives its expression. Columns only the backup's
@@ -273,7 +282,8 @@ def _insert_select(
     exprs = [overrides.get(c, f'{source_alias}."{c}"') for c in cols]
     names = ", ".join(f'"{c}"' for c in cols)
     conn.execute(
-        f"INSERT INTO main.{table} ({names}) SELECT {', '.join(exprs)} FROM {source_from} WHERE {where}"  # noqa: S608  # nosec B608 # table/clauses are module literals; columns are the LIVE schema's own
+        f"INSERT INTO main.{table} ({names}) SELECT {', '.join(exprs)} FROM {source_from} WHERE {where}",  # noqa: S608  # nosec B608 # table/clauses are module literals; columns are the LIVE schema's own
+        params or {},
     )
     return _changes(conn)
 
@@ -393,22 +403,44 @@ def _merge_shared(conn: Any, out: dict[str, Any]) -> None:
             "UPDATE main.versioned_entity_facts AS m SET value_json = f.value_json, "
             "revision_ref = f.revision_ref, observed_at = f.observed_at "
             "FROM inc.versioned_entity_facts f JOIN temp.lm_ent e ON e.inc_id = f.entity_id "
-            "WHERE m.entity_id = e.loc_id AND m.name = f.name AND f.observed_at > m.observed_at"
+            "WHERE m.entity_id = e.loc_id AND m.name = f.name AND f.observed_at > m.observed_at "
+            "AND f.observed_at <= :horizon",
+            {"horizon": _horizon()},
         )
         updated = _changes(conn)
         n = _insert_select(
             conn,
             "versioned_entity_facts",
             source_from="inc.versioned_entity_facts f JOIN temp.lm_ent e ON e.inc_id = f.entity_id",
-            overrides={"entity_id": "e.loc_id"},
+            # A reading dated past this machine's clock is stored at the horizon, never later.
+            overrides={"entity_id": "e.loc_id", "observed_at": "MIN(f.observed_at, :horizon)"},
             where=(
                 "NOT EXISTS (SELECT 1 FROM main.versioned_entity_facts m "
                 "WHERE m.entity_id = e.loc_id AND m.name = f.name)"
             ),
             source_alias="f",
+            params={"horizon": _horizon()},
         )
         tables["versioned_entity_facts"] = {"inserted": n, "updated": updated}
     conn.execute("DROP TABLE IF EXISTS temp.lm_ent")
+
+
+#: How far past this machine's clock a backup's timestamp may sit and still count as a
+#: reading (clock skew between two of the operator's machines). A later one is not a
+#: reading anyone took: it never wins "the later reading wins" (L2), so a backup cannot
+#: pin a value that no honest reading could ever replace.
+_CLOCK_SKEW = timedelta(days=1)
+
+#: How far above this machine's highest revision of an edition a backup's revision may be
+#: and still displace a local text (L4). Wikipedia revision ids grow by tens of millions a
+#: year on the largest edition; a backup claiming more is not pooled, so it cannot evict
+#: the local texts with a number no real fetch would ever exceed.
+_REVID_REACH = 500_000_000
+
+
+def _horizon() -> str:
+    """The latest timestamp a backup may claim, in the lane's stored text format."""
+    return (datetime.now(UTC) + _CLOCK_SKEW).replace(tzinfo=None).isoformat(sep=" ")
 
 
 def _merge_walk(conn: Any, out: dict[str, Any]) -> None:
@@ -418,7 +450,9 @@ def _merge_walk(conn: Any, out: dict[str, Any]) -> None:
         "UPDATE main.wiki_walk_pages AS m SET title = i.title, qid = i.qid, "
         "length_bytes = i.length_bytes, last_revid = i.last_revid, walked_at = i.walked_at "
         "FROM inc.wiki_walk_pages i "
-        "WHERE i.edition = m.edition AND i.page_id = m.page_id AND i.walked_at > m.walked_at"
+        "WHERE i.edition = m.edition AND i.page_id = m.page_id AND i.walked_at > m.walked_at "
+        "AND i.walked_at <= :horizon",
+        {"horizon": _horizon()},
     )
     updated = _changes(conn)
     # ``pass_no`` counts THIS machine's walk passes; a page it never walked is pass 0, so the
@@ -427,12 +461,13 @@ def _merge_walk(conn: Any, out: dict[str, Any]) -> None:
         conn,
         "wiki_walk_pages",
         source_from="inc.wiki_walk_pages i",
-        overrides={"pass_no": "0"},
+        overrides={"pass_no": "0", "walked_at": "MIN(i.walked_at, :horizon)"},
         where=(
             "NOT EXISTS (SELECT 1 FROM main.wiki_walk_pages m "
             "WHERE m.edition = i.edition AND m.page_id = i.page_id)"
         ),
         source_alias="i",
+        params={"horizon": _horizon()},
     )
     out["tables"]["wiki_walk_pages"] = {"inserted": n, "updated": updated}
 
@@ -450,25 +485,37 @@ def _merge_warm(conn: Any, out: dict[str, Any]) -> None:
         overrides={},
         where=(
             "NOT EXISTS (SELECT 1 FROM main.wiki_warm_pages m "
-            "WHERE m.edition = i.edition AND m.page_id = i.page_id)"
+            "WHERE m.edition = i.edition AND m.page_id = i.page_id) "
+            "AND coalesce(i.latest_revid, 0) <= coalesce((SELECT max(x.latest_revid) "
+            "FROM main.wiki_warm_pages x WHERE x.edition = i.edition), :unbounded) + :reach"
         ),
         source_alias="i",
+        params={"reach": _REVID_REACH, "unbounded": 2**62},
     )
     # L4: pool both sides' texts by revision and keep the two newest (Q710). The join reads
     # revision numbers only; a text is read, one row at a time, only for a page that changes,
     # so a re-import of this machine's own backup never holds the lane's texts in memory.
+    horizon = _horizon()
+    # The highest revision this machine holds per edition, read before any update.
+    ceiling = {
+        str(ed): int(mx) + _REVID_REACH
+        for ed, mx in conn.execute(
+            "SELECT edition, max(latest_revid) FROM main.wiki_warm_pages "
+            "WHERE latest_revid IS NOT NULL GROUP BY edition"
+        )
+    }
     rows = conn.execute(
-        "SELECT m.id, i.id, m.latest_revid, m.previous_revid, i.latest_revid, i.previous_revid, "
+        "SELECT m.edition, m.id, i.id, m.latest_revid, m.previous_revid, i.latest_revid, i.previous_revid, "
         "m.wanted_revid, i.wanted_revid, m.due_since, i.due_since, m.fetched_at, i.fetched_at "
         "FROM main.wiki_warm_pages m JOIN inc.wiki_warm_pages i "
         "ON i.edition = m.edition AND i.page_id = m.page_id"
     )
     cols = ", ".join(f"{w}_{c}" for w in ("latest", "previous") for c in _WARM_TEXT)
     width = len(_WARM_TEXT)
-    updated = dropped = 0
+    updated = dropped = refused = 0
     changes: list[tuple[Any, ...]] = []
     for r in rows:
-        m_id, i_id, m_lat, m_prev, i_lat, i_prev, m_want, i_want, m_due, i_due, m_fetched, i_fetched = r
+        edition, m_id, i_id, m_lat, m_prev, i_lat, i_prev, m_want, i_want, m_due, i_due, m_fetched, i_fetched = r
         # (revid, schema, row id, slot): local first, so an equal revid keeps the local copy.
         pool: dict[int, tuple[str, int, str]] = {}
         for rv, schema, rid, slot in (
@@ -477,9 +524,18 @@ def _merge_warm(conn: Any, out: dict[str, Any]) -> None:
             (i_lat, "inc", i_id, "latest"),
             (i_prev, "inc", i_id, "previous"),
         ):
-            if rv is not None and int(rv) not in pool:
-                pool[int(rv)] = (schema, rid, slot)
+            if rv is None or int(rv) in pool:
+                continue
+            if schema == "inc" and int(rv) > ceiling.get(str(edition), 2**62):
+                refused += 1  # a revision no real fetch would reach: never pooled
+                continue
+            pool[int(rv)] = (schema, rid, slot)
         kept = sorted(pool, reverse=True)[:2]
+        cap = ceiling.get(str(edition), 2**62)
+        if i_want is not None and int(i_want) > cap:
+            i_want = None  # the same bound as the texts: a wanted revision no fetch would reach
+        if i_fetched is not None and str(i_fetched) > horizon:
+            i_fetched = None  # a fetch dated past this machine's clock is not a fetch
         wants = [w for w in (m_want, i_want) if w is not None]
         want = max(wants) if wants else None
         due = m_due if m_due is not None else i_due
@@ -525,6 +581,8 @@ def _merge_warm(conn: Any, out: dict[str, Any]) -> None:
         )
         updated += 1
     out["tables"]["wiki_warm_pages"] = {"inserted": n, "updated": updated}
+    if refused:
+        out["tables"]["wiki_warm_pages"]["texts_refused"] = refused
     out["warm_texts_dropped"] = dropped
 
 
@@ -660,28 +718,31 @@ def _read_pending() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+#: How many merge attempts an artifact's owed lanes get before it is skipped again like
+#: any merged artifact. A lane that can never merge (a member that is missing, a store
+#: nobody here holds the passphrase for) must not turn every re-import of it into a full
+#: restore for good; after the last attempt the report and the log say why.
+MAX_LANE_ATTEMPTS = 3
+
+
 def lanes_pending(digest: str | None) -> bool:
     """Whether an artifact with this digest still owes this machine a lane merge."""
-    return bool(digest) and digest in _read_pending()
-
-
-def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
-    """Remember (or forget) that this artifact's lanes are still owed. Never raises."""
     if not digest:
-        return
-    owed = sorted(
-        {str(x.get("kind")) for x in living.get("lanes") or () if isinstance(x, dict) and x.get("state") in ("failed", "deferred")}
-    )
-    if living.get("error"):
-        owed = owed or ["all"]
+        return False
+    entry = _read_pending().get(digest)
+    if not isinstance(entry, dict):
+        return False
+    try:
+        return int(entry.get("attempts") or 0) < MAX_LANE_ATTEMPTS
+    except (TypeError, ValueError):
+        return False
+
+
+def _write_pending(update: Any) -> None:
     try:
         with _PENDING_LOCK:
             cur = _read_pending()
-            if owed:
-                cur[digest] = {"kinds": owed, "at": datetime.now(UTC).isoformat(timespec="seconds")}
-            elif digest in cur:
-                del cur[digest]
-            else:
+            if not update(cur):
                 return
             path = _pending_path()
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -690,6 +751,60 @@ def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
             os.replace(tmp, path)
     except OSError as exc:
         _LOG.warning("could not record which living sources are still owed (%s)", type(exc).__name__)
+
+
+def mark_lanes_owed(digest: str | None, lane_members: Iterable[Any]) -> None:
+    """Before a merge starts: the lanes are owed until it says otherwise, so a kill mid-merge
+    (after the corpus already recorded the artifact as merged) never loses them. Never raises."""
+    kinds = sorted({k for k in (valid_member(e) for e in lane_members or ()) if k in MERGEABLE_KINDS})
+    if not digest or not kinds:
+        return
+
+    def update(cur: dict[str, Any]) -> bool:
+        got = cur.get(digest)
+        prev: dict[str, Any] = got if isinstance(got, dict) else {}
+        try:
+            attempts = int(prev.get("attempts") or 0) + 1
+        except (TypeError, ValueError):
+            attempts = 1
+        cur[digest] = {"kinds": kinds, "attempts": attempts, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+        return True
+
+    _write_pending(update)
+
+
+def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
+    """Remember (or forget) that this artifact's lanes are still owed. Never raises.
+
+    A deferred lane (held behind the import queue) was never attempted, so it does not use
+    up an attempt; a failed one keeps the count ``mark_lanes_owed`` set.
+    """
+    if not digest:
+        return
+    lanes = [x for x in living.get("lanes") or () if isinstance(x, dict)]
+    owed = sorted({str(x.get("kind")) for x in lanes if x.get("state") in ("failed", "deferred")})
+    if living.get("error"):
+        owed = owed or ["all"]
+
+    def update(cur: dict[str, Any]) -> bool:
+        if not owed:
+            if digest in cur:
+                del cur[digest]
+                return True
+            return False
+        got = cur.get(digest)
+        prev: dict[str, Any] = got if isinstance(got, dict) else {}
+        attempts = prev.get("attempts") or 0  # a deferred lane was never attempted: no count added
+        cur[digest] = {"kinds": owed, "attempts": attempts, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+        return True
+
+    _write_pending(update)
+    if owed and not lanes_pending(digest):
+        _LOG.warning(
+            "the living sources of one backup did not merge after %d attempts; it is now skipped like "
+            "any merged backup (re-import it with force to try again)",
+            MAX_LANE_ATTEMPTS,
+        )
 
 
 def deferred_report(lane_members: Iterable[Any]) -> dict[str, Any]:
