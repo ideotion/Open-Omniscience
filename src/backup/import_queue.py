@@ -666,6 +666,8 @@ class ImportQueueManager:
         for raw in items or []:
             if raw.get("kind") != "corpus" or not raw.get("path"):
                 continue
+            if not raw.get("force") and ImportQueueManager._already_merged(str(raw["path"])):
+                continue  # the run skips it without reading it (volume_job's already-merged answer), so it cannot stop the start
             reason = backup_manifest_refusal(str(raw["path"]))
             if reason:
                 refused.append(f"{raw.get('label') or Path(str(raw.get('path'))).name} ({reason})")
@@ -674,6 +676,20 @@ class ImportQueueManager:
                 "These backups cannot be imported: " + "; ".join(refused) + ". Nothing was started; remove them from "
                 "the list and import again."
             )
+
+    @staticmethod
+    def _already_merged(path: str) -> bool:
+        """True when the run will skip this backup as already merged, the answer ``volume_job`` gives before it reads anything: a
+        committed import of the same artifact whose living sources are not still owed (R729). Any doubt answers False, so the
+        manifest is checked: "cannot tell" is never "already done"."""
+        try:
+            from src.backup.lane_merge import lanes_pending
+            from src.backup.merge import artifact_source_digest, find_completed_import
+
+            digest = artifact_source_digest(path)
+            return bool(digest) and find_completed_import(digest) is not None and not lanes_pending(digest)
+        except Exception:  # noqa: BLE001 - an unanswerable question is a "no": the manifest is checked as for any other item
+            return False
 
     @staticmethod
     def _refuse_wrong_backup_passphrases(items: list[dict], passphrase: str) -> None:
