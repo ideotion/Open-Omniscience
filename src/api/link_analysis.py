@@ -32,6 +32,7 @@ from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
 from src.database.outlet import OutletMap, outlet_expr, outlets_unhealed
 from src.database.session import get_db
+from src.database.source_names import shown_source_name
 from src.database.stand_in import not_a_stand_in_article_id, stand_in_article_ids
 
 router = APIRouter(prefix="/api/links", tags=["links"])
@@ -355,19 +356,19 @@ def articles_by_link(
         articles = []
         if ids:
             rows = (
-                db.query(Article, Source.name)
+                db.query(Article, Source.name, Source.domain)
                 .outerjoin(Source, Article.source_id == Source.id)
                 .filter(Article.id.in_(ids[:limit]))
                 .order_by(desc(func.coalesce(Article.published_at, Article.created_at)))
                 .all()
             )
-            for art, source_name in rows:
+            for art, source_name, source_domain in rows:
                 articles.append(
                     {
                         "id": art.id,
                         "title": art.title,
                         "url": art.url,
-                        "source": source_name,
+                        "source": shown_source_name(source_name, source_domain),
                         "language": art.language,
                         "published_at": art.published_at.isoformat() if art.published_at else None,
                     }

@@ -101,7 +101,7 @@ def framing(
 
             by_source: dict[str, list[dict]] = {}
             for a in articles:
-                source = a.source.name if a.source else "Unknown"
+                source = a.source.display_name if a.source else "Unknown"
                 by_source.setdefault(source, []).append(
                     {
                         "title": a.title,

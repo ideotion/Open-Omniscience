@@ -425,10 +425,61 @@ def debug_bundle(
             "kill_switch": kill_switch_active(),
         }
 
+    def _source_split() -> dict:
+        from src.catalog.qualification import STATUS_QUALIFIED
+        from src.database.source_names import is_bare_qid
+
+        enabled = Source.enabled.is_(True)
+        return {
+            "sources_collecting": int(db.query(func.count(Source.id)).filter(
+                enabled, Source.status == STATUS_QUALIFIED).scalar() or 0),
+            "sources_enabled_not_qualified": int(db.query(func.count(Source.id)).filter(
+                enabled, Source.status != STATUS_QUALIFIED).scalar() or 0),
+            "sources_not_enabled": int(db.query(func.count(Source.id)).filter(
+                Source.enabled.is_(False)).scalar() or 0),
+            "sources_named_by_bare_id": sum(
+                1 for (n,) in db.query(Source.name).filter(Source.name.like("Q%")) if is_bare_qid(n)),
+            "sources_never_stored": _never_stored(),
+        }
+
+    def _never_stored() -> dict:
+        """Field test 2026-11-14 row 39: about 25,000 sources had never stored an article and nothing
+        said why. Counts only, grouped by what decides whether a source is collected at all: enabled,
+        status, whether it has a feed, the newest qualification attempt's verdict, and whether the
+        collector ever checked its feed (and the last HTTP status it saw). A few dozen rows at most."""
+        from sqlalchemy import text as _text
+
+        rows = db.execute(_text(
+            "SELECT s.enabled, s.status, "
+            "       CASE WHEN s.rss_url IS NOT NULL AND s.rss_url != '' THEN 1 ELSE 0 END, "
+            "       (SELECT a.verdict FROM source_qualification_attempts a WHERE a.source_id = s.id "
+            "        ORDER BY a.attempted_at DESC, a.id DESC LIMIT 1), "
+            "       CASE WHEN f.last_checked_at IS NULL THEN NULL ELSE COALESCE(f.last_status, 0) END, "
+            "       COUNT(*) "
+            "FROM sources s LEFT JOIN feed_fetch_state f ON f.source_id = s.id "
+            "WHERE NOT EXISTS (SELECT 1 FROM articles x WHERE x.source_id = s.id) "
+            "GROUP BY 1, 2, 3, 4, 5 ORDER BY 6 DESC LIMIT 200"
+        )).all()
+        return {
+            "total": sum(int(r[5]) for r in rows),
+            "groups": [
+                {"enabled": None if r[0] is None else bool(r[0]), "status": r[1], "has_feed": bool(r[2]),
+                 "last_attempt": r[3] or "never attempted",
+                 "feed_checked": r[4] is not None, "last_http_status": (int(r[4]) or None) if r[4] is not None else None,
+                 "sources": int(r[5])}
+                for r in rows
+            ],
+            "method": "sources with no stored article (quarantined ones count as stored), grouped; at most 200 groups",
+        }
+
     def _corpus() -> dict:
         return {
             "articles": int(db.query(func.count(Article.id)).scalar() or 0),
             "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+            # Field test 2026-11-14 row 71: the flat count above read 20k-37k across instances, most of it
+            # discovery candidates never enabled. The headline figure is what collection reaches; the
+            # other parts say what the rest is (they partition the flat count; ids-as-names overlaps them).
+            **_source_split(),
             "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
             "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
         }

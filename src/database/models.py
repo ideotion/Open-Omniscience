@@ -533,6 +533,13 @@ class Source(Base):
         Index("idx_source_last_crawled", "last_crawled_at"),
     )
 
+    @property
+    def display_name(self) -> str:
+        """The name to SHOW: the domain when the stored name is a bare Wikidata id (row 71)."""
+        from src.database.source_names import shown_source_name
+
+        return shown_source_name(self.name, self.domain) or self.name
+
     def __repr__(self):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"
 
