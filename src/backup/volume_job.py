@@ -684,6 +684,14 @@ class VolumeBackupManager:
                     "imported_at": None,
                     "in_open_checkpoint_group": True,
                 }
+            if _already is not None and not _already.get("in_open_checkpoint_group"):
+                # R729: an artifact whose living sources did not merge last time is run again
+                # (its corpus merge is a no-op), so its lanes are never left behind for good.
+                from src.backup.lane_merge import lanes_pending
+
+                if lanes_pending(_digest):
+                    _LOG.info("importing %s again: its living sources are still owed", srcp)
+                    _already = None
             if _already is not None:
                 summary = {
                     "skipped": "already-merged",
@@ -991,14 +999,32 @@ class VolumeBackupManager:
                     # members here and this adds nothing to the report.
                     lane_members = getattr(staged, "lane_members", None)
                     if lane_members:
-                        from src.backup.lane_merge import merge_staged_lanes
+                        from src.backup.lane_merge import (
+                            deferred_report,
+                            merge_staged_lanes,
+                            record_lane_outcome,
+                        )
                         from src.database.connect import get_passphrase
 
-                        report["living_sources"] = merge_staged_lanes(
-                            staged.staging_dir,
-                            lane_members,
-                            [corpus_passphrase, get_passphrase(), passphrase],
-                        )
+                        try:
+                            if report.get("held"):
+                                # The corpus sits on the queue's working copy until its group
+                                # commits; lanes written now would outlive a group that fails.
+                                report["living_sources"] = deferred_report(lane_members)
+                            else:
+                                report["living_sources"] = merge_staged_lanes(
+                                    staged.staging_dir,
+                                    lane_members,
+                                    [corpus_passphrase, get_passphrase(), passphrase],
+                                )
+                        except Exception as exc:  # noqa: BLE001 - the corpus already committed; never report it as failed
+                            log_failure(_LOG, "merging the living sources failed", exc, passphrase, corpus_passphrase, level=logging.WARNING)
+                            report["living_sources"] = {
+                                "lanes": [],
+                                "error": record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                                "method": "The corpus restored; merging the living sources did not, and they are unchanged.",
+                            }
+                        record_lane_outcome(_digest, report["living_sources"])
                         # The restore persisted its report before the lanes merged: add the
                         # lanes' outcome to it (additive; never a figure the restore measured).
                         if report.get("persisted_report_path"):

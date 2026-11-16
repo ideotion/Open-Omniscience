@@ -648,6 +648,8 @@ def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
             "switch still decide whether anything is fetched."
         )
         lines.append("")
+    if living.get("error"):
+        lines.append(f"- Not merged ({living.get('error')}). The stores here are unchanged.")
     for lane in living.get("lanes") or ():
         if not isinstance(lane, dict):
             continue

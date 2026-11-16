@@ -167,6 +167,7 @@ def test_merge_follows_r729_and_is_idempotent(machines, tmp_path):
     again = lane_merge.merge_staged_lanes(staging, [{"name": "lanes/wiki.db", "kind": "wiki"}], [None])
     assert again["lanes"][0]["state"] == "merged"
     assert again["newly_followed"] == 0
+    assert again["lanes"][0]["warm_texts_dropped"] == 0  # nothing changed, so nothing was dropped
     assert all(v.get("inserted", 0) == 0 and v.get("updated", 0) == 0 and v.get("filled", 0) == 0 and v.get("kept_as_revision", 0) == 0
                for v in again["lanes"][0]["tables"].values())
     assert _snapshot_state() == before
@@ -308,3 +309,89 @@ def test_the_export_request_records_the_living_sources_and_a_resume_keeps_them(t
     assert read_export_request(d)["lanes"] is True
     write_export_request(d, corpus=False, categories=["wiki_dumps"], phase="folder", lanes=True)
     assert read_export_request(d)["lanes"] is False  # never without the corpus artifact
+
+
+def test_a_hostile_member_is_refused_before_anything_is_read(machines, tmp_path):
+    """Security read 1 on PR 2036: the member is untrusted input inside a keyed connection.
+
+    A non-integer page size, a member without the lane stamp, a stamp naming another kind,
+    and a view or a virtual table under a name the merge reads are each refused with a fixed
+    sentence that never echoes what the member said, and the lane is left as it was.
+    """
+    import sqlite3
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    before = _snapshot_state()
+    entry = {"name": "lanes/wiki.db", "kind": "wiki"}
+
+    for bad in ("x", [1], 4096.0, True):
+        rep = lane_merge.merge_staged_lanes(tmp_path, [dict(entry, sqlcipher=True, page_size=bad)], [None])
+        assert rep["lanes"][0]["state"] == "not-merged", bad
+
+    def staged(edit) -> Path:
+        staging = tmp_path / f"st-{edit.__name__}"
+        (staging / "lanes").mkdir(parents=True)
+        dest = staging / "lanes" / "wiki.db"
+        shutil.copy2(snap, dest)
+        con = sqlite3.connect(dest)
+        edit(con)
+        con.commit()
+        con.close()
+        return staging
+
+    def no_stamp(con):
+        con.execute("DROP TABLE lane_meta")
+
+    def other_kind(con):
+        con.execute("UPDATE lane_meta SET kind = '[click me](http://x.test) " + "y" * 5000 + "'")
+
+    def view(con):
+        con.execute("DROP TABLE wiki_walk_pages")
+        con.execute("CREATE VIEW wiki_walk_pages AS SELECT 1 AS page_id")
+
+    def virtual(con):
+        con.execute("DROP TABLE wiki_walk_pages")
+        con.execute("CREATE VIRTUAL TABLE wiki_walk_pages USING fts5(title)")
+
+    for edit in (no_stamp, other_kind, view, virtual):
+        rep = lane_merge.merge_staged_lanes(staged(edit), [entry], [None])
+        (lane,) = rep["lanes"]
+        assert lane["state"] == "failed", (edit.__name__, lane)
+        assert "click me" not in lane["reason"] and len(lane["reason"]) <= 300, edit.__name__
+    assert _snapshot_state() == before
+
+
+def test_lanes_that_did_not_merge_are_owed_until_they_do(tmp_path, monkeypatch):
+    """Correctness read on PR 2036: a failed or held lane merge must not be skipped for good.
+
+    The corpus of an artifact is skipped on its second import; when its lanes did not merge,
+    the digest is remembered so that import runs again, and forgotten once they merge.
+    """
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    store.dispose_all()
+    entry = {"name": "lanes/wiki.db", "kind": "wiki"}
+    assert lane_merge.lanes_pending("d1") is False
+    held = lane_merge.deferred_report([entry, "junk"])
+    assert [x["state"] for x in held["lanes"]] == ["deferred"] and held["newly_followed"] == 0
+    lane_merge.record_lane_outcome("d1", held)
+    assert lane_merge.lanes_pending("d1") is True
+    lane_merge.record_lane_outcome("d2", {"lanes": [{"kind": "wiki", "state": "failed", "reason": "x"}]})
+    lane_merge.record_lane_outcome("d3", {"lanes": [], "error": "boom"})
+    lane_merge.record_lane_outcome("d4", {"lanes": [{"kind": "osm", "state": "not-merged"}]})
+    assert [lane_merge.lanes_pending(d) for d in ("d2", "d3", "d4")] == [True, True, False]
+    lane_merge.record_lane_outcome("d1", {"lanes": [{"kind": "wiki", "state": "merged"}]})
+    assert lane_merge.lanes_pending("d1") is False and lane_merge.lanes_pending("d2") is True
+    raw = (tmp_path / "lane_merge_pending.json").read_text(encoding="utf-8")
+    assert "boom" not in raw  # digests and kinds only
+
+
+def test_the_restore_defers_lanes_while_the_queue_holds_the_corpus():
+    """The lanes of a held item are not written to the live store (source-level pin)."""
+    src = (Path(__file__).resolve().parents[1] / "src" / "backup" / "volume_job.py").read_text(encoding="utf-8")
+    block = src[src.index("R729: the living-source stores"):]
+    block = block[: block.index("with self._lock:")]
+    assert block.index('report.get("held")') < block.index("merge_staged_lanes(")
+    assert "deferred_report(lane_members)" in block and "record_lane_outcome(_digest" in block
+    assert "lanes_pending(_digest)" in src

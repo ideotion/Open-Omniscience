@@ -50,10 +50,14 @@ from a NEWER build that this one does not know is left unmerged and reported as 
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
+import os
 import sqlite3
+import threading
 import time
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -178,6 +182,10 @@ def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     # The member was written at SQLCipher's compiled-in page size (snapshot_lane_for_backup
     # says why), which is the only size an ATTACH reads a keyed file at.
     candidates = [k for k in dict.fromkeys(keys) if k] if encrypted else [""]
+    # The member is untrusted input attached inside a keyed live connection: SQL its schema
+    # carries (view bodies, defaults, generated columns, virtual-table modules) may run only
+    # with functions SQLite marks innocuous. _refuse_unsafe_inc then refuses the rest by name.
+    conn.execute("PRAGMA trusted_schema = OFF")
     for key in candidates:
         try:
             # Some driver builds refuse a wrong key at ATTACH, others at the first read.
@@ -191,6 +199,37 @@ def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
         "the lane member is encrypted and none of the available passphrases open it; "
         "pass the source store's own passphrase to merge it"
     )
+
+
+#: Every table the merge reads from the attached member.
+_READ_TABLES = frozenset(
+    {
+        "lane_meta",
+        "versioned_entities",
+        "versioned_revisions",
+        "versioned_baselines",
+        "versioned_changes",
+        "versioned_entity_facts",
+        "wiki_walk_pages",
+        "wiki_warm_pages",
+    }
+)
+
+
+def _refuse_unsafe_inc(conn: Any) -> None:
+    """Refuse a member whose tables the merge reads are not plain tables.
+
+    A real snapshot holds ordinary tables under these names. A view, a virtual table or a
+    generated column under one of them would run SQL the backup's author chose inside this
+    machine's keyed connection, so the member is refused before anything is read from it.
+    """
+    rows = conn.execute("SELECT type, name, sql FROM inc.sqlite_master WHERE name IN ({})".format(",".join("?" * len(_READ_TABLES))), tuple(sorted(_READ_TABLES))).fetchall()  # noqa: S608  # nosec B608 # placeholders only
+    for typ, name, sql in rows:
+        if typ != "table" or str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL"):
+            raise LaneMergeError("the lane member holds a table this build does not merge from (not a plain table); refusing to merge it")
+        hidden = [r for r in conn.execute(f'PRAGMA inc.table_xinfo("{name}")').fetchall() if int(r[6] or 0) != 0]
+        if hidden:
+            raise LaneMergeError("the lane member holds a table with computed columns; refusing to merge it")
 
 
 def _columns(conn: Any, schema: str, table: str) -> list[str]:
@@ -257,9 +296,11 @@ def _merge_shared(conn: Any, out: dict[str, Any]) -> None:
         )
         filled = _changes(conn)
     absent = "NOT EXISTS (SELECT 1 FROM main.versioned_entities m WHERE m.external_id = i.external_id)"
+    # A page the backup marked deleted is stored, never counted as followed.
+    live = " AND i.deleted_at IS NULL" if "deleted_at" in inc_cols else ""
     row = conn.execute(
         "SELECT count(*), coalesce(sum(CASE WHEN i.watching THEN 1 ELSE 0 END), 0) "  # nosec B608 # the clause is a module literal
-        f"FROM inc.versioned_entities i WHERE {absent}"
+        f"FROM inc.versioned_entities i WHERE {absent}{live}"
     ).fetchone()
     out["newly_followed"] = int(row[1]) if "watching" in inc_cols else int(row[0])
     # ``last_checked_at`` is when THIS machine asked (a different fact from when the
@@ -413,43 +454,74 @@ def _merge_warm(conn: Any, out: dict[str, Any]) -> None:
         ),
         source_alias="i",
     )
-    # L4: pool both sides' texts by revision and keep the two newest (Q710).
-    sel = ", ".join(
-        f"{side}.{w}_{c}" for side in ("m", "i") for w in ("latest", "previous") for c in _WARM_TEXT
-    )
+    # L4: pool both sides' texts by revision and keep the two newest (Q710). The join reads
+    # revision numbers only; a text is read, one row at a time, only for a page that changes,
+    # so a re-import of this machine's own backup never holds the lane's texts in memory.
     rows = conn.execute(
-        f"SELECT m.id, m.wanted_revid, i.wanted_revid, m.due_since, i.due_since, m.fetched_at, "  # noqa: S608  # nosec B608 # columns from the module's _WARM_TEXT list
-        f"i.fetched_at, {sel} FROM main.wiki_warm_pages m JOIN inc.wiki_warm_pages i "
+        "SELECT m.id, i.id, m.latest_revid, m.previous_revid, i.latest_revid, i.previous_revid, "
+        "m.wanted_revid, i.wanted_revid, m.due_since, i.due_since, m.fetched_at, i.fetched_at "
+        "FROM main.wiki_warm_pages m JOIN inc.wiki_warm_pages i "
         "ON i.edition = m.edition AND i.page_id = m.page_id"
-    ).fetchall()
+    )
+    cols = ", ".join(f"{w}_{c}" for w in ("latest", "previous") for c in _WARM_TEXT)
+    width = len(_WARM_TEXT)
     updated = dropped = 0
+    changes: list[tuple[Any, ...]] = []
     for r in rows:
-        row_id, m_want, i_want, m_due, i_due, m_fetched, i_fetched = r[:7]
-        texts = r[7:]
-        width = len(_WARM_TEXT)
-        slots = [tuple(texts[k * width:(k + 1) * width]) for k in range(4)]  # m.latest, m.prev, i.latest, i.prev
-        local = slots[:2]
-        pool: dict[int, tuple] = {}
-        for s in slots:  # local first: an equal revid keeps the local copy
-            if s[0] is not None and int(s[0]) not in pool:
-                pool[int(s[0])] = s
+        m_id, i_id, m_lat, m_prev, i_lat, i_prev, m_want, i_want, m_due, i_due, m_fetched, i_fetched = r
+        # (revid, schema, row id, slot): local first, so an equal revid keeps the local copy.
+        pool: dict[int, tuple[str, int, str]] = {}
+        for rv, schema, rid, slot in (
+            (m_lat, "main", m_id, "latest"),
+            (m_prev, "main", m_id, "previous"),
+            (i_lat, "inc", i_id, "latest"),
+            (i_prev, "inc", i_id, "previous"),
+        ):
+            if rv is not None and int(rv) not in pool:
+                pool[int(rv)] = (schema, rid, slot)
         kept = sorted(pool, reverse=True)[:2]
-        dropped += sum(1 for rv, s in pool.items() if rv not in kept and s[1] is not None)
-        latest = pool[kept[0]] if kept else (None,) * width
-        previous = pool[kept[1]] if len(kept) > 1 else (None,) * width
         wants = [w for w in (m_want, i_want) if w is not None]
         want = max(wants) if wants else None
         due = m_due if m_due is not None else i_due
-        if latest[0] is not None and (want is None or int(latest[0]) >= int(want)):
+        if kept and (want is None or kept[0] >= int(want)):
             due = None
         fetched = max([f for f in (m_fetched, i_fetched) if f is not None], default=None)
-        if (latest, previous) == tuple(local) and want == m_want and due == m_due and fetched == m_fetched:
+        keep_src = [pool[k] for k in kept]
+        local_src = [("main", m_id, "latest")] if m_lat is not None else []
+        if m_prev is not None:
+            local_src.append(("main", m_id, "previous"))
+        if keep_src == local_src and want == m_want and due == m_due and fetched == m_fetched:
             continue
+        changes.append((m_id, keep_src, [rv for rv in pool if rv not in kept], i_id, want, due, fetched))
+    for m_id, keep_src, lost, i_id, want, due, fetched in changes:
+        texts: list[tuple[Any, ...]] = []
+        for schema, rid, slot in keep_src:
+            texts.append(
+                tuple(
+                    conn.execute(
+                        f"SELECT {', '.join(f'{slot}_{c}' for c in _WARM_TEXT)} FROM {schema}.wiki_warm_pages WHERE id = ?",  # noqa: S608  # nosec B608 # slot/schema are module literals
+                        (rid,),
+                    ).fetchone()
+                )
+            )
+        while len(texts) < 2:
+            texts.append((None,) * width)
+        # Only texts that existed count as dropped, and only on a page this merge changes.
+        if lost:
+            m_row = conn.execute(f"SELECT {cols} FROM main.wiki_warm_pages WHERE id = ?", (m_id,)).fetchone()  # noqa: S608  # nosec B608 # columns from _WARM_TEXT
+            i_row = conn.execute(f"SELECT {cols} FROM inc.wiki_warm_pages WHERE id = ?", (i_id,)).fetchone()  # noqa: S608  # nosec B608 # columns from _WARM_TEXT
+            seen: set[int] = set()
+            for row_ in (m_row, i_row):
+                for k in range(2):
+                    rv, txt = row_[k * width], row_[k * width + 1]
+                    if rv is not None and int(rv) in lost and int(rv) not in seen and txt is not None:
+                        seen.add(int(rv))
+            dropped += len(seen)
         conn.execute(
             "UPDATE main.wiki_warm_pages SET latest_revid = ?, latest_text = ?, latest_bytes = ?, "
             "latest_revised_at = ?, previous_revid = ?, previous_text = ?, previous_bytes = ?, "
             "previous_revised_at = ?, wanted_revid = ?, due_since = ?, fetched_at = ? WHERE id = ?",
-            (*latest, *previous, want, due, fetched, row_id),
+            (*texts[0], *texts[1], want, due, fetched, m_id),
         )
         updated += 1
     out["tables"]["wiki_warm_pages"] = {"inserted": n, "updated": updated}
@@ -479,11 +551,14 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
         conn.isolation_level = None
         _attach(conn, path, keys)
         try:
+            _refuse_unsafe_inc(conn)
             meta = None
             if _has(conn, "inc", "lane_meta"):
                 meta = conn.execute("SELECT kind FROM inc.lane_meta ORDER BY id LIMIT 1").fetchone()
-            if meta is not None and meta[0] != kind:
-                raise LaneMergeError(f"the member named {kind} holds a {meta[0]} lane; refusing to merge it")
+            # Every lane file stamps lane_meta when it is created, so a member without the
+            # stamp, or with another kind's, is not this lane. The stamp is never echoed.
+            if meta is None or meta[0] != kind:
+                raise LaneMergeError(f"the member named {kind} is not a {kind} lane; refusing to merge it")
             conn.execute("BEGIN IMMEDIATE")
             try:
                 for step in _STEPS[kind]:
@@ -501,6 +576,10 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
     dispose_lane(kind)
     out["seconds"] = round(time.monotonic() - t0, 3)
     return out
+
+
+#: The longest failure reason a lane row keeps.
+_REASON_LIMIT = 300
 
 
 def merge_staged_lanes(
@@ -530,7 +609,9 @@ def merge_staged_lanes(
             )
             continue
         size = entry.get("page_size")
-        if entry.get("sqlcipher") and size is not None and int(size) != attach_page_size():
+        # The manifest is untrusted: a page size that is not a plain integer is refused, never parsed.
+        bad_size = size is not None and (isinstance(size, bool) or not isinstance(size, int))
+        if entry.get("sqlcipher") and (bad_size or (size is not None and size != attach_page_size())):
             report["lanes"].append(
                 {"kind": kind, "state": "not-merged", "reason": "the lane was written at a page size this build's encryption library cannot attach"}
             )
@@ -543,7 +624,7 @@ def merge_staged_lanes(
         except (LaneMergeError, DatabaseLockedError, PlaintextLaneRefused) as exc:
             # This module's own sentences, and the lane store's named refusals (locked; a
             # plaintext lane beside an encrypted corpus): scrubbed all the same.
-            report["lanes"].append({"kind": kind, "state": "failed", "reason": record_text(exc, *keys)})
+            report["lanes"].append({"kind": kind, "state": "failed", "reason": record_text(exc, *keys, limit=_REASON_LIMIT)})
         except sqlite3.Error as exc:
             _LOG.warning("merging the %s lane failed (%s); the lane is unchanged", kind, type(exc).__name__)
             report["lanes"].append({"kind": kind, "state": "failed", "reason": f"database error ({type(exc).__name__}); the lane is unchanged"})
@@ -552,3 +633,80 @@ def merge_staged_lanes(
             report["lanes"].append({"kind": kind, "state": "failed", "reason": f"{type(exc).__name__}; the lane is unchanged"})
     report["newly_followed"] = sum(int(x.get("newly_followed") or 0) for x in report["lanes"])
     return report
+
+
+# --------------------------------------------------------------------------- #
+#  Lanes still owed by an artifact whose corpus already merged
+# --------------------------------------------------------------------------- #
+#: An artifact's corpus is skipped on a second import once it has merged. When its lanes
+#: did NOT merge (a failure, or a queue holding the corpus on a working copy) the digest is
+#: recorded here, so the next import of that artifact runs instead of being skipped and the
+#: lanes are not left behind for good. Digests and kinds only: no secret, no path, no text.
+_PENDING_NAME = "lane_merge_pending.json"
+_PENDING_LOCK = threading.Lock()
+
+
+def _pending_path() -> Path:
+    from src.versioned.store import lane_path
+
+    return lane_path("wiki").parent / _PENDING_NAME
+
+
+def _read_pending() -> dict[str, Any]:
+    try:
+        raw = json.loads(_pending_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def lanes_pending(digest: str | None) -> bool:
+    """Whether an artifact with this digest still owes this machine a lane merge."""
+    return bool(digest) and digest in _read_pending()
+
+
+def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
+    """Remember (or forget) that this artifact's lanes are still owed. Never raises."""
+    if not digest:
+        return
+    owed = sorted(
+        {str(x.get("kind")) for x in living.get("lanes") or () if isinstance(x, dict) and x.get("state") in ("failed", "deferred")}
+    )
+    if living.get("error"):
+        owed = owed or ["all"]
+    try:
+        with _PENDING_LOCK:
+            cur = _read_pending()
+            if owed:
+                cur[digest] = {"kinds": owed, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+            elif digest in cur:
+                del cur[digest]
+            else:
+                return
+            path = _pending_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cur, sort_keys=True), encoding="utf-8")
+            os.replace(tmp, path)
+    except OSError as exc:
+        _LOG.warning("could not record which living sources are still owed (%s)", type(exc).__name__)
+
+
+def deferred_report(lane_members: Iterable[Any]) -> dict[str, Any]:
+    """The lanes of an artifact whose corpus is held on an import queue's working copy."""
+    lanes = []
+    for entry in lane_members or ():
+        kind = valid_member(entry)
+        if kind is None:
+            continue
+        lanes.append(
+            {
+                "kind": kind,
+                "state": "deferred",
+                "reason": (
+                    "the corpus from this backup is waiting for the rest of its import group, so its "
+                    "living sources were not merged yet; importing this backup again merges them"
+                ),
+            }
+        )
+    return {"lanes": lanes, "method": METHOD, "newly_followed": 0}
