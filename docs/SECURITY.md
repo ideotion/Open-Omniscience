@@ -295,9 +295,12 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   analytics offload folders under `duckdb_tmp`, SQLite's own temp files) are deleted, never overwritten: the app closes
   the serves that hold them and removes their folders (`src/scheduler/release.py`), and nothing it can do from a file
   system API reaches the blocks those files occupied. Until the disk reuses them, their plaintext may be recoverable from
-  a seized disk, exactly as an old database's freed pages are. Only full-disk encryption covers that; the encrypt panel
-  says so beside its escape-hatch note (×12). The panic wipe's full rewrite overwrites what is still a file, and the same
-  limit applies to what is not.
+  a seized disk, exactly as an old database's freed pages are, and so may the escape-hatch snapshot's once it is deleted.
+  Full-disk encryption is the reliable protection; overwriting free space (offered after a panic wipe) helps on some disks
+  and is not reliable on SSDs or copy-on-write file systems. The encrypt panel says so beside its escape-hatch note and the
+  panic wipe beside its free-space offer (×12). The panic wipe's full rewrite overwrites what is still a file, and the same
+  limit applies to what is not. The operator CLI `scripts/encrypt_db.py` must run with the app stopped: run beside a live
+  app it replaces the file under it, and the app's plaintext-era serves and folders stay until it restarts.
 - **A crash of the running app leaves no core dump where the platform allows it** (2026-10-06; by platform below). Once the store is unlocked its passphrase and key are in
   the memory of the process that opened it, and a native crash (SIGSEGV, SIGABRT, SIGBUS) asks the kernel to write that
   memory out as a core dump, to a file or to a program that keeps it for weeks (systemd-coredump, apport, abrt). So every

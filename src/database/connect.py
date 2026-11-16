@@ -177,11 +177,12 @@ class WrongPassphraseError(RuntimeError):
 
 
 def set_passphrase(p: str | None) -> None:
-    global _passphrase
+    global _passphrase, _key_generation
     if p:
         _guard_the_key()  # before the process holds the key, not after
     with _lock:
         _passphrase = p or None
+        _key_generation += 1
     try:  # a store that was locked may read now: do not serve the held failure of the old key
         from src.config.kv_store import clear_failures, forget_stores
 
@@ -204,6 +205,16 @@ def set_passphrase(p: str | None) -> None:
 def get_passphrase() -> str | None:
     with _lock:
         return _passphrase
+
+
+#: Moves on EVERY ``set_passphrase`` (a set or a clear), so a holder of something opened with the key can tell whether the key it
+#: was opened with is still the one held: the same passphrase set again after a clear is a new generation (open-on-main row 85).
+_key_generation = 0
+
+
+def key_generation() -> int:
+    with _lock:
+        return _key_generation
 
 
 def plaintext_mode() -> bool:

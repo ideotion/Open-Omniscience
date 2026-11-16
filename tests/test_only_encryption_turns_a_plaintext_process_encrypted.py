@@ -10,6 +10,11 @@ process starts holding a key only through ``set_passphrase``, whose callers with
 closes the plaintext-era serves right after), the unlock and the create (both from a locked state, which serves no corpus) and
 the offline country-migration command. This pins that list, so a new path that starts holding a key while a plaintext library
 is served has to say how its serves are closed.
+
+ONE ASSUMPTION it does not enforce: the operator CLI ``scripts/encrypt_db.py`` runs with the app STOPPED (it says so before it
+asks anything). Run beside a live app, it replaces the file under it, and the app's plaintext-era serves stay until it restarts;
+nothing in the app holds a lock another process could see. Matching on the name, the scan also misses an aliased import or a
+direct write to ``connect._passphrase`` (none exists).
 """
 
 from __future__ import annotations

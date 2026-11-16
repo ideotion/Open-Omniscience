@@ -178,7 +178,7 @@ def close_serves_for_cleared_key() -> dict[str, Any]:
     the key was cleared, or a persisted one swapped in while it waited if the process still holds no passphrase (that one
     was opened with the cleared key: a refresh reads the passphrase before it opens, and finds none after the clearing).
     """
-    return _defer_busy(_close_serves_snapshot(), "cleared-key")
+    return _defer_busy(_close_serves_snapshot(), "cleared-key", _key_generation_now())
 
 
 def close_serves_after_encryption() -> dict[str, Any]:
@@ -206,7 +206,7 @@ def _close_serves_snapshot() -> tuple[dict[str, Any], dict[str, Any]]:
     return serving, _close_serves(wait=False)
 
 
-def _defer_busy(snapshot: tuple[dict[str, Any], dict[str, Any]], reason: str) -> dict[str, Any]:
+def _defer_busy(snapshot: tuple[dict[str, Any], dict[str, Any]], reason: str, cleared_gen: int = -1) -> dict[str, Any]:
     """Start a :func:`_close_when_free` thread for every serve the close found busy; never raises."""
     serving, out = snapshot
     for name in out.get("busy", []):
@@ -215,7 +215,7 @@ def _defer_busy(snapshot: tuple[dict[str, Any], dict[str, Any]], reason: str) ->
         target = serving.get(name)
         try:
             threading.Thread(
-                target=_close_when_free, args=(name, target, reason), name=f"close-{name}-{reason}", daemon=True
+                target=_close_when_free, args=(name, target, reason, cleared_gen), name=f"close-{name}-{reason}", daemon=True
             ).start()
             out.setdefault("deferred", []).append(name)
         except Exception as exc:  # noqa: BLE001 - never raises: the caller's own step has already happened
@@ -223,13 +223,15 @@ def _defer_busy(snapshot: tuple[dict[str, Any], dict[str, Any]], reason: str) ->
     return out
 
 
-def _holds_no_passphrase() -> bool:
+def _key_generation_now() -> int:
+    """The key generation (``connect.key_generation``) at the clearing; a very large one when unreadable, so a persisted store
+    swapped in meanwhile counts as opened before it and is closed (closing costs latency, never an answer)."""
     try:
-        from src.database.connect import get_passphrase
+        from src.database.connect import key_generation
 
-        return not get_passphrase()
-    except Exception:  # noqa: BLE001 - unreadable: treat the key as held, so a connection that may be a new one is kept
-        return False
+        return key_generation()
+    except Exception:  # noqa: BLE001
+        return 1 << 62
 
 
 _WHY = {
@@ -238,12 +240,13 @@ _WHY = {
 }
 
 
-def _close_when_free(name: str, target: Any, reason: str = "encryption") -> None:
+def _close_when_free(name: str, target: Any, reason: str = "encryption", cleared_gen: int = -1) -> None:
     """Wait for ``name``'s serve lock, then close ``target`` with its offload folder if it is still the one serving.
 
     A connection swapped in while this waited is closed too when it belongs to the state that just ended: after an
-    encryption, an in-memory one with an offload folder (made before it); after a cleared key, a persisted one while the
-    process still holds no passphrase (opened with the cleared key)."""
+    encryption, an in-memory one with an offload folder (made before it); after a cleared key, a persisted one opened with a
+    key generation no later than ``cleared_gen`` (the generation at the clearing: one opened after a new unlock or create is
+    later, and kept)."""
     label, done = _WHY.get(reason, _WHY["encryption"])
     try:
         mod = sys.modules.get(f"src.analytics.{name}")
@@ -256,7 +259,7 @@ def _close_when_free(name: str, target: Any, reason: str = "encryption") -> None
                 return
             if con is not target:
                 if reason == "cleared-key":
-                    stale = bool(mod._STATE.get("persisted")) and _holds_no_passphrase()
+                    stale = bool(mod._STATE.get("persisted")) and mod._STATE.get("key_gen", -1) <= cleared_gen
                 else:
                     stale = bool(mod._STATE.get("spill")) and not mod._STATE.get("persisted")
                 if not stale:

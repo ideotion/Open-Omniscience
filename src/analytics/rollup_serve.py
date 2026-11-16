@@ -116,6 +116,8 @@ _STATE: dict = {
     # The offload folder of the connection in "con" (None when it has none): removed when that
     # connection is replaced.
     "spill": None,
+    # The key generation (``connect.key_generation``) a PERSISTED "con" was opened with; -1 when none was recorded.
+    "key_gen": -1,
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
@@ -170,6 +172,15 @@ def serve_enabled() -> bool:
     from src.config.memory_budget import budget
 
     return bool(budget()["columnar_serve_default"])
+
+
+def _key_generation() -> int:
+    try:
+        from src.database.connect import key_generation
+
+        return key_generation()
+    except Exception:  # noqa: BLE001 - unreadable: never equal to a generation read before, so the store is declined
+        return -2
 
 
 def _persist_passphrase() -> str | None:
@@ -613,6 +624,9 @@ def _refresh_persisted_build() -> bool | None:
     if opened_now:
         # The dispatcher chose this path a moment ago. The passphrase is read ONCE here and nothing is opened without it: ``columnar.open_store``
         # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
+        # The generation BEFORE the key: a clearing or a new key between the two reads leaves this generation behind, so the check
+        # under the lock below declines the store (never records one keyed by a key it did not read the generation of).
+        key_gen = _key_generation()
         passphrase = _persist_passphrase()
         if not passphrase:
             return _persisted_declined("no-passphrase")  # gone since the verdict: declined; the next verdict re-reads the setting
@@ -650,10 +664,10 @@ def _refresh_persisted_build() -> bool | None:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
-                if opened_now and not _persist_passphrase():
-                    # The key was cleared while the store opened outside the lock: the clearing's close found nothing of it to close,
-                    # and recorded now it would keep the cleared key inside DuckDB until the next rebuild (open-on-main row 85). A clearing
-                    # from here on finds the lock held and closes this connection once free.
+                if opened_now and _key_generation() != key_gen:
+                    # The key was cleared (or set anew) while the store opened outside the lock: the clearing's close found nothing of it
+                    # to close, and recorded now it would keep the old key inside DuckDB until the next rebuild (open-on-main row 85). A
+                    # clearing from here on finds the lock held, and its close once free sees this store's generation is the old one.
                     with contextlib.suppress(Exception):
                         con.close()
                     _remove_spill(new_spill)
@@ -679,6 +693,7 @@ def _refresh_persisted_build() -> bool | None:
                 retired_spill = _STATE.get("spill") if retired is not None or opened_now else None
                 if opened_now:
                     _STATE["spill"] = new_spill or None
+                    _STATE["key_gen"] = key_gen  # the key generation this store was opened with (release._close_when_free)
                 elif retired is not None:
                     _STATE["spill"] = None
                 _STATE["con"] = con

@@ -1855,11 +1855,14 @@ Official **figures** are not here at all — they are data, so they live under
     working untouched; **Settings → Advanced → Safety → "Encrypt this corpus…"** converts
     one *in place* (explicit consent, full verification before the swap, and a
     deliberate plaintext snapshot kept as your escape hatch — delete it once
-    you've unlocked successfully). Encrypting does not wipe the disk: the
-    earlier plaintext file and the app's temporary files (including the
-    analytics offload folders) are deleted, not overwritten, so their contents
-    may stay recoverable from the disk until it is reused; only full-disk
-    encryption protects them. The **doctor** (`GET /api/system/doctor`,
+    you've unlocked successfully). Encrypting does not securely erase the
+    disk: the earlier plaintext file and the app's temporary files (including
+    the analytics offload folders) are deleted, not overwritten, so their
+    contents may stay recoverable from the disk until it is reused, and so may
+    the snapshot's after you delete it. Full-disk encryption is the reliable
+    protection; overwriting free space (offered after a panic wipe) helps on
+    some disks, not reliably on SSDs or copy-on-write file systems. Encrypt
+    from this panel rather than `scripts/encrypt_db.py` while the app runs. The **doctor** (`GET /api/system/doctor`,
     and the same panel) attests the *real* state of every store by reading the
     file headers — corpus, custody log, signing keys — never by assumption.
     **The honest limit:** at-rest encryption protects a *seized or copied

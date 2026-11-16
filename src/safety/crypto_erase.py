@@ -682,6 +682,15 @@ def quick_crypto_erase(
             except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
                 pass
         passphrase_cleared = True
+        # Again, now the key is gone: the close above ran while the key was still held, so a persisted refresh that read it before
+        # then, or recorded its store meanwhile, would go on serving the erased corpus's rows under its key (open-on-main row 85).
+        # Never waits, like the first.
+        try:
+            from src.scheduler.release import close_serves_for_cleared_key
+
+            close_serves_for_cleared_key()
+        except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
+            log_failure(_LOG, "could not close the columnar serves after the key was cleared", exc, level=logging.WARNING)
 
     # 5a) Copies of an app database kept beside it under the app's own names (row 29): a retained pre-restore-<ts>.db snapshot,
     #    a repair's salvage and damaged copies, an encryption's in-progress copy. An encrypted one carries its database's salt in
