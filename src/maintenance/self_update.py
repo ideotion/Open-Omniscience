@@ -366,15 +366,10 @@ def _pid_alive(pid: int) -> bool:
         return bool(psutil.pid_exists(pid))
     except ImportError:
         pass
-    if os.name == "nt":
-        return True  # cannot tell without psutil: count it as running, so the click is refused rather than racing a live helper
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    # Never os.kill on Windows: there it is TerminateProcess (row 98).
+    from src.pid_probe import pid_alive
+
+    return bool(pid_alive(pid))
 
 
 #: Same as ``scripts/apply_update.py:LOCK_STALE_S`` (a test pins the two equal).

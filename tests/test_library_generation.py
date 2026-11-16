@@ -51,6 +51,16 @@ def _engine(live: Path, *, creator=None):
     return engine
 
 
+#: Windows refuses to replace or unlink a file that an open handle holds (SQLite opens without FILE_SHARE_DELETE), so on Windows
+#: a connection held across the swap never ends up on the old inode: the swap waits its whole budget for the handle (300 s,
+#: ``OO_SWAP_HANDLE_WAIT_S``) and then refuses, leaving the library as it was. The tests below assert the POSIX outcome of that
+#: state; the Windows one is asserted on every platform by
+#: ``test_a_handle_that_never_lets_go_makes_the_swap_refuse_within_its_budget_and_the_library_stays_whole`` (row 98).
+posix_swap_over_a_held_handle = pytest.mark.skipif(
+    os.name == "nt", reason="Windows cannot replace or unlink a file a handle holds: the swap refuses instead (see the budget test)"
+)
+
+
 @pytest.fixture()
 def world(tmp_path):
     live = tmp_path / "live.db"
@@ -489,6 +499,7 @@ def test_a_window_whose_source_is_gone_leaves_the_old_connections_stale(world):
 # --------------------------------------------------------------------------- #
 #  the restore's swap and the repair's swap are ONE helper
 # --------------------------------------------------------------------------- #
+@posix_swap_over_a_held_handle
 def test_the_restores_swap_refuses_a_connection_that_was_checked_out_before_it(world, monkeypatch):
     from src.backup import merge
 
@@ -506,6 +517,7 @@ def test_the_restores_swap_refuses_a_connection_that_was_checked_out_before_it(w
         assert fresh.execute(text("SELECT count(*) FROM notes")).scalar() == 1
 
 
+@posix_swap_over_a_held_handle
 def test_the_restores_swap_with_an_idle_pooled_connection_hands_out_a_connection_on_the_new_file(world, monkeypatch):
     from src.backup import merge
 
@@ -599,6 +611,7 @@ def test_a_check_that_refuses_leaves_a_connection_that_holds_the_log_valid_and_i
         engine.dispose()
 
 
+@posix_swap_over_a_held_handle
 def test_a_replace_that_could_not_be_made_after_the_log_names_were_removed_refuses_the_old_connections_and_nothing_is_lost(tmp_path, monkeypatch):
     """The measured hazard: a pooled connection holds the log by an inode (it read at connect), the swap removed the log's names, the replace
     failed, and the earlier version of this window gave the connection its validity back. Its save committed into a log no name points at,
@@ -691,3 +704,48 @@ def test_the_session_engine_and_the_snapshot_engine_are_stamped_through_the_guar
             conn2.close()
     finally:
         snap.dispose()
+
+
+def test_a_handle_that_never_lets_go_makes_the_swap_refuse_within_its_budget_and_the_library_stays_whole(world, monkeypatch):
+    """The Windows outcome of a connection held across the swap, on every platform (row 98): Windows will not replace or unlink a
+    file a handle holds, so the swap waits out its budget and refuses with the lock error. Nothing moved: the library is the file it
+    was, a fresh connection reads and writes it, and the held connection, from before a window that started changing the disk, stays
+    refused. The budget is a stepped clock's, so the test takes no wall time; the real one is 300 s."""
+    from src.backup import merge
+    from tests.test_restore_swap_locked_files import _win_error
+    from tests.wallclock_helpers import SteppedClock
+
+    tmp_path, live, engine = world
+    working = tmp_path / "working.db"
+    _store(working)
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: None)
+
+    def held(src, dst):
+        raise _win_error(32, "The process cannot access the file because it is being used by another process", str(dst))
+
+    real_unlink = Path.unlink
+
+    def held_unlink(self, missing_ok=False):
+        if self.name.startswith("live.db-"):
+            raise _win_error(32, "being used by another process", str(self))
+        return real_unlink(self, missing_ok=missing_ok)
+
+    scope_os(monkeypatch, merge, replace=held)
+    monkeypatch.setattr(Path, "unlink", held_unlink)
+    clock = SteppedClock()
+    monkeypatch.setattr(merge, "time", clock)
+    with engine.connect() as conn:
+        conn.execute(text("SELECT count(*) FROM notes")).scalar()
+        with pytest.raises(PermissionError):
+            merge.swap_in_corpus(working, live)
+        assert clock.slept and sum(clock.slept) <= merge._SWAP_HANDLE_WAIT_S + 0.5, "the swap must wait, and no longer than its budget"
+        assert working.exists(), "the restored file was not moved anywhere"
+        with pytest.raises(gen.StaleLibraryError):
+            conn.execute(text("INSERT INTO notes (body) VALUES ('after a refused swap')"))
+        conn.rollback()
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+    assert _bodies(live) == ["before"]
+    with engine.connect() as fresh:
+        fresh.execute(text("INSERT INTO notes (body) VALUES ('the library still takes saves')"))
+        fresh.commit()
+    assert _bodies(live) == ["before", "the library still takes saves"]
