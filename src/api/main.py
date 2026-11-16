@@ -1618,7 +1618,14 @@ def _structured_filters(
         # EVERY source of that name: names are not unique once a source is (domain, feed), and ``.first()`` answered with
         # an arbitrary one of them and silently dropped the others' articles. A typo still 404s.
         # A source whose name is only a Wikidata id is SHOWN by its domain (row 71), so the shown label finds it too.
-        named_ids = [sid for (sid,) in session.query(Source.id).filter(or_(Source.name == source, Source.domain == source))]
+        # Only those: a domain shared with a properly named feed does not pull that feed's articles in.
+        from src.catalog.qid_labels import looks_like_bare_qid as _bare_qid
+
+        named_ids = [
+            sid
+            for sid, name in session.query(Source.id, Source.name).filter(or_(Source.name == source, Source.domain == source))
+            if name == source or _bare_qid(name)
+        ]
         if not named_ids:
             raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
         filters.append(Article.source_id.in_(named_ids))

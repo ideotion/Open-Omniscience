@@ -708,6 +708,10 @@ def test_the_reader_shows_the_domain_for_a_source_named_only_by_a_wikidata_id(tm
         s.commit()
         s.add(Article(url="https://epari.fi/a", canonical_url="https://epari.fi/a", source_id=1, title="T",
                       content="Body.", hash="q1", language="fi", created_at=datetime.now(UTC)))
+        s.add(Source(name="Epari News", domain="epari.fi", rss_url="https://epari.fi/news.xml"))
+        s.commit()
+        s.add(Article(url="https://epari.fi/b", canonical_url="https://epari.fi/b", source_id=2, title="U",
+                      content="Body.", hash="q2", language="fi", created_at=datetime.now(UTC)))
         s.commit()
 
     def _db():
@@ -726,6 +730,10 @@ def test_the_reader_shows_the_domain_for_a_source_named_only_by_a_wikidata_id(tm
             assert "<span title='Q11858063'>epari.fi</span>" in body
             rows = client.get("/api/articles").json()
             rows = rows["results"] if isinstance(rows, dict) else rows
-            assert rows[0]["source"] == "epari.fi"
+            assert {r["source"] for r in rows} == {"epari.fi", "Epari News"}
+            # Filtering by the shown label finds the id-named source, not the named feed on the same domain.
+            only = client.get("/api/articles", params={"source": "epari.fi"}).json()
+            only = only["results"] if isinstance(only, dict) else only
+            assert [r["source"] for r in only] == ["epari.fi"]
     finally:
         app.dependency_overrides.clear()
