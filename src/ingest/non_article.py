@@ -56,6 +56,8 @@ _UTILITY_SEGMENTS = frozenset({
     "account", "accounts", "glossary", "sitemap", "sitemaps", "rss", "feed", "feeds", "print",
     "cart", "checkout", "download", "downloads", "wp-login", "wp-admin", "admin",
 })
+# A whole path that is a feed page (the door-only rule in classify_non_article).
+_FEED_PATHS = frozenset({"rss", "feed", "feeds"})
 # Taxonomy segments — a LISTING when followed by a short taxonomy value, not an article slug.
 _TAXONOMY_SEGMENTS = frozenset({
     "tag", "tags", "category", "categories", "topic", "topics", "author", "authors",
@@ -141,7 +143,7 @@ def _has_item_identifier(url: str) -> bool:
 
 def classify_non_article(
     url: str, *, title: str | None = None, text: str | None = None, word_count: int | None = None,
-    language: str | None = None,
+    language: str | None = None, door: bool = False,
 ) -> NonArticleVerdict | None:
     """Return a verdict if ``url``/``text`` is CLEARLY a non-article, else ``None`` (keep it).
 
@@ -150,8 +152,23 @@ def classify_non_article(
     THIN body proceeds to the wall / URL rules (order: boilerplate wall → utility path → pagination
     → taxonomy listing → homepage → section landing). Conservative — when in doubt, keep.
     ``language`` is the asserted/detected article language, if known (passed through to the prose
-    gate's best-matching-language search; optional, additive)."""
+    gate's best-matching-language search; optional, additive).
+
+    ``door=True`` (the ingest door only) adds the two URL shapes no article can have, whatever the body
+    length: a bare homepage (no path AND no query string) and a feed page (the whole path is ``rss``,
+    ``feed`` or ``feeds``). Field report 2026-11-14 (row 66): rnz.co.nz ``/rss``, the thediplomat.com and
+    vietnamnews.vn homepages were stored as articles because their long bodies cleared the guard. The
+    retroactive scans and the quarantine job leave ``door`` off, so stored articles are judged as before."""
     wc: int | None = word_count if word_count is not None else (len(text.split()) if text else None)
+
+    if door:
+        parsed = urlparse(url)
+        door_path = parsed.path.strip("/").lower()
+        # a single-page site routes its story in the fragment ("#/story/12", "#!/a"); "#main" is the homepage
+        if not door_path and not parsed.query and not parsed.fragment.startswith(("/", "!")):
+            return NonArticleVerdict("url_homepage", "site homepage / front page — no article path")
+        if door_path in _FEED_PATHS:
+            return NonArticleVerdict("url_utility", f"feed page '/{door_path}', not an article")
 
     # THE guard: a real article has a substantial extracted body — keep it whatever the URL shape,
     # UNLESS the PROSE GATE (below) catches word-rich nav soup that cleared this word-count floor.

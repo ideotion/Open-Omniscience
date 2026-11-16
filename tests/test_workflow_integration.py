@@ -52,7 +52,9 @@ class _NetSession:
         self._routes = routes
 
     def get(self, url, timeout=None, allow_redirects=True):
-        return self._routes.get(url) or _Resp(status_code=404, text="nf")
+        resp = self._routes.get(url) or _Resp(status_code=404, text="nf")
+        resp.url = url  # a real response's url is the address it was fetched from (the ingest door reads it)
+        return resp
 
 
 @pytest.fixture()

@@ -7045,7 +7045,7 @@
   "not a recognised country code": "رمز دولة غير معروف",
   "not a usable edition code": "رمز نسخة غير صالح للاستخدام",
   "not an ISO code": "ليس رمزًا من رموز أيزو",
-  "not an article (menu or index page)": "ليست مقالًا (قائمة أو صفحة فهرس)",
+  "not an article (menu, index or notice page)": "ليست مقالًا (قائمة أو صفحة فهرس أو صفحة إشعار)",
   "not an iCal file": "ليس ملف iCal",
   "not available for {backend}": "غير متاح لـ {backend}",
   "not checked": "لم يُراجَع",

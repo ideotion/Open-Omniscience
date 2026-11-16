@@ -112,7 +112,8 @@ def test_ad_placeholders_and_app_banner_are_stripped_from_teasers():
     assert removed == 5 and "Annons" not in cleaned
     assert "frisbeegolfbanan" in cleaned
     cleaned, removed = strip_furniture("Första stycket.\n\n" + HBL_BANNER + "\n\nUppdatera nu!")
-    assert removed == 1 and cleaned.startswith("Första stycket.")
+    # the banner AND its own button line (row 66: "Uppdatera nu!" was left behind alone)
+    assert removed == 2 and cleaned.startswith("Första stycket.") and "Uppdatera" not in cleaned
 
 
 def test_the_teaser_prose_itself_is_kept():

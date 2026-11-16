@@ -7045,7 +7045,7 @@
   "not a recognised country code": "code de pays non reconnu",
   "not a usable edition code": "code d’édition inutilisable",
   "not an ISO code": "pas un code ISO",
-  "not an article (menu or index page)": "pas un article (menu ou page d’index)",
+  "not an article (menu, index or notice page)": "pas un article (menu, page d’index ou page d’avis)",
   "not an iCal file": "pas un fichier iCal",
   "not available for {backend}": "non disponible pour {backend}",
   "not checked": "non vérifié",

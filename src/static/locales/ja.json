@@ -7045,7 +7045,7 @@
   "not a recognised country code": "認識できない国コード",
   "not a usable edition code": "使用できない版コードです",
   "not an ISO code": "ISO コードではありません",
-  "not an article (menu or index page)": "記事ではない（メニューや一覧ページ）",
+  "not an article (menu, index or notice page)": "記事ではない（メニュー、一覧ページ、またはお知らせページ）",
   "not an iCal file": "iCalファイルではありません",
   "not available for {backend}": "{backend} では利用できません",
   "not checked": "未確認",

@@ -7045,7 +7045,7 @@
   "not a recognised country code": "kode negara tidak dikenali",
   "not a usable edition code": "bukan kode edisi yang dapat dipakai",
   "not an ISO code": "bukan kode ISO",
-  "not an article (menu or index page)": "bukan artikel (menu atau halaman indeks)",
+  "not an article (menu, index or notice page)": "bukan artikel (menu, halaman indeks, atau halaman pemberitahuan)",
   "not an iCal file": "bukan berkas iCal",
   "not available for {backend}": "tidak tersedia untuk {backend}",
   "not checked": "belum diperiksa",
