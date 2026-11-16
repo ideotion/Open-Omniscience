@@ -67,6 +67,7 @@ def test_no_restore_or_repair_path_sets_a_key():
 
 
 def test_the_encryption_in_place_closes_the_plaintext_era_serves_after_it_holds_the_key():
-    src = (ROOT / "api/unlock.py").read_text(encoding="utf-8")
-    body = src[src.index("def encrypt_db("):src.index("\n@router", src.index("def encrypt_db("))]
+    from tests.js_source_helper import python_function_source
+
+    body = python_function_source((ROOT / "api/unlock.py").read_text(encoding="utf-8"), "encrypt_db")
     assert body.index("set_passphrase(body.passphrase)") < body.index("_close_plaintext_serves()")
