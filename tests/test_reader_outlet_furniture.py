@@ -145,6 +145,30 @@ def test_a_live_blog_on_most_pages_is_one_page_by_its_title():
     assert not (shingles(blog) & outlet_furniture.repeated_shingles(bodies, titles=titles))
 
 
+@pytest.mark.parametrize("titled", ["stamped", "rewritten", "empty"])
+def test_a_story_on_half_the_pages_under_different_titles_is_not_learned(titled):
+    """The third independent read: a story on 10 of the 20 newest pages, each with its own short update and its own
+    title, was learned as the template by the provisional pass, and the reader then hid that story's copy elsewhere."""
+    story = _story(5, 150)
+    bodies = [story + " " + _story(200 + i, 15) for i in range(10)] + [_story(300 + i, 80) for i in range(10)]
+    head = {
+        "stamped": [f"Live: the winter storm hits the coast {9 + i}:00" for i in range(10)],
+        "rewritten": [f"{w} as the storm moves north" for w in _VOCAB[:10]],
+        "empty": [""] * 10,
+    }[titled]
+    titles = head + [f"Other story number {i}" for i in range(10)]
+    assert not (shingles(story) & outlet_furniture.repeated_shingles(bodies, titles=titles))
+    copy = {"mine": bodies[0], "elsewhere": story}
+    learned = outlet_furniture.repeated_shingles(bodies, titles=titles)
+    assert any(len(c.members) == 2 for c in near_duplicate_clusters(copy, threshold=0.7, drop_shingles=dict.fromkeys(copy, learned)).clusters)
+
+
+def test_a_title_the_whole_sample_shares_groups_nothing():
+    """A site name stored as every page's title would merge every page and bring row 67 back."""
+    pages = [_HEAVY + " " + _story(i, 20) for i in range(20)]
+    assert shingles(_HEAVY) <= outlet_furniture.repeated_shingles(pages, titles=["Hufvudstadsbladet | Nyheter från Finland"] * 20)
+
+
 def test_the_ingest_furniture_list_is_applied_first():
     """The ingest's app banner (an hbl.fi line) is on every page, but it is the ingest's list that names it; the
     learning reads the bodies without it, so the two never disagree (and one list is kept, not two)."""

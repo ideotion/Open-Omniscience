@@ -51,6 +51,8 @@ SAMPLE_BODIES = 20
 MIN_SAMPLE = 8
 #: Sampled pages this similar are one page for the count (an updated story under a new URL, a live blog).
 _SAME_PAGE = 0.7
+#: The share a shingle needs when the pages could only be told apart once a provisional template was removed.
+FALLBACK_SHARE = 0.8
 #: A keyword is judged against its source's articles only from this many articles up.
 MIN_ARTICLES = 10
 #: The source's newest articles a keyword is counted over (an index-only read of their mentions; the
@@ -76,28 +78,39 @@ def repeated_shingles(
 ) -> frozenset[int]:
     """The shingles found on at least ``min_share`` of the DISTINCT pages in ``bodies`` (and on three). Pure.
 
-    Pages that are near-duplicates of each other (one story updated under new URLs, a live blog) count once,
-    so an outlet that ran one story several times does not learn that story as its template. Pages are one page
-    when what is left of them once the provisional template is removed is near-identical, or when their titles
-    are (``titles``, aligned with ``bodies``): a live blog on half the pages has one title and is one story,
-    where a template on half the pages sits under as many titles as there are stories."""
+    Pages that are near-duplicates of each other (one story updated under new URLs, a live blog) count once, so
+    an outlet that ran one story several times does not learn that story as its template. Pages are one page when
+    they are near-identical as whole pages, or when their titles are (``titles``, aligned with ``bodies``; a
+    title most of the sample shares, such as a site name stored for every page, groups nothing).
+
+    ONLY WHEN that leaves fewer than ``min_sample`` groups is a template so heavy that it makes unrelated pages
+    near-identical as a whole (row 67's own shape, the second independent read): then the pages are grouped on
+    what is left once a provisional template (a first count over the raw pages) is removed, and a shingle must
+    be on ``FALLBACK_SHARE`` of the groups. A template is on nearly every page; a story that fills half the
+    pages is not learned by that path either (the third read)."""
     from src.signals.near_dup import shingles
 
     pairs = [(strip_known(b), (titles[i] if titles and i < len(titles) else "") or "") for i, b in enumerate(bodies) if b and b.strip()]
     pairs = [(t, ti) for t, ti in pairs if t.strip()]
     texts = [t for t, _ti in pairs]
-    title_sets = [shingles(ti, k=3) if len(ti.split()) >= 3 else set() for _t, ti in pairs]
     if len(texts) < min_sample:
         return frozenset()
+    norm = [" ".join(ti.casefold().split()) for _t, ti in pairs]
+    common = {ti for ti in set(norm) if ti and norm.count(ti) * 2 >= len(norm)}  # a title most pages share says nothing
+    title_sets = [shingles(ti, k=3) if len(ti.split()) >= 3 and ti not in common else set() for ti in norm]
     sets = [shingles(t) for t in texts]
-    # Two passes. A first count over the raw pages finds the provisional template; pages are then grouped by
-    # what is LEFT once it is removed, because a template large enough to cause row 67 makes unrelated pages
-    # of one outlet near-identical as a whole (the second independent read), and grouping on whole pages would
-    # merge them all into one group and learn nothing.
+    groups = _groups(sets, title_sets)
+    if len(groups) >= min_sample:
+        return _on_half([set().union(*(sets[i] for i in g)) for g in groups], min_share)
     provisional = _on_half(sets, min_share)
-    rest = [st - provisional for st in sets]
-    # One group per run of near-identical pages (exact Jaccard over at most SAMPLE_BODIES pages, so a
-    # few hundred set comparisons); within a group a shingle counts once.
+    groups = _groups([st - provisional for st in sets], title_sets)
+    if len(groups) < min_sample:
+        return frozenset()
+    return _on_half([set().union(*(sets[i] for i in g)) for g in groups], FALLBACK_SHARE)
+
+
+def _groups(sets: list[set[int]], title_sets: list[set[int]]) -> list[list[int]]:
+    """Runs of near-identical pages (exact Jaccard over at most SAMPLE_BODIES pages: a few hundred comparisons)."""
     parent = list(range(len(sets)))
 
     def root(i: int) -> int:
@@ -106,17 +119,14 @@ def repeated_shingles(
             i = parent[i]
         return i
 
-    for i in range(len(rest)):
-        for j in range(i + 1, len(rest)):
-            if _similar(rest[i], rest[j]) or _similar(title_sets[i], title_sets[j]):
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            if _similar(sets[i], sets[j]) or _similar(title_sets[i], title_sets[j]):
                 parent[root(j)] = root(i)
     by_root: dict[int, list[int]] = {}
     for i in range(len(sets)):
         by_root.setdefault(root(i), []).append(i)
-    groups = list(by_root.values())
-    if len(groups) < min_sample:
-        return frozenset()
-    return _on_half([set().union(*(sets[i] for i in g)) for g in groups], min_share)
+    return list(by_root.values())
 
 
 def _similar(a: set[int], b: set[int]) -> bool:
@@ -167,7 +177,8 @@ def clear_cache() -> None:
 def _key(db: Session, source_id: int) -> tuple[int, int]:
     """A source of THIS store: the engine's identity beside the id, so a store opened after a restore, a swap or
     an unlock (a new engine) never reads another store's sets for a source with the same number."""
-    return (id(db.get_bind()), int(source_id))
+    bind = db.get_bind()
+    return (hash((id(bind), str(getattr(bind, "url", "")))), int(source_id))
 
 
 def _cached(cache: OrderedDict[tuple[int, int], tuple[float, frozenset[int]]], key: tuple[int, int], t: float) -> frozenset[int] | None:
