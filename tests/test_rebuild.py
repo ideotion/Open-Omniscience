@@ -38,6 +38,17 @@ class _Ctx:
             self.frames.append(getattr(detail, "i18n", str(detail)))
 
 
+@pytest.fixture(autouse=True)
+def _no_stale_shutdown_stop():
+    """A shutdown test earlier in this worker can leave the repair's stop raised; the app's start clears it (``reset_for_start``),
+    and so does this, so a rebuild here is not refused as an app that is shutting down. Seen only in the full suite, never alone."""
+    from src.database import repair
+
+    repair.reset_for_start()
+    yield
+    repair.reset_for_start()
+
+
 @pytest.fixture()
 def key_held():
     from src.database import connect
