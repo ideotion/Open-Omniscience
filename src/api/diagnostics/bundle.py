@@ -2873,6 +2873,9 @@ def _write_all_diagnostics_zip(
     # S6.2: resolved ONCE, before the first member is measured -- a memory instrument
     # rebuilt per reading perturbs the very thing it reads (measured 5/5).
     _rss = _RssProbe()
+    tail_names = {m[0] for m in tail}
+    scans_ended_early_iso: str | None = None
+    scans_ended_mono: float | None = None
     try:
         for i, (name, fn) in enumerate(ordered):
             if should_stop is not None and should_stop():
@@ -2892,6 +2895,12 @@ def _write_all_diagnostics_zip(
                         scan_claim = {"held": False, "reason": "could not claim the machine"}
                 scans_began_at = _mono()
                 scans_began_iso = datetime.now().isoformat(timespec="seconds")
+            if scans_began_at is not None and scans_ended_early_iso is None and name in tail_names:
+                # THE FIRST RECORD AFTER THE SCANS: the scans are over, so the machine goes back to the collector now and the
+                # scans' phase ends here; the tail runs as an ordinary record, outside the window and the scan budget.
+                scans_ended_early_iso = datetime.now().isoformat(timespec="seconds")
+                scans_ended_mono = _mono()
+                window.close()
             if progress is not None:
                 progress(i, total, name)
             started_t = _mono()  # a duration is measured on the monotonic clock: a clock step is not a member's time
@@ -3181,7 +3190,7 @@ def _write_all_diagnostics_zip(
 
     run_ended_at = _time.time()
     run_wall_s = _mono() - run_started_mono
-    scans_ended_iso = datetime.now().isoformat(timespec="seconds")
+    scans_ended_iso = scans_ended_early_iso or datetime.now().isoformat(timespec="seconds")
     phases = {
         "records": {
             "members": len(records),
@@ -3196,7 +3205,7 @@ def _write_all_diagnostics_zip(
             "members": len(scans),
             "began_at": scans_began_iso,
             "ended_at": scans_ended_iso if scans_began_at is not None else None,
-            "wall_s": round(_mono() - scans_began_at, 1) if scans_began_at is not None else None,
+            "wall_s": round((scans_ended_mono or _mono()) - scans_began_at, 1) if scans_began_at is not None else None,
             "exclusive": exclusive if exclusive is not None else scan_claim,
         },
         **({"after_scans": {

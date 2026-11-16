@@ -1645,7 +1645,7 @@ def card_audit_report(
             ),
         }
     else:
-        det = _safe_section("determinism", lambda: _determinism_check(session, outcomes))
+        det = _safe_section("determinism", lambda: _determinism_check(session, outcomes), session=session)
         if isinstance(det, dict) and det.get("ran"):
             det["first_pass_s"] = round(first_pass_s, 3)
             det["budget_s"] = (
@@ -1905,7 +1905,7 @@ def estimate_card_audit(
     if depth == "standard":
         content_bytes = articles_shown * excerpt_chars
     elif depth == "full":
-        avg = _safe_section("estimate.avg_chars", lambda: _avg_content_chars(session))
+        avg = _safe_section("estimate.avg_chars", lambda: _avg_content_chars(session), session=session)
         avg_chars = avg.get("avg_chars") if isinstance(avg, dict) else None
         content_bytes = int(articles_shown * (avg_chars or 0))
 

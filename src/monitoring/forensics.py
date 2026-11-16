@@ -1521,6 +1521,17 @@ def _under_any(path: Path, roots: tuple[str, ...]) -> bool:
     return any(resolved == Path(r) or Path(r) in resolved.parents for r in roots)
 
 
+def _on_root_device(path: Path) -> bool:
+    """Whether ``path`` (or its nearest existing parent) is on the same filesystem as ``/``. False when it cannot be read."""
+    p = Path(path)
+    try:
+        while not p.exists() and p != p.parent:
+            p = p.parent
+        return os.stat(p).st_dev == os.stat("/").st_dev
+    except OSError:
+        return False
+
+
 def data_dir_persistence() -> dict[str, Any]:
     """Honest, best-effort assessment of whether the corpus survives a restart, so the app can
     NUDGE a user on a likely-EPHEMERAL root toward an opt-in persistent ``OO_DATA_DIR`` (the
@@ -1547,11 +1558,13 @@ def data_dir_persistence() -> dict[str, Any]:
     elif disposable:
         at_risk = True
         reason = "this is a Qubes disposable VM — its storage is discarded on shutdown."
-    elif persistence == "rw-only" and not _under_any(dd, _QUBES_APPVM_PERSISTENT):
+    elif persistence == "rw-only" and not _under_any(dd, _QUBES_APPVM_PERSISTENT) and _on_root_device(dd):
+        # Only a folder on the root filesystem is provably reset from the template: an extra volume or a bind-dirs target
+        # mounted elsewhere can be persistent, and is left to the branches below (unknown, or the user's OO_DATA_DIR).
         at_risk = True
         reason = (
-            "this is a Qubes AppVM, which keeps only /home, /rw and /usr/local across a restart; "
-            "everything else is reset from its template."
+            "this is a Qubes AppVM, which keeps only /home, /rw and /usr/local across a restart, and the folder is on "
+            "its root filesystem, which is reset from its template."
         )
     elif persistence == "rw-only":
         at_risk = False
@@ -1566,7 +1579,7 @@ def data_dir_persistence() -> dict[str, Any]:
     note = None
     if at_risk is True:
         note = (
-            f"Your corpus is being written to {dd}, which {reason} To keep it across restarts, "
+            f"Your corpus is being written to {dd}: {reason[:1].upper() + reason[1:]} To keep it across restarts, "
             "set OO_DATA_DIR to a persistent path (a bind-mounted folder or an external drive) "
             "before launching, or copy the encrypted data folder off this machine. Your corpus "
             "is reconstitutable from the web, but re-scraping is slow — this one-time setup "

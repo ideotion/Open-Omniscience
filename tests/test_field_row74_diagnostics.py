@@ -140,3 +140,16 @@ def test_the_summary_names_the_logger_that_fills_the_journal(monkeypatch, tmp_pa
     rows = errorlog.summary()["logger_breakdown"]["rows"]
     assert rows[0] == {"logger": "src.wiki", "level": "WARNING", "count": 5}
     assert {"logger": "src.db", "level": "ERROR", "count": 1} in rows
+
+
+def test_an_unreadable_deferral_marker_does_not_hide_measured_drift():
+    drift, found, _incomplete = integrity._verdict(_report("unknown"))
+    assert drift is True and "counter_drift_mentions" in found
+
+
+def test_the_deferral_marker_is_read_before_the_deadline_opens():
+    # Read after the drift query, an expired deadline made the read fail and answer "unknown".
+    import inspect
+
+    src = inspect.getsource(integrity.corpus_integrity)
+    assert src.index("deferral_open_since(session)") < src.index("with statement_deadline(session):")

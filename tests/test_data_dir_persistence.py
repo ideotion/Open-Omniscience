@@ -120,7 +120,18 @@ def test_an_appvm_data_folder_on_the_private_volume_survives(monkeypatch, tmp_pa
 
 def test_an_appvm_data_folder_outside_the_private_volume_is_at_risk(monkeypatch, tmp_path):
     monkeypatch.setattr(forensics, "_QUBES_APPVM_PERSISTENT", ("/home", "/rw", "/usr/local"))
+    monkeypatch.setattr(forensics, "_on_root_device", lambda _p: True)
     p = _appvm(monkeypatch, tmp_path / "oo")  # pytest's tmp_path is under /tmp
     assert p["at_risk"] is True
     assert "/home, /rw and /usr/local" in p["reason"]
     assert p["note"] and "OO_DATA_DIR" in p["note"]
+    assert ", which this" not in p["note"], "the reason is its own sentence"
+
+
+def test_an_appvm_data_folder_on_another_volume_is_not_called_at_risk(monkeypatch, tmp_path):
+    # An extra volume or a bind-dirs target mounted outside /home, /rw and /usr/local can be persistent: not provable either way.
+    monkeypatch.setattr(forensics, "_QUBES_APPVM_PERSISTENT", ("/home", "/rw", "/usr/local"))
+    monkeypatch.setattr(forensics, "_on_root_device", lambda _p: False)
+    p = _appvm(monkeypatch, tmp_path / "oo")
+    assert p["at_risk"] is not True
+    assert p["note"] is None
