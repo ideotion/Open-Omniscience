@@ -296,8 +296,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   the serves that hold them and removes their folders (`src/scheduler/release.py`), and nothing it can do from a file
   system API reaches the blocks those files occupied. Until the disk reuses them, their plaintext may be recoverable from
   a seized disk, exactly as an old database's freed pages are, and so may the escape-hatch snapshot's once it is deleted.
-  Full-disk encryption is the reliable protection; overwriting free space (offered after a panic wipe) helps on some disks
-  and is not reliable on SSDs or copy-on-write file systems. The encrypt panel says so beside its escape-hatch note and the
+  Full-disk encryption that was on when those blocks were written protects them (turned on later, it reaches them only through
+  an in-place re-encryption of the disk); overwriting free space (offered after a panic wipe) may help and is not reliable on
+  SSDs or copy-on-write file systems. The encrypt panel says so beside its escape-hatch note and the
   panic wipe beside its free-space offer (×12). The panic wipe's full rewrite overwrites what is still a file, and the same
   limit applies to what is not. The operator CLI `scripts/encrypt_db.py` must run with the app stopped: run beside a live
   app it replaces the file under it, and the app's plaintext-era serves and folders stay until it restarts.

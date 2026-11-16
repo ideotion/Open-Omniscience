@@ -179,7 +179,7 @@ def _key_generation() -> int:
         from src.database.connect import key_generation
 
         return key_generation()
-    except Exception:  # noqa: BLE001 - unreadable: never equal to a generation read before, so the store is declined
+    except Exception:  # noqa: BLE001 - unreadable: negative, and a store whose generation is negative is declined
         return -2
 
 
@@ -664,7 +664,7 @@ def _refresh_persisted_build() -> bool | None:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
-                if opened_now and _key_generation() != key_gen:
+                if opened_now and (key_gen < 0 or _key_generation() != key_gen):
                     # The key was cleared (or set anew) while the store opened outside the lock: the clearing's close found nothing of it
                     # to close, and recorded now it would keep the old key inside DuckDB until the next rebuild (open-on-main row 85). A
                     # clearing from here on finds the lock held, and its close once free sees this store's generation is the old one.
