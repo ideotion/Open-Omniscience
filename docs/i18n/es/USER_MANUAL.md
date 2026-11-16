@@ -1,4 +1,4 @@
-<!-- es: AI-drafted translation of docs/USER_MANUAL.md (2026-11-13, R677), not yet reviewed by a native speaker; the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Improve it with a pull request; corrections by native speakers are welcome. -->
+<!-- es: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 125 of 125 headings. Corrections are welcome as a pull request. -->
 
 # Open Omniscience — Manual de usuario
 
@@ -461,6 +461,48 @@ otro, y le deja desplazarse.
 - **Cada tarjeta** muestra el título, la fuente, la fecha y las **tres palabras clave principales
   propias** del artículo: las palabras clave de ese artículo, no de lo que haya buscado. **Leer más**
   despliega el resumen **en el mismo lugar**; el título abre el artículo en el lector local.
+
+### 3.0c Vista simple
+
+**Para qué sirve:** leer lo que contiene su corpus sin aprender antes trece pestañas. La
+vista simple es una segunda interfaz, organizada por tareas, sobre la misma aplicación, los
+mismos datos y las mismas reglas de seguridad. Quita pantallas, no información: cada cifra
+conserva su método, su recuento y su advertencia a un clic.
+
+- **El interruptor.** El interruptor **Simple** de la barra superior la activa y la
+  desactiva. La elección se recuerda solo en este dispositivo (en este navegador).
+  Desactivarla devuelve la interfaz completa exactamente como estaba; nada se restablece
+  ni se pierde.
+- **Seis vistas** sustituyen a las pestañas de la barra lateral:
+  - **Hoy**: las Pistas que destacan en su corpus, los temas en auge y el estado de la red
+    con un botón **Conectarse**.
+  - **Leer**: sus artículos en forma de lista, los más recientes primero o mezclados.
+    Elegir un país en **Mundo** limita la lista (y su resumen) a los artículos de las
+    fuentes de ese país.
+  - **Buscar**: la misma búsqueda que en la vista completa. Escriba una palabra, un nombre
+    o una frase; las comillas dan una frase exacta y OR una u otra palabra. **Abrir el
+    análisis completo** lleva la misma búsqueda a Explorar.
+  - **Mundo**: los países de los que proceden sus artículos, ordenados según cuánto
+    cubren. Aquí un país es aquel bajo el que está catalogada cada fuente, nunca el lugar
+    donde ocurrió una noticia. Un clic en un país limita **Leer** y su resumen.
+  - **Cifras**: las series de mercado y los registros climáticos ya almacenados en su
+    ordenador, cada uno con su valor más reciente y su fecha. Esta vista solo lee: los
+    precios y los registros climáticos se obtienen, con su consentimiento, en la vista
+    completa.
+  - **Más herramientas**: un enlace a cada pestaña de la vista completa y el formulario
+    **Añadir una fuente**. Una herramienta abierta desde aquí muestra una barra **Volver a
+    la vista simple** que le devuelve a donde estaba, con su búsqueda todavía en su sitio.
+- **El botón ⓘ.** Cada tarjeta y cada cifra lleva uno. Abre la advertencia, el método, el
+  recuento (n), la fuente y la fecha. Funciona con el teclado, la pantalla táctil y los
+  lectores de pantalla.
+- **Las marcas.** Una cifra que merece una segunda mirada muestra una pequeña marca a su
+  lado, para que sepa que el ⓘ contiene algo que vale la pena abrir: **~** aproximado,
+  **◐** parcial, **◷** puede estar desactualizado.
+- **Lo que nunca cambia.** La vista simple no oculta ninguna de las superficies de
+  seguridad de la aplicación. La ventana emergente de consentimiento de red, el modo avión
+  y el estado de Tor en la barra superior, la pantalla de bloqueo, la confirmación antes de
+  eliminar cualquier cosa, los avisos y los mensajes de error siguen todos visibles y
+  funcionan exactamente igual que en la vista completa.
 
 ### 3.1 Búsqueda
 

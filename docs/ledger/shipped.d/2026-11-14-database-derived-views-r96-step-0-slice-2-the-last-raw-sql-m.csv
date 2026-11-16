@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,database/derived-views,R96 step 0 slice 2: the last raw-SQL mention readers read the view,shipped,PR #2011,src/analytics/keyword_growth.py; src/analytics/spell_index.py; src/analytics/serve_gate.py; tests/test_derived_read_seam.py,"keyword_growth, spell_index and serve_gate read keyword_mentions_all instead of the table; EXPLAIN QUERY PLAN unchanged; seam ratchet lowered. Steps 1-4 of the segmented derived index wait on the design's section 8 field-VM measurements."

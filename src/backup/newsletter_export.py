@@ -94,7 +94,7 @@ class _ExportRefused(Exception):
 
 
 def _pragma(con, name: str) -> Any:
-    row = con.execute(f"PRAGMA {name}").fetchone()  # noqa: S608  # nosec B608 - name is one of this module's constants
+    row = con.execute(f"PRAGMA {name}").fetchone()  # noqa: S608  name is one of this module's constants
     return row[0] if row else None
 
 
@@ -141,7 +141,7 @@ def _count(con, table: str) -> int | None:
         return None
     if not con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone():
         return None
-    return int(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])  # noqa: S608  # nosec B608 - table matched a plain-identifier pattern above
+    return int(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])  # noqa: S608  # nosec B608 # table matched a plain-identifier pattern above
 
 
 def _shape(con) -> dict[str, Any]:
@@ -168,8 +168,8 @@ def _export_to(con, out: Path, key: str, settings: dict[str, Any]) -> None:
         for name in _CIPHER_SETTINGS:
             value = settings[name]
             literal = f"'{value}'" if isinstance(value, str) else str(int(value))
-            con.execute(f"PRAGMA {_ALIAS}.{name} = {literal}")  # noqa: S608  # nosec B608 - name is a constant, value an int or a validated [A-Z0-9_] name
-        con.execute(f"SELECT sqlcipher_export('{_ALIAS}')")  # noqa: S608  # nosec B608 - fixed alias
+            con.execute(f"PRAGMA {_ALIAS}.{name} = {literal}")  # noqa: S608  name is a constant, value an int or a validated [A-Z0-9_] name
+        con.execute(f"SELECT sqlcipher_export('{_ALIAS}')")  # noqa: S608  fixed alias
     finally:
         with contextlib.suppress(Exception):
             con.execute(f"DETACH DATABASE {_ALIAS}")

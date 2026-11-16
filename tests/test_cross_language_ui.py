@@ -16,7 +16,6 @@ like a passing one.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from tests.js_source_helper import (
     read_static,
     strip_comments,
 )
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -165,7 +165,7 @@ def test_the_omnibar_disclosure_uses_keyed_templates_not_a_built_sentence():
     en_path = Path(__file__).resolve().parents[1] / "src/static/locales/en.json"
     # encoding= is not optional here: the keys asserted below carry curly quotes, so a
     # cp1252 default (Windows) would crash the read rather than fail the assertion.
-    en = json.loads(en_path.read_text(encoding="utf-8"))
+    en = load_locale(en_path)
     for key in (
         "{term} also matched as the concept “{concept}”",
         "{term} denotes several concepts, so it was not expanded",
@@ -254,7 +254,7 @@ def test_every_string_the_pick_renders_is_keyed_in_all_twelve_locales() -> None:
         assert key in body, f"{key!r} is not rendered"
     locales = Path(__file__).resolve().parents[1] / "src/static/locales"
     for path in sorted(locales.glob("*.json")):
-        table = json.loads(path.read_text(encoding="utf-8"))
+        table = load_locale(path)
         for key in keys:
             assert key in table, f"{path.name} has no entry for {key!r}"
 
@@ -461,7 +461,7 @@ def test_every_string_the_lens_renders_is_keyed_in_all_twelve_locales() -> None:
     files = sorted(locales.glob("*.json"))
     assert len(files) == 12, f"expected 12 locale files, found {len(files)}"
     for path in files:
-        table = json.loads(path.read_text(encoding="utf-8"))
+        table = load_locale(path)
         for key in keys:
             assert key in table, f"{path.name} has no entry for {key!r}"
 
@@ -556,7 +556,7 @@ def test_the_server_prose_the_rail_renders_goes_through_the_translator():
         )
     locales = Path(__file__).resolve().parents[1] / "src/static/locales"
     for path in sorted(locales.glob("*.json")):
-        table = json.loads(path.read_text(encoding="utf-8"))
+        table = load_locale(path)
         for key in keys:
             assert key in table, f"{path.name} has no entry for {key[:60]!r}..."
 

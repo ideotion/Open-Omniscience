@@ -55,6 +55,8 @@ APP_FILES: frozenset[str] = frozenset({
     "volumes.building.json", "volumes-readme.json", "weather_signals.json", "world_discovery.json",
     "calendar_autoimport.json", "calendar_feed_attempts.json", "calendar_feed_checks.json", "calendar_feed_imports.json",
     "calendar_feeds.yml", ".oos-volume",
+    # the Field data instance tag (src/paths.INSTANCE_ID_FILE) and the card self-check beside the briefing cache (2026-11-14)
+    ".oo-instance-id", "card_quality_selfcheck.jsonl",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.
@@ -208,6 +210,15 @@ def _scan_for_other(it, spec: dict) -> bool | None:
 
 
 def folder_scope(base: Path) -> dict:
+    """See :func:`_folder_scope`. A question that raises (a path with a NUL byte gives ``ValueError``) is answered broad: an
+    erase then keeps to the app's own names, which is the safe side."""
+    try:
+        return _folder_scope(base)
+    except Exception:  # noqa: BLE001 - never raises, and never answers "the app's" when it could not tell
+        return {"broad": True, "reason": "unlistable"}
+
+
+def _folder_scope(base: Path) -> dict:
     """``{"broad": bool, "reason": code | None}`` for the data folder ``base``, read on the folder the path leads to (a link to
     a drive root is a drive root).
 

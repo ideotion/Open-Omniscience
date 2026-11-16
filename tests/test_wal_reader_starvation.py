@@ -8,13 +8,15 @@ Diagnosed root cause (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_
 HARDWARE_DIAGNOSTICS_COMPARISON.md §1 "WAL/checkpoint starvation";
 docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md Phase 3,
 PR-D (W1)): ``src/briefing/registry.py``'s ``run_all()`` runs every
-registered producer on ONE shared session, and today (unpatched) nothing in
-its loop ever commits or closes that session between producers. A read
-taken by any producer therefore keeps a WAL read snapshot pinned for
+registered producer on ONE shared session, and before PR-D nothing in its
+loop committed or closed that session between producers. A read taken by
+any producer therefore kept a WAL read snapshot pinned for
 ``run_all()``'s ENTIRE duration — so ``PRAGMA wal_checkpoint(TRUNCATE)`` can
 never reclaim space while it runs, no matter how many times it is
 attempted, and the ``-wal`` file grows without bound past
-``journal_size_limit`` in the meantime.
+``journal_size_limit`` in the meantime. PR-D (c008e0347, 2026-07-27) added the
+commit between producers (``_release_transaction`` in
+``src/briefing/registry.py``); this test now guards that fix.
 
 This mirrors the SAME field-diagnosed mechanism the brief names for
 ``src/analytics/columnar.py``'s ``build_keyword_daily`` (a ``session.
@@ -28,14 +30,17 @@ one of PR-D's own three fix targets ("commit-between-producers … changes
 atomicity") — and is fully reproducible here without duckdb, so this test
 drives it directly instead of a synthetic stand-in.
 
-MUST FAIL on unpatched main: with no commit ever issued between producers,
-EVERY checkpoint attempted while ``run_all()`` is executing reports
+WHAT IT PROVES, and what a red run means. Without a commit between
+producers, EVERY checkpoint attempted while ``run_all()`` executes reports
 ``busy=1`` (the shared session's read snapshot is pinned for the whole
-pass) — so a checkpoint attempted mid-pass never once succeeds. This test
-asserts the FIXED guarantee instead: that at least one checkpoint attempted
-during a ``run_all()`` pass eventually succeeds. That is false today and
-will flip true once PR-D's fix (a commit between producers, opening a real
-transaction boundary mid-pass) lands.
+pass), so a checkpoint attempted mid-pass never once succeeds; that was the
+code before PR-D, where this test failed. It asserts the FIXED guarantee:
+at least one checkpoint attempted during a ``run_all()`` pass succeeds.
+PR-D's commit between producers is on main and the test passes there, so a
+red run means that commit was removed or stopped ending the read snapshot,
+not that the fix was never made. (The test's name describes the defect it
+was written to catch, kept so its history and the CI cost table stay
+linked.)
 
 Why the window is WRITE-GATED, not time-boxed
 ---------------------------------------------
@@ -464,13 +469,13 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         "storage_composition must surface wal_bytes for operators"
     )
 
-    # (b) THE REGRESSION (the discriminating assertion): today, with NO
-    # commit anywhere in run_all()'s producer loop, the FIRST producer's
-    # read pins the WAL snapshot for the WHOLE pass -- so *every* checkpoint
-    # attempted while run_all() is still running reports busy=1, never once
-    # succeeding. Once PR-D lands (a commit between producers), a genuine
-    # transaction boundary opens mid-pass and at least one checkpoint
-    # attempted during the window should succeed.
+    # (b) THE REGRESSION (the discriminating assertion): with NO commit
+    # anywhere in run_all()'s producer loop (the code before PR-D), the FIRST
+    # producer's read pins the WAL snapshot for the WHOLE pass -- so *every*
+    # checkpoint attempted while run_all() is still running reports busy=1,
+    # never once succeeding. PR-D's commit between producers (on main since
+    # 2026-07-27) opens a genuine transaction boundary mid-pass, so at least
+    # one checkpoint attempted during the window succeeds.
     #
     # Restricted to attempts that landed STRICTLY INSIDE the producer's
     # held-cursor window. run_all() releases the read snapshot on its way out

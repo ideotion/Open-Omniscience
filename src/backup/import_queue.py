@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.backup import collector_exit
+from src.backup import collector_exit, restore_marker
 from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
@@ -386,6 +386,11 @@ class ImportQueueManager:
         self._started_at: float | None = None
         self._ended_at: float | None = None
         self._passphrase: str = ""  # memory only, never persisted
+        # The run's default key for an encrypted DATABASE inside a backup (the store passphrase of the instance that made
+        # it), and each item's own keys when it differs from the run's: memory only, never persisted, never in an item
+        # dict (the items ARE persisted), dropped with the backup passphrase the moment the run ends.
+        self._corpus_passphrase: str = ""
+        self._item_keys: dict[str, tuple[str, str]] = {}
         self._collection_paused = False
         # True when the exclusive window could not be established for the run in flight: collection was NOT paused, so the
         # dialog says that instead of staying silent (the case where the risk is largest).
@@ -442,7 +447,7 @@ class ImportQueueManager:
             tmp.write_text(json.dumps(payload), encoding="utf-8")
             os.replace(tmp, p)
         except Exception as exc:  # noqa: BLE001 - never break an import over its own log
-            log_failure(_LOG, "could not persist the import queue state", exc, self._passphrase, level=logging.WARNING)
+            log_failure(_LOG, "could not persist the import queue state", exc, *self._secrets(), level=logging.WARNING)
 
     def _load_persisted(self) -> None:
         try:
@@ -539,10 +544,18 @@ class ImportQueueManager:
                 )
 
     # -- lifecycle ---------------------------------------------------------- #
-    def start(self, items: list[dict], *, passphrase: str = "") -> dict:
+    def start(self, items: list[dict], *, passphrase: str = "", corpus_passphrase: str = "") -> dict:
         """Queue ``items`` and begin. Each item is ``{kind, path, label?}`` plus any
         kind-specific keys (``categories`` for blobs). Raises RuntimeError if a run
-        is already in flight, ValueError if the list is empty or malformed."""
+        is already in flight, ValueError if the list is empty or malformed.
+
+        ``passphrase`` and ``corpus_passphrase`` are the run's DEFAULT keys: the backup's own, and the store passphrase of
+        the instance that made it (only needed when it differs from this instance's and from the backup's). An item may
+        carry its own ``passphrase`` / ``corpus_passphrase``, which win over the defaults for that item alone, so one run
+        can import backups locked with different passphrases while the common case is typed once. Every key is held in
+        memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
+        scrubbed from every record the run writes."""
+        self._refuse_wrong_backup_passphrases(items, passphrase)
         with self._lock:
             if self._state == "running" and self._thread is not None and self._thread.is_alive():
                 raise RuntimeError("An import is already running.")
@@ -550,6 +563,7 @@ class ImportQueueManager:
                 self._thread.join(timeout=5)
                 self._thread = None
             queued: list[dict[str, Any]] = []
+            item_keys: dict[str, tuple[str, str]] = {}
             for i, raw in enumerate(items or []):
                 kind = str(raw.get("kind") or "")
                 if kind not in KINDS:
@@ -557,6 +571,9 @@ class ImportQueueManager:
                 path = str(raw.get("path") or "")
                 if not path:
                     raise ValueError(f"item {i} has no path")
+                own = (str(raw.get("passphrase") or ""), str(raw.get("corpus_passphrase") or ""))
+                if any(own):
+                    item_keys[f"{i}-{kind}"] = own
                 queued.append({
                     "id": f"{i}-{kind}",
                     "kind": kind,
@@ -606,6 +623,8 @@ class ImportQueueManager:
             self._run_id = secrets.token_hex(6)
             self._cursor = -1
             self._passphrase = passphrase or ""
+            self._corpus_passphrase = corpus_passphrase or ""
+            self._item_keys = item_keys
             self._started_at = time.time()
             self._ended_at = None
             self._state = "running"
@@ -627,10 +646,33 @@ class ImportQueueManager:
                     self._state, self._items, self._cursor, self._started_at, self._ended_at,
                     self._tuning_done, self._tuned, self._collection_window_failed, self._run_id,
                 ) = before
-                self._passphrase = ""
+                self._drop_keys()
                 self._save()
                 raise
             return self.status()
+
+    @staticmethod
+    def _refuse_wrong_backup_passphrases(items: list[dict], passphrase: str) -> None:
+        """Refuse the whole run, before anything starts, when a backup's passphrase is certainly wrong.
+
+        A run of many backups commits them in groups (``import_checkpoint_k``): one backup failing on a typo in its own
+        passphrase discards the work of the backups staged with it, which is many minutes per backup on a large import.
+        Checking every backup's key first costs well under a second each (one key derivation and one chunk; the volume
+        is hashed only when the chunk does not open). Only a CERTAIN answer refuses (``backup_passphrase_is_wrong``): a
+        set that cannot be read is left to the restore, which says what is wrong with it."""
+        from src.backup.stream_backup import backup_passphrase_is_wrong
+
+        wrong = [
+            str(raw.get("label") or Path(str(raw.get("path"))).name)
+            for raw in items or []
+            if raw.get("kind") == "corpus" and raw.get("path")
+            and backup_passphrase_is_wrong(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
+        ]
+        if wrong:
+            raise ValueError(
+                "Wrong passphrase for " + ", ".join(wrong) + ": the backup is intact but does not open with the "
+                "passphrase given. Nothing was started; correct it and import again."
+            )
 
     def stop(self) -> None:
         """Stop the run IMMEDIATELY (ruling item 15). The item in flight is cancelled
@@ -642,7 +684,7 @@ class ImportQueueManager:
             try:
                 cancel()
             except Exception as exc:  # noqa: BLE001 - one manager's refusal must not block the others
-                log_failure(_LOG, "cancelling a sub-job during import stop failed", exc, self._passphrase, level=logging.WARNING)
+                log_failure(_LOG, "cancelling a sub-job during import stop failed", exc, *self._secrets(), level=logging.WARNING)
 
     # -- sub-manager seams (overridable in tests) ---------------------------- #
     def _cancel_volume(self) -> None:
@@ -661,7 +703,16 @@ class ImportQueueManager:
         get_import_manager().cancel()
 
     # -- the run ------------------------------------------------------------ #
+    @restore_marker.marked  # R712: an export refuses to start or resume while the queue runs
     def _run(self) -> None:
+        try:
+            self._run_with_keys()
+        finally:
+            # Whatever way the run ends, an error escaping it included, the keys go with it.
+            with self._lock:
+                self._drop_keys()
+
+    def _run_with_keys(self) -> None:
         # ONE exclusive window for the WHOLE queue (ruling item 10): collection goes
         # down once here and comes back up once at the end, instead of flapping
         # between every backup. The per-item restore's own pause nests inside this
@@ -680,7 +731,7 @@ class ImportQueueManager:
                 drove = True
                 self._drive()
         except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-            log_failure(_LOG, "the exclusive window for the import failed", exc, self._passphrase, level=logging.WARNING)
+            log_failure(_LOG, "the exclusive window for the import failed", exc, *self._secrets(), level=logging.WARNING)
             if not drove:
                 with self._lock:
                     self._collection_window_failed = True
@@ -709,7 +760,7 @@ class ImportQueueManager:
                 "started" if started else f"not started ({detail})",
             )
         except Exception as exc:  # noqa: BLE001
-            log_failure(_LOG, "could not start the post-import re-index drain", exc, self._passphrase, level=logging.WARNING)
+            log_failure(_LOG, "could not start the post-import re-index drain", exc, *self._secrets(), level=logging.WARNING)
 
     def _drive(self) -> None:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
@@ -737,7 +788,7 @@ class ImportQueueManager:
                         _LOG,
                         f"the checkpoint hold decision for {item.get('id')} failed; committing this item on its own",
                         exc,
-                        self._passphrase,
+                        *self._secrets(),
                         level=logging.WARNING,
                     )
                     hold = False
@@ -792,7 +843,7 @@ class ImportQueueManager:
                             _LOG,
                             f"checkpoint-group bookkeeping failed after item {item.get('id')}",
                             exc,
-                            self._passphrase,
+                            *self._secrets(),
                             level=logging.WARNING,
                         )
                 except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
@@ -807,11 +858,11 @@ class ImportQueueManager:
                     # ``import_queue.json``) and a log record. A single-file restore raises the route layer's own
                     # ``HTTPException``, whose text can name the exception that caused it, and the queue is the
                     # recorder of that text, so it is taken out of the passphrase here, where the text is made.
-                    said = record_text(exc, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)  # scrubbed, THEN cut
+                    said = record_text(exc, *self._secrets(), typed=False, limit=self._FAILURE_TEXT_KEEP)  # scrubbed, THEN cut
                     if stopped_here:
                         _LOG.info("import item %s stopped mid-merge: %s", item.get("id"), said)
                     else:
-                        log_failure(_LOG, f"import item {item.get('id')} failed", exc, self._passphrase)
+                        log_failure(_LOG, f"import item {item.get('id')} failed", exc, *self._secrets())
                     with self._lock:
                         item["state"] = "stopped" if stopped_here else "error"
                         item["error"] = said
@@ -859,7 +910,7 @@ class ImportQueueManager:
             self._state = "stopped" if stopped else ("error" if any_error else "done")
             self._cursor = -1
             self._ended_at = time.time()
-            self._passphrase = ""  # drop the key the moment the run ends
+            self._drop_keys()  # drop the keys the moment the run ends
             self._save()
 
     def _tune_after_run(self) -> None:
@@ -907,9 +958,9 @@ class ImportQueueManager:
             from src.database.session import session_scope
 
             with session_scope() as session:
-                self._tuned = optimize_after_bulk(session)
+                self._tuned = optimize_after_bulk(session, should_stop=self._stop.is_set)
         except Exception as exc:  # noqa: BLE001 - tuning is never load-bearing
-            log_failure(_LOG, "post-import tuning pass failed", exc, self._passphrase, level=logging.WARNING)
+            log_failure(_LOG, "post-import tuning pass failed", exc, *self._secrets(), level=logging.WARNING)
         finally:
             with self._lock:
                 self._live = None
@@ -1013,7 +1064,7 @@ class ImportQueueManager:
             try:
                 guard.close()
             except Exception as exc:  # noqa: BLE001 - a registry release must never fail a run
-                log_failure(_LOG, "releasing the checkpoint group's staging guard failed", exc, self._passphrase, level=logging.WARNING)
+                log_failure(_LOG, "releasing the checkpoint group's staging guard failed", exc, *self._secrets(), level=logging.WARNING)
         return group
 
     #: How much of a failure's own text a discarded or errored item keeps (the discard reason and
@@ -1022,17 +1073,35 @@ class ImportQueueManager:
     #: made AFTER the scrub, never before it.
     _FAILURE_TEXT_KEEP = 600
 
+    def _secrets(self) -> tuple[str, ...]:
+        """Every key this run holds (the run's two defaults and each item's own), for the scrub of every record it writes."""
+        held = [self._passphrase, self._corpus_passphrase]
+        for pair in self._item_keys.values():
+            held.extend(pair)
+        return tuple(k for k in held if k)
+
+    def _keys_for(self, item: dict) -> tuple[str, str]:
+        """``(backup passphrase, corpus passphrase)`` for ``item``: its own where it gave one, else the run's."""
+        own_backup, own_corpus = self._item_keys.get(str(item.get("id")), ("", ""))
+        return (own_backup or self._passphrase, own_corpus or self._corpus_passphrase)
+
+    def _drop_keys(self) -> None:
+        """Forget every key the run held."""
+        self._passphrase = ""
+        self._corpus_passphrase = ""
+        self._item_keys = {}
+
     def _scrubbed(self, value: Any) -> Any:
         """``value`` (a string, or a report) with the backup's passphrase and the corpus passphrase taken
         out in every form, checked once more, and withheld whole on any failure
         (``secret_scrub.scrubbed_value``)."""
-        return scrubbed_value(value, self._passphrase)
+        return scrubbed_value(value, *self._secrets())
 
     def _failure_text(self, failure: BaseException | str) -> str:
         """The failure's text for the queue file and the status: scrubbed first, THEN cut."""
         if isinstance(failure, BaseException):
-            return record_text(failure, self._passphrase, typed=False, limit=self._FAILURE_TEXT_KEEP)
-        return scrubbed(failure, self._passphrase)[: self._FAILURE_TEXT_KEEP]
+            return record_text(failure, *self._secrets(), typed=False, limit=self._FAILURE_TEXT_KEEP)
+        return scrubbed(failure, *self._secrets())[: self._FAILURE_TEXT_KEEP]
 
     def _discard_group(self, reason: str) -> None:
         """Throw the carried working copy away and SAY which items went with it."""
@@ -1120,7 +1189,7 @@ class ImportQueueManager:
                 "restore",
                 out,
                 run_id=str(rep.get("batch_id") or item.get("id") or ""),
-                secrets=(self._passphrase,),
+                secrets=self._secrets(),
             )
         except Exception as exc:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
@@ -1138,7 +1207,7 @@ class ImportQueueManager:
             from src.backup.import_reports import annotate_import_report
 
             annotate_import_report(
-                Path(str(path)), {"import_run": self._run_stamp(item)}, secrets=(self._passphrase,)
+                Path(str(path)), {"import_run": self._run_stamp(item)}, secrets=self._secrets()
             )
         except Exception as exc:  # noqa: BLE001 - a record must never cost the import it records
             _LOG.warning(
@@ -1214,7 +1283,7 @@ class ImportQueueManager:
             prev = item.get("stage_reached")
             item["stage_reached"] = s if not isinstance(prev, int) else max(prev, s)
         except Exception as exc:  # noqa: BLE001 - bookkeeping must never cost an import
-            log_failure(_LOG, "could not record the import stage", exc, self._passphrase, level=logging.DEBUG)
+            log_failure(_LOG, "could not record the import stage", exc, *self._secrets(), level=logging.DEBUG)
 
     def _await(self, status_fn, cancel_fn, *, poll: float = 0.4) -> dict:
         """Drive one sub-manager to a terminal state, mirroring its live progress.
@@ -1238,7 +1307,7 @@ class ImportQueueManager:
                 try:
                     cancel_fn()
                 except Exception as exc:  # noqa: BLE001
-                    log_failure(_LOG, "cancelling a sub-job failed", exc, self._passphrase, level=logging.WARNING)
+                    log_failure(_LOG, "cancelling a sub-job failed", exc, *self._secrets(), level=logging.WARNING)
             time.sleep(poll)
 
     def _run_corpus(self, item: dict, *, hold: bool = False) -> dict:
@@ -1268,8 +1337,10 @@ class ImportQueueManager:
                 "which this path does not produce. Import it without the filter, or "
                 "use a legacy single-file archive, where it is honoured."
             )
+        backup_key, corpus_key = self._keys_for(item)
         mgr.start_restore(
-            item["path"], self._passphrase, force=bool(item.get("force")),
+            item["path"], backup_key, force=bool(item.get("force")),
+            corpus_passphrase=corpus_key or None,
             working_copy=working_copy, hold_after_merge=hold,
             already_merged_digests=already,
             allow_unverified=bool(item.get("allow_unverified")),
@@ -1304,7 +1375,7 @@ class ImportQueueManager:
         from src.api.backup_v2 import restore_legacy_path
 
         return restore_legacy_path(
-            item["path"], self._passphrase, should_stop=self._stop.is_set,
+            item["path"], self._keys_for(item)[0], should_stop=self._stop.is_set,
             # The two options that used to live only on /v2/restore/* (Q214 = a).
             # ``restore_legacy_path`` has always accepted both, so this is wiring: a
             # caller that sends neither gets today's behaviour unchanged.

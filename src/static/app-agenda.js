@@ -101,7 +101,7 @@
       const d = e.date || "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return {
-        title: t("{n} articles mention this date").replace("{n}", e.n_articles),
+        title: _tfn("{n} articles mention this date", { n: e.n_articles }),
         category: "deduced", country: null, tags: [],
         confirmed: false,                      // deduced from text — never a confirmed event
         next_occurrence: d,
@@ -112,8 +112,8 @@
         day: null,
         calendar: "deduced", deduced: true,
         article_ids: e.article_ids || [], n_articles: e.n_articles, n_sources: e.n_sources,
-        note: t("Deduced from {n} articles ({s} sources), never confirmed.")
-          .replace("{n}", e.n_articles).replace("{s}", e.n_sources),
+        note: _tfn("Deduced from {n} articles ({s} sources), never confirmed.",
+          { n: e.n_articles, s: e.n_sources }),
       };
     }
     async function loadAgenda() {
@@ -220,9 +220,17 @@
     // those. It never fetches.
     let _bulGate = null, _bulView = null, _bulEditions = null, _bulPrivacyData = null;
     const _bulMsgs = {};
+    // R703: the annexes carry an excerpt per article unless the operator ticks the box
+    // that says the bundle would redistribute publishers' text. Off for every edition
+    // opened; the privacy enumeration and the download read the same flag.
+    let _bulFullText = false;
     function _bulSay(id, key, vars) {
       _bulMsgs[id] = {key, vars: vars || null};
       _bulPaintMsg(id);
+    }
+    function _bulClearMsg(id) {
+      delete _bulMsgs[id];
+      const el = $(id); if (el) el.textContent = "";
     }
     function _bulPaintMsg(id) {
       const el = $(id), m = _bulMsgs[id];
@@ -259,6 +267,7 @@
       _bulPaintGate();
       if (_bulEditions) _bulPaintEditions();
       if (_bulView && _bulFile) { _bulRender(_bulView); _bulPaintPrivacy(); }
+      _bulPaintEvidence();
       for (const id of Object.keys(_bulMsgs)) _bulPaintMsg(id);
     }
 
@@ -412,7 +421,7 @@
       if (!box) return;
       // A status line belongs to the edition it was about: opening ANOTHER one drops it,
       // while re-reading the same one (after narration finishes) keeps it on screen.
-      if (filename !== _bulFile) delete _bulMsgs["bul-pub"];
+      if (filename !== _bulFile) { delete _bulMsgs["bul-pub"]; _bulFullText = false; }
       _bulFile = filename;
       _bulView = null;
       _bulPrivacyData = null;
@@ -427,6 +436,7 @@
       // The §18 enumeration is fetched right after the review renders, so it is on
       // screen before the operator reaches the download button rather than after.
       _bulPrivacy();
+      _bulAdoptRunningNarration();
     }
 
     // ONE renderer for a narrated unit's label and per-sentence verdicts, shared by
@@ -528,14 +538,19 @@
         <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
-          <button class="secondary" data-on-click="bulletinNarrate(this)" id="bul-narrate-run">${esc(_bulT("Narrate with the local model"))}</button>
+          <button class="secondary" data-on-click="bulletinNarrate(this)" id="bul-narrate-run"${_bulNarrating ? " disabled" : ""}>${esc(_bulT("Narrate with the local model"))}</button>
+          <button class="secondary" data-on-click="bulletinNarrateStop(this)" id="bul-narrate-stop"${_bulNarrating ? "" : " hidden"}${_bulStopAsked ? " disabled" : ""} title="${esc(_bulT("Stops after the paragraph being written. Each finished paragraph is kept, so narrating again carries on from there."))}">${esc(_bulT("Stop narration"))}</button>
           <button class="secondary" data-on-click="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
           <button class="secondary" data-on-click="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
           <button class="secondary" data-on-click="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
           <button data-on-click="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
           <div id="bul-pub" class="hint" style="align-self:center"></div>
         </div>
-        <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>
+        <label class="row" style="${_BUL_CHECK_ROW};margin-top:8px">
+          <input type="checkbox" style="${_BUL_CHECK_BOX}" id="bul-fulltext"${_bulFullText ? " checked" : ""} data-on-change="bulletinToggleFullText(this)">
+          <span>${esc(_bulT("Include each article's full text in the annexes"))}</span>
+        </label>
+        <p class="hint" id="bul-fulltext-hint">${esc(_bulFullTextHint())}</p>
         <div id="bul-privacy" class="hint" style="margin-top:8px"></div>`;
       _bulPaintMsg("bul-pub");
     }
@@ -547,10 +562,29 @@
     //
     // It is measured against the SAME selection the download will use, or it would
     // describe a different file from the one about to be sent.
+    function _bulFullTextHint() {
+      return _bulFullText
+        ? _bulT("With full text on, the annexes redistribute publishers' text: each file carries an article someone else wrote, in full. Keep them where you keep the corpus, and check each publisher's terms before passing them on.")
+        : _bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. Each carries the article's details and an excerpt.");
+    }
+    function bulletinToggleFullText(cb) {
+      _bulFullText = !!(cb && cb.checked);
+      const hint = $("bul-fulltext-hint");
+      if (hint) hint.textContent = _bulFullTextHint();
+      _bulPrivacy();
+    }
+    // The annexes and their privacy enumeration take the same query, full text included,
+    // or the enumeration would describe a different file from the one downloaded.
+    function _bulAnnexQuery() {
+      const q = _bulQuery();
+      q.set("full_text", _bulFullText ? "true" : "false");
+      return q;
+    }
+
     async function _bulPrivacy() {
       const box = $("bul-privacy");
       if (!box || !_bulFile) return;
-      const q = _bulQuery(); q.set("kind", "annexes");
+      const q = _bulAnnexQuery(); q.set("kind", "annexes");
       try {
         _bulPrivacyData = {d: await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`)};
       } catch (e) { _bulPrivacyData = {error: e.message}; }
@@ -570,7 +604,16 @@
           {error: p.error}) + " " + _bulT("That is an unanswered question, not an all-clear.");
         return;
       }
-      const d = p.d || {};
+      box.innerHTML = _bulPrivacyHtml(p.d, "What a reader of these files can see");
+    }
+    // ONE renderer for the §18 enumeration, shared by the annexes and the evidence
+    // archive (whose plan carries the same payload, or {error, caveat} when it failed).
+    function _bulPrivacyHtml(d, heading) {
+      d = d || {};
+      if (d.error != null && !d.items) {
+        return esc(_bulTf("What a reader of these files could see could not be listed: {error}", {error: d.error})
+          + " " + _bulT("That is an unanswered question, not an all-clear."));
+      }
       const rows = (d.items || []).map(it => {
         const mark = it.present === true
           ? (it.n != null ? `${_bulT("yes")} (${it.n})` : _bulT("yes"))
@@ -578,7 +621,7 @@
         return `<li><strong>${esc(_bulT(it.what))}</strong> — ${esc(mark)}<br>
           <span class="muted">${esc(_bulT(it.why_it_matters))}</span></li>`;
       }).join("");
-      box.innerHTML = `<strong>${esc(_bulT("What a reader of these files can see"))}</strong>
+      return `<strong>${esc(_bulT(heading))}</strong>
         <p class="muted" style="margin:4px 0">${esc(_bulT(d.caveat || ""))}</p>
         <ul style="margin:4px 0 0 18px">${rows}</ul>`;
     }
@@ -622,7 +665,7 @@
         await _throwIfNotOk(report);
         _saveBlob(await report.blob(), _filenameOf(report, "bulletin.md"));
 
-        const zip = await fetch(`${base}/annexes?${q}`);
+        const zip = await fetch(`${base}/annexes?${_bulAnnexQuery()}`);
         await _throwIfNotOk(zip);
         const n = zip.headers.get("X-OO-Annex-Articles");
         _saveBlob(await zip.blob(), _filenameOf(zip, "annexes.zip"));
@@ -685,6 +728,17 @@
     // has to be an explicit act, because the loss only ever surfaces as a progress bar
     // back at zero.
     let _bulNarratePoll = null;
+    // True while a run is being watched, so a Review redrawn mid-run (a language switch,
+    // a re-read) keeps Stop on screen and Narrate off.
+    let _bulNarrating = false;
+    // True once Stop was pressed for the watched run, so a redraw does not offer it again.
+    let _bulStopAsked = false;
+    let _bulPollFails = 0;
+    function _bulNarrateButtons() {
+      const run = $("bul-narrate-run"), stop = $("bul-narrate-stop");
+      if (run) run.disabled = _bulNarrating;
+      if (stop) { stop.hidden = !_bulNarrating; stop.disabled = _bulNarrating && _bulStopAsked; }
+    }
 
     async function bulletinNarrate(btn) {
       if (!_bulFile) return;
@@ -693,11 +747,25 @@
         await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/narrate?${_bulQuery()}`,
           {method: "POST"});
         _bulSay("bul-pub", "Narrating in the background — watch it in the task manager.");
+        _bulNarrating = true; _bulNarrateButtons();
         _bulWatchNarration();
       } catch (e) {
         _bulSay("bul-pub", "Could not start narration: {error}", {error: e.message});
         btn.disabled = false;
+        _bulAdoptRunningNarration();  // a 409 means a run is already going: offer its Stop
       }
+    }
+
+    // A run this page did not start (a reload, another tab, a 409 on Narrate) can be stopped
+    // too: if the server says one is running, watch it and show Stop. Called when the Review
+    // opens and after a refused start; it never starts anything.
+    async function _bulAdoptRunningNarration() {
+      if (_bulNarrating) return;
+      let d = null;
+      try { d = await api("/api/bulletin/narration"); } catch { return; }
+      if (!(d && d.job && d.job.running) || _bulNarrating) return;
+      _bulNarrating = true; _bulNarrateButtons();
+      _bulWatchNarration();
     }
 
     // The poll stops on a terminal state and re-reads the review, so the operator sees
@@ -708,15 +776,24 @@
       _bulNarratePoll = setInterval(async () => {
         let d = null;
         try { d = await api("/api/bulletin/narration"); }
-        catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; return; }
-        const job = d.job || {}, btn = $("bul-narrate-run");
+        // One failed read says nothing about the run: keep Stop on screen and ask again next
+        // tick. Five in a row (the server gone, the store locked) end the watch, said plainly.
+        catch {
+          if (++_bulPollFails < 5) return;
+          clearInterval(_bulNarratePoll); _bulNarratePoll = null;
+          _bulNarrating = false; _bulStopAsked = false; _bulNarrateButtons();
+          _bulSay("bul-pub", "Lost track of the narration. Open the Review again to see where it is.");
+          return;
+        }
+        _bulPollFails = 0;
+        const job = d.job || {};
         const n = {done: job.done || 0, total: job.total || 0};
         if (job.running) {
-          _bulSay("bul-pub", "Narrating — units: {done} of {total}", n);
+          if (!_bulStopAsked) _bulSay("bul-pub", "Narrating — units: {done} of {total}", n);
           return;
         }
         clearInterval(_bulNarratePoll); _bulNarratePoll = null;
-        if (btn) btn.disabled = false;
+        _bulNarrating = false; _bulStopAsked = false; _bulNarrateButtons();
         {
           // Three outcomes, three sentences. An ERROR is named rather than folded
           // into "finished" -- a run that lost its model must not read as a run that
@@ -739,6 +816,138 @@
         }
         if (_bulFile) bulletinReview(_bulFile);
       }, 3000);
+    }
+
+    // STOP (Lane M's routes list): the run could be started here and stopped nowhere. It is
+    // cooperative -- the server finishes the paragraph in flight and keeps every finished one
+    // (the cursor is saved per unit), so Narrate again resumes rather than starts over. That
+    // is why it asks no confirm(): nothing is lost (tests/trusted_click_table.py lists it
+    // with the other job stops). The poll above reports the outcome in its own words.
+    async function bulletinNarrateStop(btn) {
+      btn.disabled = true;
+      try {
+        await api("/api/bulletin/narration/stop", {method: "POST"});
+        _bulStopAsked = true;
+        _bulSay("bul-pub", "Stopping after the paragraph being written…");
+        if (!_bulNarratePoll) _bulWatchNarration();
+      } catch (e) {
+        _bulSay("bul-pub", "Could not stop narration: {error}", {error: e.message});
+        btn.disabled = false;
+      }
+    }
+
+    // -- Evidence archive (Lane M's routes list: plan + build had no button) -- //
+    // Every article of the chosen period, in full, as ONE plaintext ZIP written to a
+    // folder on THIS machine. Two steps by design: Check reads the exact article count,
+    // a LABELLED size estimate, the folder's free space and what a reader of the file
+    // could see (§18); Write is enabled only by a passing Check for the SAME period and
+    // folder, and re-checks that at the click, so the numbers the operator decided on
+    // describe the file that gets written. The plaintext warning is the visible caveat
+    // (R685): this is the one place the encrypted corpus leaves as clear text.
+    let _bulEvPlan = null, _bulEvBuilt = null, _bulEvSeq = 0, _bulEvBuilding = false;
+    function _bulEvKey() {
+      return {cadence: ($("bul-cadence") || {}).value || "weekly",
+        dest: (($("bul-ev-dest") || {}).value || "").trim()};
+    }
+    function _bulEvReady() {
+      // Never while a write is in flight: a second write into the same folder races the first.
+      if (_bulEvBuilding) return false;
+      const p = _bulEvPlan, k = _bulEvKey();
+      return !!(p && p.d && !p.used && p.cadence === k.cadence && p.dest === k.dest
+        && p.d.destination_writable === true && (p.d.articles || 0) > 0);
+    }
+    async function bulletinEvidencePlan(btn) {
+      if (_bulEvBuilding) return;  // the panel belongs to the write until it answers
+      const k = _bulEvKey();
+      if (!k.dest) { _bulSay("bul-ev-msg", "Type the folder on this machine to write it into."); return; }
+      const seq = ++_bulEvSeq;
+      btn.disabled = true;
+      _bulEvPlan = null; _bulEvBuilt = null; _bulPaintEvidence();
+      _bulSay("bul-ev-msg", "Checking…");
+      try {
+        const d = await api(`/api/bulletin/evidence/plan?cadence=${encodeURIComponent(k.cadence)}&dest=${encodeURIComponent(k.dest)}`,
+          {method: "POST"});
+        if (seq !== _bulEvSeq) return;  // a later Check owns the panel
+        _bulEvPlan = {d, cadence: k.cadence, dest: k.dest};
+        _bulClearMsg("bul-ev-msg");
+      } catch (e) {
+        if (seq !== _bulEvSeq) return;
+        _bulSay("bul-ev-msg", "Could not check: {error}", {error: e.message});
+      } finally {
+        btn.disabled = false;
+        _bulPaintEvidence();
+      }
+    }
+    async function bulletinEvidenceBuild(btn) {
+      if (_bulEvBuilding) return;  // the write in flight owns the panel and its status line
+      if (_bulEvPlan && _bulEvPlan.used) {
+        _bulSay("bul-ev-msg", "This archive is written. Check again to write another.");
+        return;
+      }
+      if (!_bulEvReady()) {
+        // The period or the folder changed since the Check: its numbers describe another file.
+        _bulSay("bul-ev-msg", "The period or the folder changed since the check. Check again first.");
+        _bulPaintEvidence();
+        return;
+      }
+      const k = _bulEvKey();
+      _bulEvBuilding = true;
+      btn.disabled = true;
+      _bulPaintEvidence();
+      _bulSay("bul-ev-msg", "Writing the archive… a long period can take several minutes.");
+      try {
+        const r = await api(`/api/bulletin/evidence/build?cadence=${encodeURIComponent(k.cadence)}&dest=${encodeURIComponent(k.dest)}&plaintext_ack=true`,
+          {method: "POST"});
+        _bulEvBuilt = r;
+        // A written archive is not written again by a second click: the next Write
+        // needs a new Check (the server would replace the file of the same name).
+        if (_bulEvPlan) _bulEvPlan = Object.assign({}, _bulEvPlan, {used: true});
+        _bulClearMsg("bul-ev-msg");
+      } catch (e) {
+        _bulSay("bul-ev-msg", "Could not write the archive: {error}", {error: e.message});
+      } finally {
+        _bulEvBuilding = false;
+        _bulPaintEvidence();
+      }
+    }
+    function _bulPaintEvidence() {
+      const out = $("bul-ev-out"), wbtn = $("bul-ev-build"), cbtn = $("bul-ev-plan");
+      if (wbtn) wbtn.disabled = !_bulEvReady();
+      if (cbtn) cbtn.disabled = _bulEvBuilding;
+      if (!out) return;
+      const p = _bulEvPlan && _bulEvPlan.d, b = _bulEvBuilt;
+      if (!p) { out.innerHTML = ""; return; }
+      const per = p.period || {};
+      const size = p.estimated_bytes
+        ? `<span title="${esc(_bulT("Estimated from the stored length of a sample of the period's articles, times the exact count. The ZIP is compressed, so the file will be smaller."))}">${esc(_bulTf("About {size} before compression", {size: _fmtBytes(p.estimated_bytes)}))}</span>`
+        : esc(_bulT("Size not measurable: unknown, not zero."));
+      let dest;
+      if (p.destination_writable === true) {
+        dest = esc(p.free_bytes != null ? _bulTf("Folder writable, {free} free.", {free: _fmtBytes(p.free_bytes)}) : _bulT("Folder writable."));
+      } else {
+        dest = `<strong>${esc(_bulT("This folder cannot be written to."))}</strong>`
+          + (p.destination_error ? ` <span dir="auto">${esc(p.destination_error)}</span>` : "");
+      }
+      const lines = [
+        `<strong>${esc(_bulTf("Articles: {n} · period {start} – {end}", {n: p.articles || 0, start: ooIsoDate(per.start), end: ooIsoDate(per.last_day)}))}</strong> ${size}`,
+        dest,
+      ];
+      if (!(p.articles > 0)) lines.push(esc(_bulT("No articles in this period: there is nothing to write.")));
+      let done = "";
+      if (b) {
+        if (b.cancelled) {
+          done = esc(_bulTf("Stopped — articles: {done} of {total}. The partial file was removed.", {done: b.articles_written || 0, total: b.articles_expected || 0}));
+        } else {
+          const counts = b.complete
+            ? _bulTf("Articles: {n} · {size}", {n: b.articles || 0, size: _fmtBytes(b.bytes || 0)})
+            : _bulTf("Articles: {done} of {total} · {size}", {done: b.articles || 0, total: b.articles_expected || 0, size: _fmtBytes(b.bytes || 0)});
+          done = `<strong>${esc(_bulT("Written:"))}</strong> <span dir="ltr" style="overflow-wrap:anywhere">${esc(b.path || "")}</span> ${esc(counts)}`;
+        }
+      }
+      out.innerHTML = `<p class="card-caveat" style="margin:4px 0">${esc(_bulT("Plain text: your corpus is encrypted, this archive is not. It holds the full text of every article in the period. Keep it where you keep the corpus; it is not meant to be shared."))}</p>
+        <div>${lines.join("<br>")}</div>
+        <div style="margin-top:6px">${_bulPrivacyHtml(p.privacy, "What a reader of this archive can see")}</div>
+        ${done ? `<div style="margin-top:6px">${done}</div>` : ""}`;
     }
 
     async function bulletinPublish(btn) {
@@ -1191,11 +1400,142 @@
         ? `openAnalysisForIds(${esc(JSON.stringify(e.article_ids))}, ${esc(JSON.stringify(e.title))})`
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
       const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" data-on-click="ooStop(event);${openExpr}">${esc(e.title)}</b>`;
+      // A deduced date can be checked mention by mention (Lane M, R684): the button opens the
+      // articles that mention this date, each with its snippet and Confirm / Reject / Undo.
+      const review = (e.deduced && e.next_occurrence)
+        ? ` <button type="button" class="tiny secondary" title="${esc(T("See each article that mentions this date, with the sentence it was read from, and confirm or reject the reading."))}" data-on-click="ooStop(event);agOpenMentions(${esc(JSON.stringify(e.next_occurrence))})">${esc(T("Check the mentions"))}</button>` : "";
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?ooCountryCell(e.country,{cls:"pill"}):""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}</div>
+        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?ooCountryCell(e.country,{cls:"pill"}):""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}${review}</div>
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }
+    // -- Articles that mention a date (GET /api/article-dates/by-date) --------- //
+    // One dialog for a picked day and for a deduced event. Each row is ONE date tag: the
+    // article (local reader first, invariant #6), the sentence the date was read from, its
+    // status, and Confirm / Reject. Confirm or reject changes that tag only; Undo puts back
+    // the status it had. Confirming says the article does mention this date, never that
+    // anything happens on it, and the caveat saying so stays visible above the list.
+    const AG_MENTIONS_LIMIT = 200;
+    const _agMentions = { date: null, rows: [], prev: {}, changed: false, gen: 0, busy: new Set() };
+    function _agStatusLabel(st) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (st === "confirmed") return T("confirmed by you");
+      if (st === "rejected") return T("rejected by you");
+      return T("not checked");
+    }
+    function _agMentionRow(r) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const id = Number(r.id);
+      const pill = `<span class="pill${r.status === "confirmed" ? " ok" : r.status === "rejected" ? " warn" : ""}">${esc(_agStatusLabel(r.status))}</span>`;
+      const acts = [];
+      // A month-only mention ("March 2027") is stored on the 1st: say so, and never call it a day.
+      const monthOnly = r.precision === "month";
+      const confirmTip = monthOnly
+        ? T("This article does mention this month, with no day. It does not confirm that anything happens in it.")
+        : T("This article does mention this date. It does not confirm that anything happens on it.");
+      const busy = _agMentions.busy.has(id) ? " disabled" : "";
+      if (r.status !== "confirmed")
+        acts.push(`<button type="button" class="tiny" title="${esc(confirmTip)}"${busy} data-on-click="agMentionSet(${id}, 'confirmed')">${esc(T("Confirm"))}</button>`);
+      if (r.status !== "rejected")
+        acts.push(`<button type="button" class="tiny secondary" title="${esc(T("The date was read wrongly from this article. A rejected mention no longer counts toward the deduced date."))}" ${busy} data-on-click="agMentionSet(${id}, 'rejected')">${esc(T("Reject"))}</button>`);
+      if (Object.prototype.hasOwnProperty.call(_agMentions.prev, id))
+        acts.push(`<button type="button" class="tiny secondary" ${busy} data-on-click="agMentionUndo(${id})">${esc(T("Undo"))}</button>`);
+      const when = r.published_at ? ` <span class="muted">· ${esc(ooIsoDate(r.published_at))}</span>` : "";
+      return `<div class="ag-row" data-tag="${id}"><div class="ag-body">
+        <div><a href="/api/articles/${Number(r.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(r.title || T("(untitled)"))}</a>${when} ${pill}${monthOnly ? ` <span class="pill">${esc(T("names the month only, no day"))}</span>` : ""}</div>
+        ${r.snippet ? `<div class="hint" dir="auto">“${esc(r.snippet)}”</div>` : ""}
+        <div style="display:flex;gap:6px;margin-top:4px">${acts.join("")}</div></div></div>`;
+    }
+    function _agRenderMentions() {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const body = $("ag-mentions-body"); if (!body) return;
+      const rows = _agMentions.rows;
+      const cut = rows.length >= AG_MENTIONS_LIMIT
+        ? `<div class="hint">${esc(_tfn("Showing the first {n} mentions.", { n: AG_MENTIONS_LIMIT }))}</div>` : "";
+      body.innerHTML = `<div class="card-caveat">${esc(T("Dates read from article text by the app, never confirmed as events. Confirming says the article does mention this date; it does not confirm that anything happens on it."))}</div>` +
+        (rows.length
+          ? `<div class="hint">${esc(_tfn("{n} mentions", { n: rows.length }))}</div>` + cut + rows.map(_agMentionRow).join("")
+          : `<div class="muted">${esc(T("No article in your corpus mentions this date."))}</div>`);
+    }
+    async function agOpenMentions(iso) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dlg = $("ag-mentions"); if (!dlg || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return;
+      // A new opening starts a new generation: a reply that belongs to an earlier one is dropped.
+      const gen = ++_agMentions.gen;
+      _agMentions.date = iso; _agMentions.rows = []; _agMentions.prev = {}; _agMentions.busy = new Set();
+      let label = iso;
+      try { label = new Intl.DateTimeFormat(agLocale(), { dateStyle: "full", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z")); } catch (_e) { /* keep the ISO date */ }
+      $("ag-mentions-title").textContent = T("Articles that mention {date}").replace("{date}", label);
+      $("ag-mentions-body").innerHTML = `<div class="muted">${esc(T("Loading…"))}</div>`;
+      if (!dlg.open) dlg.showModal();
+      try {
+        const d = await api("/api/article-dates/by-date?date=" + encodeURIComponent(iso) + "&limit=" + AG_MENTIONS_LIMIT);
+        if (_agMentions.gen !== gen) return;
+        _agMentions.rows = Array.isArray(d.articles) ? d.articles : [];
+        _agRenderMentions();
+      } catch (e) {
+        if (_agMentions.gen !== gen) return;
+        $("ag-mentions-body").innerHTML = `<div class="err">${esc(T("Could not read the mentions:"))} ${esc(e && e.message ? e.message : String(e))}</div>`;
+      }
+    }
+    const _AG_STATUS_ROUTE = { confirmed: "confirm", rejected: "reject", candidate: "reset" };
+    // Returns false when the reply belongs to an earlier opening of the dialog. The agenda is
+    // marked for a re-read BEFORE the request, so closing the dialog while it is in flight
+    // still re-reads; a reply that lands after the close re-reads it itself.
+    async function _agMentionPost(id, status) {
+      const gen = _agMentions.gen;
+      _agMentions.changed = true;
+      _agMentions.busy.add(Number(id)); _agRenderMentions();
+      let r;
+      try {
+        r = await api(`/api/article-dates/${Number(id)}/${_AG_STATUS_ROUTE[status]}`, { method: "POST" });
+      } finally {
+        if (_agMentions.gen === gen) _agMentions.busy.delete(Number(id));
+      }
+      const dlg = $("ag-mentions");
+      if (_agMentions.gen !== gen || !(dlg && dlg.open)) { if (!(dlg && dlg.open)) loadAgenda(); return false; }
+      const row = _agMentions.rows.find(x => Number(x.id) === Number(id));
+      if (row) row.status = r && r.status ? r.status : status;
+      _agRenderMentions();
+      return true;
+    }
+    async function agMentionSet(id, status) {
+      const row = _agMentions.rows.find(x => Number(x.id) === Number(id));
+      if (!row || !_AG_STATUS_ROUTE[status]) return;
+      if (_agMentions.busy.has(Number(id))) return;
+      const before = row.status || "candidate";
+      try {
+        if (!(await _agMentionPost(id, status))) return;
+        if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id)) _agMentions.prev[id] = before;
+        _agRenderMentions();
+      } catch (e) { _agRenderMentions(); toast((e && e.message) || String(e), "err"); }
+    }
+    async function agMentionUndo(id) {
+      if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id) || _agMentions.busy.has(Number(id))) return;
+      const before = _agMentions.prev[id];
+      try {
+        delete _agMentions.prev[id];
+        await _agMentionPost(id, _AG_STATUS_ROUTE[before] ? before : "candidate");
+      } catch (e) { _agMentions.prev[id] = before; _agRenderMentions(); toast((e && e.message) || String(e), "err"); }
+    }
+    function agCloseMentions() {
+      const dlg = $("ag-mentions"); if (dlg && dlg.open) dlg.close();
+    }
+    function _agMentionsClosed() {
+      // A confirm or reject moves a deduced date's counts (a rejected mention drops out), so
+      // the agenda re-reads once the dialog closes rather than on every click.
+      if (_agMentions.changed) { _agMentions.changed = false; loadAgenda(); }
+    }
+    (function () {
+      const wire = () => {
+        const dlg = $("ag-mentions"); if (!dlg || dlg.dataset.wired) return;
+        dlg.dataset.wired = "1";
+        dlg.addEventListener("close", _agMentionsClosed);
+        const btn = $("ag-mentions-close"); if (btn) btn.addEventListener("click", agCloseMentions);
+      };
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire); else wire();
+    })();
+
     // -- Agenda views: MONTH grid (the ruled default) + the original list ----- //
     // The tab shows DATA only (maintainer principle 2026-06-11): calendar
     // subscriptions and the feed directory live in Settings -> Agenda.
@@ -1671,10 +2011,13 @@
           monthOnly.map(e => `<span class="ag-tag" title="${esc(e.title)}">${esc(e.title)}</span>`).join(" ") + `</div>`;
       box.innerHTML = html;
       // Day detail under the grid: the familiar honest rows for the picked day.
-      if (AGV.day && (byDay[AGV.day] || []).length) {
+      // The picked day always offers the articles that mention it (GET /api/article-dates/by-date),
+      // even when no listed event falls on it.
+      if (AGV.day) {
         const label = new Intl.DateTimeFormat(loc, { dateStyle: "full" }).format(new Date(y, m - 1, AGV.day));
-        dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)}</h3>` +
-          byDay[AGV.day].map(agRow).join("");
+        const iso = `${y}-${String(m).padStart(2, "0")}-${String(AGV.day).padStart(2, "0")}`;
+        dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)} <button type="button" class="tiny secondary" title="${esc(t9("Articles in your corpus whose text mentions this day, with the sentence each date was read from."))}" data-on-click="agOpenMentions(${esc(JSON.stringify(iso))})">${esc(t9("Articles that mention this day"))}</button></h3>` +
+          (byDay[AGV.day] || []).map(agRow).join("");
       } else dayBox.innerHTML = "";
     }
     // Events falling on ONE concrete date: annual rules (month+day, any year) +

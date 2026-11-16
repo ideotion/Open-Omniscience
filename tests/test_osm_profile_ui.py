@@ -9,12 +9,12 @@ server say are pinned.
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from pathlib import Path
 
 from tests.js_source_helper import function_source
+from tests.locale_forms import load_locale
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -79,7 +79,7 @@ def test_every_view_string_and_every_server_string_ships_in_twelve_languages():
         "Counted from the extract of {extract}; no change file has been applied since.", "Counted now", "What the daily change files changed",
     ]
     for path in sorted((STATIC / "locales").glob("*.json")):
-        loc = json.loads(path.read_text("utf-8"))
+        loc = load_locale(path)
         for s in strings:
             assert s in loc, (path.name, s)
             assert sorted(re.findall(r"\{\w+\}", s)) == sorted(re.findall(r"\{\w+\}", loc[s])), (path.name, "placeholders differ", s)

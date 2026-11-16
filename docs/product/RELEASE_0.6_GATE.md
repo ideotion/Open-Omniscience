@@ -32,7 +32,7 @@ tree.
 | B | OSM change tracking: daily diffs applied, tag-level change rows, the trend surfaces 2–6, the geography axis | session + operator (daily diffs) | ruled (R16; Q106, Q812 🔒, Q813, Q815 · 2–6, Q816, Q824) · `S06-01` | **OPEN** |
 | C | Laws: breadth to the language coverage floor — the seed list verified live, treaties as `INT`, EuroVoc topics, the SKOS thesauri | session + operator (live verification per source) | ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902 · d) · `S06-02` | **OPEN** |
 | D | Wikipedia: the coverage report per edition; every located datum in any indexed content onto the map | session | ruled (R12, R17; Q108, Q723, Q819 · 4) · `S06-03` | **OPEN** |
-| E | Help's body translated ×12 — the first tranche | session | ruled (Q1122 = b); *proposed staging* 0.6 → 0.8 · `S06-05` | **OPEN** |
+| E | Help's body translated ×12 — the first tranche | session | ruled (Q1122 = b); *proposed staging* 0.6 → 0.8 · `S06-05`; native review dropped (R721) | **CLOSED** (R721, 2026-11-14) |
 
 **The exit.** `v0.6.0` is tagged when rows A–E are CLOSED on named artifacts (row E at its stated tranche),
 the three i18n gates and the whole-tree guards are green, and the release notes carry the no-telemetry
@@ -158,7 +158,10 @@ steps.** Of the three closing conditions:
   38(d)): zh and ja are now matched as substrings, every such hit ≈, one-character labels never matched.
   R690 (PR #1959): combining marks and joiners now stay in their word (a Hindi or Bengali vowel sign or virama, a Thai
   mark, an Arabic haraka never splits one; Arabic vowelling is ignored), tested per script; "one character" counts letters,
-  not marks; Khmer, Lao and Burmese are unsupported until a test shows their matching works, so no figure is given for them.
+  not marks; Khmer, Lao and Burmese were unsupported until a test showed their matching works. R690 follow-up (Lane K):
+  a substring hit in a language without spaces must start and end on a syllable edge (never cutting off a vowel sign, a
+  stacked consonant or a vowel written before its consonant), tested on real Khmer, Lao and Burmese words, so the three are
+  scored, every hit ≈; the stated limit is that syllable edges are checked and word edges are not.
 
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
@@ -170,7 +173,7 @@ report renders for all twelve editions from the lane's own counters (the numbers
 member), and a located address from a wiki infobox appears on the map with its provenance in the hover.
 Brief `S06-03`.
 
-### Row E — Help's body ×12, the first tranche · ruled (Q1122 = b); *proposed staging* · OPEN
+### Row E — Help's body ×12, the first tranche · ruled (Q1122 = b); *proposed staging* · CLOSED (R721)
 
 **What it must demonstrate.** The 167,022-character Help body translated ×12 (~2 M characters), AI-drafted
 and flagged for native review like the GUI-gallery precedent, staged across 0.6 → 0.8 (*proposed*: the TEN
@@ -179,6 +182,13 @@ Help documents — `_DOCS` in `src/api/main.py:2558` lists ten slugs, grep-verif
 banner per the recorded mixed-language-document lesson). **Closes when** the tranche's documents pass the
 three i18n gates run separately and a live locale switch shows them (the recorded "keys exist ≠ ×12" lesson),
 with the translated-of-total figure on each document. Brief `S06-05`.
+
+**Amended 2026-11-14 (R721, maintainer: «Drop the native review for help, and mention it has been AI
+written»).** Native review of Help is no longer owed. Every Help document, in every language and English
+included, opens with one visible note that it was written by AI and may contain mistakes (the reader's
+banner, ×12, never behind a toggle); a translated document adds its language, the translated-of-total
+figure in headings and that the English original is authoritative. Tranche 1 (22 of 22 pairs, R677) closes
+the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 
 ---
 
@@ -194,6 +204,7 @@ with the translated-of-total figure on each document. Brief `S06-05`.
 | 2026-11-04 | **Row E tranche plan, measured (E1, `S06-05` S1; PROPOSED placement per Q1122 = b, not a ruling: the maintainer may move membership).** Method: `len(text)` in characters of each served Help document on main `5f07a389f`, ten slugs from `_DOCS`, against the eleven non-English locales of `src/static/locales/` (ar bn de es fr hi id ja pt ru zh; English is the authoritative text). Sizes: user-manual 225,673 · quickstart 24,620 · ethics 27,844 · governance 4,931 · security 80,666 · design 57,726 · roadmap 97,612 · architecture 24,987 · contributing 12,062 · changes 194,108; total 750,229 characters, so the owed body is 750,229 × 11 = 8,252,519 characters (the earlier ~2 M figure, 167,022 × 12, was the RENDERED Help tab and understates the owed body 4.1 times: 2,004,264 against 8,252,519). **Tranche 1 (0.6):** user-manual + quickstart = 250,293 characters × 11 = 2,753,223 (22 of the 110 document-locale pairs). **Tranche 2 (by 0.7):** governance, ethics, security, contributing, architecture = 150,490 × 11 = 1,655,390 (55 pairs; short, user-facing and safety-relevant first). **Tranche 3 (by 0.8):** design, roadmap, changes = 349,446 × 11 = 3,843,906 (33 pairs; the plan and release-by-release log, read least). Today: 0 of 110 pairs COMPLETE; one PARTIAL draft (`docs/i18n/fr/QUICKSTART.md`: 8 headings against the English 17, served but never counted). Drafting is local-model-only and no local model is reachable in the build container, so drafting the 22 tranche-1 pairs is an OPERATOR step (the maintainer's machine); each draft's banner flags it for native review, never a merge condition. The guard is `tests/test_help_docs_translated.py` (skeleton equality per pair, exact PARTIAL listing, a per-tranche floor that may only rise, a truthful `X-OO-Doc-Lang`, mutation-checked). | session (E1, measured) |
 | 2026-11-04 | **R418: a tag-timing condition on the exit.** The stage-2 stamp table `article_www_stamps` (R415) lands in two merges, the re-index PR with one registry line in `src/backup/merge.py` (cross-owner touch granted) and WAL's carry straight after; no release tag falls between them. | the coordinator session (R418) · recorded by Plan |
 | 2026-11-13 | **Row E, tranche 1 drafted (R677): 22 of 22 pairs COMPLETE.** `docs/i18n/<lang>/USER_MANUAL.md` and `QUICKSTART.md` for ar bn de es fr hi id ja pt ru zh, AI-drafted by Opus workers in a build session (R677 replaces the "local model only" reading of 2026-11-04) from the English refreshed against the code in #1944. Each opens with a banner comment stating it is AI-drafted, not native-reviewed, and its coverage (124 of 124 and 17 of 17 headings); each passes `tests/test_help_docs_translated.py` (skeleton, banner, FLOOR[1] = 22, PARTIAL now empty because the 8-heading fr quick start was replaced); fenced blocks, inline code and link targets are byte-identical to the English, and in-page anchors are rewritten to the translated headings. A fidelity read compared, per language, the quick start, §1, §3.6c, §3.6d, §5.6 and three random subsections with the English; its findings (English-style digit separators in es/pt/fr/de/id/ru, "terms" read as terminology in bn/id/ja, a fail-closed rendering in es, one word in ar) were fixed before merge. Listed in `docs/product/NATIVE_REVIEW_QUEUE.md` (Help documents). A live locale switch in Chromium against a local server (2026-11-13; ja, ar, fr, de) served each language's manual with `X-OO-Doc-Lang` set, its coverage banner drawn and no raw comment; Arabic renders right to left. The row's status is left to the gate owner (the "three i18n gates" wording predates the drafts). | session (Lane J) |
+| 2026-11-14 | **R721: native review of Help dropped; row E CLOSED.** The Help reader now opens every document, English included, with "This help text was written by AI and may contain mistakes." (×12), which replaced the old "Machine-drafted translation … Found a better wording? Improve it on the project page." wording rather than sitting beside it; the drafts' opening comments say "written by AI" instead of "not yet reviewed by a native speaker", and `docs/product/NATIVE_REVIEW_QUEUE.md` no longer lists Help documents. Guarded by `tests/help_banner_node_test.js` + `tests/test_help_banner.py`. | maintainer (R721, relayed by Plan) · recorded by the session |
 
 ---
 

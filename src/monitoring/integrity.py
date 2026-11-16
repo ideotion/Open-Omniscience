@@ -193,7 +193,7 @@ class _Generations:
             out: dict[str, Any] = {"epoch": get_corpus_epoch(self._session)}
             for t, top in key:
                 try:
-                    n = _scalar(self._session, f"SELECT COUNT(*) FROM {t} WHERE id <= :top", {"top": top})  # nosec B608 - `t` is a constant above
+                    n = _scalar(self._session, f"SELECT COUNT(*) FROM {t} WHERE id <= :top", {"top": top})  # nosec B608 # `t` is a constant above
                 except Exception:
                     self._cache[key] = None  # a count the deadline cut is not tried again in this build: unknown, so changed
                     raise
@@ -207,7 +207,7 @@ class _Generations:
     def _maxes(self, also: tuple[str, ...]) -> dict[str, int] | None:
         out: dict[str, int] = {}
         for t in also:
-            m = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 - `t` is a constant above
+            m = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 # `t` is a constant above
             if m is None:
                 return None
             out["max_" + t] = m
@@ -223,7 +223,7 @@ class _Generations:
 
         tops: dict[str, int] = {}
         for t in _GENERATION_TABLES:
-            top = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 - `t` is a constant above
+            top = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 # `t` is a constant above
             if top is None:
                 return None
             tops[t] = top
@@ -320,7 +320,7 @@ def _range_scan(
     gens = gens if gens is not None else _Generations(session)
     prev: dict[str, Any] = saved[check] if isinstance(saved.get(check), dict) else {}
     last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
-    top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 - `table` is one of three constants above
+    top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 # `table` is one of three constants above
     if top is None:
         progress[check] = {"state": "unreadable", "last_complete": last_complete}
         return None
@@ -433,7 +433,7 @@ def _fk_scan(
         if deadline_expired(session) or (stop_at is not None and time.monotonic() >= stop_at):
             break
         try:
-            rows = session.execute(text(f'PRAGMA foreign_key_check("{name}")')).fetchall()  # nosec B608 - `name` matched [A-Za-z0-9_]+ above
+            rows = session.execute(text(f'PRAGMA foreign_key_check("{name}")')).fetchall()  # `name` matched [A-Za-z0-9_]+ above
         except Exception as exc:  # noqa: BLE001
             if _budget_spent(session, exc):
                 interrupted = exc
@@ -555,7 +555,7 @@ def corpus_integrity(
                 source_rows = "keywords"
             else:
                 source_rows = (
-                    "(SELECT id, term, mention_count, article_count FROM keywords "  # nosec B608 - the only input is int(sample)
+                    "(SELECT id, term, mention_count, article_count FROM keywords "  # nosec B608 # the only input is int(sample)
                     f"ORDER BY mention_count DESC LIMIT {int(sample)})"
                 )
             checked = 0
@@ -570,7 +570,7 @@ def corpus_integrity(
             try:
                 rows = session.execute(
                     text(
-                        "SELECT k.id, k.term, k.mention_count, k.article_count, "  # nosec B608 - `source_rows` is a constant or built from int(sample); no user input
+                        "SELECT k.id, k.term, k.mention_count, k.article_count, "  # nosec B608 # `source_rows` is a constant or built from int(sample); no user input
                         "COALESCE(SUM(m.count),0) AS live_mentions, "
                         "COUNT(m.article_id) AS live_articles "
                         f"FROM {source_rows} k LEFT JOIN keyword_mentions_all m ON m.keyword_id = k.id "

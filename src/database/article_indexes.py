@@ -569,7 +569,7 @@ def _refresh_stats(engine: Engine, names: list[str]) -> None:
             conn.execute(text("PRAGMA analysis_limit=1000"))
             for name in names:
                 if name in ALL_NAMES:  # a module constant, never input
-                    conn.execute(text(f"ANALYZE main.{name}"))  # noqa: S608  # nosec B608
+                    conn.execute(text(f"ANALYZE main.{name}"))  # noqa: S608
             conn.commit()
     except Exception as exc:  # noqa: BLE001 - statistics are an optimisation, never a reason to fail the build
         # The TYPE only, never the text or a traceback: an engine's or a driver's message (and the error it was raised from)

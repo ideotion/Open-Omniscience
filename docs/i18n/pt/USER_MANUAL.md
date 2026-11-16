@@ -1,4 +1,4 @@
-<!-- pt: AI-drafted translation of docs/USER_MANUAL.md (2026-11-13, R677), not yet reviewed by a native speaker; the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Improve it with a pull request; corrections by native speakers are welcome. -->
+<!-- pt: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 125 of 125 headings. Corrections are welcome as a pull request. -->
 
 # Open Omniscience — Manual do usuário
 
@@ -443,6 +443,44 @@ outro, e deixa você rolar.
 - **Cada cartão** mostra o título, a fonte, a data e as **três principais palavras-chave do próprio
   artigo** — as palavras-chave daquele artigo, não do que você pesquisou. **Ler mais**
   expande o resumo **no próprio lugar**; o título abre o artigo no leitor local.
+
+### 3.0c Vista simples
+
+**Para que serve:** ler o que o seu corpus contém sem aprender treze abas primeiro. A vista
+simples é uma segunda interface, organizada por tarefa, sobre o mesmo aplicativo, os mesmos
+dados e as mesmas regras de segurança. Ela remove telas, não informação: cada número mantém
+o seu método, a sua contagem e a sua ressalva a um clique de distância.
+
+- **O interruptor.** O interruptor **Simples** na barra superior a liga e a desliga. A
+  escolha é lembrada apenas neste dispositivo (neste navegador). Desligá-la traz de volta a
+  interface completa exatamente como estava; nada é redefinido nem perdido.
+- **Seis vistas** substituem as abas da barra lateral:
+  - **Hoje**: as Pistas que se destacam no seu corpus, os temas em alta e o estado da rede
+    com um botão **Ficar online**.
+  - **Ler**: os seus artigos em lista, mais recentes primeiro ou embaralhados. Escolher um
+    país em **Mundo** restringe a lista (e o seu resumo) aos artigos das fontes desse país.
+  - **Pesquisar**: a mesma pesquisa da vista completa. Digite uma palavra, um nome ou uma
+    frase; as aspas dão uma frase exata e OR uma ou outra palavra. **Abrir a análise
+    completa** leva a mesma pesquisa para Explorar.
+  - **Mundo**: os países de onde vêm os seus artigos, ordenados pelo quanto cobrem. Aqui,
+    um país é aquele sob o qual cada fonte está catalogada, nunca o lugar onde uma história
+    aconteceu. Um clique em um país restringe **Ler** e o seu resumo.
+  - **Números**: as séries de mercado e os registros climáticos já armazenados no seu
+    computador, cada um com o seu valor mais recente e a sua data. Esta vista apenas lê: os
+    preços e os registros climáticos são buscados, com o seu consentimento, na vista
+    completa.
+  - **Mais ferramentas**: um link para cada aba da vista completa e o formulário
+    **Adicionar uma fonte**. Uma ferramenta aberta daqui mostra uma barra **Voltar à vista
+    simples** que leva você de volta aonde estava, com a sua pesquisa ainda no lugar.
+- **O botão ⓘ.** Cada cartão e cada número traz um. Ele abre a ressalva, o método, a
+  contagem (n), a fonte e a data. Funciona com teclado, toque e leitores de tela.
+- **As marcas.** Um número que merece uma segunda olhada mostra uma pequena marca ao lado,
+  para que você saiba que o ⓘ guarda algo que vale a pena abrir: **~** aproximado, **◐**
+  parcial, **◷** pode estar desatualizado.
+- **O que nunca muda.** A vista simples não oculta nenhuma das superfícies de segurança do
+  aplicativo. A janela de consentimento de rede, o modo avião e o estado do Tor na barra
+  superior, a tela de bloqueio, a confirmação antes de qualquer exclusão, os avisos e as
+  mensagens de erro continuam todos visíveis e funcionam exatamente como na vista completa.
 
 ### 3.1 Pesquisa
 

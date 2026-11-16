@@ -9,12 +9,12 @@ server say are pinned.
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from pathlib import Path
 
 from tests.js_source_helper import function_source
+from tests.locale_forms import load_locale
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -80,7 +80,7 @@ def test_every_view_string_and_every_server_string_ships_in_twelve_languages():
         "No places were counted here, so there is no share.",
     ]
     for path in sorted((STATIC / "locales").glob("*.json")):
-        loc = json.loads(path.read_text("utf-8"))
+        loc = load_locale(path)
         for s in strings:
             assert s in loc, (path.name, s)
             assert sorted(re.findall(r"\{\w+\}", s)) == sorted(re.findall(r"\{\w+\}", loc[s])), (path.name, "placeholders differ", s)
@@ -99,7 +99,7 @@ def test_every_osm_panel_carries_the_odbl_credit_once_at_its_foot():
     assert 'href="https://www.openstreetmap.org/copyright"' in credit and 't("OpenStreetMap contributors")' in credit and "ODbL 1.0" in credit
     for fn in ("_renderOsmCompleteness", "_renderOsmTrends", "_renderOsmProfile", "_renderOsmGeography"):
         assert function_source(js, fn).count("_osmCredit()") == 1, f"{fn} lost its OpenStreetMap credit, or carries it twice"
-    en = json.loads((STATIC / "locales" / "en.json").read_text(encoding="utf-8"))
+    en = load_locale(STATIC / "locales" / "en.json")
     assert "OpenStreetMap contributors" in en
 
 
@@ -111,5 +111,5 @@ def test_the_changed_measure_states_where_its_window_starts():
     figs = function_source(js, "_osmGeogFigures")
     assert '_osmGeogVintage(name, a.vintage, m === "changed" ? a.observed_since : null)' in figs
     for lang in ("en", "fr", "ar", "zh"):
-        loc = json.loads((STATIC / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        loc = load_locale(STATIC / "locales" / f"{lang}.json")
         assert "{since}" in loc["Changes observed here since {since}."], lang

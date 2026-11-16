@@ -21,6 +21,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 #: Not a writer to the corpus file, one reason each (read from the job's module in the R360 pass; a new row needs the same reading).
 NOT_CORPUS_WRITERS: dict[str, str] = {
     "ai-check": "reads: a connectivity and model probe",
+    "backup-export": "reads the corpus into an export folder (R701); a restore refuses while it runs (R712, merge.export_refusal)",
     "all-diagnostics": "writes the diagnostics zip on disk",
     "bulletin-narration": "writes the edition JSON on disk (narration_job.py documents it)",
     "card-audit": "reads the corpus to audit briefing cards",

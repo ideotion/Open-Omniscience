@@ -110,7 +110,9 @@ def _probe_mldsa(mod: object) -> tuple[bool, str]:
     It runs at import, deliberately: it is pure CPU (no I/O, no network, no thread),
     MEASURED at 1.6 ms for the ML-DSA-65 round trip and 0.02 ms for the OTS one on this
     machine (a figure, not a guess -- the recorded rule against writing a quantitative
-    claim without counting), and this module is imported by the custody paths rather
+    claim without counting; re-measured 2026-11-14 on a 4 vCPU cloud VM with pqcrypto
+    0.4.0: median 0.73 ms, p95 1.41 ms over 201 runs, item (e) of
+    docs/testing/PERF_FIGURES_REMEASURE_2026-11-14.md), and this module is imported by the custody paths rather
     than by boot. A lazy flag would break every existing
     ``monkeypatch.setattr(signing, "PQC_AVAILABLE", ...)`` and every
     ``from ... import PQC_AVAILABLE`` reader for no honesty gain.

@@ -443,6 +443,44 @@ other, and lets you scroll.
   keywords** — the keywords of that article, not of whatever you searched. **Read more**
   expands the summary **in place**; the title opens the article in the local reader.
 
+### 3.0c Simple view
+
+**What it's for:** reading what your corpus holds without learning thirteen tabs first. The
+simple view is a second, task-first interface over the same app, the same data and the same
+safety rules. It removes screens, not information: every figure keeps its method, count and
+caveat one click away.
+
+- **The switch.** The **Simple** switch in the top bar turns it on and off. The choice is
+  remembered on this device (in this browser) only. Turning it off brings back the full
+  interface exactly as it was; nothing is reset or lost.
+- **Six views** replace the sidebar's tabs:
+  - **Today**: the leads that stand out in your corpus, the rising topics, and the
+    network state with a **Go online** button.
+  - **Read**: your articles as a list, newest first or mixed. Choosing a country on
+    **World** scopes the list (and its summary) to the articles from that country's sources.
+  - **Search**: the same search as the full view. Type a word, a name or a phrase; quotes
+    give an exact phrase and OR either word. **Open the full analysis** takes the same
+    search to Explore.
+  - **World**: the countries your articles come from, ranked by how much they cover. A
+    country here is the one each source is catalogued under, never where a story happened.
+    A click on a country scopes **Read** and its summary.
+  - **Numbers**: the market series and climate records already stored on your computer,
+    each with its newest value and its date. This view only reads: prices and climate
+    records are fetched, with your consent, in the full view.
+  - **More tools**: a link to every tab of the full view, and the **Add a source** form.
+    A tool opened from here shows a **Back to simple view** bar that returns you to where
+    you were, with your search still in place.
+- **The ⓘ button.** Every card and figure carries one. It opens the caveat, the method,
+  the count (n), the source and the date. It works with the keyboard, touch and screen
+  readers.
+- **The marks.** A figure that needs a second look shows a small mark beside it, so you
+  know the ⓘ holds something worth opening: **~** approximate, **◐** partial, **◷** may be
+  out of date.
+- **What never changes.** The simple view hides none of the app's safety surfaces. The
+  network consent prompt, airplane mode and the Tor state in the top bar, the lock screen,
+  the confirmation before anything is deleted, notices and error messages all stay
+  visible and work exactly as in the full view.
+
 ### 3.1 Search
 
 **What it's for:** finding articles in your corpus. Search is the top half of the
