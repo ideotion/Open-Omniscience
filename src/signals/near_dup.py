@@ -343,8 +343,8 @@ def near_duplicate_clusters(
     template the copy elsewhere lacks); a shingle both pages carry is left out only when BOTH outlets
     repeat it. So two pages of one outlet are compared without its template, while a footer or a
     story one outlet learned never splits or hides its copy at another outlet, and two sister sites
-    sharing one template are not copies of each other through it. A doc without a group drops
-    nothing. Each pair has its own sets, so this mode compares every pair exactly (no MinHash, no
+    that BOTH learned their shared template are not copies of each other through it (when only one
+    learned it, it is kept, as before this rule). A doc without a group drops nothing. Each pair has its own sets, so this mode compares every pair exactly (no MinHash, no
     LSH) and refuses more than ``PAIR_MODE_MAX`` docs. A pair where either side has nothing left is
     not compared: two emptied pages are not copies of each other.
     """

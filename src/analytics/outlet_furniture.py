@@ -28,7 +28,7 @@ pages, and leaving it out of Related only makes Related lean on the other keywor
 can take a story that fills half an outlet's newest pages for its template (content alone cannot
 tell it from a paywall block), so the reader decides per pair: a copy at another outlet keeps
 everything both pages carry unless both outlets learned it, while two updates of that story at
-its own outlet are no longer copies of each other. A story the outlet ran twice is on two pages,
+its own outlet (or the same page stored twice, if that fills half the sample) are no longer copies of each other. A story the outlet ran twice is on two pages,
 not half, so it is still found. Too few pages to tell (under ``MIN_SAMPLE`` distinct pages, under
 ``MIN_ARTICLES`` articles) leaves nothing out. The template is learned from the newest pages, so an older
 page made under an earlier template or extractor keeps whatever of that template differs. The caches hold
