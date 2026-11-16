@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-16,ui/i18n,Date fallback writes local digits instead of the browser's locale (open-on-main 16b),shipped,PR #2026,src/static/app-shell.js; src/static/taskmanager.js,"The last two bare toLocaleString() calls in src/static were the catch fallbacks of fmtDateTime and the task manager's fmtLocal, used when Intl refuses the language tag; they now write the local time as YYYY-MM-DD HH:MM. Re-confirmed on main 766a01339: the other nine of the eleven hits are comments, and the {action} failed: {error} template no longer exists."

@@ -101,7 +101,7 @@ function harness() {
     p.reject(new Error("refused"));
   };
   const tick = () => new Promise((r) => setImmediate(r));
-  return { sel, server, pending, release, releaseNth, fail, tick, ...fns };
+  return { sel, box, server, pending, release, releaseNth, fail, tick, ...fns };
 }
 
 async function settle(h) { for (let i = 0; i < 5; i++) await h.tick(); }
@@ -141,6 +141,32 @@ async function settle(h) { for (let i = 0; i < 5; i++) await h.tick(); }
     while (h.pending.length) h.release("/api/llm/backend");
     await settle(h);
     assert.strictEqual(h.sel.value, "ollama");
+  }
+  // 1c. The stale load paints NOTHING: not the select, and not the "Active backend" line either
+  // (row 15: it skipped only the select, then rewrote the panel from the old stored value).
+  {
+    const h = harness();
+    h.loadAiBackendPanel();
+    await settle(h);
+    h.sel.value = "ollama"; h.setAiBackend("ollama");
+    await settle(h);
+    h.release("/api/llm/backend");             // stale: started before the pick, answers "auto"
+    await settle(h);
+    assert.strictEqual(h.box.innerHTML, "", "a stale load rewrote the panel from the old stored value");
+    h.release("/api/settings");
+    await settle(h);
+    h.release("/api/llm/backend");             // the save's reload paints the whole panel
+    await settle(h);
+    assert.ok(h.box.innerHTML.includes("ollama") && !h.box.innerHTML.includes("auto"), h.box.innerHTML);
+    // a stale load that FAILS must not paint its error over the fresh panel either
+    const painted = h.box.innerHTML;
+    h.loadAiBackendPanel();
+    await settle(h);
+    h.sel.value = "vllm"; h.setAiBackend("vllm");
+    await settle(h);
+    h.fail("/api/llm/backend");
+    await settle(h);
+    assert.strictEqual(h.box.innerHTML, painted, "a stale failed load painted its error");
   }
   // 2. Two quick picks: the first save's reload must not write while the second save is in flight.
   {
