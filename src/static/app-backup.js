@@ -425,11 +425,16 @@
           // disabled row with no explanation reads as a bug rather than as a boundary.
           const offerable = d.exportable !== false;
           const why = offerable ? "" : t(d.not_exportable_reason || "");
-          const title = why || (parts.length > 1
+          // R729: a member that rides INSIDE the corpus artifact (the living-source stores)
+          // says so on hover, beside the per-store split.
+          const split = parts.length > 1
             ? parts.map(([k, x]) => ooLabelText(k, `${files(x.count || 0)} · ${humanBytes(x.bytes || 0)}`)).join(" · ")
-            : "");
-          const state = (offerable && (d.count || 0) > 0) ? "checked" : "disabled";
-          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>`;
+            : "";
+          const title = why || [d.note ? t(d.note) : "", split].filter(Boolean).join(" · ");
+          const can = offerable && (d.count || 0) > 0;
+          const state = can ? "checked" : "disabled";
+          const needs = d.needs_corpus ? ` data-needs-corpus="1" data-can="${can ? "1" : ""}"` : "";
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}"${needs} ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>`;
         };
         // ONE ordered list from the server drives the rows AND the categories each one
         // exports (`data-cats`), so a lane that lands later becomes a row with a real
@@ -487,10 +492,20 @@
       const inside = document.getElementById("ux-c-inside");
       if (!inside) return;
       const corpus = document.getElementById("ux-c-corpus");
+      const withCorpus = !corpus || corpus.checked;
+      // R729: a member that rides inside the corpus artifact (Living sources) can only be
+      // ticked with the corpus; it is never a large-data file, so it does not count below.
+      for (const el of _uxMemberBoxes()) {
+        if (!el.dataset.needsCorpus) continue;
+        const was = el.disabled;
+        el.disabled = !(el.dataset.can && withCorpus);
+        if (el.disabled) el.checked = false;
+        else if (was) el.checked = true;
+      }
       // Read the rendered member rows rather than a hardcoded key list, so a lane added
       // to the server's member list is counted here without a second edit.
-      const any = _uxMemberBoxes().some((el) => el.checked);
-      const usable = (!corpus || corpus.checked) && any;
+      const any = _uxMemberBoxes().some((el) => el.checked && el.dataset.cats);
+      const usable = withCorpus && any;
       inside.disabled = !usable;
       if (!usable) inside.checked = false;
     }
@@ -842,8 +857,10 @@
       // so a reload between the phases no longer leaves the copy unstarted: the reopened
       // dialog re-attaches to the job. The passphrase goes to the job once; nothing echoes it.
       prog.innerHTML = `<span class="muted">${esc(t("Preparing the export folder…"))}</span>`;
+      // R729: the living-source stores ride inside the corpus artifact, so only with it.
+      const lanes = wantCorpus && _uxMemberBoxes().some((el) => el.dataset.needsCorpus && el.checked && !el.disabled);
       await _uxWatchExport(btn, () => api("/api/backup/export/start", { method: "POST", body: JSON.stringify({
-        parent, corpus: wantCorpus, categories: blobs, inside, passphrase: pass, verify_after_write: verifyAfterWrite }) }),
+        parent, corpus: wantCorpus, categories: blobs, inside, lanes, passphrase: pass, verify_after_write: verifyAfterWrite }) }),
         { mode: "backup", parent });
     }
 
@@ -1228,6 +1245,8 @@
         articles: whole ? members.reduce((a, r) => a + Number(r.articles || 0), 0) : null,
         articles_basis: whole ? "merged" : head.articles_basis,
         outcome: failed ? failed.outcome : head.outcome,
+        newly_followed: members.reduce((a, r) => a + Number(r.newly_followed || 0), 0),
+        lanes_owed: members.reduce((a, r) => a + Number(r.lanes_owed || 0), 0),
       };
     }
 
@@ -1244,6 +1263,16 @@
         bits.push(rep.articles_basis === "planned"
           ? esc(tf("{n} articles planned", { n }))
           : esc(tf("{n} articles", { n })));
+      }
+      // R729: pages the backup's living sources made this computer follow. The import
+      // fetched nothing; the hover says what decides whether anything ever is.
+      if (Number(rep.newly_followed) > 0) {
+        bits.push(`<span title="${esc(t("The import fetched nothing. These pages join the ordinary schedule, and airplane mode, consent and the lane's own switch still decide whether anything is fetched."))}">${esc(tf("{n} pages newly followed", { n: fmtNum(Number(rep.newly_followed), 0) }))}</span>`);
+      }
+      // R729: living sources this import did not merge yet (held behind the import queue,
+      // or failed). Visible, with what to do in the hover, until a later import merges them.
+      if (Number(rep.lanes_owed) > 0) {
+        bits.push(`<span style="color:var(--caveat)" title="${esc(t("Import this backup again once the import queue has finished. Its living sources merge then; its articles are not imported twice."))}">${esc(t("Living sources not merged yet"))}</span>`);
       }
       // Coloured text, never the toast `.note` box inside a sentence (Y2, as I9 did for
       // the run header): the box's padding and shadow broke the one quiet line apart.

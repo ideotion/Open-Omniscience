@@ -537,6 +537,8 @@ _READS_EVERY_COLUMN_WITHOUT_NAMING_IT = {
 _WRITES_THE_KEY_MASKED = {
     "src/api/diagnostics/source_samples.py": "the one-article-per-source zip: rss_url through shown_url, feed_key through "
     "shown_feed_key (tests/test_feed_identity_reads_r628.py builds the real zip and greps every member)",
+    "src/analytics/source_quality.py": "the source-quality zip's per-source rows (row 75: domain + feed_key join one instance's "
+    "rows to another's), feed_key through shown_feed_key (tests/test_source_quality.py plants a pre-R628 key with a login)",
 }
 
 
