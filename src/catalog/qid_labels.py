@@ -73,6 +73,17 @@ def looks_like_bare_qid(name: str | None) -> bool:
     return bool(name and _BARE_QID.match(name))
 
 
+def source_label(name: str | None, domain: str | None) -> str:
+    """What to SHOW for a source: its name, or its domain when the name is only a Wikidata identifier.
+
+    Field test 2026-11-14, row 71: a source read "Q11858063" where its domain, epari.fi, says who it is. The stored
+    name is not changed (it is an identity field, and :func:`resolve_qid_names` resolves it under review); only the
+    label is. With no domain either, the name is shown as it is."""
+    if looks_like_bare_qid(name) and domain:
+        return domain
+    return name or domain or ""
+
+
 def bare_qid_rows(rows: Iterable[tuple[object, str | None]]) -> list[tuple[object, str]]:
     """``(id, name)`` pairs whose name is a bare Q-id, normalised to upper case."""
     return [(rid, (name or "").strip().upper()) for rid, name in rows
