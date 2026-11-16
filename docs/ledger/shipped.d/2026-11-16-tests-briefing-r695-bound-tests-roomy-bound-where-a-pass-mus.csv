@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-16,tests/briefing,R695 bound tests: roomy bound where a pass must finish,shipped,PR #2039,tests/test_briefing_watch_pass_bound_r695.py,"The reached-every-watch test flaked on #2027: at a 0.3 s bound a loaded runner overran before the last watch. Tests whose pass must finish run at 3 s; tests whose watch sleeps past the bound check (expired on entry, expired after) == (False, True); only the statement-interrupt tests keep 0.3 s."

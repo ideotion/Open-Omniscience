@@ -84,7 +84,7 @@ def test_a_persisted_open_that_raises_is_a_reported_fallback_and_never_carries_t
     monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
     monkeypatch.setattr(columnar, "encryption_gate", lambda _p: True)
 
-    def boom(_path, _key):
+    def boom(_path, _key, *_spill_and_snapshot):
         raise RuntimeError("engine words that must not be kept")
 
     monkeypatch.setattr(columnar, "_attach_persisted", boom)
@@ -102,7 +102,7 @@ def test_a_persisted_connection_is_closed_when_the_open_fails_after_the_attach(m
     attached = _Con()
     monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
     monkeypatch.setattr(columnar, "encryption_gate", lambda _p: True)
-    monkeypatch.setattr(columnar, "_attach_persisted", lambda _path, _key: attached)
+    monkeypatch.setattr(columnar, "_attach_persisted", lambda _path, _key, *_spill_and_snapshot: attached)
 
     def boom(*_a, **_k):
         raise RuntimeError("engine words that must not be kept")
@@ -132,7 +132,7 @@ def test_the_attach_closes_its_own_connection_when_a_statement_fails(monkeypatch
                 raise RuntimeError("engine words")
 
     con = Con()
-    monkeypatch.setattr(columnar, "_persisted_connection", lambda: con)
+    monkeypatch.setattr(columnar, "_persisted_connection", lambda *_spill_and_snapshot: con)
     with pytest.raises(RuntimeError):
         columnar._attach_persisted(tmp_path / "store.duckdb", "00ff")
     assert con.closed, "the connection that failed to attach was left open"
@@ -144,7 +144,7 @@ def test_a_persisted_open_that_succeeds_is_persisted_with_no_fallback_reason(mon
     monkeypatch.setattr(columnar, "secure_crypto_available", lambda: True)
     monkeypatch.setattr(columnar, "encryption_gate", lambda _p: True)
     con = duckdb.connect(":memory:")
-    monkeypatch.setattr(columnar, "_attach_persisted", lambda _path, _key: con)
+    monkeypatch.setattr(columnar, "_attach_persisted", lambda _path, _key, *_spill_and_snapshot: con)
     opened = columnar.open_store("pw")
     try:
         assert opened.kind == "persisted" and opened.fallback_reason is None and opened.con is con
