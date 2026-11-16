@@ -53,6 +53,9 @@ MIN_SAMPLE = 8
 _SAME_PAGE = 0.7
 #: A keyword is judged against its source's articles only from this many articles up.
 MIN_ARTICLES = 10
+#: The source's newest articles a keyword is counted over (an index-only read of their mentions; the
+#: template of today, like the shingles' newest pages).
+KEYWORD_SAMPLE_ARTICLES = 500
 
 _CACHE_MAX = 64
 _CACHE_TTL_S = 1800.0
@@ -68,18 +71,31 @@ def strip_known(text: str) -> str:
     return strip_furniture(text or "")[0]
 
 
-def repeated_shingles(bodies: list[str], *, min_share: float = MIN_SHARE, min_sample: int = MIN_SAMPLE) -> frozenset[int]:
+def repeated_shingles(
+    bodies: list[str], *, titles: list[str] | None = None, min_share: float = MIN_SHARE, min_sample: int = MIN_SAMPLE
+) -> frozenset[int]:
     """The shingles found on at least ``min_share`` of the DISTINCT pages in ``bodies`` (and on three). Pure.
 
     Pages that are near-duplicates of each other (one story updated under new URLs, a live blog) count once,
-    so an outlet that ran one story several times does not learn that story as its template."""
+    so an outlet that ran one story several times does not learn that story as its template. Pages are one page
+    when what is left of them once the provisional template is removed is near-identical, or when their titles
+    are (``titles``, aligned with ``bodies``): a live blog on half the pages has one title and is one story,
+    where a template on half the pages sits under as many titles as there are stories."""
     from src.signals.near_dup import shingles
 
-    texts = [strip_known(b) for b in bodies if b and b.strip()]
-    texts = [t for t in texts if t.strip()]
+    pairs = [(strip_known(b), (titles[i] if titles and i < len(titles) else "") or "") for i, b in enumerate(bodies) if b and b.strip()]
+    pairs = [(t, ti) for t, ti in pairs if t.strip()]
+    texts = [t for t, _ti in pairs]
+    title_sets = [shingles(ti, k=3) if len(ti.split()) >= 3 else set() for _t, ti in pairs]
     if len(texts) < min_sample:
         return frozenset()
     sets = [shingles(t) for t in texts]
+    # Two passes. A first count over the raw pages finds the provisional template; pages are then grouped by
+    # what is LEFT once it is removed, because a template large enough to cause row 67 makes unrelated pages
+    # of one outlet near-identical as a whole (the second independent read), and grouping on whole pages would
+    # merge them all into one group and learn nothing.
+    provisional = _on_half(sets, min_share)
+    rest = [st - provisional for st in sets]
     # One group per run of near-identical pages (exact Jaccard over at most SAMPLE_BODIES pages, so a
     # few hundred set comparisons); within a group a shingle counts once.
     parent = list(range(len(sets)))
@@ -90,10 +106,9 @@ def repeated_shingles(bodies: list[str], *, min_share: float = MIN_SHARE, min_sa
             i = parent[i]
         return i
 
-    for i in range(len(sets)):
-        for j in range(i + 1, len(sets)):
-            union = len(sets[i] | sets[j])
-            if union and len(sets[i] & sets[j]) / union >= _SAME_PAGE:
+    for i in range(len(rest)):
+        for j in range(i + 1, len(rest)):
+            if _similar(rest[i], rest[j]) or _similar(title_sets[i], title_sets[j]):
                 parent[root(j)] = root(i)
     by_root: dict[int, list[int]] = {}
     for i in range(len(sets)):
@@ -101,11 +116,21 @@ def repeated_shingles(bodies: list[str], *, min_share: float = MIN_SHARE, min_sa
     groups = list(by_root.values())
     if len(groups) < min_sample:
         return frozenset()
+    return _on_half([set().union(*(sets[i] for i in g)) for g in groups], min_share)
+
+
+def _similar(a: set[int], b: set[int]) -> bool:
+    union = len(a | b)
+    return bool(union) and len(a & b) / union >= _SAME_PAGE
+
+
+def _on_half(sets: list[set[int]], min_share: float) -> frozenset[int]:
+    """The members of at least ``min_share`` of ``sets`` (and of at least three)."""
     df: dict[int, int] = {}
-    for g in groups:
-        for sh in set().union(*(sets[i] for i in g)):
+    for st in sets:
+        for sh in st:
             df[sh] = df.get(sh, 0) + 1
-    floor = max(3, math.ceil(round(min_share * len(groups), 9)))
+    floor = max(3, math.ceil(round(min_share * len(sets), 9)))
     return frozenset(sh for sh, n in df.items() if n >= floor)
 
 
@@ -128,7 +153,7 @@ def outlet_repeated_shingles(db: Session, source_id: int | None, *, now: float |
         .limit(SAMPLE_BODIES)
         .all()
     )
-    learned = repeated_shingles([r.get_content() for r in rows])
+    learned = repeated_shingles([r.get_content() for r in rows], titles=[r.title or "" for r in rows])
     _remember(_cache, int(source_id), t, learned)
     return learned
 
@@ -160,12 +185,13 @@ def outlet_furniture_keywords(
     db: Session, source_id: int | None, keyword_ids: list[int] | None = None, *, min_share: float = MIN_SHARE,
     min_articles: int = MIN_ARTICLES, now: float | None = None,
 ) -> set[int]:
-    """The keywords mentioned in at least ``min_share`` of the source's articles (of ``keyword_ids`` when given).
+    """The keywords mentioned in at least ``min_share`` of the source's newest ``KEYWORD_SAMPLE_ARTICLES`` articles
+    (of ``keyword_ids`` when given).
 
-    One indexed count of the source's articles and one grouped count over the source's mentions (a mention row is
-    unique per article and keyword, so a row count is an article count), cached per source for half an hour like
-    the shingles: the reader asks on every page view. Mentions exist only for indexed articles while the count is
-    of all of them, so during an import fewer keywords qualify, never more."""
+    One indexed read of those article ids and one grouped count over their mentions (a mention row is unique per
+    article and keyword, so a row count is an article count), cached per source for half an hour like the
+    shingles: the reader asks on every page view. Mentions exist only for indexed articles while the count is of
+    all of them, so during an import fewer keywords qualify, never more."""
     if source_id is None:
         return set()
     from src.database.derived_views import KeywordMentionRead
@@ -174,15 +200,21 @@ def outlet_furniture_keywords(
     t = time.monotonic() if now is None else now
     found = _cached(_kw_cache, int(source_id), t)
     if found is None:
-        total = int(db.query(func.count(Article.id)).filter(Article.source_id == int(source_id)).scalar() or 0)
-        if total < min_articles:
+        newest = [
+            int(i)
+            for (i,) in db.query(Article.id)
+            .filter(Article.source_id == int(source_id))
+            .order_by(Article.id.desc())
+            .limit(KEYWORD_SAMPLE_ARTICLES)
+        ]
+        if len(newest) < min_articles:
             found = frozenset()
         else:
-            floor = max(3, math.ceil(round(min_share * total, 9)))
+            floor = max(3, math.ceil(round(min_share * len(newest), 9)))
             found = frozenset(
                 int(kid)
                 for (kid,) in db.query(KeywordMentionRead.keyword_id)
-                .filter(KeywordMentionRead.source_id == int(source_id))
+                .filter(KeywordMentionRead.article_id.in_(newest))
                 .group_by(KeywordMentionRead.keyword_id)
                 .having(func.count(KeywordMentionRead.article_id) >= floor)
             )

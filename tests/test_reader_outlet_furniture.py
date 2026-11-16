@@ -42,6 +42,10 @@ _VOCAB = (  # noqa: SIM905 - a word list kept readable
 ).split() 
 
 
+_RND = random.Random(99)
+_HEAVY = " ".join(_RND.choice(_VOCAB) + str(i % 7) for i in range(300))  # ~300 distinct shingles
+
+
 def _story(seed: int, n: int = 60) -> str:
     rnd = random.Random(seed)
     return " ".join(rnd.choice(_VOCAB) for _ in range(n)).capitalize() + "."
@@ -69,11 +73,11 @@ def test_twelve_template_pages_are_not_copies_and_a_real_copy_still_is(tmp_path)
         arts = []
         for i in range(12):  # ids 1..12: the template around twelve unrelated stories
             arts.append(Article(url=f"https://hbl.test/{i}", canonical_url=f"https://hbl.test/{i}", source_id=1,
-                                title=f"Story {i}", content=_TEMPLATE + "\n" + _story(i) + "\n" + _TEMPLATE,
+                                title=f"Story {i}", content=_TEMPLATE + "\n" + _HEAVY + "\n" + _story(i, 30),
                                 hash=f"h{i}", language="sv", created_at=datetime.now(UTC)))
         # id 13: the first story, word for word, at another outlet, without the template
         arts.append(Article(url="https://other.test/copy", canonical_url="https://other.test/copy", source_id=2,
-                            title="Story 0", content=_story(0), hash="copy", language="sv", created_at=datetime.now(UTC)))
+                            title="Story 0", content=_story(0, 30), hash="copy", language="sv", created_at=datetime.now(UTC)))
         s.add_all(arts)
         s.commit()
         ex = BaselineExtractor()
@@ -122,6 +126,23 @@ def test_one_story_on_most_of_the_pages_counts_as_one_page():
     story = _story(42, 120)
     bodies = [story + " update " + str(i) for i in range(6)] + [_story(i) for i in range(100, 108)]
     assert not (shingles(story) & outlet_furniture.repeated_shingles(bodies))
+
+
+def test_a_template_that_makes_whole_pages_alike_is_still_learned():
+    """The second independent read: unrelated pages over a heavy template are near-identical as WHOLE pages, so
+    grouping on whole pages merged them into one and learned nothing. Grouping on what is left once the
+    provisional template is out keeps them apart."""
+    pages = [_HEAVY + " " + _story(i, 20) for i in range(20)]
+    a, b = shingles(pages[0]), shingles(pages[1])
+    assert len(a & b) / len(a | b) >= 0.7  # the field shape: the pages are alike as a whole
+    assert shingles(_HEAVY) <= outlet_furniture.repeated_shingles(pages, titles=[f"Story {i} of the day" for i in range(20)])
+
+
+def test_a_live_blog_on_most_pages_is_one_page_by_its_title():
+    blog = _story(5, 150)
+    bodies = [blog + " " + _story(200 + i, 15) for i in range(12)] + [_story(300 + i, 80) for i in range(8)]
+    titles = ["Live: the winter storm hits the coast"] * 12 + [f"Other story number {i}" for i in range(8)]
+    assert not (shingles(blog) & outlet_furniture.repeated_shingles(bodies, titles=titles))
 
 
 def test_the_ingest_furniture_list_is_applied_first():
