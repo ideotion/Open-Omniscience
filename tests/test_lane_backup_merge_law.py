@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import shutil
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -88,7 +89,7 @@ def _seed_b(b, use, tmp_path) -> Path:
         stray = _identity(s, "loi-orphan")  # only an unlinked version belongs to it
         _identity(s, "loi-empty")  # no version at all
         _meta(s, "k-shared", filler, title="Loi relative", source_url="https://law.test/1")
-        _meta(s, "k-new", filler, title="Loi (texte)", licence_id="etalab-2.0")
+        _meta(s, "k-new", filler, title="Loi (texte)", licence_id="licence-ouverte-2.0")
         _meta(s, "k-orphan", stray, title="Nowhere")
         s.add(LawProvision(revision_lane_key="r1", document_lane_key="k-elsewhere", address="art-1",
                            text="Article 1", content_hash="p1"))
@@ -132,7 +133,7 @@ def test_law_lane_merges_only_what_the_corpus_links(machines, tmp_path, corpus):
     st = _state()
     assert st["ids"] == [("loi-1", "Parlement", "2018")]
     assert st["meta"] == [
-        ("k-new", "Loi (texte)", None, "etalab-2.0"),
+        ("k-new", "Loi (texte)", None, "licence-ouverte-2.0"),
         # A value already here is kept (the local source_url), a gap is filled (the title).
         ("k-shared", "Loi relative", "https://law.test/local", "unknown"),
     ]
@@ -177,6 +178,76 @@ def test_a_wiki_member_is_not_merged_as_law(machines, tmp_path, corpus, monkeypa
     store.dispose_all()
     _seed_a(a, use)
     before = _state()
+    with pytest.raises(lane_merge.LaneMergeError):
+        lane_merge.merge_lane_file("law", snap, [None])
+    assert _state() == before
+
+
+def test_a_new_law_joins_with_its_own_identity_and_honest_vocabularies(machines, tmp_path, corpus, monkeypatch):
+    """Opus read on PR 2: the new-identity insert, the id remap, unknown vocabularies stored as
+    the honest unknown, future dates clamped, and provenance fields filled only across the same
+    provenance."""
+    a, b, use = machines
+    use(b)
+    with store.lane_session("law") as s:
+        _identity(s, "pad-1")  # shifts the backup's ids away from this machine's
+        _identity(s, "pad-2")
+        other = _identity(s, "loi-2", issuing_body="Sénat")
+        s.add(LawDocumentMeta(lane_key="k-new", identity_id=other.id, language="FR", translation_kind="Original",
+                              licence_id="made-up-licence", granularity="chapter", title="Loi 2",
+                              first_seen_at=datetime(2999, 1, 1, tzinfo=UTC), updated_at=datetime(2999, 1, 1, tzinfo=UTC)))
+        loi1 = _identity(s, "loi-1")
+        s.add(LawDocumentMeta(lane_key="k-shared", identity_id=loi1.id, language="fr", translation_kind="foreign-government",
+                              translated_by="Government of X", source_authority="Catalogue X"))
+        s.commit()
+    snap = tmp_path / "snap" / "law.db"
+    lane_merge.snapshot_lane_for_backup("law", snap)
+    store.dispose_lane("law")
+    use(a)
+    with store.lane_session("law") as s:
+        local = _identity(s, "loi-1")
+        s.add(LawDocumentMeta(lane_key="k-shared", identity_id=local.id, language="fr", translation_kind="official"))
+        s.commit()
+
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_identities"]["inserted"] == 1
+    with store.lane_session("law") as s:
+        ident = s.scalars(select(LawIdentity).where(LawIdentity.document_identity == "loi-2")).one()
+        new = s.scalars(select(LawDocumentMeta).where(LawDocumentMeta.lane_key == "k-new")).one()
+        shared = s.scalars(select(LawDocumentMeta).where(LawDocumentMeta.lane_key == "k-shared")).one()
+        assert new.identity_id == ident.id and ident.issuing_body == "Sénat"
+        assert (new.language, new.translation_kind, new.licence_id, new.granularity) == ("fr", "unrecorded", "unknown", "act")
+        assert new.first_seen_at.year < 2999 and new.updated_at.year < 2999
+        # The local row says "official, body not recorded": another provenance's body is not put beside it.
+        assert (shared.translation_kind, shared.translated_by, shared.source_authority) == ("official", None, None)
+        assert s.scalars(select(LawIdentity).where(LawIdentity.document_identity.like("pad-%"))).all() == []
+    before = _state()
+    lane_merge.merge_lane_file("law", snap, [None])
+    assert _state() == before
+
+
+def test_a_version_key_the_corpus_holds_twice_links_no_provision(machines, tmp_path, corpus):
+    with corpus() as db:
+        new = db.scalars(select(LawDocument).where(LawDocument.lane_key == "k-new")).one()
+        db.add(LawRevision(document_id=new.id, content_hash="h2", lane_key="r1"))
+        db.commit()
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_provisions"] == {"inserted": 0, "not_linked": 2}
+
+
+def test_a_law_member_with_a_view_under_a_law_table_is_refused(machines, tmp_path, corpus):
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    before = _state()
+    con = sqlite3.connect(snap)
+    con.execute("DROP TABLE law_provisions")
+    con.execute("CREATE VIEW law_provisions AS SELECT 'r1' AS revision_lane_key, 'x' AS document_lane_key, 'a' AS address")
+    con.commit()
+    con.close()
     with pytest.raises(lane_merge.LaneMergeError):
         lane_merge.merge_lane_file("law", snap, [None])
     assert _state() == before

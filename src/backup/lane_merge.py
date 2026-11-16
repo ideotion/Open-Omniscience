@@ -639,7 +639,12 @@ def _recount_warm_editions(conn: Any) -> None:
 #: value), and the law lane records no date for them, so no later reading can be told apart.
 _LAW_IDENTITY_FILL = ("issuing_body", "enacted_on", "published_on", "commenced_on", "repealed_on")
 #: The same for one language version of a law.
-_LAW_META_FILL = ("title", "translated_by", "source_authority", "source_url")
+_LAW_META_FILL = ("title", "source_url")
+#: Filled only when the backup's row states the SAME provenance and licence as the local one:
+#: ``translated_by`` is read as a pair with ``translation_kind`` (``model.provenance_of``) and
+#: ``source_authority`` comes from the same catalogue row as ``licence_id``, so a value
+#: filled across a different pair would name the wrong body beside this machine's claim.
+_LAW_META_PAIRED_FILL = ("translated_by", "source_authority")
 _LAW_TRIPLE = (
     "m.identity_scheme = i.identity_scheme AND m.jurisdiction_alpha3 = i.jurisdiction_alpha3 "
     "AND m.document_identity = i.document_identity"
@@ -673,14 +678,23 @@ def _corpus_law_links(conn: Any) -> None:
             )
         ).all()
     conn.executemany("INSERT OR IGNORE INTO temp.lm_law_doc VALUES (?)", [tuple(r) for r in docs])
-    conn.executemany("INSERT OR IGNORE INTO temp.lm_law_rev VALUES (?, ?)", [tuple(r) for r in revs])
+    # The corpus does not make a key unique; a version key under two documents names no one
+    # document, so it links nothing rather than an arbitrary one of them.
+    owners: dict[str, set[str]] = {}
+    for rev_key, doc_key in revs:
+        owners.setdefault(str(rev_key), set()).add(str(doc_key))
+    conn.executemany(
+        "INSERT INTO temp.lm_law_rev VALUES (?, ?)",
+        [(k, next(iter(v))) for k, v in owners.items() if len(v) == 1],
+    )
 
 
 def _merge_law(conn: Any, out: dict[str, Any]) -> None:
     tables: dict[str, dict[str, int]] = out["tables"]
     if not (_has(conn, "inc", "law_identities") and _has(conn, "inc", "law_document_meta")):
         return
-    _corpus_law_links(conn)
+    if not _has(conn, "temp", "lm_law_doc"):  # read before the transaction by merge_lane_file
+        _corpus_law_links(conn)
     horizon = {"horizon": _horizon()}
     # A language version this machine lacks and whose document the live corpus holds.
     linked_new = (
@@ -732,24 +746,57 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
             f"WHERE i.lane_key = m.lane_key AND ({gaps})"
         )
         mfilled = _changes(conn)
+    paired = [c for c in _LAW_META_PAIRED_FILL if c in meta_live and c in meta_inc]
+    if paired and {"translation_kind", "licence_id"} <= (meta_live & meta_inc):
+        sets = ", ".join(f'"{c}" = COALESCE(m."{c}", i."{c}")' for c in paired)
+        gaps = " OR ".join(f'(m."{c}" IS NULL AND i."{c}" IS NOT NULL)' for c in paired)
+        conn.execute(
+            f"UPDATE main.law_document_meta AS m SET {sets} FROM inc.law_document_meta AS i "  # noqa: S608  # nosec B608 # columns from the module's _LAW_META_PAIRED_FILL list
+            "WHERE i.lane_key = m.lane_key AND i.translation_kind = m.translation_kind "
+            f"AND i.licence_id = m.licence_id AND ({gaps})"
+        )
+        mfilled += _changes(conn)
     unlinked = int(
         conn.execute(
             "SELECT count(*) FROM inc.law_document_meta i WHERE i.lane_key NOT IN (SELECT lane_key FROM temp.lm_law_doc) "
             "AND NOT EXISTS (SELECT 1 FROM main.law_document_meta m WHERE m.lane_key = i.lane_key)"
         ).fetchone()[0]
     )
+    # A linked version whose identity the member does not hold belongs to no law: counted too.
+    unlinked += int(
+        conn.execute(
+            f"SELECT count(*) FROM inc.law_document_meta i WHERE {linked_new} "  # noqa: S608  # nosec B608 # a module literal
+            "AND i.identity_id NOT IN (SELECT inc_id FROM temp.lm_lid)"
+        ).fetchone()[0]
+    )
+    # The closed vocabularies are the model's own (``src/law/model.py``): a value this build
+    # does not know is stored as the honest unknown, never as a claim the reader would
+    # render (an unknown kind would otherwise read as "published by another government").
+    from src.law.model import GRANULARITIES, LICENCES, TRANSLATION_KINDS
+
+    vocab: dict[str, Any] = dict(horizon)
+    kinds = ", ".join(f":k{n}" for n in range(len(TRANSLATION_KINDS)))
+    lics = ", ".join(f":l{n}" for n in range(len(LICENCES)))
+    grains = ", ".join(f":g{n}" for n in range(len(GRANULARITIES)))
+    vocab.update({f"k{n}": v for n, v in enumerate(TRANSLATION_KINDS)})
+    vocab.update({f"l{n}": v for n, v in enumerate(LICENCES)})
+    vocab.update({f"g{n}": v for n, v in enumerate(GRANULARITIES)})
     n = _insert_select(
         conn,
         "law_document_meta",
         source_from="inc.law_document_meta i JOIN temp.lm_lid l ON l.inc_id = i.identity_id",
         overrides={
             "identity_id": "l.loc_id",
+            "language": "lower(i.language)",
+            "translation_kind": f"CASE WHEN i.translation_kind IN ({kinds}) THEN i.translation_kind ELSE 'unrecorded' END",
+            "licence_id": f"CASE WHEN i.licence_id IN ({lics}) THEN i.licence_id ELSE 'unknown' END",
+            "granularity": f"CASE WHEN i.granularity IN ({grains}) THEN i.granularity ELSE 'act' END",
             "first_seen_at": "MIN(i.first_seen_at, :horizon)",
             "updated_at": "MIN(i.updated_at, :horizon)",
         },
         where=linked_new,
         source_alias="i",
-        params=horizon,
+        params=vocab,
     )
     tables["law_document_meta"] = {"inserted": n, "filled": mfilled, "not_linked": unlinked}
 
@@ -812,6 +859,10 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
             # stamp, or with another kind's, is not this lane. The stamp is never echoed.
             if meta is None or meta[0] != kind:
                 raise LaneMergeError(f"the member named {kind} is not a {kind} lane; refusing to merge it")
+            if kind == "law":
+                # Read before the lane's write lock is taken, so a law poller is not held
+                # behind a corpus read; a link added meanwhile only waits for a re-import.
+                _corpus_law_links(conn)
             conn.execute("BEGIN IMMEDIATE")
             try:
                 for step in _STEPS[kind]:
