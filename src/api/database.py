@@ -27,6 +27,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -620,6 +621,65 @@ def vacuum() -> dict:
     return report
 
 
+@router.get("/rebuild")
+def rebuild_status() -> dict:
+    """R702: the library's storage settings now and the ones a rebuild gives it, whether a rebuild would change anything, the
+    free-space check, the files earlier rebuilds kept (name, size, date) and the last rebuild's report. Main library only."""
+    from src.database import rebuild
+
+    return rebuild.status()
+
+
+@router.post("/rebuild")
+def rebuild_start(body: dict) -> dict:
+    """R702: start the rebuild at the current settings. ``backup_answer`` is required (``have_backup`` or
+    ``no_backup_understood``): the page asks "back up first?" and the server does not start without the answer. Refuses with 409
+    while anything else runs (a backup download included, named), 507 when the drive is too small (the numbers in the text), and
+    400 without an answer; the job re-checks every one of them before it copies."""
+    from src.database import rebuild
+
+    answer = str((body or {}).get("backup_answer") or "")
+    if answer not in rebuild.BACKUP_ANSWERS:
+        raise HTTPException(status_code=400, detail="say whether you made a backup first (backup_answer)")
+    # Under the backup slot's lock, which the download's claim also takes and which refuses while a rebuild runs: a snapshot and a
+    # rebuild never overlap (the rebuild swaps the file a snapshot is reading).
+    with _BACKUP_LOCK:
+        if _backup_flight is not None:
+            raise HTTPException(status_code=409, detail="the rebuild waits until the backup download in progress has finished")
+        try:
+            return rebuild.start(answer)
+        except rebuild.NoRoom as refusal:
+            raise HTTPException(status_code=507, detail=http_detail(refusal)) from None
+        except rebuild.Declined as refusal:
+            raise HTTPException(status_code=409, detail=http_detail(refusal)) from None
+        except RuntimeError:
+            raise HTTPException(status_code=409, detail="a rebuild is already running, or its job could not be started") from None
+
+
+class RemoveKeptBody(BaseModel):
+    name: str = ""
+    #: The page asks before it removes (the kept file is the library as it was, recoverable only from a backup once gone).
+    confirm: bool = False
+
+
+@router.post("/rebuild/remove-kept")
+def rebuild_remove_kept(body: RemoveKeptBody) -> dict:
+    """R702 (Q-a): remove one file an earlier rebuild kept, on the operator's own click. Only a name the status lists now is
+    removed; any other is refused with 404; without ``confirm`` 400; while a rebuild runs 409."""
+    from src.database import rebuild
+
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm the removal (confirm: true)")
+    try:
+        return rebuild.remove_kept_copy(body.name)
+    except rebuild.Running as refusal:
+        raise HTTPException(status_code=409, detail=http_detail(refusal)) from None
+    except rebuild.Declined as refusal:
+        raise HTTPException(status_code=404, detail=http_detail(refusal)) from None
+    except OSError as exc:
+        raise HTTPException(status_code=409, detail=f"the file could not be removed ({type(exc).__name__})") from None
+
+
 #: A snapshot directory this old is a crashed server's. It is the line between "a download still in flight" and "a leftover":
 #: another server on the same data folder (R176) may be streaming its own snapshot, and no download of one lasts a day (an
 #: 11.7 GB file at 1 MB/s is about 3.3 hours), so a younger directory is never touched and an older one is removed. It also bounds
@@ -710,7 +770,11 @@ def _claim_backup_slot() -> object:
     keeps from freeing the takeover's claim. It is a per-process rule: two servers on one data folder (R176) can each hold one."""
     global _backup_flight
     token = object()
+    from src.database.rebuild import REBUILD_JOB
+
     with _BACKUP_LOCK:
+        if REBUILD_JOB.status().get("state") == "running":
+            raise HTTPException(status_code=409, detail="The library is being rebuilt; download a backup when that has finished.")
         if _backup_flight is not None and (time.monotonic() - _backup_flight[1]) < _BACKUP_STALE_AFTER_S:
             raise HTTPException(
                 status_code=429,

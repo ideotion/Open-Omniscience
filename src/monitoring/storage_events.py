@@ -936,6 +936,7 @@ RUN_REFUSALS: dict[str, str] = {
     "no-space": "the destination did not have the free space the backup needs",
     "free-space-unreadable": "the free space of the destination could not be read, so the backup was not started",
     "path-unreadable": "a path the request named could not be examined (the operating system refused to look at it)",
+    "rebuild-running": "the library was being rebuilt (R702), which switches the file a backup reads",
 }
 
 #: What a run came through, as a FIXED key, on every run: the volume backup, restore and verification (``volume-set``), the single-file
