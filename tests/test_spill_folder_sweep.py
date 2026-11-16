@@ -242,3 +242,18 @@ def test_a_staging_folder_under_this_pid_left_by_an_earlier_process_goes_once(ro
     monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
     rollup_serve._sweep_spill_folders(root)
     assert not left.exists()
+
+
+def test_a_staging_folder_whose_lock_is_held_is_kept_whatever_its_pid(root, owner_holder):
+    """Its maker may live in another pid namespace sharing this data directory, where its pid means nothing here."""
+    proc, folder = owner_holder
+    dead = 2**22 + 11
+    assert not psutil.pid_exists(dead)
+    staged = root / f"{rollup_serve._STAGING_PREFIX}{dead}-abcd1234"
+    folder.rename(staged)
+    rollup_serve._sweep_spill_folders(root)
+    assert staged.exists(), "a staging folder whose maker holds its lock was removed"
+    proc.kill()
+    proc.wait()
+    rollup_serve._sweep_spill_folders(root)
+    assert not staged.exists()

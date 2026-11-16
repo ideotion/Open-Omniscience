@@ -1202,7 +1202,8 @@ def _sweep_spill_folders(root) -> None:
             if int(staged) == mine:
                 if not _OWN_SPILL_SWEPT and _owner_alive(child) is not True:
                     shutil.rmtree(child, ignore_errors=True)
-            elif not psutil.pid_exists(int(staged)):
+            elif not psutil.pid_exists(int(staged)) and _owner_alive(child) is not True:
+                # (a held lock: its maker lives in another pid namespace sharing this data directory)
                 shutil.rmtree(child, ignore_errors=True)
             continue
         head = child.name.split("-", 1)[0]
