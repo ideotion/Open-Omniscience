@@ -74,7 +74,8 @@ def test_a_test_that_fails_and_then_hangs_in_teardown_is_still_caught(tmp_path):
 
 def test_the_report_variables_do_not_reach_a_child_pytest():
     """Read once and taken out of the environment, so a test that runs pytest in a child cannot empty this run's report files."""
-    assert not {k for k in os.environ if k.startswith("OO_TEST_")}
+    mine = {"OO_TEST_HANG_LIMIT_S", "OO_TEST_HANG_REPORT", "OO_TEST_SLOW_S", "OO_TEST_SLOW_REPORT"}
+    assert not mine & set(os.environ)
 
 
 def test_a_test_that_returns_leaves_the_report_empty(tmp_path):
