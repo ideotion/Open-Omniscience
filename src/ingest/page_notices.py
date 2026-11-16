@@ -51,7 +51,7 @@ _JS_NOTICE_RES = (
     # "LessWrong requires JavaScript to run." / "This site needs JavaScript to work properly."
     re.compile(r"^[^,;]{1,40}?\s(?:requires|needs)\s+javascript(?:\s+(?:to|in\s+order\s+to)\s+[^,;]{1,40})?$"),
     # "JavaScript is disabled in your browser." / "JavaScript must be enabled to view this page."
-    re.compile(r"^javascript\s+(?:is\s+(?:required|disabled|not\s+enabled|turned\s+off)|must\s+be\s+(?:enabled|turned\s+on))\b[^,;]{0,60}$"),
+    re.compile(r"^javascript\s+(?:is\s+(?:required|disabled|not\s+enabled|not\s+available|turned\s+off)|must\s+be\s+(?:enabled|turned\s+on))\b[^,;]{0,60}$"),
     # The framework template line: "We're sorry but X doesn't work properly without JavaScript enabled."
     re.compile(r"^we['’]re\s+sorry\s+but\s+[^,;]{1,40}\s+doesn['’]?t\s+work\s+properly\s+without\s+javascript\s+enabled\b[^,;]{0,60}$"),
 )
@@ -67,6 +67,8 @@ _FLASH_NOTICE_RES = (
 )
 _FLASH_HEADINGS = frozenset({"update required", "flash required", "flash player required"})
 _FLASH_MAX_WORDS = 40
+
+PHP_ERROR_ONLY = frozenset({"php_error"})
 
 _EDGE = " \t .:;!?-–—·•|"
 
@@ -85,29 +87,38 @@ def notice_kind(line: str) -> str | None:
         return "js_required"
     if low in _FLASH_HEADINGS:
         return "flash_required"
+    for heading in _FLASH_HEADINGS:  # "Update Required: To play the media ... Flash plugin." on one line
+        if low.startswith(heading) and low[len(heading):len(heading) + 1] in (":", ".", " ", "-", "–", "—"):
+            low = low[len(heading):].strip(_EDGE)
+            break
     if words <= _FLASH_MAX_WORDS and any(r.search(low) for r in _FLASH_NOTICE_RES):
         return "flash_required"
     return None
 
 
-def strip_notices(text: str) -> tuple[str, dict[str, int]]:
+def strip_notices(text: str, *, kinds: frozenset[str] | None = None) -> tuple[str, dict[str, int]]:
     """``(text without its notice lines, {kind: lines removed})``.
 
     Only the notice lines at the TOP and the BOTTOM of the body go (a run from either edge; blank
     lines do not break it), which is where a server prints its error dump and a page its notice. A
     notice line quoted in the middle of an article (a PHP tutorial showing the warning it explains)
-    is the article's text and stays. Every kept line is byte for byte; text without notices comes
-    back identical, with an empty dict."""
+    is the article's text and stays, and so does a closing run that the line before it introduces
+    ("Running the script prints:"). ``kinds`` limits which notices may go (all by default). Every
+    kept line is byte for byte; text without notices comes back identical, with an empty dict."""
     lines = (text or "").splitlines(keepends=True)
-    kinds = [notice_kind(line) for line in lines]
+    found = [notice_kind(line) for line in lines]
+    if kinds is not None:
+        found = [k if k in kinds else None for k in found]
     start = 0
-    while start < len(lines) and (kinds[start] is not None or not lines[start].strip()):
+    while start < len(lines) and (found[start] is not None or not lines[start].strip()):
         start += 1
     end = len(lines)
-    while end > start and (kinds[end - 1] is not None or not lines[end - 1].strip()):
+    while end > start and (found[end - 1] is not None or not lines[end - 1].strip()):
         end -= 1
+    if end < len(lines) and end > start and lines[end - 1].rstrip().endswith(":"):
+        end = len(lines)  # the article quotes what follows its colon
     removed: dict[str, int] = {}
-    for i, kind in enumerate(kinds):
+    for i, kind in enumerate(found):
         if kind is not None and not (start <= i < end):
             removed[kind] = removed.get(kind, 0) + 1
     if not removed:
@@ -135,10 +146,35 @@ def _is_nav_entry(line: str) -> bool:
     )
 
 
+# Section names a news site's menu carries, in the app's languages and the Nordic ones the field report
+# met. A run is a menu only when most of its entries are such names: a haiku, a poem or a film's
+# credits are short unpunctuated lines too, and none of them reads "News, Sport, Culture".
+_NAV_WORD_TEXT = """
+home news world politics business economy sport sports culture arts opinion science technology tech health
+travel lifestyle weather video videos podcasts podcast local national international entertainment
+latest menu search subscribe login register contact about more live
+hem nyheter inrikes utrikes kultur ekonomi debatt väder ledare nöje prenumerera
+etusivu uutiset urheilu kulttuuri talous mielipide sää kirjaudu
+forside nyheder indland udland kultur erhverv vejret nyheter innenriks utenriks økonomi været
+accueil actualités monde politique économie sport culture opinions sciences météo connexion
+startseite nachrichten politik wirtschaft kultur meinung wissen wetter anmelden
+inicio noticias mundo política economía deportes cultura opinión ciencia tiempo
+início notícias mundo política economia esportes desporto cultura opinião ciência tempo
+главная новости мир политика экономика спорт культура мнения наука погода
+beranda berita dunia politik ekonomi olahraga budaya opini sains cuaca
+ホーム ニュース 国際 政治 経済 スポーツ 文化 社会 天気
+首页 新闻 国际 政治 经济 体育 文化 社会 科技 天气 评论
+होम समाचार देश दुनिया राजनीति खेल मनोरंजन व्यापार
+প্রচ্ছদ খবর দেশ বিদেশ রাজনীতি খেলা বিনোদন অর্থনীতি
+الرئيسية أخبار العالم سياسة اقتصاد رياضة ثقافة رأي علوم الطقس
+"""
+_NAV_WORDS = frozenset(w.casefold() for w in _NAV_WORD_TEXT.split()) | {"log in", "sign in", "logga in", "logg inn"}
+
+
 def strip_leading_nav(text: str, *, keep_min_chars: int) -> tuple[str, int]:
     """``(text without its leading menu run, entries removed)``. A run is at least
     ``NAV_RUN_MIN_LINES`` consecutive menu-entry lines (blank lines between them do not break it)
-    starting at the first line of the body. It goes only when at least ``keep_min_chars`` of body
+    starting at the first line of the body, most of them section names (``_NAV_WORDS``). It goes only when at least ``keep_min_chars`` of body
     remain after it; otherwise the text comes back unchanged, so this never makes a stub."""
     lines = (text or "").splitlines(keepends=True)
     entries = 0
@@ -154,6 +190,9 @@ def strip_leading_nav(text: str, *, keep_min_chars: int) -> tuple[str, int]:
         return text, 0  # the whole body is short lines: a menu page, which is not this function's call
     if entries < NAV_RUN_MIN_LINES:
         return text, 0
+    named = sum(line.strip().casefold() in _NAV_WORDS for line in lines[:cut] if line.strip())
+    if named * 2 < entries:
+        return text, 0  # short lines that are not section names: verse, credits, a list
     rest = "".join(lines[cut:]).strip()
     if len(rest) < keep_min_chars:
         return text, 0

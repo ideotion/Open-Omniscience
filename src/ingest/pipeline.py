@@ -94,7 +94,7 @@ from src.ingest.fetch_verdict import (
 )
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
-from src.ingest.page_notices import is_code_title, strip_leading_nav, strip_notices
+from src.ingest.page_notices import PHP_ERROR_ONLY, is_code_title, strip_leading_nav, strip_notices
 from src.utils.url_utils import (
     canonicalize_url,
     fetched_host,
@@ -215,7 +215,8 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         # row 66): their LINES go, and a page that was little else is not an article. A counted
         # outcome with its reason, like every other non-article skip.
         stripped, notices = strip_notices(doc.text)
-        if notices and len(stripped) < MIN_BODY_CHARS and len(doc.text) - len(stripped) >= len(stripped):
+        body = doc.text.strip()
+        if notices and len(stripped) < MIN_BODY_CHARS and len(body) - len(stripped) >= len(stripped):
             # The notices were most of the page and what is left is no body: not an article.
             kinds = ", ".join(f"{kind} x{n}" for kind, n in sorted(notices.items()))
             logging.getLogger(__name__).info(
@@ -225,13 +226,13 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
                 fetched.requested_url, IngestResult.NON_ARTICLE,
                 detail=f"body was only page notices ({kinds}), not article text",
             )
+        # In an article, only a server's error dump goes: "Gmail now requires JavaScript to load." reads
+        # exactly like a notice, so JavaScript and Flash lines are judged only as the whole page above.
+        stripped, notices = strip_notices(doc.text, kinds=PHP_ERROR_ONLY)
         if notices and len(stripped) >= MIN_BODY_CHARS:
-            # The notice lines go and the article stays. (A short body whose notice was a small part of it
-            # keeps its text whole: removing the notice must never cut an article into a stub.)
             logging.getLogger(__name__).info(
-                "removed page notices (%s) from %s: %s",
-                ", ".join(f"{kind} x{n}" for kind, n in sorted(notices.items())),
-                source.domain, failure_url(fetched.final_url),
+                "removed a server error dump (%d lines) from %s: %s",
+                sum(notices.values()), source.domain, failure_url(fetched.final_url),
             )
             doc.text = stripped
         doc.text, nav_entries = strip_leading_nav(doc.text, keep_min_chars=MIN_BODY_CHARS)

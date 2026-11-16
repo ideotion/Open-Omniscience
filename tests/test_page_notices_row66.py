@@ -46,6 +46,8 @@ FLASH = ("To play the media you will need to either update your browser to a rec
     ("You need to enable JavaScript to run this app.", "js_required"),
     ("Update Required", "flash_required"),
     (FLASH, "flash_required"),
+    ("Update Required: " + FLASH, "flash_required"),
+    ("JavaScript is not available.", "js_required"),
 ])
 def test_each_specimen_line_is_named(line, kind):
     assert notice_kind(line) == kind
@@ -79,6 +81,12 @@ def test_stripping_notices_keeps_the_article_around_them_byte_for_byte():
     assert strip_notices(PROSE) == (PROSE, {})
     # a notice at the bottom goes too
     assert strip_notices(f"{PROSE}\nLessWrong requires JavaScript to run.") == (PROSE, {"js_required": 1})
+    # the article path removes only the error dump: a JavaScript line reads like news and stays
+    gmail = f"Gmail now requires JavaScript to load.\n\n{PROSE}"
+    assert strip_notices(gmail, kinds=frozenset({"php_error"})) == (gmail, {})
+    # a closing run the article introduces with a colon is a quote
+    quoted = f"{PROSE}\nRunning the script prints:\n\n{PHP_PLAIN}"
+    assert strip_notices(quoted) == (quoted, {})
 
 
 def test_a_notice_quoted_inside_an_article_stays():
@@ -107,6 +115,11 @@ def test_a_leading_menu_run_goes_and_a_byline_block_stays():
     "\n".join(["今天上午，市政府召开新闻发布会。"] * 9),
     # a CJK line without its stop is still longer than a menu entry
     "\n".join(["市政府召开新闻发布会宣布新政策"] * 9),
+    # haiku: short unpunctuated lines that are not section names
+    "\n".join(["春の海", "ひねもすのたり", "のたりかな", "古池や", "蛙飛び込む", "水の音", "閑さや", "岩にしみ入る", "蝉の声"]),
+    # a review's credits block
+    "\n".join(["Cast", "Tom Hanks", "Meg Ryan", "Bill Pullman", "Rosie O'Donnell", "Rob Reiner", "Crew",
+                "Nora Ephron", "Sven Nykvist", "Marc Shaiman"]),
     # a poem at the top of a culture article: its lines run longer than a menu entry
     "\n".join(["the river keeps its counsel", "under the winter bridge", "and the gulls wheel south",
                 "past the empty harbour", "where the boats lie still", "and nobody comes home",
@@ -164,6 +177,7 @@ def test_the_door_refuses_a_long_homepage_or_feed_page(url, signal):
     "https://site.com/2026/11/16/feed-the-world-campaign",
     "https://site.com/rss/2026/an-article-under-a-feed-folder",
     "https://x.com/#/story/12",  # a single-page site addresses its story in the fragment
+    "https://x.com/#!/story/12",
 ])
 def test_the_door_rule_spares_an_addressed_article(url):
     assert classify_non_article(url, text=LONG, door=True) is None
@@ -205,6 +219,18 @@ def test_an_article_under_an_error_dump_is_kept_without_the_dump(monkeypatch):
     out, doc, staged = _store(monkeypatch, "https://polonia1.tv/wiadomosci/x", title="Tytuł",
                               text=f"{DRUPAL}\n{DRUPAL}\n{LONG}")
     assert out.result is IngestResult.STAGED and doc.text == LONG and staged
+
+
+def test_a_fragment_that_is_not_a_route_is_still_the_homepage():
+    assert classify_non_article("https://thediplomat.com/#main", text=LONG, door=True).signal == "url_homepage"
+
+
+def test_an_article_opening_with_a_javascript_sentence_keeps_it(monkeypatch):
+    from src.ingest.pipeline import IngestResult
+
+    text = f"Gmail now requires JavaScript to load.\n\n{LONG}"
+    out, doc, _ = _store(monkeypatch, "https://example.com/news/gmail", title="Gmail", text=text)
+    assert out.result is IngestResult.STAGED and doc.text == text
 
 
 def test_a_short_brief_that_carries_a_notice_line_is_kept_whole(monkeypatch):
