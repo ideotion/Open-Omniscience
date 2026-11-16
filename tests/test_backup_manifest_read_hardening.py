@@ -21,6 +21,7 @@ import pytest
 
 from src.backup.stream_backup import STREAM_KIND, VolumeError, _require_safe_volume_name
 from src.backup.volumes import MANIFEST_NAME, load_manifest
+from tests.os_scope import scope_os
 
 
 def _manifest(folder: Path, names=("v0001.ooenc",)) -> Path:
@@ -177,8 +178,7 @@ def test_a_directory_swapped_in_after_the_check_is_refused_and_its_descriptor_cl
         return fd
 
     real_close = _os.close
-    monkeypatch.setattr(V.os, "open", _swap_then_open)
-    monkeypatch.setattr(V.os, "close", lambda fd: closed.append(fd) or real_close(fd))
+    scope_os(monkeypatch, V, open=_swap_then_open, close=lambda fd: closed.append(fd) or real_close(fd))
     with pytest.raises(VolumeError, match="not a regular file"):
         load_manifest(folder)
     assert opened and closed == opened
