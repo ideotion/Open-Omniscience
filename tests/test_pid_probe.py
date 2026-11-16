@@ -53,11 +53,20 @@ class _Win:
         self.CloseHandle = _F("close", 1)
 
 
-@pytest.mark.parametrize(("handle", "wait", "expected"), [(7, 0x102, True), (7, 0, False), (0, None, False)])
-def test_on_windows_the_probe_asks_the_process_object_and_never_signals(monkeypatch, handle, wait, expected):
+@pytest.mark.parametrize(
+    ("handle", "wait", "last_error", "expected"),
+    [
+        (7, 0x102, 0, True),  # WAIT_TIMEOUT: running
+        (7, 0, 0, False),  # WAIT_OBJECT_0: ended
+        (7, 0xFFFFFFFF, 0, True),  # WAIT_FAILED: no answer, so running (a wait has a deadline; a wrong "ended" erases)
+        (0, None, 87, False),  # ERROR_INVALID_PARAMETER: no such process
+        (0, None, 5, True),  # ERROR_ACCESS_DENIED: it exists
+    ],
+)
+def test_on_windows_the_probe_asks_the_process_object_and_never_signals(monkeypatch, handle, wait, last_error, expected):
     k32 = _Win(handle, wait)
     wintypes = types.SimpleNamespace(HANDLE=object, DWORD=object, BOOL=object)
-    fake_ctypes = types.SimpleNamespace(WinDLL=lambda *_a, **_k: k32, wintypes=wintypes)
+    fake_ctypes = types.SimpleNamespace(WinDLL=lambda *_a, **_k: k32, wintypes=wintypes, get_last_error=lambda: last_error)
     monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
     monkeypatch.setitem(sys.modules, "ctypes.wintypes", wintypes)
     monkeypatch.setattr(pid_probe, "os", types.SimpleNamespace(name="nt", kill=_no_kill))
@@ -116,17 +125,64 @@ def test_the_update_helper_carries_a_byte_identical_copy():
     assert copy == textwrap.dedent(inspect.getsource(pid_probe.pid_alive)).rstrip("\n")
 
 
+def _signal_zero_calls(text: str) -> int:
+    """``kill(x, 0)``, ``kill(x, SIG_DFL)`` (0 on Windows too) or ``kill(x, <a name>)``, as ``os.kill`` or a bare ``kill``; a call that
+    signals the process itself (``os.getpid()``) is not a probe of another process."""
+    n = 0
+    for node in ast.walk(ast.parse(text)):
+        if not isinstance(node, ast.Call) or len(node.args) != 2:
+            continue
+        f = node.func
+        if not ((isinstance(f, ast.Attribute) and f.attr == "kill") or (isinstance(f, ast.Name) and f.id == "kill")):
+            continue
+        target, sig = node.args
+        if isinstance(target, ast.Call) and isinstance(target.func, ast.Attribute) and target.func.attr == "getpid":
+            continue
+        zero = isinstance(sig, ast.Constant) and sig.value == 0
+        dfl = isinstance(sig, ast.Attribute) and sig.attr == "SIG_DFL"
+        if zero or dfl or isinstance(sig, ast.Name):
+            n += 1
+    return n
+
+
+#: Every place allowed to send signal 0, with its count. ``process_owner`` reaches its one only after a Linux /proc read (on any
+#: other system it answers "unknown" first); the probe and its pinned copy are the probe.
+_ALLOWED = {"src/pid_probe.py": 1, "scripts/apply_update.py": 1, "src/safety/process_owner.py": 1}
+
+
 def test_no_module_probes_a_pid_with_signal_zero_outside_the_probe():
-    """A new ``os.kill(pid, 0)`` reaching Windows would end the process it tests: every probe goes through ``src/pid_probe.py``.
-    ``process_owner`` keeps its own, reached only after a Linux /proc read (it answers "unknown" before it on any other system)."""
-    allowed = {"src/pid_probe.py", "scripts/apply_update.py", "src/safety/process_owner.py"}
-    found = []
+    """A new ``os.kill(pid, 0)`` reaching Windows would end the process it tests: every probe goes through ``src/pid_probe.py``."""
+    found = {}
     for base in ("src", "scripts"):
         for path in (REPO / base).rglob("*.py"):
-            rel = path.relative_to(REPO).as_posix()
-            text = path.read_text(encoding="utf-8", errors="replace")
-            for node in ast.walk(ast.parse(text)):
-                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "kill"
-                        and len(node.args) == 2 and isinstance(node.args[1], ast.Constant) and node.args[1].value == 0):
-                    found.append(rel)
-    assert set(found) <= allowed, sorted(set(found) - allowed)
+            n = _signal_zero_calls(path.read_text(encoding="utf-8", errors="replace"))
+            if n:
+                found[path.relative_to(REPO).as_posix()] = n
+    assert found == _ALLOWED
+
+
+def test_the_ratchet_sees_the_spellings_of_signal_zero():
+    assert _signal_zero_calls("import os\nos.kill(p, 0)") == 1
+    assert _signal_zero_calls("import os, signal\nos.kill(p, signal.SIG_DFL)") == 1
+    assert _signal_zero_calls("from os import kill\nkill(p, 0)") == 1
+    assert _signal_zero_calls("import os\nsig = 0\nos.kill(p, sig)") == 1
+    assert _signal_zero_calls("import os, signal\nos.kill(p, signal.SIGTERM)") == 0
+    assert _signal_zero_calls("import os\nos.kill(os.getpid(), signum)") == 0
+
+
+@pytest.mark.parametrize("pid", [0, -1, 2**32 + 5, None, "12"])
+def test_what_is_not_a_process_id_is_no_process(pid):
+    """0 and negatives name process GROUPS on POSIX, and a DWORD would wrap 2**32 + 5 to pid 5."""
+    assert pid_probe.pid_alive(pid) is False
+
+
+def test_an_install_without_the_probes_source_refuses_the_uninstall_and_erases_nothing(monkeypatch):
+    """The watcher carries the probe as source; without it it could not wait for the server, so nothing is started."""
+    from src.safety import uninstall as U
+
+    started = []
+    monkeypatch.setattr(U, "_WATCHER_SRC", U._WATCHER_SRC.replace(textwrap.dedent(inspect.getsource(pid_probe.pid_alive)), "__PID_PROBE__\n"))
+    monkeypatch.setattr(U.subprocess, "Popen", lambda *a, **k: started.append(a))
+    with pytest.raises(RuntimeError, match="liveness probe"):
+        U._default_spawn({"launchers": [], "venv": None}, 4242)
+    assert started == []

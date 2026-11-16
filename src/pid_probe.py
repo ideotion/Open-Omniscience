@@ -25,7 +25,11 @@ import os
 
 
 def pid_alive(pid):
-    """True while a process with this pid runs; never sends it anything (row 98: on Windows ``os.kill`` is TerminateProcess)."""
+    """True while a process with this pid runs; never sends it anything (row 98: on Windows ``os.kill`` is TerminateProcess).
+    When the answer cannot be had, it is "running": every caller waits on this before it erases or changes files, and a wait
+    has a deadline, where a wrong "ended" would act while the process still writes."""
+    if not isinstance(pid, int) or pid <= 0 or pid > 0xFFFFFFFF:
+        return False  # not a process id (0 and negatives name process GROUPS on POSIX)
     if os.name == "nt":
         import ctypes
         from ctypes import wintypes
@@ -38,9 +42,9 @@ def pid_alive(pid):
         k32.CloseHandle.argtypes = (wintypes.HANDLE,)
         handle = k32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE: may wait on it, may not end it
         if not handle:
-            return False
+            return ctypes.get_last_error() != 87  # type: ignore[attr-defined]  # ERROR_INVALID_PARAMETER: no such process; any other refusal: running
         try:
-            return k32.WaitForSingleObject(handle, 0) == 0x102  # WAIT_TIMEOUT: still running
+            return k32.WaitForSingleObject(handle, 0) != 0  # WAIT_OBJECT_0: ended; WAIT_TIMEOUT or WAIT_FAILED: running
         finally:
             k32.CloseHandle(handle)
     try:
@@ -50,7 +54,7 @@ def pid_alive(pid):
     except PermissionError:
         return True  # it exists; it is another user's
     except OSError:
-        return False
+        return True  # no answer: running (see above)
     # A zombie (ended, not reaped yet) still answers signal 0; on Linux its state letter in /proc says so.
     try:
         with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:

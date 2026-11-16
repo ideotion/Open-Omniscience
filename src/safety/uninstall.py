@@ -36,8 +36,8 @@ import os
 import shutil
 import subprocess
 import sys
-import threading
 import textwrap
+import threading
 import time
 from pathlib import Path
 
@@ -194,7 +194,10 @@ if lp:
 
 # Row 98: the watcher waits for the server with the ONE liveness probe (src/pid_probe.py), carried as source because this
 # process cannot import src. Its old inline os.kill(pid, 0) was TerminateProcess on Windows: it killed the server it waited for.
-_WATCHER_SRC = _WATCHER_SRC.replace("__PID_PROBE__\n", textwrap.dedent(inspect.getsource(pid_probe.pid_alive)), 1)
+try:
+    _WATCHER_SRC = _WATCHER_SRC.replace("__PID_PROBE__\n", textwrap.dedent(inspect.getsource(pid_probe.pid_alive)), 1)
+except (OSError, TypeError) as _exc:  # an install without the .py sources: the module still imports, and _default_spawn refuses
+    _LOG.warning("uninstall: the liveness probe's source could not be read (%s); the uninstall watcher cannot be started", type(_exc).__name__)
 
 
 
@@ -345,6 +348,10 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "app_only": _app_only(plan.get("data_scope")),  # R711: a broad data folder is wiped by the app's own names only
         "audit_log": plan.get("audit_log"),
     }
+    if "__PID_PROBE__" in _WATCHER_SRC:
+        # Without the probe the watcher cannot wait for the server, and erasing while the server still writes is the one outcome
+        # this must never have: nothing is started, nothing is erased, and the caller reports the failure.
+        raise RuntimeError("the uninstall watcher cannot be started: its liveness probe's source is missing from this install")
     # The watcher outlives the app and has no use for the passphrase: it is not handed the server's copy (``child_env``).
     from src.llm.model_store import child_env
 
