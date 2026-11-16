@@ -533,7 +533,7 @@
       tiles.push(tile("links", t("Links"), t("Shared outbound origins")));
       tiles.push(tile("related", t("Related"), t("Near-duplicate clusters")));
       tiles.push(tile("articles", t("Articles"), t("The matched articles")));
-      return `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
+      return `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens. Open any to dig in."))}</div>`
         + `<div class="an-ov-grid">${tiles.join("")}</div>`;
     }
 
