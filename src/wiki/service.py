@@ -226,13 +226,21 @@ def _refresh_one_pageview_top(client: Any) -> str | None:
     a day after it ends, and asking for today returns nothing that a caller could tell
     apart from "nobody read anything".
     """
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     from src.config.kv_store import kv_get_json, kv_set_json
     from src.wiki.hotset import pageview_kv_key
-    from src.wiki.pageviews import due_day, fetch_top, is_due
+    from src.wiki.pageviews import (
+        NOT_PUBLISHED_RETRY_SECONDS,
+        NotPublishedYet,
+        due_day,
+        fetch_top,
+        is_due,
+        waiting_until,
+    )
 
-    want = due_day(datetime.now(UTC))
+    now = datetime.now(UTC)
+    want = due_day(now)
     for edition in _editions():
         key = pageview_kv_key(edition)
         blob = kv_get_json(key) or {}
@@ -246,7 +254,28 @@ def _refresh_one_pageview_top(client: Any) -> str | None:
             last = None
         if not is_due(last, want):
             continue
-        rows = fetch_top(client.session, edition, want)
+        until = waiting_until(blob, want)
+        if until is not None and now < until:
+            # The service said this day was not published yet, and the wait has not
+            # passed. Asking again now could only learn the same thing.
+            continue
+        try:
+            rows = fetch_top(client.session, edition, want)
+        except NotPublishedYet:
+            # NOT A FAILURE: the service has not aggregated this day yet (field test
+            # 2026-11-14, 114 such warnings on one machine). The list already held stays
+            # as it is, and the day is asked for again after the wait, not on every drain.
+            first = until is None
+            retry_at = now + timedelta(seconds=NOT_PUBLISHED_RETRY_SECONDS)
+            kv_set_json(key, {**blob, "waiting": {"day": want.isoformat(), "until": retry_at.isoformat()}})
+            _LOG.log(
+                logging.INFO if first else logging.DEBUG,
+                "the %s top-1,000 for %s is not published yet; asking again after %s",
+                edition,
+                want,
+                retry_at.isoformat(timespec="minutes"),
+            )
+            return None
         kv_set_json(
             key,
             {
