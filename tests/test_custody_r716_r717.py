@@ -101,7 +101,7 @@ def test_r716_the_in_app_check_shows_a_warning_not_a_plain_verified():
 def test_r717_settings_shows_the_reason_and_the_fix_in_every_language():
     js = (ROOT / "src" / "static" / "app-ai-tools.js").read_text(encoding="utf-8")
     assert "s.pqc_enabled && !s.pqc_available" in js and "_custT(CUST_PQC_LIBRARY_MISSING)" in js
-    decl = re.search(r'CUST_PQC_LIBRARY_MISSING = ((?:\s*"[^"]*"\s*\+?)+);', js)
+    decl = re.search(r"CUST_PQC_LIBRARY_MISSING = ([^;]*);", js)
     assert decl, "the R717 reason string is declared"
     english = "".join(re.findall(r'"([^"]*)"', decl.group(1)))
     assert "install the library first and then turn the setting off" in english
