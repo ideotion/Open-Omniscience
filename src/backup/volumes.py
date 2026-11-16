@@ -149,11 +149,33 @@ def write_volume_set(
     return manifest
 
 
+#: The largest manifest read. A manifest lists the volumes and the members (a name and a digest each), so a real one is far
+#: smaller; the cap keeps a planted ``/dev/zero`` link or a huge file from filling memory.
+MANIFEST_MAX_BYTES = 256 * 1024 * 1024
+
+
 def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
+    """The volume set's manifest. Read only when it is a REGULAR file in the folder (never a link, a FIFO or a device: a FIFO
+    would block the read for ever, a link could point anywhere) and at most :data:`MANIFEST_MAX_BYTES` long."""
+    import stat as _stat
+
     p = Path(out_dir) / MANIFEST_NAME
-    if not p.exists():
-        raise VolumeError(f"no volume manifest ({MANIFEST_NAME}) in {out_dir}")
-    m = json.loads(p.read_text(encoding="utf-8"))
+    try:
+        st = p.lstat()
+    except FileNotFoundError:
+        raise VolumeError(f"no volume manifest ({MANIFEST_NAME}) in {out_dir}") from None
+    if not _stat.S_ISREG(st.st_mode):
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file (a link or a device is never read)")
+    if st.st_size > MANIFEST_MAX_BYTES:
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
+    fd = os.open(p, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    with os.fdopen(fd, "rb") as fh:
+        if not _stat.S_ISREG(os.fstat(fh.fileno()).st_mode):  # swapped after the lstat: refused, never read
+            raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file")
+        raw = fh.read(MANIFEST_MAX_BYTES + 1)
+    if len(raw) > MANIFEST_MAX_BYTES:
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
+    m = json.loads(raw.decode("utf-8"))
     if m.get("kind") not in _KNOWN_KINDS:
         raise VolumeError(f"not an Open Omniscience volume set (kind={m.get('kind')!r})")
     return m
