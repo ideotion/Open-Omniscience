@@ -394,6 +394,11 @@ def test_lanes_that_did_not_merge_are_owed_until_they_do(tmp_path, monkeypatch):
     assert lane_merge.lanes_pending("d1") is False and lane_merge.lanes_pending("d2") is True
     raw = (tmp_path / "lane_merge_pending.json").read_text(encoding="utf-8")
     assert "boom" not in raw  # digests and kinds only
+    # An erase destroys it with the rest of the app's files (R715), its lock and temps too.
+    from src.safety.data_scope import is_app_owned
+
+    for name in ("lane_merge_pending.json", "lane_merge_pending.json.lock", "lane_merge_pending.json.tmp.12.34"):
+        assert is_app_owned(name), name
 
 
 def test_the_restore_defers_lanes_while_the_queue_holds_the_corpus():
