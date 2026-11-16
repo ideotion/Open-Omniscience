@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "digest": "373d92b7edff87cf00dabde7818c46af2dc3af7390d77fa1bfad074dd386d88d",
+  "digest": "146e0a1846ba4452ccf3c6cb7d5ef730e18b4046ea71f1062182f1ce780f26fd",
   "log": [
     {
       "version": 1,
@@ -109,6 +109,12 @@
       "digest": "373d92b7edff87cf00dabde7818c46af2dc3af7390d77fa1bfad074dd386d88d",
       "kind": "same",
       "note": "R730 plumbing only: reindex_parallel passes the article's language to extract_entities (www half) and a docstring; text_processor (not an engine file) keeps script marks; no keyword row differs from the version-4 statement"
+    },
+    {
+      "version": 4,
+      "digest": "146e0a1846ba4452ccf3c6cb7d5ef730e18b4046ea71f1062182f1ce780f26fd",
+      "kind": "same",
+      "note": "Still INDEXER_VERSION 4, which is not merged yet (PR #2031): the second review's text_processor fix (symbol marks and variation selectors are no script marks) rides the same unmerged step."
     }
   ]
 }

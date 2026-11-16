@@ -45,9 +45,9 @@ SAMPLE: list[tuple[str, str, set[str], set[str]]] = [
 @pytest.fixture
 def tampere_in_gazetteer(monkeypatch):
     """The Finnish genitive rule needs the gazetteer to know the place. A clean install ships a 21-city
-    sample without Tampere; a generated ``cities.yml`` has it. The test supplies it."""
-    real = entextract._is_place
-    monkeypatch.setattr(entextract, "_is_place", lambda n: n.strip().lower() == "tampere" or real(n))
+    sample without Tampere; a generated ``cities.yml`` has it (a Finnish city of 240,000). The test supplies it."""
+    real = entextract._is_fi_city
+    monkeypatch.setattr(entextract, "_is_fi_city", lambda n: n.strip().lower() == "tampere" or real(n))
 
 
 def sample_counts(with_language: bool) -> dict[str, int]:
@@ -99,3 +99,49 @@ def test_given_names_in_a_grammar_list_are_never_rejected():
 def test_a_finnish_name_ending_in_n_is_not_a_genitive_without_a_gazetteer_place():
     text = "Kokouksessa puhui valtiovarainministeri Johan Lindberg, ja keskustelu jatkui pitkään."
     assert "Johan Lindberg" in {e["name"] for e in extract_entities(text, language="fi")["people"]}
+
+
+# ---- the second review's cases: real names the first rule set dropped --------------------- #
+
+@pytest.mark.parametrize("lang, text, name", [
+    ("de", "Das Buch von Thomas Mann erschien gestern.", "Thomas Mann"),
+    ("de", "Ein Gespräch mit Sebastian Kurz fand statt.", "Sebastian Kurz"),
+    ("de", "Das ist ein Film von Fritz Lang aus Berlin.", "Fritz Lang"),
+    ("de", "Das ist das Buch von Michael Ende für Kinder.", "Michael Ende"),
+    ("de", "Danach sagte Christian Lange etwas.", "Christian Lange"),
+    ("sv", "Det var enligt Dag Hammarskjöld en bra dag.", "Dag Hammarskjöld"),
+    ("sv", "Det sa sångaren Till Lindemann i går.", "Till Lindemann"),
+    ("fi", "Asiasta kertoi Aina Wifalk eilen.", "Aina Wifalk"),
+    ("fi", "Asiasta kertoi Eli Wiesel eilen.", "Eli Wiesel"),
+    ("nb", "Det sa Fritz Lang i går.", "Fritz Lang"),
+    ("en", "The goal was scored, said Emre Can on Sunday.", "Emre Can"),
+    ("fr", "Selon Mme Le Pen hier, la réforme avance.", "Le Pen"),
+    ("fr", "Le but de attaquant Son Heung-min a compté.", "Son Heung-min"),
+    ("sv-FI", "Det var enligt Dag Hammarskjöld en bra dag.", "Dag Hammarskjöld"),
+])
+def test_a_surname_or_given_name_that_is_also_a_word_is_kept(lang, text, name):
+    assert name in {e["name"] for e in extract_entities(text, language=lang)["people"]}
+
+
+def test_a_finnish_name_whose_stem_is_a_small_or_foreign_place_is_kept(monkeypatch):
+    # Simo is a Finnish municipality of about 3,000; Hel is in Poland. Neither makes "Simon" or "Helen" a genitive.
+    from src.catalog.cities import City
+
+    pair = {("simo", "fi"): City(name="Simo", lat=65.6, lon=25.0, country="fi", population=3000),
+            ("hel", "pl"): City(name="Hel", lat=54.6, lon=18.8, country="pl", population=3300),
+            ("tampere", "fi"): City(name="Tampere", lat=61.5, lon=23.8, country="fi", population=240000)}
+    monkeypatch.setattr("src.catalog.cities.cached_index", lambda: {"pair": pair, "name": {}})
+    for text, name in (("Asiasta puhui kansanedustaja Simon Elo eilen.", "Simon Elo"),
+                       ("Asiasta puhui pääministeri Helen Clark eilen.", "Helen Clark")):
+        assert name in {e["name"] for e in extract_entities(text, language="fi")["people"]}, name
+    junk = extract_entities("Ottelu pelattiin Tampereen Nokia Arenalla eilen.", language="fi")["people"]
+    assert "Tampereen Nokia" not in {e["name"] for e in junk}
+
+
+def test_a_candidate_across_a_line_break_is_not_a_name_in_a_tested_language():
+    text = "Kriget i Ukraina\nStora protester i Stockholm i dag."
+    assert "Ukraina Stora" not in {e["name"] for e in extract_entities(text, language="sv")["people"]}
+
+
+def test_nynorsk_and_bokmal_share_one_list():
+    assert entextract._function_words("nn") == entextract._function_words("nb") != frozenset()

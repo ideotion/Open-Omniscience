@@ -772,14 +772,16 @@ def www_engine_id() -> str:
     return WWW_STAMP_PREFIX + hashlib.sha256(blob.encode()).hexdigest()[:32]
 
 
-def www_inputs_digest(*, raw_content: str | None, country: str | None) -> str:
+def www_inputs_digest(*, raw_content: str | None, country: str | None, language: str | None) -> str:
     """A hash of EVERYTHING the places and entities stores read from one article (R415): the ``content`` COLUMN (not the decompressed
-    text -- the stores read the column directly, so a compressed article shows them an empty body) and the article's own ``country``
-    (the place extractor's ``source_country``). ONE function for both sides of the comparison, as :func:`date_part` is: the merge
+    text -- the stores read the column directly, so a compressed article shows them an empty body), the article's own ``country``
+    (the place extractor's ``source_country``) and its ``language`` column (the entity extractor's per-language rejects, R730; the
+    raw tag, so two spellings of one language only ever cost a re-extraction). ONE function for both sides of the comparison, as :func:`date_part` is: the merge
     imports this to recompute it from an incoming row."""
     payload = {
         "raw": hashlib.sha256((raw_content or "").encode("utf-8", "surrogatepass")).hexdigest(),
         "country": country or "",
+        "language": (language or "").strip(),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return WWW_INPUTS_PREFIX + hashlib.sha256(blob.encode("utf-8", "surrogatepass")).hexdigest()[:32]

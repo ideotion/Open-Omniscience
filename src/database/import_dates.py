@@ -74,7 +74,7 @@ def clear_import_time_publication_dates(engine: Engine) -> int:
         in_list = ", ".join(f":s{i}" for i in range(len(ids)))
         res = conn.execute(
             text(
-                f"UPDATE articles SET published_at = NULL WHERE source_id IN ({in_list}) "  # nosec B608 # bound names only
+                f"UPDATE articles SET published_at = NULL WHERE source_id IN ({in_list}) "
                 "AND published_at IS NOT NULL AND created_at IS NOT NULL "
                 "AND abs(julianday(published_at) - julianday(created_at)) <= :tol"
             ),
