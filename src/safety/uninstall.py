@@ -29,6 +29,7 @@ dependency-injected so tests never delete anything.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
@@ -36,8 +37,11 @@ import shutil
 import subprocess
 import sys
 import threading
+import textwrap
 import time
 from pathlib import Path
+
+from src import pid_probe
 
 _LOG = logging.getLogger(__name__)
 
@@ -55,9 +59,9 @@ _WATCHER_SRC = r"""
 import os, re, sys, json, time, shutil, datetime
 pid = int(sys.argv[1]); plan = json.loads(sys.argv[2])
 os.chdir(os.path.expanduser("~"))          # never sit inside a folder we may delete
+__PID_PROBE__
 for _ in range(240):                        # wait <=120s for the server to exit, then go
-    try: os.kill(pid, 0)
-    except OSError: break
+    if not pid_alive(pid): break
     time.sleep(0.5)
 log = []
 def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "  " + m)
@@ -187,6 +191,11 @@ if lp:
             fh.write("\n".join(log) + "\n")
     except OSError: pass
 """
+
+# Row 98: the watcher waits for the server with the ONE liveness probe (src/pid_probe.py), carried as source because this
+# process cannot import src. Its old inline os.kill(pid, 0) was TerminateProcess on Windows: it killed the server it waited for.
+_WATCHER_SRC = _WATCHER_SRC.replace("__PID_PROBE__\n", textwrap.dedent(inspect.getsource(pid_probe.pid_alive)), 1)
+
 
 
 def repo_root() -> Path:

@@ -96,18 +96,21 @@ def _git(root: Path, *args: str, timeout: int = GIT_TIMEOUT_S) -> subprocess.Com
     return _run(root, "git", "-C", str(root), *args, timeout=timeout)
 
 
-def pid_alive(pid: int) -> bool:
+# A copy of src/pid_probe.py:pid_alive (this helper runs mid-swap and imports nothing from src); tests/test_pid_probe.py
+# pins the two byte-identical. Never os.kill on Windows: there it is TerminateProcess (row 98).
+def pid_alive(pid):
+    """True while a process with this pid runs; never sends it anything (row 98: on Windows ``os.kill`` is TerminateProcess)."""
     if os.name == "nt":
         import ctypes
         from ctypes import wintypes
 
-        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]  # Windows only
         k32.OpenProcess.restype = wintypes.HANDLE
         k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
         k32.WaitForSingleObject.restype = wintypes.DWORD
         k32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
         k32.CloseHandle.argtypes = (wintypes.HANDLE,)
-        handle = k32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        handle = k32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE: may wait on it, may not end it
         if not handle:
             return False
         try:
@@ -119,7 +122,16 @@ def pid_alive(pid: int) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        return True  # it exists; it is another user's
+    except OSError:
+        return False
+    # A zombie (ended, not reaped yet) still answers signal 0; on Linux its state letter in /proc says so.
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:
+            if f.read().rsplit(")", 1)[1].split()[0] == "Z":
+                return False
+    except (OSError, IndexError):
+        pass
     return True
 
 
