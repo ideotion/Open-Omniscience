@@ -29,6 +29,7 @@ from datetime import date, timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from src.database.corpus_lease import corpus_lease
 from src.shared import median_ms
 
 # Day windows to compare (None = all history). These mirror what the UI actually asks for:
@@ -141,24 +142,34 @@ def _run_built(session: Session, repeats: int, columnar, snap: dict) -> dict:
         ),
     }
 
-    # -- the one-time build (this is the amortized cost) --------------------------------- #
-    # The offload folder is the serve's rule (none for an encrypted corpus; a folder of this connection's own otherwise): left to DuckDB's default it
-    # would write derived data beside the working directory in the clear once the build reached its limit.
-    spill = rollup_serve._spill_setting()
-    try:
-        con = columnar.connect(passphrase=None, spill=spill, snapshot=snap)  # offline -> in-memory (never a plaintext file)
-    except BaseException:
-        rollup_serve._remove_spill(spill)
-        raise
-    if con is None:
-        rollup_serve._remove_spill(spill)
-        return {"available": False, "reason": "columnar engine unavailable"}
-    try:
-        return _measure(session, repeats, columnar, snap, con, corpus)
-    finally:
-        with contextlib.suppress(Exception):
-            con.close()
-        rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
+    # A lease for the life of the offload folder (open-on-main row 56): an encryption in place waits for it (or refuses, by
+    # name) instead of encrypting while this run's folder, chosen while the library was plaintext, still holds plaintext rows.
+    with corpus_lease("rollup-benchmark"):
+        # Asked again now the lease is held, as the storage guard's drain does: an encryption in place or a restore that opened its
+        # window before this lease existed has already looked for leases, so this read is the one that sees it (lease first, then ask).
+        from src.scheduler.runner import owns_the_machine
+
+        if owns_the_machine():
+            return {"available": False, "declined": True, "reason": "exclusive-operation", "source": "exclusive-window",
+                    "note": "Not run: an encryption or a restore holds the library. Nothing was built; try again when it has finished."}
+        # -- the one-time build (this is the amortized cost) --------------------------------- #
+        # The offload folder is the serve's rule (none for an encrypted corpus; a folder of this connection's own otherwise): left to DuckDB's default it
+        # would write derived data beside the working directory in the clear once the build reached its limit.
+        spill = rollup_serve._spill_setting()
+        try:
+            con = columnar.connect(passphrase=None, spill=spill, snapshot=snap)  # offline -> in-memory (never a plaintext file)
+        except BaseException:
+            rollup_serve._remove_spill(spill)
+            raise
+        if con is None:
+            rollup_serve._remove_spill(spill)
+            return {"available": False, "reason": "columnar engine unavailable"}
+        try:
+            return _measure(session, repeats, columnar, snap, con, corpus)
+        finally:
+            with contextlib.suppress(Exception):
+                con.close()
+            rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
 
 
 def _measure(session: Session, repeats: int, columnar, snap: dict, con, corpus: dict) -> dict:

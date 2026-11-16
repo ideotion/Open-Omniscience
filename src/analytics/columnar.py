@@ -171,7 +171,7 @@ def _offline_config(spill=None, snapshot: dict | None = None) -> dict:
     return cfg
 
 
-def _persisted_config() -> dict:
+def _persisted_config(spill=None, snapshot: dict | None = None) -> dict:
     """DuckDB config for the PERSISTED encrypted store path (D1).
 
     Extension autoload/autoinstall stay OFF (httpfs is LOADed from the verified local binary
@@ -190,12 +190,22 @@ def _persisted_config() -> dict:
     blocks, but not for anything held in the connection's in-memory or temporary catalog (a ``TEMP TABLE``
     such as the refresh's ``_new_meta``, an intermediate), which it otherwise spilled into ``./.tmp`` as
     plaintext beside a store that is encrypted (measured on DuckDB 1.4.0 and 2.0.0; off by default on
-    both). With it on, every spilled block is written under an ephemeral key."""
+    both). With it on, every spilled block is written under an ephemeral key.
+
+    The budget's ``memory_limit`` and ``threads`` bound it as they bound the in-memory store (S1.1): left unset,
+    DuckDB took 80% of the machine's RAM and one thread per core (open-on-main row 48). ``spill`` is the offload
+    folder, as for :func:`_offline_config`: a folder the caller owns and removes
+    (``rollup_serve._persisted_spill_setting``), or ``None`` for no offload at all, never DuckDB's default ``.tmp``
+    in the working directory."""
+    snap = snapshot or budget_snapshot()
     return {
         "autoinstall_known_extensions": False,
         "autoload_known_extensions": False,
         "allow_unsigned_extensions": True,
         "temp_file_encryption": True,
+        "memory_limit": f"{int(snap['duckdb_limit_mb'])}MB",
+        "threads": int(snap["duckdb_threads"]),
+        "temp_directory": "" if spill is None else str(spill),
     }
 
 
@@ -465,7 +475,7 @@ def _canonical_httpfs_path() -> str | None:
         return canon_path
 
 
-def _persisted_connection():
+def _persisted_connection(spill=None, snapshot: dict | None = None):
     """A DuckDB connection with the VERIFIED bundled httpfs LOADed by absolute path (the
     secure OpenSSL crypto backend), using :func:`_persisted_config`. Raises if no verified
     binary is bundled -- the caller falls back to the in-memory store. Network-free by
@@ -479,7 +489,7 @@ def _persisted_connection():
     ext = _canonical_httpfs_path()  # verified bytes presented under 'httpfs.duckdb_extension'
     if ext is None:
         raise RuntimeError("no verified bundled httpfs extension (persisted store unavailable)")
-    con = duckdb.connect(config=_persisted_config())
+    con = duckdb.connect(config=_persisted_config(spill, snapshot))
     con.execute("LOAD '" + ext.replace("'", "''") + "'")
     return con
 
@@ -659,7 +669,9 @@ def connect(passphrase: str | None = None, *, spill=None, snapshot: dict | None 
     return open_store(passphrase, spill=spill, snapshot=snapshot).con
 
 
-def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | None = None) -> OpenedStore:
+def open_store(
+    passphrase: str | None = None, *, spill=None, persisted_spill=None, snapshot: dict | None = None
+) -> OpenedStore:
     """Open the derived columnar engine — a persisted ENCRYPTED store when that is
     securely possible offline, else an in-memory store. NEVER a plaintext file on disk.
 
@@ -676,8 +688,10 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
     deletes the file and falls back to in-memory — never a crash, because the canonical
     SQLCipher store is always the source of truth.
 
-    ``spill`` applies to the in-memory store only; see :func:`_offline_config`. ``snapshot`` (see
-    :func:`budget_snapshot`) is the build's own reading of the budget; none reads it afresh.
+    ``spill`` applies to the in-memory store only; see :func:`_offline_config`. ``persisted_spill`` applies to the
+    persisted store only (see :func:`_persisted_config`), and an in-memory store handed back in its place never
+    inherits it: that folder is chosen for a store whose offload is encrypted. ``snapshot`` (see
+    :func:`budget_snapshot`) is the build's own reading of the budget, for either store; none reads it afresh.
     """
     if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
         return OpenedStore(None, "off")
@@ -699,7 +713,7 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
             # Prove encryption on a throwaway probe before trusting the real file.
             if encryption_gate(store_dir / ".oo_columnar_probe.duckdb"):
                 encryption_key = _derive_key(passphrase, _store_salt(path))
-                con = attached = _attach_persisted(path, encryption_key)
+                con = attached = _attach_persisted(path, encryption_key, persisted_spill, snapshot)
                 marker = read_store_meta(con)
                 if marker is None:
                     ensure_store_meta(con)  # a fresh store: adopt the current marker
@@ -709,7 +723,7 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
                     con.close()
                     attached = None
                     path.unlink(missing_ok=True)
-                    con = attached = _attach_persisted(path, encryption_key)
+                    con = attached = _attach_persisted(path, encryption_key, persisted_spill, snapshot)
                     ensure_store_meta(con)
                     _LOG.info("columnar engine: rebuilt persisted store (was %s)", marker)
                 _LOG.info("columnar engine: persisted encrypted store at %s", path)
@@ -740,7 +754,7 @@ def open_store(passphrase: str | None = None, *, spill=None, snapshot: dict | No
     return OpenedStore(con, "memory", fallback)
 
 
-def _attach_persisted(path, encryption_key):
+def _attach_persisted(path, encryption_key, spill=None, snapshot: dict | None = None):
     """Open a persisted encrypted DuckDB store with the VERIFIED secure backend loaded (the
     absolute-path httpfs LOAD via :func:`_persisted_connection`), then ATTACH the encrypted
     file under the passphrase-derived key (:func:`_derive_key`, given as ``encryption_key``) with the default
@@ -760,7 +774,7 @@ def _attach_persisted(path, encryption_key):
     the Binder error in hexadecimal escapes and an ``int`` in digits, which no scrub of a ``str`` would find. So the key
     stays a lowercase-hex ``str``, the failure's record takes it out by name beside the passphrase, and nothing holds it
     for the nets that read what the process holds."""
-    con = _persisted_connection()  # verified httpfs LOADed; _persisted_config (file access on)
+    con = _persisted_connection(spill, snapshot)  # verified httpfs LOADed; _persisted_config (file access on)
     attached = False
     try:
         con.execute(f"ATTACH {_sql_text(path.as_posix())} AS oo (ENCRYPTION_KEY ?)", [encryption_key])

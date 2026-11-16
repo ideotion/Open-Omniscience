@@ -260,7 +260,7 @@ def persisted(tmp_path, monkeypatch):
         rec.gate_calls.append((args, kwargs))
         return True
 
-    def attach(path, encryption_key):
+    def attach(path, encryption_key, *_spill_and_snapshot):
         rec.attached.append((Path(path), encryption_key))
         if rec.fail_with is not None:
             raise rec.fail_with(encryption_key)
@@ -420,7 +420,7 @@ def test_the_attach_binds_the_key_and_escapes_the_path(monkeypatch, tmp_path):
             seen.append((sql, params))
             return self
 
-    monkeypatch.setattr(columnar, "_persisted_connection", lambda: Con())
+    monkeypatch.setattr(columnar, "_persisted_connection", lambda *_a: Con())
     key = "ab" * 32
     columnar._attach_persisted(tmp_path / "o'brien" / "analytics.duckdb", key)
     (attach_sql, params), (use_sql, _) = seen
@@ -452,7 +452,7 @@ def real_engine(tmp_path, monkeypatch):
     finally:
         probe.close()
 
-    def connection():
+    def connection(*_spill_and_snapshot):
         con = duckdb.connect()
         con.execute("SET force_mbedtls_unsafe = 'true'")
         return con
@@ -568,7 +568,7 @@ class _FakeSecureEngine:
         self.bound: list[str] = []
         self.key_of_file: dict[str, str] = {}
 
-    def connection(self):
+    def connection(self, *_spill_and_snapshot):
         engine = self
 
         class Con:
@@ -662,7 +662,7 @@ def test_a_gate_that_raises_logs_without_the_probes_key_and_without_the_passphra
         def close(self):
             pass
 
-    monkeypatch.setattr(columnar, "_persisted_connection", Con)
+    monkeypatch.setattr(columnar, "_persisted_connection", lambda *_a: Con())
     caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
     probe = tmp_path / "probe.duckdb"
     assert columnar.encryption_gate(probe) is False
@@ -690,7 +690,7 @@ def test_a_gate_that_raises_takes_the_probes_key_out_in_capitals_too(tmp_path, m
         def close(self):
             pass
 
-    monkeypatch.setattr(columnar, "_persisted_connection", Con)
+    monkeypatch.setattr(columnar, "_persisted_connection", lambda *_a: Con())
     caplog.set_level(logging.DEBUG, logger="src.analytics.columnar")
     assert columnar.encryption_gate(tmp_path / "probe.duckdb") is False
     (key,) = seen
