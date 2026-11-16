@@ -422,7 +422,7 @@ def _hold_with_start(key: str, lock: threading.Lock) -> None:
     """
     with _LOCK:
         while not lock.acquire(blocking=False):
-            _BUILD_RELEASED.wait()
+            _BUILD_RELEASED.wait(timeout=1.0)  # a release that skipped the notify costs a second, never a stuck request
         _RECOUNT_STARTED[key] = time.time()
 
 

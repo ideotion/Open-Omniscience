@@ -189,9 +189,11 @@ def test_a_cold_poll_that_finds_an_inline_compute_running_gets_its_start(monkeyp
     assert not served_cache._build_lock(_KEY).locked() and served_cache._recount_started(_KEY) is None
 
 
-def test_an_inline_caller_that_waits_reuses_the_first_ones_value_and_never_holds_the_lock_without_a_start():
-    """Two cold inline callers of one key: the second waits for the first (without ever taking the build lock just to learn it is
-    free), then serves the stored value; the compute ran once and nothing is left held."""
+def test_an_inline_caller_that_waits_reuses_the_first_ones_value_and_the_lock_held_meanwhile_carries_a_start():
+    """Two cold inline callers of one key: the second waits for the first, then serves the stored value; the compute ran once,
+    the held lock carries a start while the first computes, and nothing is left held. (The waiter's own instant after the
+    release is not sampled here: that it never takes the build lock to learn it is free is by construction, the wait being on
+    ``_BUILD_RELEASED``.)"""
     import threading
     import time
 
