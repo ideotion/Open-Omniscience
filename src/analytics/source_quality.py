@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -98,14 +99,29 @@ _METRICS = ("mention_density", "type_token", "vocab_sparsity", "single_kw_domina
 # Cheap boilerplate phrases for the heuristic PRE-LABEL (a hint for the analyst, never a verdict).
 _BOILERPLATE_PHRASES = (
     "subscribe to continue", "subscribe now", "enable javascript", "please enable",
-    "page not found", "404", "access denied", "sign in to", "log in to", "create an account",
+    "page not found", "404 not found", "error 404", "access denied", "sign in to", "log in to", "create an account",
     "accept all cookies", "cookie policy", "we use cookies", "consent", "share now", "read more",
     "continue reading", "you have reached your", "for full access", "register to read",
+    # Paywall walls in the languages the 8-instance field test (2026-11-14, report 5.1) found them
+    # in, English-only until then: Amedia's Norwegian "Allerede abonnent?" on 56 sources, the
+    # Finnish "Vain tilaajille" on 20. The others are the same "for subscribers only" wall in the
+    # app's other catalogue languages; the short "already a subscriber" forms are left out, because
+    # ordinary prose says them too. Every phrase is matched as whole words.
+    "allerede abonnent", "kun for abonnenter",                          # no / da
+    "endast för prenumeranter",                                         # sv
+    "vain tilaajille",                                                  # fi
+    "nur für abonnenten",                                               # de
+    "réservé aux abonnés",                                              # fr
+    "solo para suscriptores",                                           # es
+    "riservato agli abbonati",                                          # it
+    "exclusivo para assinantes",                                        # pt
+    "alleen voor abonnees",                                             # nl
 )
 
 
 def _base_lang(lang: str | None) -> str:
-    return (lang or "unknown").split("-")[0].lower()
+    # "zh_TW" and " zh" are the same language as "zh-TW" (the shape normalize_lang reads too).
+    return ((lang or "").strip().replace("_", "-").split("-")[0].lower()) or "unknown"
 
 
 def _chunks(seq: list[int], n: int = _IN_CHUNK):
@@ -694,12 +710,12 @@ def link_dense_article_ids(
         dense: set[int] = set()
         linked = sorted(counts)
         for chunk in _chunks(linked):
-            for aid, wc, sid in (
-                session.query(Article.id, Article.word_count, Article.source_id)
+            for aid, wc, sid, lang in (
+                session.query(Article.id, Article.word_count, Article.source_id, Article.language)
                 .filter(Article.quarantined.isnot(True))
                 .filter(Article.id.in_(chunk))
             ):
-                if sid is None:
+                if sid is None or not _word_signals_apply(lang):
                     continue
                 wc_i = int(wc) if wc is not None else None
                 if wc_i is None or wc_i <= 0:
@@ -708,7 +724,7 @@ def link_dense_article_ids(
                     dense.add(int(aid))
         return dense
 
-    art_q = session.query(Article.id, Article.word_count, Article.source_id).filter(
+    art_q = session.query(Article.id, Article.word_count, Article.source_id, Article.language).filter(
         Article.quarantined.isnot(True)
     )
     if since is not None:
@@ -719,8 +735,10 @@ def link_dense_article_ids(
     if source_ids is not None:
         art_q = art_q.filter(Article.source_id.in_(sorted(source_ids)))
     dense = set()
-    for aid, wc, sid in art_q:
-        if sid is None:
+    for aid, wc, sid, lang in art_q:
+        # The label and the selector do not assess link density for an unsegmented language (its
+        # word count is not a count of words), so the criterion does not either.
+        if sid is None or not _word_signals_apply(lang):
             continue
         links = counts.get(int(aid), 0)
         if not links:
@@ -766,10 +784,12 @@ def select_cheap_signals(
         counts[int(aid)] = int(cnt)
 
     per_source: dict[int, list[int]] = {}
-    for aid, wc, sid, quarantined in session.query(
-        Article.id, Article.word_count, Article.source_id, Article.quarantined
+    for aid, wc, sid, quarantined, lang in session.query(
+        Article.id, Article.word_count, Article.source_id, Article.quarantined, Article.language
     ).filter(Article.quarantined.isnot(True)):
         if quarantined or sid is None or int(sid) not in audited_ids:
+            continue
+        if not _word_signals_apply(lang):  # the label would not fire, so the selector does not pick
             continue
         wc_i = int(wc) if wc is not None else None
         links = counts.get(int(aid), 0)
@@ -856,15 +876,32 @@ def build_sample_union(
     return methods
 
 
-def _pre_label(text_head: str | None, *, word_count: int | None, external_links: int) -> list[str]:
+def _phrase_hit(phrase: str, low: str) -> bool:
+    """Whole words only: "al abonnee" must not fire inside "normaal abonnee", nor "404" inside 2404."""
+    return phrase in low and re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", low) is not None
+
+
+def _word_signals_apply(language: str | None) -> bool:
+    """The two word-count signals mean nothing for an UNSEGMENTED language (zh/ja/th), whose word
+    count is not a count of words -- the same reason its four metrics are NOT-ASSESSED. The field
+    test (2026-11-14, report 5.1) measured 34-46 ``very_short`` false positives per instance on
+    complete Chinese and Japanese articles."""
+    return _base_lang(language) not in UNSEGMENTED
+
+
+def _pre_label(text_head: str | None, *, word_count: int | None, external_links: int,
+               language: str | None = None) -> list[str]:
     """A cheap heuristic pre-label (hints, never verdicts): boilerplate phrase hits, a high
-    outbound-link density, and a very-short body. Works on metadata alone when the text is gated."""
+    outbound-link density, and a very-short body. Works on metadata alone when the text is gated.
+    The two word-count signals are not assessed for an unsegmented language."""
     labels: list[str] = []
     if text_head:
         low = text_head.lower()
-        hits = [p for p in _BOILERPLATE_PHRASES if p in low]
+        hits = [p for p in _BOILERPLATE_PHRASES if _phrase_hit(p, low)]
         if hits:
             labels.append("boilerplate_phrase:" + "|".join(sorted(set(hits))[:5]))
+    if not _word_signals_apply(language):
+        return labels
     if (word_count is not None and word_count > 0
             and (external_links / word_count) >= _HIGH_LINK_DENSITY):
         labels.append(f"high_link_density:{round(external_links / word_count, 3)}")
@@ -921,7 +958,8 @@ def build_sample_records(
             "selection_method": sorted(sample_methods[int(art.id)]),
             "is_newsletter": is_newsletter,
             "text_head_gated": gated,
-            "pre_label": _pre_label(text_head, word_count=art.word_count, external_links=ext_links),
+            "pre_label": _pre_label(text_head, word_count=art.word_count, external_links=ext_links,
+                                    language=art.language),
             "text_head": text_head,
         })
     return records
