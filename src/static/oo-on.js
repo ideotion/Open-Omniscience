@@ -270,7 +270,7 @@
     "candidateAct", "cardCollapse", "cardResetTunable", "cardSetEnabled", "cardWeatherFetch",
     "carouselGo", "carouselStep", "carouselToggle", "chartSymbol", "cleanupKeywords", "clearDraft",
     "clearIdxCompare", "clearSrcFilters", "closeDraft", "closePalette", "collapseAction",
-    "collectToggle", "conjCombine", "conjContrast", "conjOpenCombined", "conjScope",
+    "collectToggle", "confirmSameOutlet", "conjCombine", "conjContrast", "conjOpenCombined", "conjScope",
     "conjSearchNear", "copyDraft", "copyLlmPrompt", "createSuperGroup", "createWatch",
     "custodyGapCheck", "custodyGapRecord", "deleteDump", "deleteMarketRule", "deleteOsm",
     "deleteSource", "deleteStatSub", "deleteSuperGroup", "deleteWatch", "deleteWikiPage",
@@ -341,7 +341,7 @@
     "trustAuthor", "unattendedLog", "unattendedStart", "unattendedStop", "undoNewsletterAttach",
     "uninstallAi", "uninstallApp", "updApply", "updCheck", "updateSourceEnabled", "updateSourcePriority", "vacuumNow",
     "verifyChain", "viewChain", "viewKeywordGrowth", "viewWikiDiff", "vitalsKey", "wikiLaneClick",
-    "zoomMap",
+    "withdrawSameOutlet", "zoomMap",
   ];
   for (const name of OO_ACTIONS) ACTIONS[name] = null;
 
@@ -386,7 +386,7 @@
       "bulletinPublish", "bulletinReview", "cancelP0Validation", "cancelPull", "candidateAct", "cardCollapse",
       "cardResetTunable", "cardWeatherFetch", "carouselGo", "carouselStep", "carouselToggle", "chartSymbol",
       "cleanupKeywords", "clearDraft", "clearIdxCompare", "clearSrcFilters", "closeDraft", "closePalette",
-      "collapseAction", "collectToggle", "conjCombine", "conjContrast", "conjOpenCombined", "conjSearchNear",
+      "collapseAction", "collectToggle", "confirmSameOutlet", "conjCombine", "conjContrast", "conjOpenCombined", "conjSearchNear",
       "copyDraft", "copyLlmPrompt", "createSuperGroup", "createWatch", "custodyGapCheck", "custodyGapRecord",
       "deleteDump", "deleteMarketRule", "deleteOsm", "deleteSource", "deleteStatSub", "deleteSuperGroup",
       "deleteWatch", "deleteWikiPage", "disableUnmanagedLanguages", "discoverSources", "discoverWorld", "dismissCard",
@@ -440,7 +440,7 @@
       "toggleSourceTags", "toggleSourceTrail", "toggleStatSub", "toggleVitals", "toggleWatch", "trackWikiNow",
       "trackWikiPage", "translateArticle", "triangulateStatSeries", "unattendedLog", "unattendedStart",
       "unattendedStop", "undoNewsletterAttach", "uninstallAi", "uninstallApp", "updApply", "updCheck", "vacuumNow", "verifyChain",
-      "viewChain", "viewKeywordGrowth", "viewWikiDiff", "wikiLaneClick", "zoomMap",
+      "viewChain", "viewKeywordGrowth", "viewWikiDiff", "wikiLaneClick", "withdrawSameOutlet", "zoomMap",
     ],
     input: [
       "anMMsetScale", "filterConceptBrowse", "filterDoc", "loadBuiltinStoplist", "loadWikiChanges", "mmReload",
