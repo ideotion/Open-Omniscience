@@ -442,6 +442,33 @@ def _coerce_list(value) -> list[str]:
 
 
 
+def _last_known_wiki_lane_state() -> str | None:
+    """The lane's state from EVIDENCE when the stored settings cannot be read, or ``None``.
+
+    Two sources, in order, and nothing guessed: the app's own record of the last change of
+    the state (``src.wiki.lane_state_record``, written by every save that changed it), and
+    a lane runner streaming in THIS process, which only ever starts for ``running``. A
+    damaged row is never parsed for it: half-read text is not evidence.
+    """
+    try:
+        from src.wiki.lane_state_record import last_change
+
+        change = last_change()
+        state = change.get("state") if change else None
+        if state in WIKI_LANE_STATES:
+            return str(state)
+    except Exception:  # noqa: BLE001 - no record is no evidence, never a failed save
+        pass
+    try:
+        from src.wiki.service import lane_service_status
+
+        if lane_service_status().get("streaming"):
+            return "running"
+    except Exception:  # noqa: BLE001 - an unreadable runner is no evidence
+        pass
+    return None
+
+
 #: The Wikipedia lane's three persistent states (Q702's NOTE). A CLOSED vocabulary:
 #: the four verbs the note names are TRANSITIONS between these, not states of their
 #: own -- "start" and "resume" both arrive at ``running``, and conflating the verb
@@ -879,11 +906,37 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
             current = SchedulerSettings()
             reset = sorted(set(current.to_dict()) - {k for k, v in updates.items() if v is not None})
             # A replacement never starts network work the user's save did not ask for: what it does not supply is written OFF.
+            written_off: list[str] = []
             for off in _ONLINE_OFF_ON_REPLACE:
                 if updates.get(off) is None:
                     setattr(current, off, False)
+                    written_off.append(off)
             if updates.get("wiki_lane_state") is None:
-                current.wiki_lane_state = "halted"
+                # ROW 92 (field test 2026-11-14): this used to write ``halted`` every time,
+                # silently, so a lane the user had running stopped collecting for days
+                # with nothing saying why. The LAST KNOWN state is kept when the app holds
+                # evidence of it; only without any is the lane paused, and then the pause
+                # is recorded as the repair's and logged loudly.
+                known = _last_known_wiki_lane_state()
+                if known is not None:
+                    current.wiki_lane_state = known
+                    # Not a change: the lane stays as it was, and its record (with its
+                    # start) is left as it is.
+                    wiki_state_before = known
+                else:
+                    current.wiki_lane_state = "halted"
+                    written_off.append("wiki_lane_state")
+            current.written_off_fields = written_off  # type: ignore[attr-defined]
+            # LOUD, because nothing else in the app says it: the reset list reaches the
+            # route's answer, and an operator reading the log is told what stopped.
+            _LOG.warning(
+                "the stored scheduler settings were unreadable and were replaced by a save; "
+                "these switches were written OFF so a repair starts no network work: %s; "
+                "the Wikipedia lane is %s (%s)",
+                ", ".join(written_off) or "none",
+                current.wiki_lane_state,
+                "as it was" if "wiki_lane_state" not in written_off else "paused by the repair",
+            )
     current.reset_fields = reset  # type: ignore[attr-defined]
 
     # ``mode`` is REFUSED BY NAME, like the retired keys above and for the same reason: a

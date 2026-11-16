@@ -616,7 +616,13 @@ def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
         # never bring the app online.
         _apply_wiki_lane_state(str(fields["wiki_lane_state"]))
     # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
-    return {**_config_payload(), "reset": list(getattr(saved, "reset_fields", []) or [])}
+    # ``written_off`` names the switches the replacement wrote OFF rather than back to their
+    # default (row 92): "reset" alone read as "back to default", which for these is "on".
+    return {
+        **_config_payload(),
+        "reset": list(getattr(saved, "reset_fields", []) or []),
+        "written_off": list(getattr(saved, "written_off_fields", []) or []),
+    }
 
 
 def _apply_wiki_lane_state(state: str) -> None:
