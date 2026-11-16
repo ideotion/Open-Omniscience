@@ -87,6 +87,48 @@ def is_due(last_fetched_day: Any, want_day: Any) -> bool:
     return last_fetched_day < want_day
 
 
+#: How long to wait before asking again for a day the service has NOT PUBLISHED YET.
+#:
+#: Field test 2026-11-14 (OOS-1): the top-up asked for yesterday the moment the UTC day
+#: turned, the service answered 404 because it had not aggregated that day yet, and every
+#: drain asked again — 114 warnings in one debug log, each one a request that could only
+#: learn the same thing. A 404 for the due day is "not published yet", an ordinary state
+#: of a daily feed rather than a failure, so it is recorded and asked again after this
+#: wait, never on the next drain.
+NOT_PUBLISHED_RETRY_SECONDS: int = 3600
+
+
+class NotPublishedYet(Exception):
+    """The service answered 404 for the asked-for day: it has not aggregated that day YET.
+
+    Raised by :func:`fetch_top` in place of the generic HTTP error for a 404 only. Every
+    other failure (a refusal by the kill switch, a timeout, a 5xx, a parse error) stays the
+    error it was and is reported as one, because folding it into "not published" would
+    hide a fault behind a calm word.
+    """
+
+
+def waiting_until(blob: Any, want_day: Any) -> Any:
+    """The UTC datetime before which ``want_day`` should not be asked for again, or ``None``.
+
+    ``blob`` is the edition's stored record. A wait recorded for a DIFFERENT day is
+    ignored, so a new day is always asked for once, and an unreadable record is no wait
+    at all: the cost of being wrong that way is one request.
+    """
+    from datetime import UTC, datetime
+
+    waiting = (blob or {}).get("waiting") if isinstance(blob, dict) else None
+    if not isinstance(waiting, dict) or waiting.get("day") != want_day.isoformat():
+        return None
+    try:
+        until = datetime.fromisoformat(str(waiting.get("until")))
+    except ValueError:
+        return None
+    # A naive time (a hand-edited or restored record) is read as UTC, the only zone this
+    # module writes, so comparing it with an aware "now" can never raise.
+    return until if until.tzinfo is not None else until.replace(tzinfo=UTC)
+
+
 def project_for(edition: str) -> str:
     """``en`` -> ``en.wikipedia``. The ONE place the analytics project name is built."""
     if not edition:
@@ -156,6 +198,8 @@ def fetch_top(session: Any, edition: str, day: date, *, timeout: float = 30.0) -
     what keeps Q1018's "runs in CI without a socket" true of this path too.
     """
     response = session.get(top_url(edition, day), timeout=timeout)
+    if getattr(response, "status_code", None) == 404:
+        raise NotPublishedYet(f"{edition} {day.isoformat()}")
     raise_for_status = getattr(response, "raise_for_status", None)
     if callable(raise_for_status):
         raise_for_status()
