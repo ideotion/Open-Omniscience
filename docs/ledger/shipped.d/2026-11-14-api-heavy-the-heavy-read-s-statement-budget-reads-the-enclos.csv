@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,api/heavy,the heavy read's statement budget reads the enclosing deadline through deadline_left_s,shipped,PR #2025,src/api/heavy.py; tests/test_sink_sweep_records.py,"open-on-main row 10: statement_budget read the session's deadline key itself, a second copy of maintenance.deadline_left_s; it now calls the one reader (same answer: None with no deadline or a stub session, the seconds left otherwise), and heavy.py leaves the sink sweep's NOT_RECORDS list."
