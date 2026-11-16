@@ -1560,15 +1560,21 @@ def data_dir_persistence() -> dict[str, Any]:
         reason = "this is a Qubes disposable VM — its storage is discarded on shutdown."
     elif persistence == "rw-only" and not _under_any(dd, _QUBES_APPVM_PERSISTENT) and _on_root_device(dd):
         # Only a folder on the root filesystem is provably reset from the template: an extra volume or a bind-dirs target
-        # mounted elsewhere can be persistent, and is left to the branches below (unknown, or the user's OO_DATA_DIR).
+        # mounted elsewhere can be persistent, so it reads as unknown below (or as the user's OO_DATA_DIR choice).
         at_risk = True
         reason = (
             "this is a Qubes AppVM, which keeps only /home, /rw and /usr/local across a restart, and the folder is on "
             "its root filesystem, which is reset from its template."
         )
-    elif persistence == "rw-only":
+    elif persistence == "rw-only" and _under_any(dd, _QUBES_APPVM_PERSISTENT):
         at_risk = False
         reason = "this is a Qubes AppVM and the data folder is on its private volume, which survives a restart."
+    elif persistence == "rw-only" and not override:
+        at_risk = None
+        reason = (
+            "this is a Qubes AppVM and the data folder is on a separate volume, whose persistence could not be "
+            "proved (unknown)."
+        )
     elif override:
         at_risk = False
         reason = "OO_DATA_DIR is set to an explicit location (ensure it is a persistent path)."

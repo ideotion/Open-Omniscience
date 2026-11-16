@@ -132,6 +132,14 @@ def test_an_appvm_data_folder_on_another_volume_is_not_called_at_risk(monkeypatc
     # An extra volume or a bind-dirs target mounted outside /home, /rw and /usr/local can be persistent: not provable either way.
     monkeypatch.setattr(forensics, "_QUBES_APPVM_PERSISTENT", ("/home", "/rw", "/usr/local"))
     monkeypatch.setattr(forensics, "_on_root_device", lambda _p: False)
-    p = _appvm(monkeypatch, tmp_path / "oo")
-    assert p["at_risk"] is not True
+    monkeypatch.delenv("OO_DATA_DIR", raising=False)
+    monkeypatch.setattr(forensics, "data_dir", lambda: tmp_path / "oo")
+    monkeypatch.setattr(forensics, "_filesystem_type", lambda _p: "ext4")
+    monkeypatch.setattr(forensics, "_qubes_persistence", lambda: "rw-only")
+    monkeypatch.setattr(forensics, "_qubes_kind", lambda: "vm")
+    p = forensics.data_dir_persistence()
+    assert p["at_risk"] is None and "unknown" in p["reason"]
     assert p["note"] is None
+    # With OO_DATA_DIR set, it is the user's chosen location (the reminder), never "survives".
+    q = _appvm(monkeypatch, tmp_path / "oo")
+    assert q["at_risk"] is False and "OO_DATA_DIR" in q["reason"]

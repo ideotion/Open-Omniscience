@@ -775,8 +775,11 @@ def corpus_integrity(
     report["verdict"] = ("drift" if drift else ("no drift" if drift is False else
                          "not established: " + ", ".join(incomplete) + " did not complete"
                          + ("; " + ", ".join(report["complete_checks"]) + " did" if report["complete_checks"] else "")))
-    if deferred_since == "unknown":
-        report["verdict"] += "; the counter-deferral marker could not be read, so counter drift is counted as measured"
+    if "counter_drift" not in report:
+        if deferred_since and deferred_since != "unknown":
+            report["verdict"] += f"; the keyword counters are deferred since {deferred_since}; counter drift was not measured in this build"
+    elif deferred_since == "unknown":
+        report["verdict"] += "; the counter-deferral marker could not be read, so the measured counter drift is counted"
     elif deferred_since:
         report["verdict"] += (
             f"; the keyword counters are deferred since {deferred_since} (a re-index or drain stopped maintaining "

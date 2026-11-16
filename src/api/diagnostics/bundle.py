@@ -3210,7 +3210,11 @@ def _write_all_diagnostics_zip(
         },
         **({"after_scans": {
             "members": [m[0] for m in tail],
-            "note": "records that read what the scans write, run after the scans so they report this build's figures",
+            "note": (
+                "records that read what the scans write, run after the scans so they report this build's figures; the machine "
+                "went back to the collector before them, so the scans phase ends there (a scan thread abandoned at its deadline "
+                "can still be running, as its own entry says)"
+            ),
         }} if tail else {}),
     }
     previous_text, previous_block = "", None
