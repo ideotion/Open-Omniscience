@@ -57,8 +57,9 @@ MARGIN_BYTES = 256 * 1024 * 1024
 #: less per-page overhead, so it is usually SMALLER: 530.8 MB became 498.3 MB on the R702 bench). Kept above 1 so the estimate never
 #: under-asks for a store whose pages are nearly empty.
 SIZE_FACTOR = 1.10
+#: A partial younger than this (seconds) may be one a rebuild is writing: the sweep leaves it, and the next look removes it.
+PARTIAL_MIN_AGE_S = 600.0
 #: How long the work already in flight on the library may take to finish before the rebuild refuses, naming it (seconds).
-PARTIAL_MIN_AGE_S = 600.0  # a partial younger than this may be one a rebuild is writing; the next look removes it
 QUIESCE_S = 180.0
 
 #: What the operator answered to "back up first?" (R702): the rebuild refuses without one of these.
@@ -177,12 +178,13 @@ def remove_kept_copy(name: str) -> dict[str, Any]:
     listed = {k["name"]: k for k in kept_copies(target)}
     if target is None or name not in listed:
         raise Declined("not-a-kept-copy", "that is not a file an earlier rebuild kept")
-    path = target.parent / name
+    chosen = listed[name]
+    path = target.parent / str(chosen["name"])  # the name the folder listing gave, never the request's text
     path.unlink()
     for side in ("-wal", "-shm", "-journal"):
         with contextlib.suppress(OSError):
             Path(str(path) + side).unlink()
-    return {"removed": name, "bytes": listed[name]["bytes"]}
+    return {"removed": chosen["name"], "bytes": chosen["bytes"]}
 
 
 def sweep_partials(target: Path | None = None) -> int:
@@ -446,9 +448,11 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
         with repair._exclusive_window():
             _quiet(stopping)
             with write_lock():
-                watch = repair._Probe(target)  # opened BEFORE the copy reads its first row
                 origin = _identity(target)  # the FILE the probe watches: a library replaced under its name is not one it can see
+                watch = repair._Probe(target)  # opened BEFORE the copy reads its first row
                 try:
+                    if _replaced_since(target, origin):  # replaced between the two looks: the probe may watch either file
+                        raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
                     progress(FRAME_COPYING, mb=_mb(now["bytes_in_use"]))
                     t0 = time.monotonic()
                     try:

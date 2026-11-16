@@ -640,3 +640,20 @@ def test_encrypting_the_library_is_refused_while_a_rebuild_runs(monkeypatch):
     with pytest.raises(HTTPException) as caught:
         unlock.encrypt_db(body)
     assert caught.value.status_code == 409 and "rebuilt" in caught.value.detail
+
+
+def test_the_copy_keeps_its_temporary_data_in_memory(tmp_path, monkeypatch, key_held):
+    """A sorter or temp table spilled to disk is plaintext whatever the key: the copy forces temp_store MEMORY on its connection."""
+    from src.database import connect as connect_mod
+
+    live = _live(tmp_path, monkeypatch, encrypted=True, articles=20)
+    seen: list[str] = []
+    real = connect_mod._export
+
+    def export_and_look(conn, schema):
+        seen.append(str(conn.execute("PRAGMA temp_store").fetchone()[0]))
+        return real(conn, schema)
+
+    monkeypatch.setattr(connect_mod, "_export", export_and_look)
+    connect_mod.copy_at_current_settings(live, tmp_path / "copy.db")
+    assert seen == ["2"], "temp_store 2 is MEMORY"
