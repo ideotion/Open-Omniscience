@@ -254,8 +254,8 @@ def test_the_dropdown_loads_with_the_fold_that_contains_it() -> None:
 
 def test_both_dropdown_callers_ask_for_only_the_keys_they_read() -> None:
     src = function_source(read_static("app-sources.js"), "loadSources")
-    assert_present(src, "/api/sources?fields=id,name,rss_url",
-                   why="this dropdown prints the name and filters on rss_url")
+    assert_present(src, "/api/sources?fields=id,name,domain,rss_url",
+                   why="this dropdown prints the name (the domain when the name is a bare Wikidata id, row 71) and filters on rss_url")
     mkt = function_source(read_static("app-markets.js"), "loadMarketConfig")
     assert_present(mkt, "/api/sources?fields=id,name,domain",
                    why="this dropdown prints name (domain) and posts the id")

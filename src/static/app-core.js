@@ -256,6 +256,16 @@
       return "unresolved";
     }
 
+    // A source's shown name (row 71): a name that is only a Wikidata identifier ("Q11858063") reads as its domain
+    // ("epari.fi"), the identifier kept for the hover. The stored name is not changed. Returns {label, qid}.
+    const OO_BARE_QID = /^\s*[Qq]\d+\s*$/;
+    function ooSourceName(s) {
+      const name = (s && s.name) || "";
+      const domain = (s && s.domain) || "";
+      if (OO_BARE_QID.test(name) && domain) return {label: domain, qid: name.trim().toUpperCase()};
+      return {label: name || domain, qid: ""};
+    }
+
     // The full country name in the CURRENT UI language -- the hover's payload.
     // `ooRegionName` (app-map.js) owns the CLDR lookup and is reached through the
     // derived alpha-2, never the alpha-3, because `Intl.DisplayNames({type:
