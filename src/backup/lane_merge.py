@@ -729,7 +729,7 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
         source_from="inc.law_identities i",
         overrides={"created_at": "MIN(i.created_at, :horizon)"},
         where=(
-            f"NOT EXISTS (SELECT 1 FROM main.law_identities m WHERE {_LAW_TRIPLE}) "
+            f"NOT EXISTS (SELECT 1 FROM main.law_identities m WHERE {_LAW_TRIPLE}) "  # noqa: S608  # nosec B608 # module-literal clauses
             f"AND i.id IN (SELECT i.identity_id FROM inc.law_document_meta i WHERE {linked_new})"
         ),
         source_alias="i",
