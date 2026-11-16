@@ -76,4 +76,62 @@ def test_field_bundle_splits_the_flat_source_count():
     assert all(isinstance(corpus[k], int) for k in (*parts, "sources_named_by_bare_id")), corpus
     assert sum(corpus[k] for k in parts) == corpus["sources"]
     never = corpus["sources_never_stored"]
-    assert never["total"] == sum(g["sources"] for g in never["groups"]) and never["total"] <= corpus["sources"]
+    grouped = sum(g["sources"] for g in never["groups"])
+    assert never["total"] <= corpus["sources"] and grouped <= never["total"]
+    assert never["groups_truncated"] is (grouped < never["total"])
+
+
+def test_a_source_whose_enabled_flag_was_never_set_is_counted_in_the_split():
+    """NULL is "never set", which the app reads as enabled: it must land in a part, or the parts stop summing."""
+    from fastapi.testclient import TestClient
+
+    from sqlalchemy import text
+
+    from src.api.main import app
+    from src.database.session import SessionLocal
+
+    s = SessionLocal()
+    try:
+        row = Source(name="Q424242", domain="unset-flag.example.org", enabled=None)
+        s.add(row)
+        s.commit()
+        sid = row.id
+        # The ORM default would fill the flag in; a raw restore merge can leave it NULL, as this does.
+        s.execute(text("UPDATE sources SET enabled = NULL WHERE id = :i"), {"i": sid})
+        s.commit()
+        assert s.execute(text("SELECT enabled FROM sources WHERE id = :i"), {"i": sid}).scalar() is None
+    finally:
+        s.close()
+    try:
+        with TestClient(app) as c:
+            corpus = c.post("/api/diagnostics/debug-bundle").json()["data"]["corpus"]
+        parts = ("sources_collecting", "sources_enabled_not_qualified", "sources_not_enabled")
+        assert sum(corpus[k] for k in parts) == corpus["sources"]
+    finally:
+        s = SessionLocal()
+        try:
+            s.query(Source).filter(Source.id == sid).delete()
+            s.commit()
+        finally:
+            s.close()
+
+
+def test_a_failing_never_stored_scan_leaves_the_corpus_counts(monkeypatch):
+    """The never-stored breakdown is one scan; when it fails, the counts beside it still report."""
+    import sqlalchemy
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    real_text = sqlalchemy.text
+
+    def _text(sql, *a, **k):
+        if "NOT EXISTS (SELECT 1 FROM articles x" in str(sql):
+            raise sqlalchemy.exc.OperationalError(str(sql), {}, Exception("interrupted"))
+        return real_text(sql, *a, **k)
+
+    monkeypatch.setattr(sqlalchemy, "text", _text)
+    with TestClient(app) as c:
+        corpus = c.post("/api/diagnostics/debug-bundle").json()["data"]["corpus"]
+    assert isinstance(corpus["articles"], int) and isinstance(corpus["sources"], int)
+    assert corpus["sources_never_stored"] == {"error": "OperationalError"}
