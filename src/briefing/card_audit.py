@@ -884,6 +884,25 @@ def _tally(values: list[str], label: str = "status") -> list[dict]:
 # --------------------------------------------------------------------------- #
 
 
+def _order_key_fields(key: tuple) -> dict:
+    """``order_key`` as JSON can carry it (field test 2026-11-14 row 64). Its recency is ``-inf`` BY DESIGN for a card with
+    no dated evidence (``src/briefing/leads.py``: it sorts last on that tiebreak), and ``-inf`` has no JSON form: the
+    report wrote ``-Infinity``, which a strict reader rejects and the field read as "inf or NaN". The value becomes
+    ``null`` and ``recency_missing`` says why; the sort itself is unchanged."""
+    import math
+
+    values = list(key)
+    missing = [i for i, v in enumerate(values) if isinstance(v, float) and not math.isfinite(v)]
+    for i in missing:
+        values[i] = None
+    out: dict = {"order_key": values}
+    if 2 in missing:  # the recency element (leads.py builds it as the third)
+        out["recency_missing"] = "no evidence entry carries a date, so the card sorts last on recency"
+    if any(i != 2 for i in missing):  # no such element today; named rather than mislabelled as recency
+        out["non_finite_elements"] = [i for i in missing if i != 2]
+    return out
+
+
 def _safe_section(name: str, fn):
     """Run one risky sub-query; on failure return a structured marker for THAT
     section only (the diagnostic must degrade, never 500).
@@ -1804,7 +1823,7 @@ def card_audit_report(
             "ordering": _safe_section(
                 "ordering",
                 lambda: {
-                    "order_key": list(order_key(card, now=now)),
+                    **_order_key_fields(order_key(card, now=now)),
                     "explain_order": explain_order(card, now=now),
                     "major": is_major(card),
                     "note": (
