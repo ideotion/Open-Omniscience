@@ -53,6 +53,7 @@ FEED_LEVEL = {
 # presence test, distinct article ids or verdicts); each says what it is, so a real count cannot hide among them.
 NOT_A_SOURCE_COUNT = {
     ("src/analytics/queries.py", "ring_country_article_ids"): "distinct ARTICLE ids; source_id appears only in the join",
+    ("src/analytics/store.py", "catch_up_source_counters"): "the ids whose counters a pass end recounts",
     ("src/backup/merge.py", "_touched_source_ids"): "the ids whose counters a restore recounts",
     ("src/bulletin/evidence.py", "period_source_rows"): "distinct (source type, domain) rows listed for licence review, one per domain already",
     ("src/catalog/qualification.py", "qualification_queue"): "ids that have an attempt, an anti-join for the queue",

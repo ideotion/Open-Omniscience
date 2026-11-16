@@ -146,6 +146,7 @@ def build_sample_zip(
     full = False
     cursor = after
     shown = _shown_source_columns()
+    shown_feed_key = shown["feed_key"]  # the manifest rows write a kept pre-R628 key masked, as the samples do
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         while not full and not done:
             ids = [r[0] for r in db.execute(
@@ -162,7 +163,7 @@ def build_sample_zip(
                 data = None
                 row: dict[str, Any] | None = None
                 if art is not None:
-                    row = {"source_id": sid, "domain": src.domain, "feed_key": src.feed_key, "name": src.name, "articles_in_source": n}
+                    row = {"source_id": sid, "domain": src.domain, "feed_key": shown_feed_key(src.feed_key), "name": src.name, "articles_in_source": n}
                     a = _row_dict(art)
                     if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
                         for col in _BODY_COLUMNS:
@@ -182,7 +183,7 @@ def build_sample_zip(
                     data = json.dumps(doc, ensure_ascii=False, default=str).encode("utf-8")
                     row["article_id"] = art.id
                     row["bytes"] = len(data)
-                entry: Any = [sid, src.domain, src.feed_key] if row is None else row
+                entry: Any = [sid, src.domain, shown_feed_key(src.feed_key)] if row is None else row
                 row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
                 used = buf.tell() + _RESERVE_BYTES + rows_bytes + row_bytes
                 if (manifest or empty) and used + len(data or b"") > cap:   # empty sources count too: their rows add up

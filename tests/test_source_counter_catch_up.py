@@ -61,9 +61,10 @@ def _live(s, sid):
 def test_a_pass_end_recounts_only_the_sources_that_gained_articles():
     s = _session()
     wiki, rss, quiet = _src(s, "wiki"), _src(s, "rss"), _src(s, "quiet")
-    _art(s, wiki.id, 5)
-    _art(s, rss.id, 3)
-    _art(s, quiet.id, 2)
+    early = datetime.now(UTC) - timedelta(hours=2)  # older than the catch-up's created_at margin
+    _art(s, wiki.id, 5, at=early)
+    _art(s, rss.id, 3, at=early)
+    _art(s, quiet.id, 2, at=early)
     s.commit()
     reconcile_source_counters(s)  # the idle-window count, which sets the watermark
     stamp_quiet = s.get(Source, quiet.id).counter_reconciled_at
@@ -78,7 +79,10 @@ def test_a_pass_end_recounts_only_the_sources_that_gained_articles():
         assert s.get(Source, src.id).article_count == _live(s, src.id)
     assert s.get(Source, quiet.id).counter_reconciled_at == stamp_quiet  # not recounted, so not re-stamped
     assert _cursor_get(s, SOURCE_COUNTER_WATERMARK_KEY) == s.query(func.max(Article.id)).scalar()
-    assert catch_up_source_counters(s)["sources"] == 0  # nothing new: no write
+    again = catch_up_source_counters(s)
+    assert again["sources"] == 2  # the margin re-reads the recent articles; the counts stay exact
+    s.expire_all()
+    assert s.get(Source, quiet.id).counter_reconciled_at == stamp_quiet
 
 
 def test_a_store_without_a_watermark_starts_from_the_oldest_stamp():
@@ -114,3 +118,59 @@ def test_a_never_counted_store_is_left_to_the_live_count():
 def test_the_pass_tail_catches_the_counters_up():
     src = (ROOT / "src" / "scheduler" / "runner.py").read_text(encoding="utf-8")
     assert '_tail_phase("source-counters"' in src and "catch_up_source_counters" in src
+
+
+def test_a_reused_id_below_the_watermark_is_still_counted():
+    """articles.id has no AUTOINCREMENT: delete the newest rows and the next inserts take their ids (Opus read)."""
+    s = _session()
+    a, b = _src(s, "a"), _src(s, "b")
+    _art(s, a.id, 4)
+    s.commit()
+    reconcile_source_counters(s)
+    top = s.query(func.max(Article.id)).scalar()
+    assert _cursor_get(s, SOURCE_COUNTER_WATERMARK_KEY) == top  # the unscoped count sets the watermark
+    newest = s.query(Article).filter(Article.source_id == a.id).order_by(Article.id.desc()).limit(2).all()
+    for art in newest:
+        s.delete(art)
+    s.commit()
+    _art(s, b.id, 2)  # takes the two freed ids, at or below the watermark
+    s.commit()
+    assert s.query(func.max(Article.id)).scalar() == top
+    out = catch_up_source_counters(s)
+    assert out["sources"] >= 1
+    s.expire_all()
+    assert s.get(Source, b.id).article_count == _live(s, b.id) == 2
+
+
+def test_a_catch_up_naming_more_sources_than_one_query_can_bind_still_runs():
+    s = _session()
+    srcs = [_src(s, f"s{i}") for i in range(2000)]
+    s.commit()
+    reconcile_source_counters(s)
+    for src in srcs:
+        _art(s, src.id, 1)
+    s.commit()
+    out = catch_up_source_counters(s)
+    assert out["sources"] == 2000, out
+    s.expire_all()
+    assert all(s.get(Source, src.id).article_count == 1 for src in srcs[::97])
+
+
+def test_a_failing_catch_up_rolls_back_and_says_so(monkeypatch):
+    import src.analytics.store as store
+
+    s = _session()
+    a = _src(s, "a")
+    _art(s, a.id, 1)
+    s.commit()
+    reconcile_source_counters(s)
+    _art(s, a.id, 1)
+    s.commit()
+
+    def boom(*_a, **_k):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(store, "reconcile_source_counters", boom)
+    assert catch_up_source_counters(s) == {"skipped": "error"}
+    s.expire_all()
+    assert s.get(Source, a.id).article_count == 1  # unchanged, and the next pass retries
