@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from random import Random
@@ -323,6 +324,7 @@ def near_duplicate_clusters(
     bands: int = 32,
     rows: int = 4,
     seed: int = 0,
+    drop_shingles: Mapping[str, Collection[int]] | None = None,
 ) -> NearDupResult:
     """Cluster ``{id: text}`` into near-duplicate groups.
 
@@ -330,20 +332,36 @@ def near_duplicate_clusters(
     MinHash-estimated Jaccard ≥ ``threshold`` (high-precision — biased toward
     *under*-merging, per the §6 "false merges hurt the innocent" rule). ``bands * rows``
     must equal ``num_perm``.
+
+    ``drop_shingles`` maps a doc id to shingles left out of that doc's set before it is
+    signed: the text its outlet repeats on every page (field test 2026-11-14 row 67, see
+    :mod:`src.analytics.outlet_furniture`). A doc with nothing left after the drop is not
+    compared at all: two empty sets have identical sentinel signatures, and would read as
+    copies of each other.
     """
     if bands * rows != num_perm:
         raise ValueError(f"bands*rows ({bands * rows}) must equal num_perm ({num_perm})")
 
-    key = _fingerprint(docs, (threshold, num_perm, bands, rows, seed))
+    drop_key: tuple = ()
+    if drop_shingles:
+        drop_key = tuple(sorted((d, tuple(sorted(v))) for d, v in drop_shingles.items() if v))
+    key = _fingerprint(docs, (threshold, num_perm, bands, rows, seed, drop_key))
     cached = _memo.get(key)
     if cached is not None:
         _memo.move_to_end(key)
         return _copy_result(cached)
 
-    signatures = {
-        doc_id: minhash_signature(shingles(text), num_perm, seed=seed)
-        for doc_id, text in docs.items()
-    }
+    if drop_shingles is None:
+        signatures = {
+            doc_id: minhash_signature(shingles(text), num_perm, seed=seed)
+            for doc_id, text in docs.items()
+        }
+    else:
+        signatures = {}
+        for doc_id, text in docs.items():
+            kept = shingles(text) - set(drop_shingles.get(doc_id, ()))
+            if kept:  # an emptied doc is left out of pairing (see the docstring)
+                signatures[doc_id] = minhash_signature(kept, num_perm, seed=seed)
     candidates = _lsh_candidate_pairs(signatures, bands, rows)
 
     edges: set[tuple[str, str]] = set()
