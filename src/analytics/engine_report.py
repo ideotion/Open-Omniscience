@@ -432,6 +432,18 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
     from src.analytics.equivalence import is_ring_term, load_rings
     from src.analytics.selftest import run_keyword_selftest
 
+    # Wall seconds per block, so a field report names the block that costs (row 18b: 250 s in the field, 8.1 s on a synthetic
+    # 200k corpus with no block dominant). Measured, never estimated; a block that raises still raises.
+    walls: dict[str, float] = {}
+
+    def timed(name: str, fn):
+        t0 = time.perf_counter()
+        try:
+            return fn()
+        finally:
+            walls[name] = round(time.perf_counter() - t0, 3)
+
+    t_counts = time.perf_counter()
     total = session.query(func.count(Keyword.id)).scalar() or 0
     entities = session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
     ngrams = session.query(func.count(Keyword.id)).filter(Keyword.is_ngram.is_(True)).scalar() or 0
@@ -444,9 +456,10 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
         .limit(100000)
     ]
     ent_acronyms = sum(1 for n in ent_norms if _is_acronym(n or ""))
+    walls["counts_and_entities"] = round(time.perf_counter() - t_counts, 3)
 
     # Top-N most-mentioned keywords: cross-language ring + tag coverage.
-    top_rows = (
+    top_rows = timed("top_keywords", lambda: (
         session.query(
             Keyword.id,
             Keyword.normalized_term,
@@ -459,7 +472,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
         .order_by(func.coalesce(func.sum(KeywordMentionRead.count), 0).desc())
         .limit(top_n)
         .all()
-    )
+    ))
     top_ids = [r[0] for r in top_rows]
     top_norms = [r[1] for r in top_rows]
     ring_hits = sum(1 for n in top_norms if is_ring_term(n))
@@ -475,13 +488,19 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
     # Per-language coverage + functional status.
     languages: list[dict[str, Any]] = [
         {"language": (lang or "?"), "keywords": int(n), "status": _lang_status(lang or "?")}
-        for lang, n in session.query(Keyword.language, func.count(Keyword.id))
+        for lang, n in timed("languages", lambda: session.query(Keyword.language, func.count(Keyword.id))
         .group_by(Keyword.language)
-        .all()
+        .all())
     ]
     languages.sort(key=lambda x: -int(x["keywords"]))
 
     rings_total = len(load_rings())
+    mention_distribution = timed("mention_distribution", lambda: _mention_distribution(session))
+    lemma_preview = timed("lemma_preview", lambda: _lemma_preview([(r[1], r[2], r[3]) for r in top_rows]))
+    extraction_noise = timed("extraction_noise", lambda: _extraction_noise(session))
+    generic_terms = timed("generic_terms", lambda: _generic_terms(session))
+    selftest = timed("selftest", lambda: run_keyword_selftest()["summary"])
+    performance = timed("performance", lambda: _performance(session, sample_articles))
 
     return {
         "kind": "keyword-engine-report",
@@ -493,7 +512,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "entities": int(entities),
             "terms": int(total) - int(entities),
             "ngrams": int(ngrams),
-            "mention_distribution": _mention_distribution(session),
+            "mention_distribution": mention_distribution,
         },
         "entity_precision": {
             "entities": int(entities),
@@ -508,7 +527,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "rings_total": rings_total,
             "method": "share of the most-mentioned keywords that belong to a cross-language ring; grows as rings are added",
         },
-        "lemma_preview": _lemma_preview([(r[1], r[2], r[3]) for r in top_rows]),
+        "lemma_preview": lemma_preview,
         "tag_coverage": {
             "top_n": len(top_ids),
             "tagged": int(tagged_top),
@@ -519,14 +538,18 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "method": "functional = has a stoplist + tokenisable; unsegmented (zh/ja/th without the [segmentation] extra) = extraction broken; no_stoplist = function words leak",
             "languages": languages,
         },
-        "extraction_noise": _extraction_noise(session),
-        "generic_terms": _generic_terms(session),
+        "extraction_noise": extraction_noise,
+        "generic_terms": generic_terms,
         "curation": {
             "rings": rings_total,
             "family_overrides": int(session.query(func.count(KeywordFamilyOverride.id)).scalar() or 0),
             "supergroups": int(session.query(func.count(KeywordSuperGroup.id)).scalar() or 0),
             "tags": int(session.query(func.count(KeywordTag.id)).scalar() or 0),
         },
-        "selftest": run_keyword_selftest()["summary"],
-        "performance": _performance(session, sample_articles),
+        "selftest": selftest,
+        "performance": performance,
+        "block_wall_s": {
+            **walls,
+            "method": "wall seconds each block of this report took on this machine, measured as it ran; the curation counts are not timed",
+        },
     }

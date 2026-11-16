@@ -220,3 +220,14 @@ def test_language_status_is_honest():
 def test_acronym_predicate():
     assert _is_acronym("WHO") and _is_acronym("G7") and _is_acronym("COVID-19")
     assert not _is_acronym("world") and not _is_acronym("a")
+
+
+def test_the_report_names_what_each_block_cost():
+    # Row 18b: 250 s in the field and no block dominant on a synthetic corpus, so the report measures its own blocks.
+    s = _sess()
+    _seed(s)
+    walls = keyword_engine_report(s, top_n=50, sample_articles=1)["block_wall_s"]
+    for block in ("counts_and_entities", "top_keywords", "languages", "mention_distribution", "lemma_preview",
+                  "extraction_noise", "generic_terms", "selftest", "performance"):
+        assert isinstance(walls[block], float) and walls[block] >= 0.0, block
+    assert walls["method"]

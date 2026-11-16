@@ -495,6 +495,48 @@ def recent_errors(limit: int = 300, *, scrub: bool = True) -> list[dict]:
     return out
 
 
+#: The levels :func:`older_errors` keeps: an error, never a warning. The field journal's newest 300 records covered 9 to 17 hours
+#: and most of them were warnings from one logger (Wikipedia), so an error older than that window was trimmed out of the bundle
+#: by warnings (field test 2026-11-14, section 9).
+_ERROR_LEVELS = {"ERROR", "CRITICAL"}
+
+
+def older_errors(skip_newest: int, limit: int = 50) -> dict:
+    """The newest ``limit`` ERROR and CRITICAL records OLDER than the newest ``skip_newest`` records, oldest first, scrubbed
+    like :func:`recent_errors`.
+
+    The bundle carries the newest records whole; this carries the errors that window does not reach, so warnings cannot push
+    an error out of the bundle while the journal still holds it. ``found`` counts every such error in the journal, so
+    ``found > len(records)`` says some were left out."""
+    path = _log_path()
+    if not path.exists():
+        return {"records": [], "found": 0, "skipped_newest": skip_newest, "limit": limit}
+    lines = path.read_text(encoding="utf-8").splitlines()
+    older = lines[: max(0, len(lines) - skip_newest)]
+    hits: list[dict] = []
+    for ln in older:
+        try:
+            entry = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and entry.get("level") in _ERROR_LEVELS:
+            hits.append(entry)
+    kept = hits[-limit:] if limit > 0 else []
+    return {
+        "records": [_scrubbed_entry(e) for e in kept],
+        "found": len(hits),
+        "skipped_newest": skip_newest,
+        "limit": limit,
+    }
+
+
+def _logger_breakdown(records: list[dict], top: int = 15) -> dict:
+    """Records per (logger, level), the largest first: which logger fills the journal. Names and counts only, no words."""
+    counts = Counter((str(r.get("logger") or "?"), str(r.get("level") or "?")) for r in records)
+    rows = [{"logger": lg, "level": lv, "count": n} for (lg, lv), n in counts.most_common(top)]
+    return {"rows": rows, "pairs_not_listed": max(0, len(counts) - top)}
+
+
 def summary() -> dict:
     """Honest metadata about the rolling log so a bundle reader can tell whether
     the error window is CURRENT — no inference, counts + timestamps only.
@@ -597,4 +639,6 @@ def summary() -> dict:
             1 for r in records if _is_frontend(r) and _this_session(r)
         ),
         "frontend_kind_breakdown": dict(frontend_kinds),
+        # Which logger fills the journal: the field journal's window was mostly one logger's warnings.
+        "logger_breakdown": _logger_breakdown(records),
     }
