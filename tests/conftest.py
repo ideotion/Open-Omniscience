@@ -919,3 +919,38 @@ def no_cgroup_limit(monkeypatch):
         "cgroup_available_mb",
         lambda *a, **k: {"available_mb": None, "limit_mb": None, "min_limit_mb": None, "source": None, "unreadable": False},
     )
+
+
+# A TEST THAT HANGS NAMES ITSELF (row 93). The portability legs ran one test that never returned on Windows: the log stopped on a row of
+# dots at 23% and the job was cancelled at its 60-minute cap 30 minutes later, with nothing saying which test it was. With
+# ``OO_TEST_HANG_LIMIT_S`` set (the portability job sets it), every test is given that many seconds for setup, call and teardown
+# together; past it, faulthandler's own watchdog thread (C code, so it fires even when the hung code holds the GIL) writes every
+# thread's traceback to ``OO_TEST_HANG_REPORT`` after a line naming the test, and ends the process; the file is emptied after every
+# test that returns. The CI step after the tests prints that file. A hang therefore costs the limit, not the job's cap, and is a named failure, never a silent cancel. Unset, nothing is armed.
+_HANG_LIMIT_S = float(os.environ.get("OO_TEST_HANG_LIMIT_S") or 0)
+_HANG_REPORT = None
+if _HANG_LIMIT_S > 0:
+    import faulthandler as _faulthandler
+
+    _HANG_REPORT = open(  # noqa: SIM115 - held open for the whole run: faulthandler writes to it from its own thread
+        (os.environ.get("OO_TEST_HANG_REPORT") or "test-hang-report.txt") + (("." + os.environ["PYTEST_XDIST_WORKER"]) if os.environ.get("PYTEST_XDIST_WORKER") else ""),
+        "w",
+        encoding="utf-8",
+    )
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    if _HANG_REPORT is None:
+        return (yield)
+    _HANG_REPORT.seek(0)
+    _HANG_REPORT.truncate()
+    _HANG_REPORT.write(f"Test still running after {_HANG_LIMIT_S:g} s, so the run was ended: {item.nodeid}\n\n")
+    _HANG_REPORT.flush()
+    _faulthandler.dump_traceback_later(_HANG_LIMIT_S, exit=True, file=_HANG_REPORT)
+    try:
+        return (yield)
+    finally:
+        _faulthandler.cancel_dump_traceback_later()
+        _HANG_REPORT.seek(0)
+        _HANG_REPORT.truncate()  # empty unless a test hung, so the CI step prints only a real hang

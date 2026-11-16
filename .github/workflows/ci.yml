@@ -913,8 +913,24 @@ jobs:
         run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out shard.args
 
       # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first and why `-r` needs `fE` beside it): a macOS skip count that differs from Linux's is read from this log. No junit report here.
+      # A test that does not return within OO_TEST_HANG_LIMIT_S seconds ends the run with every thread's traceback written to
+      # test-hang-report.txt after a line naming it (tests/conftest.py, row 93): a hang costs 10 minutes and names itself, instead of
+      # going silent until the 60-minute cap cancels the leg (job 133057809613: shard 1 on Windows stopped at 23% for 30 minutes).
       - name: Test (pytest)
+        env:
+          OO_TEST_HANG_LIMIT_S: "600"
+          OO_TEST_HANG_REPORT: test-hang-report.txt
         run: python -m pytest -q -rsfE @shard.args
+
+      - name: Name the test that hung (if one did)
+        if: always()
+        run: |
+          if [ -s test-hang-report.txt ]; then
+            echo "::error title=A test hung::$(head -n 1 test-hang-report.txt)"
+            cat test-hang-report.txt
+          else
+            echo "No test ran past the hang limit."
+          fi
 
   # SQLCipher driver proof on every OS (gate zero, executed for real): the
   # at-rest encryption batch (PR-E) must not land on wheel inspection alone.
