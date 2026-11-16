@@ -773,8 +773,8 @@ def www_engine_id() -> str:
 
 
 def www_inputs_digest(*, raw_content: str | None, country: str | None) -> str:
-    """A hash of EVERYTHING the places and entities stores read from one article (R415): the ``content`` COLUMN (not the decompressed
-    text -- the stores read the column directly, so a compressed article shows them an empty body) and the article's own ``country``
+    """A hash of EVERYTHING the places and entities stores read from one article (R415): the article's text as the stores read it
+    (``get_content()`` since R725: until then they read the ``content`` column, which a compressed article leaves empty) and the article's own ``country``
     (the place extractor's ``source_country``). ONE function for both sides of the comparison, as :func:`date_part` is: the merge
     imports this to recompute it from an incoming row."""
     payload = {
@@ -831,9 +831,10 @@ def index_inputs_digest(
 
       * ``text`` -- the article text the keyword pass, sentiment and the language
         deduction read (``get_content()``: decompressed when stored compressed);
-      * ``raw_content`` -- the ``content`` COLUMN, which the date, place and entity
-        stores read directly instead of ``get_content()``. The two differ exactly when
-        an article is stored compressed, and then those stores see an empty body;
+      * ``raw_content`` -- the text the date, place and entity stores read. It was the
+        ``content`` COLUMN, read directly, so a compressed article showed them an empty
+        body; since R725 they read ``get_content()`` and the callers pass that. The field
+        stays so an uncompressed article's digest is unchanged;
       * ``title`` -- passed to the extractor beside the text;
       * ``language`` and ``detected_language`` -- both, raw: the keyword pass reads the
         first non-empty one, the date extractor reads ``language`` alone;

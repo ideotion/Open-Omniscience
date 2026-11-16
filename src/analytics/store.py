@@ -30,6 +30,7 @@ from sqlalchemy import Table, bindparam, delete, func, insert, select, text, upd
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from src.timemap.text import article_text
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
@@ -725,7 +726,7 @@ def _index_article_www(
     previous rows and the previous stamp, a lock error re-raises for the retry wrapper."""
     www = {"dates": 0, "places": 0, "entities_stored": 0}
     article_id = article.id
-    raw_content, country = article.content, article.country
+    raw_content, country = article_text(article), article.country  # R725: the text the stores read
     try:
         from src.timemap.whostore import store_entities_for_article as _store_ents
         from src.timemap.whostore import store_places_for_article as _store_places
@@ -1117,7 +1118,7 @@ def index_article(
                 )
                 # R415: the www stamp rides the SAME savepoint as the rows it certifies.
                 _stamp_www_engine(
-                    session, article_id, raw_content=article.content, country=article.country
+                    session, article_id, raw_content=article_text(article), country=article.country
                 )
             if timings is not None:
                 timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
@@ -1147,7 +1148,7 @@ def index_article(
         certified=www_rewritten,
         inputs=index_inputs_digest(
             text=content,
-            raw_content=article.content,
+            raw_content=article_text(article),  # R725: what the date/place/entity stores read
             title=article.title,
             language=article.language,
             detected_language=getattr(article, "detected_language", None),
@@ -1778,9 +1779,6 @@ def _reindex_articles_impl(
                 # keyword stoplist pick. Read after _resolve_known_language, which clears a
                 # tag the script refutes.
                 art.language,
-                # The text the inline store reads for places and entities (``article.content``), handed over only when it is
-                # not the keyword text: an article kept compressed. See reindex_parallel._extract_www.
-                None if (art.content or "") == body else (art.content or ""),
             )
             if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))

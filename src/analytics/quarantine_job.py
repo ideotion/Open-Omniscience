@@ -163,6 +163,7 @@ def default_quarantine_candidates_batch(
         classify_non_article,
     )
     from src.services.prose_gate import prose_gate_verdict
+    from src.utils.compression import database_compressor
 
     criteria_version = criteria_version or CRITERIA_VERSION
 
@@ -182,14 +183,14 @@ def default_quarantine_candidates_batch(
         if include_host_mismatch:
             rows = list(rows)
             # ONE query per batch for the sources it names (a source id with no row reads as unknown).
-            wanted = sorted({r[7] for r in rows} - source_domains.keys())
+            wanted = sorted({r[8] for r in rows} - source_domains.keys())
             for i in range(0, len(wanted), _ID_SET_CHUNK):
                 chunk = wanted[i : i + _ID_SET_CHUNK]
                 found = dict(session.query(Source.id, Source.domain).filter(Source.id.in_(chunk)))
                 source_domains.update({sid: found.get(sid) for sid in chunk})
             # The pairs a person has confirmed for these sources (R193): read per batch, never cached
             # across batches, so a confirmation made while the run is paused is seen on resume.
-            batch_sources = sorted({r[7] for r in rows})
+            batch_sources = sorted({r[8] for r in rows})
             confirmed_pairs.clear()
             for i in range(0, len(batch_sources), _ID_SET_CHUNK):
                 chunk = batch_sources[i : i + _ID_SET_CHUNK]
@@ -199,8 +200,13 @@ def default_quarantine_candidates_batch(
                         HostMismatchConfirmed.source_id, HostMismatchConfirmed.article_site
                     ).filter(HostMismatchConfirmed.source_id.in_(chunk))
                 )
-        for aid, url, wc, content, lang, detected, is_quarantined, *rest in rows:
+        for aid, url, wc, content, compressed, lang, detected, is_quarantined, *rest in rows:
             scanned += 1
+            if compressed and (include_prose_gate or include_stubs):
+                # R726: an article kept compressed leaves ``content`` empty, so until now the text signals measured
+                # nothing and always kept it -- the screening never looked at one. Read it as Article.get_content does
+                # (only when a text signal will look at it: the URL rules never do).
+                content = database_compressor.decompress_text_from_storage(compressed)
             last_id = max(last_id, int(aid))
             if include_host_mismatch:
                 host = check_host(url, source_domains.get(rest[0]))
@@ -237,7 +243,7 @@ def default_quarantine_candidates_batch(
                     to_write[int(aid)] = signal
 
     cols = (
-        Article.id, Article.url, Article.word_count, Article.content,
+        Article.id, Article.url, Article.word_count, Article.content, Article.compressed_content,
         Article.language, Article.detected_language, Article.quarantined,
     ) + ((Article.source_id,) if include_host_mismatch else ())
     # Where the time goes, published beside the counts: reading the rows (the article text comes off

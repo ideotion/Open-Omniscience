@@ -21,6 +21,7 @@ from src.database.models import Article, ArticleMentionedDate
 from src.database.outlet import FEEDS_NOT_OUTLETS
 from src.database.stand_in import not_a_stand_in_article
 from src.timemap.dateextract import extract_dates, publication_anchor
+from src.timemap.text import article_text
 
 VALID_STATUS = ("candidate", "confirmed", "rejected")
 _CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is firmer than month
@@ -81,7 +82,7 @@ def store_for_article(
     re-index, the way a keyword mention does. A confirmed or rejected tag is a human decision and
     is never touched, and neither is a tag another extractor made.
     """
-    if article is None or not (article.content or "").strip():
+    if article is None or not article_text(article).strip():
         return 0
     tags = (
         db.query(ArticleMentionedDate)
@@ -107,7 +108,7 @@ def store_for_article(
     # extract inline: it is NOT the same fact as "this article has no dates", and
     # treating it as such would silently drop every date on every non-pooled path.
     found = precomputed if precomputed is not None else extract_dates(
-        article.content, today=today, anchor=anchor, language=article.language
+        article_text(article), today=today, anchor=anchor, language=article.language
     )
     base_extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
     # The provenance label per candidate: the language half as before, plus R727's year-inferred mark.

@@ -4699,11 +4699,12 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 continue
             country = to_python(country, None)
             kw_ok = False
+            # R725: the stores read the article's text decompressed, so both digests are taken over that text.
+            text = _stored_text(content, compressed)
             if kw_inputs is not None:
-                text = _stored_text(content, compressed)
                 forms = _self_name_forms(SimpleNamespace(name=src[1], domain=src[2]))
                 digest = index_inputs_digest(
-                    text=text, raw_content=content, title=title, language=lang,
+                    text=text, raw_content=text, title=title, language=lang,
                     detected_language=detected, observed=date_part(published or created),
                     country=country, self_forms=forms,
                 )
@@ -4713,11 +4714,11 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 else:
                     kw_ok = True
             # The places and entities: the digest comes from the ONE function the index pass stamps with, called on the incoming row
-            # (the column as stored, not decompressed; the country as the column type hands it), never recomputed here.
+            # (its text decompressed, as the stores read it since R725; the country as the column type hands it), never recomputed here.
             www_ok = False
             if www_inputs is not None:
                 plan["www_verified"] += 1
-                if www_inputs_digest(raw_content=content, country=country) != www_inputs:
+                if www_inputs_digest(raw_content=text, country=country) != www_inputs:
                     refused["www_inputs_changed"] += 1
                 else:
                     www_ok = True
