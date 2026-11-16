@@ -388,7 +388,8 @@ def _write_json_atomic(path: Path, payload: Any) -> None:
     os.replace(tmp, path)
 
 
-_SAFE_VOL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+#: Matched with ``fullmatch``: ``$`` also matches before a final newline, so ``^...$`` with ``match`` let ``"v1\n"`` through.
+_SAFE_VOL_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def _require_safe_member_name(name: str) -> None:
@@ -410,7 +411,7 @@ def _require_safe_member_name(name: str) -> None:
 def _require_safe_volume_name(name: str) -> None:
     """Volume file names must be plain basenames — never a path that could make
     verify/restore read or write outside the set directory."""
-    if not name or not _SAFE_VOL_NAME.match(name):
+    if not name or name in {".", ".."} or not _SAFE_VOL_NAME.fullmatch(name):
         raise VolumeError(f"unsafe volume file name in the volume manifest: {name!r}")
 
 
