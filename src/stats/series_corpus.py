@@ -62,7 +62,6 @@ once — the provenance class, the source, and the endpoints' own caveat.
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -302,7 +301,8 @@ def upsert_series_article(
             # leaving it null and letting the detector guess from a column of digits.
             language="en",
             hash=content_hash,
-            published_at=datetime.now(UTC),
+            # A series page has no publication date; the import time is created_at, never this (R727/R730).
+            published_at=None,
         )
         session.add(art)
         session.flush()

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from src.database.models import Article, ArticleMentionedDate
 from src.database.outlet import FEEDS_NOT_OUTLETS
 from src.database.stand_in import not_a_stand_in_article
-from src.timemap.dateextract import extract_dates
+from src.timemap.dateextract import extract_dates, publication_anchor
 
 VALID_STATUS = ("candidate", "confirmed", "rejected")
 _CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is firmer than month
@@ -29,7 +29,24 @@ _CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is fir
 #: unknown" is recorded rather than read later as an English extraction.
 EXTRACTOR_KNOWN_LANGUAGE = "dateextract"
 EXTRACTOR_NO_LANGUAGE = "dateextract:no-language"
-_OWN_EXTRACTORS = frozenset({EXTRACTOR_KNOWN_LANGUAGE, EXTRACTOR_NO_LANGUAGE})
+#: R727: a tag whose YEAR the text did not give -- resolved against the publication date (a day and
+#: month with no year, "yesterday", a weekday) -- says so in the same provenance column, so the flag
+#: is stored with the row, travels through a backup like any other value of it, and needs no new
+#: column. Either label above may carry it ("dateextract:no-language:year-inferred" is 37 of 40).
+YEAR_INFERRED_SUFFIX = ":year-inferred"
+_OWN_EXTRACTORS = frozenset(
+    {
+        EXTRACTOR_KNOWN_LANGUAGE,
+        EXTRACTOR_NO_LANGUAGE,
+        EXTRACTOR_KNOWN_LANGUAGE + YEAR_INFERRED_SUFFIX,
+        EXTRACTOR_NO_LANGUAGE + YEAR_INFERRED_SUFFIX,
+    }
+)
+
+
+def year_inferred(extractor: str | None) -> bool:
+    """Whether a stored tag's year came from the publication date rather than the text (R727)."""
+    return bool(extractor) and str(extractor).endswith(YEAR_INFERRED_SUFFIX)
 
 
 def _to_row(tag: ArticleMentionedDate) -> dict:
@@ -41,6 +58,7 @@ def _to_row(tag: ArticleMentionedDate) -> dict:
         "snippet": tag.snippet,
         "confidence": tag.confidence,
         "status": tag.status,
+        "year_inferred": year_inferred(tag.extractor),
     }
 
 
@@ -78,8 +96,9 @@ def store_for_article(
     # signals live on the article; passing them is what makes ingest-time
     # extraction complete rather than explicit-dates-only (the reader and temporal
     # map already passed them — this aligns the source-of-truth store with them).
-    observed = article.published_at or article.created_at
-    anchor = observed.date() if observed else None
+    # R727: only a trustworthy PUBLICATION date anchors (never the storing time) -- see
+    # dateextract.publication_anchor.
+    anchor = publication_anchor(article.published_at, article.created_at)
     added = 0
     # ``precomputed`` is the SAME list ``extract_dates`` returns, computed in a worker
     # process (the re-index's pooled precompute, 2026-07-30 -- date extraction measured
@@ -90,19 +109,23 @@ def store_for_article(
     found = precomputed if precomputed is not None else extract_dates(
         article.content, today=today, anchor=anchor, language=article.language
     )
-    extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
-    found_keys = {(c["date"], c["precision"]) for c in found}
+    base_extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
+    # The provenance label per candidate: the language half as before, plus R727's year-inferred mark.
+    labels = {
+        (c["date"], c["precision"]): base_extractor + (YEAR_INFERRED_SUFFIX if c.get("year_inferred") else "")
+        for c in found
+    }
     changed = False
     for t in tags:
         if t.status != "candidate" or t.extractor not in _OWN_EXTRACTORS:
             continue
         key = (t.mentioned_on.isoformat(), t.precision)
-        if key not in found_keys:
+        if key not in labels:
             db.delete(t)
             existing.discard(key)
             changed = True
-        elif t.extractor != extractor:
-            t.extractor = extractor
+        elif t.extractor != labels[key]:
+            t.extractor = labels[key]
             changed = True
     for c in found:
         key = (c["date"], c["precision"])
@@ -115,7 +138,7 @@ def store_for_article(
                 precision=c["precision"],
                 snippet=c["text"][:300],
                 confidence=_CONFIDENCE.get(c["precision"], 0.5),
-                extractor=extractor,
+                extractor=labels[key],
                 status="candidate",
             )
         )
@@ -222,6 +245,7 @@ def articles_for_date(
                 "precision": tag.precision,
                 "status": tag.status,
                 "snippet": tag.snippet,
+                "year_inferred": year_inferred(tag.extractor),
             }
         )
     return out
@@ -246,7 +270,7 @@ def upcoming_deduced(
     event (a date an article MENTIONS, not proof anything will happen)."""
     from datetime import timedelta
 
-    from sqlalchemy import func
+    from sqlalchemy import case, func
 
     t0 = today or date.today()
     horizon = t0 + timedelta(days=days_ahead)
@@ -255,6 +279,16 @@ def upcoming_deduced(
             ArticleMentionedDate.mentioned_on,
             func.count(func.distinct(ArticleMentionedDate.article_id)),
             func.count(func.distinct(Article.source_id)),
+            # R727: how many of those articles gave the date WITHOUT its year (resolved against
+            # the publication date), so the agenda can say so beside the count.
+            func.count(
+                func.distinct(
+                    case(
+                        (ArticleMentionedDate.extractor.like("%" + YEAR_INFERRED_SUFFIX), ArticleMentionedDate.article_id),
+                        else_=None,
+                    )
+                )
+            ),
         )
         .join(Article, Article.id == ArticleMentionedDate.article_id)
         .filter(
@@ -270,7 +304,7 @@ def upcoming_deduced(
         .all()
     )
     events = []
-    for on, n_arts, n_srcs in rows:
+    for on, n_arts, n_srcs, n_inferred in rows:
         aids = [
             a
             for (a,) in db.query(ArticleMentionedDate.article_id)
@@ -289,6 +323,7 @@ def upcoming_deduced(
                 "date": on.isoformat(),
                 "n_articles": int(n_arts),
                 "n_sources": int(n_srcs),
+                "n_year_inferred": int(n_inferred or 0),
                 "article_ids": aids,
             }
         )
@@ -301,6 +336,7 @@ def upcoming_deduced(
         ),
         "caveat": (
             "Deduced from article text, never confirmed — a date an article mentions, "
-            "not proof an event will happen. Rejected tags excluded."
+            "not proof an event will happen. Rejected tags excluded. Where an article gave the "
+            "day and month without a year, the year was inferred from its publication date."
         ),
     }

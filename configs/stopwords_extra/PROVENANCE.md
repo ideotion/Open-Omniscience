@@ -545,3 +545,25 @@ card), batch 5 (Malay) noted it and left the entry in. A stoplist word is global
 the cost of removing `kad` is one Serbian function word shown in the keywords. A reader of Malay may put it back as an informed choice. `tests/test_analytics_extract.py` no longer declares it under batch 4.
 
 Hiding is retroactive with no re-index; extraction also drops them from now on.
+
+## Batch tet-2026-11-16 — Tetum (field test 2026-11-14, row 64)
+
+**Evidence:** the 2026-11-14 field report (§4.3, all instances) found every "rising" Home lead was boilerplate from one or two outlets: `iha` (n≈7370), `nia`, `ne'ebé`, `artigu`. These are Tetum (Tetun), a language with no stoplist here. The catalogue's only Timor-Leste outlet (`rttlep.tl`) is tagged `pt`, so the words were never filtered as Tetum.
+
+**What went in (21 words plus their apostrophe variants):** closed-class words only. Prepositions: `iha` "in, at; there is", `husi`/`hosi` "from", `kona-ba` "about", `hodi` "with, in order to". Conjunctions and connectives: `maibé`/`maibe` "but", `tanba` "because", `wainhira` "when", `hafoin` "after", `hanesan` "like, as". Demonstratives and relatives: `ne'e` "this", `ne'ebé`/`ne'ebe`/`neebe`/`nebe` "which, that". Possessives: `nian`, `ninia`. Aspect markers: `tiha` (perfective), `daudaun` (progressive). Interrogative: `oinsá` "how". The curly-apostrophe forms are added by the loader; the modifier-letter apostrophe (ʼ) forms are not listed, because the file-script guard reads that character as a letter of another script.
+
+**Left out, because a global entry would hide another language's word:**
+- `nia` "he, she, his": NIA, India's National Investigation Agency, casefolds to `nia`.
+- `sira` (plural, "they"): a given name.
+- `saida` "what": Saida (Sidon, Lebanon), and Portuguese "saída" written without its accent.
+- `tamba` (a spelling of `tanba`): Tamba, a Japanese place name and surname.
+- `artigu` "article": also a legal article ("artigu 5 Konstituisaun").
+- `no` "and", `ho` "with", `ba` "to", `la` "not", `ka` "or", `se` "if", `o` "you", `ita` "we", `ami` "we": too short, or real words elsewhere (French `ami`, Italian/Spanish `se`, Portuguese `o`).
+
+**Known cost:** `iha` also hides the ASCII spelling `IHA` in Turkish text, the drone acronym (İnsansız Hava Aracı) and a news agency. The dotted `İHA` casefolds to `i̇ha` and is not hidden. This was accepted because `iha` is the largest leak the report measured.
+
+**Not done here:** the catalogue's `pt` tag on `rttlep.tl`. Whether that outlet writes mostly Tetum or Portuguese has not been measured, and a wrong `tet` tag would misfile its Portuguese articles.
+
+**Reviewer:** no one on the project reads Tetum. The list was drawn from Tetum grammar references, conservatively, leaving out any word in doubt. A reader of Tetum may extend it.
+
+Hiding is retroactive with no re-index; extraction also drops them from now on.

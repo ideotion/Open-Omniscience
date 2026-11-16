@@ -2867,21 +2867,23 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         # summary (rejected = "not a real date here"). Fall back to the live
         # extractor only when an article carries NO stored date tags.
         ds = [
-            {"date": t["date"], "precision": t["precision"]}
+            {"date": t["date"], "precision": t["precision"], "year_inferred": t.get("year_inferred", False)}
             for t in datestore.for_article(db, a.id)
             if t.get("status") != "rejected" and t.get("date")
         ][:5]
         if not ds:
-            from src.timemap.dateextract import extract_dates
+            from src.timemap.dateextract import extract_dates, publication_anchor
 
-            anchor = a.published_at.date() if a.published_at else None
+            anchor = publication_anchor(a.published_at, a.created_at)  # R727
             ds = extract_dates(content, anchor=anchor, language=a.language, limit=5)
         if ds:
             deduced_extra.append(
                 _row(
                     "Event dates in text",
                     " · ".join(
-                        f"{_html.escape(d['date'])} <span class='muted'>({_html.escape(d['precision'])})</span>"
+                        f"{_html.escape(d['date'])} <span class='muted'>({_html.escape(d['precision'])}"
+                        + (", year inferred" if d.get("year_inferred") else "")
+                        + ")</span>"
                         for d in ds
                     ),
                 )
@@ -2923,7 +2925,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         if not ents["people"] and not ents["organizations"]:
             from src.timemap.entextract import extract_entities
 
-            ents = extract_entities(content, limit=5)
+            ents = extract_entities(content, limit=5, language=a.language)
         if ents["people"]:
             deduced_extra.append(
                 _row(
@@ -3132,7 +3134,13 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         return (
             "<li style='padding:7px 0;border-top:1px solid var(--line)'>"
             f"<b>{_html.escape(t['date'])}</b> <span class='muted'>· {_html.escape(t['precision'])}</span> "
-            f"<span style='color:{col};font-weight:600'>· {_html.escape(t['status'])}</span>"
+            + (
+                "<span class='muted' title='The text gives no year here: the year is the one nearest the "
+                "publication date (up to 183 days before it or 92 days after).'>· year inferred</span> "
+                if t.get("year_inferred")
+                else ""
+            )
+            + f"<span style='color:{col};font-weight:600'>· {_html.escape(t['status'])}</span>"
             + (
                 f"<div class='muted' style='font-size:13px;margin-top:2px'>“…{snip}…”</div>"
                 if snip

@@ -92,8 +92,8 @@ SUDACHI_AS_OF = "2026-09-25"  # sudachipy 0.7.0 + sudachidict_core 20260723.1: m
 
 # Harakat / tashkeel, Quranic annotation marks, the superscript alef, and tatweel: the
 # marks unicode61 treats as separators (so it shreds a vocalised word) plus the one
-# lengthening character it keeps inside a token. The same mark ranges the keyword
-# extractor keeps as word continuations (``extract._ARABIC_MARKS``); tatweel is added.
+# lengthening character it keeps inside a token. The keyword extractor keeps these (and
+# every other combining mark, ``extract._COMBINING_MARKS``) as word continuations; tatweel is added.
 _AR_STRIP = re.compile("[ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۤۧۨ-ۭـ]")
 _AR_FOLD = str.maketrans(
     {

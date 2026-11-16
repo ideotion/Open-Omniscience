@@ -94,7 +94,8 @@ def test_greek_accusative_and_allcaps():
 def test_cyrillic_ordinal_day_suffixes():
     # Day precision was silently LOST to the month match before.
     assert _dates("Он выступил 11-го сентября 2001 года.", "ru") == [("2001-09-11", "day")]
-    assert _dates("Он выступит 11-го сентября.", "ru") == [("2026-09-11", "day")]  # anchored
+    # anchored (an anchor within R727's 92 days: 2026-06-10 is 93 days before 11 September)
+    assert _dates("Он выступит 11-го сентября.", "ru", anchor=date(2026, 8, 1)) == [("2026-09-11", "day")]
 
 
 def test_bengali_date_clitics():
@@ -149,7 +150,7 @@ def test_korean_jinanhae_three_syllable_deictic():
 def test_hao_classifier_nouns_are_not_dates():
     # 号 is ALSO the universal "No. N" marker: Metro Line 11 / Building 11 /
     # Document No. 11 / Typhoon No. 2 must never become day dates (measured).
-    A = date(2025, 1, 15)
+    A = date(2025, 5, 15)  # within R727's 92 days of 11 June
     assert _dates("地铁6月11号线正式开通运营。", "zh", anchor=A) == []
     assert _dates("该小区6月11号楼将交付使用。", "zh", anchor=A) == []
     assert _dates("国务院6月11号文件正式印发。", "zh", anchor=A) == []

@@ -530,6 +530,14 @@ def init_db() -> None:
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
 
+    # Import time is not a publication date (R727/R730): clear it from the PDF and statistics articles that
+    # stored it. Re-runs every boot because a merged older backup brings the values back; finds nothing after.
+    _init_step("import:import_dates")
+    from src.database.import_dates import clear_import_time_publication_dates
+
+    _init_step("clear_import_time_publication_dates")
+    clear_import_time_publication_dates(engine)
+
     # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
     # view for a database made before it existed, or re-create it if the table's columns
     # moved. AFTER the column self-heals above -- a view naming a column the table does not

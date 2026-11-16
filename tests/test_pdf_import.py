@@ -58,6 +58,7 @@ def test_ingest_pdf_creates_article_under_import_source(db):
     assert "liberty and security" in art.content
     assert art.title == "Human Rights Act"  # filename (sans .pdf) is the title
     assert art.language is None  # unknown — never guessed
+    assert art.published_at is None  # not known; the import time is created_at (R730)
     # A dedicated, filterable provenance class.
     src = db.get(Source, art.source_id)
     assert src.domain == PDF_IMPORT_SOURCE_DOMAIN and src.source_type == "document"

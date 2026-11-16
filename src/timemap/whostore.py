@@ -119,7 +119,7 @@ def store_entities_for_article(
     computed in a worker process. ``None`` means "not precomputed", never "none found"."""
     text = (article.content or "")
     db.query(ArticleEntity).filter_by(article_id=article.id).delete()
-    ents = precomputed if precomputed is not None else extract_entities(text)
+    ents = precomputed if precomputed is not None else extract_entities(text, language=article.language)
     n = 0
     for cls, key in (("person", "people"), ("organization", "organizations")):
         for e in ents.get(key, []):

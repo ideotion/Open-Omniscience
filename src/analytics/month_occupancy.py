@@ -60,6 +60,7 @@ from src.timemap.dateextract import (
     _MONTHS,
     _TH_MONTHS,
     extract_dates_with_spans,
+    publication_anchor,
 )
 
 # The default sample. Every article costs one content decrypt plus one cheap regex
@@ -236,11 +237,10 @@ def month_occupancy_report(
         scanned_articles += 1
         if len(content) > _MAX_SCAN:
             truncated_bodies += 1
-        observed = published_at or created_at
         counts = occupancy_for_text(
             content,
             language=language,
-            anchor=observed.date() if observed else None,
+            anchor=publication_anchor(published_at, created_at),  # R727, as the store anchors
             today=today,
         )
         if not counts:

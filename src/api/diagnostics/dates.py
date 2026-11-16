@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.models import Article
 from src.database.session import get_db
+from src.timemap.dateextract import publication_anchor
 from src.utils.export_envelope import envelope
 
 from ._base import router
@@ -87,8 +88,7 @@ def date_extraction_log(
 
     for aid, language, pub, created, content in rows.yield_per(200):
         scanned += 1
-        anchor_dt = pub or created
-        anchor = anchor_dt.date() if anchor_dt else None
+        anchor = publication_anchor(pub, created)  # R727, exactly as the store anchors
         a = datediag.analyze_article(content, language=language, anchor=anchor, today=today)
         ne = a["n_extracted"]
         extracted_total += ne
@@ -139,8 +139,7 @@ def date_extraction_log(
             r = by_id.get(aid)
             if r is None:
                 continue
-            anchor_dt = r.published_at or r.created_at
-            anchor = anchor_dt.date() if anchor_dt else None
+            anchor = publication_anchor(r.published_at, r.created_at)  # R727, as the store anchors
             a = datediag.analyze_article(r.content, language=r.language, anchor=anchor, today=today)
             sample_rows.append(
                 {

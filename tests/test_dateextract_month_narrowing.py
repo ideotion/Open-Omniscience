@@ -198,7 +198,7 @@ def test_every_month_carrying_pattern_is_registered_for_narrowing():
         if isinstance(val, re.Pattern) and val in _MONTH_TEMPLATES
     }
     assert carriers == registered, f"not narrowable: {sorted(carriers - registered)}"
-    assert len(registered) == 10
+    assert len(registered) == 11  # + _BN_YDM_RE (Bengali year-first, 2026-11-16)
 
 
 def test_a_narrowed_pattern_keeps_the_longest_first_ordering():
@@ -221,7 +221,7 @@ def test_no_month_in_the_text_retires_the_pattern_entirely():
     assert de._narrowed(de._MDY_RE, frozenset()) is None
     # ...and the loops tolerate that rather than raising.
     assert extract_dates("the market moved on 2001-09-11", today=TODAY) == [
-        {"date": "2001-09-11", "precision": "day", "text": "the market moved on 2001-09-11"}
+        {"date": "2001-09-11", "precision": "day", "text": "the market moved on 2001-09-11", "year_inferred": False}
     ]
 
 

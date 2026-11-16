@@ -272,7 +272,7 @@ def rule_based_perception(text: str, language: str | None = None) -> dict:
     try:
         from src.timemap.entextract import extract_entities
 
-        ent = extract_entities(text)
+        ent = extract_entities(text, language=language)
         who = [e["name"] for e in ent.get("people", [])] + [
             e["name"] for e in ent.get("organizations", [])
         ]

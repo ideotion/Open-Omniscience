@@ -671,7 +671,7 @@ def _stamp_index_engine(
         )
 
 
-def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country) -> None:
+def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country, language) -> None:
     """Record which www engine, on which inputs, produced this article's places + entities (R415).
 
     An UPSERT and nothing else: the two stores land together inside one savepoint, so
@@ -689,7 +689,7 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
         from src.analytics.engine_identity import www_engine_id, www_inputs_digest
 
         current = www_engine_id()
-        inputs = www_inputs_digest(raw_content=raw_content, country=country)
+        inputs = www_inputs_digest(raw_content=raw_content, country=country, language=language)
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
@@ -737,7 +737,7 @@ def _index_article_www(
         with session.begin_nested():
             www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
             www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"))
-            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country)
+            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country, language=article.language)
         if timings is not None:
             timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
@@ -1117,7 +1117,8 @@ def index_article(
                 )
                 # R415: the www stamp rides the SAME savepoint as the rows it certifies.
                 _stamp_www_engine(
-                    session, article_id, raw_content=article.content, country=article.country
+                    session, article_id, raw_content=article.content, country=article.country,
+                    language=article.language,
                 )
             if timings is not None:
                 timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
@@ -1751,6 +1752,8 @@ def _reindex_articles_impl(
         # the optional when/where/who opt-in, and a full re-index appends it while a
         # keywords-only one does not. Without this, the element type is inferred from
         # whichever branch appends first and the other is rejected.
+        from src.timemap.dateextract import publication_anchor
+
         tasks: list[Task] = []
         content_by_id: dict[int, str] = {}
         _t0 = time.monotonic()
@@ -1765,10 +1768,11 @@ def _reindex_articles_impl(
             # on a 25-50 KB body versus ~36 ms for the keyword half, so leaving it
             # inline capped the whole re-index at ~2-3 articles/sec no matter how
             # many workers were running.
-            observed = art.published_at or art.created_at
+            # R727: the date anchor is the trustworthy publication date only (never the storing time).
+            _anchor = publication_anchor(art.published_at, art.created_at)
             www_ctx = (
                 art.country,
-                observed.date().isoformat() if observed else None,
+                _anchor.isoformat() if _anchor else None,
                 None,  # `today`: the store's own default, never a worker's clock
                 # R697: the date language is the article's OWN column, the value the inline
                 # store and the ingest precompute pass; `lang or "en"` below is only the

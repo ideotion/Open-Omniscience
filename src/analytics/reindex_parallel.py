@@ -432,9 +432,9 @@ def _worker_init(extractor_name: str, gazetteer: dict[str, str] | None) -> None:
 def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
     """The PURE half of when/where/who: extraction only, no database.
 
-    ``language`` is consumed by ``extract_dates`` ALONE -- ``extract_locations``
-    and ``extract_entities`` never see it -- and it is load-bearing rather than a
-    hint: the month/weekday tables are language-GATED, so a homograph resolves to
+    ``language`` is consumed by ``extract_dates`` and, since R730, by
+    ``extract_entities`` (its per-language rejects); ``extract_locations`` never sees
+    it. For the dates it is load-bearing rather than a hint: the month/weekday tables are language-GATED, so a homograph resolves to
     a DIFFERENT month per language (measured: "12 listopadu 2024" is 2024-11-12
     under ``cs`` and 2024-10-12 under ``hr``) and a gated weekday resolves to
     nothing at all without its own language. An unknown language REFUSES rather
@@ -482,7 +482,7 @@ def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
                 language=language,
             ),
             "places": extract_locations(content or "", source_country=country),
-            "entities": extract_entities(content or ""),
+            "entities": extract_entities(content or "", language=language),  # R730: the article's own tag
         }
     except Exception as exc:  # noqa: BLE001 - degrades to inline, never to "none found"
         log_failure(_LOG, "pooled when/where/who extraction failed", exc, level=logging.WARNING)

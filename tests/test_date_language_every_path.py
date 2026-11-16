@@ -62,6 +62,7 @@ def test_a_full_reindex_hands_the_pool_the_articles_own_language(monkeypatch):
     tagged = _article(s, "t", language="fr")
     for a in (untagged, tagged):
         a.content = TEXT
+        a.published_at = datetime(2024, 5, 1, tzinfo=UTC)  # R727: only a publication date anchors
     s.commit()
 
     seen: list[tuple] = []

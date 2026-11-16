@@ -74,13 +74,13 @@ IDENTITY_SCHEMA = "oo-index-engine-2"
 #: rows ``index_article`` produces for the same input; a change that provably leaves them
 #: alone is recorded with ``--same "why"`` and leaves this number where it is, which is
 #: the point -- the restore then still carries. The guard is ``tests/test_indexer_pin.py``.
-INDEXER_VERSION = 3
+INDEXER_VERSION = 4
 
 #: The hand-bumped version of the PLACES AND ENTITIES stage alone (R415). Same discipline as :data:`INDEXER_VERSION`, policed by
 #: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
 #: the www modules below bumps THIS number and leaves the keyword stamp where it is, so a restore still carries the keyword rows and
 #: re-extracts only the places and entities.
-WWW_INDEXER_VERSION = 1
+WWW_INDEXER_VERSION = 2
 
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
@@ -162,6 +162,10 @@ WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/countries.py",
     "src/timemap/__init__.py",
     "src/utils/safe_yaml.py",
+    # R730 first read the grammar stoplists for its function-word reject; it now carries its own hand-curated lists.
+    # Kept here on purpose: hashing a file the stage no longer reads costs at most one re-extraction, never a wrong row.
+    "src/services/__init__.py",
+    "src/services/stopwords.py",
 )
 
 #: The www stage's data: the gazetteers (``cities.yml`` is generated per install and shadows the sample; ``places_gazetteer.yml`` is
@@ -170,6 +174,14 @@ WWW_DATA_GLOBS: tuple[str, ...] = (
     "configs/cities.yml",
     "configs/cities.sample.yml",
     "configs/places_gazetteer.yml",
+)
+
+#: Data the www stage reads that the keyword pass reads too: part of BOTH engines' data digests (the twin of
+#: :data:`WWW_SHARED_MODULES`). Added for R730's first function-word reject, which read the grammar stoplists; kept as a
+#: harmless over-inclusion now that the reject carries its own lists.
+WWW_SHARED_DATA_GLOBS: tuple[str, ...] = (
+    "configs/stopwords_iso/*.txt",
+    "configs/stopwords_extra/*.yml",
 )
 
 #: Optional distributions whose presence or version changes extraction. Their data
@@ -657,7 +669,7 @@ def data_digest() -> str:
 def www_data_digest() -> str:
     """The hash of the www stage's gazetteers: ``configs/cities.yml`` is generated on the operator's machine and shadows the shipped
     sample, and ``configs/places_gazetteer.yml`` is built from their own OSM data, so a machine that has them is a different www engine."""
-    return _digest_of(_expand(WWW_DATA_GLOBS), narrow=False)
+    return _digest_of(sorted(set(_expand(WWW_DATA_GLOBS)) | set(_expand(WWW_SHARED_DATA_GLOBS))), narrow=False)
 
 
 @cache
@@ -762,14 +774,16 @@ def www_engine_id() -> str:
     return WWW_STAMP_PREFIX + hashlib.sha256(blob.encode()).hexdigest()[:32]
 
 
-def www_inputs_digest(*, raw_content: str | None, country: str | None) -> str:
+def www_inputs_digest(*, raw_content: str | None, country: str | None, language: str | None) -> str:
     """A hash of EVERYTHING the places and entities stores read from one article (R415): the ``content`` COLUMN (not the decompressed
-    text -- the stores read the column directly, so a compressed article shows them an empty body) and the article's own ``country``
-    (the place extractor's ``source_country``). ONE function for both sides of the comparison, as :func:`date_part` is: the merge
+    text -- the stores read the column directly, so a compressed article shows them an empty body), the article's own ``country``
+    (the place extractor's ``source_country``) and its ``language`` column (the entity extractor's per-language rejects, R730; the
+    raw tag, so two spellings of one language only ever cost a re-extraction). ONE function for both sides of the comparison, as :func:`date_part` is: the merge
     imports this to recompute it from an incoming row."""
     payload = {
         "raw": hashlib.sha256((raw_content or "").encode("utf-8", "surrogatepass")).hexdigest(),
         "country": country or "",
+        "language": (language or "").strip(),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return WWW_INPUTS_PREFIX + hashlib.sha256(blob.encode("utf-8", "surrogatepass")).hexdigest()[:32]

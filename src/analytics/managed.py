@@ -49,7 +49,7 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
         # (the managed bar) on 2026-06-22 and given pure-grammar stoplists in
         # src/analytics/extract.py — so their sources stop seeding disabled:
         #   fa/ur  Arabic script (distinct -> collision-free stoplist; the tokenizer now
-        #          keeps diacritized words whole via _ARABIC_MARKS).
+        #          keeps diacritized words whole: every combining mark continues a word).
         #   uk     Cyrillic (the gated 2026-06-18 set expanded to a full stoplist; the
         #          union filters it regardless of the ru-mislabel noise that gated it).
         #   ro/cs/sk/ca/sw/az/et  Latin; stoplists added with length>=4 / accented-only
@@ -75,7 +75,11 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
 # Mn, so the tokenizer shatters a Thai run into mark-bounded fragments (verified) —
 # a stoplist cannot fix missing segmentation, so it is honestly UNSEGMENTED, not
 # no_stoplist. (vi is syllable-segmented, a milder case kept as no_stoplist.)
-UNSEGMENTED: frozenset[str] = frozenset({"zh", "ja", "th"})
+# km (Khmer), lo (Lao), my (Burmese) and bo (Tibetan) added 2026-11-16 (field test 2026-11-14 row 62):
+# the same space-less writing (a space separates phrases, not words; Tibetan separates SYLLABLES with
+# the tsheg), and no segmenter ships for any of them, so a token is a phrase or a syllable, never a
+# word. They had been reported no_stoplist, which reads as "a stoplist would fix it".
+UNSEGMENTED: frozenset[str] = frozenset({"zh", "ja", "th", "km", "lo", "my", "bo"})
 
 
 def normalize_lang(lang: str | None) -> str:
