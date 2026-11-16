@@ -465,9 +465,14 @@ curl -X PUT http://127.0.0.1:8000/api/custody/settings \
   -H 'Content-Type: application/json' -d '{"pqc_enabled": true}'
 curl -X POST http://127.0.0.1:8000/api/custody/log -H 'Content-Type: application/json' \
   -d '{"item_id":"article:1","item_hash":"<sha256>","action":"ingest"}'
-curl 'http://127.0.0.1:8000/api/custody/export' > custody-bundle.json  # offline-verifiable
-python scripts/verify_custody.py custody-bundle.json                   # exit 0 = verified
+curl -X POST 'http://127.0.0.1:8000/api/custody/export' > custody-bundle.json  # offline-verifiable
+python scripts/verify_custody.py custody-bundle.json                   # exit 0 = verified (3 = older, weaker format)
 ```
+If the signing key changed and the previous key could not vouch for it (keys re-created after a
+restore or a lost key folder, a post-quantum key re-created, or post-quantum signing turned off before
+0.5.1), the check refuses until you add `--accept-unendorsed-rotation`. It then exits 4 and says the
+change was unendorsed: accepting it proves nothing about who made that change, so use it only if you
+know from elsewhere why the key changed and which key follows.
 Full model, threat model, and privacy caveats: [USER_MANUAL.md](USER_MANUAL.md).
 
 ---
