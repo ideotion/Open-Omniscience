@@ -74,7 +74,7 @@ def test_what_the_restore_may_still_read_gives_no_verdict(tmp_path):
     assert backup_manifest_refusal(tmp_path / "nowhere") is None
     other = tmp_path / "other"
     other.mkdir()
-    (other / "volumes.json").write_text(json.dumps({"kind": "oo-volumes-1", "volumes": [{"name": "a"}, {"name": "a"}]}))
+    (other / "volumes.json").write_text(json.dumps({"kind": "oo-volumes-1", "volumes": [{"name": "a"}, {"name": "a"}]}), encoding="utf-8")
     assert backup_manifest_refusal(other) is None
     junk = tmp_path / "junk"
     junk.mkdir()
