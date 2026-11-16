@@ -147,6 +147,11 @@ class SigningError(RuntimeError):
     """Raised when signing cannot proceed (e.g. a requested algorithm is absent)."""
 
 
+class PostQuantumUnavailable(SigningError):
+    """Post-quantum signing is wanted and the log's key has an ML-DSA half, but this machine lacks the library: nothing
+    is signed with the Ed25519 half alone (custody rows 42-44), and an entry stays owed until the library is back."""
+
+
 # --------------------------------------------------------------------------- #
 # Key paths / at-rest protection
 # --------------------------------------------------------------------------- #
@@ -469,6 +474,15 @@ class HybridSigner:
     def reloaded(self) -> HybridSigner:
         """A signer loaded afresh from the same key files, with the same post-quantum preference."""
         return HybridSigner(self._ed_path, self._mldsa_path, use_pqc=self._use_pqc, create=self._create)
+
+    def with_existing_post_quantum_key(self) -> HybridSigner | None:
+        """The same key files with post-quantum signing on, or ``None`` when the library is missing or there is no
+        ML-DSA key file: opened as a reader (R694), so a key is only ever LOADED here, never created (custody rows 42-44: the previous identity
+        endorsing the change when post-quantum signing is turned off)."""
+        if not PQC_AVAILABLE:
+            return None
+        signer = HybridSigner(self._ed_path, self._mldsa_path, use_pqc=True, create=False)
+        return signer if signer.is_hybrid else None
 
     # -- properties -------------------------------------------------------- #
     @property

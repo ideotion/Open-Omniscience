@@ -261,7 +261,7 @@ the `[analysis]` extra (the app still boots without it, those endpoints disabled
 | `GET /api/monitoring/...` | Real source-uptime health + corpus-volume anomalies |
 | `POST /api/verify/image-metadata` | Honest image EXIF/metadata extraction |
 | `POST /api/reports/evidence`, `/evidence/verify` | Signed, tamper-evident evidence bundles |
-| `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`, `GET /api/custody/export`, `POST /api/custody/verify` | Append-only, hash-chained signed chain-of-custody log + offline verification |
+| `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`, `POST /api/custody/export`, `POST /api/custody/verify` | Append-only, hash-chained signed chain-of-custody log + offline verification |
 | `GET/PUT /api/custody/settings` | Runtime custody preferences (post-quantum signing, anchoring mode, auto-log) — reports *effective*, availability-aware state |
 | `POST /api/custody/anchor`, `GET /api/custody/providers` | Anchor a Merkle root (local / OpenTimestamps) + provider availability |
 | `POST /api/custody/reconcile` | Write the INGEST entries a failure left owed, each marked late in its signed metadata; `scan` counts older gaps, `record_gaps` queues them (2026-09-24, CUST-1) |
