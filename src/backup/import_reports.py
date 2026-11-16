@@ -562,6 +562,15 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
             followed = int(living.get("newly_followed") or 0)
             if followed > 0:
                 out["newly_followed"] = followed
+        # Lanes this backup still owes (deferred behind an import queue, or failed): the
+        # line says so visibly, with what to do, until a later import merges them.
+        owed = sum(
+            1
+            for x in living.get("lanes") or ()
+            if isinstance(x, dict) and x.get("state") in ("deferred", "failed")
+        ) or (1 if living.get("error") else 0)
+        if owed:
+            out["lanes_owed"] = owed
     committed = str(data.get("outcome") or "").lower() in _COMMITTED_OUTCOMES
     raw_plan = data.get("plan")
     plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}

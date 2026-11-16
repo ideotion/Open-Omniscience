@@ -292,6 +292,15 @@ def test_the_import_report_says_what_the_living_sources_added(tmp_path, monkeypa
     assert "Maps (OpenStreetMap): not merged" in md and "2 older page texts were not kept" in md
     (row,) = import_reports.list_import_reports()
     assert row["newly_followed"] == 3
+    assert "lanes_owed" not in row  # a not-merged lane of another kind is not owed
+
+    held = lane_merge.deferred_report([{"name": "lanes/wiki.db", "kind": "wiki"}])
+    path2 = import_reports.persist_import_report("restore", {"outcome": "committed"})
+    import_reports.annotate_import_report(path2, {"living_sources": held})
+    rows = {r["filename"]: r for r in import_reports.list_import_reports()}
+    assert rows[path2.name]["lanes_owed"] == 1
+    md = import_reports.render_import_report_markdown({"outcome": "committed", "living_sources": held})
+    assert "importing this backup again merges them" in md
 
 
 def test_the_export_request_records_the_living_sources_and_a_resume_keeps_them(tmp_path):

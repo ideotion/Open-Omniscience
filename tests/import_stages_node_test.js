@@ -329,6 +329,16 @@ test("the last-import line states the count and links the report", () => {
   assert(out.indexOf("did not complete") === -1, "a clean run must not be labelled: " + out);
 });
 
+test("R729: newly followed pages and owed living sources are stated on the line", () => {
+  const out = mod._uxImLastLineHtml(
+    { filename: "r.json", created_at: "x", outcome: "ok", newly_followed: 4, lanes_owed: 1 }, t, tf);
+  assert(out.indexOf("4 pages newly followed") !== -1, out);
+  assert(out.indexOf("Living sources not merged yet") !== -1, out);
+  assert(out.indexOf("Import this backup again") !== -1, "the hover says what to do: " + out);
+  const clean = mod._uxImLastLineHtml({ filename: "r.json", created_at: "x", outcome: "ok" }, t, tf);
+  assert(clean.indexOf("Living sources") === -1 && clean.indexOf("newly followed") === -1, clean);
+});
+
 test("a report with no article figure prints no number", () => {
   const out = mod._uxImLastLineHtml(
     { filename: "r.json", created_at: "2026-09-12T10:45:00Z", outcome: "unknown" }, t, tf);

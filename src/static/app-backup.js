@@ -1246,6 +1246,7 @@
         articles_basis: whole ? "merged" : head.articles_basis,
         outcome: failed ? failed.outcome : head.outcome,
         newly_followed: members.reduce((a, r) => a + Number(r.newly_followed || 0), 0),
+        lanes_owed: members.reduce((a, r) => a + Number(r.lanes_owed || 0), 0),
       };
     }
 
@@ -1267,6 +1268,11 @@
       // fetched nothing; the hover says what decides whether anything ever is.
       if (Number(rep.newly_followed) > 0) {
         bits.push(`<span title="${esc(t("The import fetched nothing. These pages join the ordinary schedule, and airplane mode, consent and the lane's own switch still decide whether anything is fetched."))}">${esc(tf("{n} pages newly followed", { n: fmtNum(Number(rep.newly_followed), 0) }))}</span>`);
+      }
+      // R729: living sources this import did not merge yet (held behind the import queue,
+      // or failed). Visible, with what to do in the hover, until a later import merges them.
+      if (Number(rep.lanes_owed) > 0) {
+        bits.push(`<span style="color:var(--caveat)" title="${esc(t("Import this backup again once the import queue has finished. Its living sources merge then; its articles are not imported twice."))}">${esc(t("Living sources not merged yet"))}</span>`);
       }
       // Coloured text, never the toast `.note` box inside a sentence (Y2, as I9 did for
       // the run header): the box's padding and shadow broke the one quiet line apart.
