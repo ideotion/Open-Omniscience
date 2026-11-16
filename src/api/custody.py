@@ -308,7 +308,10 @@ def verify_item(item_id: str) -> dict:
         if not log.entries_for(item_id):
             raise HTTPException(status_code=404, detail=_NO_ENTRIES)
         # The chain's links and signatures, and its signing key followed through every key-rotation record.
-        return log.verify_report()
+        report = log.verify_report()
+        # R716: an accepted unendorsed or unrecorded key change says so beside the verdict, as on POST /verify.
+        report["accepted_unendorsed_note"] = ACCEPTED_UNENDORSED_NOTE if report.get("accepted_unendorsed") else None
+        return report
     finally:
         log.close()
 

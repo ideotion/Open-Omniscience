@@ -2493,7 +2493,7 @@
     }
 
     const CUST_PQC_LIBRARY_MISSING = "Post-quantum signing is on, but the post-quantum library is not installed here. A custody log " +
-      "already signed with a post-quantum key signs nothing new until it is: new entries wait, and are signed in order once it is " +
+      "already signed with a post-quantum key signs nothing new until it is: new entries wait, and are signed, marked as late, once it is " +
       "installed (the 'pqc' extra). Nothing else in the app is held up. To stop using post-quantum signing, install the library " +
       "first and then turn the setting off, so the old post-quantum key can vouch for the change.";
     const CUST_ACCEPTED_UNENDORSED = "verified, but only by accepting a key change nothing vouches for (named below): it proves " +
@@ -2510,6 +2510,7 @@
       const runs = [d.drained, d.drained_after_queue].filter(Boolean);
       const notes = [];
       if (runs.some((r) => r.settings_unreadable)) notes.push(_custT(CUST_DRAIN_SETTINGS_UNREADABLE));
+      if (runs.some((r) => r.pqc_unavailable)) notes.push(_custT(CUST_PQC_LIBRARY_MISSING));  // R717
       const qerr = runs.find((r) => r.queue_read_error);
       if (qerr) notes.push(_qualTf(CUST_DRAIN_QUEUE_UNREADABLE, { reason: qerr.queue_read_error }));
       return notes.join(" ");
@@ -2640,7 +2641,7 @@
         const s = await api("/api/custody/settings", {method: "PUT", body: JSON.stringify(body)});
         renderCustodyStatus(s); applyCustodyToggles(s);
         if (s.pqc_enabled && !s.pqc_available)
-          toast("PQC requested, but the 'pqc' extra is not installed — signing stays Ed25519-only.", "warn");
+          toast(_custT(CUST_PQC_LIBRARY_MISSING), "warn");
         else if (s.anchoring_mode === "opentimestamps" && !s.ots_available)
           toast("OpenTimestamps requested, but the 'timestamping' extra is not installed.", "warn");
         else toast("Custody settings saved.");

@@ -386,10 +386,12 @@ class CustodyLog:
         prev = self._last()
         if prev is not None and not _signed_by(prev, self.signer):
             same_ed = _sig_ed25519_pub(prev.signature) == self.signer.public_identity().ed25519_pub
-            if same_ed and _sig_ml_dsa(prev.signature)[1] and getattr(self.signer, "pqc_unavailable_but_requested", False):
-                # Post-quantum signing is still wanted, but this machine lacks the library: nobody changed the key, so no
-                # permanent record says so (each trip between two machines would add two), and nothing is signed with
-                # the Ed25519 half alone, which a pinned check would refuse for good. The entry stays owed.
+            if _sig_ml_dsa(prev.signature)[1] and getattr(self.signer, "pqc_unavailable_but_requested", False):
+                # Post-quantum signing is still wanted, the log's identity has an ML-DSA half, but this machine lacks the
+                # library: no permanent record is written for an identity that is not the one wanted (each trip between
+                # two machines would add two, and a re-created Ed25519 key would be recorded without its post-quantum
+                # half), and nothing is signed with the Ed25519 half alone, which a pinned check would refuse for good.
+                # The entry stays owed (R717). A log that never had an ML-DSA half keeps signing with Ed25519, labelled so.
                 raise PostQuantumUnavailable(
                     "post-quantum signing is on and this custody log's key has an ML-DSA half, but the post-quantum "
                     "library is not installed here: nothing is signed until it is (install the 'pqc' extra). Turning "
@@ -813,7 +815,8 @@ _UNSEEN = object()  # no entry has shown the identity's ML-DSA half yet (see ``_
 
 
 def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed: bool,
-                 one_item: bool = False, *, accept_unrecorded: bool = False) -> tuple[str | None, list[str]]:
+                 one_item: bool = False, *, accept_unrecorded: bool = False,
+                 signer_ml: object = _UNSEEN) -> tuple[str | None, list[str]]:
     """Walk the signing key through the entries. Returns ``(problem or None, notes)``; the key must end as
     ``signer_key``. See :func:`verify_export`'s WHICH KEY. ``accept_unrecorded`` is for the operator's own store only
     (the in-app check): a key change with no record is named in the notes instead of refused, on the same footing as an
@@ -829,7 +832,9 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
         current = named if isinstance(named, str) else current
         named_ml = first.metadata.get("previous_ml_dsa_pub")
         start = _identity_line(current, named_ml if isinstance(named_ml, str) else None) \
-            if _records_previous_ml_dsa(first.metadata) else current
+            if _records_previous_ml_dsa(first.metadata) \
+            else f"{current} (a record written before 0.5.1: whether that key had a post-quantum (ML-DSA) half, and " \
+                 "so whether the record's endorsement carries all of it, this bundle does not show; the whole-log export does)"
     else:
         start = _identity_line(current, _sig_ml_dsa(first.signature)[1])
     last_full: CustodyEntry | None = None  # the latest record that names the whole identity
@@ -979,6 +984,22 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                 cur_ml = sig_ml
     if current != signer_key:
         return "the entries end on a different key from the bundle's signer key", notes
+    if signer_ml is not _UNSEEN and isinstance(cur_ml, str) and cur_ml != signer_ml:
+        # The bundle's signer (and so its head, row 46) must be the identity the last entries showed, both halves: a
+        # head re-signed with the Ed25519 key alone under a signer that drops the ML-DSA key the entries carry is how
+        # someone holding the Ed25519 key alone would cut a hybrid log or re-sign its head. Before any 0.5.1 record, a
+        # one-item bundle of an item last touched before post-quantum signing was turned off reads the same: accepted
+        # by name only.
+        change = (f"from {_identity_line(current, cur_ml)} to "
+                  f"{_identity_line(signer_key, signer_ml if isinstance(signer_ml, str) else None)}")
+        if not (accept_unendorsed and last_full is None):
+            return ("the entries end on a post-quantum (ML-DSA) key the bundle's signer does not name: its head was "
+                    "signed without the post-quantum key the last entries show, which someone holding the Ed25519 key "
+                    "alone can do" + (". Verify again accepting an unendorsed rotation only if you know post-quantum "
+                                      "signing was changed before 0.5.1" if last_full is None else "")), notes
+        notes.append(f"the bundle's signer: the post-quantum (ML-DSA) key changed with no key-rotation record ({change}); "
+                     "post-quantum signing turned off before 0.5.1 leaves this mark, and so does a head re-signed with the "
+                     "Ed25519 key alone")
     if notes:
         # The line of keys, from its first: an endorsement proves something only to a reader who knows one of these
         # keys, and a chain built wholly with someone else's keys reads the same otherwise.
@@ -1182,7 +1203,9 @@ def _verify_export(
         # post-quantum half under a signer that names one is refused here too, in every mode (row 44).
         return False, ["head signature invalid: the bundle's signer names another post-quantum (ML-DSA) key than the "
                        "one its head was signed with"]
-    problem, rotation_notes = _key_lineage(entries, key, accept_unendorsed_rotation, one_item=bool(item_id))
+    signer_ml = signer.get("ml_dsa_pub") if isinstance(signer.get("ml_dsa_pub"), str) and signer.get("ml_dsa_pub") else None
+    problem, rotation_notes = _key_lineage(entries, key, accept_unendorsed_rotation, one_item=bool(item_id),
+                                           signer_ml=signer_ml)
     notes.extend(rotation_notes)
     if problem:
         return False, [problem]
@@ -1312,6 +1335,14 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
     ends = [*rotations, len(entries)]
     out: list[PublicIdentity | None] = [None] * len(entries)
     expected: PublicIdentity | None = local
+    if rotations and local.ml_dsa_pub:
+        last = entries[rotations[-1]]
+        md = last.metadata
+        if (_records_previous_ml_dsa(md) and md.get("ml_dsa_pub") is None and isinstance(md.get("endorsement"), dict)
+                and _sig_ed25519_pub(last.signature) == local.ed25519_pub):
+            # Post-quantum signing turned off, ENDORSED by the previous identity (both halves): the stretch since is
+            # this installation's Ed25519 key alone, though its old ML-DSA key file is still in the folder.
+            expected = PublicIdentity(ed25519_pub=local.ed25519_pub, ml_dsa_variant=None, ml_dsa_pub=None)
     for k in range(len(starts) - 1, -1, -1):
         lo, hi = starts[k], ends[k]
         stretch_key = _sig_ed25519_pub(entries[lo].signature) if lo < hi else None
@@ -1319,11 +1350,21 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
             break
         for i in range(lo, hi):
             out[i] = expected
-        if k == 0 or not chained:
+        if k == 0:
             break
         md = entries[starts[k]].metadata  # the record that opened this stretch
-        endorsement = md.get("endorsement")
         prev = md.get("previous_ed25519_pub")
+        if (_records_previous_ml_dsa(md) and md.get("previous_ml_dsa_pub") is None and isinstance(prev, str)
+                and prev == stretch_key):
+            # Row 42: a record that only ADDS a post-quantum half under the SAME Ed25519 key. The stretch before it is
+            # signed by that same key with its Ed25519 half alone, as it would be with no record at all, so the walk
+            # goes on, in a one-item bundle too (the key is this installation's current one, not an earlier key that
+            # could have leaked and been rotated away from). Turning post-quantum on never makes a bundle "not yours".
+            expected = PublicIdentity(ed25519_pub=prev, ml_dsa_variant=None, ml_dsa_pub=None)
+            continue
+        if not chained:
+            break
+        endorsement = md.get("endorsement")
         if not isinstance(endorsement, dict) or not isinstance(prev, str) or not prev:
             break
         ml = (endorsement.get("ml_dsa") or {}).get("pub") if endorsement.get("algorithm") == "hybrid" else None
@@ -1375,17 +1416,28 @@ def describe_export(
     # And only of a signer every one of whose entries sits where this installation's key signs (``_own_positions``).
     # A bundle that did not verify gets no rotation credit: each signer is only compared with this installation's key.
     one_item = bool(bundle.get("item_id"))
-    owns = (
-        (_own_positions(parsed, local, chained=not one_item) if ok and len(parsed) == len(raw) else [local] * len(parsed))
+    owns: list[PublicIdentity | None] = (
+        (_own_positions(parsed, local, chained=not one_item) if ok and len(parsed) == len(raw) else list[PublicIdentity | None]([local] * len(parsed)))
         if local
         else []
     )
+    # An entry signed with the Ed25519 half alone where this installation's identity has an ML-DSA half is not shown to be
+    # this installation's by its key: someone holding the Ed25519 key alone signs exactly that. In a whole-log bundle it
+    # is, when a later entry of the same stretch is signed with both halves (that entry's hash chain commits to it:
+    # post-quantum signing turned on before 0.5.1 wrote no record); in a one-item bundle, whose entries are not linked,
+    # it is not.
+    for i, want in enumerate(owns):
+        if want is None or not want.ml_dsa_pub or keyed[i][1] is not None:
+            continue
+        if one_item or not any(owns[j] is want and keyed[j] == (want.ed25519_pub, want.ml_dsa_pub)
+                               for j in range(i + 1, len(owns))):
+            owns[i] = None
     own_everywhere: dict[tuple[str, str | None], bool] = {}
     earlier: set[str] = set()
     for (ed, ml), want in zip(keyed, owns, strict=False):  # ``owns`` is empty when this installation's keys are unread
         mine = want is not None and _is_yours((ed, ml), want)
         own_everywhere[(ed, ml)] = own_everywhere.get((ed, ml), True) and mine
-        if mine and want is not local:
+        if mine and want is not local and local is not None and ed != local.ed25519_pub:  # the same key before a post-quantum half was added
             earlier.add(ed)
 
     if ok and local is not None and one_item and len(parsed) == len(raw) and any(

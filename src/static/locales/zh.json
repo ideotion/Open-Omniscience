@@ -4033,7 +4033,7 @@
   "Positive": "正面",
   "Post-demographic dividend": "后人口红利",
   "Post-quantum signatures": "后量子签名",
-  "Post-quantum signing is on, but the post-quantum library is not installed here. A custody log already signed with a post-quantum key signs nothing new until it is: new entries wait, and are signed in order once it is installed (the 'pqc' extra). Nothing else in the app is held up. To stop using post-quantum signing, install the library first and then turn the setting off, so the old post-quantum key can vouch for the change.": "后量子签名已开启，但此处未安装后量子库。已用后量子密钥签名的监管日志在安装之前不会签署任何新内容：新条目会等待，安装（“pqc”附加组件）后按顺序签名。应用的其他功能不受影响。若要停止使用后量子签名，请先安装该库，再关闭此设置，以便旧的后量子密钥为此变更作证。",
+  "Post-quantum signing is on, but the post-quantum library is not installed here. A custody log already signed with a post-quantum key signs nothing new until it is: new entries wait, and are signed, marked as late, once it is installed (the 'pqc' extra). Nothing else in the app is held up. To stop using post-quantum signing, install the library first and then turn the setting off, so the old post-quantum key can vouch for the change.": "后量子签名已开启，但此处未安装后量子库。已用后量子密钥签名的监管日志在安装之前不会签署任何新内容：新条目会等待，安装（“pqc”附加组件）后签名并标记为延迟。应用的其他功能不受影响。若要停止使用后量子签名，请先安装该库，再关闭此设置，以便旧的后量子密钥为此变更作证。",
   "Pre-demographic dividend": "前人口红利",
   "Precious metals": "贵金属",
   "Precipitation": "降水",

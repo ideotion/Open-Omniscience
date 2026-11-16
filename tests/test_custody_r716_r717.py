@@ -116,6 +116,7 @@ def test_r717_owed_entries_are_signed_once_the_library_is_back_in_order_with_non
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
     out = pending.drain(prefs=CustodySettings(), log_factory=lambda: CustodyLog(db_path=db, signer=_signer(tmp_path, "k")))
     assert out["recorded"] == 0 and out["still_pending"] == 3
+    assert out["pqc_unavailable"] == 3  # the drain stops at the first refusal and says why (the reads of #2032)
     with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
         assert [e.item_id for e in log.all_entries()] == ["article:1"]
     monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
