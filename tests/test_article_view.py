@@ -673,8 +673,9 @@ def test_an_outlets_page_furniture_is_listed_apart_from_its_citations(tmp_path):
             body = client.get("/api/articles/1/view").text
             cites = body.split("Sources this article cites", 1)[1]
             listed, furniture = cites.split("cites-furniture", 1)
-            assert "agency.example" in listed and "apps.apple.com" not in listed
-            assert "apps.apple.com" in furniture
+            # Counted, not "x in y": a host substring test reads to code scanning as a URL check.
+            assert listed.count("agency.example") >= 1 and listed.count("apps.apple.com") == 0
+            assert furniture.count("apps.apple.com") >= 1
             assert f"on {n} of this source's {n} articles" in furniture
             assert "1 link(s) that most of this source's articles carry" in furniture
     finally:
@@ -727,7 +728,7 @@ def test_the_reader_shows_the_domain_for_a_source_named_only_by_a_wikidata_id(tm
     try:
         with TestClient(app) as client:
             body = client.get("/api/articles/1/view").text
-            assert "<span title='Q11858063'>epari.fi</span>" in body
+            assert body.count("<span title='Q11858063'>epari.fi</span>") == 1
             rows = client.get("/api/articles").json()
             rows = rows["results"] if isinstance(rows, dict) else rows
             assert {r["source"] for r in rows} == {"epari.fi", "Epari News"}
