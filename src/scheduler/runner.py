@@ -1901,6 +1901,11 @@ class BackgroundScheduler:
         # always the lane -- starve the briefing refresh permanently.
         self._heavy_tail_lock = threading.Lock()
         self._heavy_tail_waits = 0  # bounded waits that gave up (observability)
+        # Field test 2026-11-14 (row 64, report 4.3): the briefing refresh gave up after its 900 s wait behind the
+        # housekeeping lane four to seven times per instance, and a pass lasts about a day, so a skipped cycle left Home
+        # that old. A refresh that gives up now leaves this set, and the lane starts it the moment it lets go of the
+        # heavy-tail lock (``_run_owed_briefing``), so the wait never ends in a skipped cycle twice for one pass.
+        self._briefing_owed = False
         # Session A §4 concurrency-skeptic finding (2026-07-24, HIGH): an exclusive
         # operation (a restore) pausing the CONTINUOUS loop via .stop() left run_now()
         # completely unaware -- run_now() spawns its own _do_run() thread gated ONLY on
@@ -2487,6 +2492,7 @@ class BackgroundScheduler:
 
                 # S2.5 (b): never concurrent with the housekeeping lane.
                 if not self._acquire_heavy_tail("briefing refresh"):
+                    self._briefing_owed = True  # the lane runs it when it ends (``_run_owed_briefing``)
                     return
                 try:
                     with pinned_cache_path(cache_path), session_scope() as session:
@@ -2508,6 +2514,24 @@ class BackgroundScheduler:
             target=_run, daemon=True, name="oo-briefing-bg"
         )
         self._start_detached(self._briefing_thread, self._briefing_bg_lock, "background briefing refresh")
+
+    def _run_owed_briefing(self) -> None:
+        """Start the briefing refresh a give-up left owed, now that the lane has let go of the heavy-tail lock.
+
+        Called by the lane right after it releases the lock, whatever the lane's outcome. Nothing is started while an
+        exclusive operation holds the machine (a restore): the refresh stays owed and the next pass tail starts it as
+        usual. ``_refresh_briefing_async`` keeps its own guards, so a refresh already running makes this a no-op, and
+        the flag is cleared before the start so a refresh that gives up again sets it again. Best-effort: a failure is
+        logged and never reaches the lane."""
+        if not self._briefing_owed:
+            return
+        try:
+            if self.holds_exclusive():
+                return
+            self._briefing_owed = False
+            self._refresh_briefing_async()
+        except Exception as exc:  # noqa: BLE001 - the lane's end must never be broken by the owed refresh
+            log_failure(_LOG, "the owed briefing refresh could not be started", exc, level=logging.WARNING)
 
     def whole_corpus_work_running(self) -> bool:
         """True while the pass-tail briefing refresh or the heavy-tail housekeeping holds its lock.
@@ -2595,6 +2619,7 @@ class BackgroundScheduler:
                         self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
                 finally:
                     self._heavy_tail_lock.release()
+                    self._run_owed_briefing()
             except Exception as exc:  # noqa: BLE001 - a background lane must never crash the thread
                 log_failure(_LOG, "housekeeping lane failed", exc, level=logging.WARNING)
             finally:

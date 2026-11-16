@@ -468,3 +468,51 @@ def test_a_huge_warm_deadline_is_honoured_not_capped(monkeypatch):
     monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "60")
     monkeypatch.setenv("OO_WARM_DEADLINE_S", "1e12")
     assert ins._warm_deadline_seconds() == 1e12
+
+
+# ---------------------------------------------------------- an old feed over a grown corpus (field test 2026-11-14, row 64)
+def _aged(hours: float, count: int = 3) -> dict:
+    from datetime import UTC, datetime, timedelta
+
+    return {"generated_at": (datetime.now(UTC) - timedelta(hours=hours)).isoformat(), "article_count": count}
+
+
+def test_an_old_feed_over_a_grown_corpus_is_refreshed(poll, monkeypatch):
+    """The field cache was 12-13 h old: 10% growth is ~20,000 articles on a 200,000-article corpus, more than a day."""
+    monkeypatch.setattr(service, "_article_count", lambda _s: 200_000 + service._STALE_GROWTH_MIN)
+    assert poll(_aged(4, count=200_000)) == 1
+
+
+@pytest.mark.parametrize(
+    ("hours", "grew"),
+    [(2.5, 10_000), (4, 0), (4, -5)],  # young enough / nothing new / shrank (an erase): no refresh
+)
+def test_age_alone_or_growth_alone_does_not_refresh(poll, monkeypatch, hours, grew):
+    monkeypatch.setattr(service, "_article_count", lambda _s: 200_000 + grew)
+    assert poll(_aged(hours, count=200_000)) == 0
+
+
+def test_the_age_cause_waits_for_the_same_conditions_as_the_marker_repair(poll, monkeypatch, memory):
+    monkeypatch.setattr(service, "_article_count", lambda _s: 200_000 + 100)
+    memory(100.0)
+    assert poll(_aged(4, count=200_000)) == 0, "started with memory short"
+    memory(4096.0)
+    monkeypatch.setattr(service, "_scheduler_is_busy_with_the_whole_corpus", lambda: True)
+    assert poll(_aged(4, count=200_000)) == 0, "started beside the scheduler's whole-corpus work"
+    monkeypatch.setattr(service, "_scheduler_is_busy_with_the_whole_corpus", lambda: False)
+    monkeypatch.setitem(service._marker_retry, "at", service._monotonic())
+    assert poll(_aged(4, count=200_000)) == 0, "started right after another refresh finished"
+    monkeypatch.setitem(service._marker_retry, "at", service._monotonic() - service._MARKER_RETRY_S - 1)
+    assert poll(_aged(4, count=200_000)) == 1
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("0", 0), ("3600", 1), ("", 1), ("junk", 1), ("-5", 1), ("nan", 1)])
+def test_the_age_limit_is_set_by_its_variable(poll, monkeypatch, raw, expected):
+    monkeypatch.setenv("OO_BRIEFING_MAX_AGE_S", raw)
+    monkeypatch.setattr(service, "_article_count", lambda _s: 200_000 + 100)
+    assert poll(_aged(3.5, count=200_000)) == expected  # 3.5 h: over the 3 h default and over 3600 s; 0 turns it off
+
+
+@pytest.mark.parametrize("generated", [None, "", "not a date", 12345])
+def test_an_unreadable_feed_time_is_not_an_age(generated):
+    assert service._feed_age_s({"generated_at": generated}) is None

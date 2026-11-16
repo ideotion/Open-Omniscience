@@ -166,3 +166,63 @@ def test_a_lane_that_gives_up_says_so_rather_than_reporting_a_run(monkeypatch, s
     finally:
         sched._heavy_tail_lock.release()
     assert sched._last_lane_result == {"skipped": "another heavy tail consumer is running"}
+
+
+def test_a_briefing_refresh_that_gives_up_runs_when_the_lane_ends(monkeypatch, sched):
+    """Field test 2026-11-14 row 64: the refresh gave up behind the lane four to seven times per instance and a pass
+    lasts about a day, so each give-up left Home a day old. A give-up is now owed, and the lane runs it as it ends."""
+    _stub_scope(monkeypatch)
+    monkeypatch.setenv("OO_HEAVY_TAIL_WAIT_S", "0.1")
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
+    lane_running, lane_release, refreshed = threading.Event(), threading.Event(), threading.Event()
+
+    def _lane(_session, _fetcher, _settings):
+        lane_running.set()
+        lane_release.wait(10)
+        return {"ok": True}
+
+    monkeypatch.setattr("src.scheduler.runner.run_housekeeping_lane", _lane)
+    monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda _s: refreshed.set())
+
+    sched._kick_housekeeping_lane()
+    assert lane_running.wait(3), "the lane never started"
+    sched._refresh_briefing_async()
+    sched._briefing_thread.join(HANG_GUARD_S)
+    assert not refreshed.is_set(), "the refresh ran beside the lane"
+    assert sched._heavy_tail_waits == 1 and sched._briefing_owed is True
+
+    lane_release.set()
+    sched._lane_thread.join(HANG_GUARD_S)
+    assert refreshed.wait(HANG_GUARD_S), "the owed refresh was not started when the lane ended"
+    sched._briefing_thread.join(HANG_GUARD_S)
+    assert sched._briefing_owed is False
+
+
+def test_nothing_is_owed_after_a_refresh_that_ran(monkeypatch, sched):
+    """The negative twin: a lane ending after an ordinary refresh starts nothing."""
+    _stub_scope(monkeypatch)
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
+    runs: list[int] = []
+    monkeypatch.setattr("src.briefing.service.refresh_briefing", lambda _s: runs.append(1))
+    monkeypatch.setattr("src.scheduler.runner.run_housekeeping_lane", lambda *_a: {"ok": True})
+
+    sched._refresh_briefing_async()
+    sched._briefing_thread.join(HANG_GUARD_S)
+    sched._kick_housekeeping_lane()
+    sched._lane_thread.join(HANG_GUARD_S)
+    assert runs == [1] and sched._briefing_owed is False
+
+
+def test_an_owed_refresh_waits_out_an_exclusive_hold(monkeypatch, sched):
+    """A restore holding the machine: the owed refresh is not started under it and stays owed for the next pass tail."""
+    started: list[int] = []
+    monkeypatch.setattr(sched, "_refresh_briefing_async", lambda: started.append(1))
+    monkeypatch.setattr(sched, "holds_exclusive", lambda: True)
+    sched._briefing_owed = True
+    sched._run_owed_briefing()
+    assert started == [] and sched._briefing_owed is True
+    monkeypatch.setattr(sched, "holds_exclusive", lambda: False)
+    sched._run_owed_briefing()
+    assert started == [1] and sched._briefing_owed is False
