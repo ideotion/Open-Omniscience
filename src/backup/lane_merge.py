@@ -889,7 +889,30 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
     # engine re-reads on its next checkout, so disposing is cheap insurance, never required.
     dispose_lane(kind)
     out["seconds"] = round(time.monotonic() - t0, 3)
+    out["budget"] = _budget_after(kind)
     return out
+
+
+def _budget_after(kind: str) -> dict[str, Any] | None:
+    """The lane's size against its budget after a merge (Lane F's note on #2036/#2047).
+
+    The merge never refuses for size and never removes anything to make room: a budget here
+    pauses FETCHING (``tiers.BudgetState.exhausted``), it does not delete, so an import that
+    takes a lane past its budget is merged and SAID to be over it, with both figures. ``None``
+    when the lane has no budget or nothing could be measured. Never raises.
+    """
+    try:
+        from src.scheduler.settings import load_settings
+        from src.versioned.budget import _budget_block, lane_bytes, load_table
+
+        size = lane_bytes(kind)
+        block = _budget_block(load_table().row(kind), load_settings(), size)
+    except Exception as exc:  # noqa: BLE001 - a budget reading never costs the merge
+        _LOG.warning("could not read the %s lane's budget after the merge (%s)", kind, type(exc).__name__)
+        return None
+    if block.get("gb") is None or size is None:
+        return None
+    return {"bytes": int(size), "budget_gb": int(block["gb"]), "over": bool(block.get("exhausted"))}
 
 
 #: The longest failure reason a lane row keeps.
