@@ -868,7 +868,7 @@ def test_the_date_lists_and_the_agendas_deduced_events_never_hold_the_stand_in_w
     db.commit()
     assert datestore.upcoming_deduced(db, today=today, min_articles=2)["events"] == []
     alone = datestore.upcoming_deduced(db, today=today, min_articles=1)["events"]
-    assert alone == [{"date": "2026-03-05", "n_articles": 1, "n_sources": 1, "article_ids": [1]}], alone
+    assert alone == [{"date": "2026-03-05", "n_articles": 1, "n_sources": 1, "article_ids": [1], "n_year_inferred": 0}], alone
 
 
 def test_an_explicit_id_set_of_the_corpus_analyses_never_holds_the_stand_in_nor_its_lost_source(client):

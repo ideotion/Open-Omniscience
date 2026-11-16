@@ -145,3 +145,27 @@ def test_a_candidate_across_a_line_break_is_not_a_name_in_a_tested_language():
 
 def test_nynorsk_and_bokmal_share_one_list():
     assert entextract._function_words("nn") == entextract._function_words("nb") != frozenset()
+
+
+def test_the_finnish_genitive_reads_long_vowels_and_consonant_gradation(monkeypatch):
+    from src.catalog.cities import City
+
+    big = ("Helsinki", "Espoo", "Tampere", "Vantaa", "Oulu", "Turku", "Lahti", "Joensuu", "Seinäjoki", "Porvoo")
+    pair = {(n.lower(), "fi"): City(name=n, lat=0.0, lon=0.0, country="fi", population=50000) for n in big}
+    monkeypatch.setattr("src.catalog.cities.cached_index", lambda: {"pair": pair, "name": {}})
+    for gen in ("Helsingin", "Espoon", "Tampereen", "Vantaan", "Oulun", "Turun", "Lahden", "Joensuun", "Seinäjoen",
+                "Porvoon"):
+        people = {e["name"] for e in extract_entities(f"Eilen {gen} Nokia kertoi uutisen.", language="fi")["people"]}
+        assert f"{gen} Nokia" not in people, gen
+    assert "Pekka Virtanen" in {e["name"] for e in extract_entities(
+        "Asiasta kertoi Pekka Virtanen eilen.", language="fi")["people"]}
+
+
+@pytest.mark.parametrize("text", [
+    "Prime Minister Resigns\nThe coalition collapsed.",
+    "President Warns\nMarkets fell sharply after the speech.",
+    "Senator Says In Interview that the vote is close.",
+])
+def test_a_title_case_headline_after_an_honorific_is_not_a_person(text):
+    people = {e["name"] for e in extract_entities(text, language="en")["people"]}
+    assert not people & {"Resigns", "Warns", "Says", "Resigns The", "Warns Markets", "Says In"}

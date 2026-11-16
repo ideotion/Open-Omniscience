@@ -165,7 +165,8 @@ WWW_SHARED_MODULES: tuple[str, ...] = (
     # R725: the text the date, place and entity stores read (``article_text``).
     "src/timemap/text.py",
     "src/utils/safe_yaml.py",
-    # R730: the entity extractor reads the grammar stoplists for its per-language function-word reject.
+    # R730 first read the grammar stoplists for its function-word reject; it now carries its own hand-curated lists.
+    # Kept here on purpose: hashing a file the stage no longer reads costs at most one re-extraction, never a wrong row.
     "src/services/__init__.py",
     "src/services/stopwords.py",
 )
@@ -179,7 +180,8 @@ WWW_DATA_GLOBS: tuple[str, ...] = (
 )
 
 #: Data the www stage reads that the keyword pass reads too: part of BOTH engines' data digests (the twin of
-#: :data:`WWW_SHARED_MODULES`). R730: the grammar stoplists behind the entity extractor's per-language function-word reject.
+#: :data:`WWW_SHARED_MODULES`). Added for R730's first function-word reject, which read the grammar stoplists; kept as a
+#: harmless over-inclusion now that the reject carries its own lists.
 WWW_SHARED_DATA_GLOBS: tuple[str, ...] = (
     "configs/stopwords_iso/*.txt",
     "configs/stopwords_extra/*.yml",

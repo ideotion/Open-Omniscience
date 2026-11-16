@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "digest": "60d431a5c32aa9317ca2805d756c4dcc42843a14dd4b3dd0d1ba7cd6d9813cc1",
+  "digest": "ac7e386efb912de0c46d40bf6bc515b2ad819fe8c0f10db08788c01e78852c7b",
   "log": [
     {
       "version": 1,
@@ -64,13 +64,19 @@
     },
     {
       "version": 2,
-      "digest": "c410a2c941a6aeefaf93bb2c4ea97882d3e162cb4c079d8f7a87a9c73c2309ea",
+      "digest": "9c767eb6911a369847f20bcac79bd6506c4bd8c5342e759b30569b3cad1866ec",
       "kind": "same",
-      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
+      "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): third-review R730 fixes (Finnish genitive reads long vowels and consonant gradation; an honorific's function-word or line-broken second word is trimmed instead of the name dropped; tai/kun leave the Finnish list)."
     },
     {
       "version": 2,
-      "digest": "60d431a5c32aa9317ca2805d756c4dcc42843a14dd4b3dd0d1ba7cd6d9813cc1",
+      "digest": "f25756dfbf6d136bded984b0f44059e90cd6566f03d063a4e904019629c37227",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): the honorific trim is withdrawn after the fourth read showed it kept headline verbs; candidates across a line break are dropped whole again."
+    },
+    {
+      "version": 2,
+      "digest": "ac7e386efb912de0c46d40bf6bc515b2ad819fe8c0f10db08788c01e78852c7b",
       "kind": "same",
       "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
     }
