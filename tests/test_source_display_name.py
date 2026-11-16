@@ -84,7 +84,6 @@ def test_field_bundle_splits_the_flat_source_count():
 def test_a_source_whose_enabled_flag_was_never_set_is_counted_in_the_split():
     """NULL is "never set", which the app reads as enabled: it must land in a part, or the parts stop summing."""
     from fastapi.testclient import TestClient
-
     from sqlalchemy import text
 
     from src.api.main import app
