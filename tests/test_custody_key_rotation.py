@@ -76,11 +76,14 @@ def test_an_endorsed_rotation_verifies_with_and_without_a_pin(tmp_path):
         item = log.export(item_id="article:0")
     report = verify_export_report(bundle)
     assert report["verified"], report["issues"]
-    old_pub, new_pub = old.public_identity().ed25519_pub, bundle["signer"]["ed25519_pub"]
-    # The line of keys is printed in full: an endorsement proves something only to a reader who knows one of them.
+    from src.custody.log import _identity_line
+
+    was = _identity_line(old.public_identity().ed25519_pub, old.public_identity().ml_dsa_pub)
+    now = _identity_line(bundle["signer"]["ed25519_pub"], bundle["signer"]["ml_dsa_pub"])
+    # The line of keys is printed in full, both halves: an endorsement proves something only to a reader who knows one.
     assert report["notes"] == [
-        f"the chain starts on key {old_pub}; compare any key you already know with this line of keys",
-        f"seq 4: the signing key changed from {old_pub} to {new_pub}, endorsed by the previous key",
+        f"the chain starts on key {was}; compare any key you already know with this line of keys",
+        f"seq 4: the signing key changed from {was} to {now}, endorsed by the previous key",
     ]
     assert verify_export(bundle, require_signer=True) == (True, [])
     # A one-item export carries every key-rotation record, so its key change can be followed to the head's key.
@@ -197,13 +200,15 @@ def test_the_route_and_the_cli_name_the_rotation(tmp_path):
         r = c.post("/api/custody/verify", json={"bundle": bundle}).json()
         assert r["verified"] is False and "no endorsement" in r["issues"][0] and r["notes"] == []
         r = c.post("/api/custody/verify", json={"bundle": bundle, "accept_unendorsed_rotation": True}).json()
-        assert r["verified"] is True and "record's word" in r["notes"][1]
+        assert r["verified"] is True and "record's word" in r["notes"][1] and r["accepted_unendorsed"] is True
     p = tmp_path / "b.json"
     p.write_text(json.dumps(bundle), encoding="utf-8")
     cli = [sys.executable, str(ROOT / "scripts/verify_custody.py"), str(p)]
     assert subprocess.run(cli, capture_output=True, text=True).returncode == 1
     out = subprocess.run([*cli, "--accept-unendorsed-rotation"], capture_output=True, text=True)
-    assert out.returncode == 0 and "key rotation   : seq 3" in out.stdout
+    # R716: accepted on the record's word is exit 4 with a named warning, never a plain "verified" (exit 0).
+    assert out.returncode == 4 and "key rotation   : seq 3" in out.stdout
+    assert "UNENDORSED KEY CHANGE ACCEPTED" in out.stdout
 
 
 # --- found by the two security reads of the first version ------------------------------------------------------------
@@ -328,23 +333,26 @@ def test_segment_pins_follow_each_rotation():
 @pytest.mark.skipif(not __import__("src.custody.signing", fromlist=["x"]).PQC_AVAILABLE,
                     reason="pqcrypto/ML-DSA not installed")
 def test_a_pinned_bundle_refuses_a_middle_entry_with_another_ml_dsa_half(tmp_path):
-    """Same Ed25519 key, another ML-DSA key: the lineage cannot see it, the stretch's pin can."""
+    """Same Ed25519 key, another ML-DSA key: the lineage cannot see it, the stretch's pin can. (An honest change of the
+    ML-DSA key alone now writes its own record, row 42, so the other half here is a forger's re-signature.)"""
     db = str(tmp_path / "c.db")
-    old, new, newer = _signer(tmp_path, "old"), _signer(tmp_path, "new"), _signer(tmp_path, "newer")
-    new_other_ml = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "other.key")
+    old, new = _signer(tmp_path, "old"), _signer(tmp_path, "new")
+    other_ml = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "other.key")
     with CustodyLog(db_path=db, signer=old) as log:
         _record(log, 2)
     with CustodyLog(db_path=db, signer=new) as log:
         log.rotate_signing_key(old)
-    with CustodyLog(db_path=db, signer=new_other_ml) as log:
-        _record(log, 1, 2)
-    with CustodyLog(db_path=db, signer=newer) as log:
-        log.rotate_signing_key(new)
-        _record(log, 1, 3)
+        _record(log, 2, 2)
         bundle = log.export()
-    assert verify_export(bundle)[0]
-    ok, issues = verify_export(bundle, require_signer=True)
-    assert not ok and any("ml-dsa public key does not match" in i for i in issues)
+    assert verify_export(bundle, require_signer=True) == (True, [])
+    forged = copy.deepcopy(bundle)
+    e = forged["entries"][3]
+    e["signature"] = other_ml.sign(canonical_bytes({k: v for k, v in e.items() if k not in ("entry_hash", "signature")}))
+    # Every signature is valid on its own; the key lineage sees the ML-DSA key change with no record, and the pin
+    # beneath it holds the stretch to its identity.
+    for pin in (False, True):
+        ok, issues = verify_export(forged, require_signer=pin)
+        assert not ok and "post-quantum (ML-DSA) key changes at seq 4 with no key-rotation record" in issues[0]
 
 
 # --- found by the delta read of the fixes ----------------------------------------------------------------------------
@@ -581,13 +589,18 @@ def test_the_last_stretch_is_pinned_to_its_rotation_and_the_signer_must_agree(tm
         _record(log, 2)
     with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
         log.rotate_signing_key(old)
-    # Post-quantum signing turned off after the rotation: the honest log still verifies pinned.
+    # Post-quantum signing turned off after the rotation: recorded (row 42), and the honest log verifies pinned.
     off = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "new.key", use_pqc=False)
     with CustodyLog(db_path=db, signer=off) as log:
         _record(log, 1, 2)
-        assert verify_export(log.export(), require_signer=True) == (True, [])
-    # The ML-DSA key alone replaced, with no record: the printed signer is not the identity the stretch is held to.
-    other_ml = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "other.key")
-    with CustodyLog(db_path=db, signer=other_ml) as log:
-        ok, issues = verify_export(log.export(), require_signer=True)
-    assert not ok and "names an ML-DSA key other than the one the key-rotation record at seq 3 introduced" in issues[0]
+        bundle = log.export()
+    assert verify_export(bundle, require_signer=True) == (True, [])
+    # The printed signer names an ML-DSA key the last record did not introduce (the head re-signed by the holder of the
+    # Ed25519 key with an ML-DSA key of their own): refused.
+    other = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "other.key")
+    forged = copy.deepcopy(bundle)
+    forged["signer"] = other.public_identity().to_dict()
+    forged["head_signature"] = other.sign(canonical_bytes(forged["head"]))
+    assert verify_export(forged)[0]
+    ok, issues = verify_export(forged, require_signer=True)
+    assert not ok and "not the identity the key-rotation record at seq 4 introduced" in issues[0]

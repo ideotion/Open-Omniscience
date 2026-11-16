@@ -149,9 +149,16 @@ def test_the_session_answers_two_apis_and_refuses_everything_else_loudly():
 _TRIP = "import sys, socket; sys.path.insert(0, 'scripts'); import analytics45_generate as g; g._install_socket_tripwire()\n"
 
 
+# A probe that hangs dumps its own stack and exits before the test's timeout, so the failure names the call that never returned
+# (the macOS observation lane timed one out at 60 s with nothing to show which; R733 asks for the cause before any rerun).
+_HANG_DUMP_S = 45
+_WATCHDOG = f"import faulthandler; faulthandler.dump_traceback_later({_HANG_DUMP_S}, exit=True)\n"
+# a dumped stack's line numbers count the whole -c text: the probe body's first line is line 3 (this line, then _TRIP)
+
+
 def _probe(body: str) -> list[str]:
-    done = subprocess.run([sys.executable, "-c", _TRIP + body], cwd=ROOT, capture_output=True, text=True, timeout=60)
-    assert done.returncode == 0, done.stderr[-1500:]
+    done = subprocess.run([sys.executable, "-c", _WATCHDOG + _TRIP + body], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, f"stdout so far: {done.stdout.split()}\n{done.stderr[-3000:]}"
     return done.stdout.split()
 
 
@@ -169,7 +176,9 @@ def test_the_tripwire_lets_exactly_the_loopback_through():
         "attempt(lambda: socket.getaddrinfo('::1', 80))\n"
         "attempt(lambda: socket.getaddrinfo('::ffff:127.0.0.1', 80))\n"
         "attempt(lambda: socket.getnameinfo(('127.0.0.1', 80), 0))\n"
-        "s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(1); port = s.getsockname()[1]\n"
+        # a backlog of 8, not 1: two connects wait unaccepted, and a kernel whose queue holds only the backlog (Linux at listen(0)
+        # already blocks the second) would hang the second connect rather than answer it
+        "s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(8); port = s.getsockname()[1]\n"
         "c = socket.socket(); attempt(lambda: c.connect(('127.0.0.1', port)))\n"
         "c2 = socket.socket(); attempt(lambda: c2.connect_ex(('127.0.0.1', port)))\n"
         "u = socket.socket(type=socket.SOCK_DGRAM); attempt(lambda: u.sendto(b'x', ('127.0.0.1', port)))\n"

@@ -1453,13 +1453,36 @@ def _filesystem_type(path: Path) -> str | None:
     return best_fs
 
 
-def _qubes_disposable() -> bool | None:
-    """True/False if we can PROVE Qubes disposability, else None (unknown — never a guess).
+#: Where a Qubes VM keeps its marker. ``/etc/qubes-release`` exists only in dom0, so a check on it alone said
+#: ``qubes: false`` inside every AppVM (field report 2026-11-14, row 74). The VM side ships this file with
+#: qubes-core-agent, and a Qubes-built VM kernel names itself in its release string.
+_QUBES_VM_MARKER = Path("/usr/share/qubes/marker-vm")
+_QUBES_DOM0_MARKER = Path("/etc/qubes-release")
 
-    Reads the qubesdb persistence key via ``qubesdb-read`` (``none`` == disposable). Absent
-    on non-Qubes / when the tool is not present -> None. Never nags an ordinary AppVM (whose
-    $HOME IS persistent) on a false positive."""
-    if not Path("/etc/qubes-release").exists():
+#: The folders an AppVM keeps across a restart (its private volume: ``/rw``, with ``/home`` and ``/usr/local``
+#: bound onto it). Everything else in an AppVM comes from the template and is reset when the VM starts.
+_QUBES_APPVM_PERSISTENT = ("/home", "/rw", "/usr/local")
+
+
+def _qubes_kind() -> str | None:
+    """``"dom0"``, ``"vm"`` or ``None`` (not Qubes, as far as the markers show)."""
+    if _QUBES_DOM0_MARKER.exists():
+        return "dom0"
+    try:
+        import platform
+
+        release = platform.release().lower()
+    except Exception:  # noqa: BLE001 - an unreadable kernel string is just no evidence
+        release = ""
+    if _QUBES_VM_MARKER.exists() or ".qubes" in release:
+        return "vm"
+    return None
+
+
+def _qubes_persistence() -> str | None:
+    """The VM's ``/qubes-vm-persistence`` qubesdb value (``none`` = disposable, ``rw-only`` = AppVM,
+    ``full`` = template or standalone), or None when it cannot be read (not a Qubes VM, no tool)."""
+    if _qubes_kind() != "vm":
         return None
     import shutil as _sh
     import subprocess  # noqa: S404 - reading a local qubesdb key, no shell, no user input
@@ -1475,7 +1498,38 @@ def _qubes_disposable() -> bool | None:
         return None
     if out.returncode != 0:
         return None
-    return out.stdout.strip() == "none"
+    return out.stdout.strip() or None
+
+
+def _qubes_disposable() -> bool | None:
+    """True/False if we can PROVE Qubes disposability, else None (unknown — never a guess).
+
+    Reads the qubesdb persistence key via ``qubesdb-read`` (``none`` == disposable). Absent
+    on non-Qubes / when the tool is not present -> None. Never nags an ordinary AppVM (whose
+    $HOME IS persistent) on a false positive."""
+    persistence = _qubes_persistence()
+    if persistence is None:
+        return None
+    return persistence == "none"
+
+
+def _under_any(path: Path, roots: tuple[str, ...]) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    return any(resolved == Path(r) or Path(r) in resolved.parents for r in roots)
+
+
+def _on_root_device(path: Path) -> bool:
+    """Whether ``path`` (or its nearest existing parent) is on the same filesystem as ``/``. False when it cannot be read."""
+    p = Path(path)
+    try:
+        while not p.exists() and p != p.parent:
+            p = p.parent
+        return os.stat(p).st_dev == os.stat("/").st_dev
+    except OSError:
+        return False
 
 
 def data_dir_persistence() -> dict[str, Any]:
@@ -1492,7 +1546,8 @@ def data_dir_persistence() -> dict[str, Any]:
     override = os.getenv("OO_DATA_DIR")
     fstype = _filesystem_type(dd)
     volatile_fs = (fstype in _VOLATILE_FS) if fstype else None
-    disposable = _qubes_disposable()
+    persistence = _qubes_persistence()
+    disposable = None if persistence is None else persistence == "none"
 
     if volatile_fs:
         at_risk: bool | None = True
@@ -1503,6 +1558,23 @@ def data_dir_persistence() -> dict[str, Any]:
     elif disposable:
         at_risk = True
         reason = "this is a Qubes disposable VM — its storage is discarded on shutdown."
+    elif persistence == "rw-only" and not _under_any(dd, _QUBES_APPVM_PERSISTENT) and _on_root_device(dd):
+        # Only a folder on the root filesystem is provably reset from the template: an extra volume or a bind-dirs target
+        # mounted elsewhere can be persistent, so it reads as unknown below (or as the user's OO_DATA_DIR choice).
+        at_risk = True
+        reason = (
+            "this is a Qubes AppVM, which keeps only /home, /rw and /usr/local across a restart, and the folder is on "
+            "its root filesystem, which is reset from its template."
+        )
+    elif persistence == "rw-only" and _under_any(dd, _QUBES_APPVM_PERSISTENT):
+        at_risk = False
+        reason = "this is a Qubes AppVM and the data folder is on its private volume, which survives a restart."
+    elif persistence == "rw-only" and not override:
+        at_risk = None
+        reason = (
+            "this is a Qubes AppVM and the data folder is on a separate volume, whose persistence could not be "
+            "proved (unknown)."
+        )
     elif override:
         at_risk = False
         reason = "OO_DATA_DIR is set to an explicit location (ensure it is a persistent path)."
@@ -1513,7 +1585,7 @@ def data_dir_persistence() -> dict[str, Any]:
     note = None
     if at_risk is True:
         note = (
-            f"Your corpus is being written to {dd}, which {reason} To keep it across restarts, "
+            f"Your corpus is being written to {dd}: {reason[:1].upper() + reason[1:]} To keep it across restarts, "
             "set OO_DATA_DIR to a persistent path (a bind-mounted folder or an external drive) "
             "before launching, or copy the encrypted data folder off this machine. Your corpus "
             "is reconstitutable from the web, but re-scraping is slow — this one-time setup "
@@ -1524,7 +1596,9 @@ def data_dir_persistence() -> dict[str, Any]:
         "explicit_override": bool(override),
         "filesystem": fstype,
         "volatile_filesystem": volatile_fs,
-        "qubes": Path("/etc/qubes-release").exists(),
+        "qubes": _qubes_kind() is not None,
+        "qubes_kind": _qubes_kind(),
+        "qubes_persistence": persistence,
         "qubes_disposable": disposable,
         "at_risk": at_risk,
         "reason": reason,
@@ -1534,8 +1608,10 @@ def data_dir_persistence() -> dict[str, Any]:
             "(the installer accepts it too); the corpus, keys and custody log then live there."
         ),
         "method": (
-            "tmpfs/ramfs data folder = provably volatile; Qubes disposability read from "
-            "qubesdb; otherwise honest 'unknown'. Local read-only checks; no network, no score."
+            "tmpfs/ramfs data folder = provably volatile; a Qubes VM is recognised by its marker file "
+            "or its kernel name, and its persistence read from qubesdb (disposable = volatile; an "
+            "AppVM keeps /home, /rw and /usr/local only); otherwise honest 'unknown'. Local read-only "
+            "checks; no network, no score."
         ),
     }
 

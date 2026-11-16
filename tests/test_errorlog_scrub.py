@@ -410,7 +410,10 @@ def test_the_records_a_diagnostics_bundle_reads_are_the_scrubbed_ones():
     root = Path(__file__).resolve().parents[1] / "src"
     readers = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py") if "recent_errors(" in p.read_text(encoding="utf-8"))
     assert readers == ["api/diagnostics/bundle.py", "api/diagnostics/system.py", "monitoring/errorlog.py"], readers
-    assert "recent_errors(300)" in (root / "api/diagnostics/bundle.py").read_text(encoding="utf-8")
+    bundle_src = (root / "api/diagnostics/bundle.py").read_text(encoding="utf-8")
+    assert "recent_errors(_DEBUG_BUNDLE_ERRORS)" in bundle_src and "_DEBUG_BUNDLE_ERRORS = 300" in bundle_src
+    # The older errors that ride beside them are read in errorlog itself, through the same scrub.
+    assert "_scrubbed_entry(e) for e in kept" in (root / "monitoring/errorlog.py").read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #

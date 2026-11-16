@@ -22,7 +22,6 @@ import os
 import random
 import re
 import sqlite3
-import sys
 import threading
 from pathlib import Path
 
@@ -82,18 +81,11 @@ def _build_store(path: Path, rows: int = 3000) -> None:
 
 
 def _leaf_pages(path: Path, table: str) -> list[int]:
-    con = sqlite3.connect(path)
-    try:
-        return [p for p, t in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name=?", (table,)) if t == "leaf"]
-    except sqlite3.OperationalError:
-        reason = "this SQLite build has no dbstat virtual table (SQLITE_ENABLE_DBSTAT_VTAB)"
-        if os.getenv("CI") and sys.platform.startswith("linux"):
-            # the Linux lane is where the real damaged-page tests are meant to run: a silent skip
-            # there would leave the whole file asserting nothing
-            pytest.fail(reason + " -- the Linux CI lane must run the damaged-page tests")
-        pytest.skip(reason)
-    finally:
-        con.close()
+    """The leaf pages of ``table``: through ``dbstat``, or read off the file where the build has none (the macOS lane), so these
+    damage tests run there too rather than skip (``damaged_store_helpers.leaf_pages``, held equal to dbstat by its own test)."""
+    from tests.damaged_store_helpers import leaf_pages
+
+    return leaf_pages(path, table)
 
 
 def _overwrite(path: Path, pages: list[int]) -> None:

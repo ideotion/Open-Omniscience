@@ -144,7 +144,7 @@ def test_page_size_user_version_and_auto_vacuum_are_kept(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-#  damaged leaf, interior and index pages (plaintext, pages found through dbstat)
+#  damaged leaf, interior and index pages (plaintext, pages found through dbstat, or the file-format walk where it is missing)
 # --------------------------------------------------------------------------- #
 def _spread(pages: list[int], count: int) -> list[int]:
     step = max(1, len(pages) // (count + 1))
@@ -238,11 +238,7 @@ def test_a_damaged_search_index_page_loses_no_article_and_the_index_is_rebuilt(t
 def test_an_unreadable_last_page_is_a_tail_of_unknown_size_not_a_huge_number(tmp_path, plain_pristine):
     src = _fresh(tmp_path, plain_pristine)
     pages = H.leaf_pages(src, "articles")
-    con = sqlite3.connect(src)
-    last_leaf = con.execute(
-        "SELECT pageno FROM dbstat WHERE name='articles' AND pagetype='leaf' ORDER BY path DESC LIMIT 1"
-    ).fetchone()[0]
-    con.close()
+    last_leaf = pages[-1]  # the right-most leaf: the last in preorder (dbstat's path order)
     assert last_leaf in pages
     H.overwrite_pages(src, [last_leaf], H.PLAIN_PAGE)
     # `max(id)` seeks the right-most leaf: with it damaged the table's end is not readable
@@ -268,9 +264,7 @@ def test_an_unreadable_schema_refuses_and_creates_nothing(tmp_path):
     src = tmp_path / "src.db"
     ddl = [f"CREATE TABLE tbl_{i:03d}_with_a_long_name_to_fill_the_schema_pages (id INTEGER PRIMARY KEY, a TEXT, b TEXT, c TEXT)" for i in range(150)]
     _one_store(src, ddl, {}, page=512)
-    con = sqlite3.connect(src)
-    leaves = [p for p, t in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name IN ('sqlite_master', 'sqlite_schema')") if t == "leaf"]
-    con.close()
+    leaves = H.leaf_pages(src, "sqlite_schema")
     assert len(leaves) > 3
     H.overwrite_pages(src, leaves[1:3], 512)
     out = tmp_path / "out.partial"
@@ -357,8 +351,8 @@ def test_an_autoincrement_counter_never_goes_back_below_a_lost_id(tmp_path):
     con.executemany("INSERT INTO t (v) VALUES (?)", [("x" * 60 + str(i),) for i in range(900)])
     con.commit()
     seq_before = con.execute("SELECT seq FROM sqlite_sequence WHERE name='t'").fetchone()[0]
-    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='t'") if kind == "leaf"]
     con.close()
+    leaves = H.leaf_pages(src, "t")
     H.overwrite_pages(src, _spread(leaves, 2), 1024)
     report, out = _salvage(src, tmp_path)
     con = sqlite3.connect(out)
@@ -377,8 +371,8 @@ def test_a_table_without_row_ids_is_copied_to_its_first_unreadable_page_and_says
     con = sqlite3.connect(src)
     con.executemany("INSERT INTO d VALUES (?, ?)", [(f"key{i:05d}", "y" * 50) for i in range(1500)])
     con.commit()
-    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='d'") if kind == "leaf"]
     con.close()
+    leaves = H.leaf_pages(src, "d")
     H.overwrite_pages(src, [leaves[len(leaves) // 2]], 1024)
     report, out = _salvage(src, tmp_path)
     entry = _entry(report, "d")
@@ -407,8 +401,8 @@ def test_children_of_a_lost_parent_are_kept_and_counted_as_orphans(tmp_path):
     con.executemany("INSERT INTO parent VALUES (?, ?)", [(i, "p" * 60 + str(i)) for i in range(1, 801)])
     con.executemany("INSERT INTO child VALUES (?, ?, ?)", [(i, 1 + (i * 7) % 800, f"c{i}") for i in range(1, 801)])
     con.commit()
-    leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name='parent'") if kind == "leaf"]
     con.close()
+    leaves = H.leaf_pages(src, "parent")
     H.overwrite_pages(src, _spread(leaves, 1), 1024)
     report, out = _salvage(src, tmp_path)
     assert _entry(report, "child")["kept"] == 800, "no child is dropped because its parent is gone"
@@ -422,11 +416,7 @@ def test_children_of_a_lost_parent_are_kept_and_counted_as_orphans(tmp_path):
 
 
 def _lose_leaves(src: Path, table: str, which: list[int], page: int = 1024) -> None:
-    con = sqlite3.connect(src)
-    try:
-        leaves = [p for p, kind in con.execute("SELECT pageno, pagetype FROM dbstat WHERE name=?", (table,)) if kind == "leaf"]
-    finally:
-        con.close()
+    leaves = H.leaf_pages(src, table)
     H.overwrite_pages(src, [leaves[i] for i in which], page)
 
 
