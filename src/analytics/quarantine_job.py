@@ -240,11 +240,27 @@ def default_quarantine_candidates_batch(
         Article.id, Article.url, Article.word_count, Article.content,
         Article.language, Article.detected_language, Article.quarantined,
     ) + ((Article.source_id,) if include_host_mismatch else ())
+    # Where the time goes, published beside the counts: reading the rows (the article text comes off
+    # disk and, on an encrypted store, through decryption) versus judging them. The import's screening
+    # took 3,396 s for 258,903 articles on a field run with no way to tell the two apart. The query
+    # already buffers every row of a chunk, so reading them out first changes no memory high-water mark.
+    read_s = 0.0
+    classify_s = 0.0
+
+    def _read_then_classify(q) -> None:
+        nonlocal read_s, classify_s
+        t0 = time.perf_counter()
+        rows = q.all()
+        t1 = time.perf_counter()
+        _classify_rows(rows)
+        read_s += t1 - t0
+        classify_s += time.perf_counter() - t1
+
     if article_ids is not None:
         last_id = 0
         for i in range(0, len(article_ids), _ID_SET_CHUNK):
             chunk = article_ids[i : i + _ID_SET_CHUNK]
-            _classify_rows(
+            _read_then_classify(
                 session.query(*cols).filter(Article.id.in_(chunk)).order_by(Article.id)
             )
         done = True
@@ -255,7 +271,7 @@ def default_quarantine_candidates_batch(
             .order_by(Article.id)
             .limit(limit)
         )
-        _classify_rows(q)
+        _read_then_classify(q)
         done = scanned < limit
 
     newly_written = 0
@@ -316,6 +332,8 @@ def default_quarantine_candidates_batch(
         "last_id": last_id,
         "done": done,
         "write": write,
+        "read_s": round(read_s, 3),
+        "classify_s": round(classify_s, 3),
     } | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
         {"host_mismatch": host_counts} if include_host_mismatch else {}
     )

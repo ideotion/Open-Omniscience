@@ -54,7 +54,6 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
-    "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     # R689 (1): ``_await_unless_stopped`` hands a queued generation's exception from its thread to the waiting caller, which
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
