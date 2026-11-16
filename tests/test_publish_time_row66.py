@@ -8,7 +8,7 @@ midnight, exactly as before, so nothing is invented.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -33,6 +33,16 @@ def test_the_stated_time_is_kept(head, expected):
     doc = ex.extract_article(_page(head), url="https://example.com/news/a-story")
     assert doc is not None and doc.published_at == expected
     assert doc.published_at.tzinfo is None
+
+
+def test_an_article_published_earlier_today_keeps_its_time():
+    now = datetime.now(UTC).replace(microsecond=0)
+    early = now - timedelta(seconds=1)  # a moment that is past, and later than midnight, today
+    if early.date() != now.date() or (early.hour, early.minute, early.second) == (0, 0, 0):
+        pytest.skip("the first second of the UTC day: no earlier moment today")
+    head = f'<meta property="article:published_time" content="{early.strftime("%Y-%m-%dT%H:%M:%S")}+00:00">'
+    doc = ex.extract_article(_page(head), url="https://example.com/news/today")
+    assert doc is not None and doc.published_at == early.replace(tzinfo=None)
 
 
 def test_the_two_parse_path_keeps_the_time_too(monkeypatch):
@@ -62,3 +72,27 @@ def test_the_extensive_search_flag_still_reaches_htmldate(monkeypatch):
     monkeypatch.delenv("OO_EXTENSIVE_DATE_SEARCH")
     params = ex._date_params()
     assert params["extensive_search"] is False and params["outputformat"] == "%Y-%m-%dT%H:%M:%S%z"
+    assert "max_date" not in params  # htmldate's default: the END of today, so today's times survive
+
+
+def test_an_end_day_bound_keeps_that_days_timed_articles():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from src.api.search_filters import published_until
+    from src.database.models import Article, Base, Source
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        src = Source(name="S", domain="s.example", source_type="news", enabled=True)
+        s.add(src)
+        s.flush()
+        for i, when in enumerate([datetime(2026, 5, 3, 14, 0), datetime(2026, 5, 4, 0, 30)]):
+            s.add(Article(url=f"http://x/{i}", canonical_url=f"http://x/{i}", content="c", hash=f"h{i}",
+                          source_id=src.id, published_at=when, title="t"))
+        s.commit()
+        day = [a.published_at for a in s.query(Article).filter(published_until("2026-05-03"))]
+        exact = [a.published_at for a in s.query(Article).filter(published_until("2026-05-03T12:00:00"))]
+    assert day == [datetime(2026, 5, 3, 14, 0)]  # the whole day, not only its midnight
+    assert exact == []  # a timestamp stays an exact bound

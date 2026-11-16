@@ -305,6 +305,10 @@ def _date_params() -> dict:
     :func:`extensive_date_search_enabled`) plus an output format that keeps the time of day."""
     params = set_date_params(extensive_date_search_enabled())
     params["outputformat"] = _DATE_OUTPUT_FORMAT
+    # trafilatura passes today's DATE as the latest allowed, which htmldate reads as today at 00:00: with
+    # the time kept, every article published later today would be "in the future" and fall back to
+    # midnight. htmldate's own default is the end of the current day.
+    params.pop("max_date", None)
     return params
 
 

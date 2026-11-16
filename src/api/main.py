@@ -64,7 +64,7 @@ from starlette.requests import HTTPConnection
 from src.api._wiring import wire
 from src.api.country_wire import CountryWireResponse
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.search_filters import AdvancedSearch, advanced_search_params, result_ordering
+from src.api.search_filters import AdvancedSearch, advanced_search_params, published_until, result_ordering
 from src.catalog.provenance import (
     NEWSLETTER_DOMAINS,
     PROVENANCE_CLASSES,
@@ -1633,7 +1633,8 @@ def _structured_filters(
     if start_date:
         filters.append(Article.published_at >= datetime.fromisoformat(start_date))
     if end_date:
-        filters.append(Article.published_at <= datetime.fromisoformat(end_date))
+        # A day bound includes that whole day: publication times now carry their time of day (row 66).
+        filters.append(published_until(end_date))
 
     if language:
         filters.append(Article.language == language)
