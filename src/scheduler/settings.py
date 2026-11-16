@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 _LOG = logging.getLogger(__name__)
 
@@ -143,6 +143,14 @@ class SchedulerSettings:
     # opened the panel would be the silent change it exists to prevent. Not settable to
     # anything but "" (the Dismiss button); see ``save_settings``.
     retired_mode: str = ""
+
+    # What the last repair of an unreadable settings blob changed (row 94, field test
+    # 2026-11-14): ``{"at", "reset", "written_off"}``, empty when there was none or the
+    # operator dismissed it. Persisted, like ``retired_mode``, because the repair happens on
+    # a save the operator may have made from anywhere (the top-bar speed knob included), and
+    # the panel that would show it may not be open: a notice that lived only in that one
+    # response would be gone before anyone read it. Settable to nothing but ``{}`` (Dismiss).
+    repair_notice: dict = field(default_factory=dict)
 
     # Source selection for rss/crawl runs (empty list = no filter on that facet).
     # Sources are always also filtered to enabled=True. Tags match ANY (substring).
@@ -812,6 +820,7 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
             raw.get("auto_refresh_stat_subscriptions"), d.auto_refresh_stat_subscriptions
         ),
         retired_mode=_coerce_retired_mode(raw.get("retired_mode")),
+        repair_notice=_coerce_repair_notice(raw.get("repair_notice")),
     )
     _migrate_retired_mode(raw, settings)
     settings.wiki_lane_budget_gb = _follow_budget_default(raw, settings)
@@ -851,6 +860,44 @@ def _follow_budget_default(raw: dict, settings: SchedulerSettings) -> int:
 def _coerce_retired_mode(value) -> str:
     """Only a mode the disclosure table knows survives a load; anything else reads as none."""
     return value if isinstance(value, str) and value in _RETIRED_MODE_SENTENCES else ""
+
+
+# Fields that are bookkeeping rather than a choice: a repair resetting them is nothing the
+# operator has to check, so the notice does not count them.
+_REPAIR_NOTICE_UNCOUNTED = frozenset({"repair_notice", "retired_mode", "wiki_lane_default_seen"})
+
+
+def _coerce_repair_notice(value) -> dict:
+    """A stored repair notice, or ``{}``. Only setting names this module knows survive, so
+    a damaged or hand-edited value can never make the panel name something that was not reset."""
+    if not isinstance(value, dict):
+        return {}
+    known = {f.name for f in fields(SchedulerSettings)} - _REPAIR_NOTICE_UNCOUNTED
+
+    def names(v) -> list[str]:
+        return sorted({x for x in v if isinstance(x, str) and x in known}) if isinstance(v, list) else []
+
+    reset, written_off = names(value.get("reset")), names(value.get("written_off"))
+    if not reset and not written_off:
+        return {}
+    at = value.get("at")
+    return {"at": at if isinstance(at, str) else "", "reset": reset, "written_off": written_off}
+
+
+def _repair_notice(reset: list[str], written_off: list[str]) -> dict:
+    """The notice a repair leaves behind: what went back to its default, and what was written OFF.
+
+    A written-off field is named once, under ``written_off``: "reset" reads as "back to the
+    default", and for those switches the default is ON."""
+    from datetime import UTC, datetime
+
+    return _coerce_repair_notice(
+        {
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "reset": [r for r in reset if r not in written_off],
+            "written_off": written_off,
+        }
+    )
 
 
 def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerSettings:
@@ -920,6 +967,9 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
             else:
                 was_running = False
             current.written_off_fields = written_off  # type: ignore[attr-defined]
+            # Shown once, visibly, until dismissed (row 94): the log line below is for an
+            # operator who reads logs, and most do not.
+            current.repair_notice = _repair_notice(reset, written_off)
             # LOUD, because nothing on screen says it yet: the reset list reaches the route's
             # answer, and an operator reading the log is told what stopped and why.
             _LOG.warning(
@@ -955,6 +1005,12 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
                 "retired_mode can only be cleared (set to an empty string)"
             )
         current.retired_mode = ""
+    if "repair_notice" in updates and updates["repair_notice"] is not None:
+        # Dismiss only, for the same reason as ``retired_mode``: a caller must not be able
+        # to write a notice for a repair that never ran.
+        if updates["repair_notice"] != {}:
+            raise SchedulerSettingsError("repair_notice can only be cleared (set to {})")
+        current.repair_notice = {}
     for key in (
         "auto_run_market_rules",
         "auto_refresh_stat_subscriptions",

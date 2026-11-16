@@ -987,6 +987,64 @@
       finally { btn.disabled = false; }
     }
 
+    // Row 94 (field test 2026-11-14): a save that replaced an unreadable settings value
+    // leaves a notice (the server's repair_notice). It is drawn here from field NAMES, never
+    // from server prose, so every word is a locale key x12; the six switch labels match the
+    // server's _ONLINE_OFF_ON_REPLACE. Plain and short: one line per kind of change.
+    const _REPAIR_OFF_LABELS = {
+      continuous: "Continuous collection",
+      auto_track_signals: "Hazard feeds on every pass",
+      auto_track_law: "Watched laws on every pass",
+      auto_import_calendars: "Calendar feeds on every pass",
+      crawl_supplement: "Crawl supplement",
+      auto_refresh_stat_subscriptions: "Subscribed statistics on every pass",
+    };
+    function settingsRepairLines(n) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : String(v[k]))));
+      const reset = (n && n.reset) || [], off = (n && n.written_off) || [];
+      if (!reset.length && !off.length) return [];
+      const lines = [t("Your collection settings could not be read, so your last save rebuilt them.")];
+      const named = ["wiki_lane_editions", "wiki_lane_budget_gb"];
+      if (reset.indexOf("wiki_lane_editions") >= 0) lines.push(t("Wikipedia editions: back to the default (all of them)."));
+      if (reset.indexOf("wiki_lane_budget_gb") >= 0) lines.push(t("Wikipedia storage budget: back to the default."));
+      const offNames = off.filter((k) => _REPAIR_OFF_LABELS[k]).map((k) => t(_REPAIR_OFF_LABELS[k]));
+      if (offNames.length) lines.push(tf("Turned off, so the repair started nothing online: {list}.", {list: offNames.join(", ")}));
+      if (off.indexOf("wiki_lane_state") >= 0) lines.push(t("The Wikipedia lane was paused. Check its editions and budget before you resume it."));
+      const others = reset.filter((k) => named.indexOf(k) < 0 && off.indexOf(k) < 0).length;
+      if (others) lines.push(tf("{n} other settings are back at their defaults.", {n: others}));
+      return lines;
+    }
+    function renderSettingsRepair(c) {
+      const box = $("sch-repaired"), txt = $("sch-repaired-text");
+      if (!box || !txt) return;
+      const lines = settingsRepairLines(c && c.repair_notice);
+      box.hidden = !lines.length;
+      txt.textContent = lines.join(" ");
+    }
+    // Once per repair, per device, wherever the operator is: a clickable toast that opens the
+    // panel holding the full notice. The panel line stays until Dismiss; the toast does not
+    // repeat for the same repair. Storage can be unavailable: then it shows each boot, which
+    // errs toward telling.
+    function noteSettingsRepair(c) {
+      const n = c && c.repair_notice;
+      if (!settingsRepairLines(n).length) return;
+      const key = "oo.settingsRepairSeen", at = String(n.at || "?");
+      try { if (localStorage.getItem(key) === at) return; localStorage.setItem(key, at); } catch (_e) {}
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      toast(t("Your collection settings were rebuilt and some went back to their defaults. Click to see what changed."), "warn",
+        () => { showTab("settings"); _openAdvanced("collect"); });
+    }
+    async function dismissSettingsRepair(btn) {
+      btn.disabled = true;
+      try {
+        renderSettingsRepair(await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({repair_notice: {}})}));
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
+      finally { btn.disabled = false; }
+    }
+
     // Timezone-proof: the backend reports UTC; the browser knows the operator's
     // zone. Show a relative time ("in ~N min") and keep the exact local moment
     // in the tooltip (maintainer ruling 2026-06-10: no naked zone-less clock).
@@ -1129,6 +1187,7 @@
       if ($("sch-auto-law")) $("sch-auto-law").checked = !!c.auto_track_law;
       if ($("sch-auto-signals")) $("sch-auto-signals").checked = !!c.auto_track_signals;
       renderRetiredMode(c);
+      renderSettingsRepair(c);
       $("sch-depth").value = c.crawl_max_depth;
       $("sch-pages").value = c.crawl_max_pages;
       $("sch-autostart").checked = !!c.autostart;
@@ -1183,6 +1242,10 @@
       try {
         const c = await api("/api/scheduler/config");
         _paintRateMode(c.collect_rate_mode || "maximum");
+        // The boot read every install makes: where a settings repair is first told (row 94).
+        if (window.OOI18N && OOI18N.ready && OOI18N.ready.then) {
+          OOI18N.ready.then(() => noteSettingsRepair(c)).catch(() => noteSettingsRepair(c));
+        } else noteSettingsRepair(c);
         if (window.OOI18N && OOI18N.ready && OOI18N.ready.then) {
           OOI18N.ready.then(() => { if (_rateMode) _paintRateMode(_rateMode); }).catch(() => {});
         }
@@ -1195,6 +1258,7 @@
         const c = await api("/api/scheduler/config",
           {method: "PUT", body: JSON.stringify({collect_rate_mode: next})});
         _paintRateMode((c && c.collect_rate_mode) || next);
+        noteSettingsRepair(c);   // this save may be the one that repaired the settings
         // Keep the Settings → Collect speed slider in sync if that panel is live.
         try { if ($("sch-speed") && c) applySchedConfig(c); } catch (_e) {}
         toast(next === "maximum"
