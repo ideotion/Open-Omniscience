@@ -773,6 +773,8 @@ def copy_at_current_settings(src: Path | str, dest: Path | str, *, should_stop=N
         if should_stop is None:
             _export(conn, "rebuilt")
         else:
+            if should_stop():  # a stop already given: the watcher looks only every 0.25 s, and a small copy is done by then
+                raise SnapshotStopped("the copy was stopped")
             with _interrupt_when(conn, should_stop) as fired:
                 try:
                     _export(conn, "rebuilt")
