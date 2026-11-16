@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-16,backup,early passphrase check never reads a volume the restore would refuse,shipped,PR #2057,src/backup/stream_backup.py;tests/test_backup_early_check_symlink.py,"The early wrong-passphrase check (#2022) hashed the first volume before the restore's own checks, so a volume linked out of the chosen folder was read once; it now runs the restore's volume checks first and never follows a link (security read, LOW)."
