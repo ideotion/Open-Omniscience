@@ -1109,6 +1109,27 @@ def collect_blob_members(categories: Iterable[str]) -> list[tuple[MemberFile, di
     return out
 
 
+def collect_lane_members(tmp_dir: Path) -> list[tuple[MemberFile, dict[str, Any]]]:
+    """The living-source stores this build can merge back, snapshotted into ``tmp_dir`` (R729).
+
+    Only ``lane_merge.MERGEABLE_KINDS``: a backup never carries a store its own build could
+    not put back. An absent lane is skipped (absent is not empty). A snapshot that fails --
+    a locked store, a full disk -- fails the run loudly rather than writing a backup that
+    silently lacks what the operator ticked.
+    """
+    from src.backup.lane_merge import MERGEABLE_KINDS, snapshot_lane_for_backup
+    from src.versioned.store import lane_exists
+
+    out: list[tuple[MemberFile, dict[str, Any]]] = []
+    for kind in MERGEABLE_KINDS:
+        if not lane_exists(kind):
+            continue
+        snap = tmp_dir / "lanes" / f"{kind}.db"
+        entry = snapshot_lane_for_backup(kind, snap)
+        out.append((MemberFile(entry["name"], "lane", snap), entry))
+    return out
+
+
 def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
     """Stage every non-corpus member into ``tmp_dir`` (small copies, stable while
     they hash + encrypt). Custody is snapshotted PRESERVING its encryption state —
@@ -1465,6 +1486,7 @@ def write_stream_backup(
     corpus_source: CorpusSource | None = None,
     side_members: list[MemberFile] | None = None,
     include_blobs: Iterable[str] | None = None,
+    include_lanes: bool = False,
 ) -> dict[str, Any]:
     """Build (or incrementally refresh / resume) an oo-volumes-2 set at ``dest_dir``.
 
@@ -1474,7 +1496,11 @@ def write_stream_backup(
 
     ``include_blobs`` (S6.2, default none) names the large public categories to carry
     INSIDE the artifact -- see :func:`collect_blob_members` for why it is opt-in and what
-    it costs. Passing none leaves the output byte-identical to before it existed."""
+    it costs. Passing none leaves the output byte-identical to before it existed.
+
+    ``include_lanes`` (R729, default off) carries the living-source stores this build can
+    also merge back (``lane_merge.MERGEABLE_KINDS``) as ``lanes/<kind>.db`` members, each a
+    consistent snapshot keeping its own encryption -- see :func:`collect_lane_members`."""
     if not passphrase:
         raise VolumeError("the volume backup is always encrypted: a passphrase is required")
     explicit_vsize = volume_size is not None  # an explicit size is honoured; else DB-9 adapts
@@ -1538,6 +1564,11 @@ def write_stream_backup(
             # only so the manifest can carry the placement index the restore needs.
             blob_pairs = collect_blob_members(include_blobs or ())
             blobs = [mf for mf, _ in blob_pairs]
+            # Lanes ride as ordinary side members (sliced, encrypted, parity-covered) and are
+            # snapshotted HERE, before the sizing and the disk preflight that must count them.
+            lane_pairs = collect_lane_members(tmp_dir) if include_lanes else []
+            if lane_pairs:
+                side = [*side, *(mf for mf, _ in lane_pairs)]
             side_sizes = [m.path.stat().st_size for m in side]
             blob_sizes = [m.path.stat().st_size for m in blobs]
             # Blob bytes enter BOTH the adaptive volume sizing and the disk preflight.
@@ -1788,6 +1819,11 @@ def write_stream_backup(
                 )
                 _ms("stage_end", "export:parity")
 
+            if lane_pairs:
+                # R729: which members are living-source stores, and how to open them. Only
+                # when there are some, so a lane-less set's manifest is unchanged. A build that
+                # predates the key stages these members, checks their hashes and ignores them.
+                vman["lane_members"] = [entry for _, entry in lane_pairs]
             # Sign LAST so the signature covers the parity block too, then swap
             # the canonical manifest atomically as the single commit point.
             vman.pop("signature", None)
@@ -2308,6 +2344,8 @@ def read_stream_backup(
             # re-trusting) the volume manifest. The bytes themselves are already in
             # staging AND already checksum-verified by the reassembly loop above.
             staged.file_members = list(m.get("file_members") or [])
+            # R729: the living-source members, merged by the caller once the corpus has.
+            staged.lane_members = [e for e in (m.get("lane_members") or []) if isinstance(e, dict)]
             return staged
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)

@@ -339,6 +339,10 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
                 lines.append(f"- Qualification dates: {span_lo or '—'} .. {span_hi or '—'}.")
             lines.append("")
 
+    living = report.get("living_sources")
+    if isinstance(living, dict) and living.get("lanes"):
+        _living_sources_markdown(lines, living)
+
     work = report.get("work_induced")
     if work:
         lines.append("## Work induced")
@@ -550,6 +554,14 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
             out["run_id"] = run["id"]
         if run.get("label"):
             out["label"] = scrubbed_value(str(run["label"]))  # an older build's report is listed as it is read, so it is checked here
+    # R729: pages the backup's living-source stores made this computer follow, so the
+    # "Last import" line can say it where the outcome is read. Absent when none.
+    living = data.get("living_sources")
+    if isinstance(living, dict):
+        with contextlib.suppress(TypeError, ValueError):
+            followed = int(living.get("newly_followed") or 0)
+            if followed > 0:
+                out["newly_followed"] = followed
     committed = str(data.get("outcome") or "").lower() in _COMMITTED_OUTCOMES
     raw_plan = data.get("plan")
     plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}
@@ -619,3 +631,44 @@ def read_import_report(filename: str) -> dict[str, Any]:
     if p is None or not p.is_file():
         raise FileNotFoundError(filename)
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+_LANE_TITLES = {"wiki": "Wikipedia", "law": "Law", "osm": "Maps (OpenStreetMap)"}
+
+
+def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
+    """R729: what the backup's living-source stores added here, and what they did not."""
+    lines.append("## Living sources")
+    lines.append("")
+    followed = living.get("newly_followed")
+    if followed:
+        lines.append(
+            f"**{_fmt_count(followed)} pages are newly followed on this computer.** The import fetched "
+            "nothing: they join the ordinary schedule, and airplane mode, consent and the lane's own "
+            "switch still decide whether anything is fetched."
+        )
+        lines.append("")
+    for lane in living.get("lanes") or ():
+        if not isinstance(lane, dict):
+            continue
+        title = _LANE_TITLES.get(str(lane.get("kind")), "Unknown store")
+        state = lane.get("state")
+        if state != "merged":
+            lines.append(f"- {title}: not merged ({lane.get('reason') or state}). This store here is unchanged.")
+            continue
+        lines.append(f"- {title}: merged in {lane.get('seconds')} s.")
+        for table, counts in sorted((lane.get("tables") or {}).items()):
+            if isinstance(counts, dict):
+                shown = ", ".join(f"{k.replace('_', ' ')} {_fmt_count(v)}" for k, v in counts.items())
+                lines.append(f"  - {table}: {shown}")
+        dropped = lane.get("warm_texts_dropped")
+        if dropped:
+            lines.append(
+                f"  - {_fmt_count(dropped)} older page texts were not kept: a changed page keeps its latest "
+                "and previous text only, as it does when this computer fetches them."
+            )
+    method = living.get("method")
+    if method:
+        lines.append("")
+        lines.append(f"_{method}_")
+    lines.append("")
