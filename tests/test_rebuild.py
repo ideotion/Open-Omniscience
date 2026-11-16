@@ -657,3 +657,43 @@ def test_the_copy_keeps_its_temporary_data_in_memory(tmp_path, monkeypatch, key_
     monkeypatch.setattr(connect_mod, "_export", export_and_look)
     connect_mod.copy_at_current_settings(live, tmp_path / "copy.db")
     assert seen == ["2"], "temp_store 2 is MEMORY"
+
+
+def test_the_copy_is_keyed_with_the_library_key_bound_not_written_into_the_statement(tmp_path, monkeypatch, key_held):
+    """The ATTACH binds the key (CodeQL py/sql-injection on the old escaped literal): the copy opens with the same key, not
+    with another, and no statement the copy runs carries the key's text."""
+    import sqlcipher3.dbapi2 as sqc
+
+    from src.database import connect as connect_mod
+
+    live = _live(tmp_path, monkeypatch, encrypted=True, articles=20)
+    statements: list[str] = []
+    real_connect = connect_mod.connect
+
+    class _Recording:  # the statement TEXT each call hands SQLite (a trace callback would show the bound values expanded)
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, *args):
+            statements.append(sql)
+            return self._conn.execute(sql, *args)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def traced(*a, **kw):
+        return _Recording(real_connect(*a, **kw))
+
+    monkeypatch.setattr(connect_mod, "connect", traced)
+    copy = tmp_path / "copy.db"
+    connect_mod.copy_at_current_settings(live, copy)
+    monkeypatch.setattr(connect_mod, "connect", real_connect)
+    assert statements and not [s for s in statements if H.KEY in s], "the key's text is never in a statement"
+    assert _settings(copy)["articles"] == 20, "the copy opens with the library's key"
+    other = sqc.connect(str(copy))
+    try:
+        other.execute("PRAGMA key = 'not-the-key'")
+        with pytest.raises(sqc.DatabaseError):
+            other.execute("SELECT count(*) FROM sqlite_master").fetchone()
+    finally:
+        other.close()

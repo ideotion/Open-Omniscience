@@ -752,20 +752,22 @@ def copy_at_current_settings(src: Path | str, dest: Path | str, *, should_stop=N
     encrypted = is_encrypted_file(src_p)
     if encrypted is None:
         raise FileNotFoundError(f"{src_p.name} is missing or empty")
+    attach_args: tuple[str, ...]
     if encrypted:
         key = get_passphrase()
         if not key:
             raise DatabaseLockedError(f"{src_p.name} is encrypted: cannot copy it while locked")
         conn = connect(src_p, check_same_thread=False)
-        attach, size_pragma = f"ATTACH DATABASE ? AS rebuilt KEY '{_sql_literal_escape(key)}'", "cipher_page_size"
+        # the key is BOUND, never in the statement's text (ATTACH takes an expression for KEY)
+        attach, attach_args, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ?", (str(dest_p), key), "cipher_page_size"
     else:
         from sqlcipher3 import dbapi2 as sqc
 
         conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
-        attach, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ''", "page_size"
+        attach, attach_args, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ''", (str(dest_p),), "page_size"
     try:
         conn.execute("PRAGMA temp_store = MEMORY")  # a sorter or temp table spilled to disk would be plaintext, whatever the build
-        conn.execute(attach, (str(dest_p),))
+        conn.execute(attach, attach_args)
         conn.execute(f"PRAGMA rebuilt.{size_pragma} = {int(_FRESH_PAGE_SIZE)}")
         conn.execute(f"PRAGMA rebuilt.auto_vacuum = {int(_FRESH_AUTO_VACUUM)}")
         if should_stop is None:
