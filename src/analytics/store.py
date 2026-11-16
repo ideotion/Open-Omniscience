@@ -2648,16 +2648,29 @@ def reconcile_source_counters(
                 "scoped_to": 0,
             }
 
-    counts = session.query(Article.source_id, func.count(Article.id))
-    current = session.query(Source.id, Source.article_count)
-    if wanted is not None:
-        counts = counts.filter(Article.source_id.in_(wanted))
-        current = current.filter(Source.id.in_(wanted))
-    live: dict[int, int] = {sid: cnt for sid, cnt in counts.group_by(Article.source_id).all()}
+    # The highest article id this count is taken at or above: read BEFORE the count, so an article
+    # added while it runs has a higher id and is picked up by the next catch-up rather than missed.
+    top_id = int(session.query(func.max(Article.id)).scalar() or 0) if wanted is None else None
+    taken_at = datetime.now(UTC)
+    # A scoped run reads in chunks: one IN list of every source a long catch-up names can pass
+    # SQLite's bound-variable limit (32,766), and a raised count would skip the whole repair.
+    chunks: list[list[int] | None] = (
+        [None] if wanted is None else [wanted[i : i + _SOURCE_ID_CHUNK] for i in range(0, len(wanted), _SOURCE_ID_CHUNK)]
+    )
+    live: dict[int, int] = {}
+    pairs: list[tuple[int, int | None]] = []
+    for chunk in chunks:
+        counts = session.query(Article.source_id, func.count(Article.id))
+        current = session.query(Source.id, Source.article_count)
+        if chunk is not None:
+            counts = counts.filter(Article.source_id.in_(chunk))
+            current = current.filter(Source.id.in_(chunk))
+        live.update({sid: cnt for sid, cnt in counts.group_by(Article.source_id).all()})
+        pairs.extend((int(sid), have) for sid, have in current.all())
 
     rows: list[dict] = []
     drift = 0
-    for sid, have in current.all():
+    for sid, have in pairs:
         want = int(live.get(sid, 0))
         if have != want:  # includes NULL -> a first population counts as drift
             drift += 1
@@ -2670,6 +2683,9 @@ def reconcile_source_counters(
         connection_first(session)
         with write_lock():
             session.bulk_update_mappings(Source, rows)
+            if top_id is not None:  # a whole-corpus count covers every article up to here
+                _cursor_set(session, SOURCE_COUNTER_WATERMARK_KEY, top_id)
+                _cursor_set(session, SOURCE_COUNTER_WATERMARK_AT_KEY, int(taken_at.timestamp()))
             session.commit()
 
     return {
@@ -2679,6 +2695,89 @@ def reconcile_source_counters(
         "scope": "scoped" if wanted is not None else "all",
         **({"scoped_to": len(wanted)} if wanted is not None else {}),
     }
+
+
+#: The highest article id every source counter has been recounted over (``derived_meta``).
+SOURCE_COUNTER_WATERMARK_KEY = "source_counter_article_watermark"
+#: When that count was taken (epoch seconds, ``derived_meta``): the second half of the catch-up's range.
+SOURCE_COUNTER_WATERMARK_AT_KEY = "source_counter_article_watermark_at"
+#: How far before the last count the ``created_at`` half of the range reaches back. ``created_at`` is set
+#: in Python before the row commits, so an article stamped just before a count can commit just after it.
+SOURCE_COUNTER_CREATED_MARGIN = 15 * 60
+#: Source ids per IN list in a scoped reconcile (well under SQLite's 32,766 bound variables).
+_SOURCE_ID_CHUNK = 900
+
+
+def catch_up_source_counters(session: Session) -> dict:
+    """Recount ``Source.article_count`` for the sources that gained articles since the last count.
+
+    WHY (field test 2026-11-14, report 5.5, open-on-main row 75): no write path maintains the
+    counter; only :func:`reconcile_source_counters` sets it, and that runs in the scheduler's
+    collector-IDLE window, which a machine that collects continuously almost never gets (the
+    window is yielded with ``collect_pass_owns_lock``). On the field instances it had last run
+    hours before the export, so every source that kept collecting read low, the Wikipedia
+    editions most (their stream adds articles all day). This runs at the end of each collection
+    pass and recounts only the sources that gained an article since the last count: two indexed
+    range scans (article id, created_at), one indexed count per source they name, one short gated
+    write.
+
+    The range has two halves: ids above the watermark, and articles created after the last count
+    (less a margin). The second catches a reused id, since ``articles.id`` has no AUTOINCREMENT and
+    an insert after the newest rows are deleted takes an id at or below the watermark. The first
+    call on a store with no watermark starts from the oldest counter stamp, so it catches up what
+    the idle count missed without recounting every source. A deletion with no insert after it, or
+    an article moved to another source, is left to the whole-corpus reconcile, which still runs in
+    the idle window and resets the watermark. Never raises; counts only.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func
+
+    try:
+        taken_at = datetime.now(UTC)
+        top = int(session.query(func.max(Article.id)).scalar() or 0)
+        mark = _cursor_get(session, SOURCE_COUNTER_WATERMARK_KEY)
+        mark_at = _cursor_get(session, SOURCE_COUNTER_WATERMARK_AT_KEY)
+        margin = timedelta(seconds=SOURCE_COUNTER_CREATED_MARGIN)
+        start = "watermark"
+        if mark <= 0 or mark_at <= 0:
+            oldest = session.query(func.min(Source.counter_reconciled_at)).scalar()
+            if oldest is None:
+                # never counted: the readers count live (a NULL counter), so there is nothing stale yet
+                return {"skipped": "never-reconciled"}
+            since = oldest.replace(tzinfo=None) - margin
+            mark = int(session.query(func.max(Article.id)).filter(Article.created_at <= since).scalar() or 0)
+            start = "oldest-stamp"
+        else:
+            since = datetime.fromtimestamp(mark_at, UTC).replace(tzinfo=None) - margin
+        # Two halves, each an indexed range scan. Ids above the mark catch an import that keeps an old
+        # created_at; created_at after the last count catches a REUSED id (articles.id has no
+        # AUTOINCREMENT, so after the newest rows are deleted the next inserts take ids at or below
+        # the mark, and an id range alone would never see them).
+        by_id = session.query(Article.source_id).filter(Article.id > mark, Article.id <= top)
+        by_time = session.query(Article.source_id).filter(Article.created_at > since, Article.id <= top)
+        touched = sorted(
+            {
+                int(sid)
+                for q in (by_id, by_time)
+                for (sid,) in q.filter(Article.source_id.isnot(None)).distinct()
+            }
+        )
+        if not touched and top == mark:
+            return {"sources": 0, "after_id": mark, "start": start}
+        out = reconcile_source_counters(session, source_ids=touched) if touched else {"sources": 0}
+        from src.database.writer import connection_first, write_lock
+
+        connection_first(session)
+        with write_lock():
+            _cursor_set(session, SOURCE_COUNTER_WATERMARK_KEY, top)
+            _cursor_set(session, SOURCE_COUNTER_WATERMARK_AT_KEY, int(taken_at.timestamp()))
+            session.commit()
+        return {**out, "after_id": mark, "up_to_id": top, "start": start}
+    except Exception as exc:  # noqa: BLE001 - a pass tail must never break; the idle reconcile still runs
+        log_failure(_LOG, "source counter catch-up failed; the idle reconcile still runs", exc, level=logging.WARNING)
+        session.rollback()
+        return {"skipped": "error"}
 
 
 def source_counter_envelope(session: Session, source, *, fresh_within_hours: float = 24.0) -> dict:

@@ -57,6 +57,8 @@ APP_FILES: frozenset[str] = frozenset({
     "calendar_feeds.yml", ".oos-volume",
     # the Field data instance tag (src/paths.INSTANCE_ID_FILE) and the card self-check beside the briefing cache (2026-11-14)
     ".oo-instance-id", "card_quality_selfcheck.jsonl",
+    # R729: which backups still owe this machine a living-source merge (src/backup/lane_merge.py)
+    "lane_merge_pending.json",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.

@@ -1433,7 +1433,10 @@
           + opts + `</select>`;
       return `<div class="conj-lens" style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
         + `<div class="hint" style="margin-top:0"><b>${esc(t("Combine keywords"))}</b> — `
-        + `${esc(t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score."))}</div>`
+        // Explore states "counts only" once for the page, so its lens drops the repeat (row 76);
+        // the dialog ("cd") opens from Living sources and a place card, with no such line above.
+        + `${esc(pfx === "cd" ? t("set algebra over N keywords. The set expression is the corpus label; counts only, never a score.")
+          : t("set algebra over N keywords. The set expression is the corpus label."))}</div>`
         + `<div style="margin-top:6px"><label class="muted" style="font-size:12px">${esc(t("Read in"))}</label> ${scopeCtl}</div>`
         + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
         + `<input id="${pfx}-conj-terms" placeholder="${esc(t("keyword, keyword, keyword…"))}" style="flex:1;min-width:180px" `

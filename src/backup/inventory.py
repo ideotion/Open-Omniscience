@@ -84,23 +84,22 @@ def _lane_member() -> dict:
     categories. A future slice that wires the export reads that field rather than
     guessing from the presence of ``categories``.
 
-    ``exportable`` is False until S04-04 owns the format, and the reason travels WITH
-    the flag: a disabled row with no explanation reads as a bug.
-
-    THAT LAST SENTENCE USED TO CONTINUE "no shipped path creates a lane file in this
-    slice, so an operator cannot yet have lane data for a dialog to omit", AND S04-09
-    MADE IT FALSE. The Wikipedia lane now collects, so an operator can have gigabytes
-    here; the SIZE below is measured from their real file and is what Q721 = a asks to
-    be shown, and ``exportable`` stays False because the FORMAT is still S04-04's. The
-    difference matters: a row saying "0" would understate what is at stake, and a row
-    saying "exportable" would promise a restore nothing can perform. Corrected rather
-    than left, because a docstring whose premise expired is how a later reader comes to
-    trust a claim nobody rechecked.
+    THE FORMAT EXISTS NOW (R729, 2026-11-16): ``src/backup/lane_merge.py``. A lane rides as a
+    ``lanes/<kind>.db`` member of the encrypted volume set (snapshotted with its own
+    encryption kept) and is merged back additively on import. ``exportable`` is True as
+    soon as a lane this build can merge back exists; a present lane it cannot carry yet is
+    listed in ``waiting`` with its real size, and when ONLY such lanes exist the row stays
+    disabled with the reason beside it (a disabled row with no explanation reads as a bug).
     """
+    from src.backup.lane_merge import MERGEABLE_KINDS
     from src.versioned.lanes import all_lanes
     from src.versioned.store import lane_file_bytes
 
+    # R729: a lane rides only when this build can also merge it back, so the row counts
+    # exactly what the export would write; a present lane this build cannot carry yet is
+    # named in ``waiting`` with its size, never silently left out of the picture.
     breakdown: dict[str, dict] = {}
+    waiting: dict[str, dict] = {}
     for spec in all_lanes():
         size = lane_file_bytes(spec.kind)
         # ``None`` means ABSENT, which is not zero: a lane that does not exist is not a
@@ -108,18 +107,38 @@ def _lane_member() -> dict:
         # for a store they have never opened.
         if size is None:
             continue
-        breakdown[spec.kind] = {"count": 1, "bytes": int(size)}
-    return {
+        target = breakdown if spec.kind in MERGEABLE_KINDS else waiting
+        target[spec.kind] = {"count": 1, "bytes": int(size)}
+    out = {
         "key": "lanes",
         "label": "Living sources",
         "categories": [],
+        # Lanes always ride INSIDE the encrypted artifact (a live database is never byte-
+        # copied beside it), so the row needs the corpus and ignores "carry them inside".
         "via": "snapshot",
-        "exportable": False,
-        "not_exportable_reason": "a lane is a live encrypted database; its backup format is not settled yet",
+        "needs_corpus": True,
+        "exportable": True,
         "count": sum(int(p["count"]) for p in breakdown.values()),
         "bytes": sum(int(p["bytes"]) for p in breakdown.values()),
         "breakdown": breakdown,
+        "waiting": waiting,
     }
+    if not breakdown:
+        out["exportable"] = False
+        out["not_exportable_reason"] = LANES_WAITING if waiting else LANES_ABSENT
+    else:
+        out["note"] = LANES_NOTE
+    return out
+
+
+#: The three sentences the Living sources row can show, each a key in all 12 locale files
+#: (the dialog looks them up with t(); tests/test_backup_inventory.py is their gate).
+LANES_ABSENT = "No living-source store on this computer yet."
+LANES_WAITING = "This version backs up the Wikipedia store; the law and maps stores follow in a later version."
+LANES_NOTE = (
+    "Living sources always travel inside the encrypted backup, so they need the corpus ticked. "
+    "This version carries the Wikipedia store; law and maps follow later."
+)
 
 
 def _members(blobs: dict[str, dict]) -> list[dict]:

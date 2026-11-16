@@ -247,7 +247,7 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
             if hist.get("recording_began_at")
             else "wal_bytes has never been recorded on this install"
         )
-        return out
+        return _with_reading_now(out, window)
 
     start = _parse_ts(window.get("started_at"))
     if not window.get("measured") or start is None:
@@ -281,7 +281,7 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
             "no snapshot has been recorded since this process started; the "
             "series above is earlier history and describes other sessions"
         )
-        return out
+        return _with_reading_now(out, window)
     values = []
     for point in inside:
         try:
@@ -307,6 +307,37 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
         "the window boundary is widened to the top of the hour this process started "
         f"in ({edge.isoformat()}), because the series is bucketed hourly; the first "
         "point may therefore include readings from up to 59 minutes before the start"
+    )
+    return out
+
+
+def _with_reading_now(out: dict[str, Any], window: dict[str, Any]) -> dict[str, Any]:
+    """When the hourly series has no point in this process's window, take ONE reading of the log now.
+
+    The series is at most hourly and the snapshot runs in idle maintenance, so a build taken in the
+    first hour of uptime found nothing (5 of 6 field bundles on 2026-11-14, row 74). A reading taken
+    now is inside the window; it is reported as that, one reading, a floor under the window's true
+    maximum rather than the maximum, and the series' own reason stays beside it."""
+    if not window.get("measured"):
+        return out
+    try:
+        from src.database.snapshots import wal_bytes
+
+        now_bytes = wal_bytes()
+    except Exception:  # noqa: BLE001 - a diagnostic read degrades, never raises
+        now_bytes = None
+    if now_bytes is None:
+        return out
+    out["series_reason"] = out.pop("reason", None)
+    out["measured"] = True
+    out["basis"] = "one reading taken now"
+    out["points_in_window"] = 1
+    out["hours_in_window"] = window.get("hours")
+    out["max_bytes"] = now_bytes
+    out["min_bytes"] = now_bytes
+    out["reading_now_note"] = (
+        "the hourly series has no point in this window yet, so this is one reading of the write-ahead log "
+        "taken now: the window's maximum was at least this, and may have been higher between readings"
     )
     return out
 
@@ -524,6 +555,10 @@ def _wiki_lane(bar_hours: float) -> dict[str, Any]:
     # row count.
     out["measured"] = True
     out["service"] = _wiki_service()
+    # Beside the gap history too, where a reader of "no gap" looks (row 73): a held-off
+    # lane says so there instead of reading as a lane that missed nothing.
+    if isinstance(out.get("gaps"), dict) and isinstance(out["service"], dict):
+        out["gaps"]["lane_not_running"] = out["service"].get("not_running")
     return out
 
 
@@ -551,10 +586,68 @@ def _wiki_service() -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - an unreadable setting is absent, not guessed
             status["state"] = None
         status["online"] = not kill_switch_active()
+        status["not_running"] = _not_running(status["state"])
         return status
     except Exception as exc:  # noqa: BLE001 - the service state is a reading, not the block's work
         log_failure(_LOG, "wiki lane service state unreadable", exc, level=logging.DEBUG)
         return {"measured": False, "reason": f"unreadable: {type(exc).__name__}"}
+
+
+def _not_running(state: str | None, *, now: datetime | None = None) -> dict[str, Any] | None:
+    """The stretch the operator's setting has held the lane off, or ``None`` while it runs.
+
+    FIELD TEST 2026-11-14, ROW 73: a lane halted for days read as "0 rows a day, no gap",
+    the same as a lane with nothing to do. A halt is NOT written as a ``versioned_gaps``
+    row, because it is not yet a hole in the change log: a resume continues from the stored
+    cursor, and if the source no longer holds that stretch the stream records a
+    ``retention`` gap then, with the real bounds. What it is, is a named stretch in which
+    the lane was held off on purpose, and this is where it is published, with WHEN and
+    through which door when the app recorded it, and a plain "not recorded" when it did not.
+    """
+    if state in (None, "running"):
+        return None
+    from src.wiki.lane_state_record import last_change as wiki_lane_state_change
+
+    at = now or datetime.now(UTC)
+    change = wiki_lane_state_change()
+    out: dict[str, Any] = {
+        "state": state,
+        "basis": "the operator's setting, and the app's record of when it last changed",
+        "caveat": (
+            "Not a gap in the change log yet: a resume continues from the stored position, and "
+            "if the source no longer holds that stretch the lane records a retention gap then. "
+            "Until then, nothing in this stretch was asked for. The start is the app's record of the "
+            "last settings save that set this state; a state restored from a backup is not recorded "
+            "on its own and may be dated by an earlier record of the same state."
+        ),
+    }
+    since = None
+    if change and change.get("state") == state:
+        try:
+            since = datetime.fromisoformat(str(change.get("at")))
+        except ValueError:
+            since = None
+    if since is None or change is None:
+        out.update(
+            since=None,
+            hours=None,
+            by=None,
+            reason=(
+                "the app did not record when this state began (it was set before this record "
+                "existed, or the record is unreadable); the run clock's idle_now says when the "
+                "lane last showed life"
+            ),
+        )
+        return out
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)
+    out.update(
+        since=since.isoformat(),
+        hours=round(max(0.0, (at - since).total_seconds()) / 3600.0, 1),
+        by=change.get("by"),
+        previous=change.get("from"),
+    )
+    return out
 
 
 def _block(name: str, fn: Any) -> dict[str, Any]:

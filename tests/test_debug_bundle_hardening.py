@@ -22,7 +22,7 @@ from tests.wallclock_helpers import HANG_GUARD_S
 
 _SECTIONS = (
     "runtime", "corpus", "scheduler", "network", "imports", "calendar_imports",
-    "law_documents", "wiki_pages", "collect_perf", "field_test", "errors", "error_log",
+    "law_documents", "wiki_pages", "collect_perf", "field_test", "errors", "error_log", "errors_older",
     "request_latency", "slow_queries", "schema_drift", "corpus_integrity",
     "session_forensics", "storage_composition", "keyword_write_cost", "p0_validation", "method",
 )

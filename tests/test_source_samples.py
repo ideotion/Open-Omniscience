@@ -54,7 +54,10 @@ def test_one_article_per_source_and_a_manifest_row_for_an_empty_source(db):
     man = json.loads(z.read("manifest.json"))
     assert (nxt, covered, total) == (None, 2, 2)
     assert [r["source_id"] for r in man["sources"]] == [1]
-    assert man["sources_without_article"]["rows"] == [[2, "s2.example"]]
+    # field report 2026-11-14 5.4: ids above the shipped catalogue differ across instances, so each row carries the join key
+    assert man["sources_without_article"]["rows"] == [[2, "s2.example", ""]]
+    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key"]
+    assert man["sources"][0]["domain"] == "s1.example" and man["sources"][0]["feed_key"] == ""
     assert man["sources_in_this_zip"] == 2
     from src.paths import instance_tag
 
@@ -166,9 +169,8 @@ def test_a_newsletter_body_stays_home_unless_the_operator_switch_is_on(db, monke
 
 
 def test_the_route_passes_the_switch_to_the_builder():
-    import inspect as _inspect
-
     import importlib
+    import inspect as _inspect
 
     mod = importlib.import_module("src.api.diagnostics.source_samples")
 
@@ -193,3 +195,18 @@ def test_one_huge_article_cannot_push_its_part_past_the_cap(db):
     assert len(data) <= SAMPLE_ZIP_MAX_BYTES, len(data)
     man = json.loads(_open(data).read("manifest.json"))
     assert (nxt, covered) == (None, 1) and man["sources"][0]["text_truncated"] is True
+
+
+def test_a_source_without_an_article_writes_its_kept_key_masked(db):
+    """Row 75's join key on the compact rows: a key kept from before R628 can hold a login, written as the samples write it."""
+    from sqlalchemy import text
+
+    db.add(Source(id=1, name="S1", domain="news.example"))
+    db.commit()
+    # written round the ORM, as a build before R628 left it (the ORM derives a fresh key without the login)
+    db.execute(text("UPDATE sources SET feed_key = :k WHERE id = 1"), {"k": "f:alice:hunter2@news.example/rss"})
+    db.commit()
+    data = build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]
+    assert b"hunter2" not in _open(data).read("manifest.json")
+    man = json.loads(_open(data).read("manifest.json"))
+    assert man["sources_without_article"]["rows"] == [[1, "news.example", "f:***@news.example/rss"]]
