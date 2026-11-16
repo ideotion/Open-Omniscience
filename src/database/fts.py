@@ -1248,17 +1248,22 @@ def optimize_after_bulk(session: Session, *, should_stop: Callable[[], bool] | N
     """Tuning pass after a BULK write (a whole-corpus re-index or a large article
     import) — keyword-engine Phase 1.4. Two cheap, gated, SQLite-only steps:
 
-    * FTS5 ``'optimize'`` — merge the external-content FTS index segments that a bulk
-      article load churns into many small b-trees, for faster MATCH queries. DISTINCT
-      from ``PRAGMA optimize``; a near no-op when the index is already merged (e.g.
-      after a keyword-only re-index that never touched ``articles``).
+    * FTS5 incremental ``'merge'`` in bounded steps (:func:`merge_fts_segments`) — merge
+      the external-content FTS index segments that a bulk article load churns into many
+      small b-trees, for faster MATCH queries, giving the writer gate back between steps.
+      It ends with a few segments per level (SQLite's automerge state), not the single
+      segment a full FTS5 ``'optimize'`` would leave. DISTINCT from ``PRAGMA optimize``;
+      a near no-op when nothing is left to merge (e.g. after a keyword-only re-index that
+      never touched ``articles``).
     * ``PRAGMA optimize`` (bounded by ``analysis_limit``) — refresh the query planner's
       statistics after a big ``keyword_mentions`` / ``keywords`` churn so the next
       trending / top / associations queries pick good indexes.
 
     Both are writes (the FTS merge writes the index; ``PRAGMA optimize`` may run ANALYZE),
     so they take the single-writer gate. Best-effort: a tuning failure (incl. a missing
-    FTS table) never breaks the caller. Returns a ``{"fts", "planner"}`` bool tally.
+    FTS table) never breaks the caller. Returns a ``{"fts", "planner"}`` bool tally;
+    ``"fts"`` is True when the merge found nothing left to merge, False when the budget,
+    a stop or a failure ended it first.
 
     (The in-memory READ lever is ``cache_size`` — env ``OO_SQLITE_CACHE_MB``, default
     64 MiB, set per connection in ``session.py``; mmap is unavailable under the SQLCipher
@@ -1272,11 +1277,11 @@ def optimize_after_bulk(session: Session, *, should_stop: Callable[[], bool] | N
 
     try:
         # Bounded and stoppable steps rather than one 'optimize' that held the gate for half an hour on a large index
-        # (merge_fts_segments). "fts" stays what it was: whether the index ended up fully merged.
+        # (merge_fts_segments). "fts" says whether the merge finished: nothing left to merge, a few segments per level.
         out["fts"] = merge_fts_segments(session, budget_s=_fts_merge_budget_s(), should_stop=should_stop)
     except Exception as exc:  # noqa: BLE001 - a tuning step must never break the caller
         session.rollback()
-        log_failure(_LOG, "FTS5 optimize failed", exc, level=logging.WARNING)
+        log_failure(_LOG, "FTS5 merge failed", exc, level=logging.WARNING)
     try:
         from src.config.power_profiles import fts_analysis_limit
 

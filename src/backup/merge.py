@@ -8864,6 +8864,37 @@ def reindex_hold_target_s() -> float:
     return REINDEX_HOLD_TARGET_S
 
 
+#: R724 (2026-11-15): the hold target for the backlog drain's batches WHILE THE COLLECTOR IS RUNNING. Until then a drain that
+#: shared the machine committed one article at a time (R21), which the field's live re-index rate measured as the slowest part of
+#: a multi-day run; it now takes the import's wide width, bounded by this target, and the collector still wins the gate the way
+#: every writer does: once it is queued, the batch ends after :data:`REINDEX_QUEUED_WRITER_MIN_HOLD_S`. Two seconds, so a batch
+#: that nobody queues behind still gives the gate back often. ``OO_REINDEX_COLLECTING_HOLD_TARGET_S`` overrides; 0 is the old
+#: one-article-per-commit rule while collecting.
+REINDEX_COLLECTING_HOLD_TARGET_S = 2.0
+
+
+def reindex_collecting_hold_target_s() -> float:
+    """The drain's hold target while the collector runs (R724): ``OO_REINDEX_COLLECTING_HOLD_TARGET_S`` or
+    :data:`REINDEX_COLLECTING_HOLD_TARGET_S`, never above :func:`reindex_hold_target_s`, and 0 whenever that one is 0.
+
+    0 means the wide batch is not used while collecting. The general target being 0 is the operator saying "count-only", and a
+    wide count-only batch with the collector waiting is the 36 s hold the target exists to prevent, so it switches this off too.
+    An unreadable override falls back to the default, for :func:`reindex_hold_target_s`'s reason."""
+    general = reindex_hold_target_s()
+    if general <= 0:
+        return 0.0
+    value = REINDEX_COLLECTING_HOLD_TARGET_S
+    raw = os.getenv("OO_REINDEX_COLLECTING_HOLD_TARGET_S", "").strip()
+    if raw:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            parsed = REINDEX_COLLECTING_HOLD_TARGET_S
+        if math.isfinite(parsed) and parsed >= 0:
+            value = parsed if parsed > 0 else 0.0
+    return min(value, general)
+
+
 def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float], bool] | None:
     """The drain's early-commit policy for :func:`~src.analytics.store.reindex_articles`' ``should_flush``.
 

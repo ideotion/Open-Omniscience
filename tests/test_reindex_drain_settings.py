@@ -138,6 +138,11 @@ def drain(monkeypatch):
     monkeypatch.setattr("src.backup.merge.reindex_backlog", _backlog)
     monkeypatch.setattr("src.backup.merge.reindex_imported_articles", _reindex)
     monkeypatch.setattr("src.backup.merge.import_reindex_commit_batch", lambda: 200)
+    # The knobs the tests read in their defaults, whatever the runner's environment says.
+    for _var in ("OO_REINDEX_WORKERS", "OO_REINDEX_HOLD_TARGET_S", "OO_REINDEX_COLLECTING_HOLD_TARGET_S"):
+        monkeypatch.delenv(_var, raising=False)
+    # A fixed core count, so a test reads the same on a 2-core runner and a 64-core box.
+    monkeypatch.setattr("src.analytics.reindex_parallel.all_cores_worker_count", lambda: 8)
     monkeypatch.setattr(
         "src.backup.merge.default_reindex_commit_batch",
         lambda: int(state["env_commit_batch"]),
@@ -192,16 +197,52 @@ def test_an_idle_collector_gets_the_imports_wide_commit_batch(drain):
     assert [b["exclusive_settings"] for b in out["batches"]] == [True, True]
 
 
-def test_a_live_collector_keeps_the_conservative_default(drain):
-    """``OO_REINDEX_COMMIT_BATCH``, whose default is 1 -- the right answer while a
-    scrape needs the writer gate back between articles."""
+def test_a_live_collector_gets_the_wide_width_under_the_short_hold_target(drain, monkeypatch):
+    """R724 (amending R21 for this drain): a running collector no longer means one commit per
+    article. The batch takes the import's width, bounded by the 2 s collecting target, and the
+    collector still wins the gate the way every queued writer does, after 1 s."""
     state, rec = drain
     state["scheduler_running"] = True
+    monkeypatch.delenv("OO_REINDEX_HOLD_TARGET_S", raising=False)
+    monkeypatch.delenv("OO_REINDEX_COLLECTING_HOLD_TARGET_S", raising=False)
+    waiters = {"n": 0}
+    monkeypatch.setattr("src.database.writer.write_gate_waiters", lambda: waiters["n"])
 
-    out = bv2._reindex_resume_worker(_Ctx())
+    ctx = _Ctx()
+    out = bv2._reindex_resume_worker(ctx)
+
+    assert [c["commit_batch"] for c in rec["calls"]] == [200, 200]
+    assert [b["exclusive_settings"] for b in out["batches"]] == [False, False]
+    assert ctx.metrics["hold_target_seen"] == [2.0]
+    policy = rec["calls"][0]["extra"]["should_flush"]
+    assert policy(3, 1.9) is False and policy(3, 2.0) is True, "the collecting target, two seconds"
+    waiters["n"] = 1
+    assert policy(3, 0.9) is False and policy(3, 1.0) is True, "a queued writer still ends it after 1 s"
+
+
+def test_a_collecting_target_of_zero_is_the_old_one_article_rule(drain, monkeypatch):
+    state, rec = drain
+    state["scheduler_running"] = True
+    monkeypatch.setenv("OO_REINDEX_COLLECTING_HOLD_TARGET_S", "0")
+
+    bv2._reindex_resume_worker(_Ctx())
 
     assert [c["commit_batch"] for c in rec["calls"]] == [1, 1]
-    assert [b["exclusive_settings"] for b in out["batches"]] == [False, False]
+    assert [c["extra"]["should_flush"] for c in rec["calls"]] == [None, None]
+
+
+def test_the_collecting_target_never_exceeds_the_general_one(monkeypatch):
+    from src.backup import merge as M
+
+    monkeypatch.setenv("OO_REINDEX_HOLD_TARGET_S", "1.5")
+    monkeypatch.setenv("OO_REINDEX_COLLECTING_HOLD_TARGET_S", "5")
+    assert M.reindex_collecting_hold_target_s() == 1.5
+    monkeypatch.setenv("OO_REINDEX_HOLD_TARGET_S", "0")
+    assert M.reindex_collecting_hold_target_s() == 0.0, "count-only in general is count-only while collecting"
+    monkeypatch.delenv("OO_REINDEX_HOLD_TARGET_S")
+    for raw, want in (("", 2.0), ("junk", 2.0), ("-1", 2.0), ("nan", 2.0), ("0.5", 0.5), ("-0", 0.0)):
+        monkeypatch.setenv("OO_REINDEX_COLLECTING_HOLD_TARGET_S", raw)
+        assert M.reindex_collecting_hold_target_s() == want, raw
 
 
 def test_the_reported_width_is_the_env_var_not_an_assumed_default(drain):
@@ -240,8 +281,10 @@ def test_the_settings_are_re_read_per_batch(drain, monkeypatch):
     who goes online mid-run gets the conservative default from the next batch."""
     state, rec = drain
     _goes_online_after_the_first_read(monkeypatch)
-    bv2._reindex_resume_worker(_Ctx())
-    assert [c["commit_batch"] for c in rec["calls"]] == [200, 1]
+    ctx = _Ctx()
+    bv2._reindex_resume_worker(ctx)
+    assert [c["extra"]["workers"] for c in rec["calls"]] == [8, None]
+    assert ctx.metrics["hold_target_seen"] == [2.0, 10.0]
 
 
 def test_an_unreadable_scheduler_is_never_idle(drain, monkeypatch):
@@ -253,25 +296,30 @@ def test_an_unreadable_scheduler_is_never_idle(drain, monkeypatch):
         raise RuntimeError("no scheduler here")
 
     monkeypatch.setattr("src.scheduler.runner.get_scheduler", _boom)
-    bv2._reindex_resume_worker(_Ctx())
-    assert [c["commit_batch"] for c in rec["calls"]] == [1, 1]
+    out = bv2._reindex_resume_worker(_Ctx())
+    assert [b["exclusive_settings"] for b in out["batches"]] == [False, False]
+    assert [c["extra"]["workers"] for c in rec["calls"]] == [None, None]
 
 
-def test_workers_are_left_alone(drain):
-    """Audit §9.1 step 3. This machine is write-bound; more precompute cores would only
-    fill the apply queue faster, and the worker count is what the A/B still must
-    measure. Passing it would silently settle an open question."""
+def test_an_idle_collector_gets_every_core_and_a_live_one_the_default(drain, monkeypatch):
+    """R723 (amending R21 for this drain): the worker count was left alone while it was an open
+    A/B question; the field's live re-index rate answered it. Idle gets every core, as the
+    restore's own re-index does when it owns the machine; a running collector gets the default
+    (``None``). The count that RAN is published, resolved through ``OO_REINDEX_WORKERS`` first."""
     state, rec = drain
-    bv2._reindex_resume_worker(_Ctx())
-    assert all("workers" not in c["extra"] for c in rec["calls"]), (
-        "the worker count is what the A/B still has to measure; passing it settles it"
-    )
-    # The knob set is pinned too, so a future knob has to be added HERE deliberately
-    # rather than arriving unnoticed -- which is what the original `extra == {}` was
-    # really guarding, before R22 gave this call site its first legitimate extra.
+    state["scheduler_running"] = [False, True]
+    monkeypatch.delenv("OO_REINDEX_WORKERS", raising=False)
+
+    ctx = _Ctx()
+    bv2._reindex_resume_worker(ctx)
+
+    assert [c["extra"]["workers"] for c in rec["calls"]] == [8, None]
+    from src.analytics.reindex_parallel import worker_count
+
+    assert ctx.metrics["workers_seen"] == sorted({8, worker_count(None)})
     assert [set(c["extra"]) for c in rec["calls"]] == [
-        {"defer_counters", "should_flush"},
-        {"defer_counters", "should_flush"},
+        {"defer_counters", "should_flush", "workers"},
+        {"defer_counters", "should_flush", "workers"},
     ]
 
 
@@ -307,7 +355,10 @@ def test_the_split_names_which_settings_produced_the_seconds(drain, monkeypatch)
 
     assert ctx.metrics["exclusive_articles"] == 2
     assert ctx.metrics["shared_articles"] == 2
-    assert ctx.metrics["commit_batch_seen"] == [1, 200]
+    # Since R724 both regimes share the width; what separates them is the hold target and the workers.
+    assert ctx.metrics["commit_batch_seen"] == [200]
+    assert ctx.metrics["hold_target_seen"] == [2.0, 10.0]
+    assert ctx.metrics["workers_seen"][-1] == 8
 
 
 def test_the_rate_is_computed_from_the_accumulated_totals(drain):
@@ -716,7 +767,7 @@ def test_every_batch_gets_the_early_commit_policy_shared_or_exclusive(drain, mon
 
     bv2._reindex_resume_worker(_Ctx())
 
-    assert [c["commit_batch"] for c in rec["calls"]] == [200, 1], "one exclusive batch, one shared"
+    assert [c["commit_batch"] for c in rec["calls"]] == [200, 200], "one exclusive batch, one shared (R724)"
     policies = [c["extra"]["should_flush"] for c in rec["calls"]]
     assert all(callable(p) for p in policies), "both batches are handed the policy, the width alone is not enough"
     assert policies[0](3, 10.0) is True and policies[0](3, 9.0) is False, "the default target, ten seconds"
