@@ -132,6 +132,22 @@ def test_the_junk_screen_judges_a_compressed_body(Session):
         assert s.get(Article, prose).quarantined is not True
 
 
+def test_an_unreadable_blob_does_not_fail_the_screens_batch(Session):
+    """A blob this install cannot decompress (a codec not installed here, or a corrupt one) is screened
+    by URL as before R726 and counted; the rest of its batch is still judged."""
+    from src.analytics.quarantine_job import default_quarantine_candidates_batch
+
+    with Session() as s:
+        bad = _add(s, 1, _BODY, compressed=True)
+        s.get(Article, bad).compressed_content = b"\xffnot-a-known-codec"
+        soup = _add(s, 2, _NAV_SOUP, compressed=True, url="https://s.test/all-about/newsletter-preference-centre")
+        s.commit()
+        r = default_quarantine_candidates_batch(s, article_ids=[bad, soup], write=True)
+        assert r["scanned"] == 2 and r["undecodable"] == 1
+        assert r["quarantined_ids"] == [soup]
+        assert s.get(Article, bad).quarantined is not True
+
+
 def test_the_junk_screen_still_reads_the_source_on_the_host_path(Session):
     """The added column shifts the row layout; the host-mismatch reading must still find the source id."""
     from src.analytics.quarantine_job import default_quarantine_candidates_batch

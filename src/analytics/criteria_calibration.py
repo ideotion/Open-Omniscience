@@ -261,8 +261,12 @@ def calibration_report(
             if a is None:
                 continue  # vanished since the scan (a concurrent delete/prune) -- never invent it
             lang = a.language or a.detected_language
-            density, best_lang = function_word_density(a.content or "", language=lang)
-            punct = sentence_punct_density(a.content or "")
+            try:
+                text = a.get_content()  # R726: the screen read a compressed article's decompressed text; measure that
+            except Exception:  # noqa: BLE001 -- a blob this install cannot read: the screen used the empty column too
+                text = a.content or ""
+            density, best_lang = function_word_density(text, language=lang)
+            punct = sentence_punct_density(text)
             source_name = source_names.get(a.source_id) or f"source #{a.source_id}"
             articles.append({
                 "id": a.id,

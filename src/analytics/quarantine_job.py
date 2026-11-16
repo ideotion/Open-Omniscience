@@ -163,7 +163,7 @@ def default_quarantine_candidates_batch(
         classify_non_article,
     )
     from src.services.prose_gate import prose_gate_verdict
-    from src.utils.compression import database_compressor
+    from src.utils.compression import CompressionError, database_compressor
 
     criteria_version = criteria_version or CRITERIA_VERSION
 
@@ -176,10 +176,11 @@ def default_quarantine_candidates_batch(
     source_domains: dict[int, str | None] = {}  # source id -> domain, read once per batch
     already_quarantined = 0
     scanned = 0
+    undecodable = 0  # compressed blobs this install could not read (R726): screened by URL and host only
     last_id = after_id
 
     def _classify_rows(rows) -> None:
-        nonlocal scanned, already_quarantined, last_id
+        nonlocal scanned, already_quarantined, last_id, undecodable
         if include_host_mismatch:
             rows = list(rows)
             # ONE query per batch for the sources it names (a source id with no row reads as unknown).
@@ -206,7 +207,13 @@ def default_quarantine_candidates_batch(
                 # R726: an article kept compressed leaves ``content`` empty, so until now the text signals measured
                 # nothing and always kept it -- the screening never looked at one. Read it as Article.get_content does
                 # (only when a text signal will look at it: the URL rules never do).
-                content = database_compressor.decompress_text_from_storage(compressed)
+                try:
+                    content = database_compressor.decompress_text_from_storage(compressed)
+                except (CompressionError, UnicodeDecodeError, ValueError):
+                    # A blob this install cannot read (a codec not installed here, or a corrupt one) must not fail the
+                    # whole batch: its URL and host verdicts never needed the text. Screen it as before R726 (the empty
+                    # column) and count it, so the report says how many were not text-screened.
+                    undecodable += 1
             last_id = max(last_id, int(aid))
             if include_host_mismatch:
                 host = check_host(url, source_domains.get(rest[0]))
@@ -340,6 +347,7 @@ def default_quarantine_candidates_batch(
         "write": write,
         "read_s": round(read_s, 3),
         "classify_s": round(classify_s, 3),
+        "undecodable": undecodable,
     } | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
         {"host_mismatch": host_counts} if include_host_mismatch else {}
     )
@@ -560,6 +568,8 @@ class QuarantineJobManager:
                         for key, cnt in (r.get("host_mismatch") or {}).items():
                             self._tally[f"host:{key}"] = self._tally.get(f"host:{key}", 0) + int(cnt)
                         self._samples = merge_samples(self._samples, r.get("ids_by_reason") or {})
+                        if r.get("undecodable"):
+                            self._tally["undecodable"] = self._tally.get("undecodable", 0) + int(r["undecodable"])
                         self._done += int(r.get("scanned", 0))
                         self._cursor = after
                         self._save()
