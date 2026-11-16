@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, Source
+from src.database.source_names import shown_source_name
 from src.utils.url_utils import fetched_host_fields
 
 _SQL_IN_CHUNK = 900  # stay under the SQLite bound-variable limit
@@ -122,7 +123,7 @@ def latest_articles(
         Source.id, Source.name, Source.domain, Source.source_type, Source.tags
     ):
         srcinfo[sid] = {
-            "name": name,
+            "name": shown_source_name(name, domain),
             "domain": domain,
             "source_type": (stype or "news"),
             "tags": _split_tags(tags),
