@@ -111,6 +111,7 @@ from src.safety.crypto import (
     encrypt_stream_to_hashed,
     stream_key_opens,
 )
+from src.utils.interrupts import kept
 
 _LOG = logging.getLogger("backup.stream")
 
@@ -2345,7 +2346,8 @@ def read_stream_backup(
             # staging AND already checksum-verified by the reassembly loop above.
             staged.file_members = list(m.get("file_members") or [])
             # R729: the living-source members, merged by the caller once the corpus has.
-            staged.lane_members = [e for e in (m.get("lane_members") or []) if isinstance(e, dict)]
+            # kept(): a filtered comprehension in a frame of its own (src/utils/interrupts.py).
+            staged.lane_members = kept(m.get("lane_members") or [], lambda e: isinstance(e, dict))
             return staged
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
