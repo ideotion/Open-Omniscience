@@ -1131,19 +1131,22 @@ class ImportQueueManager:
         group = self._release_group()
         if group is None:
             return
-        # The corpus of every held item is live now, so their living sources merge now,
-        # before the group's directory (which holds their members) goes.
+        landed: list[dict] = []
+        if group.item_ids:
+            with self._lock:
+                for it in self._items:
+                    if it.get("id") in group.item_ids and it.get("state") == "staged":
+                        it["state"] = "done"
+                        landed.append(it)
+                self._save()
+        # The corpus of every held item is live AND recorded as done now, so their living
+        # sources merge now: after the save, so a kill during a long lane merge never leaves
+        # a live corpus labelled "staged" (and later "discarded"); before the group's
+        # directory, which holds their members, goes. A kill here leaves the lanes owed.
         self._merge_held_lanes(group)
         shutil.rmtree(group.dir, ignore_errors=True)
-        if not group.item_ids:
+        if not landed:
             return
-        landed: list[dict] = []
-        with self._lock:
-            for it in self._items:
-                if it.get("id") in group.item_ids and it.get("state") == "staged":
-                    it["state"] = "done"
-                    landed.append(it)
-            self._save()
         # AFTER the states above are recorded, never before: the report is a record of
         # what happened, and a report that cannot be written must not be able to change
         # what the run says it imported.
@@ -1156,7 +1159,11 @@ class ImportQueueManager:
         if not group.held_lanes:
             return
         try:
-            from src.backup.lane_merge import merge_staged_lanes, record_lane_outcome
+            from src.backup.lane_merge import (
+                mark_lanes_owed,
+                merge_staged_lanes,
+                record_lane_outcome,
+            )
             from src.database.connect import get_passphrase
         except Exception as exc:  # noqa: BLE001 - the commit stands whatever the lanes do
             _LOG.warning("could not merge the held living sources (%s)", type(exc).__name__)
@@ -1168,6 +1175,9 @@ class ImportQueueManager:
                 continue
             try:
                 backup_key, corpus_key = self._keys_for(item)
+                # Counts an attempt, as the non-held path does, so a held lane that keeps
+                # failing at commit runs out of attempts like any other.
+                mark_lanes_owed(held.get("digest"), held.get("members") or [])
                 living = merge_staged_lanes(
                     Path(str(held.get("dir"))), held.get("members") or [], [corpus_key, get_passphrase(), backup_key]
                 )

@@ -568,3 +568,39 @@ def test_held_lanes_merge_when_the_import_group_commits(machines, tmp_path, monk
     assert living["lanes"][0]["state"] == "merged", living
     assert _snapshot_state() != before
     assert not lane_merge.lanes_pending("dg")
+
+
+def test_group_commit_records_done_before_the_lane_merge_and_counts_an_attempt(tmp_path, monkeypatch):
+    """A lane merge can take minutes: the held items are saved as done FIRST, so a kill during
+    it never relabels a live corpus "discarded"; and each held merge counts an attempt."""
+    from src.backup import import_queue
+    from src.backup.import_queue import ImportQueueManager, _CheckpointGroup
+
+    mgr = ImportQueueManager(state_path=tmp_path / "queue.json")
+    item = {"id": "i1", "state": "staged", "summary": {"report": {"held": True}}}
+    mgr._items = [item]
+    group_dir = tmp_path / ".restore-group"
+    group_dir.mkdir()
+    group = _CheckpointGroup(dir=group_dir)
+    group.item_ids.append("i1")
+    group.held_lanes.append(("i1", {"dir": str(group_dir), "members": [], "digest": "dg2"}))
+    mgr._group = group
+    seen: list[str] = []
+    saved: list[str] = []
+    real_save = mgr._save
+    monkeypatch.setattr(mgr, "_save", lambda: (saved.append(item["state"]), real_save()))
+    monkeypatch.setattr(mgr, "_merge_held_lanes", lambda g: seen.append(str(item.get("state"))))
+    monkeypatch.setattr(mgr, "_persist_held_report", lambda *a, **k: None)
+    mgr._commit_group()
+    assert saved and saved[0] == "done"
+    assert seen == ["done"]
+    assert not group_dir.exists()
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(lane_merge, "mark_lanes_owed", lambda d, m: calls.append(("owed", d)))
+    monkeypatch.setattr(lane_merge, "merge_staged_lanes", lambda *a, **k: calls.append(("merge",)) or {"lanes": []})
+    monkeypatch.setattr(lane_merge, "record_lane_outcome", lambda *a, **k: calls.append(("outcome",)))
+    monkeypatch.setattr(mgr, "_keys_for", lambda it: ("b", "c"), raising=False)
+    monkeypatch.setattr(import_queue, "log_failure", lambda *a, **k: None)
+    ImportQueueManager._merge_held_lanes(mgr, group)
+    assert [c[0] for c in calls] == ["owed", "merge", "outcome"]
