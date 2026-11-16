@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "digest": "4d959077190b9fe3c5afc2cc0962a6f55580c97b02535f8a1ed79c4784c5b60a",
+  "digest": "1e164d4da048a1a0dd3262c9e1a38c27f048b7781386bf000f1baab66c4af3ac",
   "log": [
     {
       "version": 1,
@@ -97,6 +97,12 @@
       "digest": "4d959077190b9fe3c5afc2cc0962a6f55580c97b02535f8a1ed79c4784c5b60a",
       "kind": "bump",
       "note": "Field test 2026-11-14 rows 62-63: the keyword tokenizer keeps every combining mark (Tamil, Telugu, Gujarati, Kannada, Malayalam, Gurmukhi, Odia, Myanmar, Khmer words were cut at vowel signs); km/lo/my/bo are reported unsegmented; dates read the Bengali year-first form, resolve a year-less date only within 183 days before or 92 days after publication (R727), mark an inferred year in the tag's provenance, and anchor only on a trustworthy publication date"
+    },
+    {
+      "version": 4,
+      "digest": "1e164d4da048a1a0dd3262c9e1a38c27f048b7781386bf000f1baab66c4af3ac",
+      "kind": "same",
+      "note": "Re-record after the version-4 bump of this same PR: a blank line after extract.py's imports (lint), langdetect.SUPPORTED keeps km/lo/my/bo out of detection so deduction is unchanged, and two comments; no row an article gets differs from the version-4 statement"
     }
   ]
 }

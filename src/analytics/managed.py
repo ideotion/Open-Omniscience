@@ -49,7 +49,7 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
         # (the managed bar) on 2026-06-22 and given pure-grammar stoplists in
         # src/analytics/extract.py — so their sources stop seeding disabled:
         #   fa/ur  Arabic script (distinct -> collision-free stoplist; the tokenizer now
-        #          keeps diacritized words whole via _ARABIC_MARKS).
+        #          keeps diacritized words whole: every combining mark continues a word).
         #   uk     Cyrillic (the gated 2026-06-18 set expanded to a full stoplist; the
         #          union filters it regardless of the ru-mislabel noise that gated it).
         #   ro/cs/sk/ca/sw/az/et  Latin; stoplists added with length>=4 / accented-only
