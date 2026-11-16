@@ -221,7 +221,7 @@ _LOG_CALLS = frozenset({"debug", "info", "warning", "warn", "error", "exception"
 #: Calls whose result is safe to log: the writers, the scrub, and what reads an address without writing it (its host, its length).
 _SAFE_CALLS = frozenset(
     {"reported_url", "failure_url", "shown_feed_key", "_shown_feed", "record_text", "masked_address", "address_secrets", "_logged",
-     "_url_without_query", "urlparse", "len", "bool", "isinstance"}
+     "_url_without_query", "len", "bool", "isinstance"}
 )
 #: The UI answer form, or a wrapper of it: never in a log line or a raised sentence (the second security read on R734 found a
 #: request body logged through such a wrapper).
