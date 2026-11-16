@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "digest": "1e164d4da048a1a0dd3262c9e1a38c27f048b7781386bf000f1baab66c4af3ac",
+  "digest": "373d92b7edff87cf00dabde7818c46af2dc3af7390d77fa1bfad074dd386d88d",
   "log": [
     {
       "version": 1,
@@ -103,6 +103,12 @@
       "digest": "1e164d4da048a1a0dd3262c9e1a38c27f048b7781386bf000f1baab66c4af3ac",
       "kind": "same",
       "note": "Re-record after the version-4 bump of this same PR: a blank line after extract.py's imports (lint), langdetect.SUPPORTED keeps km/lo/my/bo out of detection so deduction is unchanged, and two comments; no row an article gets differs from the version-4 statement"
+    },
+    {
+      "version": 4,
+      "digest": "373d92b7edff87cf00dabde7818c46af2dc3af7390d77fa1bfad074dd386d88d",
+      "kind": "same",
+      "note": "R730 plumbing only: reindex_parallel passes the article's language to extract_entities (www half) and a docstring; text_processor (not an engine file) keeps script marks; no keyword row differs from the version-4 statement"
     }
   ]
 }

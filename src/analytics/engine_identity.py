@@ -80,7 +80,7 @@ INDEXER_VERSION = 4
 #: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
 #: the www modules below bumps THIS number and leaves the keyword stamp where it is, so a restore still carries the keyword rows and
 #: re-extracts only the places and entities.
-WWW_INDEXER_VERSION = 1
+WWW_INDEXER_VERSION = 2
 
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
@@ -162,6 +162,9 @@ WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/countries.py",
     "src/timemap/__init__.py",
     "src/utils/safe_yaml.py",
+    # R730: the entity extractor reads the grammar stoplists for its per-language function-word reject.
+    "src/services/__init__.py",
+    "src/services/stopwords.py",
 )
 
 #: The www stage's data: the gazetteers (``cities.yml`` is generated per install and shadows the sample; ``places_gazetteer.yml`` is
@@ -170,6 +173,13 @@ WWW_DATA_GLOBS: tuple[str, ...] = (
     "configs/cities.yml",
     "configs/cities.sample.yml",
     "configs/places_gazetteer.yml",
+)
+
+#: Data the www stage reads that the keyword pass reads too: part of BOTH engines' data digests (the twin of
+#: :data:`WWW_SHARED_MODULES`). R730: the grammar stoplists behind the entity extractor's per-language function-word reject.
+WWW_SHARED_DATA_GLOBS: tuple[str, ...] = (
+    "configs/stopwords_iso/*.txt",
+    "configs/stopwords_extra/*.yml",
 )
 
 #: Optional distributions whose presence or version changes extraction. Their data
@@ -657,7 +667,7 @@ def data_digest() -> str:
 def www_data_digest() -> str:
     """The hash of the www stage's gazetteers: ``configs/cities.yml`` is generated on the operator's machine and shadows the shipped
     sample, and ``configs/places_gazetteer.yml`` is built from their own OSM data, so a machine that has them is a different www engine."""
-    return _digest_of(_expand(WWW_DATA_GLOBS), narrow=False)
+    return _digest_of(sorted(set(_expand(WWW_DATA_GLOBS)) | set(_expand(WWW_SHARED_DATA_GLOBS))), narrow=False)
 
 
 @cache

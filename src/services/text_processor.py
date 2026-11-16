@@ -34,6 +34,27 @@ import unicodedata
 from src.utils.markup_blocks import strip_html_tags
 
 
+def _script_marks() -> str:
+    """Every combining mark (Mn, Mc, Me) EXCEPT the Latin combining diacriticals U+0300-U+036F, as
+    ``re`` class ranges (field test 2026-11-14 row 62). ``\\w`` excludes marks, so a Tamil, Telugu,
+    Gurmukhi, Myanmar or Khmer word was split at every vowel sign and virama, here as in the keyword
+    index (where ``analytics.extract`` fixed it). The Latin block is left out on purpose: this
+    processor decomposes with NFKD and has always dropped those accents ("café" -> "cafe"), and that
+    folding is behaviour its callers see; changing it is not this fix."""
+    ranges: list[tuple[int, int]] = []
+    for cp in (*range(0x30000), *range(0xE0000, 0xE1000)):
+        if 0x300 <= cp <= 0x36F or unicodedata.category(chr(cp))[0] != "M":
+            continue
+        if ranges and ranges[-1][1] == cp - 1:
+            ranges[-1] = (ranges[-1][0], cp)
+        else:
+            ranges.append((cp, cp))
+    return "".join((f"\\U{a:08x}" if a == b else f"\\U{a:08x}-\\U{b:08x}") for a, b in ranges)
+
+
+_SCRIPT_MARKS = _script_marks()
+
+
 def _drop_email_token(m: re.Match[str]) -> str:
     """``\\S+@\\S+``'s answer for one whitespace-free run, in one scan of the run.
 
@@ -64,10 +85,10 @@ class TextProcessor:
         self.email_pattern = re.compile(r"\S+@\S+")
         self.html_tag_pattern = re.compile(r"<[^>]+>")
         self._token_pattern = re.compile(r"\S+")
-        self.special_char_pattern = re.compile(r"[^\w\s\-]")
+        self.special_char_pattern = re.compile(rf"[^\w\s\-{_SCRIPT_MARKS}]")
         self.multiple_space_pattern = re.compile(r"\s+")
         self.leading_trailing_space_pattern = re.compile(r"^\s+|\s+$")
-        self.word_pattern = re.compile(r"[\w\-]+")
+        self.word_pattern = re.compile(rf"[\w\-{_SCRIPT_MARKS}]+")
 
         # Contractions
         self.contractions = {

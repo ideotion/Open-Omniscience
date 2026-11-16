@@ -2925,7 +2925,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         if not ents["people"] and not ents["organizations"]:
             from src.timemap.entextract import extract_entities
 
-            ents = extract_entities(content, limit=5)
+            ents = extract_entities(content, limit=5, language=a.language)
         if ents["people"]:
             deduced_extra.append(
                 _row(
