@@ -50,6 +50,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 from src.analytics.managed import MANAGED_LANGUAGES, UNSEGMENTED, normalize_lang
@@ -81,11 +82,15 @@ def _is_unsegmented_script(text: str, *, threshold: float = _UNSEGMENTED_SCRIPT_
     """True when the text's alphabetic characters are dominated by an unsegmented script (zh/ja/th)
     -- used when no language is asserted, so a raw CJK/Thai body is never scored as low-density
     junk (it would be, since the word-regex globs it into one huge "token")."""
-    letters = [c for c in text if c.isalpha()]
-    if not letters:
+    # Counted with C-level calls rather than a per-character Python loop (the import's quarantine
+    # scan measured it as the gate's largest cost): the same two counts, so the same answer. A
+    # character in the CJK/Thai class counts only when it is a letter (the class also holds Thai
+    # digits and a few punctuation marks), exactly as the per-letter test did.
+    n_letters = sum(map(str.isalpha, text))
+    if not n_letters:
         return False
-    cjk = sum(1 for c in letters if _CJK_THAI_RE.match(c))
-    return (cjk / len(letters)) >= threshold
+    cjk = sum(map(str.isalpha, _CJK_THAI_RE.findall(text)))
+    return (cjk / n_letters) >= threshold
 
 
 def function_word_density(text: str | None, *, language: str | None = None) -> tuple[float, str | None]:
@@ -99,10 +104,20 @@ def function_word_density(text: str | None, *, language: str | None = None) -> t
     NEWS/PLATFORM/publishing-boilerplate domain-curation words folded in), since those curated
     additions are exactly the content-noise a nav/listing page is often saturated with, and would
     blur the very distinction this measure exists for."""
-    tokens = tokenize_words(text)
+    return _function_word_density(tokenize_words(text), language)
+
+
+def _function_word_density(tokens: list[str], language: str | None) -> tuple[float, str | None]:
+    """:func:`function_word_density` on tokens already made, so the gate tokenizes a body once.
+
+    The hits are counted from one tally of the distinct tokens rather than by testing every token
+    against every language's set: the same integer per language, the same languages in the same
+    order and the same tie rule, so the same density and the same best-matching language."""
     if not tokens:
         return 0.0, None
     n = len(tokens)
+    tally = Counter(tokens)
+    distinct = tally.keys()
     lang = normalize_lang(language) if language else None
     candidates = [lang] if lang else sorted(MANAGED_LANGUAGES)
     best_density = 0.0
@@ -111,7 +126,7 @@ def function_word_density(text: str | None, *, language: str | None = None) -> t
         if not cand:
             continue
         stops = stopwords_manager.get_grammar_stopwords(cand)
-        hits = sum(1 for t in tokens if t in stops)
+        hits = sum(tally[w] for w in distinct & stops)
         density = hits / n
         if density > best_density or best_lang is None:
             best_density = density
@@ -123,11 +138,15 @@ def sentence_punct_density(text: str | None) -> float:
     """Share of sentence-ending punctuation (``.``/``!``/``?``) per token -- near-zero for a bare
     list of menu items/headlines (no sentences), healthy for real prose strung into sentences.
     PURE. Returns ``0.0`` for empty/unmeasurable text."""
-    tokens = tokenize_words(text)
-    if not tokens:
+    return _sentence_punct_density(text, len(tokenize_words(text)))
+
+
+def _sentence_punct_density(text: str | None, n_tokens: int) -> float:
+    """:func:`sentence_punct_density` given the token count already made."""
+    if not n_tokens:
         return 0.0
     hits = len(_SENTENCE_PUNCT_RE.findall(text or ""))
-    return round(hits / len(tokens), 4)
+    return round(hits / n_tokens, 4)
 
 
 @dataclass(frozen=True)
@@ -174,8 +193,9 @@ def prose_gate_verdict(
         return None
     if lang and not stopwords_manager.get_grammar_stopwords(lang):
         return None
-    density, best_lang = function_word_density(text, language=lang)
-    punct = sentence_punct_density(text)
+    # One tokenization serves both measures (each public measure tokenized the body again).
+    density, best_lang = _function_word_density(tokens, lang)
+    punct = _sentence_punct_density(text, len(tokens))
     if lang is None and density == 0.0:
         # Auto-search found ZERO function-word hits in EVERY managed language's grammar
         # stoplist -- the mirror of the asserted-language guard above, for the (more common,

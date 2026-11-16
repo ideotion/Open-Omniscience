@@ -43,7 +43,7 @@ _META = {
     "alembic_rev": "head", "manifest": None,
 }
 _GROUPS = {
-    "rep_keywords": "SELECT MIN(id) FROM inc.keywords GROUP BY normalized_term, COALESCE(language,'en')",
+    "rep_keywords": "SELECT MIN(id) FROM inc.keywords NOT INDEXED GROUP BY normalized_term, COALESCE(language,'en')",
     "rep_links": "SELECT MIN(id) FROM inc.article_links GROUP BY article_id, url, COALESCE(position,-1)",
     "rep_asr": "SELECT MIN(id) FROM inc.article_source_relationships"
                " GROUP BY article_id, COALESCE(source_id,-1), COALESCE(relationship_type,'')",

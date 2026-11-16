@@ -344,3 +344,66 @@ def test_the_report_opens_no_socket_at_all(db, monkeypatch):
     r = law_ingest_report(db)
     assert r["documents"] == 1
     assert r["structured"]["adapter_selftest"]["ok"] is True  # the fixture read is local
+
+
+# ------------------------------------------------- revisions that barely moved (row 72)
+
+
+def _rev(session, doc, delta, diff, n, basis="previous"):
+    from src.database.models import LawRevision
+
+    session.add(LawRevision(document_id=doc.id, observed_at=datetime(2026, 11, n, tzinfo=UTC),
+                            content_hash=f"h{doc.id}-{n}", size=1000 + (delta or 0), delta_bytes=delta, diff=diff,
+                            diff_basis=basis))
+    session.commit()
+
+
+def test_revisions_that_barely_moved_are_counted_and_the_newest_is_quoted(db):
+    """Field data 2026-11-08: five legislation.gov.uk documents ended every poll in
+    "changed (+0 bytes)" or "(+1 bytes)". The report now counts such revisions and quotes
+    the newest one's stored diff, so the next field report shows what changed."""
+    d = _doc(db, last_status="changed (+1 bytes vs the previous version)")
+    _rev(db, d, 2400, "+PART 2 inserted", 1)
+    _rev(db, d, 1, "-Page generated 10:41\n+Page generated 10:42", 2)
+    _rev(db, d, 0, "-token abc\n+token abd", 3)
+    r = law_ingest_report(db)
+    row = r["per_document"][0]
+    assert (row["revisions"], row["small_revisions"]) == (3, 2)
+    assert row["latest_small_revision"]["delta_bytes"] == 0
+    assert row["latest_small_revision"]["diff_excerpt"] == "-token abc\n+token abd"
+    assert row["latest_small_revision"]["diff_truncated"] is False
+    assert (r["with_small_revisions"], r["small_revisions"]) == (1, 2)
+    assert "not a verdict" in r["caveat"]
+
+
+def test_a_document_with_only_real_sized_changes_quotes_nothing(db):
+    d = _doc(db)
+    _rev(db, d, -5000, "-a repealed Part", 1)
+    _rev(db, d, None, "-unknown size", 2)  # no delta recorded: never counted as small
+    r = law_ingest_report(db)
+    row = r["per_document"][0]
+    assert (row["revisions"], row["small_revisions"], row["latest_small_revision"]) == (2, 0, None)
+    assert r["with_small_revisions"] == 0
+
+
+def test_the_quoted_diff_is_capped_and_says_so(db):
+    from src.law.ingest_report import _SMALL_DIFF_EXCERPT_CHARS
+
+    d = _doc(db)
+    _rev(db, d, 1, "+" + "x" * (_SMALL_DIFF_EXCERPT_CHARS * 3), 1)
+    row = law_ingest_report(db)["per_document"][0]
+    assert len(row["latest_small_revision"]["diff_excerpt"]) == _SMALL_DIFF_EXCERPT_CHARS
+    assert row["latest_small_revision"]["diff_truncated"] is True
+
+
+def test_a_first_capture_and_a_baseline_measured_row_are_never_small(db):
+    """A first capture records 0 against nothing, and a baseline-measured row measures drift
+    from the first capture, so neither says a poll barely moved the text."""
+    d = _doc(db)
+    _rev(db, d, 0, None, 1, basis="first")
+    _rev(db, d, 3, "-x\n+y", 2, basis="baseline")
+    _rev(db, d, 2, "-old\n+new", 3, basis=None)
+    r = law_ingest_report(db)
+    row = r["per_document"][0]
+    assert (row["revisions"], row["small_revisions"], row["latest_small_revision"]) == (3, 0, None)
+    assert r["with_small_revisions"] == 0 and r["small_revision_chars"] == 16
