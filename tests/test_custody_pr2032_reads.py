@@ -329,6 +329,7 @@ def test_the_verify_route_holds_an_unreadable_settings_store_to_every_key(tmp_pa
 
     monkeypatch.setattr(api, "load_settings",
                         lambda: type("S", (), {"pqc_enabled": False, "store_unreadable": True})())
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)  # the library-missing case is its own test below
     seen = {}
 
     class _Spy:
@@ -344,3 +345,37 @@ def test_the_verify_route_holds_an_unreadable_settings_store_to_every_key(tmp_pa
     monkeypatch.setattr(api, "load_settings", lambda: (_ for _ in ()).throw(RuntimeError("unreadable")))
     api._local_identity()
     assert seen["use_pqc"] is True
+
+
+def test_the_verify_route_reads_no_identity_with_post_quantum_on_and_its_library_missing(monkeypatch):
+    """Fifth-round read B: with post-quantum on and the library missing, the identity fell back to the Ed25519 key
+    alone, so a forgery signed with that key alone read "verified against your keys". It is unread instead."""
+    from src.api import custody as api
+
+    monkeypatch.setattr(api, "load_settings", lambda: type("S", (), {"pqc_enabled": True, "store_unreadable": False})())
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    monkeypatch.setattr(api, "HybridSigner", lambda **kw: pytest.fail("no key is read"))
+    assert api._local_identity() is None
+
+
+@pytest.mark.parametrize("own_ml, asked", [(None, True), ("ab" * 8, False)])
+def test_the_verify_route_passes_the_held_ml_dsa_key_only_while_signing_without_post_quantum(monkeypatch, own_ml, asked):
+    """Fifth-round Opus read: the route reads the ML-DSA key in the folder only when the identity as it signs now has
+    none, and hands it to the verdict."""
+    from src.api import custody as api
+    from src.custody.signing import PublicIdentity
+
+    local = PublicIdentity(ed25519_pub="cd" * 32, ml_dsa_variant="ml_dsa_65" if own_ml else None, ml_dsa_pub=own_ml)
+    monkeypatch.setattr(api, "_local_identity", lambda: local)
+    calls = []
+    monkeypatch.setattr(api, "_held_ml_dsa_pub", lambda: calls.append(1) or "ef" * 8)
+    seen = {}
+
+    def _describe(bundle, **kw):
+        seen.update(kw)
+        return {"verified": False, "notes": [], "accepted_unendorsed": False}
+
+    monkeypatch.setattr(api, "describe_export", _describe)
+    api.verify_bundle(api.VerifyBundleRequest(bundle={}))
+    assert bool(calls) is asked
+    assert seen["held_ml_dsa_pub"] == ("ef" * 8 if asked else None) and seen["local"] is local

@@ -31,6 +31,7 @@ from src.custody.settings import (
     load_settings,
     save_settings,
 )
+from src.custody import signing
 from src.custody.signing import HybridSigner, PostQuantumUnavailable, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
@@ -348,6 +349,10 @@ def _local_identity():
         use_pqc = bool(settings.pqc_enabled) or bool(getattr(settings, "store_unreadable", False))
     except Exception:  # noqa: BLE001 - unreadable settings: hold the verdict to every key there is
         use_pqc = True
+    if use_pqc and not signing.PQC_AVAILABLE:
+        # Post-quantum signing on and its library missing: the ML-DSA key cannot be read, and an identity of the
+        # Ed25519 key alone would call a forgery signed with that key alone this installation's. Say it is unread.
+        return None
     try:
         return HybridSigner(use_pqc=use_pqc, create=False).public_identity()
     except FileNotFoundError:
