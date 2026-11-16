@@ -172,6 +172,8 @@ class StagedArtifact:
     # weights) go back to, when it carries any. Empty for every artifact written before
     # they could ride inside one, and for every restore that is not asked to place them.
     file_members: list[dict] = field(default_factory=list)
+    #: R729: ``lane_members`` from the volume manifest (living-source stores), merged after the corpus.
+    lane_members: list[dict] = field(default_factory=list)
     hash_failures: list[str] = field(default_factory=list)
     # True when the uploaded artifact was OOENC1-wrapped (AES-256-GCM at rest) and
     # had to be decrypted to read it. Surfaced in the restore preview so the operator
@@ -683,6 +685,7 @@ def write_volume_backup(
     should_stop: Callable[[], bool] | None = None,
     progress_cb: Callable[[dict], None] | None = None,
     include_blobs: Iterable[str] | None = None,
+    include_lanes: bool = False,
 ) -> dict:
     """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
     server-side directory ``dest_dir``.
@@ -714,6 +717,7 @@ def write_volume_backup(
         should_stop=should_stop,
         progress_cb=progress_cb,
         include_blobs=include_blobs,
+        include_lanes=include_lanes,
     )
 
 
