@@ -21,12 +21,15 @@ work only, no network -- never airplane/consent-gated (mirrors the reindex job's
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.monitoring.secret_scrub import http_detail
+from src.monitoring.secret_scrub import http_detail, log_failure
+
+_LOG = logging.getLogger("api.quarantine")
 
 router = APIRouter(prefix="/api/quarantine", tags=["quarantine"])
 
@@ -322,6 +325,25 @@ def _pair_is_a_current_mismatch(session, source_id: int, domain: str | None, sit
     return False
 
 
+def _pair_is_off_site(session, source_id: int, domain: str | None, site: str) -> bool:
+    """True when at least one stored article of this source was FETCHED from ``site`` (its fetched host,
+    after redirects) while the source's own site differs: the pair an off-site hold names (R728 A)."""
+    from src.catalog.off_site import site_of
+    from src.database.models import Article
+
+    own = site_of(domain)
+    if own is None or own == site:
+        return False
+    # Every fetched host of this one source, compared by the one normaliser: a substring pre-filter
+    # would miss a host stored in its Unicode spelling.
+    q = (
+        session.query(Article.fetched_host)
+        .filter(Article.source_id == source_id, Article.fetched_host.isnot(None))
+        .yield_per(500)
+    )
+    return any(site_of(h) == site for (h,) in q)
+
+
 @router.post("/host-pairs")
 def quarantine_host_pair_confirm(body: HostPairBody) -> dict:
     """Record that ``source_id`` legitimately publishes on ``article_site``. Loopback and local: no
@@ -346,11 +368,15 @@ def quarantine_host_pair_confirm(body: HostPairBody) -> dict:
             .filter(HostMismatchConfirmed.source_id == body.source_id, HostMismatchConfirmed.article_site == site)
             .first()
         )
-        if existing is None and not _pair_is_a_current_mismatch(session, body.source_id, src[1], site):
+        if (
+            existing is None
+            and not _pair_is_a_current_mismatch(session, body.source_id, src[1], site)
+            and not _pair_is_off_site(session, body.source_id, src[1], site)
+        ):
             raise HTTPException(
                 status_code=409,
-                detail="Nothing to confirm: no stored article of this source lives on that site while "
-                "the source's own site differs.",
+                detail="Nothing to confirm: no stored article of this source lives on that site, or was "
+                "fetched from it, while the source's own site differs.",
             )
         if existing is None:
             existing = HostMismatchConfirmed(
@@ -360,10 +386,35 @@ def quarantine_host_pair_confirm(body: HostPairBody) -> dict:
             session.add(existing)
         elif body.note is not None:
             existing.note = body.note
+        # R728 A: confirming the pair a source is HELD for re-admits it (an attempt row and an admission
+        # audit row, so it can be undone), and lifts the marks that hold set on its articles (R728 B).
+        from src.catalog import off_site
+
+        full = session.get(Source, body.source_id)
+        outcome = None
+        if full is not None:
+            pairs = off_site.confirmed_sites(session, body.source_id) | {site}
+            # Re-admitted only when no OTHER unconfirmed site still answers for it.
+            if off_site.evaluate(session, body.source_id, full.domain, confirmed=pairs).state != off_site.HELD:
+                outcome = off_site.readmit(session, full)
+        confirmed_at = existing.confirmed_at.isoformat()
+        note = existing.note
         session.commit()
+        # The confirmation and the re-admission are committed; the marks follow. If lifting them fails
+        # the pair still stands, and the answer says the marks are still on rather than failing the call.
+        released: int | None
+        try:
+            released = off_site.release_off_site(session, body.source_id, site)
+        except Exception as exc:  # noqa: BLE001 - reported in the answer, never swallowed silently
+            session.rollback()
+            log_failure(_LOG, f"lifting off-site marks failed for source {body.source_id}", exc, level=logging.WARNING)
+            released = None
         return {
             "source_id": body.source_id, "article_site": site,
-            "confirmed_at": existing.confirmed_at.isoformat(), "note": existing.note,
+            "confirmed_at": confirmed_at, "note": note,
+            # qualified: collection resumes; requeued: a candidate goes back to being judged.
+            "readmitted": outcome == "qualified", "requeued": outcome == "requeued",
+            "articles_released": released,
         }
     finally:
         session.close()
@@ -372,6 +423,8 @@ def quarantine_host_pair_confirm(body: HostPairBody) -> dict:
 @router.delete("/host-pairs")
 def quarantine_host_pair_unconfirm(source_id: int = Query(..., ge=1), article_site: str = Query(..., min_length=1)) -> dict:
     """Withdraw a confirmation. Idempotent: ``removed`` is 0 when there was none."""
+    from datetime import UTC, datetime
+
     from src.analytics.quarantine_job import _default_session
     from src.database.models import HostMismatchConfirmed
 
@@ -388,7 +441,23 @@ def quarantine_host_pair_unconfirm(source_id: int = Query(..., ge=1), article_si
             .delete(synchronize_session=False)
         )
         session.commit()
-        return {"removed": int(removed)}
+        # R728 A: withdrawing a confirmation re-checks the source NOW, so a pair that should hold it does.
+        from src.catalog import off_site
+        from src.catalog.qualification import STATUS_QUALIFIED
+
+        held = False
+        marked: int | None = 0
+        src = session.get(Source, source_id)
+        if removed and src is not None and src.status == STATUS_QUALIFIED:
+            finding = off_site.evaluate(session, source_id, src.domain)
+            if off_site.hold(session, src, finding, now=datetime.now(UTC).replace(tzinfo=None)):
+                held = True
+                session.commit()
+                # The hold queued its marks in the same commit; a failure here leaves them owed to the
+                # next sweep, and the answer says so (null) instead of a 500 after the write.
+                n, failed = off_site.apply_pending_marks(session, source_ids=[source_id])
+                marked = None if failed else n
+        return {"removed": int(removed), "held": held, "articles_marked": marked}
     finally:
         session.close()
 

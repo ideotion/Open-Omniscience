@@ -207,8 +207,24 @@ def list_sources(
         aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
         return "exact" if (_now - aware) < timedelta(hours=24) else "estimated"
 
+    # R728 A: a held source shows its hold, with the two sites, IN THE ROW (visible by default, never behind a toggle),
+    # and a source with operator-confirmed pairs shows them so a confirmation can be withdrawn.
+    from src.catalog.off_site import held_payloads
+    from src.database.models import HostMismatchConfirmed
+
     # The list shows a feed's login as ***@ (R637); the CSV export below keeps the URL as written, so it imports back unchanged.
     from src.ingest.fetch_verdict import shown_url
+
+    holds = held_payloads(db, sources)
+    pairs: dict[int, list[str]] = {}
+    page_ids = [int(s.id) for s in sources]
+    if page_ids:
+        for sid, site in (
+            db.query(HostMismatchConfirmed.source_id, HostMismatchConfirmed.article_site)
+            .filter(HostMismatchConfirmed.source_id.in_(page_ids))
+            .order_by(HostMismatchConfirmed.article_site)
+        ):
+            pairs.setdefault(int(sid), []).append(str(site))
 
     return {
         "total": int(total_n),
@@ -231,6 +247,8 @@ def list_sources(
                 "article_count": _count(s),
                 "count_basis": _basis(s),  # exact (fresh) | estimated (stale) | live (NULL)
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],
+                "hold": holds.get(int(s.id)),
+                "confirmed_sites": pairs.get(int(s.id), []),
             }
             for s in sources
         ],

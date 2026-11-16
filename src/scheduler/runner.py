@@ -1566,6 +1566,18 @@ def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> d
     from src.monitoring import tasks as _bgtasks
 
     new_n, recheck = effective_qualification_budgets(settings)
+    # R728 A: the off-site hold is checked first, offline, over the sources that stored articles since the
+    # last run. Its own failure never skips qualification (and qualification judges the same rule itself).
+    off_site: dict = {}
+    if session is not None:
+        try:
+            from src.catalog.off_site import sweep as _off_site_sweep
+
+            off_site = _off_site_sweep(session)
+        except Exception as exc:  # noqa: BLE001 - a hold check that failed is retried next run
+            log_failure(_LOG, "off-site hold check failed", exc, level=logging.WARNING)
+            session.rollback()
+            off_site = {"error": True}
     tok = _bgtasks.register(
         "qualification", "qualifying candidate sources",
         detail=(
@@ -1574,9 +1586,10 @@ def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> d
         ),
     )
     try:
-        return advance_qualification(
+        out = advance_qualification(
             session, fetcher, per_pass=new_n, recheck_per_pass=recheck,
         )
+        return {**out, "off_site": off_site}
     finally:
         _bgtasks.finish(tok)
 

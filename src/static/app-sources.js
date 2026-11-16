@@ -477,7 +477,7 @@
         `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       return `<tr>
-        <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
+        <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div>${srcHoldHtml(s, t)}</td>
         <td>${esc(s.domain)}${s.rss_url?` <span class="pill ok" title="${esc(s.rss_url)}">rss</span>`:''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
         <td class="muted">${s.country ? ooCountryCell(s.country) : "—"}</td>
@@ -492,6 +492,53 @@
         <button class="tiny danger" data-on-click="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
       </tr>
       <tr id="src-trail-${s.id}" style="display:none"><td colspan="9"></td></tr>`;
+    }
+
+    // R728 A (field test 2026-11-14): the OFF-SITE HOLD, shown IN THE ROW -- visible by default, never behind the
+    // Trail toggle -- with the two sites, the counts it rests on, and what it did (stopped, set aside, nothing
+    // deleted). The way back is one logged, reversible confirmation of the pair (R193's table).
+    function srcHoldHtml(s, t) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+      let html = "";
+      const h = s.hold;
+      if (h && h.other_site) {
+        const site = JSON.stringify(h.other_site);
+        html += `<div class="note warn" style="font-size:12px;margin-top:4px">`
+          + `<span class="pill err">${esc(t("Held"))}</span> `
+          + esc(tf("Its recent pages came from {site}: {n} of {k} with a known address.",
+              {site: h.other_site, n: h.n_other, k: h.n_known}))
+          + ` <span class="card-caveat">${esc(t("Collection is stopped and those pages are set aside, never deleted. The site may have changed hands."))}</span> `
+          + `<button class="tiny secondary" title="${esc(tf("Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.", {site: h.other_site}))}"`
+          + ` data-on-click='confirmSameOutlet(${s.id}, ${esc(site)}, ${esc(JSON.stringify(s.domain || ""))})'>${esc(t("This is the same outlet"))}</button>`
+          + `</div>`;
+      }
+      for (const cs of (s.confirmed_sites || [])) {
+        html += `<div class="muted" style="font-size:12px">`
+          + esc(tf("Same outlet as {site} (you confirmed).", {site: cs}))
+          + ` <button class="tiny ghost" title="${esc(t("Withdraw the confirmation. The source is checked again at once and held if its pages still come from that site."))}"`
+          + ` data-on-click='withdrawSameOutlet(${s.id}, ${esc(JSON.stringify(cs))})'>${esc(t("Withdraw"))}</button></div>`;
+      }
+      return html;
+    }
+    async function confirmSameOutlet(id, site, domain) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+      if (!confirm(tf("Resume collecting {domain}, whose pages now come from {site}?", {domain, site}))) return;
+      try {
+        const r = await api("/api/quarantine/host-pairs", {method: "POST", body: JSON.stringify({source_id: id, article_site: site})});
+        // A candidate held while being judged goes back to the qualification queue, not straight to collection.
+        const msg = (r && r.requeued) ? "Confirmed. The source goes back to the qualification queue." : "Confirmed. Collection resumes.";
+        toast(window.OOI18N ? OOI18N.t(msg) : msg);
+        loadManagedSources();
+      } catch (e) { toast(_failMsg("Update failed: {error}", e), "err"); }
+    }
+    async function withdrawSameOutlet(id, site) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+      if (!confirm(tf("Withdraw that {site} is the same outlet? The source is checked again and held if its pages still come from there.", {site}))) return;
+      try {
+        await api("/api/quarantine/host-pairs?source_id=" + encodeURIComponent(id) + "&article_site=" + encodeURIComponent(site), {method: "DELETE"});
+        toast(window.OOI18N ? OOI18N.t("Withdrawn. The source was checked again.") : "Withdrawn. The source was checked again.");
+        loadManagedSources();
+      } catch (e) { toast(_failMsg("Update failed: {error}", e), "err"); }
     }
 
     // E-S5 (2026-08-01): the qualification ASSIST finally has a home. It has existed
