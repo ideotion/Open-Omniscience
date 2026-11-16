@@ -261,17 +261,23 @@ def refresh(key: str, compute, *, probe: int | None = None) -> dict | None:
         return None
 
 
-def _kick_background_refresh(key: str, compute) -> None:
+def _kick_background_refresh(key: str, compute) -> float | None:
     """Kick ONE background recompute for ``key`` when none is already in flight.
 
     Non-blocking: the stale-but-real value keeps being served meanwhile, which is
     the entire point -- a poll must never wait on the scan.
+
+    Returns when the recompute in flight started: the one this call started, or the one already running, or ``None`` when
+    none is (one that was running has just ended). The caller takes the start from HERE, never from a second read after
+    the kick: a compute fast enough to end before that read has already taken its start out of ``_RECOUNT_STARTED``, which
+    answered a cold poll "computing" with no start time (``pending_since: null``, seen on CI, run 43808845357).
     """
     lock = _build_lock(key)
     if not lock.acquire(blocking=False):
-        return  # a rebuild for this key is already running
+        return _recount_started(key)  # a rebuild for this key is already running
     with _LOCK:
-        _RECOUNT_STARTED[key] = time.time()
+        started = time.time()
+        _RECOUNT_STARTED[key] = started
 
     def _run() -> None:
         # The probe is read BEFORE the compute: a write that lands mid-scan must
@@ -293,6 +299,7 @@ def _kick_background_refresh(key: str, compute) -> None:
             _RECOUNT_STARTED.pop(key, None)
         lock.release()
         raise
+    return started
 
 
 def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None) -> dict:
@@ -340,8 +347,19 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
     if cold_payload is not None:
         # Non-blocking cold start: one background compute (a second caller finds the lock taken and starts nothing), the cheap
         # part answered now. The cheap part is read BEFORE the kick returns control to the poll, never after the scan.
-        _kick_background_refresh(key, compute)
-        started = _recount_started(key)
+        started = _kick_background_refresh(key, compute)
+        if started is None:
+            started = _recount_started(key)  # a kick that reports nothing (a stand-in): read what is in flight
+        if started is None:
+            # No compute is in flight, so the one this poll found running has ENDED between the kick and here. Its value
+            # is the answer if it stored one; "computing" with no start would describe a count that is not running.
+            with _LOCK:
+                entry = _CACHE.get(key)
+                done = dict(entry) if (entry is not None and _same_bind(session, entry.get("bind"))) else None
+            if done is not None:
+                later = change_probe()
+                return _decorate(done, ttl_s=ttl_s, cached=True, now=time.time(),
+                                 verified=later is not None and later == done["probe"])
         out = _decorate(
             {"payload": cold_payload(session), "built_at": time.time()},
             ttl_s=ttl_s, cached=False, now=time.time(), verified=False, recount_started=started,
