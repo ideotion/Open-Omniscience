@@ -24,13 +24,13 @@ _EXTRACTOR = "lexical-v1"
 
 
 def store_places_for_article(
-    db: Session, article: Article, *, precomputed: list[dict] | None = None
+    db: Session, article: Article, *, precomputed: list[dict] | None = None, text: str | None = None
 ) -> int:
     """``precomputed`` is the same list ``extract_locations`` returns, optionally
     computed in a worker process (the re-index's pooled precompute). ``None`` means
     "not precomputed" -- extract inline -- and is deliberately NOT the same fact as
     "no places found"."""
-    text = article_text(article)
+    text = article_text(article) if text is None else text  # ``text``: the caller already decompressed it
     db.query(ArticleMentionedPlace).filter_by(article_id=article.id).delete()
     places = (
         precomputed if precomputed is not None
@@ -114,11 +114,11 @@ def entities_for_article(db: Session, article_id: int, limit: int = 5) -> dict:
 
 
 def store_entities_for_article(
-    db: Session, article: Article, *, precomputed: dict | None = None
+    db: Session, article: Article, *, precomputed: dict | None = None, text: str | None = None
 ) -> int:
     """``precomputed`` is the same dict ``extract_entities`` returns, optionally
     computed in a worker process. ``None`` means "not precomputed", never "none found"."""
-    text = article_text(article)
+    text = article_text(article) if text is None else text  # ``text``: the caller already decompressed it
     db.query(ArticleEntity).filter_by(article_id=article.id).delete()
     ents = precomputed if precomputed is not None else extract_entities(text, language=article.language)
     n = 0

@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "digest": "7e03148b51563d524d4d1c804133cd6631bd2dfbf77a271b7443304075c84556",
+  "digest": "79a71dfbff949f5f292458f007675f3584668176d1f98f48a7bef3c7dec3aa67",
   "log": [
     {
       "version": 1,
@@ -119,6 +119,12 @@
     {
       "version": 4,
       "digest": "7e03148b51563d524d4d1c804133cd6631bd2dfbf77a271b7443304075c84556",
+      "kind": "same",
+      "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
+    },
+    {
+      "version": 4,
+      "digest": "79a71dfbff949f5f292458f007675f3584668176d1f98f48a7bef3c7dec3aa67",
       "kind": "same",
       "note": "R725/R726 within the held INDEXER 4 / WWW 2 step that #2031 opened (neither merges before the user's mass import ends, so no install stamps the intermediate state): the date, place and entity stores read the decompressed text, so an article kept compressed now gets the rows its text yields instead of none; uncompressed articles get identical rows and identical inputs digests."
     }

@@ -118,6 +118,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/timemap/datestore.py",
     "src/timemap/entextract.py",
     "src/timemap/locextract.py",
+    "src/timemap/text.py",
     "src/timemap/whostore.py",
     "src/utils/markup_blocks.py",
     "src/utils/safe_yaml.py",
@@ -161,6 +162,8 @@ WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/timemap/__init__.py",
+    # R725: the text the date, place and entity stores read (``article_text``).
+    "src/timemap/text.py",
     "src/utils/safe_yaml.py",
     # R730: the entity extractor reads the grammar stoplists for its per-language function-word reject.
     "src/services/__init__.py",

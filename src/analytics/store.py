@@ -736,8 +736,8 @@ def _index_article_www(
             _pw = {}
         _t_www = time.monotonic() if timings is not None else 0.0
         with session.begin_nested():
-            www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
-            www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"))
+            www["places"] = _store_places(session, article, precomputed=_pw.get("places"), text=raw_content)
+            www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"), text=raw_content)
             _stamp_www_engine(session, article_id, raw_content=raw_content, country=country, language=article.language)
         if timings is not None:
             timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
@@ -1111,14 +1111,15 @@ def index_article(
                 _pw = {}
             _t_www = time.monotonic() if timings is not None else 0.0
             with session.begin_nested():
-                www["dates"] = _store_dates(session, article, precomputed=_pw.get("dates"))
-                www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
+                # R725: the stores read the text already decompressed above (``content``), never the column again.
+                www["dates"] = _store_dates(session, article, precomputed=_pw.get("dates"), text=content)
+                www["places"] = _store_places(session, article, precomputed=_pw.get("places"), text=content)
                 www["entities_stored"] = _store_ents(
-                    session, article, precomputed=_pw.get("entities")
+                    session, article, precomputed=_pw.get("entities"), text=content
                 )
                 # R415: the www stamp rides the SAME savepoint as the rows it certifies.
                 _stamp_www_engine(
-                    session, article_id, raw_content=article_text(article), country=article.country,
+                    session, article_id, raw_content=content, country=article.country,
                     language=article.language,
                 )
             if timings is not None:
@@ -1149,7 +1150,7 @@ def index_article(
         certified=www_rewritten,
         inputs=index_inputs_digest(
             text=content,
-            raw_content=article_text(article),  # R725: what the date/place/entity stores read
+            raw_content=content,  # R725: the date/place/entity stores read this same text
             title=article.title,
             language=article.language,
             detected_language=getattr(article, "detected_language", None),

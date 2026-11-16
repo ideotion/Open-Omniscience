@@ -69,8 +69,11 @@ def store_for_article(
     *,
     today: date | None = None,
     precomputed: list[dict] | None = None,
+    text: str | None = None,
 ) -> int:
     """Extract dates from one article's text and store new candidate tags. Returns the count added.
+
+    ``text``: the article's text when the caller already holds it decompressed (R725); else it is read here.
 
     Idempotent: an existing (article, date, precision) tag is left untouched — so a human's
     confirm/reject decision is preserved across re-runs.
@@ -82,7 +85,10 @@ def store_for_article(
     re-index, the way a keyword mention does. A confirmed or rejected tag is a human decision and
     is never touched, and neither is a tag another extractor made.
     """
-    if article is None or not article_text(article).strip():
+    if article is None:
+        return 0
+    text = article_text(article) if text is None else text
+    if not text.strip():
         return 0
     tags = (
         db.query(ArticleMentionedDate)
@@ -108,7 +114,7 @@ def store_for_article(
     # extract inline: it is NOT the same fact as "this article has no dates", and
     # treating it as such would silently drop every date on every non-pooled path.
     found = precomputed if precomputed is not None else extract_dates(
-        article_text(article), today=today, anchor=anchor, language=article.language
+        text, today=today, anchor=anchor, language=article.language
     )
     base_extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
     # The provenance label per candidate: the language half as before, plus R727's year-inferred mark.
