@@ -1313,7 +1313,9 @@ def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
     return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
 
 
-def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chained: bool = True) -> list[PublicIdentity | None]:
+def _own_positions(
+    entries: list[CustodyEntry], local: PublicIdentity, *, chained: bool = True, held_ml: str | None = None
+) -> list[PublicIdentity | None]:
     """For each entry of a VERIFIED bundle, the identity of this installation's that it must be signed by to be this
     installation's, or ``None`` when no key of this installation's signs that place in the chain.
 
@@ -1332,20 +1334,28 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
     Only a ``chained`` bundle (the whole log) gets earlier-stretch credit: there each rotation record, signed by the next
     key, commits through its previous-entry hash to everything before it. A one-item bundle is not chained (its record
     links to an entry the bundle does not carry), so a leaked earlier key could rewrite the stretch it signed and nothing
-    in the bundle would tell; only the last stretch is credited there."""
+    in the bundle would tell; only the last stretch is credited there.
+
+    ``held_ml`` is the ML-DSA key this installation still holds while it signs without post-quantum (``local`` has no
+    ML-DSA half then): an entry signed with both halves under this installation's Ed25519 key is its own only with
+    that key, and a record is its own previous identity only when it names that key. An ML-DSA key it does not hold
+    is never its own, whatever a record says."""
     rotations = [i for i, e in enumerate(entries)
                  if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM]
     starts = [0, *rotations]
     ends = [*rotations, len(entries)]
     out: list[PublicIdentity | None] = [None] * len(entries)
     own_ml = local.ml_dsa_pub
+    held = own_ml or held_ml  # the ML-DSA key this installation holds, whether it signs with it now or not
+    held_identity = PublicIdentity(ed25519_pub=local.ed25519_pub, ml_dsa_variant=None, ml_dsa_pub=held) if held else None
 
     def _hybrid_ml(entry: CustodyEntry) -> str | None:
         return _sig_ml_dsa(entry.signature)[1]
 
     def _is_local_previous(md: dict) -> bool:
         # The record's previous identity is this installation's own, both halves.
-        return md.get("previous_ed25519_pub") == local.ed25519_pub and md.get("previous_ml_dsa_pub") == own_ml
+        return held is not None and md.get("previous_ed25519_pub") == local.ed25519_pub \
+            and md.get("previous_ml_dsa_pub") == held
 
     # ``local`` is the identity as this installation signs NOW (the route reads the post-quantum setting): while it
     # signs with post-quantum the stretch since the last record is held to both halves, whatever records an older copy
@@ -1356,11 +1366,16 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
         stretch_key = _sig_ed25519_pub(entries[lo].signature) if lo < hi else None
         if expected is None or (stretch_key is not None and stretch_key != expected.ed25519_pub):
             break
-        if own_ml and expected.ed25519_pub == local.ed25519_pub and expected.ml_dsa_pub not in (None, own_ml):
+        if expected.ed25519_pub == local.ed25519_pub and expected.ml_dsa_pub not in (None, held):
             break  # this installation's Ed25519 key beside an ML-DSA key it does not hold: not this installation's
         for i in range(lo, hi):
             out[i] = expected
-            if expected.ml_dsa_pub and _hybrid_ml(entries[i]) is None and not (chained and any(
+            if (expected.ml_dsa_pub is None and held_identity is not None and expected.ed25519_pub == local.ed25519_pub
+                    and _hybrid_ml(entries[i]) is not None):
+                # Signed with both halves while this installation signs (now) without post-quantum, as everything it
+                # signed before turning it off is: its own only with the ML-DSA key it still holds.
+                out[i] = held_identity
+            elif expected.ml_dsa_pub and _hybrid_ml(entries[i]) is None and not (chained and any(
                     _hybrid_ml(entries[j]) == expected.ml_dsa_pub for j in range(i + 1, hi))):
                 # Signed with the Ed25519 half alone where the identity has an ML-DSA half: someone holding the Ed25519
                 # key alone signs exactly that. In a whole log a later entry of the same stretch signed with both
@@ -1380,11 +1395,11 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
             expected = PublicIdentity(ed25519_pub=prev, ml_dsa_variant=None, ml_dsa_pub=None)
             continue
         if (_records_previous_ml_dsa(md) and prev == stretch_key == local.ed25519_pub
-                and isinstance(md.get("endorsement"), dict) and (own_ml is None or _is_local_previous(md))):
+                and isinstance(md.get("endorsement"), dict) and _is_local_previous(md)):
             # The same Ed25519 key, the post-quantum half changed with the previous identity endorsing it (both halves,
             # checked by the key lineage): the stretch before is this installation's, in a one-item bundle too, for the
             # same reason. While this installation signs with post-quantum, that previous identity must be its own,
-            # both halves; with post-quantum signing off its guarantee is the Ed25519 key's alone, as it says.
+            # both halves, its ML-DSA key the one it holds whether it signs with it now or not.
             pm = md.get("previous_ml_dsa_pub")
             expected = PublicIdentity(ed25519_pub=local.ed25519_pub, ml_dsa_variant=None,
                                       ml_dsa_pub=pm if isinstance(pm, str) and pm else None)
@@ -1400,7 +1415,12 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
 
 
 def describe_export(
-    bundle: dict, *, local: PublicIdentity | None, require_signer: bool = False, accept_unendorsed_rotation: bool = False
+    bundle: dict,
+    *,
+    local: PublicIdentity | None,
+    require_signer: bool = False,
+    accept_unendorsed_rotation: bool = False,
+    held_ml_dsa_pub: str | None = None,
 ) -> dict:
     """Verify a posted custody bundle and say BY WHOM it is signed (R681).
 
@@ -1444,7 +1464,7 @@ def describe_export(
     # A bundle that did not verify gets no rotation credit: each signer is only compared with this installation's key.
     one_item = bool(bundle.get("item_id"))
     owns: list[PublicIdentity | None] = (
-        (_own_positions(parsed, local, chained=not one_item) if ok and len(parsed) == len(raw) else list[PublicIdentity | None]([local] * len(parsed)))
+        (_own_positions(parsed, local, chained=not one_item, held_ml=held_ml_dsa_pub) if ok and len(parsed) == len(raw) else list[PublicIdentity | None]([local] * len(parsed)))
         if local
         else []
     )

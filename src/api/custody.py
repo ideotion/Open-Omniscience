@@ -323,6 +323,16 @@ class VerifyBundleRequest(BaseModel):
     accept_unendorsed_rotation: bool = False
 
 
+def _held_ml_dsa_pub() -> str | None:
+    """The ML-DSA public key this installation still holds in its keys folder, or ``None`` (no key file, no post-quantum
+    library, or unreadable). Read while it signs without post-quantum, so that what it signed with both halves before
+    stays its own, and an ML-DSA key it never held is never called its own. Opened as a reader: nothing is made."""
+    try:
+        return HybridSigner(use_pqc=True, create=False).public_identity().ml_dsa_pub
+    except Exception:  # noqa: BLE001 - no key or no library: nothing signed with both halves is credited
+        return None
+
+
 def _local_identity():
     """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
     be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
@@ -332,7 +342,10 @@ def _local_identity():
     # Its identity as it signs NOW: with post-quantum signing off it is the Ed25519 key alone, though an old ML-DSA key
     # file may still be in the folder, so the verdict is not held to a post-quantum key nothing signs with any more.
     try:
-        use_pqc = bool(load_settings().pqc_enabled)
+        settings = load_settings()
+        # An unreadable store answers with defaults (post-quantum off) rather than raising: hold the verdict to every
+        # key there is then, as when reading the settings fails outright.
+        use_pqc = bool(settings.pqc_enabled) or bool(getattr(settings, "store_unreadable", False))
     except Exception:  # noqa: BLE001 - unreadable settings: hold the verdict to every key there is
         use_pqc = True
     try:
@@ -348,9 +361,11 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
     """Verify a posted custody bundle offline (no DB needed), and say by whom it is signed (R681):
     ``verified`` never travels without ``signed_by`` and a ``verdict`` that tells "verified against
     your keys" from "signatures valid, signer not yours"; every key rotation crossed is named in ``notes``."""
+    local = _local_identity()
     out = describe_export(
         req.bundle,
-        local=_local_identity(),
+        local=local,
+        held_ml_dsa_pub=_held_ml_dsa_pub() if local is not None and not local.ml_dsa_pub else None,
         require_signer=req.require_signer,
         accept_unendorsed_rotation=req.accept_unendorsed_rotation,
     )

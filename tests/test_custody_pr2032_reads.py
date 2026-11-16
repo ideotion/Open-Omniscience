@@ -9,6 +9,9 @@
    "signer not yours".
 4. With post-quantum signing wanted and its library missing, a re-created Ed25519 key wrote an unendorsed rotation and
    signed with the Ed25519 half alone (R717: nothing is signed).
+5. With post-quantum signing off the verdict lost the ML-DSA key the folder still holds: a bundle exported before the
+   change read "not yours", a foreign ML-DSA key under the installation's Ed25519 key read "yours", and an unreadable
+   settings store held the verdict to the Ed25519 key alone.
 """
 
 from __future__ import annotations
@@ -45,6 +48,12 @@ def _signer(tmp_path: Path, ed: str, ml: str | None = None, use_pqc: bool = True
 def _record(log: CustodyLog, n: int, start: int = 0) -> None:
     for i in range(start, start + n):
         log.record(f"article:{i % 2}", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+
+
+def _held(folder: Path, ml: str = "k") -> str | None:
+    """The ML-DSA key a folder holds, read as the verify route reads it (``_held_ml_dsa_pub``)."""
+    return HybridSigner(ed25519_path=folder / "k.pem", mldsa_path=folder / f"{ml}.key", use_pqc=True,
+                        create=False).public_identity().ml_dsa_pub
 
 
 def _rehead(bundle: dict, signer: HybridSigner, keep: int | None = None) -> dict:
@@ -119,7 +128,8 @@ def test_turning_post_quantum_off_with_the_library_keeps_the_operators_bundle_th
     # The old ML-DSA key file stays in the folder; the installation's identity as it signs now has no ML-DSA half.
     now = _signer(tmp_path, "k", use_pqc=False).public_identity()
     assert now.ml_dsa_pub is None
-    d = describe_export(bundle, local=now)
+    # The route passes the ML-DSA key the folder still holds: the hybrid entries before the change are held to it.
+    d = describe_export(bundle, local=now, held_ml_dsa_pub=_held(tmp_path))
     assert d["verified"] and d["verdict"] == VERDICT_YOURS, d
     assert all(s["yours"] for s in d["signed_by"])  # the hybrid entries before the change too
 
@@ -187,7 +197,8 @@ def test_the_operators_one_item_bundle_stays_theirs_across_post_quantum_changes(
     with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=flips[-1] == "on")) as log:
         bundles = [log.export(), log.export(item_id="article:0")]
     for b in bundles:
-        d = describe_export(b, local=_signer(tmp_path, "k", use_pqc=flips[-1] == "on").public_identity())
+        local = _signer(tmp_path, "k", use_pqc=flips[-1] == "on").public_identity()
+        d = describe_export(b, local=local, held_ml_dsa_pub=None if local.ml_dsa_pub else _held(tmp_path))
         assert d["verified"] and d["verdict"] == VERDICT_YOURS, d
 
 
@@ -265,3 +276,71 @@ def test_pin_with_an_accepted_change_and_no_rotation_record_never_crashes(tmp_pa
     out = subprocess.run([sys.executable, str(root / "scripts/verify_custody.py"), str(path), "--pin",
                           "--accept-unendorsed-rotation"], capture_output=True, text=True)
     assert out.returncode in (1, 4) and "Traceback" not in out.stderr, out.stderr
+
+
+def _yours(d: dict) -> list[tuple[int, bool]]:
+    return [(s["entries"], bool(s["yours"])) for s in d["signed_by"]]
+
+
+@pqc
+@pytest.mark.parametrize("item", [None, "article:0"])
+def test_a_bundle_exported_while_post_quantum_was_on_stays_yours_once_it_is_off(tmp_path, item):
+    """Fourth-round Opus read: with post-quantum signing off the verdict lost the ML-DSA key the folder still holds, so
+    a bundle exported before the change (no record in it) read "signer not yours". It is held to that key."""
+    with CustodyLog(db_path=str(tmp_path / "c.db"), signer=_signer(tmp_path, "k")) as log:
+        _record(log, 3)
+        bundle = log.export(item_id=item)
+    off = _signer(tmp_path, "k", use_pqc=False).public_identity()
+    held = _held(tmp_path)
+    d = describe_export(bundle, local=off, held_ml_dsa_pub=held)
+    assert d["verified"] and d["verdict"] == VERDICT_YOURS, d
+    # Without the key it holds, the verdict cannot say so (the honest answer when the folder has none).
+    assert describe_export(bundle, local=off)["verdict"] == VERDICT_NOT_YOURS
+
+
+@pqc
+@pytest.mark.parametrize("item", [None, "article:0"])
+def test_with_post_quantum_off_a_foreign_ml_dsa_key_under_the_installations_ed25519_key_is_never_yours(tmp_path, item):
+    """Fourth-round reads A and B: someone holding the Ed25519 key alone signed with an ML-DSA key of their own, then
+    turned post-quantum off (a record they can endorse). With the installation's post-quantum signing off, their
+    ML-DSA key was listed as the installation's. It is checked against the key the folder holds."""
+    victim, thief = tmp_path / "v", tmp_path / "t"
+    victim.mkdir()
+    thief.mkdir()
+    with CustodyLog(db_path=str(victim / "c.db"), signer=_signer(victim, "k")) as log:
+        _record(log, 2)
+    (thief / "k.pem").write_bytes((victim / "k.pem").read_bytes())  # the Ed25519 key alone
+    with CustodyLog(db_path=str(thief / "c.db"), signer=_signer(thief, "k", "x")) as log:
+        _record(log, 3)
+        log.signer = _signer(thief, "k", "x", use_pqc=False)
+        _record(log, 1, start=3)
+        forged = log.export(item_id=item)
+    off = _signer(victim, "k", use_pqc=False).public_identity()
+    held = _held(victim)
+    for h in (held, None):
+        d = describe_export(forged, local=off, held_ml_dsa_pub=h)
+        assert not any(s["yours"] for s in d["signed_by"] if s["ml_dsa_pub"]), d
+
+
+def test_the_verify_route_holds_an_unreadable_settings_store_to_every_key(tmp_path, monkeypatch):
+    """Fourth-round read B: an unreadable settings store answers with defaults (post-quantum off) rather than raising,
+    so the verdict was held to the Ed25519 key alone and credited a forgery signed with it."""
+    from src.api import custody as api
+
+    monkeypatch.setattr(api, "load_settings",
+                        lambda: type("S", (), {"pqc_enabled": False, "store_unreadable": True})())
+    seen = {}
+
+    class _Spy:
+        def __init__(self, *, use_pqc, create):
+            seen.update(use_pqc=use_pqc, create=create)
+
+        def public_identity(self):
+            return None
+
+    monkeypatch.setattr(api, "HybridSigner", _Spy)
+    api._local_identity()
+    assert seen == {"use_pqc": True, "create": False}
+    monkeypatch.setattr(api, "load_settings", lambda: (_ for _ in ()).throw(RuntimeError("unreadable")))
+    api._local_identity()
+    assert seen["use_pqc"] is True
