@@ -226,8 +226,11 @@ def test_a_cut_log_with_a_tail_re_signed_by_another_key_is_refused_even_unpinned
         b["head_signature"] = forger.signer.sign(canonical_bytes(b["head"]))
     ok, issues = verify_export(b)
     assert not ok and issues[0].startswith("head signature invalid")
-    # and with the signer relabelled to B, the key change is named
+    # and with the signer relabelled to B (both halves: row 46 holds the printed signer to the head's whole identity),
+    # the key change is named
     b["signer"] = {**b["signer"], "ed25519_pub": b["head_signature"]["ed25519"]["pub"]}
+    if b["head_signature"].get("algorithm") == "hybrid":
+        b["signer"]["ml_dsa_pub"] = b["head_signature"]["ml_dsa"]["pub"]
     ok, issues = verify_export(b)
     assert not ok and issues[0].startswith("the signing key changes at seq 3 with no key-rotation record")
 
@@ -268,13 +271,19 @@ def test_a_lone_surrogate_is_refused_by_the_route_and_the_cli(bundle, tmp_path):
     path.write_text(text, encoding="utf-8")
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)
     assert r.returncode == 1 and "surrogate" in r.stdout and "Traceback" not in r.stderr
-    # In a field the report prints back (the second read: the print itself raised).
-    for field, refused in (("item_id", True), ("log_version", False)):  # the top-level log_version is not signed
+    # In a field the report prints back (the second read: the print itself raised). A top-level copy is unsigned and
+    # must agree with the signed head (row 46), and the head's own value is what is printed.
+    for field in ("item_id", "log_version"):
         path.write_text(json.dumps({**bundle[1], field: "x"}).replace('"x"', '"\\ud800"'), encoding="utf-8")
         r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True,
                            text=True)
-        assert "Traceback" not in r.stderr and "\\ud800" in r.stdout, r.stderr
-        assert (r.returncode == 1) is refused
+        assert "Traceback" not in r.stderr and r.returncode == 1, r.stderr
+    # With no signed head the top-level fields are all there is to print: printed, never a traceback.
+    headless = {k: v for k, v in bundle[1].items() if k not in ("head", "head_signature")}
+    path.write_text(json.dumps({**headless, "item_id": "x"}).replace('"x"', '"\\ud800"'), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True,
+                       text=True)
+    assert "Traceback" not in r.stderr and "\\ud800" in r.stdout and r.returncode == 1, r.stderr
     # A number too long for int(): a ValueError that is not a JSONDecodeError.
     path.write_text('{"entries": [{"seq": ' + "9" * 5000 + "}]}", encoding="utf-8")
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)

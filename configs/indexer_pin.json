@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
+  "digest": "06b3bbf00b25b080d00bc68947f7e42f39bc84946391589769e991ad18ea6317",
   "log": [
     {
       "version": 1,
@@ -91,6 +91,12 @@
       "digest": "b1f79b914a92d9b76459bfd39346808a7ad186b82eae65ec326b683ab48c40b2",
       "kind": "same",
       "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
+    },
+    {
+      "version": 3,
+      "digest": "06b3bbf00b25b080d00bc68947f7e42f39bc84946391589769e991ad18ea6317",
+      "kind": "same",
+      "note": "src/analytics/store.py gained catch_up_source_counters and a chunked scoped reconcile_source_counters (Source.article_count bookkeeping, row 75); no function index_article calls changed, so the rows an article gets are identical"
     }
   ]
 }
