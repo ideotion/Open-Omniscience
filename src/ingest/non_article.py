@@ -123,6 +123,13 @@ _ITEM_ID_PARAM = re.compile(
     r"^(?:(?:article|story|post|item|entry|content|doc|news|obj|page|thread|topic)_?)?id$|^p$|^[ans]id$"
 )
 
+# A BARE SLUG as the whole query string (``/?Benin-le-gouvernement-annonce-...``): some CMSes put the
+# article's slug there with no name and no ``=``. FIELD EVIDENCE (8-instance field test, 2026-11-14,
+# report 5.2): 24haubenin.info stored 899 real articles at such URLs and every one read as the site
+# homepage (listing_url_rate 1.0). Narrow on purpose, like the id rule: the query must be ONE token
+# with no ``=`` or ``&``, at least 12 characters, and at least two hyphens, the shape of a title.
+_QUERY_SLUG = re.compile(r"^[^\W_][\w-]{11,}$")
+
 
 def _has_item_identifier(url: str) -> bool:
     """True if ``url``'s QUERY STRING addresses one specific item (see ``_ITEM_ID_PARAM``).
@@ -132,9 +139,15 @@ def _has_item_identifier(url: str) -> bool:
     path segments and are unaffected.
     """
     try:
-        params = parse_qsl(urlparse(url).query, keep_blank_values=False)
+        query = urlparse(url).query
+        params = parse_qsl(query, keep_blank_values=False)
     except (ValueError, UnicodeDecodeError):  # a malformed URL is not an item address
         return False
+    from urllib.parse import unquote
+
+    bare = unquote(query).strip()
+    if "=" not in bare and "&" not in bare and bare.count("-") >= 2 and _QUERY_SLUG.match(bare):
+        return True
     return any(
         _ITEM_ID_PARAM.match(name.strip().lower()) and any(ch.isdigit() for ch in value)
         for name, value in params

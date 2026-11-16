@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -101,7 +102,22 @@ _BOILERPLATE_PHRASES = (
     "page not found", "404", "access denied", "sign in to", "log in to", "create an account",
     "accept all cookies", "cookie policy", "we use cookies", "consent", "share now", "read more",
     "continue reading", "you have reached your", "for full access", "register to read",
+    # Paywall walls in the languages the 8-instance field test (2026-11-14, report 5.1) found them
+    # in, English-only until then: Amedia's Norwegian "Allerede abonnent?" on 56 sources, the
+    # Finnish "Vain tilaajille" on 20. The other lines are the same wall in the app's other
+    # catalogue languages. Each is a phrase a wall prints and an article almost never does.
+    "allerede abonnent", "kun for abonnenter", "bli abonnent",          # no / da
+    "redan prenumerant", "endast för prenumeranter",                    # sv
+    "vain tilaajille", "jo tilaaja",                                    # fi
+    "nur für abonnenten", "bereits abonnent",                           # de
+    "réservé aux abonnés", "déjà abonné",                               # fr
+    "solo para suscriptores", "ya eres suscriptor",                     # es
+    "riservato agli abbonati", "sei già abbonato",                      # it
+    "exclusivo para assinantes", "já é assinante",                      # pt
+    "alleen voor abonnees", "al abonnee",                               # nl
 )
+# "404" is matched as a NUMBER, not a substring: "2404 dead" or a phone number is not an error page.
+_WORD_PHRASES = frozenset({"404"})
 
 
 def _base_lang(lang: str | None) -> str:
@@ -766,10 +782,12 @@ def select_cheap_signals(
         counts[int(aid)] = int(cnt)
 
     per_source: dict[int, list[int]] = {}
-    for aid, wc, sid, quarantined in session.query(
-        Article.id, Article.word_count, Article.source_id, Article.quarantined
+    for aid, wc, sid, quarantined, lang in session.query(
+        Article.id, Article.word_count, Article.source_id, Article.quarantined, Article.language
     ).filter(Article.quarantined.isnot(True)):
         if quarantined or sid is None or int(sid) not in audited_ids:
+            continue
+        if not _word_signals_apply(lang):  # the label would not fire, so the selector does not pick
             continue
         wc_i = int(wc) if wc is not None else None
         links = counts.get(int(aid), 0)
@@ -856,15 +874,33 @@ def build_sample_union(
     return methods
 
 
-def _pre_label(text_head: str | None, *, word_count: int | None, external_links: int) -> list[str]:
+def _phrase_hit(phrase: str, low: str) -> bool:
+    if phrase in _WORD_PHRASES:
+        return re.search(rf"(?<!\d){re.escape(phrase)}(?!\d)", low) is not None
+    return phrase in low
+
+
+def _word_signals_apply(language: str | None) -> bool:
+    """The two word-count signals mean nothing for an UNSEGMENTED language (zh/ja/th), whose word
+    count is not a count of words -- the same reason its four metrics are NOT-ASSESSED. The field
+    test (2026-11-14, report 5.1) measured 34-46 ``very_short`` false positives per instance on
+    complete Chinese and Japanese articles."""
+    return _base_lang(language) not in UNSEGMENTED
+
+
+def _pre_label(text_head: str | None, *, word_count: int | None, external_links: int,
+               language: str | None = None) -> list[str]:
     """A cheap heuristic pre-label (hints, never verdicts): boilerplate phrase hits, a high
-    outbound-link density, and a very-short body. Works on metadata alone when the text is gated."""
+    outbound-link density, and a very-short body. Works on metadata alone when the text is gated.
+    The two word-count signals are not assessed for an unsegmented language."""
     labels: list[str] = []
     if text_head:
         low = text_head.lower()
-        hits = [p for p in _BOILERPLATE_PHRASES if p in low]
+        hits = [p for p in _BOILERPLATE_PHRASES if _phrase_hit(p, low)]
         if hits:
             labels.append("boilerplate_phrase:" + "|".join(sorted(set(hits))[:5]))
+    if not _word_signals_apply(language):
+        return labels
     if (word_count is not None and word_count > 0
             and (external_links / word_count) >= _HIGH_LINK_DENSITY):
         labels.append(f"high_link_density:{round(external_links / word_count, 3)}")
@@ -921,7 +957,8 @@ def build_sample_records(
             "selection_method": sorted(sample_methods[int(art.id)]),
             "is_newsletter": is_newsletter,
             "text_head_gated": gated,
-            "pre_label": _pre_label(text_head, word_count=art.word_count, external_links=ext_links),
+            "pre_label": _pre_label(text_head, word_count=art.word_count, external_links=ext_links,
+                                    language=art.language),
             "text_head": text_head,
         })
     return records
