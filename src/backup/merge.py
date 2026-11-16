@@ -8050,7 +8050,7 @@ def artifact_source_digest(src: str | os.PathLike[str]) -> str | None:
     digest = manifest.get("plaintext_sha256")
     if digest is None and "members" in manifest:
         return _members_digest(manifest.get("members"))
-    if not isinstance(digest, str) or len(digest) != 64:
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         return None
     return digest
 
