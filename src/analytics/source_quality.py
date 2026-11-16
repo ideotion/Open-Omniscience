@@ -120,7 +120,8 @@ _BOILERPLATE_PHRASES = (
 
 
 def _base_lang(lang: str | None) -> str:
-    return (lang or "unknown").split("-")[0].lower()
+    # "zh_TW" and " zh" are the same language as "zh-TW" (the shape normalize_lang reads too).
+    return ((lang or "").strip().replace("_", "-").split("-")[0].lower()) or "unknown"
 
 
 def _chunks(seq: list[int], n: int = _IN_CHUNK):
@@ -709,12 +710,12 @@ def link_dense_article_ids(
         dense: set[int] = set()
         linked = sorted(counts)
         for chunk in _chunks(linked):
-            for aid, wc, sid in (
-                session.query(Article.id, Article.word_count, Article.source_id)
+            for aid, wc, sid, lang in (
+                session.query(Article.id, Article.word_count, Article.source_id, Article.language)
                 .filter(Article.quarantined.isnot(True))
                 .filter(Article.id.in_(chunk))
             ):
-                if sid is None:
+                if sid is None or not _word_signals_apply(lang):
                     continue
                 wc_i = int(wc) if wc is not None else None
                 if wc_i is None or wc_i <= 0:
@@ -723,7 +724,7 @@ def link_dense_article_ids(
                     dense.add(int(aid))
         return dense
 
-    art_q = session.query(Article.id, Article.word_count, Article.source_id).filter(
+    art_q = session.query(Article.id, Article.word_count, Article.source_id, Article.language).filter(
         Article.quarantined.isnot(True)
     )
     if since is not None:
@@ -734,8 +735,10 @@ def link_dense_article_ids(
     if source_ids is not None:
         art_q = art_q.filter(Article.source_id.in_(sorted(source_ids)))
     dense = set()
-    for aid, wc, sid in art_q:
-        if sid is None:
+    for aid, wc, sid, lang in art_q:
+        # The label and the selector do not assess link density for an unsegmented language (its
+        # word count is not a count of words), so the criterion does not either.
+        if sid is None or not _word_signals_apply(lang):
             continue
         links = counts.get(int(aid), 0)
         if not links:

@@ -82,7 +82,9 @@ _WALL_PHRASES = (
     # WordPress's untouched default post, stored as an article on four sites in the 8-instance field
     # test (2026-11-14, report 5.2). The PHP, JavaScript and Flash notices of the same report are
     # handled at the door (src/ingest/page_notices.py, PR #2056).
-    "this is your first post",
+    # The stock text, not just its first sentence: "this is your first post" alone matched real briefs
+    # ("This is your first posting abroad", "your first post-season win").
+    "this is your first post. edit or delete it",
 )
 # The load-bearing guard: a body at/above this many words is a real article, KEPT regardless of
 # URL. The recall-gap non-article pages had ~30-50 extracted words; real articles run far longer.
@@ -135,7 +137,8 @@ _ITEM_ID_PARAM = re.compile(
 # starting with a tracking or view word.
 _QUERY_SLUG = re.compile(r"^[^\W_][\w-]{11,}$")
 #: First words of query tokens that are tracking or view switches, never a title.
-_NOT_A_SLUG_HEAD = frozenset({"utm", "fbclid", "gclid", "amp", "lang", "ref", "source", "view", "print"})
+_NOT_A_SLUG_HEAD = frozenset({"utm", "fbclid", "gclid", "amp", "lang", "ref", "source", "view", "print",
+                              "sort", "preview", "mc", "filter"})
 
 
 def _has_item_identifier(url: str) -> bool:
