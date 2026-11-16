@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import func
 
 from src.analytics.quarantine_scope import not_quarantined
+from src.analytics.source_article_counts import unquarantined_counts_by_source
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
@@ -3409,21 +3410,27 @@ def source_type_facets(session) -> dict:
     table on source_type — index-friendly, never reads article content (no codec
     decrypt); Article.source_id is NOT NULL, so every article is counted exactly once.
     """
+    # QUARANTINED articles are excluded here for the same reason the docstring
+    # below gives: ``_query_articles`` applies this condition ALWAYS, not as an
+    # optional filter (src/api/main.py:1150, and again at :1269 for the
+    # explicit-id path), so without it the facet promised more articles than
+    # clicking it delivers -- and the equality was not a nicety, it was stated
+    # as a property. Found by an adversarial review of a proposed waffle chart:
+    # a discrepancy that is quiet in a chip label becomes COUNTABLE the moment
+    # one square means one article.
+    #
+    # Counted per source from ``idx_article_feed_scan`` alone, then folded onto the
+    # small sources table here (field test 2026-11-14 row 59: the join read every
+    # article ROW, text included, and timed out at 60 s after an unlock; see
+    # ``src.analytics.source_article_counts``). An article whose source row is missing
+    # is left out, as the inner join left it out.
+    per_source = unquarantined_counts_by_source(session)
+    type_of = dict(session.query(Source.id, Source.source_type).all())
     counts: dict[str, int] = {}
-    for st, c in (
-        session.query(Source.source_type, func.count(Article.id))
-        .join(Article, Article.source_id == Source.id)
-        # QUARANTINED articles are excluded here for the same reason the docstring
-        # below gives: ``_query_articles`` applies this condition ALWAYS, not as an
-        # optional filter (src/api/main.py:1150, and again at :1269 for the
-        # explicit-id path), so without it the facet promised more articles than
-        # clicking it delivers -- and the equality was not a nicety, it was stated
-        # as a property. Found by an adversarial review of a proposed waffle chart:
-        # a discrepancy that is quiet in a chip label becomes COUNTABLE the moment
-        # one square means one article.
-        .filter(Article.quarantined.isnot(True))
-        .group_by(Source.source_type)
-    ):
+    for sid, c in per_source.items():
+        if sid not in type_of:
+            continue
+        st = type_of[sid]
         # Normalise identically to the filter (lowercase; NULL/blank -> untyped), so the
         # facet count for a channel EQUALS what clicking it in /api/articles returns.
         key = (st or "").strip().lower() or SOURCE_TYPE_UNTYPED

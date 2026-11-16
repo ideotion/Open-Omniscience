@@ -294,25 +294,29 @@ def latest_articles(
 def _facet_options(session: Session, since: datetime) -> tuple[dict[str, int], list[dict]]:
     """Content-type + tag options present in the recent window (independent of the
     active filters), so a UI can offer every channel/tag the window contains. Counts
-    only; article-count group-bys joined to the small sources table (no decrypt)."""
-    type_counts: dict[str, int] = {}
-    for stype, c in (
-        session.query(func.coalesce(Source.source_type, "news"), func.count(Article.id))
-        .join(Article, Article.source_id == Source.id)
-        .filter(Article.created_at >= since)
-        .group_by(func.coalesce(Source.source_type, "news"))
-    ):
-        type_counts[stype] = int(c)
+    only; per-source counts read from indexes alone, folded onto the small sources table."""
+    # Counted per source from two indexes and folded onto the small sources table here
+    # (field test 2026-11-14 row 59: the joins read every article ROW in the window,
+    # text included, and with the candidate read this route answered 503 at the 60 s
+    # deadline after an unlock; see ``src.analytics.source_article_counts``). The same
+    # numbers: COALESCE(source_type, 'news') as the GROUP BY spelled it (so '' stays
+    # ''), a source with NULL tags offers no tag, and an article whose source row is
+    # missing is left out as the inner join left it out.
+    from src.analytics.source_article_counts import counts_by_source_since
 
+    per_source = counts_by_source_since(session, since)
+    meta_of = {sid: (stype, tags) for sid, stype, tags in session.query(Source.id, Source.source_type, Source.tags)}
+    type_counts: dict[str, int] = {}
     tag_counts: dict[str, int] = {}
-    for tags, c in (
-        session.query(Source.tags, func.count(Article.id))
-        .join(Article, Article.source_id == Source.id)
-        .filter(Article.created_at >= since, Source.tags.isnot(None))
-        .group_by(Source.tags)
-    ):
-        for t in _split_tags(tags):
-            tag_counts[t] = tag_counts.get(t, 0) + int(c)
+    for sid, c in per_source.items():
+        if sid not in meta_of:
+            continue
+        stype, tags = meta_of[sid]
+        tkey = "news" if stype is None else stype
+        type_counts[tkey] = type_counts.get(tkey, 0) + int(c)
+        if tags is not None:
+            for t in _split_tags(tags):
+                tag_counts[t] = tag_counts.get(t, 0) + int(c)
 
     types = dict(sorted(type_counts.items(), key=lambda kv: (-kv[1], kv[0])))
     tags_out = [
