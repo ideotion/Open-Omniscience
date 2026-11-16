@@ -85,6 +85,7 @@ from __future__ import annotations
 import ast
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -263,9 +264,12 @@ def check_math_row(row: Any) -> dict:
 
     Returns ``{label, value, checkable, reason, ...}``. ``checkable`` is False —
     with a stated ``reason`` — for every row this cannot mechanically recompute
-    (a bare number, a ✓/— flag, a range, a threshold). A row is only ever reported
-    ``reproduced: true`` when its left-hand side was actually re-evaluated and
-    matched its right-hand side. NEVER a pass that was not verified.
+    (a bare number, a ✓/— flag, a range, a threshold whose tested value sits on
+    another row). A row is only ever reported ``reproduced: true`` when its
+    left-hand side was actually re-evaluated and matched its right-hand side, or,
+    for a comparison row ("a ≥ b ✓"), when both sides were re-evaluated and the
+    comparison re-made agrees with its verdict mark. NEVER a pass that was not
+    verified. ``row_kind`` says which of the three shapes the row has.
     """
     if not isinstance(row, dict):
         return {
@@ -276,13 +280,18 @@ def check_math_row(row: Any) -> dict:
         }
     label = row.get("label")
     raw = row.get("value")
-    out: dict = {"label": label, "value": raw, "checkable": False, "reason": None}
+    out: dict = {
+        "label": label, "value": raw, "checkable": False, "reason": None, "row_kind": "quantity",
+    }
+    if isinstance(raw, str) and _comparison_parts(raw) is not None:
+        return _check_comparison_row(raw, out)
     if not isinstance(raw, str) or "=" not in raw:
         out["reason"] = (
             "no '=' in the value — this row states a quantity or a flag rather than "
             "an equation, so there is nothing to recompute"
         )
         return out
+    out["row_kind"] = "equation"
 
     lhs_raw, rhs_raw = raw.rsplit("=", 1)
     lhs = lhs_raw
@@ -341,6 +350,126 @@ def check_math_row(row: Any) -> dict:
     return out
 
 
+# A COMPARISON row states a test and its verdict: "24.21 ≥ 8 × 2.14 ✓". Both sides are
+# recomputed and the comparison re-made, so the tick is checked rather than trusted. The
+# operators are matched longest first so ">=" is never read as ">" followed by "=".
+_COMPARATORS: tuple[tuple[str, str], ...] = (
+    ("≥", ">="), (">=", ">="), ("≤", "<="), ("<=", "<="), (">", ">"), ("<", "<"),
+)
+_TICKS = {"✓": True, "✗": False}
+_NUMBER_LITERAL = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _comparison_parts(raw: str) -> tuple[str, str, str, bool] | None:
+    """``(lhs, op, rhs, ticked)`` when ``raw`` is ONE comparison followed by a ✓/✗ verdict.
+
+    Anything else -- no verdict mark, no operator, or more than one operator -- is not a
+    comparison row and goes down the equation/quantity path unchanged.
+    """
+    body = raw.strip()
+    if not body or body[-1] not in _TICKS:
+        return None
+    ticked = _TICKS[body[-1]]
+    body = body[:-1].strip()
+    found: list[tuple[int, str, str]] = []
+    i = 0
+    while i < len(body):
+        for sym, op in _COMPARATORS:
+            if body.startswith(sym, i):
+                found.append((i, sym, op))
+                i += len(sym)
+                break
+        else:
+            i += 1
+    if len(found) != 1:
+        return None
+    at, sym, op = found[0]
+    return body[:at], op, body[at + len(sym):], ticked
+
+
+def _side_error_bound(rendered: str, value: float) -> float:
+    """How far the TRUE value of one displayed side can sit from ``value``.
+
+    Every number on a card is shown rounded, so each literal may be off by half a unit in
+    its last shown place. The bound adds, for every literal, its own half-unit scaled by
+    the side's size over the literal's (the first-order error of a product or quotient)
+    plus the half-unit itself (the error of a sum). That over-covers every one of the four
+    operators, so a verdict is only ever re-made where the displayed numbers settle it.
+    An integer counts as rounded to the unit too: nothing on the card says it is exact,
+    so a comparison of small integers may stay undecided rather than be guessed.
+    """
+    bound = 0.0
+    for lit in _NUMBER_LITERAL.findall(rendered):
+        half = _display_tolerance(lit)
+        number = float(lit)
+        bound += half + (abs(value) * half / number if number else 0.0)
+    return bound
+
+
+def _check_comparison_row(raw: str, out: dict) -> dict:
+    """Re-make a comparison row's test and check its ✓/✗ against the result."""
+    parts = _comparison_parts(raw)
+    assert parts is not None  # the caller matched it
+    lhs_raw, op, rhs_raw, ticked = parts
+    out["row_kind"] = "comparison"
+    if not lhs_raw.strip():
+        out["reason"] = (
+            "a threshold with no left-hand side — the value it tests is stated on another "
+            "row, so which one is not knowable without guessing"
+        )
+        return out
+    sides: list[float] = []
+    for name, side in (("left", lhs_raw), ("right", rhs_raw)):
+        expr = side
+        for src, dst in _ARITH_SUBSTITUTIONS:
+            expr = expr.replace(src, dst)
+        bad = sorted({ch for ch in expr if ch not in _ARITH_ALLOWED})
+        if bad:
+            out["reason"] = (
+                f"{name}-hand side carries non-arithmetic character(s) {bad} — not "
+                "recomputable without guessing what they mean"
+            )
+            return out
+        expr = expr.strip()  # a leading space is an indentation error to ast.parse
+        value = _safe_arith(expr) if expr else None
+        if value is None:
+            out["reason"] = f"{name}-hand side did not parse as arithmetic (or divides by zero)"
+            return out
+        sides.append(value)
+    left, right = sides
+    margin = _side_error_bound(lhs_raw, left) + _side_error_bound(rhs_raw, right)
+    if abs(left - right) <= margin:
+        out.update(
+            {
+                "recomputed_left": round(left, 6),
+                "recomputed_right": round(right, 6),
+                "margin": round(margin, 9),
+                "reason": (
+                    "the two sides are within the rounding of the numbers shown, so the "
+                    "displayed figures cannot settle the comparison either way"
+                ),
+            }
+        )
+        return out
+    holds = {
+        ">=": left >= right, ">": left > right, "<=": left <= right, "<": left < right,
+    }[op]
+    out.update(
+        {
+            "checkable": True,
+            "reason": None,
+            "recomputed_left": round(left, 6),
+            "recomputed_right": round(right, 6),
+            "operator": op,
+            "margin": round(margin, 9),
+            "comparison_holds": holds,
+            "claimed_holds": ticked,
+            "reproduced": holds == ticked,
+        }
+    )
+    return out
+
+
 def check_trigger(trigger: Any) -> dict:
     """Dimension 1 over a card's whole ``trigger`` block. Pure.
 
@@ -354,6 +483,7 @@ def check_trigger(trigger: Any) -> dict:
             "rows_total": 0,
             "checkable_n": 0,
             "not_checkable_n": 0,
+            "quantity_rows_n": 0,
             "reproduced_n": 0,
             "failed_n": 0,
             "rows": [],
@@ -365,6 +495,7 @@ def check_trigger(trigger: Any) -> dict:
             "rows_total": 0,
             "checkable_n": 0,
             "not_checkable_n": 0,
+            "quantity_rows_n": 0,
             "reproduced_n": 0,
             "failed_n": 0,
             "rows": [],
@@ -382,12 +513,15 @@ def check_trigger(trigger: Any) -> dict:
         "rows_total": len(math_rows),
         "checkable_n": len(checkable),
         "not_checkable_n": len(checks) - len(checkable),
+        "quantity_rows_n": sum(1 for c in checks if c.get("row_kind") == "quantity"),
         "reproduced_n": len(reproduced),
         "failed_n": len(checkable) - len(reproduced),
         "rows": checks,
         "note": (
-            "Only rows stating an equation are recomputable; every other row is "
-            "reported checkable:false with its reason, never counted as a pass."
+            "Rows stating an equation (a = b) or a comparison with its verdict (a ≥ b ✓) are "
+            "recomputed; every other row is reported checkable:false with its reason, never "
+            "counted as a pass. quantity_rows_n of those state a count, a range or a flag: "
+            "there is nothing in them to recompute, which is not a gap in the check."
         ),
     }
 
@@ -1232,6 +1366,48 @@ def _evidence_article_ids(card) -> list[int]:
     return ids
 
 
+#: WHAT ``n`` COUNTS, per card type, for the types that carry article ids. ``n`` is "the
+#: sample size behind the signal", and on many cards that sample is not the article set:
+#: the reading-diet card's n is the number of SOURCES while its ids are the articles
+#: (capped at 2000), a rising card's n is MENTIONS while its ids are the few articles that
+#: illustrate them. Comparing those to the id count reported a mismatch on every such
+#: card, which the 2026-11-14 field test read as a producer defect. Only an "articles"
+#: card's n is compared with its ids; every other unit is reported as what it is.
+#: ``tests/test_card_audit_n_units.py`` fails when a producer that sets article_ids has
+#: no entry here, so a new card type cannot fall back to the misleading comparison.
+N_COUNTS_BY_TYPE: dict[str, str] = {
+    # n is the number of articles in article_ids
+    "framing_split": "articles",
+    "through_time": "articles",
+    "ownership_change": "articles",
+    "lonely_signal": "articles",
+    "weather_corroboration": "articles",
+    "space_time_convergence": "articles",
+    "watch_match": "articles",
+    "source_laundering": "articles",
+    "recycled_claim": "articles",
+    "headline_body_mismatch": "articles",
+    "manufactured_emergence": "articles",
+    "flooded_topic": "articles",
+    "copypasta": "articles",
+    "disputed_chronology": "articles",
+    "story_propagation": "articles",
+    "supply_chain_ripple": "articles",
+    "recipe_promise": "articles",
+    # n counts something else; the ids are the articles behind it
+    "rising": "mentions",
+    "emotion_profile": "mentions",
+    "supergroup_rising": "mentions",
+    "diet_self_audit": "sources",
+    "capacity_implausible": "sources",
+    "echo_chamber": "sources",
+    "story_lineage": "sources",
+    "buried_topic": "articles_in_source",
+    "price_narrative": "days",
+    "severity_alert": "alert_signals",
+}
+
+
 def _corpus_fidelity(card, resolved: dict) -> dict:
     """Dimension 2 — do the ids resolve, and does the count match the claimed ``n``?"""
     total = resolved.get("total", 0)
@@ -1253,6 +1429,10 @@ def _corpus_fidelity(card, resolved: dict) -> dict:
                 "whole-corpus distribution, so there is no id set to reconcile (not a defect)"
             ),
         }
+    n_counts = N_COUNTS_BY_TYPE.get(str(getattr(card, "type", "") or ""), "undeclared")
+    # The card's OWN id set: evidence-only ids are examples, never part of what n counts.
+    own_ids = len(set(getattr(card, "article_ids", None) or []))
+    compared = isinstance(n, int) and n_counts == "articles" and own_ids > 0
     return {
         "has_article_ids": True,
         "article_ids_total": total,
@@ -1261,14 +1441,18 @@ def _corpus_fidelity(card, resolved: dict) -> dict:
         "quarantined_n": quarantined,
         "live_n": found - quarantined,
         "n_claimed": n,
-        "n_matches_ids": (n == total) if isinstance(n, int) else None,
-        "n_vs_ids_delta": (n - total) if isinstance(n, int) else None,
+        "n_counts": n_counts,
+        "card_article_ids_n": own_ids,
+        "n_matches_ids": (n == own_ids) if compared else None,
+        "n_vs_ids_delta": (n - own_ids) if compared else None,
         "note": (
             "resolved_n counts ids that still exist; missing_n are ids with no article row "
             "(a pruned/deleted article the card still points at). quarantined_n are resolved "
             "but excluded from search/analytics by default, so live_n is what a reader reaches. "
-            "n_matches_ids compares the card's own claimed n against its id-set size; None means "
-            "the card states no n."
+            "n_counts says what this card type's n counts. n_matches_ids compares n with the "
+            "card's own article_ids only when n counts those articles; None means the card "
+            "states no n, or its n counts something else (sources, mentions, days), so there "
+            "is nothing to reconcile."
         ),
     }
 
@@ -1689,11 +1873,13 @@ def card_audit_report(
                 "math_rows_total": sum(a.get("rows_total", 0) for a in arith_rows),
                 "checkable_n": sum(a.get("checkable_n", 0) for a in arith_rows),
                 "not_checkable_n": sum(a.get("not_checkable_n", 0) for a in arith_rows),
+                "quantity_rows_n": sum(a.get("quantity_rows_n", 0) for a in arith_rows),
                 "reproduced_n": sum(a.get("reproduced_n", 0) for a in arith_rows),
                 "failed_n": sum(a.get("failed_n", 0) for a in arith_rows),
                 "note": (
                     "reproduced_n counts rows actually recomputed and matched. "
-                    "not_checkable_n is stated separately and is NOT a pass."
+                    "not_checkable_n is stated separately and is NOT a pass; quantity_rows_n "
+                    "of those state a count, a range or a flag, with nothing to recompute."
                 ),
             },
             "non_fabrication": {
@@ -1715,6 +1901,15 @@ def card_audit_report(
                 ),
                 "cards_where_n_mismatches_ids": sum(
                     1 for f in fid_rows if f.get("n_matches_ids") is False
+                ),
+                "cards_where_n_counts_another_unit": sum(
+                    1
+                    for f in fid_rows
+                    if f.get("has_article_ids")
+                    and f.get("n_counts") not in ("articles", "undeclared")
+                ),
+                "cards_with_undeclared_n_unit": sum(
+                    1 for f in fid_rows if f.get("n_counts") == "undeclared"
                 ),
             },
         },
