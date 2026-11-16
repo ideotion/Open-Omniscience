@@ -48,7 +48,9 @@ SCHEMA = "oo-criteria-calibration-1"
 # the reversibility story. Measured on the 2026-08-23 field corpus: the drop path went
 # from 12 specimens to 8, and the 4 it stopped flagging had function-word densities of
 # 0.28-0.37 (prose), against 0.0 for all 8 it kept.
-CRITERIA_VERSION = "nav-soup-v2"
+# v3 (2026-11-16, R726): the screening reads an article kept compressed (its `content` column is empty, so until now the
+# text signals measured nothing and always kept it). Same rules, new population: the stamp says which generation could see it.
+CRITERIA_VERSION = "nav-soup-v3"
 _DEFAULT_TOP_N = 100
 _DEFAULT_PROSE_GATE_LIMIT = 2000
 
