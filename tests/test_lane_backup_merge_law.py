@@ -263,3 +263,159 @@ def test_a_document_key_the_corpus_holds_twice_links_nothing(machines, tmp_path,
     rep = lane_merge.merge_lane_file("law", snap, [None])
     assert rep["tables"]["law_document_meta"]["inserted"] == 0
     assert rep["tables"]["law_document_meta"]["not_linked"] == 2
+
+
+def _snap_of(b, use, tmp_path, seed) -> Path:
+    use(b)
+    with store.lane_session("law") as s:
+        seed(s)
+        s.commit()
+    snap = tmp_path / "snap" / "law.db"
+    lane_merge.snapshot_lane_for_backup("law", snap)
+    store.dispose_lane("law")
+    return snap
+
+
+def test_a_version_this_machine_holds_keeps_its_own_parse_whole(machines, tmp_path, corpus):
+    """Security read on PR 2: provisions merge per VERSION, never per address."""
+    a, b, use = machines
+
+    def seed_b(s):
+        ident = _identity(s, "loi-1")
+        _meta(s, "k-shared", ident)
+        s.add_all([
+            LawProvision(revision_lane_key="r1", document_lane_key="k-shared", address="art-1", text="new", content_hash="x"),
+            LawProvision(revision_lane_key="r1", document_lane_key="k-shared", address="art-3", text="three", content_hash="x"),
+        ])
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    use(a)
+    with store.lane_session("law") as s:
+        _meta(s, "k-shared", _identity(s, "loi-1"))
+        s.add_all([
+            LawProvision(revision_lane_key="r1", document_lane_key="k-shared", address="art-1", text="old", content_hash="o"),
+            LawProvision(revision_lane_key="r1", document_lane_key="k-shared", address="art-2", text="two", content_hash="t"),
+        ])
+        s.commit()
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_provisions"] == {"inserted": 0, "not_linked": 0, "kept_local_parse": 1}
+    with store.lane_session("law") as s:
+        got = sorted((p.address, p.text) for p in s.scalars(select(LawProvision)))
+    assert got == [("art-1", "old"), ("art-2", "two")]
+
+
+def test_a_new_version_s_provisions_carry_a_hash_of_their_own_text(machines, tmp_path, corpus):
+    import hashlib
+
+    a, b, use = machines
+
+    def seed_b(s):
+        _meta(s, "k-shared", _identity(s, "loi-1"))
+        s.add(LawProvision(revision_lane_key="r1", document_lane_key="k-shared", address="art-1",
+                           text="Article 1", content_hash="forged", num="x" * 65))
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    lane_merge.merge_lane_file("law", snap, [None])
+    with store.lane_session("law") as s:
+        p = s.scalars(select(LawProvision)).one()
+        assert p.content_hash == hashlib.sha256(b"Article 1").hexdigest()
+        assert p.num is None  # longer than the column: not copied, never truncated
+
+
+def test_a_backup_identity_the_model_would_not_write_is_not_inserted(machines, tmp_path, corpus):
+    """Security read on PR 2: the triple must be in normal form and the vocabularies closed."""
+    a, b, use = machines
+
+    def seed_b(s):
+        bad = LawIdentity(identity_scheme="ELI ", jurisdiction_alpha3="fra", document_identity="LOI-1",
+                          jurisdiction_level="<img src=x>", doc_type="bill", legal_system="pwned", status="x")
+        s.add(bad)
+        s.flush()
+        _meta(s, "k-new", bad)
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_identities"]["inserted"] == 0
+    assert rep["tables"]["law_document_meta"]["inserted"] == 0
+    assert rep["tables"]["law_document_meta"]["not_linked"] == 1
+    assert [i[0] for i in _state()["ids"]] == ["loi-1"]
+
+
+def test_an_unknown_status_or_legal_system_is_stored_as_unknown(machines, tmp_path, corpus):
+    a, b, use = machines
+
+    def seed_b(s):
+        _meta(s, "k-new", _identity(s, "loi-2", status="Weird-Status", legal_system="pwned"))
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    lane_merge.merge_lane_file("law", snap, [None])
+    with store.lane_session("law") as s:
+        ident = s.scalars(select(LawIdentity).where(LawIdentity.document_identity == "loi-2")).one()
+        assert (ident.status, ident.legal_system) == ("unknown", "unknown")
+
+
+def test_a_bare_identity_row_fills_nothing_on_a_law_it_does_not_link(machines, tmp_path, corpus):
+    """Security read on PR 2: identity triples are public, so a fill needs a linked version."""
+    a, b, use = machines
+
+    def seed_b(s):
+        _identity(s, "loi-1", repealed_on="1999-01-01", issuing_body="x" * 300)  # no version at all
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_identities"]["filled"] == 0
+    assert _state()["ids"] == [("loi-1", None, None)]
+
+
+def test_an_identity_fill_copies_only_well_formed_values(machines, tmp_path, corpus):
+    a, b, use = machines
+
+    def seed_b(s):
+        ident = _identity(s, "loi-1", issuing_body="x" * 300, enacted_on="not a date", published_on="2019-03-01")
+        _meta(s, "k-shared", ident)
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_identities"]["filled"] == 1
+    with store.lane_session("law") as s:
+        ident = s.scalars(select(LawIdentity)).one()
+        assert (ident.issuing_body, ident.enacted_on, ident.published_on) == (None, None, "2019-03-01")
+
+
+def test_a_row_reached_by_both_meta_fills_counts_once(machines, tmp_path, corpus):
+    a, b, use = machines
+
+    def seed_b(s):
+        _meta(s, "k-shared", _identity(s, "loi-1"), title="Loi", translated_by="Body", licence_id="unknown")
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    use(a)
+    with store.lane_session("law") as s:
+        _meta(s, "k-shared", _identity(s, "loi-1"), licence_id="unknown")
+        s.commit()
+    rep = lane_merge.merge_lane_file("law", snap, [None])
+    assert rep["tables"]["law_document_meta"]["filled"] == 1
+    with store.lane_session("law") as s:
+        m = s.scalars(select(LawDocumentMeta)).one()
+        assert (m.title, m.translated_by) == ("Loi", "Body")
+
+
+def test_new_version_values_are_copied_only_in_the_shape_the_app_writes(machines, tmp_path, corpus):
+    a, b, use = machines
+
+    def seed_b(s):
+        _meta(s, "k-new", _identity(s, "loi-1"), licence_id=" licence-ouverte-2.0 ",
+              source_url="javascript:alert(1)", title="t" * 600)
+
+    snap = _snap_of(b, use, tmp_path, seed_b)
+    _seed_a(a, use)
+    lane_merge.merge_lane_file("law", snap, [None])
+    with store.lane_session("law") as s:
+        m = s.scalars(select(LawDocumentMeta).where(LawDocumentMeta.lane_key == "k-new")).one()
+        # The licence is a catalogue key or nothing, exactly as register_document takes it.
+        assert (m.licence_id, m.source_url, m.title) == ("unknown", None, None)
