@@ -701,3 +701,55 @@ def test_a_prune_whose_epoch_bump_fails_rolls_its_chunk_back(tmp_path, monkeypat
     assert r["pruned"] == 0 and r["epoch_bumped"] is False
     assert s.get(Keyword, top + 10) is not None  # the chunk was rolled back with the bump
     assert get_corpus_epoch(s) == e0
+
+
+def _slow_tail_scan(monkeypatch):
+    """Make the serve's first read a statement that runs past a short deadline (a stand-in for a long tail scan)."""
+    real = day_counts._max_id
+
+    def slow(conn):
+        conn.exec_driver_sql(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50000000) SELECT count(*) FROM n"
+        ).scalar()
+        return real(conn)
+
+    monkeypatch.setattr(day_counts, "_max_id", slow)
+
+
+def test_the_requests_deadline_stopping_the_serve_is_raised_not_read_live(tmp_path, monkeypatch, caplog):
+    """Field test 2026-11-14, OOS-4: the request's own stop was logged as "serve failed" and then read live with no
+    time left, so the live scan was interrupted too. Once the deadline has passed the interrupt is the deadline's."""
+    import logging
+
+    from src.database.maintenance import StatementTimeout, statement_deadline
+
+    eng, s, ex = _corpus(tmp_path)
+    _build(eng)
+    s.info.pop("keyword_day_counts", None)
+    _slow_tail_scan(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=day_counts.__name__)
+    with pytest.raises(StatementTimeout), statement_deadline(s, seconds=0.05):
+        day_counts.windowed_counts(s, lo=LO, hi=HI)
+    assert "serve failed" not in caplog.text
+
+
+def test_a_serve_error_inside_the_deadline_still_reads_live(tmp_path, monkeypatch, caplog):
+    """The other side: a database error that is not the deadline's keeps the old answer (None, logged, read live)."""
+    import logging
+
+    from sqlalchemy.exc import OperationalError
+
+    from src.database.maintenance import statement_deadline
+
+    eng, s, ex = _corpus(tmp_path)
+    _build(eng)
+    s.info.pop("keyword_day_counts", None)
+
+    def broken(_conn):
+        raise OperationalError("SELECT", {}, Exception("no such table: keyword_mentions_all"))
+
+    monkeypatch.setattr(day_counts, "_max_id", broken)
+    caplog.set_level(logging.WARNING, logger=day_counts.__name__)
+    with statement_deadline(s, seconds=60):
+        assert day_counts.windowed_counts(s, lo=LO, hi=HI) is None
+    assert "serve failed; reading live" in caplog.text
