@@ -709,6 +709,8 @@ class ImportQueueManager:
             str(raw.get("label") or Path(str(raw.get("path"))).name)
             for raw in items or []
             if raw.get("kind") == "corpus" and raw.get("path")
+            # a backup the run skips as already merged is never opened, so an old passphrase for it cannot stop the start
+            and (raw.get("force") or not ImportQueueManager._already_merged(str(raw["path"])))
             and backup_passphrase_is_wrong(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
         ]
         if wrong:
