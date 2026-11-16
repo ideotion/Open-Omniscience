@@ -25,6 +25,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from src.analytics.link_furniture import METHOD as FURNITURE_METHOD
+from src.analytics.link_furniture import furniture_pairs
 from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.normalize import registrable_domain
 from src.database.models import Article, ArticleLink, Source
@@ -165,60 +167,18 @@ def corpus_links(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap, adv=adv)
     items: list[dict] = []
+    furniture_items: list[dict] = []
     if ids:
-        cit = func.count(func.distinct(ArticleLink.article_id))
-        # DISTINCT CITING SOURCES, alongside distinct citing ARTICLES. The two counts
-        # are what separate echo from corroboration, and only the pair can say which:
-        # five articles from one outlet citing a page is one voice; five articles from
-        # five outlets is five paths that merely happen to share this origin. The join
-        # is many-to-one (a link row belongs to exactly one article), so it adds no
-        # fan-out to the article count grouped beside it.
-        # OUTLETS, not feeds: two feeds of one site are one voice (row J, R146).
-        srcs = func.count(func.distinct(outlet_expr(Article.source_id, Source.outlet_id, unhealed=outlets_unhealed(db))))
-        rows = (
-            db.query(
-                ArticleLink.normalized_url.label("nu"),
-                cit.label("citations"),
-                srcs.label("sources"),
-                func.max(ArticleLink.url).label("sample_url"),
-                func.max(ArticleLink.link_text).label("sample_text"),
-            )
-            .join(Article, Article.id == ArticleLink.article_id)
-            .outerjoin(Source, Source.id == Article.source_id)
-            .filter(ArticleLink.article_id.in_(ids))
-            .group_by(ArticleLink.normalized_url)
-            .having(cit >= min_citations)
-            .order_by(desc("citations"))
-            .limit(limit)
-            .all()
-        )
-        items = [
-            {
-                "normalized_url": r.nu,
-                "sample_url": r.sample_url,
-                "link_text": r.sample_text,
-                "domain": registrable_domain(r.nu),
-                "citations": int(r.citations),
-                "citing_sources": int(r.sources),
-                # A MACHINE-READABLE verdict, never prose: the caller renders it in the
-                # reader's own language. "distinct_sources" holds ONLY when every citing
-                # article comes from a different outlet -- one outlet citing a page twice
-                # makes the count of articles overstate the count of independent paths,
-                # so that case reads as single_origin, exactly like a lone outlet does.
-                "independence": (
-                    "distinct_sources"
-                    if int(r.sources) > 1 and int(r.citations) == int(r.sources)
-                    else "single_origin"
-                ),
-            }
-            for r in rows
-        ]
+        items, furniture_items = _shared_links(db, ids, min_citations=min_citations, limit=limit)
     return {
         "n_articles": len(ids),
         "total_matched": total,
         "capped": total > len(ids),
         "min_citations": min_citations,
         "items": items,
+        # Row 99: a link an outlet carries on most of its pages is its footer, not a citation; listed apart, never dropped.
+        "furniture_items": furniture_items,
+        "furniture_method": FURNITURE_METHOD,
         "method": (
             "Outbound URLs cited by at least min_citations of the matched articles, "
             "with the distinct-article and distinct-source counts side by side."
@@ -231,6 +191,97 @@ def corpus_links(
             "view cannot see."
         ),
     }
+
+
+def _shared_links(db: Session, ids: list[int], *, min_citations: int, limit: int) -> tuple[list[dict], list[dict]]:
+    """The Links tab's rows, with each outlet's page furniture taken out of the counts and listed apart (row 99).
+
+    A link counts as cited by an article only when that article's source does not carry it as furniture
+    (``link_furniture.furniture_pairs``, the reader's own measure). A URL that falls under ``min_citations`` once its
+    furniture carriers are left out goes to the second list, with both counts, so nothing disappears unexplained.
+    """
+    cit = func.count(func.distinct(ArticleLink.article_id))
+    # The candidate URLs: cited by at least min_citations of the set before anything is left out. The cut at ``limit``
+    # is applied only AFTER the furniture is taken out, so a footer link cannot push a real citation off the list.
+    candidates = [
+        str(u)
+        for (u,) in db.query(ArticleLink.normalized_url)
+        .filter(ArticleLink.article_id.in_(ids), ArticleLink.normalized_url.isnot(None))
+        .group_by(ArticleLink.normalized_url)
+        .having(cit >= min_citations)
+        .all()
+        if u
+    ]
+    if not candidates:
+        return [], []
+    # DISTINCT CITING SOURCES, alongside distinct citing ARTICLES. The two counts
+    # are what separate echo from corroboration, and only the pair can say which:
+    # five articles from one outlet citing a page is one voice; five articles from
+    # five outlets is five paths that merely happen to share this origin.
+    # OUTLETS, not feeds: two feeds of one site are one voice (row J, R146).
+    outlet = outlet_expr(Article.source_id, Source.outlet_id, unhealed=outlets_unhealed(db))
+    wanted = set(candidates)
+    per_url: dict[str, dict[str, Any]] = {}
+    # Read from the ARTICLE side (the id set, through the covering (article_id, normalized_url) index) and keep only the
+    # candidate URLs: going in by URL instead reads every link of every popular URL in the whole corpus.
+    for i in range(0, len(ids), 500):
+        for nu, aid, sid, out_key, raw, text in (
+            db.query(ArticleLink.normalized_url, ArticleLink.article_id, Article.source_id, outlet,
+                     ArticleLink.url, ArticleLink.link_text)
+            .join(Article, Article.id == ArticleLink.article_id)
+            .outerjoin(Source, Source.id == Article.source_id)
+            .filter(ArticleLink.article_id.in_(ids[i : i + 500]), ArticleLink.normalized_url.isnot(None))
+            .all()
+        ):
+            if nu not in wanted:
+                continue
+            row = per_url.setdefault(str(nu), {"carriers": {}, "url": None, "text": None})
+            row["carriers"][int(aid)] = (sid, out_key)
+            # The same sample the grouped query took before (its max), so a row reads as it did.
+            if raw is not None and (row["url"] is None or raw > row["url"]):
+                row["url"] = raw
+            if text is not None and (row["text"] is None or text > row["text"]):
+                row["text"] = text
+    furniture = furniture_pairs(
+        db, ((sid, nu) for nu, row in per_url.items() for sid, _ in row["carriers"].values())
+    )
+    kept: list[dict] = []
+    apart: list[dict] = []
+    for nu, row in per_url.items():
+        citing = {a: v for a, v in row["carriers"].items() if (v[0], nu) not in furniture}
+        n_all = len(row["carriers"])
+        n_furniture = n_all - len(citing)
+        n_cit = len(citing)
+        n_src = len({v[1] for v in citing.values()})
+        base = {
+            "normalized_url": nu,
+            "sample_url": row["url"],
+            "link_text": row["text"],
+            "domain": registrable_domain(nu),
+        }
+        if n_cit >= min_citations:
+            kept.append(
+                {
+                    **base,
+                    "citations": n_cit,
+                    "citing_sources": n_src,
+                    "furniture_carriers": n_furniture,
+                    # A MACHINE-READABLE verdict, never prose: the caller renders it in the
+                    # reader's own language. "distinct_sources" holds ONLY when every citing
+                    # article comes from a different outlet -- one outlet citing a page twice
+                    # makes the count of articles overstate the count of independent paths,
+                    # so that case reads as single_origin, exactly like a lone outlet does.
+                    "independence": "distinct_sources" if n_src > 1 and n_cit == n_src else "single_origin",
+                }
+            )
+        else:
+            outlets_carrying = {v[1] for a, v in row["carriers"].items() if a not in citing}
+            apart.append({**base, "carried_by": n_all, "furniture_carriers": n_furniture,
+                          "citations": n_cit, "furniture_outlets": len(outlets_carrying)})
+    # Ties by URL, so the cut at ``limit`` does not depend on scan order.
+    kept.sort(key=lambda x: (-x["citations"], x["normalized_url"]))
+    apart.sort(key=lambda x: (-x["carried_by"], x["normalized_url"]))
+    return kept[:limit], apart[:limit]
 
 
 @router.get("/articles-by-link")

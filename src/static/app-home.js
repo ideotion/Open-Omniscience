@@ -2200,13 +2200,15 @@
           rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${ooCountryCell(d.known_source.country)})</span>` : ""}</div>`);
         }
         rows.push(`<div>${esc(t("Articles in your corpus citing this URL:"))} <b>${d.cited_by_articles}</b></div>`);
+        // Row 99: articles whose own outlet carries this link on most of its pages are counted apart, not dropped.
+        if (d.furniture_articles) rows.push(`<div class="muted small" title="${esc(t("A link counts as an outlet's page furniture (a footer, app or subscription link) when at least half of the articles stored from that source carry it, and the source has at least 20 stored articles. Measured on your corpus."))}">${esc(t("Articles that carry it only as their outlet's page furniture (not counted):"))} <b>${d.furniture_articles}</b></div>`);
         if ((d.citing_examples || []).length) {
           rows.push(`<div class="muted small">${d.citing_examples.map(x => `<a href="/api/articles/${x.article_id}/view" target="_blank" rel="noopener">${esc(x.title || ("#" + x.article_id))}</a>`).join(" · ")}</div>`);
         }
         if (d.law_document) rows.push(`<div>${esc(t("Tracked law document:"))} <b>${esc(d.law_document.title)}</b> <span class="muted">(${ooCountryCell(d.law_document.jurisdiction)})</span></div>`);
         if (d.wiki_page) rows.push(`<div>${esc(t("Watched Wikipedia page:"))} <b>${esc(d.wiki_page.title)}</b> <span class="muted">(${esc(d.wiki_page.wiki)})</span></div>`);
         if (d.keywords && d.keywords.length) rows.push(`<div class="muted small">${esc(t("Top keywords of the local copy:"))} ${d.keywords.map(esc).join(", ")}</div>`);
-        if (!d.local_article && !d.known_source && !d.cited_by_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
+        if (!d.local_article && !d.known_source && !d.cited_by_articles && !d.furniture_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
         rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(d.method || "")}">${esc(t("Built from your local database only — no network call."))}</div>`);
         body.innerHTML = rows.join("");
         out.innerHTML = `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>` +
