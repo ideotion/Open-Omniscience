@@ -148,7 +148,12 @@
       var lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : undefined;
       return new Intl.DateTimeFormat(lang,
         { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
-    } catch (e) { return d.toLocaleString(); }
+    } catch (e) {
+      // An Intl that refuses the language tag: the LOCAL time in digits, never the browser's
+      // locale (open-on-main row 16b).
+      var p = function (n) { return String(n).padStart(2, "0"); };
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+    }
   }
 
   async function api(path, opts) {

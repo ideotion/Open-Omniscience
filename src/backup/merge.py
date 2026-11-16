@@ -1518,7 +1518,9 @@ _SCRATCH_CACHE_KIB = 32 * 1024
 #: passed the bare check (about 1.2x the computed need) then ran their keyword step with swap full.
 _INRAM_GROUPING_HEADROOM = 2.0
 
-_REP_GROUP_SQL = re.compile(r"SELECT MIN\(id\) FROM inc\.([A-Za-z_][A-Za-z0-9_]*) GROUP BY (.+)", re.S)
+_REP_GROUP_SQL = re.compile(
+    r"SELECT MIN\(id\) FROM inc\.([A-Za-z_][A-Za-z0-9_]*)(?: NOT INDEXED)? GROUP BY (.+)", re.S
+)
 
 
 def _scratch_attached(con: sqlite3.Connection) -> bool:
@@ -4166,9 +4168,17 @@ def _merge_keywords(con, batch_id, results) -> None:
     # _materialise_rep for the measurement). `keywords` is the largest table the
     # merge still copies -- ~6.9M rows on the field corpus -- so this is the step
     # where that mattered most.
+    #
+    # NOT INDEXED: left to itself SQLite walks idx_keyword_normalized_term and fetches every row by
+    # rowid in term order (it needs `language`, which that index does not hold), so the table is
+    # read at random. Reading it straight through and sorting gives the same groups and the same
+    # MIN(id). MEASURED on 7M keyword rows with the page cache dropped, memory held below the
+    # file's size and reads throttled to 150 MB/s and 1,500 IOPS (the field ratio): 104.9 s by the
+    # index, 20.0 s straight through, the same 6,592,573 ids; 10.8 s against 8.9 s fully cached.
+    # (The field run, 2026-11-15: 91 s.) The scratch path below already reads the table in order.
     _materialise_rep(
         con, "rep_keywords",
-        "SELECT MIN(id) FROM inc.keywords GROUP BY normalized_term, COALESCE(language,'en')",
+        "SELECT MIN(id) FROM inc.keywords NOT INDEXED GROUP BY normalized_term, COALESCE(language,'en')",
     )
     r.new = _insert_tracked(
         con, batch_id, "keywords",
