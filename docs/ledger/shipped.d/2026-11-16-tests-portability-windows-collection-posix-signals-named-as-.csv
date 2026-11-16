@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-16,tests/portability,Windows collection: POSIX signals named as strings at import,shipped,PR #2046,tests/test_guards_for_diff.py;tests/test_native_inflight.py;tests/test_launcher_stop_row.py;tests/test_posix_signal_collection.py,"Three test modules read signal.SIGHUP/SIGKILL in a parametrize list, which fails collection on Windows; they now take the name and getattr inside the test (POSIX unchanged). test_posix_signal_collection.py scans tests/ for an import-time POSIX-only signal read."
