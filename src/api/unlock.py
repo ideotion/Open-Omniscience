@@ -291,6 +291,12 @@ def encrypt_db(body: EncryptBody) -> dict:
         )
     if body.passphrase != body.confirm:
         raise HTTPException(status_code=400, detail="passphrases do not match")
+    from src.database.rebuild import REBUILD_JOB
+
+    if REBUILD_JOB.status().get("state") == "running":
+        raise HTTPException(
+            status_code=409, detail="the library is being rebuilt at the current storage settings; encrypt it once the rebuild has finished"
+        )
     # The key typed into this request is not held until the store is encrypted, so the nets that read what the process holds
     # cannot know it, and an engine's error can quote the statement that carried it: what escapes the block is converted.
     with scrub_and_reraise(_LOG, "encrypt in place failed", body.passphrase), _alone_with_the_library():

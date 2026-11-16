@@ -60,6 +60,8 @@ _CLASS_C: dict[tuple[str, str], str] = {
         f"{_WORKER}: the scheduler's maintenance thread (src/scheduler/maintenance.py), not an init_db step",
     ("src/database/query.py", "grouped_counts"):
         f"{_LOOP}/{_WORKER}: analytics.emergence, on request or job threads",
+    ("src/database/rebuild.py", "_run"):
+        f"{_WORKER}: the rebuild-database BackgroundJob thread (REBUILD_JOB's worker; the route only starts it)",
     ("src/database/repair.py", "_disk_unread_pages"):
         f"{_WORKER}: the repair job, started from the boot-sequence daemon thread",
     ("src/database/repair.py", "_swap"):

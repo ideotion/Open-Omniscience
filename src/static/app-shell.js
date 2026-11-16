@@ -606,7 +606,7 @@
       // not mean fetched. loadAtRestState is a loopback read of the store's encryption
       // state; it is cheap, but running it because someone opened Advanced to change a
       // scheduler knob is still work nobody asked for.
-      safety:   () => { loadAtRestState(); },
+      safety:   () => { loadAtRestState(); loadRebuild(); },  // R702: the rebuild sits beside Compact
       // UNINSTALL & WIPE, its own section (ruling 26). onUninstallMode paints the preview
       // of what the CURRENT mode would delete -- it must run before the panel is read, or
       // the reader sees an empty preview beside an irreversible button.
