@@ -17,7 +17,7 @@ from src.analytics.emergence import find_manufactured_emergence
 from src.database import query as query_mod
 from src.database.derived_views import KeywordMentionRead
 from src.database.stand_in import not_a_stand_in_article_id
-from tests.test_concentration_bounded_reads import _random_corpus, db  # noqa: F401  (the fixture)
+from tests.test_concentration_bounded_reads import _random_corpus, _today_is_now, db  # noqa: F401  (the fixtures)
 
 _ARGS = {"max_prior": 1, "min_recent_articles": 2, "min_sources": 2, "max_candidates": 100_000, "max_items": 100_000}
 
