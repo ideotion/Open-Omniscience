@@ -153,16 +153,17 @@ def test_a_lane_this_build_cannot_carry_yet_is_named_with_its_size(db, monkeypat
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     try:
-        lane_store.create_lane("law")
+        lane_store.create_lane("osm")
         lanes = inv.backup_inventory(db)["lanes"]
         assert lanes["exportable"] is False and lanes["not_exportable_reason"] == inv.LANES_WAITING
-        assert set(lanes["waiting"]) == {"law"} and lanes["waiting"]["law"]["bytes"] > 0
+        assert set(lanes["waiting"]) == {"osm"} and lanes["waiting"]["osm"]["bytes"] > 0
         assert lanes["count"] == 0
         lane_store.create_lane("wiki")
+        lane_store.create_lane("law")
         lanes = inv.backup_inventory(db)["lanes"]
         assert lanes["exportable"] is True and lanes["note"] == inv.LANES_NOTE
-        assert set(lanes["breakdown"]) == {"wiki"} and set(lanes["waiting"]) == {"law"}
-        assert lanes["bytes"] == lane_store.lane_file_bytes("wiki")
+        assert set(lanes["breakdown"]) == {"wiki", "law"} and set(lanes["waiting"]) == {"osm"}
+        assert lanes["bytes"] == lane_store.lane_file_bytes("wiki") + lane_store.lane_file_bytes("law")
     finally:
         lane_store.dispose_all()
 

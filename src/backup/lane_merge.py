@@ -61,8 +61,8 @@ from typing import Any
 
 _LOG = logging.getLogger("backup.lane_merge")
 
-#: The lanes this build both exports and merges. Law and OSM join in their own PRs.
-MERGEABLE_KINDS: tuple[str, ...] = ("wiki",)
+#: The lanes this build both exports and merges. OSM joins in its own PR.
+MERGEABLE_KINDS: tuple[str, ...] = ("wiki", "law")
 
 #: Member-name prefix inside the volume set. A namespace of its own, like ``blobs/``.
 LANE_PREFIX = "lanes"
@@ -219,6 +219,9 @@ _READ_TABLES = frozenset(
         "versioned_entity_facts",
         "wiki_walk_pages",
         "wiki_warm_pages",
+        "law_identities",
+        "law_document_meta",
+        "law_provisions",
     }
 )
 
@@ -628,8 +631,158 @@ def _recount_warm_editions(conn: Any) -> None:
     )
 
 
+# --------------------------------------------------------------------------- #
+#  The law lane (R729, PR 2): identities, per-language metadata, provisions
+# --------------------------------------------------------------------------- #
+#: Identity columns filled from the backup when the local row has none (never replaced).
+#: ``status`` and ``legal_system`` are NOT here: they are never NULL ("unknown" is a real
+#: value), and the law lane records no date for them, so no later reading can be told apart.
+_LAW_IDENTITY_FILL = ("issuing_body", "enacted_on", "published_on", "commenced_on", "repealed_on")
+#: The same for one language version of a law.
+_LAW_META_FILL = ("title", "translated_by", "source_authority", "source_url")
+_LAW_TRIPLE = (
+    "m.identity_scheme = i.identity_scheme AND m.jurisdiction_alpha3 = i.jurisdiction_alpha3 "
+    "AND m.document_identity = i.document_identity"
+)
+
+
+def _corpus_law_links(conn: Any) -> None:
+    """The live corpus's law links, in two temp tables of the lane connection.
+
+    ``law.db`` links into ``corpus.db`` by minted strings (``src/law/lane_models.py``). A
+    language version or a provision whose string the live corpus does not hold would be a
+    member of a law group with no document behind it, so only linked rows are merged; the
+    rest are counted. A provision's ``document_lane_key`` is read from the corpus, never
+    from the backup: the corpus merge files an incoming version under THIS machine's copy
+    of the same law, whose key is this machine's own.
+    """
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    conn.execute("DROP TABLE IF EXISTS temp.lm_law_doc")
+    conn.execute("DROP TABLE IF EXISTS temp.lm_law_rev")
+    conn.execute("CREATE TEMP TABLE lm_law_doc (lane_key TEXT PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE lm_law_rev (lane_key TEXT PRIMARY KEY, doc_key TEXT NOT NULL)")
+    with session_scope() as db:
+        docs = db.execute(text("SELECT lane_key FROM law_documents WHERE lane_key IS NOT NULL")).all()
+        revs = db.execute(
+            text(
+                "SELECT r.lane_key, d.lane_key FROM law_revisions r JOIN law_documents d ON d.id = r.document_id "
+                "WHERE r.lane_key IS NOT NULL AND d.lane_key IS NOT NULL"
+            )
+        ).all()
+    conn.executemany("INSERT OR IGNORE INTO temp.lm_law_doc VALUES (?)", [tuple(r) for r in docs])
+    conn.executemany("INSERT OR IGNORE INTO temp.lm_law_rev VALUES (?, ?)", [tuple(r) for r in revs])
+
+
+def _merge_law(conn: Any, out: dict[str, Any]) -> None:
+    tables: dict[str, dict[str, int]] = out["tables"]
+    if not (_has(conn, "inc", "law_identities") and _has(conn, "inc", "law_document_meta")):
+        return
+    _corpus_law_links(conn)
+    horizon = {"horizon": _horizon()}
+    # A language version this machine lacks and whose document the live corpus holds.
+    linked_new = (
+        "i.lane_key IN (SELECT lane_key FROM temp.lm_law_doc) "
+        "AND NOT EXISTS (SELECT 1 FROM main.law_document_meta m WHERE m.lane_key = i.lane_key)"
+    )
+
+    live_cols = set(_columns(conn, "main", "law_identities"))
+    inc_cols = set(_columns(conn, "inc", "law_identities"))
+    fill = [c for c in _LAW_IDENTITY_FILL if c in live_cols and c in inc_cols]
+    filled = 0
+    if fill:
+        sets = ", ".join(f'"{c}" = COALESCE(m."{c}", i."{c}")' for c in fill)
+        gaps = " OR ".join(f'(m."{c}" IS NULL AND i."{c}" IS NOT NULL)' for c in fill)
+        conn.execute(
+            f"UPDATE main.law_identities AS m SET {sets} FROM inc.law_identities AS i "  # noqa: S608  # nosec B608 # columns from the module's _LAW_IDENTITY_FILL list
+            f"WHERE {_LAW_TRIPLE} AND ({gaps})"
+        )
+        filled = _changes(conn)
+    # Only identities a merged language version will belong to: an identity with no
+    # document behind it would be an empty law group on this machine.
+    inserted = _insert_select(
+        conn,
+        "law_identities",
+        source_from="inc.law_identities i",
+        overrides={"created_at": "MIN(i.created_at, :horizon)"},
+        where=(
+            f"NOT EXISTS (SELECT 1 FROM main.law_identities m WHERE {_LAW_TRIPLE}) "
+            f"AND i.id IN (SELECT i.identity_id FROM inc.law_document_meta i WHERE {linked_new})"
+        ),
+        source_alias="i",
+        params=horizon,
+    )
+    tables["law_identities"] = {"inserted": inserted, "filled": filled}
+
+    conn.execute("DROP TABLE IF EXISTS temp.lm_lid")
+    conn.execute("CREATE TEMP TABLE lm_lid (inc_id INTEGER PRIMARY KEY, loc_id INTEGER NOT NULL)")
+    conn.execute(f"INSERT INTO temp.lm_lid SELECT i.id, m.id FROM inc.law_identities i JOIN main.law_identities m ON {_LAW_TRIPLE}")  # noqa: S608  # nosec B608 # a module literal
+
+    meta_live = set(_columns(conn, "main", "law_document_meta"))
+    meta_inc = set(_columns(conn, "inc", "law_document_meta"))
+    mfill = [c for c in _LAW_META_FILL if c in meta_live and c in meta_inc]
+    mfilled = 0
+    if mfill:
+        sets = ", ".join(f'"{c}" = COALESCE(m."{c}", i."{c}")' for c in mfill)
+        gaps = " OR ".join(f'(m."{c}" IS NULL AND i."{c}" IS NOT NULL)' for c in mfill)
+        conn.execute(
+            f"UPDATE main.law_document_meta AS m SET {sets} FROM inc.law_document_meta AS i "  # noqa: S608  # nosec B608 # columns from the module's _LAW_META_FILL list
+            f"WHERE i.lane_key = m.lane_key AND ({gaps})"
+        )
+        mfilled = _changes(conn)
+    unlinked = int(
+        conn.execute(
+            "SELECT count(*) FROM inc.law_document_meta i WHERE i.lane_key NOT IN (SELECT lane_key FROM temp.lm_law_doc) "
+            "AND NOT EXISTS (SELECT 1 FROM main.law_document_meta m WHERE m.lane_key = i.lane_key)"
+        ).fetchone()[0]
+    )
+    n = _insert_select(
+        conn,
+        "law_document_meta",
+        source_from="inc.law_document_meta i JOIN temp.lm_lid l ON l.inc_id = i.identity_id",
+        overrides={
+            "identity_id": "l.loc_id",
+            "first_seen_at": "MIN(i.first_seen_at, :horizon)",
+            "updated_at": "MIN(i.updated_at, :horizon)",
+        },
+        where=linked_new,
+        source_alias="i",
+        params=horizon,
+    )
+    tables["law_document_meta"] = {"inserted": n, "filled": mfilled, "not_linked": unlinked}
+
+    if _has(conn, "inc", "law_provisions"):
+        # A provision belongs to one VERSION; one whose version the corpus does not hold
+        # under the same key is counted, never stored (its text is in the backup's corpus).
+        p_unlinked = int(
+            conn.execute(
+                "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key NOT IN (SELECT lane_key FROM temp.lm_law_rev) "
+                "AND NOT EXISTS (SELECT 1 FROM main.law_provisions m "
+                "WHERE m.revision_lane_key = p.revision_lane_key AND m.address = p.address)"
+            ).fetchone()[0]
+        )
+        pn = _insert_select(
+            conn,
+            "law_provisions",
+            source_from="inc.law_provisions p JOIN temp.lm_law_rev r ON r.lane_key = p.revision_lane_key",
+            overrides={"document_lane_key": "r.doc_key", "created_at": "MIN(p.created_at, :horizon)"},
+            where=(
+                "NOT EXISTS (SELECT 1 FROM main.law_provisions m "
+                "WHERE m.revision_lane_key = p.revision_lane_key AND m.address = p.address)"
+            ),
+            source_alias="p",
+            params=horizon,
+        )
+        tables["law_provisions"] = {"inserted": pn, "not_linked": p_unlinked}
+    for t in ("lm_lid", "lm_law_doc", "lm_law_rev"):
+        conn.execute(f"DROP TABLE IF EXISTS temp.{t}")
+
+
 _STEPS = {
     "wiki": (_merge_shared, _merge_walk, _merge_warm),
+    "law": (_merge_shared, _merge_law),
 }
 
 
