@@ -42642,7 +42642,7 @@ sources:
   domain: radiolvn.dk
   rss_url: https://radiolvn.dk/feed/
   rate_limit_ms: 2000
-  enabled: true
+  enabled: false  # field test 2026-11-14 (8 instances, R728 D): pages are daily hourly-slot podcast lists, not articles, pathology rate 0.60 on all 8
   verified: true
   last_verified: '2026-09-10'
   language: da
@@ -69270,7 +69270,7 @@ sources:
   domain: polonia1.tv
   rss_url: https://polonia1.tv/rss.xml
   rate_limit_ms: 2000
-  enabled: true
+  enabled: false  # field test 2026-11-14 (8 instances, R728 D): every stored body is a Drupal PHP 'Deprecated function' error dump, pathology rate 0.86-1.0 on all 8
   verified: true
   last_verified: '2026-09-10'
   country: POL
