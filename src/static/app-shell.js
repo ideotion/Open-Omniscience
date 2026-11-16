@@ -1047,7 +1047,12 @@
       try {
         return new Intl.DateTimeFormat(OOI18N.current(),
           { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
-      } catch (e) { return d.toLocaleString(); }
+      } catch (e) {
+        // An Intl that refuses the language tag: write the LOCAL time in digits, never the
+        // browser's locale (which is not the language the reader chose; open-on-main row 16b).
+        const p = (n) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      }
     }
     // Human, translated labels for the at-a-glance stat keys. The server keys are
     // raw snake_case identifiers (the Database tab + cache rely on them), so the

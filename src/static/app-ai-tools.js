@@ -1919,8 +1919,13 @@
       const box = $("ai-backend-box");
       const sel = $("ai-backend-select");
       if (!box) return;
+      // A load that a pick or a save overtook paints NOTHING (row 15): skipping only the select
+      // left it rewriting the "Active backend" line and the override box from the old stored
+      // value. The load that follows every save repaints the whole panel, so nothing is lost.
+      const stale = () => picksAtStart !== _aiBackendPicks || _aiBackendSaving !== 0;
       try {
         const b = await api("/api/llm/backend");
+        if (stale()) return;
         const gpu = b.gpu || {};
         const vllm = b.vllm || {};
         // Ollama is now reported as two INDEPENDENT facts (installed / running), so
@@ -2005,8 +2010,9 @@
           // checkbox that reverses it. The caveat colour is invariant #23's
           // var(--caveat) (AA-verified on all 17 themes).
           hwHtml;
-        if (sel && picksAtStart === _aiBackendPicks && _aiBackendSaving === 0) sel.value = b.stored_override || "auto";
+        if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
+        if (stale()) return;
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
       }
     }
