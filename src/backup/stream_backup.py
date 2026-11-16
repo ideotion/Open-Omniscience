@@ -2193,8 +2193,8 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
     if first is None:
         return
     path = src / first
-    if not path.is_file():
-        return
+    if path.is_symlink() or not path.is_file():
+        return  # a link is never followed out of the chosen folder; the restore refuses it by name
     try:
         if stream_key_opens(path, passphrase):
             return
@@ -2221,6 +2221,9 @@ def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
         if m.get("kind") != STREAM_KIND:
             return False
         _require_safe_manifest_names(m)
+        # The restore's own volume checks first (a link, a volume listed twice): this runs before the run is started, so
+        # it must not read anything the restore itself would refuse to read.
+        _require_each_volume_read_once(m, src)
         _refuse_a_wrong_backup_passphrase(src, m, passphrase)
     except EncryptionError:
         return True
