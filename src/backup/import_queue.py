@@ -1187,7 +1187,9 @@ class ImportQueueManager:
                 if isinstance(rep, dict):
                     rep["living_sources"] = living  # what _persist_held_report writes
             except Exception as exc:  # noqa: BLE001 - one item's lanes never cost the commit
-                log_failure(_LOG, "merging a held backup's living sources failed", exc, *self._secrets(), level=logging.WARNING)
+                log_failure(
+                    _LOG, "merging a held backup's living sources failed", exc, *self._secrets(), get_passphrase(), level=logging.WARNING
+                )
 
     # -- the persisted record (2026-09-26, I7) -------------------------------- #
     def _run_stamp(self, item: dict) -> dict:

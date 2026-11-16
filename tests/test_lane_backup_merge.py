@@ -10,6 +10,7 @@ as it was.
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -538,6 +539,8 @@ def test_held_lanes_merge_when_the_import_group_commits(machines, tmp_path, monk
     from src.backup.import_queue import ImportQueueManager, _CheckpointGroup
 
     a, b, use = machines
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    monkeypatch.setattr("src.database.connect._passphrase", "machine pass", raising=False)
     snap = _seed_b(b, use, tmp_path)
     _seed_a(a, use)
     staging = tmp_path / "staging"
@@ -604,3 +607,36 @@ def test_group_commit_records_done_before_the_lane_merge_and_counts_an_attempt(t
     monkeypatch.setattr(import_queue, "log_failure", lambda *a, **k: None)
     ImportQueueManager._merge_held_lanes(mgr, group)
     assert [c[0] for c in calls] == ["owed", "merge", "outcome"]
+
+
+def test_held_members_never_leave_the_group_dir_and_must_read_encrypted(machines, tmp_path, monkeypatch):
+    """Second security read on #2051: the digest can come from a backup's manifest, so it never
+    names a path; and the manifest's sqlcipher flag is checked against the file itself."""
+    a, b, use = machines
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    monkeypatch.setattr("src.database.connect._passphrase", "machine pass", raising=False)
+    snap = _seed_b(b, use, tmp_path)
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    shutil.copy2(snap, staging / "lanes" / "wiki.db")
+    entry = {"name": "lanes/wiki.db", "kind": "wiki", "sqlcipher": True, "extra": "x" * 5000}
+    group_dir = tmp_path / "grp" / ".restore-group"
+    for hostile in ("../../../escaped/./././././././.", str(tmp_path / "abs") + "/" * 32):
+        held = lane_merge.hold_lane_members(staging, [entry], group_dir, hostile)
+        assert held and Path(held["dir"]).resolve().is_relative_to(group_dir.resolve())
+        assert held["members"] == [{"name": "lanes/wiki.db", "kind": "wiki", "sqlcipher": True}]
+    assert not (tmp_path / "escaped").exists() and not (tmp_path / "abs").exists()
+    # A plaintext file the manifest calls encrypted is not kept.
+    plain = tmp_path / "plain"
+    (plain / "lanes").mkdir(parents=True)
+    sqlite3.connect(plain / "lanes" / "wiki.db").execute("create table t(x)").connection.close()
+    assert lane_merge.hold_lane_members(plain, [entry], group_dir, "dg3") is None
+
+
+def test_a_non_hex_top_level_digest_is_no_identity(tmp_path, monkeypatch):
+    from src.backup import merge, volumes
+
+    monkeypatch.setattr(volumes, "load_manifest", lambda src: {"plaintext_sha256": "../" + "a" * 61})
+    assert merge.artifact_source_digest(tmp_path) is None
+    monkeypatch.setattr(volumes, "load_manifest", lambda src: {"plaintext_sha256": "a" * 64})
+    assert merge.artifact_source_digest(tmp_path) == "a" * 64

@@ -882,22 +882,34 @@ def hold_lane_members(
     then. Only ENCRYPTED members are kept: the group directory promises an orphan is
     encrypted whenever the corpus is, and a plaintext one stays owed for a re-import.
     """
+    import hashlib
+    import secrets
     import shutil
+
+    from src.database.connect import is_encrypted_file
 
     kept: list[dict[str, Any]] = []
     try:
-        dest = Path(group_dir) / "lanes" / (str(digest or "")[:32] or f"item-{time.monotonic_ns()}")
+        # The digest can come from a backup's own manifest, so it never names a path: the
+        # directory is a hash of it (or a random name), and must resolve inside the group.
+        leaf = hashlib.sha256(str(digest).encode("utf-8")).hexdigest()[:32] if digest else secrets.token_hex(16)
+        root = Path(group_dir).resolve()
+        dest = root / "lanes" / leaf
+        if not dest.resolve().is_relative_to(root):
+            return None
         for entry in lane_members or ():
             kind = valid_member(entry)
             if kind is None or kind not in MERGEABLE_KINDS or not entry.get("sqlcipher"):
                 continue
             src = Path(staging_dir) / member_name(kind)
-            if not src.is_file():
+            # The manifest's flag is a claim: the file itself must read as encrypted.
+            if not src.is_file() or is_encrypted_file(src) is not True:
                 continue
             target = dest / member_name(kind)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, target)
-            kept.append(dict(entry))
+            # Only the fields the merge reads: the rest of a manifest entry is untrusted.
+            kept.append({k: entry[k] for k in ("name", "kind", "sqlcipher", "page_size") if k in entry})
     except OSError as exc:
         _LOG.warning("could not keep a held backup's living sources for its group (%s)", type(exc).__name__)
         return None
