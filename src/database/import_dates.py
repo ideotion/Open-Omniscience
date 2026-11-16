@@ -13,9 +13,8 @@ backup merged in later brings the old values back:
   * it touches only the sources these two importers own: the one PDF source (``pdf.import.local``) and the
     per-agency statistics sources (``statistics.<agency>.local`` with ``source_type = 'statistics'``), never a
     catalogue source, whatever its type;
-  * it clears a value only where ``published_at`` sits within :data:`TOLERANCE_HOURS` of ``created_at``, which is
-    what ``now()`` at insert time looks like. A date some later path filled in from the document itself is left
-    alone, so nothing is guessed in either direction;
+  * it clears every value on those sources: the writers only ever stored ``now()`` there, and a backup merge
+    that fills one from a hash twin copies the other machine's import time (see the function);
   * after the first run it finds nothing: the ``(source_id, published_at)`` index answers ``published_at IS NOT
     NULL`` for those few sources without reading an article row.
 
@@ -36,9 +35,6 @@ from sqlalchemy.engine import Engine
 
 _LOG = logging.getLogger("database.import_dates")
 
-#: How far apart ``published_at`` and ``created_at`` may be for ``published_at`` to count as the insert time.
-TOLERANCE_HOURS = 1
-
 #: The sources whose articles carried the import time as their publication date. ``LIKE`` patterns over
 #: ``sources.domain``; the statistics pattern is also gated on ``source_type`` below.
 PDF_DOMAIN = "pdf.import.local"
@@ -53,12 +49,18 @@ def _source_ids_sql() -> str:
 
 
 def clear_import_time_publication_dates(engine: Engine) -> int:
-    """Set ``published_at`` to NULL where an importer stored its import time there. Returns the rows changed.
+    """Set ``published_at`` to NULL on every article of the two importers' sources. Returns the rows changed.
 
-    Idempotent and additive-safe: a second run changes nothing, and a row whose ``published_at`` is not the insert
-    time (beyond :data:`TOLERANCE_HOURS`) is never touched. A store without the tables yet is left as it is.
+    Every value those sources ever held is an import time: the two writers only ever stored ``now()`` there, and the
+    only other path that fills an article's ``published_at`` -- the backup merge adopting it from a hash twin --
+    copies another machine's import time, against that machine's ``created_at`` and not this one's, so no proximity
+    test to the local ``created_at`` can tell it from a real date (the second review, 2026-11-16). A future writer
+    that stores a TRUE document date for these sources must change this step first; the writers' tests pin None.
+
+    Read-only when there is nothing to clear: one indexed ``SELECT ... LIMIT 1`` decides, so a steady-state boot takes
+    no write lock here. A store without the tables yet is left as it is.
     """
-    with engine.begin() as conn:
+    with engine.connect() as conn:
         tables = {
             r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
@@ -69,13 +71,16 @@ def clear_import_time_publication_dates(engine: Engine) -> int:
         )]
         if not ids:
             return 0
-        stmt = text(
-            "UPDATE articles SET published_at = NULL WHERE source_id IN :ids "
-            "AND published_at IS NOT NULL AND created_at IS NOT NULL "
-            "AND abs(julianday(published_at) - julianday(created_at)) <= :tol"
+        probe = text(
+            "SELECT 1 FROM articles WHERE source_id IN :ids AND published_at IS NOT NULL LIMIT 1"
         ).bindparams(bindparam("ids", expanding=True))
-        res = conn.execute(stmt, {"ids": ids, "tol": TOLERANCE_HOURS / 24.0})
-        n = int(res.rowcount or 0)
+        if conn.execute(probe, {"ids": ids}).first() is None:
+            return 0
+    with engine.begin() as conn:
+        stmt = text(
+            "UPDATE articles SET published_at = NULL WHERE source_id IN :ids AND published_at IS NOT NULL"
+        ).bindparams(bindparam("ids", expanding=True))
+        n = int(conn.execute(stmt, {"ids": ids}).rowcount or 0)
     if n:
         _LOG.info("cleared the import time from published_at on %d imported article(s)", n)
     return n

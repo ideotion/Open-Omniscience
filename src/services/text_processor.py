@@ -33,7 +33,6 @@ import unicodedata
 
 from src.utils.markup_blocks import strip_html_tags
 
-
 #: Marks that belong to no script's words: the Latin and symbol diacritic blocks (combining
 #: diacriticals and their extensions and supplement, the marks for symbols such as the vector
 #: arrow, the half marks) and the variation selectors (U+FE0F turns "1" into the keycap emoji

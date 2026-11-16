@@ -2,8 +2,8 @@
 
 The PDF import, the statistics corpus and the Wikipedia corpus wrote the IMPORT time into ``published_at`` when
 they had no real date, so a 2009 report read "Published 2026-11-14" and anchored year-less dates to the import
-day. They now store none; ``created_at`` keeps the import time. ``clear_import_time_publication_dates`` clears the
-old values from the two importers that ALWAYS wrote ``now()``, and leaves every other row as it is.
+day. They now store none; ``created_at`` keeps the import time. ``clear_import_time_publication_dates`` clears every
+value on the two importers' sources (they only ever held import times, a merged twin's included) and nothing else.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -89,7 +89,7 @@ def _seed(Sess):
         s.commit()
         _article(s, 1, 1, T0 + timedelta(seconds=2))  # PDF, import time -> cleared
         _article(s, 2, 2, T0)  # statistics, import time -> cleared
-        _article(s, 3, 1, datetime(2009, 5, 1))  # PDF with a date filled from the document -> kept
+        _article(s, 3, 2, T0 - timedelta(days=40))  # statistics, another machine's import time adopted by a merge -> cleared
         _article(s, 4, 3, T0)  # news article published the minute it was stored -> kept
         _article(s, 5, 4, T0)  # a look-alike domain that is not a statistics source -> kept
         _article(s, 6, 5, T0)  # a catalogue statistics source -> kept
@@ -105,10 +105,9 @@ def _published(Sess):
 def test_the_clean_up_clears_only_the_import_time_of_the_two_importers(store):
     engine, Sess = store
     _seed(Sess)
-    assert clear_import_time_publication_dates(engine) == 2
+    assert clear_import_time_publication_dates(engine) == 3
     got = _published(Sess)
-    assert got[1] is None and got[2] is None and got[7] is None
-    assert got[3] == datetime(2009, 5, 1)
+    assert got[1] is None and got[2] is None and got[3] is None and got[7] is None
     assert got[4] == T0 and got[5] == T0 and got[6] == T0
 
 
@@ -132,3 +131,14 @@ def test_init_db_runs_the_clean_up():
     src = Path("src/database/session.py").read_text(encoding="utf-8")
     assert '_init_step("clear_import_time_publication_dates")' in src
     assert "clear_import_time_publication_dates(engine)" in src
+
+
+def test_a_store_with_nothing_to_clear_takes_no_write_lock(store, monkeypatch):
+    engine, Sess = store
+    _seed(Sess)
+    clear_import_time_publication_dates(engine)
+    began = []
+    real = engine.begin
+    monkeypatch.setattr(engine, "begin", lambda *a, **k: began.append(1) or real(*a, **k))
+    assert clear_import_time_publication_dates(engine) == 0
+    assert began == []

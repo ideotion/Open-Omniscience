@@ -80,7 +80,7 @@ _FUNCTION_WORDS: dict[str, frozenset[str]] = {
                     "ved hos uden"),
     "nb": _words("og eller men at som for fra med på av om i en et ett det jeg vi er var har ikke når etter under "
                     "over mot ved hos uten"),
-    "fi": _words("ja tai mutta että kun jos on oli ovat ei se ne hän me te tämä joka mikä myös kuin"),
+    "fi": _words("ja mutta että jos on oli ovat ei se ne hän me te tämä joka mikä myös kuin"),
     "de": _words("und oder aber dass die das dem ein eine einen einem einer im in ist war hat nicht mit zu zum zur auf "
                     "für bei nach aus über unter vor gegen ohne durch wenn als wie auch noch sich er sie es wir ihr"),
     "en": _words("the and or but of to in on at for from with by as is was are were has have had not this that these "
@@ -123,13 +123,30 @@ def _is_fi_city(stem: str) -> bool:
     return city is not None and (city.population or 0) >= _FI_GENITIVE_MIN_POPULATION
 
 
+def _fi_nominatives(stem: str) -> list[str]:
+    """The nominatives a genitive stem can come from: itself (Espoo-n, Pori-n), its final vowel undoubled
+    (Tamperee-n -> Tampere) and the common consonant gradations (Helsingi-n -> Helsinki, Turu-n -> Turku,
+    Lahde-n -> Lahti, Seinäjoe-n -> Seinäjoki)."""
+    out = [stem]
+    low = stem.lower()
+    if low[-1:] == low[-2:-1] and low[-1:] in "aeiouyäö":
+        out.append(stem[:-1])
+    if low.endswith("ngi"):
+        out.append(stem[:-2] + "ki")
+    if low.endswith("de"):
+        out.append(stem[:-2] + "ti")
+    if low.endswith("e"):
+        out.append(stem[:-1] + "ki")
+    if len(low) >= 2 and low[-1] in "aeiouyäö" and low[-2] not in "aeiouyäö":
+        out.append(stem[:-1] + "k" + stem[-1])
+    return out
+
+
 def _fi_place_genitive(token: str) -> bool:
-    for stem in (token[:-1], token[:-2]):  # Tampereen -> Tampere(e) / Tamper
+    for stem in (token[:-1], token[:-2]):  # Espoon -> Espoo; Tampereen -> Tampere
         if len(stem) < 3:
             continue
-        if stem[-1:] == stem[-2:-1] and stem[-1:].lower() in "aeiouyäö":
-            stem = stem[:-1]  # the genitive lengthens the final vowel: Tamperee -> Tampere
-        if _is_fi_city(stem):
+        if any(_is_fi_city(n) for n in _fi_nominatives(stem)):
             return True
     return False
 
@@ -204,12 +221,18 @@ def extract_entities(text: str, *, limit: int = 6, language: str | None = None) 
     org_words = {w.lower() for o in orgs.values() for w in o["name"].split()}
     people: dict[str, dict] = {}
 
-    def _add_person(name: str, m: re.Match, note: str) -> None:
-        name = " ".join(name.split())
+    def _add_person(name: str, m: re.Match, note: str, *, trim: bool = False) -> None:
+        broken = lang in _FUNCTION_WORD_LANGS and "\n" in text[m.start(1):m.end(m.lastindex or 1)]
+        tokens = name.split()
+        if trim and len(tokens) == 2 and (broken or tokens[1].lower() in function_words):
+            # The honorific rule takes an OPTIONAL second word: when that word is a function word or sits after a
+            # line break ("President Biden On Monday", "Mr Smith\nThe next day"), the name is the first word alone.
+            tokens, broken = tokens[:1], False
+        name = " ".join(tokens)
         key = name.lower()
-        if any(w.lower() in org_words for w in name.split()):
+        if any(w.lower() in org_words for w in tokens):
             return  # claimed by an organization — never double-classed
-        if lang in _FUNCTION_WORD_LANGS and "\n" in text[m.start(1):m.end(m.lastindex or 1)]:
+        if broken:
             return  # R730: a headline break between two capitalised words ("Afrika\nFör"), not a name
         if lang and _person_rejected(name.split(), lang, function_words):
             return  # R730: a place genitive, a demonym or a function word, not a name
@@ -224,7 +247,7 @@ def extract_entities(text: str, *, limit: int = 6, language: str | None = None) 
             }
 
     for m in _PERSON_HONORIFIC_RE.finditer(text):
-        _add_person(m.group(1), m, "deduced: name following an honorific/title")
+        _add_person(m.group(1), m, "deduced: name following an honorific/title", trim=True)
     for m in _PERSON_SHAPE_RE.finditer(text):
         _add_person(
             f"{m.group(1)} {m.group(2)}", m,

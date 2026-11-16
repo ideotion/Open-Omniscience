@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
+  "digest": "9c767eb6911a369847f20bcac79bd6506c4bd8c5342e759b30569b3cad1866ec",
   "log": [
     {
       "version": 1,
@@ -61,6 +61,12 @@
       "digest": "f59c94eb4a49e3fa99f569603ce48de892d438614a903ba640296ce3fe518774",
       "kind": "same",
       "note": "Still WWW_INDEXER_VERSION 2, not merged yet (PR #2031, shared with R725/R726): the second review's R730 fixes (hand-curated function words, a line-break rule, Finnish genitives of Finnish cities of 20,000+ only, language in the www inputs digest) ride the same unmerged step."
+    },
+    {
+      "version": 2,
+      "digest": "9c767eb6911a369847f20bcac79bd6506c4bd8c5342e759b30569b3cad1866ec",
+      "kind": "same",
+      "note": "Still WWW_INDEXER_VERSION 2, unmerged (PR #2031): third-review R730 fixes (Finnish genitive reads long vowels and consonant gradation; an honorific's function-word or line-broken second word is trimmed instead of the name dropped; tai/kun leave the Finnish list)."
     }
   ]
 }
