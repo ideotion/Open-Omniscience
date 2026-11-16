@@ -159,3 +159,8 @@ release_notes.md
 # The operator's dated population table (configs/population_table.json) is a local drop-in, never committed
 # (S06-04 S6): a population vintage is someone's published data with its own terms.
 configs/population_table.json
+
+# Per-test hang and slow-test reports written by tests/conftest.py when OO_TEST_HANG_LIMIT_S / OO_TEST_SLOW_S are set (row 93)
+test-hang-report.txt*
+test-slow-report.txt*
+test-slow-sorted.txt
