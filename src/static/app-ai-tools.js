@@ -2492,8 +2492,18 @@
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
         (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>` +
         // An unreadable settings store is not an unset one: the switches below then show defaults, not the saved choice.
-        (s.store_unreadable ? `<div class="card-caveat" style="margin-top:4px">${esc(_custT(CUST_STORE_UNREADABLE))}</div>` : "");
+        (s.store_unreadable ? `<div class="card-caveat" style="margin-top:4px">${esc(_custT(CUST_STORE_UNREADABLE))}</div>` : "") +
+        // R717: the reason nothing post-quantum is signed here, and the fix, in plain words beside the switch.
+        (s.pqc_enabled && !s.pqc_available
+          ? `<div class="card-caveat" style="margin-top:4px">${esc(_custT(CUST_PQC_LIBRARY_MISSING))}</div>` : "");
     }
+
+    const CUST_PQC_LIBRARY_MISSING = "Post-quantum signing is on, but the post-quantum library is not installed here. A custody log " +
+      "already signed with a post-quantum key signs nothing new until it is: new entries wait, and are signed, marked as late, once it is " +
+      "installed (the 'pqc' extra). Nothing else in the app is held up. To stop using post-quantum signing, install the library " +
+      "first and then turn the setting off, so the old post-quantum key can vouch for the change.";
+    const CUST_ACCEPTED_UNENDORSED = "verified, but only by accepting a key change nothing vouches for (named below): it proves " +
+      "nothing about who made that change";
 
     const CUST_STORE_UNREADABLE = "The custody settings could not be read, so automatic logging is off and each new entry is queued " +
       "until they can be read. The switches below show the defaults, not your saved choice.";
@@ -2506,6 +2516,7 @@
       const runs = [d.drained, d.drained_after_queue].filter(Boolean);
       const notes = [];
       if (runs.some((r) => r.settings_unreadable)) notes.push(_custT(CUST_DRAIN_SETTINGS_UNREADABLE));
+      if (runs.some((r) => r.pqc_unavailable)) notes.push(_custT(CUST_PQC_LIBRARY_MISSING));  // R717
       const qerr = runs.find((r) => r.queue_read_error);
       if (qerr) notes.push(_qualTf(CUST_DRAIN_QUEUE_UNREADABLE, { reason: qerr.queue_read_error }));
       return notes.join(" ");
@@ -2636,7 +2647,7 @@
         const s = await api("/api/custody/settings", {method: "PUT", body: JSON.stringify(body)});
         renderCustodyStatus(s); applyCustodyToggles(s);
         if (s.pqc_enabled && !s.pqc_available)
-          toast("PQC requested, but the 'pqc' extra is not installed — signing stays Ed25519-only.", "warn");
+          toast(_custT(CUST_PQC_LIBRARY_MISSING), "warn");
         else if (s.anchoring_mode === "opentimestamps" && !s.ots_available)
           toast("OpenTimestamps requested, but the 'timestamping' extra is not installed.", "warn");
         else toast("Custody settings saved.");
@@ -2672,7 +2683,11 @@
       const id = custItem(); if (!id) return;
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
-        $("cust-result").innerHTML = d.verified
+        // R716: a chain that verifies only by accepting a key change nothing vouches for never reads as a plain "verified".
+        $("cust-result").innerHTML = d.verified && d.accepted_unendorsed
+          ? '<span class="pill warn">' + esc(_custT(CUST_ACCEPTED_UNENDORSED)) + '</span> '
+            + esc((d.notes||[]).join("; "))
+          : d.verified
           ? '<span class="pill ok">verified</span> chain intact, signatures valid.'
             + ((d.notes||[]).length ? ' ' + esc(d.notes.join("; ")) : "")
           : '<span class="pill err">FAILED</span> ' + esc((d.issues||[]).join("; "));

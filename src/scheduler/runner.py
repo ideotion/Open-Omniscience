@@ -94,6 +94,19 @@ def _drain_owed_custody() -> dict | None:
         return None
 
 
+def _catch_up_source_counters() -> dict | None:
+    """Recount the article counter of the sources that gained articles since the last count. Never raises."""
+    try:
+        from src.analytics.store import catch_up_source_counters
+        from src.database.session import session_scope
+
+        with session_scope() as session:
+            return catch_up_source_counters(session)
+    except Exception as exc:  # noqa: BLE001 - the idle reconcile still runs; the pass end goes on
+        log_failure(_LOG, "source counters not caught up at this pass end", exc, level=logging.DEBUG)
+        return None
+
+
 def _tail_journal_trim() -> None:
     try:
         from src.scheduler.pass_journal import trim
@@ -2328,6 +2341,13 @@ class BackgroundScheduler:
                 custody_late = _drain_owed_custody()
             if custody_late:
                 report["custody_late"] = custody_late
+            # Row 75 (field test 2026-11-14): the per-source article counter is otherwise recounted only in the idle
+            # window, which a continuously collecting machine never gets; recount the sources this pass (and any other
+            # writer since) gave articles to.
+            with _tail_phase("source-counters", pass_id=report.get("pass_id")):
+                source_counters = _catch_up_source_counters()
+            if source_counters:
+                report["source_counters"] = source_counters
             report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             # One auditable line per run (WP3/RM-06); best-effort by design.
             from src.scheduler.runlog import record_run

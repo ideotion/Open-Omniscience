@@ -18,6 +18,7 @@ so most of a multi-GB corpus survived, forensically recoverable. These tests pro
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import subprocess
@@ -835,8 +836,17 @@ def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files
     (home / "thesis.odt").write_bytes(b"years of work")
     (home / "models").mkdir()
     (home / "models" / "mine.bin").write_bytes(b"weights")
+    latin = os.fsdecode(b"caf\xe9.txt")
+    made_latin = False
     if os.name == "posix":
-        (home / os.fsdecode(b"caf\xe9.txt")).write_bytes(b"latin-1 name")
+        try:
+            (home / latin).write_bytes(b"latin-1 name")
+            made_latin = True
+        except OSError as exc:
+            # APFS (macOS) refuses a name that is not UTF-8 (EILSEQ), so an operator's file there cannot carry one: nothing for the
+            # watcher to meet, and the rest of the folder is still what it is held to
+            if exc.errno != errno.EILSEQ:
+                raise
     outside = tmp_path / "outside.txt"
     outside.write_bytes(b"outside")
     (home / "wiki_dumps").symlink_to(tmp_path)  # an app name that is a link: removed, never followed
@@ -846,6 +856,7 @@ def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files
     assert home.is_dir()
     left = sorted(os.listdir(home))
     assert "models" in left and "thesis.odt" in left and "keys" not in left
+    assert (latin in left) is made_latin  # the operator's non-UTF-8 name stays where the drive could hold one
     assert not {"open_omniscience.db", "app_settings.json.tmp", "session_state.json", "wiki_dumps"} & set(left)
     assert (home / "thesis.odt").read_bytes() == b"years of work"
     assert (home / "models" / "mine.bin").read_bytes() == b"weights"

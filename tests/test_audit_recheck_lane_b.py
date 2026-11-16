@@ -318,6 +318,7 @@ def test_a_leaked_earlier_key_cannot_vouch_for_what_it_signs_after_handing_over(
     p_id = old.public_identity()
     back["metadata"].update(
         previous_ed25519_pub=new.public_identity().ed25519_pub,
+        **({"previous_ml_dsa_pub": new.public_identity().ml_dsa_pub} if "previous_ml_dsa_pub" in back["metadata"] else {}),
         ed25519_pub=p_id.ed25519_pub,
         ml_dsa_variant=p_id.ml_dsa_variant,
         ml_dsa_pub=p_id.ml_dsa_pub,
@@ -334,7 +335,9 @@ def test_a_leaked_earlier_key_cannot_vouch_for_what_it_signs_after_handing_over(
         "entries": forged_tail,
         "signer": p_id.to_dict(),
     }
-    forged["head"] = _bundle_head("article:9", [_E.from_dict(d) for d in forged_tail])
+    forged["head"] = _bundle_head("article:9", [_E.from_dict(d) for d in forged_tail],
+                                  bundle_format=bundle["head"].get("bundle_format", 1))
+    forged["entry_count"] = len(forged_tail)  # the unsigned copy must agree with the signed head (R714)
     forged["head_signature"] = old.sign(canonical_bytes(forged["head"]))
     out = describe_export(forged, local=new.public_identity(), accept_unendorsed_rotation=True)
     assert out["verified"] is True, out["issues"]  # the chain itself is well formed: the verdict is what must not lie
