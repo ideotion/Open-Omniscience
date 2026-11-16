@@ -991,10 +991,21 @@ def port_occupant(*, timeout: float = 2.0) -> dict:
     except OSError:
         return {"state": "unknown", "port": port, "detail": f"could not probe {url}."}
     if not connected:
+        # Said only when it is so: a bundle on a machine without vLLM read "installed but not started" beside
+        # ``installed: false`` (field report 2026-11-14, row 74).
+        try:
+            installed: bool | None = bool(is_installed())
+        except Exception:  # noqa: BLE001 - a probe must never raise
+            installed = None
+        tail = {
+            True: "vLLM is installed but not started.",
+            False: "vLLM is not installed here.",
+            None: "vLLM is not started (whether it is installed could not be read).",
+        }[installed]
         return {
             "state": "free",
             "port": port,
-            "detail": f"nothing is listening on port {port} -- vLLM is installed but not started.",
+            "detail": f"nothing is listening on port {port} -- {tail}",
         }
     return {
         "state": "foreign",

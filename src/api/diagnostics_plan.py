@@ -189,6 +189,17 @@ def split_members(
     return records, scans
 
 
+#: Records that read what the scans WRITE, so they run after the scans: ``kpi.json`` resolves K5/K6 (keyword-engine), K7 (the date
+#: diagnostics) and K8 (source-audit) from the records those scans persist (R706), and as a record before them it reported the
+#: previous build's figures (field report 2026-11-14: K5 "not run" and K6 at 12.6 % beside keyword-engine.json's 19.8 %).
+AFTER_SCANS: tuple[str, ...] = ("kpi.json",)
+
+
+def after_scans(records: list[tuple[str, Any]]) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]]]:
+    """``(records, tail)``: the records in :data:`AFTER_SCANS` moved to a tail that runs after the scans, order kept."""
+    return [m for m in records if m[0] not in AFTER_SCANS], [m for m in records if m[0] in AFTER_SCANS]
+
+
 def operator_budget_s(minutes: Any) -> float | None:
     """The scan budget an operator set for a THOROUGH build, in seconds, or ``None`` for none (the default: every scan runs
     under its own deadline). Refuses a value that is not a finite number of minutes above zero with ``ValueError`` (the route

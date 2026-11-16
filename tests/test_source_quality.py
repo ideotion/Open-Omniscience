@@ -538,3 +538,22 @@ def test_an_unreachable_furniture_cut_says_WHY_it_was_unreachable():
         source_to_articles={1: [1]}, n_sources_with_fingerprint=241,
     )["cross_source_df"]
     assert ok["unreachable_by_construction"] is False
+
+
+def test_the_per_source_rows_carry_the_feed_key_masked():
+    """Row 75: domain + feed_key join one instance's rows to another's. A key kept from before R628 can hold a login, so the
+    rows write it as every report does (``shown_feed_key``), never as stored."""
+    s = _corpus()
+    from sqlalchemy import text
+
+    src = s.query(Source).filter(Source.domain.isnot(None)).first()
+    # written round the ORM, as a build before R628 left it (the ORM derives a fresh key without the login)
+    s.execute(text("UPDATE sources SET feed_key = :k WHERE id = :i"), {"k": "f:alice:hunter2@news.example/rss", "i": src.id})
+    s.commit()
+    s.expire_all()
+    files = build_quality_report_files(s, generated_at="2026-07-13T12:00:00", seed=20260713, floor=3)
+    for name in ("per_source_summary.jsonl", "per_source_keywords.jsonl"):
+        body = files[name].decode()
+        assert "hunter2" not in body and "alice:" not in body, name
+        rows = {r["source_id"]: r for r in (json.loads(ln) for ln in body.splitlines() if ln)}
+        assert rows[src.id]["feed_key"] == "f:***@news.example/rss", name

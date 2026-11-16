@@ -422,6 +422,7 @@ class _CustodyBatch:
         self.opened = 0  # logs this batch has opened (a reading, for the tests)
         self.refused_offline = 0  # entries the kill switch refused (R618): owed, and logged ONCE when the block ends
         self.settings_unreadable = 0  # entries owed because the custody settings could not be read: logged ONCE too
+        self.pqc_unavailable = 0  # entries owed because post-quantum signing is on and its library is missing: ONCE too
 
     @staticmethod
     def _under(prefs) -> tuple:
@@ -465,6 +466,11 @@ class _CustodyBatch:
             logging.getLogger(__name__).warning(
                 "custody: %d ingest entr(ies) of this flush are owed because the custody settings could not be read; "
                 "they are written, marked late, once the settings read as auto-log ON again", self.settings_unreadable,
+            )
+        if self.pqc_unavailable:
+            logging.getLogger(__name__).warning(
+                "custody: %d ingest entr(ies) of this flush are owed because post-quantum signing is on and the "
+                "post-quantum library is not installed; install the 'pqc' extra", self.pqc_unavailable,
             )
 
 
@@ -531,6 +537,7 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             batch.log(prefs).record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
         from src.custody.settings import CustodySettingsUnreadable as _Unreadable
+        from src.custody.signing import PostQuantumUnavailable
         from src.custody.timestamp import TimestampRefusedOffline
 
         if isinstance(exc, _Unreadable):
@@ -543,6 +550,14 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
                     batch.drop()
             else:
                 logging.getLogger(__name__).warning("custody entry on ingest owed: the custody settings could not be read")
+        elif isinstance(exc, PostQuantumUnavailable):
+            # Refused before anything is signed: the log is sound and would refuse the next entry the same way, so the
+            # batch keeps it (a fresh one costs a key derivation) and the flush logs once.
+            if batch is not None:
+                batch.pqc_unavailable += 1
+            else:
+                logging.getLogger(__name__).warning("custody entry on ingest owed: post-quantum signing is on and the "
+                                                    "post-quantum library is not installed")
         elif isinstance(exc, TimestampRefusedOffline):
             # R618: the switch's refusal, raised before the insert: the connection is clean, so the batch keeps its log (a
             # fresh one costs a key derivation) and the flush logs once; an unbatched entry logs its own line, at INFO.

@@ -179,6 +179,11 @@ _DEBUG_BUNDLE_POINTER_SECTION: dict[str, str] = {
 #: case is not covered by the pin). It is pinned in tests/test_collect_perf_window_history.py. A later trim of the tick only makes the
 #: zip smaller than it was; a pin against the live tick would fail on it. 31 widest windows with their envelope and the two keys that
 #: carry them (about 12,560 B) are paid by 9 ticks (13,968 B), 11 by 3 (4,656 B): so 191 and 17.
+#: The newest journal records the bundle carries whole, and how many older ERROR/CRITICAL records ride beside them
+#: (``errors_older``), so warnings cannot crowd an error out of the bundle.
+_DEBUG_BUNDLE_ERRORS = 300
+_DEBUG_BUNDLE_OLDER_ERRORS = 50
+
 _DEBUG_BUNDLE_SLIM_PERF_TICKS = 17
 _DEBUG_BUNDLE_PERF_TICKS = 191
 
@@ -286,7 +291,7 @@ def debug_bundle(
     from src.monitoring import feed_preflight
     from src.monitoring.collect_perf import recent_samples as _collect_perf_samples
     from src.monitoring.collect_perf import window_history as _collect_perf_windows
-    from src.monitoring.errorlog import recent_errors
+    from src.monitoring.errorlog import older_errors, recent_errors
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.forensics import session_forensics as _session_forensics
@@ -472,7 +477,7 @@ def debug_bundle(
 
     # The error window drives the envelope count; guarded like every other member, and the
     # count degrades to 0 if the member itself failed/skipped (never a crash on len()).
-    errors_val = _member("errors", lambda: recent_errors(300))
+    errors_val = _member("errors", lambda: recent_errors(_DEBUG_BUNDLE_ERRORS))
     count = len(errors_val) if isinstance(errors_val, list) else 0
 
     # One read of the governor's closed windows, shared by the two collect_perf members: whether the log holds any decides how many
@@ -532,6 +537,9 @@ def debug_bundle(
         # clean current run reads zero — the direct answer to "is the data-loss
         # happening now?" (P0-5; field test 2026-06-22).
         "error_log": _member("error_log", error_log_summary),
+        # The errors the newest records above do not reach: on the field journal those 300 were mostly one logger's
+        # warnings over 9 to 17 hours, so an older error was cut out while the journal still held it.
+        "errors_older": _member("errors_older", lambda: older_errors(_DEBUG_BUNDLE_ERRORS, _DEBUG_BUNDLE_OLDER_ERRORS)),
         # Recursive-augmentation logs #2-#5 (maintainer 2026-07-02): so the bundle the
         # operator sends carries the diagnostics that catch bugs automatically — the
         # loop-block/latency log, the slow-query log, live schema drift, and the
@@ -2837,7 +2845,9 @@ def _write_all_diagnostics_zip(
     mode = _plan.resolve_mode(mode)
     budget_s = _plan.scan_budget_for(mode, thorough_budget_s)
     records, scans = _plan.split_members(list(members))
-    ordered = records + scans
+    # A record that reads what the scans write (kpi.json) runs after them, or it reports the previous build's figures.
+    records, tail = _plan.after_scans(records)
+    ordered = records + scans + tail
     scan_names = {m[0] for m in scans}
     total = len(ordered)
     run_started_at = _time.time()
@@ -2863,6 +2873,9 @@ def _write_all_diagnostics_zip(
     # S6.2: resolved ONCE, before the first member is measured -- a memory instrument
     # rebuilt per reading perturbs the very thing it reads (measured 5/5).
     _rss = _RssProbe()
+    tail_names = {m[0] for m in tail}
+    scans_ended_early_iso: str | None = None
+    scans_ended_mono: float | None = None
     try:
         for i, (name, fn) in enumerate(ordered):
             if should_stop is not None and should_stop():
@@ -2882,6 +2895,12 @@ def _write_all_diagnostics_zip(
                         scan_claim = {"held": False, "reason": "could not claim the machine"}
                 scans_began_at = _mono()
                 scans_began_iso = datetime.now().isoformat(timespec="seconds")
+            if scans_began_at is not None and scans_ended_early_iso is None and name in tail_names:
+                # THE FIRST RECORD AFTER THE SCANS: the scans are over, so the machine goes back to the collector now and the
+                # scans' phase ends here; the tail runs as an ordinary record, outside the window and the scan budget.
+                scans_ended_early_iso = datetime.now().isoformat(timespec="seconds")
+                scans_ended_mono = _mono()
+                window.close()
             if progress is not None:
                 progress(i, total, name)
             started_t = _mono()  # a duration is measured on the monotonic clock: a clock step is not a member's time
@@ -3171,7 +3190,7 @@ def _write_all_diagnostics_zip(
 
     run_ended_at = _time.time()
     run_wall_s = _mono() - run_started_mono
-    scans_ended_iso = datetime.now().isoformat(timespec="seconds")
+    scans_ended_iso = scans_ended_early_iso or datetime.now().isoformat(timespec="seconds")
     phases = {
         "records": {
             "members": len(records),
@@ -3186,9 +3205,17 @@ def _write_all_diagnostics_zip(
             "members": len(scans),
             "began_at": scans_began_iso,
             "ended_at": scans_ended_iso if scans_began_at is not None else None,
-            "wall_s": round(_mono() - scans_began_at, 1) if scans_began_at is not None else None,
+            "wall_s": round((scans_ended_mono or _mono()) - scans_began_at, 1) if scans_began_at is not None else None,
             "exclusive": exclusive if exclusive is not None else scan_claim,
         },
+        **({"after_scans": {
+            "members": [m[0] for m in tail],
+            "note": (
+                "records that read what the scans write, run after the scans so they report this build's figures; the machine "
+                "went back to the collector before them, so the scans phase ends there (a scan thread abandoned at its deadline "
+                "can still be running, as its own entry says)"
+            ),
+        }} if tail else {}),
     }
     previous_text, previous_block = "", None
     if previous_runs is not None:

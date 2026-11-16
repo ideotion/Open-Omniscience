@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import random
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -212,6 +213,17 @@ def _bundle(client) -> dict:
     return r.json()["data"]
 
 
+def _has_dbstat() -> bool:
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("SELECT count(*) FROM dbstat").fetchone()
+        return True
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        con.close()
+
+
 _DEAD = ("PendingRollbackError", "rolled back", "rollback() fully")
 
 
@@ -243,7 +255,15 @@ def test_a_section_that_kills_its_connection_leaves_the_later_sections_answered(
     assert seen.get("killed"), "the section was not run: the bundle no longer reads corpus_integrity from this module"
     _no_dead_transaction(data)
     # the sections after it READ (a healthy install's answer, not a section that went unavailable)
-    assert data["storage_composition"].get("available") is True, data["storage_composition"]
+    storage = data["storage_composition"]
+    if _has_dbstat():
+        assert storage.get("available") is True, storage
+    else:
+        # a build without dbstat (python.org's macOS SQLite) reports the split unavailable by design; the section still read,
+        # and its reason is the driver's plain OperationalError, never the dead transaction (_no_dead_transaction reads it too)
+        reason = storage.get("reason", "")
+        assert storage.get("available") is False and reason.startswith("dbstat virtual table unavailable"), storage
+        assert "OperationalError" in reason, storage
     assert data["keyword_write_cost"].get("available") is True, data["keyword_write_cost"]
     assert data["corpus"] and "error" not in data["corpus"], data["corpus"]
     if how == "raises":

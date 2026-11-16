@@ -687,11 +687,15 @@ def test_the_output_of_the_real_step_is_read_by_the_script(job_name, tmp_path):
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "GITHUB_STEP_SUMMARY": str(summary), "ImageOS": "ubuntu24", "ImageVersion": "20261023.334.3"}
     done = subprocess.run(["bash", "-e", "-c", run], capture_output=True, text=True, encoding="utf-8", env=env, timeout=60, check=False)
     assert done.returncode == 0, done.stderr
+    kernel = subprocess.run(["uname", "-s"], capture_output=True, text=True, env=env, timeout=30, check=True).stdout.strip()
+    assert kernel, "uname -s printed nothing"
     for label, text in (("stdout", done.stdout), ("step summary", summary.read_text(encoding="utf-8"))):
         block = div.read_block(text, label)
         assert block.heading_line == 1
         assert block.environment is not None
-        assert block.environment.startswith("python 3.13.16, runner image ubuntu24 20261023.334.3, Linux ")
+        # the step's kernel field is the host's own ``uname -sr``: Linux on the lanes that run the step, Darwin where this test
+        # runs on the macOS observation lane
+        assert block.environment.startswith(f"python 3.13.16, runner image ubuntu24 20261023.334.3, {kernel} "), kernel
         assert block.pins == {
             "pytest": ("pytest", "9.2.0"),
             "typing-extensions": ("typing_extensions", "4.15.0"),
@@ -719,7 +723,10 @@ def test_the_real_step_without_the_runner_variables_prints_unknown_and_is_still_
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "GITHUB_STEP_SUMMARY": str(tmp_path / "s.md")}
     done = subprocess.run(["bash", "-e", "-c", run], capture_output=True, text=True, encoding="utf-8", env=env, timeout=60, check=False)
     assert done.returncode == 0, done.stderr
+    kernel = subprocess.run(["uname", "-s"], capture_output=True, text=True, env=env, timeout=30, check=True).stdout.strip()
+    assert kernel, "uname -s printed nothing"
     block = div.read_block(done.stdout, "x")
     fields = div._environment_fields(block.environment)
     assert fields is not None and fields["runner image"] == "unknown unknown"
+    assert fields["kernel"].startswith(kernel + " "), (fields["kernel"], kernel)
     assert block.pins == {"a": ("a", "1")}
