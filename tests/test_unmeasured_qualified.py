@@ -31,7 +31,7 @@ def Session():
     return sessionmaker(bind=engine, future=True, autoflush=False)
 
 
-def _curated(s, domain: str, n_articles: int, *, enabled: bool = True) -> int:
+def _curated(s, domain: str, n_articles: int, *, enabled: bool = True, quarantined: int = 0) -> int:
     global _N
     src = Source(name=domain, domain=domain, enabled=enabled, status=q.STATUS_QUALIFIED,
                  qualified_at=datetime(2026, 11, 1), qualification_criteria_version=q.CURATED_CRITERIA_VERSION)
@@ -39,11 +39,12 @@ def _curated(s, domain: str, n_articles: int, *, enabled: bool = True) -> int:
     s.commit()
     s.add(SourceQualificationAttempt(source_id=src.id, attempted_at=datetime(2026, 11, 1),
                                      verdict=q.VERDICT_CURATED, criteria_version=q.CURATED_CRITERIA_VERSION))
-    for _ in range(n_articles):
+    for i in range(n_articles):
         _N += 1
         url = f"https://{domain}/a/{_N}"
         s.add(Article(url=url, canonical_url=url, source_id=src.id, content=_BODY, hash=f"u{_N}",
-                      word_count=200, language="en", title=f"Title {_N}", fetched_host=domain))
+                      word_count=200, language="en", title=f"Title {_N}", fetched_host=domain,
+                      quarantined=i < quarantined))
     s.commit()
     return int(src.id)
 
@@ -75,7 +76,8 @@ def test_judged_offline_inside_the_recheck_budget(Session, monkeypatch):
                                        now=datetime.now(UTC))
         assert out.get("unmeasured_judged") == 1, out
         assert tried == []  # no request made for it
-        assert _verdicts(s, sid)[-1] in q.JUDGING_VERDICTS
+        assert _verdicts(s, sid)[-1] == q.STATUS_QUALIFIED  # clean stored pages read as qualified
+        assert out.get("qualified") == 1, out
         # Judged once, it leaves the pool.
         assert q.select_unmeasured_qualified(s, limit=10) == []
 
@@ -113,3 +115,38 @@ def test_offline_ones_are_judged_even_when_the_trial_budget_is_spent(Session, mo
         assert out.get("deferred") == 1, out
         assert out.get("unmeasured_judged") == 1, out
         assert _verdicts(s, sid)[-1] in q.JUDGING_VERDICTS
+
+
+def test_quarantined_pages_do_not_count_toward_the_floor(Session):
+    # 12 stored, 3 quarantined: 9 the verdict would read, under the floor of 10.
+    with Session() as s:
+        _curated(s, "mostly-held.example.org", 12, quarantined=3)
+        assert q.select_unmeasured_qualified(s, limit=10) == []
+
+
+def test_an_offline_verdict_queues_no_history_backfill(Session, monkeypatch):
+    import src.ingest.archive_backfill as backfill
+
+    queued: list[int] = []
+    monkeypatch.setattr(backfill, "enqueue_source", lambda *a, **k: queued.append(1))
+    monkeypatch.setattr(q, "trial_fetch", lambda *a, **k: None)
+    with Session() as s:
+        _curated(s, "e.example.org", 12)
+        out = q.run_qualification_pass(s, object(), per_pass=0, recheck_per_pass=2, now=datetime.now(UTC))
+        assert out.get("qualified") == 1, out
+        assert queued == []
+
+
+def test_one_with_no_evidence_rotates_to_the_back(Session):
+    # A no_evidence row is not a judging verdict, so the source stays in the pool, but its newer attempt
+    # moves it behind one that was not tried, so it cannot take the only slot on every pass.
+    with Session() as s:
+        first = _curated(s, "f.example.org", 12)
+        second = _curated(s, "g.example.org", 12)
+        assert [int(x.id) for x in q.select_unmeasured_qualified(s, limit=1)] == [first]
+        assert q.VERDICT_NO_EVIDENCE not in q.JUDGING_VERDICTS
+        s.add(SourceQualificationAttempt(source_id=first, attempted_at=datetime(2026, 11, 16),
+                                         verdict=q.VERDICT_NO_EVIDENCE, criteria_version=q.CRITERIA_VERSION))
+        s.commit()
+        assert [int(x.id) for x in q.select_unmeasured_qualified(s, limit=1)] == [second]
+        assert {int(x.id) for x in q.select_unmeasured_qualified(s, limit=2)} == {first, second}

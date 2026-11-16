@@ -508,9 +508,10 @@ def select_unmeasured_qualified(session: Session, *, limit: int, exclude: set[in
     # Enough stored articles, tested IN SQL so the rotation below only ever orders eligible rows (a
     # Python filter after the LIMIT let a few low-id sources with too few pages fill the window on
     # every pass, since they never get an attempt row that would move them back). The N-th article
-    # exists: an index seek on the source that reads at most UNMEASURED_MIN_STORED rows.
+    # exists: an index seek on the source that reads at most UNMEASURED_MIN_STORED rows. Quarantined
+    # articles do not count, because the verdict does not read them either.
     enough = (
-        select(Article.id).where(Article.source_id == Source.id)
+        select(Article.id).where(Article.source_id == Source.id, Article.quarantined.isnot(True))
         .limit(1).offset(UNMEASURED_MIN_STORED - 1).exists()
     )
     skip = ~Source.id.in_(sorted(exclude)) if exclude else true()
