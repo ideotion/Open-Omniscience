@@ -247,7 +247,7 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
             if hist.get("recording_began_at")
             else "wal_bytes has never been recorded on this install"
         )
-        return out
+        return _with_reading_now(out, window)
 
     start = _parse_ts(window.get("started_at"))
     if not window.get("measured") or start is None:
@@ -281,7 +281,7 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
             "no snapshot has been recorded since this process started; the "
             "series above is earlier history and describes other sessions"
         )
-        return out
+        return _with_reading_now(out, window)
     values = []
     for point in inside:
         try:
@@ -307,6 +307,37 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
         "the window boundary is widened to the top of the hour this process started "
         f"in ({edge.isoformat()}), because the series is bucketed hourly; the first "
         "point may therefore include readings from up to 59 minutes before the start"
+    )
+    return out
+
+
+def _with_reading_now(out: dict[str, Any], window: dict[str, Any]) -> dict[str, Any]:
+    """When the hourly series has no point in this process's window, take ONE reading of the log now.
+
+    The series is at most hourly and the snapshot runs in idle maintenance, so a build taken in the
+    first hour of uptime found nothing (5 of 6 field bundles on 2026-11-14, row 74). A reading taken
+    now is inside the window; it is reported as that, one reading, a floor under the window's true
+    maximum rather than the maximum, and the series' own reason stays beside it."""
+    if not window.get("measured"):
+        return out
+    try:
+        from src.database.snapshots import wal_bytes
+
+        now_bytes = wal_bytes()
+    except Exception:  # noqa: BLE001 - a diagnostic read degrades, never raises
+        now_bytes = None
+    if now_bytes is None:
+        return out
+    out["series_reason"] = out.pop("reason", None)
+    out["measured"] = True
+    out["basis"] = "one reading taken now"
+    out["points_in_window"] = 1
+    out["hours_in_window"] = window.get("hours")
+    out["max_bytes"] = now_bytes
+    out["min_bytes"] = now_bytes
+    out["reading_now_note"] = (
+        "the hourly series has no point in this window yet, so this is one reading of the write-ahead log "
+        "taken now: the window's maximum was at least this, and may have been higher between readings"
     )
     return out
 

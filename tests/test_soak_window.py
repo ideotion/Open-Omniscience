@@ -296,10 +296,18 @@ def test_a_reading_in_the_start_hour_is_kept_and_the_widening_is_disclosed(
     assert "59 minutes" in wal["boundary_note"]
 
 
+def _no_reading_now(monkeypatch):
+    """No live log to read either (an in-memory store): the series' absence is the whole answer."""
+    from src.database import snapshots
+
+    monkeypatch.setattr(snapshots, "wal_bytes", lambda: None)
+
+
 def test_no_snapshot_since_the_process_started_is_unmeasured_not_zero(monkeypatch, session):
     start = datetime.now(UTC).replace(minute=30, second=0, microsecond=0)
     _uptime(monkeypatch, seconds=3600.0, started_at=start.isoformat(timespec="seconds"))
     _series(monkeypatch, [{"t": _hour(start - timedelta(days=2)), "n": 500}])
+    _no_reading_now(monkeypatch)
 
     wal = sw.soak_window(session)["wal"]
     assert wal["measured"] is False
@@ -307,11 +315,30 @@ def test_no_snapshot_since_the_process_started_is_unmeasured_not_zero(monkeypatc
     assert "since this process started" in wal["reason"]
 
 
+def test_with_no_snapshot_in_the_window_one_reading_now_is_taken_and_named(monkeypatch, session):
+    """Field report 2026-11-14 (row 74): a build in the first hour of uptime found no hourly point. A reading of the log
+    taken now is inside the window; it is reported as one reading, a floor under the maximum, beside the series' reason."""
+    start = datetime.now(UTC).replace(minute=30, second=0, microsecond=0)
+    _uptime(monkeypatch, seconds=3600.0, started_at=start.isoformat(timespec="seconds"))
+    _series(monkeypatch, [{"t": _hour(start - timedelta(days=2)), "n": 500}])
+    from src.database import snapshots
+
+    monkeypatch.setattr(snapshots, "wal_bytes", lambda: 4096)
+
+    wal = sw.soak_window(session)["wal"]
+    assert wal["measured"] is True
+    assert wal["basis"] == "one reading taken now"
+    assert wal["max_bytes"] == 4096 and wal["points_in_window"] == 1
+    assert "since this process started" in wal["series_reason"]
+    assert "at least" in wal["reading_now_note"]
+
+
 def test_a_never_recorded_wal_says_so_rather_than_reporting_a_healthy_series(
     monkeypatch, session
 ):
     _uptime(monkeypatch, seconds=3600.0)
     _series(monkeypatch, [])
+    _no_reading_now(monkeypatch)
 
     wal = sw.soak_window(session)["wal"]
     assert wal["measured"] is False
@@ -744,6 +771,7 @@ def test_a_crashed_block_is_told_apart_from_a_block_with_nothing_to_read(monkeyp
     degrade wrapper becomes the hiding place for the bug it survives."""
     _uptime(monkeypatch, seconds=80 * 3600.0)
     _series(monkeypatch, [])
+    _no_reading_now(monkeypatch)
 
     def _boom(_window):
         raise RuntimeError("gate exploded")

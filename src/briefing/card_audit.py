@@ -702,7 +702,7 @@ def _tally(values: list[str], label: str = "status") -> list[dict]:
 # --------------------------------------------------------------------------- #
 
 
-def _safe_section(name: str, fn):
+def _safe_section(name: str, fn, *, session=None):
     """Run one risky sub-query; on failure return a structured marker for THAT
     section only (the diagnostic must degrade, never 500).
 
@@ -710,6 +710,11 @@ def _safe_section(name: str, fn):
     can never be confused with a real measurement that happens to be false
     (the ``ai_diagnostics._safe`` lesson, 2026-07-29). ``StatementTimeout`` is
     RE-RAISED so an outer statement deadline still bites.
+
+    With ``session``, a section that fails AFTER the enclosing statement deadline has
+    expired says so (``stopped_by``) instead of naming the driver's error: SQLite's interrupt
+    reaches it as a plain ``OperationalError``, which the 2026-11-14 field bundles read as
+    72 to 96 broken cards when every one of them was the deadline (field row 74).
     """
     from src.database.maintenance import StatementTimeout
 
@@ -718,6 +723,22 @@ def _safe_section(name: str, fn):
     except StatementTimeout:
         raise
     except Exception as exc:  # noqa: BLE001 - a failing section must not abort the report
+        if session is not None:
+            try:
+                from src.database.maintenance import deadline_expired
+
+                expired = deadline_expired(session)
+            except Exception:  # noqa: BLE001 - no DB layer: report the error as before
+                expired = False
+            if expired:
+                return {
+                    "section_ok": False,
+                    "stopped_by": "statement deadline",
+                    "note": (
+                        f"the {name!r} section was not finished: this report's statement deadline "
+                        "had expired, so the database stopped it. It is not an error in the card."
+                    ),
+                }
         log_failure(_LOG, f"card_audit: section {name!r} failed", exc, level=logging.WARNING)
         return {
             "section_ok": False,
@@ -925,7 +946,7 @@ def _attach_linked_layers(session, items: list[dict], *, max_linked_rows: int) -
                     "items": buckets[aid],
                 }
 
-        res = _safe_section(f"linked.{layer}", _run)
+        res = _safe_section(f"linked.{layer}", _run, session=session)
         if isinstance(res, dict) and res.get("section_ok") is False:
             for aid in ids:
                 by_id[aid].setdefault("linked", {})[layer] = res
@@ -1119,7 +1140,7 @@ def _attach_linked_layers(session, items: list[dict], *, max_linked_rows: int) -
         for aid in ids:
             by_id[aid].setdefault("linked", {})["hazard_detail"] = found.get(aid)
 
-    res = _safe_section("linked.hazard_detail", _hazards)
+    res = _safe_section("linked.hazard_detail", _hazards, session=session)
     if isinstance(res, dict) and res.get("section_ok") is False:
         for aid in ids:
             by_id[aid].setdefault("linked", {})["hazard_detail"] = res
@@ -1185,7 +1206,7 @@ def _keyword_facts(session, card) -> dict:
                     kw.last_reconciled_at.isoformat() if kw.last_reconciled_at else None
                 ),
                 "extractor": kw.extractor,
-                "tags": _safe_section("keyword.tags", lambda n=kw.normalized_term: tags_for_keyword(session, n)),
+                "tags": _safe_section("keyword.tags", lambda n=kw.normalized_term: tags_for_keyword(session, n), session=session),
                 "ring": (
                     {
                         "id": rid,
@@ -1306,7 +1327,7 @@ def _independence(session, card, ids: list[int], *, max_articles: int) -> dict:
             ),
         }
 
-    out["shared_origins"] = _safe_section("independence.shared_origins", _origins)
+    out["shared_origins"] = _safe_section("independence.shared_origins", _origins, session=session)
 
     coord_ids = ids[:max_articles]
 
@@ -1340,7 +1361,7 @@ def _independence(session, card, ids: list[int], *, max_articles: int) -> dict:
             ),
         }
 
-    out["coordination"] = _safe_section("independence.coordination", _coord)
+    out["coordination"] = _safe_section("independence.coordination", _coord, session=session)
     return out
 
 
@@ -1515,7 +1536,8 @@ def card_audit_report(
         shown_ids = combined[:max_articles_per_card]
         resolved = _safe_section(
             "articles",
-            lambda: _resolve_articles(
+            session=session,
+            fn=lambda: _resolve_articles(
                 session,
                 combined,
                 depth=depth,
@@ -1547,8 +1569,9 @@ def card_audit_report(
                 lambda: _independence(
                     session, card, ids, max_articles=max_coordination_articles
                 ),
+                session=session,
             ),
-            "keywords": _safe_section("keywords", lambda: _keyword_facts(session, card)),
+            "keywords": _safe_section("keywords", lambda: _keyword_facts(session, card), session=session),
             "provenance_mix": resolved_ok.get("provenance_mix", []),
             "articles": {
                 "shown": resolved_ok.get("shown", 0),

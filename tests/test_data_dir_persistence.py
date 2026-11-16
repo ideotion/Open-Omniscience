@@ -19,7 +19,8 @@ def _persist(monkeypatch, *, fstype, disposable, override, tmp_path):
         "OO_DATA_DIR", raising=False
     )
     monkeypatch.setattr(forensics, "_filesystem_type", lambda _p: fstype)
-    monkeypatch.setattr(forensics, "_qubes_disposable", lambda: disposable)
+    persistence = {True: "none", False: "full", None: None}[disposable]
+    monkeypatch.setattr(forensics, "_qubes_persistence", lambda: persistence)
     return forensics.data_dir_persistence()
 
 
@@ -78,3 +79,48 @@ def test_session_forensics_embeds_persistence(monkeypatch, tmp_path):
     sf = forensics.session_forensics()
     assert "data_dir_persistence" in sf
     assert sf["data_dir_persistence"]["explicit_override"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Qubes VMs (field report 2026-11-14, row 74: "qubes: false" on a Qubes kernel) #
+# --------------------------------------------------------------------------- #
+
+
+def test_a_qubes_vm_is_recognised_by_its_kernel_or_marker_not_only_dom0s_file(monkeypatch, tmp_path):
+    missing = tmp_path / "absent"
+    monkeypatch.setattr(forensics, "_QUBES_DOM0_MARKER", missing)
+    monkeypatch.setattr(forensics, "_QUBES_VM_MARKER", missing)
+    monkeypatch.setattr("platform.release", lambda: "6.18.4-1.qubes.fc41.x86_64")
+    assert forensics._qubes_kind() == "vm"
+
+    monkeypatch.setattr("platform.release", lambda: "6.18.4-200.fc41.x86_64")
+    assert forensics._qubes_kind() is None
+
+    marker = tmp_path / "marker-vm"
+    marker.write_text("")
+    monkeypatch.setattr(forensics, "_QUBES_VM_MARKER", marker)
+    assert forensics._qubes_kind() == "vm"
+
+
+def _appvm(monkeypatch, data_dir):
+    monkeypatch.setenv("OO_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(forensics, "_filesystem_type", lambda _p: "ext4")
+    monkeypatch.setattr(forensics, "_qubes_persistence", lambda: "rw-only")
+    monkeypatch.setattr(forensics, "_qubes_kind", lambda: "vm")
+    return forensics.data_dir_persistence()
+
+
+def test_an_appvm_data_folder_on_the_private_volume_survives(monkeypatch, tmp_path):
+    monkeypatch.setattr(forensics, "_QUBES_APPVM_PERSISTENT", (str(tmp_path),))
+    p = _appvm(monkeypatch, tmp_path / "oo")
+    assert p["qubes"] is True and p["qubes_persistence"] == "rw-only"
+    assert p["at_risk"] is False
+    assert p["qubes_disposable"] is False
+
+
+def test_an_appvm_data_folder_outside_the_private_volume_is_at_risk(monkeypatch, tmp_path):
+    monkeypatch.setattr(forensics, "_QUBES_APPVM_PERSISTENT", ("/home", "/rw", "/usr/local"))
+    p = _appvm(monkeypatch, tmp_path / "oo")  # pytest's tmp_path is under /tmp
+    assert p["at_risk"] is True
+    assert "/home, /rw and /usr/local" in p["reason"]
+    assert p["note"] and "OO_DATA_DIR" in p["note"]

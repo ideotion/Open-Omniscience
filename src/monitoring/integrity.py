@@ -501,7 +501,14 @@ def _verdict(report: dict[str, Any]) -> tuple[bool | None, list[str], list[str]]
     complete."""
     found: list[str] = []
     incomplete: list[str] = []
+    # While a counter deferral is open (a re-index or drain that stopped maintaining the counters on purpose, R22),
+    # a counter that disagrees with the live mentions is the deferral working, not drift: those two checks then
+    # count as not established, and the verdict names the deferral (field row 74).
+    deferred = bool((report.get("counter_drift") or {}).get("deferred_since"))
     for name, path in _VERDICT_CHECKS:
+        if deferred and name.startswith("counter_drift_"):
+            incomplete.append(name)
+            continue
         v: Any = report
         for k in path:
             v = v.get(k) if isinstance(v, dict) else None
@@ -620,7 +627,14 @@ def corpus_integrity(
             # `None` (the fts_status `count_status` shape, copied exactly), never as a
             # fabricated zero indistinguishable from a genuinely clean sample.
             ok = drift_count_status == "ok"
+            try:
+                from src.analytics.counter_deferral import deferral_open_since
+
+                deferred_since = deferral_open_since(session)
+            except Exception:  # noqa: BLE001 - no marker store: the counters are taken as maintained, as before
+                deferred_since = None
             report["counter_drift"] = {
+                "deferred_since": deferred_since,
                 "mode": "full" if full else "sampled",
                 "count_status": drift_count_status,
                 "checked": checked if ok else None,
@@ -757,6 +771,12 @@ def corpus_integrity(
     report["verdict"] = ("drift" if drift else ("no drift" if drift is False else
                          "not established: " + ", ".join(incomplete) + " did not complete"
                          + ("; " + ", ".join(report["complete_checks"]) + " did" if report["complete_checks"] else "")))
+    deferred_since = (report.get("counter_drift") or {}).get("deferred_since")
+    if deferred_since:
+        report["verdict"] += (
+            f"; the keyword counters are deferred since {deferred_since} (a re-index or drain stopped maintaining "
+            "them on purpose), so counter drift is expected and not counted"
+        )
     assembled = sorted(c for c, p in progress.items() if isinstance(p, dict) and p.get("assembled_across_builds"))
     report["assembled_across_builds"] = assembled
     if assembled:
