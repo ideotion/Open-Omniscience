@@ -493,6 +493,18 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`socks5h`), the proxy resolves the target, so the only address this process resolves or
   connects to is the proxy's own; what the proxy reaches is checked by the pre-fetch guard
   alone.
+- **A resolver blip on a Wikimedia name gets the last good answer, behind both gates**
+  (`src/ingest/dns_stale.py`, 2026-11-16, field test row 72). Only inside the same patched
+  `getaddrinfo`, only for `wikipedia.org`, `wikimedia.org` and `wikidata.org` names, only when
+  the resolver fails with `EAI_AGAIN`, and only with an answer received in the last 10 minutes.
+  The resolver is always asked first. The airplane refusal runs before it, and the remembered
+  answer meets the SSRF answer check and the connect-time check exactly like a fresh one.
+  Only an all-public answer is kept. An answer is handed back only on the same network it was
+  received on, judged by this machine's own interface addresses from the kernel's tables, and
+  the memory is emptied whenever airplane mode engages. **Stated limit:** `EAI_AGAIN` is also
+  what a resolver's SERVFAIL or REFUSED becomes, so a DNS-level block of these names that starts
+  on the same network is ridden over for at most 10 minutes after the last good answer, and then
+  honoured. It is held in memory only and capped at 64 entries. `OO_DNS_STALE=0` turns it off.
 
 ## Data integrity / chain of custody
 

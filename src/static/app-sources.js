@@ -286,11 +286,11 @@
     // not a cap, so the dropdown still lists every source that has a feed.
     async function loadSources() {
       let sources = [];
-      try { sources = await api("/api/sources?fields=id,name,rss_url"); }
+      try { sources = await api("/api/sources?fields=id,name,domain,rss_url"); }
       catch (e) { toast(_failMsg("Could not load sources: {error}", e), "err"); }
       const sel = $("ing-source");
       sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
-        `<option value="${s.id}">${esc(s.name)}</option>`).join("")
+        `<option value="${s.id}">${esc(ooSourceName(s).label)}</option>`).join("")
         || '<option value="">(no sources with an RSS feed)</option>';
       loadUnmanagedLanguages();
     }
@@ -454,9 +454,13 @@
         const shownTo = Math.min(SRC.offset + SRC.limit, d.total);
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
           : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
-        $("src-meta").textContent = d.total
+        // Row 71: the count says how many of its rows are discovery candidates (disabled, awaiting review).
+        const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        const cand = (typeof d.candidates === "number" && d.candidates > 0)
+          ? ` · ${tt("Discovery candidates")}: ${fmtNum(d.candidates, 0)}` : "";
+        $("src-meta").textContent = (d.total
           ? tf("{total} source(s) · showing {from}–{to}", {total: d.total, from: shownFrom, to: shownTo})
-          : tf("{total} source(s)", {total: d.total});
+          : tf("{total} source(s)", {total: d.total})) + cand;
         // The pager is the analysis window's keyed frame, not an English literal beside a
         // translated count line (2026-09-27 re-walk L-8).
         $("src-page").textContent = tf("Page {n} of {total}", {
@@ -477,7 +481,7 @@
         `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       return `<tr>
-        <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
+        <td>${(() => { const n = ooSourceName(s); return n.qid ? `<span title="${esc(n.qid)}">${esc(n.label)}</span>` : esc(n.label); })()}<div class="muted" style="font-size:12px">${tags}</div></td>
         <td>${esc(s.domain)}${s.rss_url?` <span class="pill ok" title="${esc(s.rss_url)}">rss</span>`:''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
         <td class="muted">${s.country ? ooCountryCell(s.country) : "—"}</td>
@@ -906,7 +910,7 @@
           return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
             <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}
               data-on-change="batchToggle(${s.id}, this.checked)">
-            <span class="bi-name">${esc(s.name)}</span>
+            <span class="bi-name"${ooSourceName(s).qid ? ` title="${esc(ooSourceName(s).qid)}"` : ""}>${esc(ooSourceName(s).label)}</span>
             <span class="bi-meta muted">${meta}${feed ? "" : " · no feed"}${s.enabled ? "" : " · disabled"}</span></label>`;
         }).join("");
       }

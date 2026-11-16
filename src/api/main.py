@@ -1002,6 +1002,13 @@ def _allowed_hosts() -> set[str]:
     return _LOOPBACK_HOST_NAMES | _operator_hosts()
 
 
+def _source_label(name: str | None, domain: str | None) -> str:
+    """The shown name of a source (row 71): see :func:`src.catalog.qid_labels.source_label`, imported when used."""
+    from src.catalog.qid_labels import source_label
+
+    return source_label(name, domain)
+
+
 @app.middleware("http")
 async def _host_header_guard(request: Request, call_next):
     if _host_without_port(request.headers.get("host", "")) not in _allowed_hosts():
@@ -1610,7 +1617,15 @@ def _structured_filters(
     if source:
         # EVERY source of that name: names are not unique once a source is (domain, feed), and ``.first()`` answered with
         # an arbitrary one of them and silently dropped the others' articles. A typo still 404s.
-        named_ids = [sid for (sid,) in session.query(Source.id).filter(Source.name == source)]
+        # A source whose name is only a Wikidata id is SHOWN by its domain (row 71), so the shown label finds it too.
+        # Only those: a domain shared with a properly named feed does not pull that feed's articles in.
+        from src.catalog.qid_labels import looks_like_bare_qid as _bare_qid
+
+        named_ids = [
+            sid
+            for sid, name in session.query(Source.id, Source.name).filter(or_(Source.name == source, Source.domain == source))
+            if name == source or _bare_qid(name)
+        ]
         if not named_ids:
             raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
         filters.append(Article.source_id.in_(named_ids))
@@ -1783,7 +1798,7 @@ def _article_row(
         "title": a.title,
         "url": a.url,
         "canonical_url": a.canonical_url,
-        "source": src.name if src else "Unknown",
+        "source": _source_label(src.name, src.domain) if src else "Unknown",
         # Descriptive ingestion channel (wikipedia/newsletter/statistics/web) derived
         # from the source -- a filterable label, never a quality/credibility verdict.
         "provenance": provenance_of(src.domain if src else None, src.source_type if src else None),
@@ -2694,7 +2709,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             "title": a.title,
             "url": a.url,
             "canonical_url": a.canonical_url,
-            "source": a.source.name if a.source else "Unknown",
+            "source": _source_label(a.source.name, a.source.domain) if a.source else "Unknown",
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "language": a.language,
             "content": a.content,
@@ -2749,7 +2764,18 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     def _row(label: str, value: str | None) -> str:
         return f"<div class='mrow'><span>{label}</span><b>{value}</b></div>" if value else ""
 
-    src_name = _html.escape(a.source.name) if a.source else None
+    # Row 71: a name that is only a Wikidata identifier reads as the domain, the identifier on hover.
+    from src.catalog.qid_labels import looks_like_bare_qid as _looks_like_bare_qid
+
+    src_name = (
+        (
+            f"<span title='{_html.escape(a.source.name)}'>{_html.escape(a.source.domain)}</span>"
+            if _looks_like_bare_qid(a.source.name) and a.source.domain
+            else _html.escape(a.source.name)
+        )
+        if a.source
+        else None
+    )
     # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
     # source's (by registrable domain, as the quarantine host-mismatch report compares them: a source's own subdomain is its
     # site). Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
@@ -3036,9 +3062,27 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         .all()
     )
     cite_items = []
+    furniture_items = []
+    # Row 68: a link most of THIS outlet's articles carry is its page furniture (an app badge, a subscription link), not a
+    # citation; it is listed apart, with the counts that put it there (src/analytics/link_furniture.py).
+    try:
+        from src.analytics.link_furniture import outlet_link_shares
+
+        shares = outlet_link_shares(db, a.source_id, [ln.normalized_url for ln in links[:40]])
+    except Exception as exc:  # noqa: BLE001 - the reader never fails for the furniture count; every link is then listed
+        log_failure(logger, "outlet furniture count failed in reader", exc, level=logging.WARNING)
+        shares = {"source_articles": None, "carried_by": {}, "furniture": set(), "method": ""}
     for ln in links[:40]:
         safe_ln = safe_href(ln.url)
         if not safe_ln:
+            continue
+        if ln.normalized_url in shares["furniture"]:
+            f_host = _html.escape((safe_ln.split("//", 1)[-1].split("/", 1)[0]).replace("www.", ""))
+            furniture_items.append(
+                f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{f_host}</a>"
+                f"<span class='muted'> · on {shares['carried_by'].get(ln.normalized_url, 0)} of this source's "
+                f"{shares['source_articles']} articles</span></li>"
+            )
             continue
         indeg = (
             db.query(func.count(func.distinct(ArticleLink.article_id)))
@@ -3059,11 +3103,21 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{label}</a>"
             f"<span class='muted'> · {host}</span> {shared}</li>"
         )
+    furniture_html = (
+        f"<details class='cites-furniture'><summary class='muted' title='{_html.escape(shares['method'])}'>"
+        f"{len(furniture_items)} link(s) that most of this source's articles carry (its page furniture) "
+        "are not counted as citations</summary><ul>"
+        + "".join(furniture_items)
+        + "</ul></details>"
+        if furniture_items
+        else ""
+    )
     cites_html = (
-        "<section class='cites'><h2>Sources this article cites</h2><ul>"
-        + "".join(cite_items)
-        + "</ul></section>"
-        if cite_items
+        "<section class='cites'><h2>Sources this article cites</h2>"
+        + ("<ul>" + "".join(cite_items) + "</ul>" if cite_items else "")
+        + furniture_html
+        + "</section>"
+        if cite_items or furniture_items
         else ""
     )
 
@@ -3182,7 +3236,9 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # per-candidate row decrypt); only the small, already-ranked final result set
     # (limit 8) is resolved to titles.
     related_html = ""
+    _furniture_kw: set[int] = set()
     try:
+        from src.analytics.outlet_furniture import outlet_furniture_keywords
         from src.database.derived_views import KeywordMentionRead
 
         my_kw = [
@@ -3191,6 +3247,10 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 KeywordMentionRead.article_id == a.id
             )
         ]
+        # Field test 2026-11-14 row 67: a keyword on half or more of this source's articles is its
+        # template's, not this story's, and ranked unrelated pages of the same site first.
+        _furniture_kw = outlet_furniture_keywords(db, a.source_id, my_kw)
+        my_kw = [k for k in my_kw if k not in _furniture_kw]
         if my_kw:
             ranked = (
                 db.query(
@@ -3226,7 +3286,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 related_html = (
                     '<section><h2>Related in your corpus</h2>'
                     '<p class="muted">Ranked by shared extracted keywords — overlap counts, '
-                    "not a similarity score. All links stay local.</p>"
+                    "not a similarity score. Keywords found on half or more of this source's "
+                    "articles (from 10 articles up) are not counted. All links stay local.</p>"
                     f"<ul>{items}</ul></section>"
                 )
     except Exception as exc:  # noqa: BLE001 - related list is optional, never breaks the reader
@@ -3270,6 +3331,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             for r in db.query(KeywordMentionRead.keyword_id).filter(
                 KeywordMentionRead.article_id == a.id
             )
+            if r[0] not in _furniture_kw  # the template's keywords pick the template's pages (row 67)
         ]
         _cand = (
             [
@@ -3293,12 +3355,27 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             else []
         )
         if _cand:
-            docs = {str(a.id): ((a.title or "") + "\n" + (a.get_content() or ""))}
+            from src.analytics.outlet_furniture import outlet_repeated_shingles, strip_known
+
+            docs = {str(a.id): ((a.title or "") + "\n" + strip_known(a.get_content() or ""))}
             titles: dict[str, str] = {}
+            source_of = {str(a.id): a.source_id}
             for c in db.query(Article).filter(Article.id.in_(_cand)).all():
-                docs[str(c.id)] = (c.title or "") + "\n" + (c.get_content() or "")
+                docs[str(c.id)] = (c.title or "") + "\n" + strip_known(c.get_content() or "")
                 titles[str(c.id)] = c.title or "(untitled)"
-            res = near_duplicate_clusters(docs, threshold=0.7)
+                source_of[str(c.id)] = c.source_id
+            # Field test 2026-11-14 row 67: text a source repeats on half or more of its recent pages is its
+            # template, and twelve unrelated pages of one site read as copies of each other on it. Each PAIR is
+            # compared without the text its sources repeat: two pages of one source without that source's set, two
+            # pages of different sources without only what BOTH repeat, so a footer or a story one outlet learned
+            # never splits or hides its copy at another (read-time; nothing stored). The ingest's own furniture list
+            # is stripped on every side, as in the learning.
+            res = near_duplicate_clusters(
+                docs,
+                threshold=0.7,
+                group_of={d: sid for d, sid in source_of.items() if sid is not None},
+                group_drop={sid: outlet_repeated_shingles(db, sid) for sid in set(source_of.values()) if sid is not None},
+            )
             mine = next(
                 (cl for cl in res.clusters if str(a.id) in cl.members and len(cl.members) >= 2),
                 None,
