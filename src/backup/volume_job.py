@@ -290,6 +290,7 @@ class VolumeBackupManager:
         include_blobs: list[str] | None = None,
         verify_after_write: bool = True,
         _backup_fn: Callable[..., dict] | None = None,
+        include_lanes: bool = False,
     ) -> dict:
         with self._lock, storage_events.run_refusals_net("export", via="volume-set", refused_as=storage_events.NOT_A_FOLDER):
             self._reap_or_reject("export")
@@ -322,6 +323,7 @@ class VolumeBackupManager:
                     include_blobs,
                     verify_after_write,
                     _backup_fn,
+                    include_lanes,
                 ),
                 daemon=True,
                 name="volume-backup",
@@ -407,6 +409,7 @@ class VolumeBackupManager:
         include_blobs,
         verify_after_write,
         backup_fn,
+        include_lanes=False,
     ):
         from src.backup.volumes import VolumeStopped
 
@@ -416,7 +419,7 @@ class VolumeBackupManager:
         runlog.begin(
             "export", label=destp.name, dest=str(destp),
             include_newsletters=include_newsletters, parity_fraction=parity_fraction,
-            include_blobs=list(include_blobs or ()),
+            include_blobs=list(include_blobs or ()), include_lanes=bool(include_lanes),
         )
         # The storage-events journal keeps the last ten of these runs and writes this one OPEN, so a kill in the middle leaves "started,
         # never ended". The free bytes come after the open record: a stat that hangs on a dead mount leaves the run open, which is the fact.
@@ -436,6 +439,8 @@ class VolumeBackupManager:
                 should_stop=self._stop.is_set,
                 progress_cb=self._on_prog,
                 include_blobs=include_blobs,
+                # Passed only when asked for, so an injected writer that predates R729 runs as before.
+                **({"include_lanes": True} if include_lanes else {}),
             )
             kept = {k: v for k, v in summary.items() if k != "envelope"}
             # The envelope itself stays out of the polled status (it carries the
@@ -679,6 +684,14 @@ class VolumeBackupManager:
                     "imported_at": None,
                     "in_open_checkpoint_group": True,
                 }
+            if _already is not None and not _already.get("in_open_checkpoint_group"):
+                # R729: an artifact whose living sources did not merge last time is run again
+                # (its corpus merge is a no-op), so its lanes are never left behind for good.
+                from src.backup.lane_merge import lanes_pending
+
+                if lanes_pending(_digest):
+                    _LOG.info("importing %s again: its living sources are still owed", srcp)
+                    _already = None
             if _already is not None:
                 summary = {
                     "skipped": "already-merged",
@@ -980,6 +993,56 @@ class VolumeBackupManager:
                                     "artifact still carries them."
                                 ),
                             }
+                    # R729: the living-source stores the artifact carries, merged once the
+                    # corpus has, each in its own transaction. Never costs the corpus merge: a
+                    # lane that fails is left as it was and reported. A lane-less backup has no
+                    # members here and this adds nothing to the report.
+                    lane_members = getattr(staged, "lane_members", None)
+                    if lane_members:
+                        from src.backup.lane_merge import (
+                            deferred_report,
+                            mark_lanes_owed,
+                            merge_staged_lanes,
+                            record_lane_outcome,
+                        )
+                        from src.database.connect import get_passphrase
+
+                        try:
+                            if not report.get("held"):
+                                # Owed from here until the outcome says otherwise: a kill
+                                # mid-merge must not let the next import skip this backup.
+                                mark_lanes_owed(_digest, lane_members)
+                            if report.get("held"):
+                                # The corpus sits on the queue's working copy until its group
+                                # commits; lanes written now would outlive a group that fails.
+                                report["living_sources"] = deferred_report(lane_members)
+                            else:
+                                report["living_sources"] = merge_staged_lanes(
+                                    staged.staging_dir,
+                                    lane_members,
+                                    [corpus_passphrase, get_passphrase(), passphrase],
+                                )
+                        except Exception as exc:  # noqa: BLE001 - the corpus already committed; never report it as failed
+                            log_failure(_LOG, "merging the living sources failed", exc, passphrase, corpus_passphrase, level=logging.WARNING)
+                            report["living_sources"] = {
+                                "lanes": [],
+                                "error": record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                                "method": "The corpus restored; merging the living sources did not, and they are unchanged.",
+                            }
+                        record_lane_outcome(_digest, report["living_sources"])
+                        # The restore persisted its report before the lanes merged: add the
+                        # lanes' outcome to it (additive; never a figure the restore measured).
+                        if report.get("persisted_report_path"):
+                            try:
+                                from src.backup.import_reports import annotate_import_report
+
+                                annotate_import_report(
+                                    Path(report["persisted_report_path"]),
+                                    {"living_sources": report["living_sources"]},
+                                    secrets=(passphrase, corpus_passphrase),
+                                )
+                            except Exception as exc:  # noqa: BLE001 - the report is an aid; the merge stands
+                                log_failure(_LOG, "adding the living sources to the import report failed", exc, passphrase, corpus_passphrase, level=logging.WARNING)
                     with self._lock:
                         self._state, self._summary = "done", {
                             "report": report,

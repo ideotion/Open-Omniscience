@@ -214,6 +214,7 @@ class ExportJobManager:
         passphrase: str = "",
         verify_after_write: bool = True,
         include_newsletters: bool = True,
+        lanes: bool = False,
         _backup_fn: Any = None,
         _items: Any = None,
         _targets: Any = None,
@@ -227,6 +228,8 @@ class ExportJobManager:
         cats = _known_categories(categories)
         want_corpus = bool(corpus)
         inside = bool(inside) and want_corpus and bool(cats)
+        # R729: the living-source stores ride inside the corpus artifact, so only with it.
+        lanes = bool(lanes) and want_corpus
         if not want_corpus and not cats:
             raise ValueError("Choose at least one thing to back up.")
         if want_corpus and not passphrase:
@@ -247,12 +250,13 @@ class ExportJobManager:
                 "corpus": want_corpus,
                 "categories": cats,
                 "inside": inside,
+                "lanes": lanes,
                 "verify_after_write": bool(verify_after_write),
                 "include_newsletters": bool(include_newsletters),
             }
             write_export_request(
                 dest, corpus=want_corpus, categories=cats, inside=inside,
-                phase=phases[0], verify_after_write=bool(verify_after_write),
+                phase=phases[0], verify_after_write=bool(verify_after_write), lanes=lanes,
             )
             seams = {"_backup_fn": _backup_fn, "_items": _items, "_targets": _targets}
             return self._begin(dest, phases, request, passphrase if want_corpus else "", seams)
@@ -315,6 +319,7 @@ class ExportJobManager:
                 "corpus": bool(req.get("corpus")),
                 "categories": list(req.get("categories") or []) if phase == PHASE_VOLUMES else list(owed),
                 "inside": bool(req.get("inside")) and phase == PHASE_VOLUMES,
+                "lanes": bool(req.get("lanes")) and phase == PHASE_VOLUMES,
                 "verify_after_write": True if verify is None else bool(verify),
                 "include_newsletters": bool(self._request.get("include_newsletters", True)) if same else True,
             }
@@ -501,6 +506,8 @@ class ExportJobManager:
                 include_blobs=list(req.get("categories") or []) if req.get("inside") else None,
                 verify_after_write=bool(req.get("verify_after_write", True)),
                 _backup_fn=self._seams.get("_backup_fn"),
+                # Passed only when asked for, so a volume job that predates R729 runs as before.
+                **({"include_lanes": True} if req.get("lanes") else {}),
             )
         except Exception as exc:  # noqa: BLE001 - a refusal is the export's failure, written without the passphrase
             text = record_text(exc, pw, typed=False)
