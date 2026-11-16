@@ -125,8 +125,10 @@ def test_nothing_is_resolved_by_the_check_itself(machine):
 def test_the_liveness_thread_runs_the_check():
     from pathlib import Path
 
+    from tests.js_source_helper import python_function_source
+
     src = Path("src/monitoring/session_history.py").read_text(encoding="utf-8")
-    loop = src[src.index("def _loop() -> None:"):src.index("def start_liveness")]
+    loop = python_function_source(src, "_loop")
     assert "regrow_check()" in loop and loop.index("tick_once()") < loop.index("regrow_check()")
 
 
