@@ -246,6 +246,11 @@ class VolumeBackupManager:
         if self._state == "running" and self._alive():
             storage_events.run_refused(what, "already-running", via="volume-set")
             raise RuntimeError("A volume backup/restore is already running.")
+        if what in ("export", "import") and _rebuild_running():
+            # R702: the rebuild switches the library file under every reader, so an export or a restore waits for it (the rebuild
+            # refuses while one of these runs, and this is the other direction).
+            storage_events.run_refused(what, "rebuild-running", via="volume-set")
+            raise RuntimeError("The library is being rebuilt at the current settings; start this once the rebuild has finished.")
         if self._thread is not None:
             self._thread.join(timeout=5)  # instant once the work is done; a safety cap
             self._thread = None
@@ -1337,6 +1342,16 @@ class VolumeBackupManager:
         if kept is None:
             return st
         return {"mode": "backup", "state": "done", "dest": key, "summary": kept}
+
+
+def _rebuild_running() -> bool:
+    """Whether the R702 rebuild job runs (it switches the library file). A registry that cannot be read is not a rebuild."""
+    try:
+        from src.database.rebuild import REBUILD_JOB
+
+        return REBUILD_JOB.status().get("state") == "running"
+    except Exception:  # noqa: BLE001 - the class is not needed: an unreadable registry starts nothing new either way
+        return False
 
 
 _MANAGER: VolumeBackupManager | None = None

@@ -734,6 +734,66 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
     return dest_p
 
 
+def copy_at_current_settings(src: Path | str, dest: Path | str, *, should_stop=None) -> Path:
+    """Copy ``src`` into a NEW file at the settings a new store is created with today (R702: DB-10's rebuild at new settings).
+
+    The one place a snapshot does NOT keep the source's framing: where :func:`snapshot_preserving` declares the source's own
+    ``page_size``/``auto_vacuum`` on the target (``_match_source_pragmas``), this declares :data:`_FRESH_PAGE_SIZE` and
+    :data:`_FRESH_AUTO_VACUUM`, in that order (the fresh-file branches of :func:`connect` say why), and keeps the encryption state:
+    an encrypted store is copied under the same key, a plaintext one stays plaintext. VACUUM cannot do this: it never changes
+    SQLCipher's page size, it cannot change ``page_size`` in WAL mode, and at 16 KiB with ``temp_store=FILE`` it wrote a corrupt
+    encrypted store (``maintenance.VACUUM_RAM_FACTOR``). ``sqlcipher_export`` writes straight into the attached file.
+
+    ``should_stop`` (a no-argument callable) interrupts the copy (``sqlcipher_export`` is one statement, aborted within the
+    watcher's quarter second); :class:`SnapshotStopped` is raised. The partial file is removed on a stop and on any failure, so a
+    name this returns is always a whole copy."""
+    src_p, dest_p = Path(src), Path(dest)
+    dest_p.unlink(missing_ok=True)
+    encrypted = is_encrypted_file(src_p)
+    if encrypted is None:
+        raise FileNotFoundError(f"{src_p.name} is missing or empty")
+    attach_args: tuple[str, ...]
+    if encrypted:
+        key = get_passphrase()
+        if not key:
+            raise DatabaseLockedError(f"{src_p.name} is encrypted: cannot copy it while locked")
+        conn = connect(src_p, check_same_thread=False)
+        # the key is BOUND, never in the statement's text (ATTACH takes an expression for KEY)
+        attach, attach_args, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ?", (str(dest_p), key), "cipher_page_size"
+    else:
+        from sqlcipher3 import dbapi2 as sqc
+
+        conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
+        attach, attach_args, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ''", (str(dest_p),), "page_size"
+    try:
+        conn.execute("PRAGMA temp_store = MEMORY")  # a sorter or temp table spilled to disk would be plaintext, whatever the build
+        conn.execute(attach, attach_args)
+        conn.execute(f"PRAGMA rebuilt.{size_pragma} = {int(_FRESH_PAGE_SIZE)}")
+        conn.execute(f"PRAGMA rebuilt.auto_vacuum = {int(_FRESH_AUTO_VACUUM)}")
+        if should_stop is None:
+            _export(conn, "rebuilt")
+        else:
+            if should_stop():  # a stop already given: the watcher looks only every 0.25 s, and a small copy is done by then
+                raise SnapshotStopped("the copy was stopped")
+            with _interrupt_when(conn, should_stop) as fired:
+                try:
+                    _export(conn, "rebuilt")
+                except Exception:
+                    if fired[0]:
+                        raise SnapshotStopped("the copy was stopped") from None
+                    raise
+        conn.execute("DETACH DATABASE rebuilt")
+    except BaseException:
+        with contextlib.suppress(Exception):
+            conn.close()
+        for side in ("", "-journal", "-wal", "-shm"):
+            with contextlib.suppress(OSError):
+                Path(str(dest_p) + side).unlink()  # never leave a partial copy to be mistaken for one
+        raise
+    conn.close()
+    return dest_p
+
+
 def _note_snapshot_checkpoint(row, seconds: float) -> None:
     """Put the snapshot's TRUNCATE in the storage-events journal (a lazy import: this module sits under everything else, and the
     journal must never be the reason a snapshot fails). Never raises."""
