@@ -369,7 +369,8 @@ def test_the_page_reads_the_export_refusal_back_in_the_operator_language():
         function_source(js, "ooServerText"),
         "process.stdout.write(JSON.stringify(ooServerText(" + json.dumps(message) + ")));",
     ])
-    proc = subprocess.run(["node", "-e", prog], capture_output=True, text=True, check=False)
+    proc = subprocess.run(["node", "-e", prog], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                          timeout=120, check=False)
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
     key = (
@@ -783,7 +784,8 @@ def _ooservertext_in(lang: str, messages: list[str]) -> list[str]:
         script = Path(tmp) / "ooservertext.js"
         script.write_text(prog, encoding="utf-8")
         proc = subprocess.run(
-            ["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+            ["node", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", timeout=120,
+            check=False,
         )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)

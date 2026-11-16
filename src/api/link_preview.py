@@ -92,6 +92,23 @@ def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
         not_a_stand_in_article_id(ArticleLink.article_id),  # the links kept for a lost article cite nothing: a stand-in is no article
     )
     citing_ids = sorted({aid for (aid,) in cite_q.all()})
+    # Row 99: an article whose own outlet carries this link on most of its pages (a footer, an app badge) is not citing
+    # it. Those are counted apart with the reader's one measure (link_furniture.furniture_pairs), never dropped.
+    furniture_ids: list[int] = []
+    furniture_sources = 0
+    if citing_ids:
+        from src.analytics.link_furniture import furniture_pairs
+
+        source_of: dict[int, int | None] = {}
+        for i in range(0, len(citing_ids), 500):
+            for aid, sid in db.query(Article.id, Article.source_id).filter(Article.id.in_(citing_ids[i : i + 500])).all():
+                source_of[int(aid)] = sid
+        furniture = furniture_pairs(db, {(sid, norm) for sid in source_of.values()})
+        furniture_ids = [a for a in citing_ids if (source_of.get(a), norm) in furniture]
+        furniture_sources = len({sid for sid, _ in furniture})
+        if furniture_ids:
+            gone = set(furniture_ids)
+            citing_ids = [a for a in citing_ids if a not in gone]
     citing = []
     if citing_ids:
         rows = (
@@ -136,6 +153,8 @@ def link_preview(url: str, db: Session = Depends(get_db)) -> dict:
             else None
         ),
         "cited_by_articles": len(citing_ids),
+        "furniture_articles": len(furniture_ids),
+        "furniture_sources": furniture_sources,
         "citing_examples": citing,
         "law_document": (
             {"document_id": law[0], "title": law[1], "jurisdiction": law[2]} if law else None

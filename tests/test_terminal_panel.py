@@ -518,10 +518,32 @@ def _wait_file(p: Path, secs: float) -> bool:
     return p.exists()
 
 
-def _drain(master: int) -> None:
+def _drain(master: int, secs: float = 5.0, *, _select=select.select, _read=os.read) -> None:
+    """Read what the terminal holds, and stop at its end or after ``secs``.
+
+    Once every process has closed the slave side, Linux answers a read on the master with EIO, but macOS answers with an
+    empty read and select keeps calling the master readable, so a loop that stops only on an error spins forever (row 95:
+    macOS observation shard 3 sat in here until the job cap). An empty read is the end, and the deadline bounds a writer
+    that never stops.
+    """
+    end = time.monotonic() + secs
     with contextlib.suppress(OSError):
-        while select.select([master], [], [], 0)[0]:
-            os.read(master, 65536)
+        while time.monotonic() < end and _select([master], [], [], 0)[0]:
+            if not _read(master, 65536):
+                return
+
+
+def test_the_drain_stops_at_an_empty_read_and_at_its_deadline():
+    """Row 95: macOS answers an empty read at the end of a terminal and keeps calling it readable; the drain must stop."""
+    reads: list[int] = []
+    readable = lambda r, w, x, t=None: (r, [], [])  # noqa: E731 - always readable, as macOS answers at the end
+    t0 = time.monotonic()
+    _drain(99, _select=readable, _read=lambda fd, n: reads.append(fd) or b"")
+    assert reads == [99] and time.monotonic() - t0 < 1
+    # a writer that never stops: bounded by the deadline, not by the data
+    t0 = time.monotonic()
+    _drain(99, secs=0.3, _select=readable, _read=lambda fd, n: b"x")
+    assert time.monotonic() - t0 < 2
 
 
 @posix_only
