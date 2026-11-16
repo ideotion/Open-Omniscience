@@ -355,8 +355,10 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
         if started is None:
             started = _recount_started(key)  # a kick that reports nothing (a stand-in): read what is in flight
         if started is None:
-            # No compute is in flight, so the one this poll found running has ENDED between the kick and here. Its value
-            # is the answer if it stored one; "computing" with no start would describe a count that is not running.
+            # Defence in depth: every holder of the build lock records its start under ``_LOCK`` (the kick and
+            # ``_hold_with_start``), so a real kick always reports one. This keeps a stand-in kick, or a holder added later
+            # without a start, from answering "computing" with no start time: if nothing is in flight, the compute has
+            # ENDED, and its value is the answer if it stored one.
             with _LOCK:
                 entry = _CACHE.get(key)
                 done = dict(entry) if (entry is not None and _same_bind(session, entry.get("bind"))) else None
@@ -378,16 +380,19 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
     # Cold (or a bind we may not answer for): compute ONCE, under the per-key
     # build lock, and let concurrent cold callers reuse that one result.
     lock = _build_lock(key)
-    with lock:
+    _hold_with_start(key, lock)
+    try:
         with _LOCK:
             entry = _CACHE.get(key)
             servable = entry is not None and _same_bind(session, entry.get("bind"))
             snapshot = dict(entry) if (servable and entry is not None) else None
         if snapshot is not None:
             later = change_probe()
+            # This thread holds the build lock, so no other compute of the key is running: the start beside the lock is
+            # this call's own, which is a read of the cache, not a recount.
             return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=time.time(),
                              verified=later is not None and later == snapshot["probe"],
-                             recount_started=_recount_started(key))
+                             recount_started=None)
         generation = _generation(key)  # BEFORE the compute reads anything
         fresh = compute(session)
         _store(key, fresh, _bind_of(session), probe, generation)
@@ -395,6 +400,26 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
         later = change_probe()
         return _decorate(built, ttl_s=ttl_s, cached=False, now=time.time(),
                          verified=probe is not None and later == probe)
+    finally:
+        with _LOCK:
+            _RECOUNT_STARTED.pop(key, None)
+            lock.release()
+
+
+def _hold_with_start(key: str, lock: threading.Lock) -> None:
+    """Take ``key``'s build lock for the inline path, recording its start beside it as the background kick does.
+
+    The lock is only ever TAKEN under ``_LOCK`` (without waiting), so a held build lock always has a start beside it,
+    whichever path holds it: a cold poll that finds it taken reads a real "running since". Waiting happens outside
+    ``_LOCK``, on the lock itself, and then the take is tried again.
+    """
+    while True:
+        with _LOCK:
+            if lock.acquire(blocking=False):
+                _RECOUNT_STARTED[key] = time.time()
+                return
+        with lock:  # the holder ends; try again under ``_LOCK``
+            pass
 
 
 def invalidate(key: str | None = None) -> None:

@@ -65,7 +65,9 @@ def test_a_compute_that_ends_before_the_kick_returns_still_leaves_pending_since(
 
 def test_when_the_compute_in_flight_ends_before_the_read_the_poll_serves_its_value(monkeypatch):
     """The other side of the same window: this poll found a compute running (the lock taken, so it starts nothing), and that
-    compute ended and stored before the poll read its start. The stored value is the answer, never "computing" since nothing."""
+    compute ended and stored before the poll read its start. The stored value is the answer, never "computing" since nothing.
+    The state is built by hand (the lock held with no start beside it), which the real holders no longer leave: this pins the
+    defence-in-depth branch, not a race the code can still run into."""
     s = SessionLocal()
     try:
         served_cache.refresh(_KEY, _compute)  # the compute that was in flight has stored its value...
@@ -149,3 +151,39 @@ def test_a_compute_that_ended_without_storing_is_started_again_not_reported_as_r
     finally:
         s.close()
     assert len(kicks) == 2 and out["pending"] is True and out["pending_since"], (kicks, out)
+
+
+def test_a_cold_poll_that_finds_an_inline_compute_running_gets_its_start(monkeypatch):
+    """The other holder of the build lock: ``cached`` without a cold payload computes inline under it. A poll of the same key with a
+    cold payload that lands meanwhile finds the lock taken; the inline holder records its start beside the lock too, so the poll
+    answers "computing since" that start, never "computing since nothing" (the Opus read of #2058, should-fix 1)."""
+    import threading
+
+    inside, release = threading.Event(), threading.Event()
+
+    def slow_inline(_session):
+        inside.set()
+        assert release.wait(10)
+        return {"n": 1}
+
+    def run_inline():
+        s = SessionLocal()
+        try:
+            served_cache.cached(_KEY, slow_inline, s, ttl_s=60)
+        finally:
+            s.close()
+
+    t = threading.Thread(target=run_inline)
+    t.start()
+    try:
+        assert inside.wait(10)
+        s = SessionLocal()
+        try:
+            out = served_cache.cached(_KEY, _compute, s, ttl_s=60, cold_payload=_cheap)
+        finally:
+            s.close()
+        assert out["pending"] is True and out["pending_since"] is not None
+    finally:
+        release.set()
+        t.join(10)
+    assert not served_cache._build_lock(_KEY).locked() and served_cache._recount_started(_KEY) is None
