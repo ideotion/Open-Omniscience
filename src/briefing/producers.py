@@ -42,6 +42,15 @@ _LOG = logging.getLogger(__name__)
 
 # Bounds — the same discipline as the bounded crawler: never an unbounded scan.
 _MAX_RISING = 5
+#: R732 (field test 2026-11-14 row 64): a term is a "rising" Lead only when its recent-window mentions come from at least
+#: this many articles in at least this many outlets. Every rising lead on eight field instances was one outlet's own
+#: wording (Tetum function words at n~7,370, a site's "category" label) or one article repeating a name 404 times. The
+#: ratio still counts mentions; these floors decide only whether a term is shown at all, and are never relaxed for a
+#: small corpus (nothing rising is said so instead).
+RISING_MIN_ARTICLES = 3
+RISING_MIN_OUTLETS = 2
+#: How many trending terms are read so that the floors can pass over the narrow ones and still find _MAX_RISING.
+_RISING_CANDIDATES = _MAX_RISING * 4
 _MAX_WIKI = 5
 _MAX_SYMBOLS = 5
 _FRAMING_ARTICLE_CAP = 40
@@ -276,6 +285,23 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
 # --------------------------------------------------------------------------- #
 #  Rising now — trending keywords/entities (composes /api/insights/trending)
 # --------------------------------------------------------------------------- #
+def _recent_spread(session, keyword_id: int, *, window_days: int, end: date | None, outlets: OutletMap) -> tuple[int, int]:
+    """``(articles, outlets)`` carrying a keyword in the recent window ``trending`` compares, quarantined articles left
+    out (R101). The window is ``trending``'s own: ``[end - window_days, end)``, ``end`` defaulting to the end of today."""
+    w_end = (date.today() + timedelta(days=1)) if end is None else end
+    rows = (
+        session.query(KeywordMentionRead.article_id, Article.source_id)
+        .join(Article, Article.id == KeywordMentionRead.article_id)
+        .filter(KeywordMentionRead.keyword_id == keyword_id)
+        .filter(KeywordMentionRead.observed_on >= w_end - timedelta(days=window_days))
+        .filter(KeywordMentionRead.observed_on < w_end)
+        .filter(Article.quarantined.isnot(True))
+        .distinct()
+        .all()
+    )
+    return len({a for a, _ in rows}), len({outlets.key(sid) for _, sid in rows})
+
+
 def rising_now(session, *, as_of: date | None = None) -> list[Card]:
     """``as_of`` (EXCLUSIVE) anchors every window here to a CLOSED period.
 
@@ -289,13 +315,23 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
 
     young = _is_young(session)
     min_recent = 2 if young else 3
-    data = q.trending(session, limit=_MAX_RISING, min_recent=min_recent, end=as_of)
+    data = q.trending(session, limit=_RISING_CANDIDATES, min_recent=min_recent, end=as_of)
     note = _small_corpus_note_frames(session) if young else []
     scanned = data.get("scanned", 0)
+    outlets = OutletMap(session)
     cards: list[Card] = []
+    held: list[tuple[dict, int, int, list]] = []
     for term in data.get("terms", []):
+        if len(cards) >= _MAX_RISING:
+            break
         kw = resolve_keyword(session, term["term"])
-        rows = _articles_for_term(session, kw.id, days=14, limit=6, end=as_of) if kw else []
+        if kw is None:
+            continue
+        n_articles, n_outlets = _recent_spread(session, kw.id, window_days=7, end=as_of, outlets=outlets)
+        rows = _articles_for_term(session, kw.id, days=14, limit=6, end=as_of)
+        if n_articles < RISING_MIN_ARTICLES or n_outlets < RISING_MIN_OUTLETS:
+            held.append((term, n_articles, n_outlets, rows))
+            continue
         ci = rate_ratio_interval(
             term["recent"], term["prior"], window_days=7, baseline_days=30
         )
@@ -310,6 +346,8 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
                 f"×{round(ci.low, 2)} – ×{round(ci.high, 2)}" if ci else "—",
             ),
             ("Minimum recent mentions required", f"≥ {min_recent} ✓"),
+            ("Articles carrying it in the last 7 days", f"{n_articles} (≥ {RISING_MIN_ARTICLES} ✓)"),
+            ("Outlets carrying it in the last 7 days", f"{n_outlets} (≥ {RISING_MIN_OUTLETS} ✓)"),
             ("Terms scanned to pick the top few", f"{scanned} → {_MAX_RISING}"),
         ]
         cards.append(
@@ -327,7 +365,11 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
                             "rate ({recent} recent vs {prior} before).",
                             term=term["term"], growth=term["growth"],
                             recent=term["recent"], prior=term["prior"],
-                        )
+                        ),
+                        frame(
+                            "They come from {articles} articles in {outlets} outlets.",
+                            articles=n_articles, outlets=n_outlets,
+                        ),
                     ],
                     caveat=[
                         frame(
@@ -335,6 +377,12 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
                             "is not a significance test, and small samples are noisy."
                         ),
                         *note,
+                    ],
+                    method=[
+                        frame(data.get(
+                            "method", "recent volume vs prior-period rate (a ratio, not a significance test)"
+                        )),
+                        _rising_floor_frame(),
                     ],
                 ),
                 bucket="rising",
@@ -346,6 +394,8 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
                     "kind": term["kind"],
                     "ci95": [round(ci.low, 4), round(ci.high, 4)] if ci else None,
                     "scanned": scanned,
+                    "articles": n_articles,
+                    "outlets": n_outlets,
                 },
                 trigger=_trigger(
                     "This word or name suddenly appears much more often in the articles "
@@ -353,17 +403,83 @@ def rising_now(session, *, as_of: date | None = None) -> list[Card]:
                     "story is moving.",
                     math_rows,
                 ),
-                method=data.get(
-                    "method",
-                    "recent volume vs prior-period rate (a ratio, not a significance test)",
-                ),
                 evidence=_evidence_from_articles(rows),
                 n=term["recent"],
                 key=term["normalized"],
                 article_ids=sorted({a.id for a, _ in rows}),  # F1: carry the exact set so the click opens it
             )
         )
+    if not cards and held:
+        cards.append(_rising_held_card(held, scanned=scanned, note=note))
     return cards
+
+
+def _rising_floor_frame() -> dict:
+    """The method sentence that states R732's floor, keyed so it reads in the UI language."""
+    return frame(
+        "A term is shown only when its mentions in the last 7 days come from at least {articles} articles in at "
+        "least {outlets} outlets; the ratio itself counts mentions.",
+        articles=RISING_MIN_ARTICLES, outlets=RISING_MIN_OUTLETS,
+    )
+
+
+def _rising_held_card(held: list[tuple[dict, int, int, list]], *, scanned: int, note: list[dict]) -> Card:
+    """R732's honest state: terms DID rise, but each in too few articles or outlets to be shown as rising. Never a
+    relaxed threshold. It opens the articles those terms came from, so the reader can see what the narrow ones were."""
+    ids = sorted({a.id for _, _, _, rows in held for a, _ in rows})
+    math_rows = [
+        ("Terms that rose but stayed below the floor", str(len(held))),
+        ("Floor: articles / outlets in the last 7 days", f"≥ {RISING_MIN_ARTICLES} / ≥ {RISING_MIN_OUTLETS}"),
+        ("Terms scanned to pick the top few", f"{scanned} → {_MAX_RISING}"),
+        (
+            "Narrow terms (recent mentions · articles / outlets)",
+            "; ".join(f"“{term['term']}” {term['recent']} · {arts} / {outs}" for term, arts, outs, _ in held[:_MAX_RISING]),
+        ),
+    ]
+    return Card(
+        type="rising_held",
+        **_fx(
+            title=[frame("Nothing is rising across outlets yet")],
+            summary=[
+                frame(
+                    "{n} terms rose, but each in fewer than {articles} articles or {outlets} outlets, so none is "
+                    "shown as rising.",
+                    n=len(held), articles=RISING_MIN_ARTICLES, outlets=RISING_MIN_OUTLETS,
+                )
+            ],
+            caveat=[
+                frame(
+                    "A word that rises in one outlet is usually that outlet's own wording; it becomes a rising lead "
+                    "once it spreads."
+                ),
+                *note,
+            ],
+            method=[
+                frame("recent volume vs prior-period rate (a ratio, not a significance test)"),
+                _rising_floor_frame(),
+            ],
+        ),
+        bucket="rising",  # the Rising family's own honest empty state, where a reader looks for rising terms
+        signal={
+            "metric": "rising_below_floor",
+            "value": len(held),
+            "min_articles": RISING_MIN_ARTICLES,
+            "min_outlets": RISING_MIN_OUTLETS,
+            "terms": [
+                {"term": term["term"], "recent": term["recent"], "articles": arts, "outlets": outs}
+                for term, arts, outs, _ in held
+            ],
+        },
+        trigger=_trigger(
+            "Some words did rise in your collection, but each one in too few articles or outlets to count as a "
+            "story moving.",
+            math_rows,
+        ),
+        evidence=_evidence_from_articles([r for _, _, _, rows in held for r in rows][:6]),
+        n=len(held),
+        key="rising-held",
+        article_ids=ids,
+    )
 
 
 # --------------------------------------------------------------------------- #
