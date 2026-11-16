@@ -85,7 +85,6 @@ from __future__ import annotations
 import ast
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -357,7 +356,6 @@ _COMPARATORS: tuple[tuple[str, str], ...] = (
     ("≥", ">="), (">=", ">="), ("≤", "<="), ("<=", "<="), (">", ">"), ("<", "<"),
 )
 _TICKS = {"✓": True, "✗": False}
-_NUMBER_LITERAL = re.compile(r"\d+(?:\.\d+)?")
 
 
 def _comparison_parts(raw: str) -> tuple[str, str, str, bool] | None:
@@ -387,23 +385,58 @@ def _comparison_parts(raw: str) -> tuple[str, str, str, bool] | None:
     return body[:at], op, body[at + len(sym):], ticked
 
 
-def _side_error_bound(rendered: str, value: float) -> float:
-    """How far the TRUE value of one displayed side can sit from ``value``.
+def _interval_node(node: ast.AST, source: str) -> tuple[float, float]:
+    """The range ONE whitelisted node's true value can take, given its numbers are shown rounded.
 
-    Every number on a card is shown rounded, so each literal may be off by half a unit in
-    its last shown place. The bound adds, for every literal, its own half-unit scaled by
-    the side's size over the literal's (the first-order error of a product or quotient)
-    plus the half-unit itself (the error of a sum). That over-covers every one of the four
-    operators, so a verdict is only ever re-made where the displayed numbers settle it.
-    An integer counts as rounded to the unit too: nothing on the card says it is exact,
-    so a comparison of small integers may stay undecided rather than be guessed.
+    Each literal is ``[x - h, x + h]`` with ``h`` half a unit in its last SHOWN place (read from
+    the source text, so "1.0" and "1" keep their different precision); the four operators and
+    the signs are applied as interval arithmetic, which is exact for the bounds whatever the
+    expression's shape (a cancelling subtraction, a coarse small divisor). A divisor whose range
+    holds zero has no bounded quotient, so it raises and the row stays undecided.
     """
-    bound = 0.0
-    for lit in _NUMBER_LITERAL.findall(rendered):
-        half = _display_tolerance(lit)
-        number = float(lit)
-        bound += half + (abs(value) * half / number if number else 0.0)
-    return bound
+    if isinstance(node, ast.Expression):
+        return _interval_node(node.body, source)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        shown = ast.get_source_segment(source, node) or repr(node.value)
+        half = _display_tolerance(shown)
+        x = float(node.value)
+        return x - half, x + half
+    if isinstance(node, ast.UnaryOp):
+        lo, hi = _interval_node(node.operand, source)
+        if isinstance(node.op, ast.USub):
+            return -hi, -lo
+        if isinstance(node.op, ast.UAdd):
+            return lo, hi
+        raise ValueError("unsupported unary operator")
+    if isinstance(node, ast.BinOp):
+        a_lo, a_hi = _interval_node(node.left, source)
+        b_lo, b_hi = _interval_node(node.right, source)
+        if isinstance(node.op, ast.Add):
+            return a_lo + b_lo, a_hi + b_hi
+        if isinstance(node.op, ast.Sub):
+            return a_lo - b_hi, a_hi - b_lo
+        if isinstance(node.op, ast.Div):
+            if b_lo <= 0.0 <= b_hi:
+                raise ZeroDivisionError("the divisor's range holds zero")
+            b_lo, b_hi = 1.0 / b_hi, 1.0 / b_lo
+        elif not isinstance(node.op, ast.Mult):
+            raise ValueError("unsupported binary operator")
+        products = (a_lo * b_lo, a_lo * b_hi, a_hi * b_lo, a_hi * b_hi)
+        return min(products), max(products)
+    raise ValueError("unsupported node")
+
+
+def _side_interval(expr: str) -> tuple[float, float] | None:
+    """``(low, high)`` for a side ``_safe_arith`` already accepted, or ``None`` when it has no
+    bounded range (a divisor that could be zero at the shown precision, an overflow)."""
+    try:
+        tree = ast.parse(expr, mode="eval")
+        lo, hi = _interval_node(tree, expr)
+    except (SyntaxError, ValueError, ZeroDivisionError, OverflowError, RecursionError, MemoryError):
+        return None
+    if any(v != v or v in (float("inf"), float("-inf")) for v in (lo, hi)):
+        return None
+    return lo, hi
 
 
 def _check_comparison_row(raw: str, out: dict) -> dict:
@@ -419,6 +452,7 @@ def _check_comparison_row(raw: str, out: dict) -> dict:
         )
         return out
     sides: list[float] = []
+    spans: list[tuple[float, float]] = []
     for name, side in (("left", lhs_raw), ("right", rhs_raw)):
         expr = side
         for src, dst in _ARITH_SUBSTITUTIONS:
@@ -435,25 +469,39 @@ def _check_comparison_row(raw: str, out: dict) -> dict:
         if value is None:
             out["reason"] = f"{name}-hand side did not parse as arithmetic (or divides by zero)"
             return out
+        span = _side_interval(expr)
+        if span is None:
+            out["reason"] = (
+                f"{name}-hand side has no bounded value at the precision shown (a divisor "
+                "that could round to zero)"
+            )
+            return out
         sides.append(value)
+        spans.append(span)
     left, right = sides
-    margin = _side_error_bound(lhs_raw, left) + _side_error_bound(rhs_raw, right)
-    if abs(left - right) <= margin:
+    (l_lo, l_hi), (r_lo, r_hi) = spans
+    ranges = {"left_range": [round(l_lo, 6), round(l_hi, 6)], "right_range": [round(r_lo, 6), round(r_hi, 6)]}
+    # Decided only when the two ranges cannot meet: then every true value on the left is
+    # above (or below) every true value on the right, and the strict and non-strict forms
+    # of the operator agree.
+    if l_lo > r_hi:
+        left_above = True
+    elif l_hi < r_lo:
+        left_above = False
+    else:
         out.update(
             {
                 "recomputed_left": round(left, 6),
                 "recomputed_right": round(right, 6),
-                "margin": round(margin, 9),
+                **ranges,
                 "reason": (
-                    "the two sides are within the rounding of the numbers shown, so the "
-                    "displayed figures cannot settle the comparison either way"
+                    "the two sides' ranges overlap once the rounding of the numbers shown "
+                    "is allowed for, so the displayed figures cannot settle the comparison"
                 ),
             }
         )
         return out
-    holds = {
-        ">=": left >= right, ">": left > right, "<=": left <= right, "<": left < right,
-    }[op]
+    holds = left_above if op in (">=", ">") else not left_above
     out.update(
         {
             "checkable": True,
@@ -461,7 +509,7 @@ def _check_comparison_row(raw: str, out: dict) -> dict:
             "recomputed_left": round(left, 6),
             "recomputed_right": round(right, 6),
             "operator": op,
-            "margin": round(margin, 9),
+            **ranges,
             "comparison_holds": holds,
             "claimed_holds": ticked,
             "reproduced": holds == ticked,
@@ -1373,7 +1421,7 @@ def _evidence_article_ids(card) -> list[int]:
 #: illustrate them. Comparing those to the id count reported a mismatch on every such
 #: card, which the 2026-11-14 field test read as a producer defect. Only an "articles"
 #: card's n is compared with its ids; every other unit is reported as what it is.
-#: ``tests/test_card_audit_n_units.py`` fails when a producer that sets article_ids has
+#: ``tests/test_card_audit_n_units.py`` fails when a card built anywhere in ``src/`` with article_ids has
 #: no entry here, so a new card type cannot fall back to the misleading comparison.
 N_COUNTS_BY_TYPE: dict[str, str] = {
     # n is the number of articles in article_ids
@@ -1394,6 +1442,7 @@ N_COUNTS_BY_TYPE: dict[str, str] = {
     "story_propagation": "articles",
     "supply_chain_ripple": "articles",
     "recipe_promise": "articles",
+    "skeleton_echo": "articles",  # src/analytics/skeleton.py
     # n counts something else; the ids are the articles behind it
     "rising": "mentions",
     "emotion_profile": "mentions",
@@ -1432,7 +1481,9 @@ def _corpus_fidelity(card, resolved: dict) -> dict:
     n_counts = N_COUNTS_BY_TYPE.get(str(getattr(card, "type", "") or ""), "undeclared")
     # The card's OWN id set: evidence-only ids are examples, never part of what n counts.
     own_ids = len(set(getattr(card, "article_ids", None) or []))
-    compared = isinstance(n, int) and n_counts == "articles" and own_ids > 0
+    # An articles card is compared even when it carries no ids of its own (only evidence ones):
+    # an n with nothing behind it is the mismatch this check exists to show.
+    compared = isinstance(n, int) and n_counts == "articles"
     return {
         "has_article_ids": True,
         "article_ids_total": total,

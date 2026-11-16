@@ -559,8 +559,8 @@ def windowed_counts(session: Session, *, lo: date, hi: date, deadline: float | N
     interrupting the statement it is in, which surfaces as an ``OperationalError``. Caught here, it was logged as a
     fault of this serve and answered ``None``, so trending started the LIVE scan with no time left; that scan's
     first statement was interrupted at once and the request ended as a 503 anyway. Once the deadline has passed the
-    error is the deadline's, so it is raised again for ``statement_deadline`` to name as the timeout it is."""
-    from src.database.maintenance import deadline_expired
+    error is the deadline's, so it is raised as the ``StatementTimeout`` the request's stop is."""
+    from src.database.maintenance import StatementTimeout, deadline_expired
 
     if deadline is not None and time.monotonic() >= deadline:
         return None  # trending's own budget is spent: its live path reports the window as over budget
@@ -628,7 +628,9 @@ def windowed_counts(session: Session, *, lo: date, hi: date, deadline: float | N
         return out
     except Exception as exc:  # noqa: BLE001 - any doubt reads live
         if deadline_expired(session):
-            raise  # the enclosing deadline stopped this read: not a fault here, and nothing is left to read live with
+            # The enclosing deadline stopped this read (or passed while it failed): not a fault here, and nothing
+            # is left to read live with. Named as the timeout it is, whatever the driver's error said.
+            raise StatementTimeout("the statement deadline passed during the daily keyword counts serve") from None
         log_failure(_LOG, "daily keyword counts: serve failed; reading live", exc, level=logging.WARNING)
         return None
 

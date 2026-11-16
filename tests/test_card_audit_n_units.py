@@ -49,9 +49,9 @@ def _resolved(total: int) -> dict:
 
 
 def _card_types_with_article_ids() -> set[str]:
-    """Every literal ``Card(type=...)`` in the briefing package that passes article_ids."""
+    """Every literal ``Card(type=...)`` anywhere in ``src/`` that passes article_ids."""
     found: set[str] = set()
-    for path in sorted((ROOT / "src" / "briefing").glob("*.py")):
+    for path in sorted((ROOT / "src").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Card"):
@@ -107,6 +107,35 @@ def test_evidence_only_ids_are_never_what_n_counts():
     assert fid["article_ids_total"] == 5
     assert fid["card_article_ids_n"] == 3
     assert fid["n_matches_ids"] is True
+
+
+def test_an_articles_card_with_no_ids_of_its_own_is_a_mismatch():
+    fid = _corpus_fidelity(_card(type="copypasta", n=4, article_ids=[]), _resolved(2))
+    assert fid["card_article_ids_n"] == 0
+    assert fid["n_matches_ids"] is False
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "10.0 × 30.0 − 299.0 > 0.0 ✓",  # a cancelling subtraction: the left can be -1.06
+        "(5.0 − 4.9) × 100.0 > 5.0 ✓",  # the left can be 0
+        "10 / 1 < 18 ✓",  # a coarse small divisor: the left can be 21
+    ],
+)
+def test_rounding_that_could_flip_the_comparison_is_never_a_pass(value):
+    """The first-order error band let these through as passes (independent read of the PR)."""
+    row = check_math_row({"label": "l", "value": value})
+    assert row["checkable"] is False, row
+    assert "reproduced" not in row
+
+
+def test_a_divisor_that_could_round_to_zero_has_no_bounded_value():
+    row = check_math_row({"label": "l", "value": "1 / 0.0 > 0 ✓"})
+    assert row["checkable"] is False
+    assert "reproduced" not in row
+    row = check_math_row({"label": "l", "value": "100 / 0.4 > 1 ✓"})
+    assert row["checkable"] is True and row["reproduced"] is True
 
 
 def test_an_undeclared_type_is_named_not_compared():
