@@ -886,9 +886,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Portability observation (${{ matrix.os }}, shard ${{ matrix.shard }} of 3)
     continue-on-error: true  # observation lane: graduates to required when green
-    # 60 min per leg: a third of the suite is about 28 min on Linux; a macOS or Windows leg that needs more than twice that is a finding, and the cap keeps it
-    # from burning six hours (the Windows hang, PRH-29) before anyone reads the log.
-    timeout-minutes: 60
+    # 60 min per macOS leg: a third of the suite is about 28 min on Linux; a leg that needs more than twice that is a finding, and the cap keeps it from
+    # burning six hours (the Windows hang, PRH-29) before anyone reads the log. 90 min per Windows leg (row 93, the planner's call over more shards:
+    # runners are the bottleneck and these legs run only weekly and on dispatch): with no hang left, shard 2 was still at 49% when the 60-minute cap
+    # stopped it (run 43803278424). A hang now ends a leg in 10 minutes on its own (OO_TEST_HANG_LIMIT_S below), so the cap only bounds slowness.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 90 || 60 }}
     defaults:
       run:
         shell: bash  # one shell on every OS: the Windows default is PowerShell, which does not expand "$RUNNER_TEMP" or read `@FILE` the same way

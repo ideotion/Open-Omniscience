@@ -7,15 +7,20 @@ cancelled at its 60-minute cap, with nothing naming the test. ``tests/conftest.p
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 _PROBE = "tests/test_hang_watchdog.py::test_the_probe_returns_at_once_unless_asked_to_hang"
+
+
+_TEARDOWN_PROBE = "tests/test_hang_watchdog.py::test_the_probe_fails_and_then_hangs_in_teardown_when_asked"
 
 
 def test_the_probe_returns_at_once_unless_asked_to_hang():
@@ -23,14 +28,25 @@ def test_the_probe_returns_at_once_unless_asked_to_hang():
         time.sleep(120)
 
 
-def _run_probe(tmp_path: Path, *, hang: bool) -> tuple[subprocess.CompletedProcess[str], Path, float]:
+@pytest.fixture
+def _teardown_that_hangs_when_asked():
+    yield
+    if os.environ.get("OO_HANG_PROBE") == "teardown":
+        time.sleep(120)
+
+
+def test_the_probe_fails_and_then_hangs_in_teardown_when_asked(_teardown_that_hangs_when_asked):
+    assert os.environ.get("OO_HANG_PROBE") != "teardown"
+
+
+def _run_probe(tmp_path: Path, *, hang: bool, probe: str = _PROBE, mode: str = "1") -> tuple[subprocess.CompletedProcess[str], Path, float]:
     report = tmp_path / "hang.txt"
-    env = {**os.environ, "OO_TEST_HANG_LIMIT_S": "3", "OO_TEST_HANG_REPORT": str(report), "OO_HANG_PROBE": "1" if hang else "0"}
+    env = {**os.environ, "OO_TEST_HANG_LIMIT_S": "3", "OO_TEST_HANG_REPORT": str(report), "OO_HANG_PROBE": mode if hang else "0"}
     for key in ("PYTEST_XDIST_WORKER", "PYTEST_ADDOPTS", "OO_TEST_SLOW_S"):
         env.pop(key, None)
     started = time.monotonic()
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist", _PROBE],
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist", probe],
         cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
     )
     return proc, report, time.monotonic() - started
@@ -48,6 +64,19 @@ def test_a_test_past_the_limit_ends_the_run_and_the_report_names_it_with_its_tra
     assert elapsed < 110, f"the watchdog did not end the run: {elapsed:.0f} s (the probe sleeps 120 s)"
 
 
+def test_a_test_that_fails_and_then_hangs_in_teardown_is_still_caught(tmp_path):
+    """pytest's faulthandler plugin cancels the timer when a phase fails; the conftest re-arms it, or this hang would run to the cap."""
+    proc, report, elapsed = _run_probe(tmp_path, hang=True, probe=_TEARDOWN_PROBE, mode="teardown")
+    text = report.read_text(encoding="utf-8")
+    assert proc.returncode != 0 and "Timeout (" in text and text.startswith(f"Running (limit 3 s): {_TEARDOWN_PROBE}"), text
+    assert elapsed < 110, f"the timer was not re-armed after the failure: {elapsed:.0f} s (the teardown sleeps 120 s)"
+
+
+def test_the_report_variables_do_not_reach_a_child_pytest():
+    """Read once and taken out of the environment, so a test that runs pytest in a child cannot empty this run's report files."""
+    assert not {k for k in os.environ if k.startswith("OO_TEST_")}
+
+
 def test_a_test_that_returns_leaves_the_report_empty(tmp_path):
     proc, report, _ = _run_probe(tmp_path, hang=False)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -59,7 +88,8 @@ def test_the_portability_legs_arm_the_watchdog_and_print_its_report():
     steps = {s.get("name"): s for s in job["steps"]}
     test_step = steps["Test (pytest)"]
     limit = float(test_step["env"]["OO_TEST_HANG_LIMIT_S"])
-    assert 0 < limit * 3 <= job["timeout-minutes"] * 60, "the hang limit must sit well under the leg's cap, or the cap cancels first and names nothing"
+    shortest_cap_s = 60 * min(int(n) for n in re.findall(r"\b(\d+)\b", str(job["timeout-minutes"])))
+    assert 0 < limit * 3 <= shortest_cap_s, "the hang limit must sit well under the leg's cap, or the cap cancels first and names nothing"
     report = test_step["env"]["OO_TEST_HANG_REPORT"]
     printer = steps["Name a test that hung, and the slow tests"]
     assert printer.get("if") == "always()" and report in printer["run"] and "^Timeout (" in printer["run"]
