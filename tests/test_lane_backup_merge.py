@@ -478,3 +478,49 @@ def test_a_plaintext_lane_beside_an_encrypted_corpus_is_never_copied_out_in_the_
         assert not dest.exists()
     finally:
         store.dispose_all()
+
+
+def test_a_timestamp_this_build_cannot_read_refuses_the_member(machines, tmp_path):
+    """Final read on PR 2036: a malformed timestamp would be committed and break every read."""
+    import sqlite3
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    before = _snapshot_state()
+    for i, stmt in enumerate(
+        (
+            "UPDATE versioned_entities SET first_seen_at = 5",
+            "UPDATE wiki_walk_pages SET walked_at = '1999-13-45 00:00:00.000000'",
+        )
+    ):
+        staging = tmp_path / f"bad{i}"
+        (staging / "lanes").mkdir(parents=True)
+        dest = staging / "lanes" / "wiki.db"
+        shutil.copy2(snap, dest)
+        con = sqlite3.connect(dest)
+        con.execute(stmt)
+        con.commit()
+        con.close()
+        rep = lane_merge.merge_staged_lanes(staging, [{"name": "lanes/wiki.db", "kind": "wiki"}], [None])
+        assert rep["lanes"][0]["state"] == "failed", (stmt, rep)
+        assert "timestamp" in rep["lanes"][0]["reason"]
+    assert _snapshot_state() == before
+
+
+def test_the_merge_keeps_the_pages_with_text_count_equal_to_the_rows(machines, tmp_path):
+    """Final read on PR 2036: wiki_warm_editions.pages_with_text counts rows; the merge adds rows."""
+    from src.wiki.lane_models import WikiWarmEdition
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    use(a)  # this computer has never run WARM
+    store.create_lane("wiki")
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    shutil.copy2(snap, staging / "lanes" / "wiki.db")
+    rep = lane_merge.merge_staged_lanes(staging, [{"name": "lanes/wiki.db", "kind": "wiki"}], [None])
+    assert rep["lanes"][0]["state"] == "merged", rep
+    with store.lane_session("wiki") as s:
+        (ed,) = s.execute(select(WikiWarmEdition)).scalars()
+        assert (ed.edition, ed.pages_with_text, ed.texts_fetched) == ("en", 1, 0)

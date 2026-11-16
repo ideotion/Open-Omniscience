@@ -238,6 +238,20 @@ def _refuse_unsafe_inc(conn: Any) -> None:
         hidden = [r for r in conn.execute(f'PRAGMA inc.table_xinfo("{name}")').fetchall() if int(r[6] or 0) != 0]
         if hidden:
             raise LaneMergeError("the lane member holds a table with computed columns; refusing to merge it")
+        # Timestamps are copied as they are stored, so one this build could not read back
+        # (an integer, a 13th month) would be committed and break every later read of the
+        # table. Any such value refuses the member before anything is written.
+        live_types = {str(r[1]): str(r[2] or "").upper() for r in conn.execute(f'PRAGMA main.table_info("{name}")')}
+        inc_cols = {str(r[1]) for r in conn.execute(f'PRAGMA inc.table_info("{name}")')}
+        for col, typ_ in live_types.items():
+            if col not in inc_cols or not ("DATE" in typ_ or "TIME" in typ_):
+                continue
+            bad = conn.execute(
+                f'SELECT 1 FROM inc."{name}" WHERE "{col}" IS NOT NULL AND (typeof("{col}") != \'text\' '  # noqa: S608  # nosec B608 # names are the live schema's own, filtered to _READ_TABLES
+                f'OR datetime("{col}") IS NULL OR substr("{col}", 1, 19) != datetime("{col}")) LIMIT 1'
+            ).fetchone()
+            if bad is not None:
+                raise LaneMergeError("the lane member holds a timestamp this build cannot read; refusing to merge it")
 
 
 def _columns(conn: Any, schema: str, table: str) -> list[str]:
@@ -580,10 +594,39 @@ def _merge_warm(conn: Any, out: dict[str, Any]) -> None:
             (*texts[0], *texts[1], want, due, fetched, m_id),
         )
         updated += 1
+    _recount_warm_editions(conn)
     out["tables"]["wiki_warm_pages"] = {"inserted": n, "updated": updated}
     if refused:
         out["tables"]["wiki_warm_pages"]["texts_refused"] = refused
     out["warm_texts_dropped"] = dropped
+
+
+def _recount_warm_editions(conn: Any) -> None:
+    """Keep ``wiki_warm_editions.pages_with_text`` equal to the rows it counts.
+
+    The model writes that count in the same transaction as the rows, so it cannot disagree
+    with them; the merge gives rows text too, so it recounts them here, inside the merge's
+    transaction. The other counters are this machine's own fetches (L5) and are left alone.
+    """
+    if not _has(conn, "main", "wiki_warm_editions"):
+        return
+    info = conn.execute('PRAGMA main.table_info("wiki_warm_editions")').fetchall()
+    cols, vals = ["edition", "pages_with_text"], ["p.edition", "p.n"]
+    for r in info:
+        name, typ_, notnull, default = str(r[1]), str(r[2] or "").upper(), int(r[3] or 0), r[4]
+        if name in cols or not notnull or default is not None:
+            continue
+        cols.append(name)
+        vals.append(":now" if ("DATE" in typ_ or "TIME" in typ_) else "0")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds")
+    conn.execute(
+        f"INSERT INTO main.wiki_warm_editions ({', '.join(cols)}) "  # noqa: S608  # nosec B608 # columns are the live schema's own
+        f"SELECT {', '.join(vals)} FROM (SELECT edition, count(*) AS n FROM main.wiki_warm_pages "
+        "WHERE latest_bytes IS NOT NULL OR previous_bytes IS NOT NULL GROUP BY edition) p WHERE true "
+        "ON CONFLICT(edition) DO UPDATE SET pages_with_text = excluded.pages_with_text "
+        "WHERE pages_with_text != excluded.pages_with_text",
+        {"now": now},
+    )
 
 
 _STEPS = {
