@@ -267,15 +267,18 @@ def test_the_fetcher_writes_a_link_with_spaces_as_one_token(monkeypatch, tmp_pat
 def test_failure_url_leaves_no_character_the_reader_would_end_the_token_on(space):
     import re
 
-    url = f"https://h.example/a{space}b?q=1{space}#f"
+    url = f"https://h.example/a{space}b/{space}?page=1"  # R734: the query is masked before the encoding, so the whitespace sits in the path
     token = failure_url(url)
     assert re.fullmatch(r"\S+", token), repr(token)
     assert token == url.replace(space, "".join(f"%{b:02X}" for b in space.encode("utf-8")))
+    assert re.fullmatch(r"\S+", failure_url(f"https://h.example/a?q=1{space}#f")), "a masked query holds no whitespace either"
 
 
 def test_failure_url_changes_nothing_else():
-    url = "https://h.example:8443/p%20q/r?x=1&y='\"()[]~@!$*+,;=#frag/é"
+    url = "https://h.example:8443/p%20q/r'\"()[]~@!$*+,;=/é?format=rss&page=2"
     assert failure_url(url) == url
+    # R734: but for the query's values (an allowlisted harmless one kept) and the fragment, which is dropped
+    assert failure_url("https://h.example/r?x=1&y=2&lang=en#frag") == "https://h.example/r?x=***&y=***&lang=en"
     assert failure_url("https://h.example/\ud800 x") == "https://h.example/\ud800%20x"  # a lone surrogate is kept and never raises
 
 
