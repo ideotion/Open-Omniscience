@@ -36,7 +36,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
         ("q=my+search", "q=***"),
         ("page=2;sig=deadbeef", "page=2;sig=***"),  # ; separates as & does
         ("lang=en/../x", "lang=***"),  # an allowlisted name with an odd-shaped value is masked all the same
-        ("rss", "rss"),  # a bare allowlisted name stays
+        ("page", "page"),  # a bare allowlisted name stays
+        ("rss", "***"),  # feed, rss and channel left the allowlist (first security read): a private feed's token sits there
+        ("feed=0123456789abcdef0123456789abcdef", "feed=***"),
+        ("tag=ghp_abcdefghijklmnopqrstuvwxyz0123456789", "tag=***"),  # longer than a kept value's 16 characters
+        ("lang=en&lang=SECRETSECRETSECRET", "lang=en&lang=***"),
         ("3f9a0c1d2e", QUERY_VALUE_MASK),  # a bare item that is not one is masked whole: a name can be the token
         ("a b=1", QUERY_VALUE_MASK),  # a name that does not read as a plain name is masked with its value
         ("", ""),
@@ -65,7 +69,25 @@ def test_the_allowlist_holds_no_name_that_can_carry_who_asks():
 
 
 def test_query_secrets_are_the_masked_values_at_the_scrub_floor():
-    assert query_secrets("https://a.example/x?format=rss&token=abcd%2Fef&id=7") == ("abcd%2Fef", "abcd/ef")
+    secrets = query_secrets("https://a.example/x?format=rss&token=abcd%2Fef&id=7")
+    assert {"abcd%2Fef", "abcd/ef", "abcd%2fef"} <= set(secrets)
+    assert not any(s == "rss" or s == "7" for s in secrets)
+
+
+@pytest.mark.parametrize(
+    "value, quoted",
+    [
+        ("S\u00c9CRETXYZ", "S%C3%89CRETXYZ"),
+        ("ab|cdEFGH", "ab%7CcdEFGH"),
+        ("SEC RETXYZ", "SEC%20RETXYZ"),
+        ("a%2fBCDEFG", "a%2FBCDEFG"),
+        ("SECR\tETXYZ", "SECRETXYZ"),
+    ],
+)
+def test_the_scrub_takes_out_the_spelling_requests_quotes_back(value, quoted):
+    """The first security read proved requests re-quotes the address before quoting it in its exception text; each of those
+    spellings is among the secrets the scrub takes out."""
+    assert quoted in query_secrets(f"https://a.example/rss?token={value}")
     assert query_secrets("https://a.example/x") == ()
     assert query_secrets(None) == ()  # type: ignore[arg-type]  # never raises
 
@@ -136,8 +158,7 @@ SHOWN_URL_READERS = frozenset(
         "src/api/main.py",
         "src/api/source_management.py",
         "src/api/source_io.py",
-        "src/monitoring/health.py",
-    }
+            }
 )
 
 
@@ -163,7 +184,7 @@ def test_ratchet_no_scrub_takes_the_userinfo_alone():
     assert offenders == []
 
 
-_FEED_ADDRESS_KEYS = frozenset({"rss_url", "feed_key", "feed_url"})
+_FEED_ADDRESS_KEYS = frozenset({"rss_url", "feed_key", "feed_url", "source_url", "final_url", "feed_address"})
 _WRITERS = frozenset({"reported_url", "failure_url", "shown_feed_key", "shown_url", "_shown_feed"})
 #: Report, field data and diagnostics writers: every feed address they put in a row goes through a writer above.
 _REPORT_MODULE_PREFIXES = ("src/api/diagnostics/", "src/analytics/", "src/monitoring/", "src/backup/", "src/scheduler/")
@@ -182,10 +203,13 @@ def test_ratchet_report_rows_never_write_a_feed_address_raw():
             for key, value in zip(node.keys, node.values, strict=True):
                 if not (isinstance(key, ast.Constant) and key.value in _FEED_ADDRESS_KEYS) or isinstance(value, ast.Constant):
                     continue
-                inner = value.body if isinstance(value, ast.IfExp) else value
-                if isinstance(inner, ast.Call) and _called_name(inner) in _WRITERS:
-                    continue
-                if isinstance(inner, ast.Name) and inner.id in _WRITERS:  # a column -> writer table (source_samples)
+                branches = [value.body, value.orelse] if isinstance(value, ast.IfExp) else [value]  # both arms of a conditional
+                if all(
+                    isinstance(b, ast.Constant)
+                    or (isinstance(b, ast.Call) and _called_name(b) in _WRITERS)
+                    or (isinstance(b, ast.Name) and b.id in _WRITERS)  # a column -> writer table (source_samples)
+                    for b in branches
+                ):
                     continue
                 if f"{rel}:{key.value}={ast.unparse(value)}" in _NOT_A_REPORT_ROW:
                     continue
@@ -193,9 +217,61 @@ def test_ratchet_report_rows_never_write_a_feed_address_raw():
     assert offenders == [], offenders
 
 
-_LOG_CALLS = frozenset({"debug", "info", "warning", "error", "exception", "critical", "log", "log_failure"})
-#: Pinned: names that read as URL-ish but are not addresses (a wiki lane's feed NAME; a test stand-in's own fixture URL).
-_NOT_AN_ADDRESS = frozenset({"src/wiki/runner.py:feed", "src/testing/wiki_standin.py:url"})
+_LOG_CALLS = frozenset({"debug", "info", "warning", "warn", "error", "exception", "critical", "log", "log_failure", "print"})
+#: Calls whose result is safe to log: the writers, the scrub, and what reads an address without writing it (its host, its length).
+_SAFE_CALLS = frozenset(
+    {"reported_url", "failure_url", "shown_feed_key", "_shown_feed", "record_text", "masked_address", "address_secrets", "_logged",
+     "_url_without_query", "urlparse", "len", "bool", "isinstance"}
+)
+#: The UI answer form, or a wrapper of it: never in a log line or a raised sentence (the second security read on R734 found a
+#: request body logged through such a wrapper).
+_ANSWER_FORM_CALLS = frozenset({"shown_url", "_shown", "_shown_found"})
+#: Pinned, each with why it is not a feed address leaving the app: written as ``path:expression``.
+_NOT_AN_ADDRESS = frozenset(
+    {
+        "src/api/markets.py:feed",  # a market feed's catalogue entry; only feed.key is written
+        "src/markets/pipeline.py:feed",  # the same
+        "src/backup/sqlite_backup.py:engine.url",  # only get_backend_name() is written
+        "src/database/session.py:DATABASE_URL",  # only the scheme is written
+        "src/law/declared.py:row.get('url')",  # a bundled law catalogue address, never a user's feed
+        "src/services/duckduckgo.py:result.get('url', 'No URL')",  # the module's __main__ demo prints a public search result
+        "src/testing/wiki_standin.py:url",  # a test stand-in's own fixture URL
+        "src/tui/panel.py:url",  # the app's own loopback address
+        "src/versioned/feed.py:batch.feed",  # a versioned feed's NAME
+    }
+)
+_NAME_ONLY_FEED_TREES = ("src/wiki/", "src/versioned/")  # there ``feed`` is a lane's name
+
+
+def _urlish(label: str) -> bool:
+    return "url" in label.lower() or label in {"feed", "feed_key", "href", "location"}
+
+
+def _raw_addresses(node: ast.AST, out: list[ast.AST]) -> None:
+    """Every part of a log or raise argument that writes an address unmasked: a URL-ish name or attribute, a URL-ish key read by
+    subscript or ``.get``, or the UI answer form, at any depth (an f-string, ``%``, ``.format``, ``+``), except inside a safe call."""
+    if isinstance(node, ast.Call):
+        name = _called_name(node)
+        if name in _SAFE_CALLS:
+            return
+        if name in _ANSWER_FORM_CALLS:
+            out.append(node)
+            return
+        first = node.args[0] if node.args else None
+        if name == "get" and isinstance(first, ast.Constant) and isinstance(first.value, str) and _urlish(first.value):
+            out.append(node)
+            return
+    key = node.slice.value if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) else None
+    if isinstance(key, str) and _urlish(key):
+        out.append(node)
+        return
+    if isinstance(node, ast.Name | ast.Attribute) and _urlish(node.id if isinstance(node, ast.Name) else node.attr):
+        out.append(node)
+        return
+    if isinstance(node, ast.Lambda):
+        return
+    for child in ast.iter_child_nodes(node):
+        _raw_addresses(child, out)
 
 
 def test_ratchet_no_log_line_or_raised_sentence_interpolates_an_address_raw():
@@ -205,15 +281,48 @@ def test_ratchet_no_log_line_or_raised_sentence_interpolates_an_address_raw():
             if not isinstance(node, ast.Call):
                 continue
             name = _called_name(node)
-            if not (name in _LOG_CALLS or name == "FetchFailed" or name.endswith("Error")):
+            if not (name in _LOG_CALLS or name == "FetchFailed" or name.endswith(("Error", "Exception", "Refused", "Failed"))):
                 continue
             for arg in list(node.args) + [k.value for k in node.keywords]:
-                parts = [v.value for v in ast.walk(arg) if isinstance(v, ast.FormattedValue)] if isinstance(arg, ast.JoinedStr) else [arg]
-                for part in parts:
-                    label = part.id if isinstance(part, ast.Name) else (part.attr if isinstance(part, ast.Attribute) else "")
-                    if "url" not in label.lower() and label not in {"feed", "feed_key", "href", "location"}:
+                found: list[ast.AST] = []
+                _raw_addresses(arg, found)
+                for part in found:
+                    text = ast.unparse(part)
+                    if f"{rel}:{text}" in _NOT_AN_ADDRESS or (rel.startswith(_NAME_ONLY_FEED_TREES) and text == "feed"):
                         continue
-                    if f"{rel}:{label}" in _NOT_AN_ADDRESS or (rel.startswith(("src/wiki/", "src/versioned/")) and label == "feed"):
-                        continue
-                    offenders.append(f"{rel}:{part.lineno}: {ast.unparse(part)}")
+                    offenders.append(f"{rel}:{part.lineno}: {text}")
     assert offenders == [], offenders
+
+
+def test_the_log_ratchet_sees_the_spellings_the_second_read_named():
+    """The escapes the second security read listed, each caught: a call, a subscript, ``%``, ``.format``, ``+``, a wrapper of
+    the answer form, ``print``, an ``Exception``."""
+    src = """
+log.info("x %s" % url)
+log.info("x {}".format(row["rss_url"]))
+log.info("x " + str(feed_url))
+log.warning(f"{row.get('url')}")
+log.info(f"{_shown(u)}")
+print(final_url)
+raise HTTPException(detail=f"bad {source.rss_url}")
+"""
+    found: list[ast.AST] = []
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Call) and (_called_name(node) in _LOG_CALLS or _called_name(node).endswith("Exception")):
+            for arg in list(node.args) + [k.value for k in node.keywords]:
+                _raw_addresses(arg, found)
+    assert len(found) == 7, [ast.unparse(f) for f in found]
+
+
+def test_a_logged_request_body_and_a_health_row_write_the_reported_form():
+    """The second security read: the create/update log line wrote the body through the UI answer form, and the health row's
+    ``url`` kept the query its ``detail`` masked. Both write :func:`reported_url` now."""
+    from datetime import UTC, datetime
+
+    from src.api.source_management import _reported_data
+    from src.monitoring.health import HealthStatus, SourceHealth
+
+    sent = "https://u:p@news.example/rss?token=abcdef1234#frag"
+    assert _reported_data({"rss_url": sent, "name": "n"}) == {"rss_url": "https://***@news.example/rss?token=***", "name": "n"}
+    row = SourceHealth(1, "n", sent, HealthStatus.UP, 1.0, datetime.now(UTC)).to_dict()
+    assert row["url"] == "https://***@news.example/rss?token=***"
