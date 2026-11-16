@@ -10,7 +10,7 @@ and "this is the same outlet" (a confirmed R193 pair) re-admits it and lifts the
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -295,3 +295,46 @@ def test_marks_go_in_chunks(Session, monkeypatch):
         sid = _source(s, "x.example.org", ["y.example.com"] * 20)
         assert off_site.sweep(s)["articles_marked"] == 20
         assert off_site.release_off_site(s, sid, "example.com") == 20
+
+
+# ------------------------------------------------------------------ final-read fixes
+def test_a_hold_on_an_ip_site_can_be_lifted(Session, monkeypatch):
+    """A redirect to a bare IP is held under the IP; "This is the same outlet" must accept that name back."""
+    with Session() as s:
+        sid = _source(s, "ip.example.org", ["ip.example.org"] * 4 + ["203.0.113.7"] * 16)
+        off_site.sweep(s)
+        assert s.get(Source, sid).status == STATUS_DISQUALIFIED
+        assert off_site.held_payloads(s, [s.get(Source, sid)])[sid]["other_site"] == "203.0.113.7"
+    c = _client(monkeypatch, Session)
+    r = c.post("/api/quarantine/host-pairs", json={"source_id": sid, "article_site": "203.0.113.7"})
+    assert r.status_code == 200, r.text
+    assert r.json()["readmitted"] is True and r.json()["articles_released"] == 16
+
+
+def test_a_recheck_keeps_a_once_qualified_hold_re_admittable(Session, monkeypatch):
+    """A held QUALIFIED source re-checked by a pass is held again as qualified, never as a candidate."""
+    from src.catalog import qualification as q
+
+    with Session() as s:
+        sid = _source(s, "rq.example.org", ["rq.example.org"] * 4 + ["casino.example.com"] * 16)
+        off_site.sweep(s)
+        src = s.get(Source, sid)
+        assert src.status == STATUS_DISQUALIFIED
+        # The hold is old enough for its re-check to be due.
+        s.query(SourceQualificationAttempt).filter_by(source_id=sid).update(
+            {"attempted_at": datetime.now(UTC).replace(tzinfo=None) - timedelta(days=400)})
+        s.commit()
+        monkeypatch.setattr(q, "trial_fetch", lambda *a, **k: None)
+        held = []
+        real_hold = off_site.hold
+
+        def _spy(session, source, finding, *, now, candidate=False):
+            held.append(candidate)
+            return real_hold(session, source, finding, now=now, candidate=candidate)
+
+        monkeypatch.setattr(off_site, "hold", _spy)
+        out = q.run_qualification_pass(s, None, per_pass=1, recheck_per_pass=1,
+                                 now=datetime.now(UTC))
+        assert held == [False], (held, {k: v for k, v in out.items() if v})  # it was re-checked, and held as the qualified source it was
+        versions = {v for (v,) in s.query(SourceQualificationAttempt.criteria_version).filter_by(source_id=sid)}
+        assert off_site.CANDIDATE_CRITERIA_VERSION not in versions

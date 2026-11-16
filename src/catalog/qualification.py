@@ -1867,9 +1867,14 @@ def run_qualification_pass(
     from src.catalog import off_site as _off_site
 
     held_off_site: list[tuple[int, str]] = []
+    # A source that was qualified before (held as such, or re-admitted and then undone) keeps that standing
+    # when a re-check holds it again: confirming the pair then re-admits it rather than requeueing it.
+    _prior_versions = _off_site.latest_attempt_versions(session, [int(s.id) for s in judged])
+    _was_qualified = (_off_site.CRITERIA_VERSION, _off_site.CONFIRMED_CRITERIA_VERSION)
     for s in list(judged):
         finding = _off_site.evaluate(session, int(s.id), s.domain)
-        if _off_site.hold(session, s, finding, now=now, candidate=True):
+        candidate = not (s.status == STATUS_QUALIFIED or _prior_versions.get(int(s.id)) in _was_qualified)
+        if _off_site.hold(session, s, finding, now=now, candidate=candidate):
             held_off_site.append((int(s.id), str(finding.other_site)))
             judged.remove(s)
 

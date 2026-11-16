@@ -294,9 +294,16 @@ class HostPairBody(BaseModel):
 def _canonical_site(site: str, source_domain: str | None) -> str | None:
     """The article site exactly as :func:`src.ingest.host_mismatch.check_host` would name it (the one
     normaliser), or None when the text names no readable site."""
+    import ipaddress
+
     from src.ingest.host_mismatch import check_host
 
-    return check_host(f"https://{site.strip()}/", source_domain).article_site
+    text = site.strip().rstrip(".")
+    try:  # a bare IP is a site of its own, named as off_site.site_of names it, so its hold can be lifted
+        return str(ipaddress.ip_address(text.strip("[]")))
+    except ValueError:
+        pass
+    return check_host(f"https://{text}/", source_domain).article_site
 
 
 def _pair_is_a_current_mismatch(session, source_id: int, domain: str | None, site: str) -> bool:
