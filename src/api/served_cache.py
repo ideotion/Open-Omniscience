@@ -82,6 +82,8 @@ from src.monitoring.secret_scrub import log_failure
 _LOG = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
+#: Signalled, under ``_LOCK``, each time a build lock is released, so an inline waiter retakes it under ``_LOCK`` too.
+_BUILD_RELEASED = threading.Condition(_LOCK)
 # key -> {"payload", "built_at", "checked_at", "probe", "bind"}
 _CACHE: dict[str, dict] = {}
 # One build lock PER KEY: a cold /figures must not block a warm /stats behind it.
@@ -294,6 +296,7 @@ def _kick_background_refresh(key: str, compute) -> float | None:
             with _LOCK:
                 _RECOUNT_STARTED.pop(key, None)
                 lock.release()
+                _BUILD_RELEASED.notify_all()
 
     try:
         threading.Thread(target=_run, name=f"served-cache-{key}", daemon=True).start()
@@ -302,6 +305,7 @@ def _kick_background_refresh(key: str, compute) -> float | None:
         with _LOCK:
             _RECOUNT_STARTED.pop(key, None)
             lock.release()
+            _BUILD_RELEASED.notify_all()
         raise
     return started
 
@@ -404,22 +408,22 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
         with _LOCK:
             _RECOUNT_STARTED.pop(key, None)
             lock.release()
+            _BUILD_RELEASED.notify_all()
 
 
 def _hold_with_start(key: str, lock: threading.Lock) -> None:
     """Take ``key``'s build lock for the inline path, recording its start beside it as the background kick does.
 
     The lock is only ever TAKEN under ``_LOCK`` (without waiting), so a held build lock always has a start beside it,
-    whichever path holds it: a cold poll that finds it taken reads a real "running since". Waiting happens outside
-    ``_LOCK``, on the lock itself, and then the take is tried again.
+    whichever path holds it: a cold poll that finds it taken reads a real "running since". The wait is on
+    ``_BUILD_RELEASED``, which gives ``_LOCK`` up while waiting and is signalled under it at every release, never on the
+    build lock itself: a waiter that took the build lock to learn it was free would hold it, for that instant, with no
+    start beside it.
     """
-    while True:
-        with _LOCK:
-            if lock.acquire(blocking=False):
-                _RECOUNT_STARTED[key] = time.time()
-                return
-        with lock:  # the holder ends; try again under ``_LOCK``
-            pass
+    with _LOCK:
+        while not lock.acquire(blocking=False):
+            _BUILD_RELEASED.wait()
+        _RECOUNT_STARTED[key] = time.time()
 
 
 def invalidate(key: str | None = None) -> None:

@@ -187,3 +187,43 @@ def test_a_cold_poll_that_finds_an_inline_compute_running_gets_its_start(monkeyp
         release.set()
         t.join(10)
     assert not served_cache._build_lock(_KEY).locked() and served_cache._recount_started(_KEY) is None
+
+
+def test_an_inline_caller_that_waits_reuses_the_first_ones_value_and_never_holds_the_lock_without_a_start():
+    """Two cold inline callers of one key: the second waits for the first (without ever taking the build lock just to learn it is
+    free), then serves the stored value; the compute ran once and nothing is left held."""
+    import threading
+    import time
+
+    inside, release, calls, starts_seen = threading.Event(), threading.Event(), [], []
+
+    def slow(_session):
+        calls.append(1)
+        inside.set()
+        assert release.wait(10)
+        return {"n": 2}
+
+    def run(results):
+        s = SessionLocal()
+        try:
+            results.append(served_cache.cached(_KEY, slow, s, ttl_s=60))
+        finally:
+            s.close()
+
+    first, second = [], []
+    t1 = threading.Thread(target=run, args=(first,))
+    t1.start()
+    assert inside.wait(10)
+    t2 = threading.Thread(target=run, args=(second,))
+    t2.start()
+    for _ in range(20):  # while both are in, the held lock always carries a start
+        with served_cache._LOCK:
+            if served_cache._build_lock(_KEY).locked():
+                starts_seen.append(served_cache._RECOUNT_STARTED.get(_KEY))
+        time.sleep(0.01)
+    release.set()
+    t1.join(10)
+    t2.join(10)
+    assert calls == [1] and first[0]["n"] == second[0]["n"] == 2
+    assert starts_seen and None not in starts_seen
+    assert not served_cache._build_lock(_KEY).locked() and served_cache._recount_started(_KEY) is None
