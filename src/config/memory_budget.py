@@ -284,8 +284,8 @@ def resolve_for(total_mb: float | None, *, exact: bool = False) -> dict[str, Any
         "api_margin": _API_MARGIN,
         "overrides": overrides,
         "method": (
-            "Hardware-aware DEFAULTS for knobs that already exist, resolved once from "
-            "total RAM. An operator's explicit environment value always wins and is "
+            "Hardware-aware DEFAULTS for knobs that already exist, resolved from total "
+            "RAM at start and again, upward only, when the machine grows into a higher tier (R731). An operator's explicit environment value always wins and is "
             "listed under 'overrides'. This is NOT a power-profile switch: profiles "
             "stay user-activated (2026-07-12 ruling)."
         ),
@@ -368,6 +368,107 @@ def reset_for_tests() -> None:
     with _LOCK:
         _CACHE = None
         _RESOLVED = None
+        _GROWTH.clear()
+
+
+# R731 (2026-11-16, field test 2026-11-14 row 60): a VM whose memory balloon grows after boot kept the tier of its first
+# reading for the life of the process. Five of eight instances resolved ``small`` or ``medium`` at a boot-time total and
+# then ran on several GiB more: the rollup off, or killed by a 738 MiB DuckDB limit sized for the smaller machine. So the
+# budget is now resolved AGAIN when the total grows, under these conditions:
+#   * UPWARD ONLY at runtime. A shrink never lowers the tier mid-run; the memory guard and the rollup's own verdicts
+#     handle pressure, and lowering a limit under a build that already sized itself from it would cut it in two.
+#   * SUSTAINED: the higher tier is read on two checks at least ``REGROW_CONFIRM_S`` apart, and the LOWER of the two
+#     readings is the one the budget is sized from, so a balloon still settling is never over-credited.
+#   * A tier boundary must be crossed; growth inside one tier changes nothing.
+#   * An operator's explicit value still wins (``resolve_for`` reads the same environment), and ``OO_MEMORY_REGROW=0``
+#     keeps the boot budget for the whole run.
+#   * The connection POOL is never resized: a live engine cannot change it, so the boot pool is carried over and said so.
+#     Everything else is read where it is used, at a safe point: the SQLite page cache at the next new connection, the
+#     DuckDB limit and threads at the next rollup build (a build snapshots its budget once, R147), and whether the
+#     rollup runs at the next serve.
+#   * Logged once per change with the old and new tier, and kept in ``resolved_reading()`` for the diagnostics.
+REGROW_CONFIRM_S = 60.0
+_TIER_RANK = {"small": 0, "medium": 1, "large": 2}
+#: The pending higher reading (``tier``, ``total``, ``mono``) a second check must confirm. Guarded by ``_LOCK``.
+_GROWTH: dict[str, Any] = {}
+
+
+def regrow_enabled() -> bool:
+    return os.getenv("OO_MEMORY_REGROW", "1").strip() != "0"
+
+
+def regrow_check(now_mono: float | None = None) -> dict[str, Any] | None:
+    """One check of R731's rule; call about once a minute. Returns the change record when the budget moved up, else
+    None. Never lowers the tier, never resizes the pool, never raises."""
+    global _CACHE, _RESOLVED
+    import logging
+    import time
+
+    if not regrow_enabled():
+        return None
+    now = time.monotonic() if now_mono is None else now_mono
+    try:
+        total, total_from = budget_ram_mb()
+    except Exception:  # noqa: BLE001 - an unreadable total is no evidence of growth
+        return None
+    exact = total_from == "cgroup limit"
+    with _LOCK:
+        cur = _CACHE
+        if cur is None:
+            return None  # nothing resolved yet: the first resolve reads the machine as it is
+        cur_rank = _TIER_RANK.get(str(cur.get("tier")))
+        now_tier = _tier(total, exact)
+        now_rank = _TIER_RANK.get(now_tier)
+        if cur_rank is None or now_rank is None or total is None or now_rank <= cur_rank:
+            _GROWTH.clear()  # unmeasured either side, or no higher tier: nothing pending
+            return None
+        pending = dict(_GROWTH)
+        if not pending:
+            _GROWTH.update(tier=now_tier, total=total, mono=now, exact=exact)
+            return None
+        if now - float(pending["mono"]) < REGROW_CONFIRM_S:
+            return None  # too soon to count as a second check; the first stays pending
+        sized_from = min(float(pending["total"]), float(total))
+        new = resolve_for(sized_from, exact=exact)
+        _GROWTH.clear()
+        if _TIER_RANK.get(str(new.get("tier")), -1) <= cur_rank:
+            return None  # the lower of the two readings did not cross the boundary
+        new["total_ram_from"] = total_from
+        # The pool stays as built: it cannot change on a live engine (``session.py``).
+        for key in ("db_pool_size", "db_max_overflow"):
+            new[key] = cur[key]
+        new["pool_total"] = int(new["db_pool_size"]) + int(new["db_max_overflow"])
+        new["worst_case_pool_cache_mb"] = new["pool_total"] * int(new["sqlite_cache_mb"])
+        change = {
+            "at": _now_iso(),
+            "from_tier": cur.get("tier"),
+            "to_tier": new.get("tier"),
+            "from_total_ram_mb": cur.get("total_ram_mb"),
+            "to_total_ram_mb": round(sized_from, 1),
+            "readings_mb": [round(float(pending["total"]), 1), round(float(total), 1)],
+            "rule": (
+                "R731: the higher tier was read on two checks at least "
+                f"{REGROW_CONFIRM_S:.0f} s apart; the budget is sized from the lower reading; upward only; the "
+                "connection pool keeps its boot size, everything else applies where it is next read"
+            ),
+        }
+        history = list(cur.get("regrown") or []) + [change]
+        new["regrown"] = history
+        new["reason"] = (
+            str(new.get("reason") or "")
+            + f" Re-resolved while running: the machine grew from the {change['from_tier']} tier"
+            + f" ({change['from_total_ram_mb']} MiB at start) to {change['to_total_ram_mb']} MiB; the connection pool"
+            + " keeps the size it was built with."
+        )
+        first = (_RESOLVED or {}).get("first_resolved_at") or (_RESOLVED or {}).get("resolved_at")
+        _RESOLVED = {"resolved_at": change["at"], "cores": _cores(), "first_resolved_at": first}
+        _CACHE = new
+    logging.getLogger(__name__).warning(
+        "memory budget: re-resolved upward from the %s tier (%s MiB) to the %s tier (%s MiB); pool kept at %s+%s",
+        change["from_tier"], change["from_total_ram_mb"], change["to_tier"], change["to_total_ram_mb"],
+        new["db_pool_size"], new["db_max_overflow"],
+    )
+    return change
 
 
 def _now_iso() -> str:
@@ -408,6 +509,10 @@ def resolved_reading() -> dict[str, Any]:
         "cores": moment.get("cores"),
         "columnar_serve_default": b.get("columnar_serve_default"),
         "resolved_at": moment.get("resolved_at"),
+        # R731: when the budget moved up while running, the start's moment and every change (old and new tier). Absent
+        # keys, not empty ones, for a process that never re-resolved, so an older record and a steady run read alike.
+        **({"first_resolved_at": moment["first_resolved_at"]} if moment.get("first_resolved_at") else {}),
+        **({"regrown": b["regrown"]} if b.get("regrown") else {}),
     }
 
 
@@ -415,7 +520,7 @@ def reading_vs_now() -> dict[str, Any]:
     """The reading this process's budget was resolved from, beside the one the machine
     gives right now and the tier that reading would resolve to.
 
-    The budget is resolved once per process (the pool size, the cache sizes, DuckDB's
+    The budget is resolved at start, and since R731 again only upward (the pool size, the cache sizes, DuckDB's
     memory limit and whether the in-memory rollup runs follow from it), and a virtual machine
     whose memory is ballooned reports a different total later: the 2026-10-06 field
     diagnostics hold an instance whose one pass summary says ``small`` while its own records of
@@ -430,10 +535,15 @@ def reading_vs_now() -> dict[str, Any]:
     now_tier = _tier(now_total, now_exact)
     differs = now_tier != resolved["tier"]
     caveat = (
-        "the budget is not re-resolved while the process runs, so a machine whose total "
-        "RAM changes (a virtual machine with ballooned memory) keeps the tier of its "
-        "start; a restart resolves it again. Two readings that differ are a measured fact "
-        "about the machine, not a finding about which reading is right"
+        "the budget is re-resolved while the process runs only UPWARD (R731): a higher tier read on two checks a "
+        "minute apart raises it, sized from the lower reading, and the connection pool keeps its boot size; a total "
+        "that falls is not re-resolved, and keeps the tier already in force until a restart resolves it again. Two "
+        "readings that differ are a measured fact about the machine, not a finding about which reading is right"
+        if regrow_enabled()
+        else "the budget is not re-resolved while the process runs (OO_MEMORY_REGROW=0), so a machine whose total "
+        "RAM changes (a virtual machine with ballooned memory) keeps the tier of its start; a restart resolves it "
+        "again. Two readings that differ are a measured fact about the machine, not a finding about which reading "
+        "is right"
     )
     if differs and "unmeasured" in (resolved["tier"], now_tier):
         caveat += (
@@ -456,7 +566,7 @@ def reading_vs_now() -> dict[str, Any]:
         "method": (
             "resolved: the RAM total psutil reported, or the cgroup memory limit when that is smaller "
             "(total_ram_from says which), when this process first asked for its "
-            "budget (decided from it, once: the connection pool and the SQLite page cache, "
+            "budget (decided from it at start, and again upward only under R731: the connection pool (at start only) and the SQLite page cache, "
             "unless the operator set them, DuckDB's memory limit, and whether the in-memory "
             "rollup runs by default); now: the same reader, the same tier boundaries, read "
             "at this moment"

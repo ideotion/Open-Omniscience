@@ -17,8 +17,8 @@ So the reading the budget was resolved from (tier, RAM total, cores, whether the
 the rollup on, and WHEN) now rides every boot record, the session's high-water header (read at
 the next boot as the previous session's) and the crash report; the soak window carries it beside
 the tier the machine would resolve to now. What these tests hold, mostly as negative space: the
-budget is still resolved ONCE (a reading that re-resolved would change the pool under a running
-app), an absent record stays absent (nothing is invented for an older build), a reading that
+budget is resolved at start and since R731 only ever UPWARD after that, never by reading_vs_now (the pool keeps its
+boot size, tests/test_memory_tier_regrow.py), an absent record stays absent (nothing is invented for an older build), a reading that
 cannot be taken says so and never breaks a boot, and a difference between the two tiers is
 shown as a fact and never as a verdict.
 """
@@ -508,7 +508,7 @@ def test_the_dead_sessions_tier_travels_into_the_next_boots_report(hwm, monkeypa
     previous_identity.claim(monkeypatch)
     peaks = forensics._previous_peaks()
     assert peaks is not None and peaks["memory_budget"] == small
-    assert "memory_budget" in peaks["method"] and "resolved once per process" in peaks["method"]
+    assert "memory_budget" in peaks["method"] and "resolved at the start of the process" in peaks["method"]
 
 
 def test_a_reading_that_cannot_be_taken_is_in_the_header_as_the_error(hwm, monkeypatch):

@@ -37,8 +37,8 @@ process started with.
 
 Since 2026-10-06 it also carries the reading the memory budget was resolved from
 (``memory_budget``: the tier, the RAM total, the logical CPUs, whether the in-memory rollup is on by
-default, and when). The budget is resolved once per process from the RAM total read at that
-instant, and a virtual machine whose memory is ballooned can resolve one tier at one boot and
+default, and when). The budget is resolved at start from the RAM total read at that
+instant (and since R731 again, upward only, when the machine grows), and a virtual machine whose memory is ballooned can resolve one tier at one boot and
 another at the next, so a death is read against the tier THAT session ran under.
 
 Since 2026-10-01 a machine that STAYS short is recorded too. The crash that began 091717's

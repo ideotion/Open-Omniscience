@@ -957,6 +957,13 @@ def _loop() -> None:
                 tick_once()
             except Exception as exc:  # noqa: BLE001 - the tick must never kill its thread
                 log_failure(_LOG, "session ledger: tick failed", exc, level=logging.DEBUG)
+            try:
+                # R731: once a minute, whether the machine grew into a higher memory tier (upward only, confirmed twice).
+                from src.config.memory_budget import regrow_check
+
+                regrow_check()
+            except Exception as exc:  # noqa: BLE001 - a budget check must never kill the liveness thread
+                log_failure(_LOG, "session ledger: memory tier check failed", exc, level=logging.DEBUG)
         try:
             from src.monitoring.session_hwm import observe
 

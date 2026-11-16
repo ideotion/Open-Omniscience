@@ -1187,7 +1187,8 @@ def _previous_peaks() -> dict[str, Any] | None:
         "which C allocator the session ran on and whether its malloc arenas were capped "
         "(R114), read from the environment the process started with; memory_budget is "
         "the memory tier the session was resolved to (tier, RAM total, logical CPUs, whether the "
-        "in-memory rollup is on by default, and when: resolved once per process); a record "
+        "in-memory rollup is on by default, and when: resolved at the start of the process and again only upward, "
+        "R731, when the machine grew into a higher tier); a record "
         "written before either was kept has none. A field that could not be measured is "
         "ABSENT rather than zero."
     )
