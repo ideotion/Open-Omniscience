@@ -24,6 +24,7 @@ and the route is served by a router of its own on a session bound to that file: 
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -54,8 +55,20 @@ class _Blocked:
         raise RobotsDisallowed(f"robots.txt disallows {url}")
 
 
-def _install(path: Path, form: str) -> Path:
-    """A store file as an install in ``form`` holds it: the schema, and (for alpha-3) the marker a new store is stamped with."""
+#: One built store per form, copied for each case: building the whole schema took seconds per store on the Windows legs, and the
+#: spelling tests build forty (198 s for one of them, row 98). A copy is the same bytes the build would have written.
+_TEMPLATES: dict[str, Path] = {}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _template_dir(tmp_path_factory):
+    _TEMPLATES.clear()
+    _TEMPLATES["_dir"] = tmp_path_factory.mktemp("law-store-templates")
+    yield
+    _TEMPLATES.clear()
+
+
+def _build(path: Path, form: str) -> None:
     engine = create_engine(f"sqlite:///{path}", future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
@@ -66,6 +79,16 @@ def _install(path: Path, form: str) -> Path:
             con.commit()
         finally:
             con.close()
+
+
+def _install(path: Path, form: str) -> Path:
+    """A store file as an install in ``form`` holds it: the schema, and (for alpha-3) the marker a new store is stamped with."""
+    template = _TEMPLATES.get(form)
+    if template is None:
+        template = _TEMPLATES["_dir"] / f"{form}.db"
+        _build(template, form)
+        _TEMPLATES[form] = template
+    shutil.copyfile(template, path)
     return path
 
 

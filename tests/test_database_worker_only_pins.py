@@ -51,6 +51,11 @@ _PINNED: dict[str, tuple[str, ...]] = {
         "src/database/article_indexes.py::_worker",
         "src/database/article_indexes.py::build_missing",
     ),
+    "src/database/rebuild.py::_run": (  # _worker is REBUILD_JOB's BackgroundJob worker; the POST route only starts the job
+        "src/database/rebuild.py::_run",
+        "src/database/rebuild.py::_worker",
+        "src/database/rebuild.py::run",
+    ),
     "src/database/fts_reindex.py::SearchReindexJobManager._park": (
         "src/database/fts_reindex.py::SearchReindexJobManager._park",
         "src/database/fts_reindex.py::SearchReindexJobManager._run",
