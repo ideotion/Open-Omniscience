@@ -5540,6 +5540,7 @@
   "The terminal panel could not start ({error}). The app keeps running.": "Панель терминала не смогла запуститься ({error}). Приложение продолжает работать.",
   "The terminal panel stopped after repeated errors ({error}). The app keeps running: open {url} in the browser.": "Панель терминала остановилась после повторных ошибок ({error}). Приложение продолжает работать: откройте {url} в браузере.",
   "The terms are not recorded; this app makes no claim about redistribution": "Условия не зафиксированы; это приложение не делает никаких заявлений о распространении",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "Год в тексте не указан: взят год, ближайший к дате публикации статьи (до 183 дней до неё или 92 дней после).",
   "The text of this version was not stored, so it cannot be compared. It stays in the list so the history keeps every version.": "Текст этой версии не был сохранён, поэтому её нельзя сравнить. Она остаётся в списке, чтобы история содержала каждую версию.",
   "The three-month average sea-surface temperature anomaly in the Niño 3.4 region of the Pacific, in °C.": "Трёхмесячная средняя аномалия температуры поверхности моря в районе Ниньо 3.4 Тихого океана, в °C.",
   "The title index does not cover older articles yet — build it": "Индекс заголовков пока не охватывает более старые статьи — построить",
@@ -6314,6 +6315,7 @@
   "Written:": "Записано:",
   "Wrong passphrase — try again.": "Неверная фраза — попробуйте ещё раз.",
   "Year": "Год",
+  "Year inferred from the publication date in {k} of {n}.": "Год выведен из даты публикации в {k} из {n}.",
   "Yearly": "Ежегодно",
   "Yearly emissions and energy figures by country and region, compiled by Our World in Data from the Global Carbon Project, the Energy Institute and Ember.": "Годовые данные о выбросах и энергетике по странам и регионам, собранные Our World in Data из Global Carbon Project, Energy Institute и Ember.",
   "Yearly mean (January to December)": "Среднее за год (с января по декабрь)",
@@ -7492,6 +7494,7 @@
   "words or \"a phrase\"": "слова или \"фраза\"",
   "workers": "потоков",
   "written": "записана",
+  "year inferred": "год выведен",
   "years": "лет",
   "yes": "да",
   "you": "вы",
@@ -8018,8 +8021,5 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик (",
-  "year inferred": "год выведен",
-  "Year inferred from the publication date in {k} of {n}.": "Год выведен из даты публикации в {k} из {n}.",
-  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "Год в тексте не указан: взят год, ближайший к дате публикации статьи (до 183 дней до неё или 92 дней после)."
+  "🛒 Draft (": "🛒 Черновик ("
 }

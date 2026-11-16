@@ -5540,6 +5540,7 @@
   "The terminal panel could not start ({error}). The app keeps running.": "टर्मिनल पैनल शुरू नहीं हो सका ({error})। ऐप चलता रहता है।",
   "The terminal panel stopped after repeated errors ({error}). The app keeps running: open {url} in the browser.": "बार-बार त्रुटियों के बाद टर्मिनल पैनल रुक गया ({error})। ऐप चलता रहता है: ब्राउज़र में {url} खोलें।",
   "The terms are not recorded; this app makes no claim about redistribution": "शर्तें दर्ज नहीं हैं; यह ऐप पुनर्वितरण के बारे में कोई दावा नहीं करता",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "यहाँ पाठ में वर्ष नहीं दिया गया है: यह लेख की प्रकाशन तिथि के सबसे निकट का वर्ष है (उससे 183 दिन पहले या 92 दिन बाद तक)।",
   "The text of this version was not stored, so it cannot be compared. It stays in the list so the history keeps every version.": "इस संस्करण का पाठ संग्रहीत नहीं किया गया, इसलिए इसकी तुलना नहीं की जा सकती। यह सूची में रहता है ताकि इतिहास में हर संस्करण बना रहे।",
   "The three-month average sea-surface temperature anomaly in the Niño 3.4 region of the Pacific, in °C.": "प्रशांत महासागर के नीनो 3.4 क्षेत्र में समुद्र सतह तापमान की तीन-माही औसत विसंगति, °C में।",
   "The title index does not cover older articles yet — build it": "शीर्षक सूचकांक में अभी पुराने लेख शामिल नहीं हैं — इसे बनाएँ",
@@ -6314,6 +6315,7 @@
   "Written:": "लिखा गया:",
   "Wrong passphrase — try again.": "गलत पासफ़्रेज़ — फिर प्रयास करें।",
   "Year": "वर्ष",
+  "Year inferred from the publication date in {k} of {n}.": "{n} में से {k} में वर्ष प्रकाशन तिथि से अनुमानित।",
   "Yearly": "वार्षिक",
   "Yearly emissions and energy figures by country and region, compiled by Our World in Data from the Global Carbon Project, the Energy Institute and Ember.": "देश और क्षेत्र के अनुसार वार्षिक उत्सर्जन और ऊर्जा आँकड़े, जिन्हें Our World in Data ने Global Carbon Project, Energy Institute और Ember से संकलित किया है।",
   "Yearly mean (January to December)": "वार्षिक औसत (जनवरी से दिसंबर)",
@@ -7492,6 +7494,7 @@
   "words or \"a phrase\"": "शब्द या \"एक वाक्यांश\"",
   "workers": "वर्कर",
   "written": "लिखी गई",
+  "year inferred": "वर्ष अनुमानित",
   "years": "वर्ष",
   "yes": "हाँ",
   "you": "आप",
@@ -8018,8 +8021,5 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट (",
-  "year inferred": "वर्ष अनुमानित",
-  "Year inferred from the publication date in {k} of {n}.": "{n} में से {k} में वर्ष प्रकाशन तिथि से अनुमानित।",
-  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "यहाँ पाठ में वर्ष नहीं दिया गया है: यह लेख की प्रकाशन तिथि के सबसे निकट का वर्ष है (उससे 183 दिन पहले या 92 दिन बाद तक)।"
+  "🛒 Draft (": "🛒 ड्राफ़्ट ("
 }

@@ -5540,6 +5540,7 @@
   "The terminal panel could not start ({error}). The app keeps running.": "Le panneau du terminal n’a pas pu démarrer ({error}). L’application continue de tourner.",
   "The terminal panel stopped after repeated errors ({error}). The app keeps running: open {url} in the browser.": "Le panneau du terminal s’est arrêté après des erreurs répétées ({error}). L’application continue de tourner : ouvrez {url} dans le navigateur.",
   "The terms are not recorded; this app makes no claim about redistribution": "Les conditions ne sont pas enregistrées ; cette application n'affirme rien quant à la redistribution",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "Le texte ne donne pas d'année ici : c'est l'année la plus proche de la date de publication de l'article (jusqu'à 183 jours avant ou 92 jours après).",
   "The text of this version was not stored, so it cannot be compared. It stays in the list so the history keeps every version.": "Le texte de cette version n'a pas été conservé ; elle ne peut donc pas être comparée. Elle reste dans la liste pour que l'historique garde chaque version.",
   "The three-month average sea-surface temperature anomaly in the Niño 3.4 region of the Pacific, in °C.": "L'anomalie moyenne sur trois mois de la température de surface de la mer dans la région Niño 3.4 du Pacifique, en °C.",
   "The title index does not cover older articles yet — build it": "L’index des titres ne couvre pas encore les articles plus anciens — le construire",
@@ -6314,6 +6315,7 @@
   "Written:": "Écrit :",
   "Wrong passphrase — try again.": "Phrase secrète erronée — réessayez.",
   "Year": "Année",
+  "Year inferred from the publication date in {k} of {n}.": "Année déduite de la date de publication dans {k} sur {n}.",
   "Yearly": "Annuel",
   "Yearly emissions and energy figures by country and region, compiled by Our World in Data from the Global Carbon Project, the Energy Institute and Ember.": "Chiffres annuels d'émissions et d'énergie par pays et région, compilés par Our World in Data à partir du Global Carbon Project, de l'Energy Institute et d'Ember.",
   "Yearly mean (January to December)": "Moyenne annuelle (janvier à décembre)",
@@ -7492,6 +7494,7 @@
   "words or \"a phrase\"": "des mots ou \"une expression\"",
   "workers": "tâches",
   "written": "écrite",
+  "year inferred": "année déduite",
   "years": "ans",
   "yes": "oui",
   "you": "vous",
@@ -8018,8 +8021,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon (",
-  "year inferred": "année déduite",
-  "Year inferred from the publication date in {k} of {n}.": "Année déduite de la date de publication dans {k} sur {n}.",
-  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "Le texte ne donne pas d'année ici : c'est l'année la plus proche de la date de publication de l'article (jusqu'à 183 jours avant ou 92 jours après)."
+  "🛒 Draft (": "🛒 Brouillon ("
 }

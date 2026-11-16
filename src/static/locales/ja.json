@@ -5540,6 +5540,7 @@
   "The terminal panel could not start ({error}). The app keeps running.": "ターミナルパネルを起動できませんでした（{error}）。アプリは動き続けます。",
   "The terminal panel stopped after repeated errors ({error}). The app keeps running: open {url} in the browser.": "エラーが続いたためターミナルパネルを終了しました（{error}）。アプリは動き続けます。ブラウザで {url} を開いてください。",
   "The terms are not recorded; this app makes no claim about redistribution": "条件は記録されていません。本アプリは再配布について一切主張しません。",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "本文に年がありません。記事の公開日に最も近い年です（公開日の183日前から92日後まで）。",
   "The text of this version was not stored, so it cannot be compared. It stays in the list so the history keeps every version.": "この版の本文は保存されていないため、比較できません。履歴にすべての版を残すため、一覧には表示したままにしています。",
   "The three-month average sea-surface temperature anomaly in the Niño 3.4 region of the Pacific, in °C.": "太平洋ニーニョ 3.4 海域における 3 か月平均の海面水温偏差（°C）。",
   "The title index does not cover older articles yet — build it": "タイトル索引はまだ古い記事を含んでいません — 作成する",
@@ -6314,6 +6315,7 @@
   "Written:": "書き込み先:",
   "Wrong passphrase — try again.": "パスフレーズが違います — もう一度。",
   "Year": "年",
+  "Year inferred from the publication date in {k} of {n}.": "{n}件中{k}件で年を公開日から推定。",
   "Yearly": "毎年",
   "Yearly emissions and energy figures by country and region, compiled by Our World in Data from the Global Carbon Project, the Energy Institute and Ember.": "国・地域別の年間排出量とエネルギーの数値。Our World in Data が Global Carbon Project、Energy Institute、Ember から編集したものです。",
   "Yearly mean (January to December)": "年平均（1 月から 12 月）",
@@ -7492,6 +7494,7 @@
   "words or \"a phrase\"": "語句または「フレーズ」",
   "workers": "ワーカー",
   "written": "書き込み済み",
+  "year inferred": "年は推定",
   "years": "年",
   "yes": "あり",
   "you": "あなた",
@@ -8018,8 +8021,5 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 (",
-  "year inferred": "年は推定",
-  "Year inferred from the publication date in {k} of {n}.": "{n}件中{k}件で年を公開日から推定。",
-  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "本文に年がありません。記事の公開日に最も近い年です（公開日の183日前から92日後まで）。"
+  "🛒 Draft (": "🛒 草稿 ("
 }

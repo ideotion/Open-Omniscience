@@ -5540,6 +5540,7 @@
   "The terminal panel could not start ({error}). The app keeps running.": "টার্মিনাল প্যানেল শুরু হতে পারেনি ({error})। অ্যাপ চলতে থাকে।",
   "The terminal panel stopped after repeated errors ({error}). The app keeps running: open {url} in the browser.": "বারবার ত্রুটির পরে টার্মিনাল প্যানেল থেমে গেছে ({error})। অ্যাপ চলতে থাকে: ব্রাউজারে {url} খুলুন।",
   "The terms are not recorded; this app makes no claim about redistribution": "শর্তাবলি লিপিবদ্ধ নেই; এই অ্যাপ পুনর্বণ্টন সম্পর্কে কোনো দাবি করে না",
+  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "এখানে লেখায় বছর দেওয়া নেই: বছরটি নিবন্ধের প্রকাশের তারিখের সবচেয়ে কাছের বছর (তার ১৮৩ দিন আগে বা ৯২ দিন পর পর্যন্ত)।",
   "The text of this version was not stored, so it cannot be compared. It stays in the list so the history keeps every version.": "এই সংস্করণের পাঠ্য সংরক্ষিত হয়নি, তাই এটি তুলনা করা যায় না। এটি তালিকায় থাকে যাতে ইতিহাসে প্রতিটি সংস্করণ থাকে।",
   "The three-month average sea-surface temperature anomaly in the Niño 3.4 region of the Pacific, in °C.": "প্রশান্ত মহাসাগরের নিনো ৩.৪ অঞ্চলে সমুদ্রপৃষ্ঠের তাপমাত্রার তিন মাসের গড় বিচ্যুতি, °C-এ।",
   "The title index does not cover older articles yet — build it": "শিরোনাম সূচিতে এখনও পুরোনো নিবন্ধ নেই — এখনই তৈরি করুন",
@@ -6314,6 +6315,7 @@
   "Written:": "লেখা হয়েছে:",
   "Wrong passphrase — try again.": "ভুল পাসফ্রেজ — আবার চেষ্টা করুন।",
   "Year": "বছর",
+  "Year inferred from the publication date in {k} of {n}.": "{n}টির মধ্যে {k}টিতে বছর প্রকাশের তারিখ থেকে অনুমিত।",
   "Yearly": "বার্ষিক",
   "Yearly emissions and energy figures by country and region, compiled by Our World in Data from the Global Carbon Project, the Energy Institute and Ember.": "দেশ ও অঞ্চলভিত্তিক বার্ষিক নিঃসরণ ও শক্তির সংখ্যা, যা Our World in Data সংকলন করেছে Global Carbon Project, Energy Institute ও Ember থেকে।",
   "Yearly mean (January to December)": "বার্ষিক গড় (জানুয়ারি থেকে ডিসেম্বর)",
@@ -7492,6 +7494,7 @@
   "words or \"a phrase\"": "শব্দ বা \"একটি বাক্যাংশ\"",
   "workers": "ওয়ার্কার",
   "written": "লেখা হয়েছে",
+  "year inferred": "বছর অনুমিত",
   "years": "বছর",
   "yes": "হ্যাঁ",
   "you": "আপনি",
@@ -8018,8 +8021,5 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া (",
-  "year inferred": "বছর অনুমিত",
-  "Year inferred from the publication date in {k} of {n}.": "{n}টির মধ্যে {k}টিতে বছর প্রকাশের তারিখ থেকে অনুমিত।",
-  "The text gives no year here: the year is the one nearest the article's publication date (up to 183 days before it or 92 days after).": "এখানে লেখায় বছর দেওয়া নেই: বছরটি নিবন্ধের প্রকাশের তারিখের সবচেয়ে কাছের বছর (তার ১৮৩ দিন আগে বা ৯২ দিন পর পর্যন্ত)।"
+  "🛒 Draft (": "🛒 খসড়া ("
 }
