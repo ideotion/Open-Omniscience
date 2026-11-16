@@ -1242,8 +1242,12 @@ def _verify_export(
     # also pinned in full (its ML-DSA half too) to the identity that introduced it -- the stretch after the last rotation
     # to the bundle's signer, a middle stretch to its rotation record's identity when that names an ML-DSA key. The
     # stretch before the first rotation has no identity in the bundle beyond its Ed25519 key, which the lineage checked.
-    last_rot = next(e for e in reversed(entries)
-                    if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM)
+    last_rot = next((e for e in reversed(entries)
+                     if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM), None)
+    if last_rot is None:
+        # The notes name a change with no record (accepted by name): there is no stretch to pin but the one, to the
+        # bundle's signer.
+        return verify_entries(entries, pinned=pinned, chained=not item_id)
     rot_ml = last_rot.metadata.get("ml_dsa_pub")
     if _records_previous_ml_dsa(last_rot.metadata) and (rot_ml or None) != (pinned.ml_dsa_pub or None):
         # A record since 0.5.1 is followed by another for any change of identity, so the signer must be its identity.
@@ -1343,21 +1347,16 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
         # The record's previous identity is this installation's own, both halves.
         return md.get("previous_ed25519_pub") == local.ed25519_pub and md.get("previous_ml_dsa_pub") == own_ml
 
+    # ``local`` is the identity as this installation signs NOW (the route reads the post-quantum setting): while it
+    # signs with post-quantum the stretch since the last record is held to both halves, whatever records an older copy
+    # of the log carries, so a replayed post-quantum-off record cannot lend its Ed25519-only stretch to a forger.
     expected: PublicIdentity | None = local
-    if rotations and own_ml:
-        last = entries[rotations[-1]]
-        md = last.metadata
-        if (_records_previous_ml_dsa(md) and md.get("ml_dsa_pub") is None and isinstance(md.get("endorsement"), dict)
-                and _sig_ed25519_pub(last.signature) == local.ed25519_pub and _is_local_previous(md)):
-            # Post-quantum signing turned off, ENDORSED by this installation's own identity (both halves): the stretch
-            # since is its Ed25519 key alone, though its ML-DSA key file is still in the folder.
-            expected = PublicIdentity(ed25519_pub=local.ed25519_pub, ml_dsa_variant=None, ml_dsa_pub=None)
     for k in range(len(starts) - 1, -1, -1):
         lo, hi = starts[k], ends[k]
         stretch_key = _sig_ed25519_pub(entries[lo].signature) if lo < hi else None
         if expected is None or (stretch_key is not None and stretch_key != expected.ed25519_pub):
             break
-        if expected.ed25519_pub == local.ed25519_pub and expected.ml_dsa_pub not in (None, own_ml):
+        if own_ml and expected.ed25519_pub == local.ed25519_pub and expected.ml_dsa_pub not in (None, own_ml):
             break  # this installation's Ed25519 key beside an ML-DSA key it does not hold: not this installation's
         for i in range(lo, hi):
             out[i] = expected
@@ -1380,12 +1379,15 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chaine
             # could have leaked and been rotated away from). Turning post-quantum on never makes a bundle "not yours".
             expected = PublicIdentity(ed25519_pub=prev, ml_dsa_variant=None, ml_dsa_pub=None)
             continue
-        if (_records_previous_ml_dsa(md) and prev == stretch_key and own_ml and _is_local_previous(md)
-                and isinstance(md.get("endorsement"), dict)):
-            # The same Ed25519 key, the post-quantum half changed with this installation's own identity endorsing it
-            # (both halves, checked by the key lineage): the stretch before is this installation's, in a one-item bundle
-            # too, for the same reason.
-            expected = local
+        if (_records_previous_ml_dsa(md) and prev == stretch_key == local.ed25519_pub
+                and isinstance(md.get("endorsement"), dict) and (own_ml is None or _is_local_previous(md))):
+            # The same Ed25519 key, the post-quantum half changed with the previous identity endorsing it (both halves,
+            # checked by the key lineage): the stretch before is this installation's, in a one-item bundle too, for the
+            # same reason. While this installation signs with post-quantum, that previous identity must be its own,
+            # both halves; with post-quantum signing off its guarantee is the Ed25519 key's alone, as it says.
+            pm = md.get("previous_ml_dsa_pub")
+            expected = PublicIdentity(ed25519_pub=local.ed25519_pub, ml_dsa_variant=None,
+                                      ml_dsa_pub=pm if isinstance(pm, str) and pm else None)
             continue
         if not chained:
             break

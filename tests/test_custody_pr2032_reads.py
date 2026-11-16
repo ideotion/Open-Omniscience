@@ -116,9 +116,12 @@ def test_turning_post_quantum_off_with_the_library_keeps_the_operators_bundle_th
     with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=False)) as log:
         _record(log, 2, 3)
         bundle = log.export()
-    # The old ML-DSA key file stays in the folder, so the installation's identity still names it.
-    d = describe_export(bundle, local=_signer(tmp_path, "k").public_identity())
+    # The old ML-DSA key file stays in the folder; the installation's identity as it signs now has no ML-DSA half.
+    now = _signer(tmp_path, "k", use_pqc=False).public_identity()
+    assert now.ml_dsa_pub is None
+    d = describe_export(bundle, local=now)
     assert d["verified"] and d["verdict"] == VERDICT_YOURS, d
+    assert all(s["yours"] for s in d["signed_by"])  # the hybrid entries before the change too
 
 
 @pqc
@@ -184,7 +187,7 @@ def test_the_operators_one_item_bundle_stays_theirs_across_post_quantum_changes(
     with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=flips[-1] == "on")) as log:
         bundles = [log.export(), log.export(item_id="article:0")]
     for b in bundles:
-        d = describe_export(b, local=_signer(tmp_path, "k").public_identity())
+        d = describe_export(b, local=_signer(tmp_path, "k", use_pqc=flips[-1] == "on").public_identity())
         assert d["verified"] and d["verdict"] == VERDICT_YOURS, d
 
 
@@ -200,3 +203,65 @@ def test_a_bundle_that_does_not_verify_calls_no_ed25519_only_entry_yours(tmp_pat
     d = describe_export(b, local=_signer(tmp_path, "k").public_identity())
     assert not d["verified"]
     assert not any(s["yours"] for s in d["signed_by"] if s["ml_dsa_pub"] is None)
+
+
+@pqc
+def test_a_replayed_post_quantum_off_record_lends_nothing_once_post_quantum_is_back_on(tmp_path):
+    """Third-round read: the install went on, off, on. A forger holding K alone takes a copy of the log from the off
+    period and signs new entries with the Ed25519 key alone after the genuine drop record."""
+    import shutil
+
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=False)) as log:
+        _record(log, 2, 2)
+    shutil.copy(db, tmp_path / "snapshot.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        _record(log, 1, 4)
+    with CustodyLog(db_path=str(tmp_path / "snapshot.db"), signer=_signer(tmp_path, "k", "nope", use_pqc=False)) as log:
+        log.record("article:FORGED", "f" * 64, CustodyAction.INGEST, actor="forger")
+        bundles = [log.export(), log.export(item_id="article:FORGED")]
+    now = _signer(tmp_path, "k").public_identity()  # post-quantum is on again here
+    for b in bundles:
+        d = describe_export(b, local=now)
+        assert d["verdict"] != VERDICT_YOURS, d
+
+
+def test_the_verify_route_holds_the_verdict_to_the_identity_as_it_signs_now(tmp_path, monkeypatch):
+    from src.api import custody as api
+
+    monkeypatch.setattr(api, "load_settings", lambda: type("S", (), {"pqc_enabled": False})())
+    seen = {}
+
+    class _Spy:
+        def __init__(self, *, use_pqc, create):
+            seen.update(use_pqc=use_pqc, create=create)
+
+        def public_identity(self):
+            return None
+
+    monkeypatch.setattr(api, "HybridSigner", _Spy)
+    api._local_identity()
+    assert seen == {"use_pqc": False, "create": False}
+
+
+@pqc
+def test_pin_with_an_accepted_change_and_no_rotation_record_never_crashes(tmp_path):
+    """Third-round read B: a re-headed bundle with no rotation record, pinned and accepted, raised StopIteration."""
+    import json
+    import subprocess
+    import sys
+
+    with CustodyLog(db_path=str(tmp_path / "c.db"), signer=_signer(tmp_path, "k")) as log:
+        _record(log, 3)
+        genuine = log.export()
+    forged = _rehead(genuine, _signer(tmp_path, "k", "none", use_pqc=False))
+    r = verify_export_report(forged, require_signer=True, accept_unendorsed_rotation=True)
+    assert isinstance(r["verified"], bool)
+    path = tmp_path / "b.json"
+    path.write_text(json.dumps(forged), encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    out = subprocess.run([sys.executable, str(root / "scripts/verify_custody.py"), str(path), "--pin",
+                          "--accept-unendorsed-rotation"], capture_output=True, text=True)
+    assert out.returncode in (1, 4) and "Traceback" not in out.stderr, out.stderr

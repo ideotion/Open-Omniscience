@@ -327,10 +327,16 @@ def _local_identity():
     """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
     be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
     ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
-    key file already exists. It is opened as a reader (``create=False``, R694): nothing is made, the keys
+    key file already exists and post-quantum signing is on. It is opened as a reader (``create=False``, R694): nothing is made, the keys
     folder included, and a legacy plaintext key file is left as it is."""
+    # Its identity as it signs NOW: with post-quantum signing off it is the Ed25519 key alone, though an old ML-DSA key
+    # file may still be in the folder, so the verdict is not held to a post-quantum key nothing signs with any more.
     try:
-        return HybridSigner(use_pqc=True, create=False).public_identity()
+        use_pqc = bool(load_settings().pqc_enabled)
+    except Exception:  # noqa: BLE001 - unreadable settings: hold the verdict to every key there is
+        use_pqc = True
+    try:
+        return HybridSigner(use_pqc=use_pqc, create=False).public_identity()
     except FileNotFoundError:
         return None
     except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
