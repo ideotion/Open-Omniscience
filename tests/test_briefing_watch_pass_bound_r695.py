@@ -28,9 +28,16 @@ import src.api.insights as ins
 from src.analytics import watches as W
 from src.briefing import registry, service
 from src.briefing.card import Card
+from src.database.maintenance import deadline_expired
 from src.database.models import Article, Base, Watch
 
-_BOUND = 0.3  # seconds: the producers' bound, shrunk for the test
+_BOUND = 0.3  # seconds: the producers' bound, shrunk for the tests whose watch must run past it
+# The bound for the tests whose pass must FINISH inside it. Arming, the watch select and each watch's concept lookup (its first
+# call imports the equivalence module) all spend wall time, and on a loaded CI runner that alone overran 0.3 s (#2027): the
+# loop then rightly stopped and the test measured the runner, not the code. A test whose slow STATEMENT must be interrupted asks
+# for _BOUND itself (an overrun there only moves the stop between watches, and its assertions hold either way); a test whose
+# watch sleeps past the bound keeps _ROOMY and checks on entry that the deadline had not yet expired.
+_ROOMY = 3.0
 # A read that runs for seconds and cannot finish within _BOUND: the progress handler interrupts it.
 _SLOW_SQL = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 30000000) SELECT count(*) FROM c"
 
@@ -56,7 +63,7 @@ def home(monkeypatch, tmp_path):
     monkeypatch.setattr(ins, "warm_cache", lambda _s: {"warmed": []})
     monkeypatch.setattr(service, "dismissed_ids", lambda: set())
     monkeypatch.setattr(registry, "_disabled_names", lambda: set())
-    monkeypatch.setattr(service, "PRODUCER_DEADLINE_S", _BOUND)
+    monkeypatch.setattr(service, "PRODUCER_DEADLINE_S", _ROOMY)
     ran: list[str] = []
 
     def _producers(*_a, **_k):
@@ -94,6 +101,7 @@ def _stamped(db, wid: int):
 
 
 def test_a_slow_watch_pass_is_stopped_at_the_bound_and_home_says_which_cards_are_missing(db, home, monkeypatch):
+    monkeypatch.setattr(service, "PRODUCER_DEADLINE_S", _BOUND)
     ids = _articles(db, 3)
     slow_id, later_id = _watches(db)
 
@@ -119,6 +127,7 @@ def test_a_slow_watch_pass_is_stopped_at_the_bound_and_home_says_which_cards_are
 
 def test_the_next_refresh_evaluates_the_watches_the_stopped_pass_did_not_reach(db, home, monkeypatch):
     """The ruling's addition: a watch the bound stopped is evaluated (and fires) on the next run, never skipped as fresh."""
+    monkeypatch.setattr(service, "PRODUCER_DEADLINE_S", _BOUND)
     ids = _articles(db, 3)
     slow_id, later_id = _watches(db)
     slow = {"now": True}
@@ -133,6 +142,7 @@ def test_the_next_refresh_evaluates_the_watches_the_stopped_pass_did_not_reach(d
     db.commit()
     assert _stamped(db, slow_id) is None and _stamped(db, later_id) is None
     slow["now"] = False
+    monkeypatch.setattr(service, "PRODUCER_DEADLINE_S", _ROOMY)  # this pass must finish: the claim is that it reaches both
     payload = service.refresh_briefing(db)
     db.commit()
     assert "stopped_producers" not in payload
@@ -144,36 +154,54 @@ def test_the_next_refresh_evaluates_the_watches_the_stopped_pass_did_not_reach(d
 def test_a_pass_that_ran_past_the_bound_without_raising_is_named_and_stops_between_watches(db, home, monkeypatch):
     """Python between statements is not interruptible, so the slow watch finishes: its firing and stamp are written (they are
     true). The loop then asks the deadline before the next watch (the progress handler fires only inside a long statement), so
-    the watch after the bound is not run and not stamped; the refresh names the kind as stopped, as R666 does for a producer."""
+    the watch after the bound is not run and not stamped; the refresh names the kind as stopped, as R666 does for a producer.
+
+    The loop asks the deadline before the FIRST watch too, so this keeps the fixture's _ROOMY bound: at 0.3 s a loaded runner
+    could stop before "Slow" and the test would measure the runner (#2027's cause, one watch earlier)."""
     ids = _articles(db, 3)
     slow_id, later_id = _watches(db)
+    spent: list[tuple[bool, bool]] = []
 
-    def _matcher(_session, query):
+    def _matcher(session, query):
         if query == "slow":
-            time.sleep(_BOUND + 0.2)
+            before = deadline_expired(session)
+            time.sleep(_ROOMY + 0.2)
+            spent.append((before, deadline_expired(session)))
         return list(ids)
 
     monkeypatch.setattr(W, "_fts_matcher", _matcher)
     payload = service.refresh_briefing(db)
     db.commit()
+    assert spent == [(False, True)], "(expired on reaching Slow, expired after it): a True first means the prefix overran"
     assert payload["stopped_producers"] == ["watch_matches"]
     assert _stamped(db, slow_id) is not None and _stamped(db, later_id) is None
     assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow"}
 
 
 def test_a_pass_whose_last_watch_ran_past_the_bound_reached_every_watch_and_names_nothing_missing(db, home, monkeypatch):
-    """The second Opus read of R695: a pass that reached every watch has nothing missing, so Home is not told a kind is."""
+    """The second Opus read of R695: a pass that reached every watch has nothing missing, so Home is not told a kind is.
+
+    Everything BEFORE the last watch (arming the deadline, selecting the watches, the first watch and its concept lookup) must
+    finish inside the bound, or the loop rightly stops before "Later" and the test measures the runner, not the code: at
+    _BOUND = 0.3 s a loaded CI runner did not (#2027). So this test keeps the fixture's _ROOMY bound for that prefix, and only
+    the last watch spends wall time, past the bound, so the pass still ends after its deadline."""
+    bound = _ROOMY
     ids = _articles(db, 3)
     slow_id, later_id = _watches(db)
+    spent: list[tuple[bool, bool]] = []
 
-    def _matcher(_session, query):
+    def _matcher(session, query):
         if query == "later":  # the last watch in id order
-            time.sleep(_BOUND + 0.2)
+            before = deadline_expired(session)
+            time.sleep(bound + 0.2)
+            spent.append((before, deadline_expired(session)))
         return list(ids)
 
     monkeypatch.setattr(W, "_fts_matcher", _matcher)
     payload = service.refresh_briefing(db)
     db.commit()
+    # reached inside the bound, and the pass did run past its deadline inside the last watch
+    assert spent == [(False, True)], "(expired on reaching Later, expired after it): a True first means the prefix overran"
     assert "stopped_producers" not in payload
     assert _stamped(db, slow_id) is not None and _stamped(db, later_id) is not None
     assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow", "Later"}
