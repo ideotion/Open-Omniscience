@@ -59,7 +59,7 @@ const LIVING = [
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
-  "lawVelocityHtml",
+  "lawVelocityHtml", "lawThesaurusWords", "livingThesauriHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
@@ -828,6 +828,33 @@ const WIKI = {
   assert.ok(empty.includes("T[No version has been captured after a first capture yet.]") && empty.includes("T[C-short]"), empty);
   assert.ok(!/First captures/.test(empty));
   assert.strictEqual(R.lawVelocityHtml(null, marked, mtf), "");
+}
+
+// The topic thesauri (R737): every state in words, the server's reason on hover, a file set aside opens the fold,
+// a state this build does not know is shown as sent, and a release date is never judged.
+{
+  const TH = { thesauri: [
+    { scheme: "eurovoc", name: "EuroVoc", state: "ok", vintage: "2026-10-01", n_concepts: 7000, reason: "" },
+    { scheme: "agrovoc", name: "AGROVOC", state: "missing", reason: "no agrovoc.json in the data directory" },
+  ] };
+  const html = R.livingThesauriHtml(TH, t, tf);
+  noJunk(html, "the thesauri fold");
+  noVerdict(html, "the thesauri fold");
+  assert.ok(visible(html).includes("Topic thesauri on this computer: 1 of 2 ready to use"), visible(html));
+  assert.ok(html.includes("EuroVoc :: ready: release 2026-10-01, 7000 concepts"), html);
+  assert.ok(html.includes("AGROVOC :: not built on this computer yet"), html);
+  assert.ok(hovers(html).includes("no agrovoc.json in the data directory"), "the server's reason is on hover");
+  assert.ok(!/<details[^>]*open/.test(html), "nothing set aside: the fold stays closed");
+  for (const [st, words] of [["unreadable", "set aside: not a file this version can read"],
+    ["old_format", "set aside: built by an older version"], ["hash_mismatch", "set aside: the file changed after it was built"],
+    ["unverified", "set aside: its build summary is missing"]]) {
+    const h = R.livingThesauriHtml({ thesauri: [{ scheme: "eurovoc", name: "EuroVoc", state: st, reason: "R-" + st }] }, t, tf);
+    assert.ok(/<details[^>]*open/.test(h), st + " opens the fold: " + h);
+    assert.ok(visible(h).includes(words) && hovers(h).includes("R-" + st), h);
+  }
+  assert.strictEqual(R.lawThesaurusWords({ state: "brand-new" }, t, tf), "brand-new");
+  assert.strictEqual(R.livingThesauriHtml(null, t, tf), "");
+  assert.ok(!R.livingThesauriHtml({ thesauri: [{ scheme: "eurovoc", state: "ok" }] }, t, tf).includes("undefined"));
 }
 
 console.log("living_sources_node_test: all checks passed");
