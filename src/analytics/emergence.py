@@ -74,7 +74,7 @@ def find_manufactured_emergence(
         Read as many SHORT statements, one day of one key range each (``windowed_group_counts``), never one GROUP BY
         over the whole five weeks: on a field corpus that one statement was a reader open for minutes, and a running
         statement is a reader no WAL checkpoint can pass (field test 2026-11-14 row 58: this producer ran 1,239 s while
-        the log grew to 2.81 GB). Counting ROWS per day is the distinct-article count: ``keyword_mentions`` holds one
+        the log grew to 2.81 GB). Counting ROWS per day is the distinct-article count: the mention table (``KeywordMentionRead``) holds one
         row per (keyword, article) (the unique ``ix_mention_keyword_article``), so a keyword's rows over the window are its
         distinct articles, each counted on the one day its row carries."""
         from src.database.query import windowed_group_counts
