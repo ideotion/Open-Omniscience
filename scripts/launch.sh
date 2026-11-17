@@ -132,22 +132,50 @@ oo_pid_alive() {
     if [ -d /proc/self ]; then [ -d "/proc/$1" ]; else kill -0 "$1" 2>/dev/null; fi
 }
 
+# _oo_rec_claim FILE: create FILE holding this shell's pid, and only if it does not exist yet (the shell's noclobber opens it O_EXCL, in the kernel). The
+# lock and the directory mark are claimed THIS way, never by `mkdir` alone: an `mkdir` is not exclusive everywhere. uutils coreutils 0.10 (the mkdir of
+# Ubuntu 26.04, CI 17 Nov) checks that the name is free, then creates it, and reports SUCCESS when another process created it in between, so two
+# launchers each "made" the lock and both held it (both pids named by the eight-taker test). The directory is only the container; whoever creates its
+# pid file holds it, and one that made the directory but lost the pid file waits like everybody else. The owner is THIS process, not the launcher it was
+# forked from: bash 4+ has BASHPID; bash 3.2 (macOS) has not, and there $$ is the launcher's pid in every subshell, so the deferred child would be recorded
+# as its parent and a second launcher would take the lock over the moment the parent exited. A simple command with a redirect is forked by this very shell
+# (not by a command substitution, which has a subshell of its own), so the sh it starts sees the pid of this shell as its PPID. noclobber is set for the
+# one redirect and put back as it was.
+_oo_rec_claim() {
+    local c=0 r=0
+    case $- in *C*) c=1 ;; esac
+    set -C
+    # r=1: the file was there already (or could not be made), not ours. A pid that could not be WRITTEN into a file this shell did create (a full disk)
+    # still leaves the claim this shell's, as an unwritten pid always has: the lock is held and released as usual rather than left for nobody to take.
+    if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" || :; } 2>/dev/null > "$1" || r=1
+    else { sh -c 'echo $PPID' || :; } 2>/dev/null > "$1" || r=1
+    fi
+    [ "$c" = 1 ] || set +C
+    return "$r"
+}
+
+# _oo_rec_take DIR: make the lock directory and claim it. A directory this call made but could not claim with no pid file in it at all (the create failed
+# for another reason: no inode or quota left) is removed again, so it never stays a lock nobody can take over (Opus read, 17 Nov). rmdir removes only an
+# EMPTY directory: a pid file anyone has made since keeps it, and a creator whose fresh directory goes this way finds no name to claim and waits.
+_oo_rec_take() {
+    mkdir "$1" 2>/dev/null || return 1
+    ! _oo_rec_claim "$1/pid" || return 0
+    [ -e "$1/pid" ] || rmdir "$1" 2>/dev/null || true
+    return 1
+}
+
 # The takeover mark where the filesystem has no hard links (exFAT, some FUSE and SMB mounts: `ln` always fails there, and without this a dead owner's lock would
 # never be taken over again, every row deferred for ever). The mark has the SAME name, "reap", as the linked one, so the two can never be held at once (mkdir
-# refuses a name a file holds, and a link made into a directory is not that directory). It is made by mkdir, the one step whose exclusivity holds on every
-# system, never by renaming a prepared directory into place: what `mv` does with a directory name that already exists differs between implementations (moved
-# inside, refused, or replaced), and a rename that REPLACES a mark lets two takers in (CI, 17 Nov, no-hard-links round of the eight-taker test, on a runner
-# whose mv is not the one this was first measured with). Its pid is written just after; a mark whose taker is dead is renamed away and removed, and so is one
+# refuses a name a file holds, and a link made into a directory is not that directory). It is made by mkdir and held by whoever creates its pid file
+# (_oo_rec_claim, O_EXCL), never by renaming a prepared directory into place (what `mv` does with a directory name that already exists differs between
+# implementations) and never by mkdir alone (not exclusive under uutils 0.10, see _oo_rec_claim). The pid is written in the same step as the claim; a mark whose taker is dead is renamed away and removed, and so is one
 # left with no pid (its taker died between the two steps) once a waiter has seen it so for a minute, so nobody waits behind it for ever. Weaker than the linked mark in one
 # way: two clearers of one dead taker's mark can still remove a live taker's new one between them, which needs a taker to die first. That is the cost of a
 # filesystem without links, never paid where links work.
 _oo_rec_reap_dir() {
     local d="$1" owner="$2" mk="$1/reap" me p tok
     tok="${RANDOM:-0}${RANDOM:-0}.$$"
-    if mkdir "$mk" 2>/dev/null; then
-        if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID" 2>/dev/null > "$mk/pid" || true
-        else sh -c 'echo $PPID' 2>/dev/null > "$mk/pid" || true
-        fi
+    if mkdir "$mk" 2>/dev/null && _oo_rec_claim "$mk/pid"; then
         me="$(cat "$mk/pid" 2>/dev/null || true)"
         p="$(cat "$d/pid" 2>/dev/null || true)"
         case "$p" in ''|*[!0-9]*) p="" ;; esac
@@ -222,14 +250,8 @@ oo_rec_locked() {
     d="$f.lock.d"
     tries=$(( OO_REC_LOCK_WAIT_MS / 10 + 1 ))
     while :; do
-        if mkdir "$d" 2>/dev/null; then
-            # The owner is THIS process, not the launcher it was forked from. bash 4+ has BASHPID; bash 3.2 (macOS) has not, and there $$ is the launcher's pid in every
-            # subshell, so the deferred child would be recorded as its parent and a second launcher would take the lock over the moment the parent exited. A simple
-            # command with a redirect is forked by this very shell (not by a command substitution, which has a subshell of its own), so the sh it starts sees the
-            # pid of this shell as its PPID.
-            if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID" > "$d/pid" 2>/dev/null || true
-            else sh -c 'echo $PPID' > "$d/pid" 2>/dev/null || true
-            fi
+        # held by whoever creates the pid file, never by the mkdir alone (_oo_rec_take): a lock whose pid file is somebody else's is waited for
+        if _oo_rec_take "$d"; then
             # A lock renamed away (released, or a dead owner's taken over) is nobody's, but a waiter whose path walk reached it just before the rename can still
             # create its temp mark in it after the remover listed it, so the remover's rm -rf leaves it behind (seen once in 30 stress runs, 16 Nov). The holder
             # removes such leftovers: only names a remover makes after the rename, so never a lock anybody holds.
@@ -366,7 +388,7 @@ oo_rec_append_stdin() {
 }
 # The text of the helpers, for the filter: awk starts the appending shell itself, and a function exported through the environment does not reach it under
 # every awk and sh (measured: the one-true-awk lost every row, silently, with a close status of 0), so the shell is handed the definitions to eval.
-oo_rec_lib() { declare -f oo_pid_alive _oo_rec_reap_dir oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
+oo_rec_lib() { declare -f oo_pid_alive _oo_rec_claim _oo_rec_take _oo_rec_reap_dir oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
 # --- end of the evidence file helpers ------------------------------------------------------------------------------------------------------
 
 # How the server ended when this launcher did not stop it (2026-09-26, the daily-crash

@@ -1147,11 +1147,15 @@ def test_a_taker_that_does_not_take_the_lock_over_removes_its_own_mark(tmp_path,
 
 
 @posix_only
+@pytest.mark.parametrize("mkdir_kind", ["mkdir", "mkdir-not-exclusive"])
 @pytest.mark.parametrize("links", [True, False], ids=["hard-links", "no-hard-links"])
-def test_eight_launchers_taking_over_one_dead_owners_lock_never_hold_it_two_at_once(tmp_path, links):
+def test_eight_launchers_taking_over_one_dead_owners_lock_never_hold_it_two_at_once(tmp_path, links, mkdir_kind):
     """Row 100 itself, aimed at the takeover: eight launchers find the same dead owner's lock at once. Every one of them gets the lock in turn, and no two hold
-    it at the same moment (each holder makes an exclusive directory while it holds the lock and says so if somebody else's is already there)."""
+    it at the same moment (each holder creates an exclusive file while it holds the lock and names both pids if somebody else's is already there).
+    "mkdir-not-exclusive" is an mkdir that reports success on a directory that is already there: the uutils 0.10 mkdir of Ubuntu 26.04 does that when
+    another process creates the name between its check and its create (CI, 17 Nov: two named holders). The lock must not rest on mkdir's exclusivity."""
     h, env = _helpers(tmp_path, no_flock=True)
+    shim = 'mkdir() { command mkdir "$@" 2>/dev/null || [ -d "${!#}" ]; }; ' if mkdir_kind == "mkdir-not-exclusive" else ""
     for r in range(5):
         f = tmp_path / f"r{r}.jsonl"
         owner = subprocess.Popen(["true"])
@@ -1160,16 +1164,12 @@ def test_eight_launchers_taking_over_one_dead_owners_lock_never_hold_it_two_at_o
         lock.mkdir()
         (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
         held, log = tmp_path / f"held{r}", tmp_path / f"log{r}"
-        # The detector names both holders: a holder writes its pid into the exclusive directory with a builtin (no fork) the moment it has made it, and
-        # one that finds the directory already there reads that pid again 20 ms later (inside the other's 50 ms hold), so "twice" always names two live
-        # pids. A failed mkdir with no directory, or a directory with no pid in it, is written as what it is (a tool or fork failure under load, a
-        # leftover), never as a second holder: CI saw one "twice" (17 Nov, shard 3, hard-links round) that no local run, uutils or loaded, reproduced.
-        body = (f'hold() {{ if mkdir "{held}" 2>/dev/null; then echo "$BASHPID" > "{held}/who"; '
-                f'elif [ -d "{held}" ]; then sleep 0.02; o=$(cat "{held}/who" 2>/dev/null); '
-                f'if [ -n "$o" ]; then echo "twice:$BASHPID:$o" >> "{log}"; else echo "leftover:$BASHPID" >> "{log}"; fi; '
-                f'else echo "mkdirfail:$BASHPID" >> "{log}"; fi; '
-                f'echo in >> "{log}"; sleep 0.05; rm -f "{held}/who"; rmdir "{held}" 2>/dev/null; }}; '
-                f'. "{h}"; {"" if links else "ln() { return 1; }; "}OO_REC_LOCK_WAIT_MS=20000; oo_rec_locked "{f}" hold; echo "rc=$?" >> "{log}"')
+        # The detector: a holder creates the file with its pid exclusively (noclobber, O_EXCL; not mkdir, which is not exclusive everywhere, see
+        # below) and removes it before it lets go, so ANY failed create is an overlap. It reads the other's pid back (it may be gone already: "?").
+        body = (f'hold() {{ if ( set -C; echo "$BASHPID" > "{held}" ) 2>/dev/null; then :; '
+                f'else o=$(cat "{held}" 2>/dev/null); echo "twice:$BASHPID:${{o:-?}}" >> "{log}"; fi; '
+                f'echo in >> "{log}"; sleep 0.05; rm -f "{held}"; }}; '
+                f'. "{h}"; {"" if links else "ln() { return 1; }; "}{shim}OO_REC_LOCK_WAIT_MS=20000; oo_rec_locked "{f}" hold; echo "rc=$?" >> "{log}"')
         procs = [subprocess.Popen(["bash", "-c", body], env=env) for _ in range(8)]
         for p in procs:
             p.wait(timeout=60)
@@ -1179,6 +1179,24 @@ def test_eight_launchers_taking_over_one_dead_owners_lock_never_hold_it_two_at_o
         assert not [x for x in lines if x.startswith("twice:")], f"round {r}: two launchers held the lock at once {lines} (tools: {tools})"
         assert lines.count("in") == 8 and lines.count("rc=0") == 8, (r, lines, tools)
         assert not lock.exists() and not list(tmp_path.glob(f"r{r}.jsonl.lock.d.*")), "no lock or leftover stays behind"
+
+
+@posix_only
+def test_a_lock_directory_whose_pid_file_could_not_be_made_is_removed_not_left_for_ever(tmp_path):
+    """Opus read, 17 Nov. The lock is held by whoever creates its pid file (_oo_rec_claim), not by the mkdir. When the mkdir works but the create fails for
+    another reason (no inode or quota left), a directory with no pid file must not stay: nobody could ever take it over (no owner to judge), and every
+    later launcher, and every deferred child, would wait on it for ever. The creator removes it again (only an empty one), and the next try takes the lock."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    flag = tmp_path / "failed_once"
+    shim = (f'eval "_real_claim() $(declare -f _oo_rec_claim | tail -n +2)"; '
+            f'_oo_rec_claim() {{ if [ ! -e "{flag}" ]; then : > "{flag}"; return 1; fi; _real_claim "$@"; }}; ')
+    r = subprocess.run(["bash", "-c", f'. "{h}"; {shim}OO_REC_LOCK_WAIT_MS=2000; oo_rec_locked "{f}" true; echo "rc=$?"'],
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert flag.exists(), "the first claim was made to fail"
+    assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+    assert not (tmp_path / "x.jsonl.lock.d").exists(), "no lock directory left behind"
 
 
 @posix_only
