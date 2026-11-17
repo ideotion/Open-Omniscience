@@ -127,6 +127,11 @@ FRAME_INDEXES = (
     "Repairing the damaged library file: rebuilding its indexes ({index} of {total}). Anything the app saves waits "
     "until it is done."
 )
+#: R741: the reason a repair gives when Windows refused the switch because another program or connection still held the library.
+LIBRARY_HELD_WORDS = (
+    "another program or connection still held the library file, so it was not switched; the finished copy is kept and the switch is "
+    "tried again at the next start"
+)
 FRAME_SEARCH = (
     "Repairing the damaged library file: rebuilding the search index. Anything the app saves waits until it is done."
 )
@@ -1277,7 +1282,7 @@ def _swap(
     stale (a save committed since would be lost under it) and is discarded. ``probe`` is the connection that was opened before the
     copy began (a resume has none, and opens its own here, before the fold): inside the swap window it is asked whether any
     other connection committed since, and if so nothing is switched."""
-    from src.backup.merge import swap_in_corpus
+    from src.backup.merge import _file_is_locked, swap_in_corpus
     from src.database import after_shutdown
     from src.database.session import dispose_engine, init_db
 
@@ -1381,6 +1386,13 @@ def _swap(
             swap_in_corpus(finished, target, check=written_to_since)
         except library_generation.LibraryBusy as busy:
             raise Declined("writer-busy", str(busy)) from busy
+        except OSError as refused:
+            # R741 (row 145): a Windows sharing violation at the switch that outlasted the swap's wait is the same answer as a busy
+            # window, never a failed repair: it is recorded as refused, and the finished copy and its sidecar stay for the next start.
+            # Fixed words, and the chain cut: the OS's text names a path, and the record keeps only what a refusal may say (R138).
+            if not _file_is_locked(refused):
+                raise
+            raise Declined("writer-busy", LIBRARY_HELD_WORDS) from None
         except Declined as refusal:
             if refusal.code == "saved-during-the-copy":
                 # AFTER the window has ended (it reads the copy's existence to tell whether the file moved, and gives the earlier

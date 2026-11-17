@@ -3924,7 +3924,7 @@
         msg.textContent = "";
         toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
         loadAtRestState();
-      } catch (e) { msg.textContent = e.message; }
+      } catch (e) { msg.textContent = t(e.message); }  // a keyed refusal (the library still in use, R741) is translated
       finally { btn.disabled = false; }
     }
 

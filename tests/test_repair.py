@@ -1800,6 +1800,48 @@ def test_a_swap_that_cannot_get_its_window_keeps_the_copy_for_the_next_start(tmp
     assert repair.run(repair.plan())["outcome"] == "repaired"
 
 
+def test_a_switch_windows_refuses_because_the_library_is_held_is_busy_and_keeps_the_copy(tmp_path, monkeypatch, reg, engine_calls):
+    """R741 (row 145): a sharing violation at the switch that outlasted the swap's wait is "writer-busy" (refused, never failed), the
+    finished copy stays for the next start, and the words are the fixed ones (the OS's text names a path). Simulated on any OS."""
+    from src.backup import merge
+
+    class HeldOpen(PermissionError):
+        winerror = 32
+
+    live = _live(tmp_path, monkeypatch, reg)
+    before = H.sha(live)
+    real = merge.swap_in_corpus
+
+    def held(*a, **kw):
+        raise HeldOpen(13, "The process cannot access the file because it is being used by another process", str(live))
+
+    monkeypatch.setattr(merge, "swap_in_corpus", held)
+    with pytest.raises(repair.Declined) as refusal:
+        repair.run(repair.plan())
+    assert refusal.value.code == "writer-busy" and str(refusal.value.detail) == repair.LIBRARY_HELD_WORDS
+    assert refusal.value.__suppress_context__
+    assert H.sha(live) == before
+    assert reg.repairs()[-1]["state"] == "refused" and reg.repairs()[-1]["reason"] == "writer-busy"
+    assert repair.plan()["kind"] == "resume", "the finished copy was thrown away"
+    monkeypatch.setattr(merge, "swap_in_corpus", real)
+    assert repair.run(repair.plan())["outcome"] == "repaired"
+
+
+def test_a_switch_refused_for_another_reason_is_still_a_failure(tmp_path, monkeypatch, reg, engine_calls):
+    from src.backup import merge
+
+    live = _live(tmp_path, monkeypatch, reg)
+
+    def read_only(*a, **kw):
+        raise PermissionError(13, "read-only volume", str(live))  # no winerror: not a held file
+
+    monkeypatch.setattr(merge, "swap_in_corpus", read_only)
+    with pytest.raises(Exception) as caught:
+        repair.run(repair.plan())
+    assert not isinstance(caught.value, repair.Declined)
+    assert reg.repairs()[-1]["state"] == "failed"
+
+
 def test_a_data_version_that_cannot_be_read_keeps_the_copy_and_does_not_switch(tmp_path, monkeypatch, reg, engine_calls):
     import sqlite3
 

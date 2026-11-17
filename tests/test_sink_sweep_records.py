@@ -166,6 +166,9 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,
         ("classify_restore_error", 'f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "'): 1,
         ("_retry_while_locked", "if not _file_is_locked(exc) or time.monotonic() >= deadline:"): 1,
+        # R741 (row 145): the grace hook only reads ``filename`` to ask whether THIS process holds that file; no text is read or kept.
+        ("_retry_while_locked", "after_grace(exc)"): 1,
+        ("_refuse_if_this_process_holds", 'name = getattr(exc, "filename", None)'): 1,
         # BackupError is ``validate_sqlite_file``'s own error; its text is fixed words plus ``record_text`` (class only for a driver).
         ("prepare_staged_corpus", "raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text"): 1,
         # A comparison with the one known engine message that means "no rows yet"; nothing is written.
@@ -293,7 +296,12 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_run', 'report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))'): 1,
         ('_switch', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
     },
+    # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
+    'src/database/encrypt_tool.py': {
+        ('encrypt_database', 'if not _file_is_locked(refused):'): 1,
+    },
     'src/database/repair.py': {
+        ('_swap', 'if not _file_is_locked(refused):'): 1,
         ('run', 'code = refusal.code'): 2,
         ('run', 'report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)'): 1,
         ('run', 'failure = f"{exc.where}: {exc.reason}" if isinstance(exc, salvage.SalvageFailed) else damage.failure_text(exc)'): 3,

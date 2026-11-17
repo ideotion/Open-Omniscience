@@ -96,15 +96,26 @@ def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> di
                 f"{got == want}); the original file is untouched"
             )
 
-        with _library_window(enc_tmp) if library else nullcontext():
-            for suffix in ("-wal", "-shm"):
-                stale = p.with_name(p.name + suffix)
-                # the guard-clause form, not ``if stale.exists(): stale.unlink()``: a loop whose body ends in a bare ``if`` has its back-edge
-                # outside the exception table of the ``try`` around it on CPython 3.13 (R163; tests/test_gates_survive_an_interrupt.py)
-                if not stale.exists():
-                    continue
-                stale.unlink()
-            os.replace(enc_tmp, p)  # atomic on the same filesystem
+        removed: list[str] = []  # the side files already gone when a step was refused: what the message may still claim
+        try:
+            with _library_window(enc_tmp) if library else nullcontext():
+                for suffix in ("-wal", "-shm"):
+                    stale = p.with_name(p.name + suffix)
+                    # the guard-clause form, not ``if stale.exists(): stale.unlink()``: a loop whose body ends in a bare ``if`` has its back-edge
+                    # outside the exception table of the ``try`` around it on CPython 3.13 (R163; tests/test_gates_survive_an_interrupt.py)
+                    if not stale.exists():
+                        continue
+                    os.unlink(stale)
+                    removed.append(suffix)
+                os.replace(enc_tmp, p)  # atomic on the same filesystem
+        except OSError as refused:
+            # Windows: a request of this app or another program still had the file open (R741, row 145). No retry here: the gate this
+            # holds may be what that request waits on. Fixed words, the chain cut (the OS's text names a path).
+            from src.backup.merge import _file_is_locked
+
+            if not _file_is_locked(refused):
+                raise
+            raise EncryptToolError(_held_words(removed)) from None
     finally:
         enc_tmp.unlink(missing_ok=True)
     _LOG.info("encrypted %s (snapshot kept: %s)", p.name, snapshot.name)
@@ -116,6 +127,25 @@ def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> di
         "snapshot_note": "kept ON PURPOSE as your escape hatch -- delete it once "
         "you have unlocked successfully and are satisfied",
     }
+
+
+#: The two refusals of a swap Windows would not allow because the library file was still open (R741, row 145). FIXED words (keyed in every
+#: locale; the page translates the detail it is given), each true at the step it is given: before any log file went, the file and its log
+#: are as they were; after one went, the file was still not replaced but "untouched" would no longer be true, and the snapshot made just
+#: before is the complete copy.
+HELD_UNTOUCHED = (
+    "A request of this app or another program was still using the library file, so it was not encrypted. The original file is untouched, "
+    "and the plaintext snapshot made just before (pre-encrypt-…) is kept too. Try again when the app is idle."
+)
+HELD_LOG_REMOVED = (
+    "A request of this app or another program was still using the library file, so it was not encrypted. The library file itself was not "
+    "replaced, but its log files were already removed, so the plaintext snapshot made just before (pre-encrypt-…) is the complete copy. "
+    "Try again when the app is idle."
+)
+
+
+def _held_words(removed: list[str]) -> str:
+    return HELD_LOG_REMOVED if removed else HELD_UNTOUCHED
 
 
 @contextmanager

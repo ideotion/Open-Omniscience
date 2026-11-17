@@ -16,6 +16,7 @@ original untouched, and a replace that fails after the log names were removed do
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -81,14 +82,26 @@ def test_a_save_queued_on_the_gate_during_the_encryption_is_refused_and_loses_no
     t = threading.Thread(target=request_save)
     t.start()
     assert started.wait(5)
+    refused = None
     with writer.write_lock():  # what encrypt_all does around encrypt_database
         go.set()
         time.sleep(0.3)  # the save is now queued on the gate with its connection out
-        report = encrypt_tool.encrypt_database(p, _KEY, library=True)
+        if os.name == "nt":
+            # Windows cannot remove or replace a file the queued save's connection holds: the encryption stops at once with its
+            # named refusal (R741, row 145) instead of the raw OS error, and the file stays plaintext.
+            with pytest.raises(encrypt_tool.EncryptToolError) as refused:
+                encrypt_tool.encrypt_database(p, _KEY, library=True)
+            report = {}
+        else:
+            report = encrypt_tool.encrypt_database(p, _KEY, library=True)
     t.join(10)
     eng.dispose()
-    assert report.get("encrypted") is True and is_encrypted_file(p)
     assert out.get("save") == "StaleLibraryError", f"the queued save {out.get('save')!r}: it must be refused, never reported as saved"
+    if refused is not None:
+        assert str(refused.value) in (encrypt_tool.HELD_UNTOUCHED, encrypt_tool.HELD_LOG_REMOVED)
+        assert not is_encrypted_file(p)
+        return
+    assert report.get("encrypted") is True and is_encrypted_file(p)
     assert _rows(p) == ["before"]
 
 
