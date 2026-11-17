@@ -34,6 +34,11 @@ public pages; no cookie, header or page text is kept. Exit 0 when the report is 
 
     python scripts/stat_news_check.py --online --out stat-news-check.json
     python scripts/stat_news_check.py --online --only fr-insee,uk-ons --out stat-news-check.json
+
+THE TRANSPORT is printed before the consent check (``direct``, ``proxy``, ``pool``) and written into the report. The safety
+settings live in the app's encrypted store, so on an encrypted install they read as ``unknown`` unless the passphrase is in the
+environment (``read -rs OO_DB_PASSPHRASE && export OO_DB_PASSPHRASE``, never on the command line); ``unknown`` and ``refused``
+stop the run before anything is sent, because a protected-mode install must never fall back to a direct connection.
 """
 
 from __future__ import annotations
@@ -204,7 +209,8 @@ def feed_entries(body: str) -> int | None:
     """Entries of an RSS/Atom body, or None when it is not a feed."""
     import feedparser
 
-    parsed = feedparser.parse(body)
+    # BYTES, never the str: feedparser fetches a string that looks like a URL, outside the one fetch path (security read 2).
+    parsed = feedparser.parse(body.encode("utf-8"))
     if not getattr(parsed, "version", ""):
         return None
     return sum(1 for e in parsed.entries if e.get("title") and e.get("link"))
@@ -338,6 +344,18 @@ def fit(report: dict[str, Any], limit: int = MAX_REPORT_BYTES) -> dict[str, Any]
     return report
 
 
+def _transport() -> str:
+    """How the requests would leave, read from the app's safety settings before anything is sent: ``direct``, ``proxy``,
+    ``pool``, ``refused`` or ``unknown`` (the settings could not be read). A token, never an address."""
+    from src.safety.fetcher import transport_summary
+    from src.safety.settings import load_settings
+
+    try:
+        return str(transport_summary(load_settings()).get("kind", "unknown"))
+    except Exception:  # noqa: BLE001 - an unreadable settings store is "unknown", which refuses below
+        return "unknown"
+
+
 def _fetcher() -> tuple[Any, str]:
     from src.safety.fetcher import make_fetcher
 
@@ -363,6 +381,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     print(f"{len(agencies)} agencies; this run asks these hosts (and same-site pages they link to):")
     for h in hosts:
         print(f"  {h}")
+    transport = _transport()
+    print(f"transport: {transport} (from the app's safety settings in this data folder)")
+    if transport == "direct":
+        print("  a direct connection: if your app runs in protected mode, run this with the app's OO_DATA_DIR so its proxy is used")
+    if transport in ("refused", "unknown"):
+        print(f"refused: the transport is {transport}, so nothing would leave as your settings say. Nothing was sent.", file=sys.stderr)
+        return 2
     if not args.online:
         print("refused: add --online to consent to these requests. Nothing was sent.", file=sys.stderr)
         return 2
@@ -380,7 +405,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                    "error_class": type(exc).__name__, "candidates": [], "proposed": None}
         print(f"[{n}/{len(agencies)}] {agency.code}: {row['verdict']}" + (f" -> {row['proposed']}" if row["proposed"] else ""))
         rows.append(row)
-    report = build_report(rows, fetcher_mode=mode)
+    report = build_report(rows, fetcher_mode=f"{mode}; transport {transport}")
     args.out.write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"wrote {args.out} ({args.out.stat().st_size} bytes): {report['verdicts']}")
     return 0

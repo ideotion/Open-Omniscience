@@ -115,6 +115,7 @@ def test_dates_are_counted_once_each_in_several_shapes():
 
 def test_without_online_it_names_the_hosts_and_sends_nothing(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(M, "_fetcher", lambda: pytest.fail("a fetcher was built without consent"))
+    monkeypatch.setattr(M, "_transport", lambda: "direct")
     assert M.main(["--out", str(tmp_path / "r.json"), "--only", "fr-insee,uk-ons"]) == 2
     out = capsys.readouterr()
     assert "www.insee.fr" in out.out and "www.ons.gov.uk" in out.out and "--online" in out.err
@@ -125,11 +126,12 @@ def test_without_online_it_names_the_hosts_and_sends_nothing(tmp_path, monkeypat
 def test_an_online_run_goes_through_the_one_fetcher_and_writes_a_report_within_the_send_back_size(tmp_path, monkeypatch):
     sites = _Sites({"https://www.insee.fr": ("https://www.insee.fr/", HOME), "https://www.insee.fr/fr/information/actualites": NEWS_PAGE})
     monkeypatch.setattr(M, "_fetcher", lambda: (types.SimpleNamespace(fetch=sites), "stand-in"))
+    monkeypatch.setattr(M, "_transport", lambda: "proxy")
     out = tmp_path / "r.json"
     assert M.main(["--online", "--out", str(out), "--only", "fr-insee"]) == 0
     rep = json.loads(out.read_text(encoding="utf-8"))
     assert rep["agencies"][0]["proposed"] and out.stat().st_size <= M.MAX_REPORT_BYTES
-    assert sites.asked[0] == "https://www.insee.fr"
+    assert sites.asked[0] == "https://www.insee.fr" and rep["fetcher"] == "stand-in; transport proxy"
 
 
 def test_the_real_fetcher_is_the_apps_own_factory():
@@ -156,3 +158,20 @@ def test_a_malformed_link_or_a_hostile_page_costs_one_candidate_never_the_run():
     assert time.monotonic() - started < 5, "the tag strip stays linear on a page of '<' with no '>'"
     (only,) = row["candidates"]
     assert only["url"] == "https://www.insee.fr/news" and only["outcome"] == "read" and row["verdict"] == "candidates_not_list_shaped"
+
+
+def test_a_transport_the_settings_cannot_describe_refuses_before_any_fetcher(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(M, "_fetcher", lambda: pytest.fail("a fetcher was built on a refused transport"))
+    for kind in ("refused", "unknown"):
+        monkeypatch.setattr(M, "_transport", lambda kind=kind: kind)
+        assert M.main(["--online", "--out", str(tmp_path / "r.json"), "--only", "fr-insee"]) == 2
+        assert f"transport is {kind}" in capsys.readouterr().err
+    assert not (tmp_path / "r.json").exists()
+
+
+def test_a_feed_body_that_looks_like_an_address_is_never_fetched_by_the_parser(monkeypatch):
+    import socket
+
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: pytest.fail("feedparser opened a socket"))
+    monkeypatch.setattr(socket.socket, "connect", lambda *a, **k: pytest.fail("feedparser opened a socket"))
+    assert M.feed_entries("http://127.0.0.1:9/x") is None
