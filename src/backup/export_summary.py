@@ -54,6 +54,7 @@ from src.backup.attribution import (
     PendingRulingError,
     attribution_dicts,
     files_signal,
+    lane_signal,
     signals_from_tables,
 )
 from src.backup.export_folder import REQUEST_NAME, read_export_request
@@ -139,6 +140,27 @@ def _folder_manifest(dest: Path) -> dict[str, Any] | None:
     return m if isinstance(m, dict) else None
 
 
+def _lane_kinds(dest: Path) -> list[str]:
+    """The living-source stores the folder's backup carries (R729), read from its own volume manifest.
+
+    Each one is a measured signal for its source's credit line (Q823 = a: OpenStreetMap's credit
+    and the ODbL wherever map data leaves the machine). An unreadable manifest names none.
+    """
+    from src.backup.lane_merge import valid_member
+    from src.backup.volumes import MANIFEST_NAME as VOLUME_MANIFEST
+
+    p = dest / VOLUME_MANIFEST
+    if not p.exists():
+        return []
+    try:
+        m = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log_failure(_LOG, f"export summary: unreadable {VOLUME_MANIFEST}", exc, level=logging.WARNING)
+        return []
+    members = m.get("lane_members") if isinstance(m, dict) else None
+    return sorted({k for k in (valid_member(e) for e in members or ()) if k})
+
+
 def _file_categories(manifest: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Files copied per category, from the folder backup's OWN manifest.
 
@@ -219,6 +241,7 @@ def export_facts(
 
     signals = signals_from_tables(tables)
     signals |= {files_signal(c["category"]) for c in files}
+    signals |= {lane_signal(k) for k in _lane_kinds(d)}
     try:
         attribution = attribution_dicts(signals)
         attribution_error = None

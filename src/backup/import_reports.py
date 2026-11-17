@@ -689,6 +689,16 @@ def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
                 f"budget is {_fmt_count(budget.get('budget_gb'))} GB. Nothing was removed. It fetches nothing new "
                 "until it is back under budget or the budget is raised (Settings > Storage)."
             )
+        newer = [str(c) for c in (lane.get("osm_newer_in_backup") or ()) if isinstance(c, str)]
+        if newer:
+            # R739: a country both computers hold keeps this computer's copy whole, even when
+            # the backup's stands later; that is said, never done silently.
+            noun = "country" if len(newer) == 1 else "countries"
+            lines.append(
+                f"  - **The backup holds a newer copy of {_fmt_count(len(newer))} {noun} this computer already has** "
+                f"({', '.join(newer)}). This computer's copy was kept whole; nothing in it was replaced. Its daily "
+                "update, or cutting the country again, brings it forward."
+            )
         dropped = lane.get("warm_texts_dropped")
         if dropped:
             lines.append(
