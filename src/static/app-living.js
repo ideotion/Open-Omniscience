@@ -1058,14 +1058,20 @@
       if (st === "unverified") return t("set aside: its build summary is missing, so it cannot be checked");
       return String(st); // a state this build does not know is shown as sent, never mapped onto the nearest known word
     }
+    // The hover: the server's reason as a translated template with its parameters (file names, hash prefixes, an
+    // error's class name), so it reads in the reader's language; the English text only when no template came.
+    function lawThesaurusWhy(x, tf) {
+      if (x && x.reason_key && x.reason_params && typeof x.reason_params === "object") return tf(String(x.reason_key), x.reason_params);
+      return x && x.reason ? String(x.reason) : "";
+    }
     function livingThesauriHtml(d, t, tf) {
       const list = d && Array.isArray(d.thesauri) ? d.thesauri : [];
       if (!list.length) return "";
       const ready = list.filter((x) => x && x.state === "ok").length;
       // A file set aside opens the fold: its reason is something to read now, not one click away.
       const aside = list.some((x) => x && x.state !== "ok" && x.state !== "missing");
-      const rows = list.map((x) => `<li${x.reason ? ` title="${esc(String(x.reason))}"` : ""}>`
-        + `${ooLabelHtml(esc(String(x.name || x.scheme || "")), esc(lawThesaurusWords(x, t, tf)))}</li>`).join("");
+      const rows = list.map((x) => { const why = lawThesaurusWhy(x, tf); return `<li${why ? ` title="${esc(why)}"` : ""}>`
+        + `${ooLabelHtml(esc(String(x.name || x.scheme || "")), esc(lawThesaurusWords(x, t, tf)))}</li>`; }).join("");
       return `<details class="hint"${aside ? " open" : ""}><summary>`
         + `${esc(tf("Topic thesauri on this computer: {ok} of {n} ready to use", { ok: String(ready), n: String(list.length) }))}`
         + `</summary><ul>${rows}</ul></details>`;

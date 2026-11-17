@@ -364,3 +364,20 @@ def test_the_bytes_do_not_depend_on_the_hash_seed(tmp_path):
 def test_online_without_a_fetch_url_is_refused_not_ignored(tmp_path, capsys):
     assert tb.main(["--source", str(MINI), "--online", "--vintage", "v", "--license", "l", "--out-dir", str(tmp_path)]) == 2
     assert "--fetch-url" in capsys.readouterr().err and not any(tmp_path.iterdir())
+
+
+def test_every_reason_is_a_template_shipped_in_the_twelve_languages(tmp_path):
+    import re
+
+    locales = sorted((ROOT / "src" / "static" / "locales").glob("*.json"))
+    assert len(locales) == 12
+    ph = re.compile(r"\{\w+\}")
+    for p in locales:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        for template in ts.REASONS.values():
+            assert template in d, f"{p.name} lacks {template!r}"
+            assert sorted(ph.findall(d[template])) == sorted(ph.findall(template)), (p.name, template)
+    st = ts.thesaurus_status("eurovoc", tmp_path)
+    assert st["reason_key"] in ts.REASONS.values()
+    assert st["reason"] == st["reason_key"].format(**st["reason_params"])
+    assert str(tmp_path) not in json.dumps(st), "a parameter is a file name, never a path"

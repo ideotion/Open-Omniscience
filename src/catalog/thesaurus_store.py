@@ -154,24 +154,44 @@ def canonical_bytes(doc: dict[str, Any]) -> bytes:
     return (json.dumps(doc, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+#: Every reason the status can give, as a translatable template (R737: a reason is shown to the reader, so it ships in
+#: the twelve UI languages). The server sends the template and its parameters; ``reason`` is the English text, kept for
+#: scripts and as the page's fallback. Parameters are file names, a scheme, a format, hash prefixes and an error's class
+#: name: never a path.
+REASONS = {
+    "missing": "There is no {file} in the data folder's thesauri folder. Run scripts/thesaurus_build.py to build it.",
+    "unreadable": "{file} cannot be read as a thesaurus ({error}).",
+    "not_thesaurus": "{file} is not a built {scheme} thesaurus.",
+    "old_format": "{file} has format {found}; this version reads format {expected}. Build it again.",
+    "unverified": "The build summary {summary} is missing or unreadable ({error}), so the hash cannot be checked.",
+    "hash_mismatch": "{file} has SHA-256 {actual}…, but its build recorded {recorded}…. Build it again.",
+    "changed_while_read": "{file} changed while it was being read. Read it again.",
+}
+
+
+def _said(state: str, which: str, **params: Any) -> dict[str, Any]:
+    params = {k: str(v) for k, v in params.items()}
+    template = REASONS[which]
+    return {"state": state, "reason": template.format(**params), "reason_key": template, "reason_params": params}
+
+
 def thesaurus_status(scheme: str, base: Path | None = None) -> dict[str, Any]:
     """The one state of ``scheme``'s built file, with its reason and what the build recorded."""
     path, spath = thesaurus_path(scheme, base), summary_path(scheme, base)
     out: dict[str, Any] = {"scheme": scheme, "name": _DISPLAY_NAMES.get(scheme, scheme), "format_expected": FORMAT_VERSION}
     if not path.exists():
-        return {**out, "state": "missing",
-                "reason": f"no {path.name} in the data directory's thesauri folder: run scripts/thesaurus_build.py"}
+        return {**out, **_said("missing", "missing", file=path.name)}
     try:
         head = _read_head(path)
     except _READ_ERRORS as exc:
-        return {**out, "state": "unreadable", "reason": f"{path.name} is not readable JSON ({type(exc).__name__})"}
+        return {**out, **_said("unreadable", "unreadable", file=path.name, error=type(exc).__name__)}
     if head is None or head.get("scheme") != scheme:
-        return {**out, "state": "unreadable", "reason": f"{path.name} is not a built {scheme} thesaurus"}
+        return {**out, **_said("unreadable", "not_thesaurus", file=path.name, scheme=scheme)}
     out.update(vintage=head.get("vintage"), license=head.get("license"), n_concepts=head.get("n_concepts"),
                languages=head.get("languages"), format=head.get("format"))
     if head.get("format") != FORMAT_VERSION:
-        return {**out, "state": "old_format",
-                "reason": f"{path.name} has format {str(head.get('format'))[:40]!r}; this version reads format {FORMAT_VERSION}"}
+        return {**out, **_said("old_format", "old_format", file=path.name, found=repr(head.get("format"))[:40],
+                               expected=FORMAT_VERSION)}
     try:
         _stamp(spath)
         summary = json.loads(spath.read_text(encoding="utf-8"))
@@ -179,17 +199,16 @@ def thesaurus_status(scheme: str, base: Path | None = None) -> dict[str, Any]:
         if not isinstance(recorded, str):
             raise TypeError("no string output.sha256")
     except (*_READ_ERRORS, KeyError, TypeError) as exc:
-        return {**out, "state": "unverified",
-                "reason": f"{spath.name} is missing or unreadable ({type(exc).__name__}), so the hash cannot be checked"}
+        return {**out, **_said("unverified", "unverified", summary=spath.name, error=type(exc).__name__)}
     out["built_at_tool"] = summary.get("tool_version")
     try:
         actual = _hash_cached(path)
     except OSError as exc:  # removed or replaced by something else since the read above
-        return {**out, "state": "unreadable", "reason": f"{path.name} could not be read ({type(exc).__name__})"}
+        return {**out, **_said("unreadable", "unreadable", file=path.name, error=type(exc).__name__)}
     out["sha256"] = actual
     if actual != recorded:
-        return {**out, "state": "hash_mismatch",
-                "reason": f"{path.name} has SHA-256 {actual[:12]}…, its build recorded {recorded[:12]}…"}
+        return {**out, **_said("hash_mismatch", "hash_mismatch", file=path.name, actual=actual[:12],
+                               recorded=recorded[:12])}
     return {**out, "state": "ok", "reason": ""}
 
 
@@ -203,12 +222,11 @@ def load_thesaurus(scheme: str, base: Path | None = None) -> tuple[dict[str, Any
     _stamp(path)
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != status["sha256"]:
-        return None, {**status, "state": "hash_mismatch",
-                      "reason": f"{scheme}.json changed while it was being read; read it again"}
+        return None, {**status, **_said("hash_mismatch", "changed_while_read", file=path.name)}
     doc = json.loads(data.decode("utf-8"))
     if (not isinstance(doc, dict) or not isinstance(doc.get("concepts"), dict) or doc.get("scheme") != scheme
             or doc.get("format") != FORMAT_VERSION):
-        return None, {**status, "state": "unreadable", "reason": f"{scheme}.json is not a built {scheme} thesaurus"}
+        return None, {**status, **_said("unreadable", "not_thesaurus", file=path.name, scheme=scheme)}
     return doc, status
 
 
@@ -220,5 +238,5 @@ def statuses(base: Path | None = None) -> list[dict[str, Any]]:
             out.append(thesaurus_status(s, base))
         except Exception as exc:  # noqa: BLE001 - one bad file never takes the whole list down
             out.append({"scheme": s, "name": _DISPLAY_NAMES.get(s, s), "format_expected": FORMAT_VERSION,
-                        "state": "unreadable", "reason": f"the status could not be read ({type(exc).__name__})"})
+                        **_said("unreadable", "unreadable", file=f"{s}.json", error=type(exc).__name__)})
     return out

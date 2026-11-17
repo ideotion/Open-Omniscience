@@ -59,7 +59,7 @@ const LIVING = [
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
-  "lawVelocityHtml", "lawThesaurusWords", "livingThesauriHtml",
+  "lawVelocityHtml", "lawThesaurusWords", "lawThesaurusWhy", "livingThesauriHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
@@ -853,6 +853,11 @@ const WIKI = {
     assert.ok(visible(h).includes(words) && hovers(h).includes("R-" + st), h);
   }
   assert.strictEqual(R.lawThesaurusWords({ state: "brand-new" }, t, tf), "brand-new");
+  // The hover reason is the translated template with its parameters, not the server's English text.
+  const T2 = (s, v) => "T[" + tf(s, v) + "]";
+  const hv = R.livingThesauriHtml({ thesauri: [{ scheme: "eurovoc", name: "EuroVoc", state: "hash_mismatch",
+    reason: "English text", reason_key: "{file} has SHA-256 {actual}", reason_params: { file: "eurovoc.json", actual: "abc" } }] }, t, T2);
+  assert.ok(hovers(hv).includes("T[eurovoc.json has SHA-256 abc]") && !hovers(hv).includes("English text"), hv);
   assert.strictEqual(R.livingThesauriHtml(null, t, tf), "");
   assert.ok(!R.livingThesauriHtml({ thesauri: [{ scheme: "eurovoc", state: "ok" }] }, t, tf).includes("undefined"));
 }
