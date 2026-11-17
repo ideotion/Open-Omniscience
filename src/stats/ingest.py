@@ -58,8 +58,9 @@ def ingest_agencies_as_sources(session: SASession) -> dict:
     URL rather than guess one. The tally reports both counts, so an operator can see
     exactly how many producers are still waiting on a researched news URL.
 
-    The caller owns the transaction (e.g. ``session_scope()``): this only
-    ``session.add(...)`` new rows; the single-writer gate serialises the commit.
+    The caller owns the transaction (e.g. ``session_scope()``): this adds and flushes new
+    rows, never commits; the single-writer gate serialises the commit. The flush is what
+    makes the rows visible to the domain check and to the caller's own session (row 108).
 
     Returns a tally dict with a ``method`` + ``caveat`` (no score field).
     """
@@ -104,6 +105,10 @@ def ingest_agencies_as_sources(session: SASession) -> dict:
                 # reliability_score intentionally NOT set — no fabricated score.
             )
         )
+        # The session does not autoflush, so without this the domain check above could
+        # not see a row added earlier in this same call (two agencies on one domain would
+        # both be added) and a caller reading back in the same session would count none.
+        session.flush()
         created += 1
 
     return {

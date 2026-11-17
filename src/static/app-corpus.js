@@ -81,17 +81,8 @@
           const kit = $("mm-kit");
           if (kit) $("corpus-mm-host").appendChild(kit);
           await renderMindmap(_corpusTerm);
-        } else if (which === "links") {
-          const d = await api(`/api/links/shared?term=${encodeURIComponent(_corpusTerm)}`);
-          const rows = d.shared || [];
-          el.innerHTML =
-            `<div class="hint">${esc(t("Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation."))}</div>` +
-            (rows.length ? rows.map(r =>
-              `<div class="note" style="max-width:none;margin-bottom:6px">
-                 <div style="font-size:12.5px;word-break:break-all"><b>${r.cited_by_articles}×</b> ${esc(r.url)}</div>
-                 <div class="muted" style="font-size:12px">${esc(t("citing sources:"))} ${r.citing_sources} — ${esc(r.note)}</div>
-               </div>`).join("")
-             : `<div class="muted">${esc(t("No outbound link is shared by more than one member article."))}</div>`);
+        // The "links" branch (/api/links/shared) left with row 101: this window is retired (corpusTab has no
+        // callers, see above), and Explore > Links (/api/links/corpus) is the live view of shared origins.
         } else if (which === "sentiment") {
           // Reuse the EXACT Insights framing renderer (loadFraming → /api/framing)
           // by CALLING it into a fresh host — no DOM relocation, Insights untouched.

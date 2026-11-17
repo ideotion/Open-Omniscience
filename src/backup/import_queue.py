@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backup import collector_exit, restore_marker
-from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import holding, log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -751,7 +751,9 @@ class ImportQueueManager:
     @restore_marker.marked  # R712: an export refuses to start or resume while the queue runs
     def _run(self) -> None:
         try:
-            self._run_with_keys()
+            # row 111: the run's keys are held while it runs, so a third-party logger's record is scrubbed of them too
+            with holding(*self._secrets()):
+                self._run_with_keys()
         finally:
             # Whatever way the run ends, an error escaping it included, the keys go with it.
             with self._lock:

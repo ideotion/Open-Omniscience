@@ -2813,6 +2813,14 @@
            feeds, and markets, law, hazards, discovery, the crawl supplement and the
            Wikipedia stream run BESIDE it as lanes. An install migrated from a retired
            mode is told what changed here, once, until it dismisses the line. -->
+      <!-- Row 94 (field test 2026-11-14): an unreadable settings value replaced by a save is
+           said here, once, until dismissed: what went back to its default, which switches
+           were turned OFF, and whether the Wikipedia lane was paused. Built by
+           renderSettingsRepair from the server's repair_notice. -->
+      <div id="sch-repaired" class="card-caveat" hidden>
+        <span id="sch-repaired-text"></span>
+        <button class="secondary" type="button" data-on-click="dismissSettingsRepair(this)">Dismiss</button>
+      </div>
       <div id="sch-retired" class="card-caveat" hidden>
         <span id="sch-retired-text"></span>
         <button class="secondary" type="button" data-on-click="dismissRetiredMode(this)">Dismiss</button>

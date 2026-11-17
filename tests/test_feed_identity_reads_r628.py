@@ -20,6 +20,7 @@ The credentials are fakes; nothing leaves the process (every fetch is a stand-in
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sqlite3
 from pathlib import Path
@@ -411,6 +412,21 @@ def test_rule_2_takes_the_oldest_of_two_rows_holding_the_exact_url(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
+@contextlib.contextmanager
+def _refusing(Engine, lock):
+    """Refuse statements at the driver call, where the database itself refuses them (row 113). A ``before_cursor_execute``
+    listener runs OUTSIDE SQLAlchemy's error handling in 2.0.51 (the locked version), so its raw ``sqlite3`` error escaped
+    unwrapped and these tests failed on every local run; ``do_execute`` runs inside it, so the error is wrapped as a real
+    locked database's would be, ``hide_parameters`` included."""
+    event.listen(Engine, "do_execute", lock)
+    event.listen(Engine, "do_executemany", lock)
+    try:
+        yield
+    finally:
+        event.remove(Engine, "do_execute", lock)
+        event.remove(Engine, "do_executemany", lock)
+
+
 @pytest.fixture()
 def locked_on_a_login():
     """Every statement whose parameters hold the password fails as a locked database would; ``seen`` keeps the error's own
@@ -419,14 +435,13 @@ def locked_on_a_login():
 
     seen: list[str] = []
 
-    def _lock(conn, cursor, statement, parameters, context, executemany):
+    def _lock(cursor, statement, parameters, context):
         if _NEEDLE in str(parameters):
             seen.append(f"{statement} {parameters}")
             raise sqlite3.OperationalError("database is locked")
 
-    event.listen(Engine, "before_cursor_execute", _lock)
-    yield seen
-    event.remove(Engine, "before_cursor_execute", _lock)
+    with _refusing(Engine, _lock):
+        yield seen
 
 
 def test_the_dedups_database_error_is_answered_and_logged_without_the_login(client, sess_factory, locked_on_a_login, caplog):
@@ -517,14 +532,13 @@ def lock_when_armed():
     seen: list[str] = []
     armed: list[bool] = []
 
-    def _lock(conn, cursor, statement, parameters, context, executemany):
+    def _lock(cursor, statement, parameters, context):
         if armed and _NEEDLE in str(parameters):
             seen.append(statement.split(None, 1)[0].upper())
             raise sqlite3.OperationalError("database is locked")
 
-    event.listen(Engine, "before_cursor_execute", _lock)
-    yield SimpleNamespace(seen=seen, arm=lambda: armed.append(True))
-    event.remove(Engine, "before_cursor_execute", _lock)
+    with _refusing(Engine, _lock):
+        yield SimpleNamespace(seen=seen, arm=lambda: armed.append(True))
 
 
 def _store_in_app(domain: str, url: str) -> int:

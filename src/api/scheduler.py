@@ -67,6 +67,8 @@ class SchedulerConfigUpdate(BaseModel):
     auto_track_signals: bool | None = None
     # Only "" is accepted: the Dismiss button on the retired-mode disclosure.
     retired_mode: str | None = None
+    # Only {} is accepted: the Dismiss button on the settings-repair notice (row 94).
+    repair_notice: dict | None = None
     max_sources_per_run: int | None = None
     crawl_max_depth: int | None = None
     crawl_max_pages: int | None = None
