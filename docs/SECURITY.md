@@ -106,6 +106,20 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   **Not a lane of the app: the place gazetteer build is an operator's command, so it is not in the table above (and not in the
   consent popup's hover, which lists only what the app itself can do).** `scripts/build_place_gazetteer.py` reaches `www.wikidata.org` (the Action API: `wbgetentities`, up to 50 items a request, for population (P1082), labels in the app's twelve languages and a coordinate check of the OpenStreetMap `place=*` objects of a country the operator ingested). **An operator's command, never the app** — `python scripts/build_place_gazetteer.py --country CC --online`; the flag is the consent, and nothing schedules it. It goes out on the operator's own transport (Tor or a proxy per `OO_FETCH_MODE` / `OO_HTTP_PROXY` or the data directory's persisted settings) and **refuses unless that transport is named there or the operator passes `--clearnet`** — a fresh or throwaway store holds none of their settings, and a silent clearnet default would be a downgrade. **One request at a time, one request per 10 seconds** (R8: it protects Wikidata's shared servers and the standing of this User-Agent), each carrying `maxlag` and a descriptive User-Agent, `Retry-After` honoured, and the pace gate waited on before every request, retries included. The script is its OWN process: it checks its own kill switch (before every request, by name), which only that process can engage, so it cannot see the airplane state of a running app — run it with the app stopped; the flag is the consent. A refusal by the transport or the kill switch stops the run with a named reason, and it writes nothing if any QID was refused or the run was interrupted. `--plan` counts the QIDs and the minimum run time and makes no request. The output is a repository file (`configs/places_gazetteer.yml`), not a cache in the user's database. Fetcher: ethical fetcher (`guarded_session`). Code: `src/entities/gazetteer_build.py` · `scripts/build_place_gazetteer.py`.
 
+  **Not a lane of the app either: the topic thesaurus build (R737) is an operator's command, and it is offline unless told
+  otherwise.** `scripts/thesaurus_build.py --source FILE` builds a SKOS thesaurus (EuroVoc first) from a file the operator
+  downloaded and opens no connection (a test patches the socket layer to prove it). Only `--fetch-url URL --online` downloads, and
+  only from the publisher's hosts (EuroVoc: `op.europa.eu`, `publications.europa.eu`): the URL the operator copied is checked as a
+  whole (https, port 443, no user name, both URL readings) before anything goes out; the publisher's robots.txt is read first
+  through the ethical fetcher (held to the same hosts) and the download is refused when it disallows the address or cannot be
+  read (fail closed; asked again for a redirect that lands on another address); every redirect hop is held to the same two
+  hosts by the guarded session (`guarded_session(allowed_hosts=...)`, which also honours the kill switch and the operator's
+  transport), the final address is checked again, and the body is streamed to disk under a size cap. Like the gazetteer build it
+  refuses an unnamed transport unless the operator says `--clearnet`, and runs in its own process, so `--online` is this run's
+  consent. The result lands in `<data dir>/thesauri/`; the app reads it only when its format and SHA-256 match its build summary
+  (`src/catalog/thesaurus_store.py`), and the summary the operator sends back holds counts and hashes, no label and no path.
+  Code: `scripts/thesaurus_build.py` · `src/catalog/thesaurus_store.py`.
+
   **Not a lane of the app either: the 0.4 release run reads one Hugging Face URL.** The Diagnostics release run
   (`POST /api/diagnostics/release-run`, an acceptance run the operator starts by one press; the press passes the one network consent,
   whose text names "the probes") has an online-probes phase that is on unless the operator turns it off (`online_probes`). In it,

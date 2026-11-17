@@ -921,6 +921,17 @@ def law_topics(
     return topic_by_jurisdiction(db, q)
 
 
+@router.get("/thesauri")
+def law_thesauri() -> dict:
+    """The topic thesauri built on this computer (R737): each one's state and reason, read from the data directory.
+
+    Only a file whose format and SHA-256 hold (``ok``) is ever used; any other state is said with its reason. Local
+    reads only: no connection, no database."""
+    from src.catalog.thesaurus_store import statuses
+
+    return {"thesauri": statuses()}
+
+
 @router.get("/amendment-map")
 def law_amendment_map(
     days: Annotated[int, Query(ge=1, le=3660)] = 365,
