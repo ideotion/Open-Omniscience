@@ -2068,6 +2068,7 @@
   "Fetch mode saved.": "抓取模式已保存。",
   "Fetch official statistics figures": "获取官方统计数据",
   "Fetch once and apply the rule": "抓取一次并应用该规则",
+  "Fetch one calendar feed from its publisher": "从发布方获取一个日历源",
   "Fetch station": "获取站点",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "从世界银行获取每个国家的标准国家指标（联网，先征求同意）。这也会在每次联网采集时自动推进几个指标（调度器设置 country_data_per_pass，设为 0 可禁用）；此按钮只是现在立即运行整个目录。加载后，新版本随后会在后台自动刷新。",
   "Fetch weather context": "获取天气背景数据",

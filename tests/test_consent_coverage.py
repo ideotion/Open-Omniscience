@@ -182,9 +182,12 @@ EGRESS: tuple[Row, ...] = (
         found="hand",
         why="clears the kill switch and runs one collection pass: the crossing online itself, no fetcher named in the handler",
     ),
+    # The Agenda feed Check/Import and the Markets rule Run asked nothing until row 130 (2026-11-17): they ask now, and their
+    # routes still name the kill switch's refusal for a caller that never opened the UI (_BACKSTOP_PROBES below).
+    Row(("events.py", "feed_import"), ("feedAction",), "consent"),
+    Row(("events.py", "feed_verify"), ("feedAction",), "consent"),
+    Row(("markets.py", "run_rule_now"), ("runMarketRule",), "consent"),
     # --- named: nothing asked, the refusal is named -------------------------------------------------------------------
-    Row(("events.py", "feed_import"), ("feedAction",), "named"),
-    Row(("events.py", "feed_verify"), ("feedAction",), "named"),
     Row(
         ("events.py", "feed_verify_batch"),
         (),
@@ -195,7 +198,6 @@ EGRESS: tuple[Row, ...] = (
     Row(("ingestion.py", "ingest_source_endpoint"), ("ingestSource",), "named", pinned_by=_SKIPPED),
     Row(("ingestion.py", "ingest_batch_endpoint"), ("ingestBatch",), "named", pinned_by=_SKIPPED),
     Row(("law.py", "law_track"), ("lawTrack",), "named"),
-    Row(("markets.py", "run_rule_now"), ("runMarketRule",), "named"),
     Row(
         ("markets.py", "import_custom_feed"),
         ("importCustomFeed",),
@@ -892,17 +894,32 @@ _PROBES = {
     ("source_management.py", "run_source_preflight"): _probe_run_source_preflight,
     ("source_management.py", "discover_rss_feeds"): _probe_discover_rss_feeds,
     ("source_management.py", "discover_sources_by_topic"): _probe_discover_sources_by_topic,
-    ("events.py", "feed_import"): _probe_feed_import,
     ("ingestion.py", "ingest_url_endpoint"): _probe_ingest_url,
     ("law.py", "law_track"): _probe_law_track,
-    ("markets.py", "run_rule_now"): _probe_run_rule,
     ("markets.py", "import_custom_feed"): _probe_import_custom_feed,
     ("monitoring.py", "sources_health"): _probe_sources_health,
     ("wiki.py", "track_page"): _probe_track_page,
     ("wiki.py", "track_now"): _probe_track_now,
-    ("events.py", "feed_verify"): _probe_feed_verify,
     ("events.py", "feed_verify_batch"): _probe_feed_verify_batch,
 }
+
+
+#: Consent rows whose route ALSO names the kill switch's refusal, for a caller that never opened the UI: the popup is the gate, and this
+#: is the floor beneath it, so it is still proved.
+_BACKSTOP_PROBES = {
+    ("events.py", "feed_import"): _probe_feed_import,
+    ("events.py", "feed_verify"): _probe_feed_verify,
+    ("markets.py", "run_rule_now"): _probe_run_rule,
+}
+
+
+@pytest.mark.parametrize("handler", sorted(_BACKSTOP_PROBES), ids=lambda h: h[1])
+def test_a_consent_rows_route_still_names_the_refusal_in_airplane_mode(client, handler):
+    assert next(r for r in EGRESS if r.handler == handler).kind == "consent"
+    with airplane_mode():
+        r, ok = _BACKSTOP_PROBES[handler](client)
+    assert r.status_code != 404, f"the probe did not reach the route ({r.status_code}): {r.text[:200]}"
+    assert ok, f"{handler}: the refusal is not named at the top level of the answer -- {r.status_code} {r.text[:300]}"
 
 
 @pytest.mark.parametrize("handler", sorted(_PROBES), ids=lambda h: h[1])

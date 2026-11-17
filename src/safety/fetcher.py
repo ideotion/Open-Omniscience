@@ -742,6 +742,67 @@ _FOLLOWING_LOCK = threading.Lock()
 _FOLLOWING: dict[str, tuple[tuple[Any, ...], Any]] = {}
 
 
+def require_robots_allow(url: str, allowed_hosts: Iterable[str], *, user_agents: Iterable[str] = (), fetcher: Any = None) -> None:
+    """Refuse unless ``url``'s robots.txt allows it, read through the ethical fetcher held to ``allowed_hosts``.
+
+    For the guarded sessions that fetch a PAGE or a DOCUMENT rather than a published API or a data file (SECURITY.md,
+    Transport): the session itself never reads robots.txt, so the caller asks here first. FAIL CLOSED: a robots.txt that
+    cannot be read (refused, unreachable, a server error) raises :class:`~src.ingest.RobotsUnavailable`, and one that
+    disallows the address raises :class:`~src.ingest.RobotsDisallowed`. A kill switch engaged before or during the read
+    raises the fetcher's own named refusal (``FetchFailed`` with ``KILL_SWITCH_REFUSAL``), never a robots verdict.
+
+    The read goes through :func:`make_fetcher` (its robots cache, transport, kill switch and connect-time SSRF guard), and
+    every request it makes, each redirect hop included, must be https on a listed host (:func:`refuse_unlisted_host`), so a
+    robots.txt that redirects elsewhere is a failure to read it, not a reason to follow. The address is checked against the
+    fetcher's own User-Agent AND each of ``user_agents`` (the agent the caller's session actually sends): any one disallowed
+    refuses."""
+    from src.ingest import RobotsDisallowed
+
+    hosts = _checked_hosts(allowed_hosts)
+    if not hosts:
+        raise ValueError("require_robots_allow needs at least one host")
+    refuse_unlisted_host(url, hosts)
+    f = fetcher if fetcher is not None else _host_held_fetcher(hosts)
+    host_key, _target = f._robots_target(url)
+    parsed = urlparse(url)
+    f._enforce_robots(url, host_key, parsed)
+    parser = f._get_robots(host_key, parsed)
+    for agent in user_agents:
+        if parser is None or not parser.can_fetch(agent, url):
+            raise RobotsDisallowed(f"robots.txt disallows {_robots_shown(url)} for the agent this request sends")
+
+
+def _robots_shown(url: str) -> str:
+    """Scheme, host and path of ``url``, never its query (a search query is the user's words)."""
+    p = urlparse(url)
+    return f"{p.scheme}://{p.hostname or ''}{p.path or '/'}"
+
+
+def _host_held_fetcher(hosts: tuple[str, ...]) -> EthicalFetcher:
+    """An :func:`make_fetcher` fetcher whose every request, redirect hop included, is held to ``hosts``."""
+    fetcher = make_fetcher()
+    real_get = fetcher.session.get
+
+    def _get(u: str, *a: Any, **kw: Any) -> Any:
+        try:
+            refuse_unlisted_host(u, hosts)
+        except RedirectRefused as exc:
+            raise BlockedTarget(f"refused: {exc}") from None
+        kw["allow_redirects"] = False  # hops are walked one judged hop at a time by the fetcher, never by the library
+        return real_get(u, *a, **kw)
+
+    fetcher.session.get = _get  # type: ignore[method-assign, assignment]
+    real_guard = fetcher._guard_target
+
+    def _guard(host: str | None) -> None:
+        if not host or not _host_listed(host.lower(), hosts):
+            raise BlockedTarget("refused: the host is not one this read may reach")
+        real_guard(host)
+
+    fetcher._guard_target = _guard  # type: ignore[method-assign]
+    return fetcher
+
+
 def _transport_key(s: SafetySettings) -> tuple[Any, ...]:
     """Everything ``_fetcher_for`` reads from the settings, and nothing else."""
     return (bool(s.is_protected), s.http_proxy, tuple(getattr(s, "http_proxies", None) or ()), bool(getattr(s, "read_failed", False)))

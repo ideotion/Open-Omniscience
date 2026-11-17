@@ -2068,6 +2068,7 @@
   "Fetch mode saved.": "ফেচ মোড সংরক্ষণ করা হয়েছে।",
   "Fetch official statistics figures": "সরকারি পরিসংখ্যানের সংখ্যা আনুন",
   "Fetch once and apply the rule": "একবার আনুন এবং নিয়ম প্রয়োগ করুন",
+  "Fetch one calendar feed from its publisher": "একটি ক্যালেন্ডার ফিড তার প্রকাশকের কাছ থেকে আনুন",
   "Fetch station": "স্টেশন আনুন",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "বিশ্বব্যাংক থেকে প্রতিটি দেশের জন্য মানক দেশভিত্তিক সূচক আনে (অনলাইন, প্রথমে সম্মতি চায়)। এটি প্রতিটি অনলাইন সংগ্রহ পাসে কয়েকটি সূচক স্বয়ংক্রিয়ভাবেও এগিয়ে নেয় (শিডিউলার সেটিং country_data_per_pass, 0 এটি বন্ধ করে দেয়); এই বোতাম শুধু এখন পুরো তালিকা চালায়। লোড হওয়ার পর, নতুন সংস্করণগুলো তারপর ব্যাকগ্রাউন্ডে স্বয়ংক্রিয়ভাবে রিফ্রেশ হয়।",
   "Fetch weather context": "আবহাওয়ার প্রেক্ষাপট আনুন",

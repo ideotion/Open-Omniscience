@@ -1708,6 +1708,19 @@ def batch_set_group_rate_limit(
 # ==================== SOURCE DISCOVERY ENDPOINTS ====================
 
 
+#: Said when DuckDuckGo's robots.txt refuses the search (SearchRefusedByRobots), by reason. The search page is a page, not a
+#: published API, so robots.txt applies and fails closed (SECURITY.md, Transport); nothing works around it.
+_DISCOVERY_ROBOTS = {
+    "disallowed": (
+        "DuckDuckGo's robots.txt does not allow its search page to be fetched, so nothing was searched. This app follows "
+        "robots.txt and does not work around it, so topic discovery cannot run while that is so."
+    ),
+    "unavailable": (
+        "DuckDuckGo's robots.txt could not be read, so nothing was searched: the app searches only when robots.txt can be "
+        "read and allows it. Try again later."
+    ),
+}
+
 _DISCOVERY_OFFLINE = (
     "The network kill switch (airplane mode) is engaged: nothing was asked, so this is not a finding that there is nothing to find. "
     "Turn the network on and run it again."
@@ -1814,8 +1827,22 @@ def discover_sources_by_topic(
             "message": _DISCOVERY_OFFLINE,
         }
 
+    from src.services.duckduckgo import SearchRefusedByRobots
+
     with SourceManager(session=db) as manager:
-        sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
+        try:
+            sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
+        except SearchRefusedByRobots as refused:
+            # Refused, not empty: present only when robots.txt caused it, beside the reason, so it never reads as "0 found".
+            return {
+                "topic": topic,
+                "max_sources": max_sources,
+                "region": region,
+                "sources": [],
+                "count": 0,
+                "refused_by_robots": refused.reason,
+                "message": _DISCOVERY_ROBOTS[refused.reason],
+            }
 
         out: dict[str, Any] = {
             "topic": topic,
