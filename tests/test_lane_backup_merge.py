@@ -193,10 +193,13 @@ def test_a_failure_rolls_the_lane_back(machines, tmp_path, monkeypatch):
     assert _snapshot_state() == before
 
 
-def test_members_are_chosen_by_kind_never_by_name(tmp_path):
+def test_members_are_chosen_by_kind_never_by_name(tmp_path, monkeypatch):
     assert lane_merge.valid_member({"name": "lanes/wiki.db", "kind": "wiki"}) == "wiki"
     assert lane_merge.valid_member({"name": "../corpus.db", "kind": "wiki"}) is None
     assert lane_merge.valid_member({"name": "lanes/x.db", "kind": "x"}) is None
+    # Every lane this build knows merges since R739; a known lane this build cannot merge (as
+    # one a later version adds would be) is simulated by narrowing the list.
+    monkeypatch.setattr(lane_merge, "MERGEABLE_KINDS", ("wiki", "law"))
     rep = lane_merge.merge_staged_lanes(tmp_path, [{"name": "lanes/osm.db", "kind": "osm"}, "junk"], [])
     states = [x["state"] for x in rep["lanes"]]
     assert states == ["not-merged", "ignored"]
@@ -431,7 +434,9 @@ def test_owed_lanes_survive_a_kill_and_stop_after_three_attempts(tmp_path, monke
     for _ in range(5):
         lane_merge.record_lane_outcome("h", lane_merge.deferred_report([entry]))
     assert lane_merge.lanes_pending("h") is True
-    lane_merge.mark_lanes_owed("other", [{"name": "lanes/osm.db", "kind": "osm"}])
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(lane_merge, "MERGEABLE_KINDS", ("wiki", "law"))
+        lane_merge.mark_lanes_owed("other", [{"name": "lanes/osm.db", "kind": "osm"}])
     assert lane_merge.lanes_pending("other") is False  # a lane this build cannot merge is never owed
 
 
