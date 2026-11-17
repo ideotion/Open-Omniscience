@@ -52,7 +52,7 @@ from itertools import groupby, islice
 from pathlib import Path
 from typing import Any
 
-from src.backup.artifact import StagedArtifact
+from src.backup.artifact import StagedArtifact, member_segment_is_safe
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
 from src.database.stand_in import ARTICLE_HASH_END, ARTICLE_HASH_PREFIX
@@ -6954,6 +6954,9 @@ def merge_side_files(staged: StagedArtifact) -> dict:
     logs: dict = {}
     for name, path in staged.member_paths("logs"):
         fname = Path(name).name
+        if not member_segment_is_safe(fname):  # on Windows "C:x" joined to the data dir is a path on drive C:, outside it
+            logs[fname] = {"refused": "unsafe member name"}
+            continue
         local = base / fname
         try:
             incoming_lines, withheld = _log_lines(path)
@@ -7017,7 +7020,10 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             # though verify already checked them: EVERY name-to-path field runs
             # through a guard, not only the ones that motivated the rule.
             rel = Path(name)
-            if rel.is_absolute() or ".." in rel.parts or not str(rel).startswith(subdir):
+            # compared by parts: the name is spelled with "/" (member_paths), str() of it on Windows is spelled with "\\", which no
+            # subdir matched (row 109); and parts never let "bulletin/editionsX" pass for "bulletin/editions"
+            want = tuple(subdir.split("/"))
+            if rel.is_absolute() or ".." in rel.parts or rel.parts[: len(want)] != want or len(rel.parts) <= len(want):
                 refused.append(name)
                 continue
             local = base / rel

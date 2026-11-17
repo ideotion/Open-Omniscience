@@ -409,15 +409,24 @@ def test_a_shutdown_after_the_stop_is_never_undone_by_the_restart(registry, monk
 
 def test_a_job_still_on_its_way_out_is_started_again_once_it_is_out(registry, monkeypatch):
     """The drain met the yield after the restore's wait and was still in its own finally when the restore refused and started it again:
-    the start must wait for it to be out, not be refused as 'already running' and leave it paused for an import that never happened."""
+    the start must wait for it to be out, not be refused as 'already running' and leave it paused for an import that never happened.
+
+    Ordered by events, never by sleeps (row 103: a sleep(0.3) way out against a 0.05 s restore wait failed on a loaded macOS runner,
+    where the drain could miss the yield inside the wait). The restore's wait is the real ``_joined`` given a deadline already passed,
+    entered only once the drain is inside its finally; the drain leaves its finally only once the restore has read the running writers
+    and found it there, so the restart is the one thing that has to wait for it."""
     from src.backup import merge
 
     runs = []
     release = threading.Event()
+    in_finally = threading.Event()  # the drain met the yield and is on its way out
+    let_out = threading.Event()  # the restore has seen it still running after its wait
+    second_run = threading.Event()
 
     def worker(ctx):
         runs.append(1)
         if len(runs) > 1:  # the second run: an ordinary drain
+            second_run.set()
             while not release.wait(0.01):
                 if ctx.stopping:
                     return
@@ -427,15 +436,32 @@ def test_a_job_still_on_its_way_out_is_started_again_once_it_is_out(registry, mo
                 if ctx.yielding:
                     return
         finally:
-            time.sleep(0.3)  # its way out takes longer than the restore waits
+            in_finally.set()
+            assert let_out.wait(10)  # its way out lasts past the restore's wait
 
+    real_joined = bg._joined
+    real_running = bg.running_writer_jobs
+
+    def wait_ended_while_on_its_way_out(job, deadline):
+        assert in_finally.wait(10)
+        return real_joined(job, time.monotonic())  # the wait ends now, with the drain still in its finally
+
+    def running_then_let_out(*, include_stoppable=True):
+        out = real_running(include_stoppable=include_stoppable)
+        if include_stoppable:  # the read after the wait: the drain is still named, then its way out ends
+            let_out.set()
+        return out
+
+    monkeypatch.setattr(bg, "_joined", wait_ended_while_on_its_way_out)
+    monkeypatch.setattr(bg, "running_writer_jobs", running_then_let_out)
     drain = bg.register_job(bg.BackgroundJob("reindex-resume", "Drain", worker, is_writer=True, cancellable=True, stops_for_restore=True))
     drain.start()
     try:
-        monkeypatch.setattr(merge, "_STOP_FOR_RESTORE_S", 0.05)
         with pytest.raises(merge.WriterJobsRefused):
             merge.refuse_while_writer_jobs_run()
-        assert drain._alive() and len(runs) == 2, "the drain was not started again after its way out"
+        assert second_run.wait(10) and len(runs) == 2, "the drain was not started again after its way out"
+        assert drain._alive()
     finally:
         release.set()
+        let_out.set()
         drain.join(5)

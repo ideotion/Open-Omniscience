@@ -1,6 +1,15 @@
+# Every text file is checked out with LF on every OS, whatever the contributor's core.autocrlf is (row 109). A Windows checkout with
+# CRLF broke what reads exact bytes: the vendored public suffix list failed its sha256 (so every off-site verdict read "unknown site"
+# on a Windows clone), digest-pinned fixtures, ledger fragments, and the node tests that extract functions out of app.js. Files
+# committed with CRLF stay as committed (text=auto leaves a CRLF index copy alone). FIRST, so the rules below override it.
+* text=auto eol=lf
+
 docs/ledger/shipped.csv merge=union
 
 # Windows scripts must keep CRLF endings whatever the contributor's core.autocrlf is:
 # a .cmd checked out with bare LF can misparse multi-line blocks under cmd.exe.
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# Never converted, whatever their bytes look like (text=auto takes a NUL-free binary for text)
+*.pdf binary

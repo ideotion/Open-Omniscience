@@ -1257,6 +1257,7 @@ def test_a_failed_read_from_a_user_outside_the_groups_still_names_the_permission
     assert "permission_note" not in kernel_log.read_kernel_evidence(216352)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX only by nature: Windows has no groups (no grp module) and no systemd journal to read")
 def test_root_and_a_primary_group_count_as_able_to_read_the_journal(monkeypatch):
     import grp
     import types

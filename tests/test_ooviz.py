@@ -30,6 +30,7 @@ def test_ooviz_primitives_and_stat_series_paths():
         ["node", str(test_js)],
         capture_output=True,
         text=True,
+        encoding="utf-8",  # node writes UTF-8; Windows would decode it as its ANSI code page (row 109)
         timeout=60,
         cwd=str(_ROOT),
     )

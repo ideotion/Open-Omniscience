@@ -55,7 +55,7 @@ def test_scrubbed_copy_takes_the_key_out_and_keeps_every_other_byte(tmp_path):
 def test_scrubbed_copy_never_copies_an_overlong_line_in_part(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, "_COPY_LINE_BYTES", 100)
     src = tmp_path / "big.jsonl"
-    src.write_text("first\n" + "ZQ" * 300 + _KEY + "\nlast\n", encoding="utf-8")
+    src.write_text("first\n" + "ZQ" * 300 + _KEY + "\nlast\n", encoding="utf-8", newline="\n")
     dst = tmp_path / "big.out"
     ss.scrubbed_copy(src, dst)
     text = dst.read_text(encoding="utf-8")
@@ -66,7 +66,7 @@ def test_scrubbed_copy_never_copies_an_overlong_line_in_part(tmp_path, monkeypat
 def test_scrubbed_copy_of_a_line_of_exactly_the_bound_is_kept_whole(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, "_COPY_LINE_BYTES", 100)
     src = tmp_path / "edge.jsonl"
-    src.write_text("a\n" + "y" * 100, encoding="utf-8")  # exactly the bound, no line ending, end of file
+    src.write_text("a\n" + "y" * 100, encoding="utf-8", newline="\n")  # exactly the bound, no line ending, end of file
     dst = tmp_path / "edge.out"
     ss.scrubbed_copy(src, dst)
     assert dst.read_text(encoding="utf-8") == "a\n" + "y" * 100
@@ -173,7 +173,7 @@ def test_a_line_that_is_not_valid_utf8_is_withheld_whole_with_its_size_not_repai
 def test_a_line_of_the_bound_followed_by_its_line_ending_counts_as_too_long(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, "_COPY_LINE_BYTES", 100)
     src = tmp_path / "b.jsonl"
-    src.write_text("y" * 100 + "\n" + "z" * 98 + "\n", encoding="utf-8")
+    src.write_text("y" * 100 + "\n" + "z" * 98 + "\n", encoding="utf-8", newline="\n")
     dst = tmp_path / "b.out"
     ss.scrubbed_copy(src, dst)
     text = dst.read_text(encoding="utf-8")
@@ -301,7 +301,7 @@ def _reports_stage(tmp_path, monkeypatch, body: str):
     monkeypatch.setattr(artifact, "snapshot_sqlite", lambda _src, dest: Path(dest).write_bytes(b""))
     d = tmp_path / "import_reports"
     d.mkdir(exist_ok=True)
-    (d / "restore-20260101T000000Z-ab.json").write_text(body, encoding="utf-8")
+    (d / "restore-20260101T000000Z-ab.json").write_text(body, encoding="utf-8", newline="\n")
     out = tmp_path / "stage"
     out.mkdir(exist_ok=True)
     members = [m for m in artifact._collect_members(False, out) if m.role == "import_reports"]
@@ -342,7 +342,7 @@ def test_the_report_download_and_listing_check_an_older_report(tmp_path, monkeyp
 
     monkeypatch.setattr(import_reports, "_reports_dir", lambda: tmp_path)
     old = {"outcome": "ok", "import_run": {"id": "r1", "label": f"run {_KEY}"}, "errors": [f"driver said {_KEY}"]}
-    (tmp_path / "restore-20260101T000000Z-ab.json").write_text(json.dumps(old), encoding="utf-8")
+    (tmp_path / "restore-20260101T000000Z-ab.json").write_text(json.dumps(old), encoding="utf-8", newline="\n")
     for fmt in ("json", "md"):
         body = backup_v2.import_reports_download("restore-20260101T000000Z-ab.json", format=fmt).body.decode()
         assert _KEY not in body, fmt
