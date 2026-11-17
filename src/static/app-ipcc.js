@@ -72,25 +72,25 @@
   let _predKey = null, _predData = null, _predFilter = "all", _predWired = false;
 
   async function loadIpccPredictions(key) {
-    const host = document.getElementById("ipcc-pred");
-    if (!host) return;
+    const panel = document.getElementById("ipcc-pred");
+    if (!panel) return;
     if (!_predWired) {
       _predWired = true;
-      host.addEventListener("click", (ev) => {
+      panel.addEventListener("click", (ev) => {
         const b = ev.target.closest("button[data-ipcc-decide]");
         if (b) ipccDecide(b.getAttribute("data-ipcc-hash"), b.getAttribute("data-ipcc-decide"), b.hasAttribute("data-ipcc-orphan"));
       });
-      host.addEventListener("change", (ev) => {
+      panel.addEventListener("change", (ev) => {
         if (ev.target && ev.target.id === "ipcc-pred-filter") { _predFilter = ev.target.value; _renderPredictions(); }
       });
     }
     _predKey = key;
-    host.innerHTML = `<div class="muted">${esc(_tx("Loading…"))}</div>`;
+    panel.innerHTML = `<div class="muted">${esc(_tx("Loading…"))}</div>`;
     try {
       _predData = await api("/api/ipcc/spm/" + encodeURIComponent(key) + "/predictions");
       _renderPredictions();
     } catch (e) {
-      host.textContent = _tx("Suggested predictions failed:") + " " + e.message;
+      panel.textContent = _tx("Suggested predictions failed:") + " " + e.message;
     }
   }
 
@@ -101,16 +101,16 @@
   }
 
   function _renderPredictions() {
-    const host = document.getElementById("ipcc-pred");
+    const view = document.getElementById("ipcc-pred");
     const d = _predData;
-    if (!host || !d) return;
+    if (!view || !d) return;
     const c = d.counts || {};
     const head = `<h3 style="margin:0;font-size:13px">${esc(_tx("Suggested predictions"))} <span class="muted">&mdash; ${esc(d.title || "")}</span></h3>
       <p class="card-caveat" style="margin-top:6px">${esc(_tx(d.caveat || ""))}</p>
       <details style="margin-top:4px"><summary class="hint">${esc(_tx("How sentences are suggested"))}</summary>
         <p class="hint">${esc(_tx(d.method || ""))}</p></details>`;
     if (!d.stored) {
-      host.innerHTML = head + `<p class="hint">${esc(_tx("This report is not stored in your corpus yet: fetch it first."))}</p>`;
+      view.innerHTML = head + `<p class="hint">${esc(_tx("This report is not stored in your corpus yet: fetch it first."))}</p>`;
       return;
     }
     const reader = d.article_id != null
@@ -136,7 +136,7 @@
     const orphanList = orphans.length ? `<h4 style="margin:10px 0 0;font-size:12px">${esc(_tx("Decided earlier, no longer suggested by this method"))}</h4>
       <ul style="padding-left:18px">${orphans.map((o) => `<li style="margin-top:6px"><div>&ldquo;${esc(o.sentence)}&rdquo;</div>
         <div class="muted">${esc(_decisionLabel(o.decision))}</div><div class="row" style="gap:6px;margin-top:4px">${btn(o.hash, "kept", "Keep as a prediction", o.decision === "kept")}${btn(o.hash, "set_aside", "Set aside", o.decision === "set_aside")}${btn(o.hash, "undecided", "Undo", false, true)}</div></li>`).join("")}</ul>` : "";
-    host.innerHTML = head + counts + `<div id="ipcc-pred-msg" class="hint" role="status" aria-live="polite"></div>` + filter + list + orphanList;
+    view.innerHTML = head + counts + `<div id="ipcc-pred-msg" class="hint" role="status" aria-live="polite"></div>` + filter + list + orphanList;
   }
 
   async function ipccDecide(hash, decision, orphan) {
@@ -144,13 +144,13 @@
     // A sentence this method no longer suggests cannot be decided on again once its decision is gone: say so first.
     if (orphan && decision === "undecided"
         && !window.confirm(_tx("This sentence is no longer suggested, so once removed it cannot be kept again. Remove your decision?"))) return;
-    const st = document.getElementById("ipcc-pred-msg") || document.getElementById("ipcc-status");
+    const note = document.getElementById("ipcc-pred-msg") || document.getElementById("ipcc-status");
     try {
       await api("/api/ipcc/spm/" + encodeURIComponent(_predKey) + "/predictions/decide",
         {method: "POST", body: JSON.stringify({sentence_hash: hash, decision: decision})});
       await loadIpccPredictions(_predKey);
     } catch (e) {
-      if (st) st.textContent = _tx("Saving the decision failed:") + " " + e.message;
+      if (note) note.textContent = _tx("Saving the decision failed:") + " " + e.message;
     }
   }
 
