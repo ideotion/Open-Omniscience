@@ -1085,7 +1085,9 @@ def test_a_long_hold_is_opened_by_the_watchdog_updated_on_each_sample_and_closed
         assert e["open"] is True and e["holder"] == "field-writer", "held, and not yet released: the record says so"
         assert e["frames"] is not None and isinstance(e["frames"], list), "the frames the watchdog saw"
         first_seconds = e["seconds"]
-        time.sleep(0.05)
+        # more than the 0.1 s the record rounds to: two samples 0.05 s apart could round to the same figure (0.2 > 0.2 on a slow
+        # macOS runner, row 109), and 0.15 s later the rounded figure is always higher
+        time.sleep(0.15)
         writer.watchdog_tick(gate, warned)
         (e,) = _events("gate_hold")
         assert e["seconds"] > first_seconds and _member()["kinds"]["gate_hold"]["total"] == 1, "updated, not a second entry"

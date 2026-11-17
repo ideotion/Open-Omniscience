@@ -122,7 +122,7 @@ def test_the_removal_is_a_step_of_the_start_and_nothing_else_calls_it():
     the notice says so. The only callers of the sweep are the boot step's own function and its definition."""
     root = Path(__file__).resolve().parents[1] / "src"
     callers = {
-        str(p.relative_to(root))
+        p.relative_to(root).as_posix()
         for p in root.rglob("*.py")
         if "sweep_kept_copies(" in p.read_text(encoding="utf-8")
     }
@@ -131,7 +131,7 @@ def test_the_removal_is_a_step_of_the_start_and_nothing_else_calls_it():
     assert text.count("sweep_kept_copies(") == 2, "the definition and the boot step's one call: no other call"
     boot = (root / "api" / "boot_sequence.py").read_text(encoding="utf-8")
     assert "repair.run_now_and_wait()" in boot
-    users = {str(p.relative_to(root)) for p in root.rglob("*.py") if "run_now_and_wait()" in p.read_text(encoding="utf-8")}
+    users = {p.relative_to(root).as_posix() for p in root.rglob("*.py") if "run_now_and_wait()" in p.read_text(encoding="utf-8")}
     assert "api/boot_sequence.py" in users and not any("scheduler" in u or "jobs" in u for u in users), users
 
 

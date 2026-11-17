@@ -61,7 +61,8 @@ def test_an_unreadable_limit_file_is_named_unreadable_and_not_read_as_no_limit(t
     pc.write_text("0::/\n", encoding="utf-8")
     r = reader.cgroup_reading(str(tmp_path / "cg"), str(pc))
     assert r["headroom_bytes"] is None and r["unreadable"]
-    assert any("is unreadable (IsADirectoryError)" in n for n in r["notes"]), r["notes"]
+    # Windows answers a read of a directory with PermissionError, POSIX with IsADirectoryError: either is "unreadable" (row 109)
+    assert any("is unreadable (IsADirectoryError)" in n or "is unreadable (PermissionError)" in n for n in r["notes"]), r["notes"]
     assert not any("no limit" in n for n in r["notes"])
 
 

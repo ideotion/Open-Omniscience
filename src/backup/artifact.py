@@ -528,7 +528,7 @@ def _collect_members(
     ann = base / _ANNOTATIONS_DIR
     if ann.is_dir():
         for p in sorted(ann.rglob("*.json")):
-            members.append(Member(str(p.relative_to(base)), "annotations", p))
+            members.append(Member(p.relative_to(base).as_posix(), "annotations", p))
     reports = base / _IMPORT_REPORTS_DIR
     if reports.is_dir():
         for p in sorted(reports.rglob("*.json")):
@@ -537,20 +537,20 @@ def _collect_members(
             # It is a JSON DOCUMENT, so it is checked as one (parsed, every value checked, written again): a line-by-line copy would
             # rewrite a number or a key that the passphrase happens to be, and tear the document. One that does not parse is withheld
             # whole and says so. Size and sha are taken on the staged copy.
-            rel = str(p.relative_to(base))
+            rel = p.relative_to(base).as_posix()
             staged_report = tmp_dir / rel
             _stage_json_report(p, staged_report)
             members.append(Member(rel, "import_reports", staged_report))
     editions = base / _BULLETIN_EDITIONS_DIR
     if editions.is_dir():
         for p in sorted(editions.rglob("*.json")):
-            members.append(Member(str(p.relative_to(base)), "bulletin", p))
+            members.append(Member(p.relative_to(base).as_posix(), "bulletin", p))
     if include_keys:
         keys = base / _KEYS_DIR
         if keys.is_dir():
             for p in sorted(keys.iterdir()):
                 if p.is_file():
-                    members.append(Member(str(p.relative_to(base)), "keys", p))
+                    members.append(Member(p.relative_to(base).as_posix(), "keys", p))
     return members
 
 

@@ -1173,12 +1173,12 @@ def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
     ann = base / _ANNOTATIONS_DIR
     if ann.is_dir():
         for p in sorted(ann.rglob("*.json")):
-            _stage(str(p.relative_to(base)), "annotations", p)
+            _stage(p.relative_to(base).as_posix(), "annotations", p)
     keys = base / _KEYS_DIR
     if keys.is_dir():
         for p in sorted(keys.iterdir()):
             if p.is_file():
-                _stage(str(p.relative_to(base)), "keys", p)
+                _stage(p.relative_to(base).as_posix(), "keys", p)
     return members
 
 
