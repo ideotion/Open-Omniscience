@@ -32,8 +32,14 @@ THE RULES (R729, ruled 2026-11-16; design /mnt/project-files/living-sources-back
     cursors and samples, ``wiki_lane_hourly``, ``wiki_warm_editions``/``scan``); the lane's
     search index is derived and its own triggers queue every merged text for indexing.
 
-ONE TRANSACTION PER STORE. A failure anywhere rolls the lane back to what it was; the backup
-is never written. Idempotent by construction: every insert is guarded by the natural key and
+  * L6b (R739, the maps store) the COUNTRY is the unit: a finished country this machine
+    lacks is copied whole -- objects, country row with its diff cursor, change records,
+    history cut -- after the checks a reader makes of a local cut, and its indexes are
+    rebuilt here; a country both hold keeps this machine's copy whole, and the report says
+    when the backup's is newer; an unfinished one is never copied. See ``_merge_osm``.
+
+ONE TRANSACTION PER STORE (per COUNTRY for the maps store). A failure anywhere rolls that
+unit back to what it was; the backup is never written. Idempotent by construction: every insert is guarded by the natural key and
 every update by a strict comparison, so importing the same backup again changes nothing.
 
 NO PLAINTEXT ON DISK. The staged member keeps the SQLCipher encryption it was exported with
@@ -62,8 +68,8 @@ from typing import Any
 
 _LOG = logging.getLogger("backup.lane_merge")
 
-#: The lanes this build both exports and merges. OSM joins in its own PR.
-MERGEABLE_KINDS: tuple[str, ...] = ("wiki", "law")
+#: The lanes this build both exports and merges.
+MERGEABLE_KINDS: tuple[str, ...] = ("wiki", "law", "osm")
 
 #: Member-name prefix inside the volume set. A namespace of its own, like ``blobs/``.
 LANE_PREFIX = "lanes"
@@ -209,6 +215,17 @@ def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     )
 
 
+#: The maps lane's tables the merge reads (R739). Listed here because ``_READ_TABLES`` is
+#: checked before the maps section of this module is reached.
+_OSM_TABLES_READ = (
+    "osm_countries",
+    "osm_objects",
+    "osm_tag_changes",
+    "osm_diff_runs",
+    "osm_history_cuts",
+    "osm_history_changes",
+)
+
 #: Every table the merge reads from the attached member.
 _READ_TABLES = frozenset(
     {
@@ -223,6 +240,8 @@ _READ_TABLES = frozenset(
         "law_identities",
         "law_document_meta",
         "law_provisions",
+        "versioned_gaps",
+        *_OSM_TABLES_READ,
     }
 )
 
@@ -238,6 +257,11 @@ def _refuse_unsafe_inc(conn: Any) -> None:
     for typ, name, sql in rows:
         if typ != "table" or str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL"):
             raise LaneMergeError("the lane member holds a table this build does not merge from (not a plain table); refusing to merge it")
+        if "COLLATE" in str(sql or "").upper():
+            # A collation declared by the backup decides how its own "=" and "IN" compare: a
+            # NOCASE country column would let 'zzz' rows pass a filter on 'ZZZ' and land here
+            # outside every country. No lane this build writes declares one.
+            raise LaneMergeError("the lane member holds a table with a declared collation; refusing to merge it")
         hidden = [r for r in conn.execute(f'PRAGMA inc.table_xinfo("{name}")').fetchall() if int(r[6] or 0) != 0]
         if hidden:
             raise LaneMergeError("the lane member holds a table with computed columns; refusing to merge it")
@@ -1019,25 +1043,554 @@ def _merge_law(conn: Any, out: dict[str, Any]) -> None:
         conn.execute(f"DROP TABLE IF EXISTS temp.{t}")
 
 
+# --------------------------------------------------------------------------- #
+#  The maps lane (R739: the country is the unit)
+# --------------------------------------------------------------------------- #
+#: The country is the unit (R739). A finished country this machine lacks is copied whole --
+#: its objects, its row with the diff cursor, its change records and its history cut -- in
+#: ONE transaction of its own, so a copy that fails leaves no part of it here. A country both
+#: machines hold keeps this machine's copy whole: the backup's is counted, and the report
+#: says when it is newer. A country the backup never finished is never copied. Nothing here is
+#: replaced or deleted, so importing the same backup again copies nothing.
+
+#: The country's own columns a reader or the daily update reads, and the type each must have.
+_OSM_COUNTRY_INTS = ("relation_id", "extract_bytes", "extract_sequence", "diff_sequence")
+_OSM_COUNTRY_TEXTS = ("name", "extract_name", "reader", "error")
+_OSM_COUNTRY_JSON = ("counts_json", "blob_json", "border_json")
+
+
+class _OsmRefused(Exception):
+    """One country of the backup is not copied; ``reason`` is the report's counter name."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _osm_position(conn: Any, schema: str, alpha3: str) -> tuple[str | None, int | None, str | None]:
+    """``(time, sequence, status)`` of where a country's objects stand (``apply._position``'s rule)."""
+    row = conn.execute(
+        "SELECT datetime(CASE WHEN diff_sequence IS NOT NULL THEN diff_timestamp ELSE extract_vintage END), "  # noqa: S608  # nosec B608 # schema is a module literal
+        "CASE WHEN diff_sequence IS NOT NULL THEN diff_sequence ELSE extract_sequence END, status "
+        f"FROM {schema}.osm_countries WHERE alpha3 = ?",
+        (alpha3,),
+    ).fetchone()
+    if row is None:
+        return None, None, None
+    seq = row[1] if isinstance(row[1], int) and not isinstance(row[1], bool) else None
+    return row[0], seq, row[2]
+
+
+def _osm_backup_is_newer(conn: Any, alpha3: str) -> bool:
+    """Whether the backup's finished copy of a country this machine keeps stands later than this one's.
+
+    Later by the time its objects stand at (the extract's vintage, or the last daily file applied),
+    else by the replication sequence. A time past this machine's clock is not a reading anyone took
+    and never counts as newer. A local cut that never finished is behind any finished copy.
+    """
+    inc_t, inc_s, _ = _osm_position(conn, "inc", alpha3)
+    loc_t, loc_s, loc_status = _osm_position(conn, "main", alpha3)
+    if loc_status != "complete":
+        return False  # reported apart (``osm_unfinished_here``)
+    horizon = _horizon()[:19]
+    if inc_t is not None and inc_t > horizon:
+        return False
+    if inc_t is not None and (loc_t is None or inc_t > loc_t):
+        return True
+    if inc_t is not None and loc_t is not None and inc_t < loc_t:
+        return False
+    return inc_s is not None and loc_s is not None and inc_s > loc_s
+
+
+def _osm_json_object(col: str, alias: str) -> str:
+    return f'({alias}."{col}" IS NULL OR (typeof({alias}."{col}") = \'text\' AND json_valid({alias}."{col}") AND json_type({alias}."{col}") = \'object\'))'
+
+
+def _osm_tag_map(col: str, alias: str) -> str:
+    """A tag column: NULL, or a JSON object whose every value is a string (``tags.dumps`` writes no other)."""
+    each = f'SELECT 1 FROM json_each({alias}."{col}") WHERE type <> \'text\''  # noqa: S608  # nosec B608 # col is the LIVE schema's own column name
+    return f'({_osm_json_object(col, alias)} AND ({alias}."{col}" IS NULL OR NOT EXISTS ({each})))'
+
+
+def _osm_text(col: str, alias: str) -> str:
+    return f'({alias}."{col}" IS NULL OR typeof({alias}."{col}") = \'text\')'
+
+
+def _osm_int(col: str, alias: str) -> str:
+    return f'({alias}."{col}" IS NULL OR typeof({alias}."{col}") = \'integer\')'
+
+
+def _osm_check_country(conn: Any, alpha3: str) -> None:
+    """The backup's country row passes the checks a reader and the daily update make of a local one."""
+    from src.osm.geometry import decode_rings
+    from src.osm.ingest import country_codes
+
+    cols = set(_columns(conn, "inc", "osm_countries"))
+    try:
+        alpha2, _ = country_codes(alpha3)
+    except ValueError:
+        raise _OsmRefused("refused_unreadable") from None
+    checks = [
+        "i.alpha2 = :a2",
+        "i.finished_at IS NOT NULL",
+        "(i.border_rings IS NULL OR typeof(i.border_rings) = 'blob')",
+        *(_osm_int(c, "i") for c in _OSM_COUNTRY_INTS if c in cols),
+        *(_osm_text(c, "i") for c in _OSM_COUNTRY_TEXTS if c in cols),
+        *(_osm_json_object(c, "i") for c in _OSM_COUNTRY_JSON if c in cols),
+    ]
+    if "border_json" in cols:
+        # The border's box is read as four numbers (``wiki/located.py``); anything else there
+        # would drop every country's box at once.
+        checks.append(
+            "(i.border_json IS NULL OR json_type(i.border_json, '$.bbox') IS NULL OR ("
+            "json_array_length(i.border_json, '$.bbox') = 4 AND NOT EXISTS (SELECT 1 FROM json_each(i.border_json, '$.bbox') "
+            "WHERE type NOT IN ('integer', 'real') OR value NOT BETWEEN -180 AND 180)))"
+        )
+    if {"diff_sequence", "extract_sequence"} <= cols:
+        # The daily update moves the cursor forward from the extract's own header, never back.
+        checks.append("(i.diff_sequence IS NULL OR i.extract_sequence IS NULL OR i.diff_sequence >= i.extract_sequence)")
+    ok = conn.execute(
+        f"SELECT 1 FROM inc.osm_countries i WHERE i.alpha3 = :a AND {' AND '.join(checks)}",  # noqa: S608  # nosec B608 # module literals and the inc schema's own column names
+        {"a": alpha3, "a2": alpha2},
+    ).fetchone()
+    if ok is None:
+        raise _OsmRefused("refused_unreadable")
+    rings = conn.execute("SELECT border_rings FROM inc.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone()[0]
+    if rings is not None:
+        try:
+            decoded = decode_rings(bytes(rings))
+        except Exception:  # noqa: BLE001 - any damage to the border is a refusal
+            raise _OsmRefused("refused_unreadable") from None
+        if not decoded or any(not (-90 <= la <= 90 and -180 <= lo <= 180) for ring in decoded for la, lo in ring):
+            raise _OsmRefused("refused_unreadable")
+
+
+def _osm_check_objects(conn: Any, alpha3: str, live: set[str]) -> None:
+    """Every object of the country is one a local cut could have written; a way's shape decodes."""
+    from src.osm import tags as T
+    from src.osm.geometry import decode_coords
+
+    inc = set(_columns(conn, "inc", "osm_objects"))
+    cols = live & inc
+    json_cols = {"other_tags", *T.FAMILIES.values()}
+    structural = {"id", "osm_type", "osm_id", "version", "timestamp", "country_alpha3", "kind", "notable",
+                  "lat", "lon", "geom", "node_count", "members"}
+    kinds = ", ".join(f"'{k}'" for k in T.KINDS)
+    checks = [
+        "o.osm_type IN ('n', 'w', 'r')",
+        "typeof(o.osm_id) = 'integer' AND o.osm_id > 0",
+        f"o.kind IN ({kinds})",
+        "(o.lat IS NULL OR (typeof(o.lat) IN ('real', 'integer') AND o.lat BETWEEN -90 AND 90))",
+        "(o.lon IS NULL OR (typeof(o.lon) IN ('real', 'integer') AND o.lon BETWEEN -180 AND 180))",
+        "(o.lat IS NULL) = (o.lon IS NULL)",
+        "(o.geom IS NULL OR typeof(o.geom) = 'blob')",
+        "(o.members IS NULL OR (typeof(o.members) = 'text' AND json_valid(o.members) AND json_type(o.members) = 'array'))",
+        # A node is its point; a way is its vertices. A relation's shape is a stated gap.
+        "(o.osm_type <> 'n' OR (o.lat IS NOT NULL AND o.geom IS NULL))",
+        "(o.osm_type <> 'w' OR (o.lat IS NOT NULL AND o.geom IS NOT NULL AND typeof(o.node_count) = 'integer'))",
+        # OpenStreetMap caps a way at 2,000 nodes, and a point takes at most two ten-byte numbers:
+        # a shape outside these bounds is refused before a byte of it is decoded.
+        "(o.geom IS NULL OR (o.node_count BETWEEN 1 AND 2000 AND length(o.geom) <= 20 * o.node_count + 10))",
+        _osm_int("version", "o"),
+        _osm_int("node_count", "o"),
+    ]
+    if "notable" in cols:
+        checks.append("(o.notable IS NULL OR o.notable IN (0, 1))")
+    for c in sorted(cols - structural):
+        checks.append(_osm_tag_map(c, "o") if c in json_cols else _osm_text(c, "o"))
+    bad = conn.execute(
+        f"SELECT 1 FROM inc.osm_objects o WHERE o.country_alpha3 = :a AND NOT ({' AND '.join(checks)}) LIMIT 1",  # noqa: S608  # nosec B608 # module literals and the LIVE schema's own column names
+        {"a": alpha3},
+    ).fetchone()
+    if bad is not None:
+        raise _OsmRefused("refused_unreadable")
+    cur = conn.execute(
+        "SELECT geom, node_count FROM inc.osm_objects WHERE country_alpha3 = ? AND geom IS NOT NULL", (alpha3,)
+    )
+    for geom, n in cur:
+        try:
+            pts = decode_coords(bytes(geom))
+        except Exception:  # noqa: BLE001 - a shape that does not decode is a refusal
+            raise _OsmRefused("refused_unreadable") from None
+        if len(pts) != n or any(not (-90 <= la <= 90 and -180 <= lo <= 180) for la, lo in pts):
+            raise _OsmRefused("refused_unreadable")
+
+
+def _osm_check_inside(conn: Any, alpha3: str) -> None:
+    """Every node and way of the country stands inside its own border, the rule the cut and the daily update keep.
+
+    Without it a backup could label another country's objects as this one's: they would take
+    those OpenStreetMap ids here, and that country's own cut would then fail on them. A country
+    with no stored border (cut before borders were kept) cannot be checked and is not copied.
+    """
+    from src.osm.geometry import Border, decode_rings
+
+    rings = conn.execute("SELECT border_rings FROM inc.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone()[0]
+    if rings is None:
+        raise _OsmRefused("not_copied_no_border")
+    try:
+        border = Border(decode_rings(bytes(rings)))
+    except Exception:  # noqa: BLE001 - a border that does not build is a refusal
+        raise _OsmRefused("refused_unreadable") from None
+    cur = conn.execute(
+        "SELECT lat, lon FROM inc.osm_objects WHERE country_alpha3 = ? AND osm_type IN ('n', 'w')", (alpha3,)
+    )
+    for lat, lon in cur:
+        if not border.contains(float(lat), float(lon)):
+            raise _OsmRefused("refused_outside_border")
+
+
+def _osm_check_counts(conn: Any, alpha3: str) -> None:
+    """A country never updated holds exactly the objects its cut counted, kind by kind (the cut's own record)."""
+    from src.osm import tags as T
+
+    row = conn.execute(
+        "SELECT counts_json, diff_sequence FROM inc.osm_countries WHERE alpha3 = ?", (alpha3,)
+    ).fetchone()
+    if row is None or row[0] is None or row[1] is not None:
+        return  # a daily update moves objects without recounting the cut
+    counts = json.loads(row[0])
+    held = dict(conn.execute(
+        "SELECT kind, count(*) FROM inc.osm_objects WHERE country_alpha3 = ? GROUP BY kind", (alpha3,)
+    ).fetchall())
+    for kind in T.KINDS:
+        want = counts.get(kind)
+        if want is not None and want != held.get(kind, 0):
+            raise _OsmRefused("refused_incomplete")
+
+
+def _osm_check_history(conn: Any, alpha3: str) -> bool:
+    """Whether the backup holds a finished history cut of the country that passes the checks; refuses a damaged one."""
+    if not (_has(conn, "inc", "osm_history_cuts") and _has(conn, "inc", "osm_history_changes")):
+        return False
+    row = conn.execute("SELECT status FROM inc.osm_history_cuts WHERE alpha3 = ?", (alpha3,)).fetchone()
+    if row is None or row[0] != "complete":
+        return False  # an unfinished history cut is never copied; the country still is
+    cut_cols = set(_columns(conn, "inc", "osm_history_cuts"))
+    checks = ["c.finished_at IS NOT NULL", *(_osm_json_object(c, "c") for c in ("counts_json", "span_json") if c in cut_cols)]
+    ok = conn.execute(
+        f"SELECT 1 FROM inc.osm_history_cuts c WHERE c.alpha3 = ? AND {' AND '.join(checks)}",  # noqa: S608  # nosec B608 # module literals
+        (alpha3,),
+    ).fetchone()
+    bad = conn.execute(
+        "SELECT 1 FROM inc.osm_history_changes h WHERE h.country_alpha3 = ? AND NOT ("
+        "h.osm_type IN ('n', 'w', 'r') AND typeof(h.osm_id) = 'integer' AND h.osm_id > 0 "
+        "AND (h.object_version IS NULL OR typeof(h.object_version) = 'integer') "
+        "AND typeof(h.change) = 'text' AND length(h.change) BETWEEN 1 AND 8 "
+        "AND (h.key IS NULL OR typeof(h.key) = 'text') AND (h.old_value IS NULL OR typeof(h.old_value) = 'text') "
+        "AND (h.new_value IS NULL OR typeof(h.new_value) = 'text')) LIMIT 1",
+        (alpha3,),
+    ).fetchone()
+    if ok is None or bad is not None:
+        raise _OsmRefused("refused_unreadable")
+    return True
+
+
+def _osm_partly_here(conn: Any, alpha3: str) -> bool:
+    """Something of a country with no country row here is already in the lane (never true of a lane this build wrote)."""
+    for sql in (
+        "SELECT 1 FROM main.osm_objects WHERE country_alpha3 = ? LIMIT 1",
+        "SELECT 1 FROM main.osm_history_cuts WHERE alpha3 = ? LIMIT 1",
+        "SELECT 1 FROM main.osm_history_changes WHERE country_alpha3 = ? LIMIT 1",
+    ):
+        if conn.execute(sql, (alpha3,)).fetchone() is not None:
+            return True
+    return False
+
+
+def _osm_validate(conn: Any, alpha3: str, live_objects: set[str]) -> bool:
+    """Every check of the backup's copy of one country, read from the member alone. Returns whether a
+    finished history cut comes with it; raises :class:`_OsmRefused`.
+
+    Run BEFORE the maps store's write lock is taken: the checks read every object, and a daily
+    update or a cut must not wait behind them.
+    """
+    _osm_check_country(conn, alpha3)
+    _osm_check_objects(conn, alpha3, live_objects)
+    _osm_check_inside(conn, alpha3)
+    _osm_check_counts(conn, alpha3)
+    return _osm_check_history(conn, alpha3)
+
+
+def _osm_copy_country(conn: Any, alpha3: str, with_history: bool, tables: dict[str, dict[str, int]]) -> None:
+    """Copy one validated country whole inside the caller's transaction (``_osm_validate`` first).
+
+    Raises :class:`_OsmRefused` (or a database error) during the copy; the caller rolls back.
+    """
+    from src.osm.apply import FEED_PREFIX
+
+    if conn.execute("SELECT 1 FROM main.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone() is not None:
+        # A cut of this country started here while the backup's copy was being checked: it is
+        # this machine's now, and kept like any country both hold.
+        raise _OsmRefused("kept_here")
+    if _osm_partly_here(conn, alpha3):
+        raise _OsmRefused("refused_partly_here")
+    clash = conn.execute(
+        "SELECT 1 FROM inc.osm_objects o JOIN main.osm_objects m ON m.osm_type = o.osm_type AND m.osm_id = o.osm_id "
+        "WHERE o.country_alpha3 = ? LIMIT 1",
+        (alpha3,),
+    ).fetchone()
+    if clash is not None:
+        # One OpenStreetMap object is stored once in this lane; here it already belongs to another country.
+        raise _OsmRefused("refused_shares_objects")
+    params = {"a": alpha3, "horizon": _horizon(), "feed": f"{FEED_PREFIX}{alpha3}"}
+
+    def add(table: str, key: str, n: int) -> None:
+        slot = tables.setdefault(table, {})
+        slot[key] = slot.get(key, 0) + n
+
+    _insert_select(
+        conn, "osm_countries", source_from="inc.osm_countries i",
+        overrides={"started_at": "MIN(i.started_at, :horizon)", "finished_at": "MIN(i.finished_at, :horizon)", "alpha3": ":a"},
+        where="i.alpha3 = :a", source_alias="i", params=params,
+    )
+    add("osm_objects", "inserted", _insert_select(
+        conn, "osm_objects", source_from="inc.osm_objects o", overrides={"country_alpha3": ":a"}, where="o.country_alpha3 = :a",
+        source_alias="o", params=params,
+    ))
+    if _has(conn, "inc", "osm_tag_changes"):
+        add("osm_tag_changes", "inserted", _insert_select(
+            conn, "osm_tag_changes", source_from="inc.osm_tag_changes c",
+            overrides={"recorded_at": "MIN(c.recorded_at, :horizon)", "country_alpha3": ":a"},
+            where=(
+                "c.country_alpha3 = :a AND c.osm_type IN ('n', 'w', 'r') AND typeof(c.osm_id) = 'integer' "
+                "AND typeof(c.key) = 'text' AND typeof(c.change) = 'text' AND length(c.change) BETWEEN 1 AND 8"
+            ),
+            source_alias="c", params=params,
+        ))
+    if _has(conn, "inc", "osm_diff_runs"):
+        add("osm_diff_runs", "inserted", _insert_select(
+            conn, "osm_diff_runs", source_from="inc.osm_diff_runs r",
+            overrides={"applied_at": "MIN(r.applied_at, :horizon)", "alpha3": ":a"},
+            where="r.alpha3 = :a AND typeof(r.sequence) = 'integer'", source_alias="r", params=params,
+        ))
+    if _has(conn, "inc", "versioned_changes"):
+        # The country's daily feed: which change files it was told about. Its cursor is this
+        # machine's own bookmark (L5) and stays behind; the update re-derives it from the
+        # copied country row (``apply._sync_cursor``).
+        live_vc = set(_columns(conn, "main", "versioned_changes"))
+        add("versioned_changes", "inserted", _insert_select(
+            conn, "versioned_changes", source_from="inc.versioned_changes c",
+            overrides={k: "NULL" for k in ("entity_id", "ingested_revision_id") if k in live_vc}
+            | ({"recorded_at": "MIN(c.recorded_at, :horizon)"} if "recorded_at" in live_vc else {})
+            | {"feed": ":feed"},
+            where=(
+                "c.feed = :feed AND typeof(c.change_ref) = 'text' AND typeof(c.change_kind) = 'text' "
+                "AND NOT EXISTS (SELECT 1 FROM main.versioned_changes m WHERE m.feed = c.feed AND m.change_ref = c.change_ref)"
+            ),
+            source_alias="c", params=params,
+        ))
+    if _has(conn, "inc", "versioned_gaps"):
+        # A gap the country's feed PUBLISHED (a re-baseline, a re-cut) is never healed; readers
+        # count them, so they travel with the runs they explain.
+        add("versioned_gaps", "inserted", _insert_select(
+            conn, "versioned_gaps", source_from="inc.versioned_gaps g",
+            overrides={"detected_at": "MIN(g.detected_at, :horizon)", "feed": ":feed"},
+            where="g.feed = :feed AND typeof(g.reason) = 'text'", source_alias="g", params=params,
+        ))
+    if with_history:
+        _insert_select(
+            conn, "osm_history_cuts", source_from="inc.osm_history_cuts c",
+            overrides={"started_at": "MIN(c.started_at, :horizon)", "finished_at": "MIN(c.finished_at, :horizon)", "alpha3": ":a"},
+            where="c.alpha3 = :a", source_alias="c", params=params,
+        )
+        add("osm_history_cuts", "inserted", 1)
+        add("osm_history_changes", "inserted", _insert_select(
+            conn, "osm_history_changes", source_from="inc.osm_history_changes h", overrides={"country_alpha3": ":a"},
+            where="h.country_alpha3 = :a", source_alias="h", params=params,
+        ))
+
+
+def _osm_count(counts: dict[str, int], key: str) -> None:
+    counts[key] = counts.get(key, 0) + 1
+
+
+def _osm_rollback(conn: Any) -> None:
+    """Roll the country back; SQLite may already have (an interrupt, a full disk), and that is not a second failure."""
+    if conn.in_transaction:
+        conn.execute("ROLLBACK")
+
+
+def _merge_osm(conn: Any, out: dict[str, Any]) -> None:
+    """R739: copy each finished country this machine lacks, whole, one transaction per country.
+
+    A country NOT copied because of this machine's state (the store busy behind a daily update, a
+    database error that is not the backup's content) leaves the lane OWED: ``out["owed"]`` is set,
+    the lane reads ``partial``, and the next import of the same backup tries that country again
+    (every country already copied is then kept here, so nothing is copied twice).
+    """
+    tables: dict[str, dict[str, int]] = out["tables"]
+    counts = {"copied": 0, "kept_here": 0, "not_finished_in_backup": 0}
+    out["osm_newer_in_backup"] = []
+    out["osm_unfinished_here"] = []
+    out["osm_copied"] = []
+    out["osm_history_copied"] = []
+    tables["osm_countries"] = counts
+    if not all(_has(conn, "inc", t) for t in ("osm_countries", "osm_objects")):
+        return
+    live_objects = set(_columns(conn, "main", "osm_objects"))
+    # A tag column a NEWER build added would have nowhere to go here, and the object would
+    # come out with a tag missing. Such a backup's countries wait for a build that knows it.
+    newer_format = bool(set(_columns(conn, "inc", "osm_objects")) - live_objects)
+    rows = conn.execute("SELECT alpha3, status FROM inc.osm_countries ORDER BY alpha3").fetchall()
+    for alpha3, status in rows:
+        if not (isinstance(alpha3, str) and len(alpha3) == 3 and alpha3.isascii() and alpha3.isalpha() and alpha3.isupper()):
+            _osm_count(counts, "refused_unreadable")
+            continue
+        try:
+            here = conn.execute("SELECT status FROM main.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone()
+            if here is not None:
+                counts["kept_here"] += 1
+                if status == "complete" and here[0] != "complete":
+                    # This machine's own cut never finished: no daily update can bring it forward,
+                    # only cutting the country again. Said apart from "newer".
+                    out["osm_unfinished_here"].append(alpha3)
+                elif status == "complete" and _osm_backup_is_newer(conn, alpha3):
+                    out["osm_newer_in_backup"].append(alpha3)
+                continue
+        except sqlite3.Error as exc:
+            _LOG.warning("a country of the maps backup could not be compared (%s); it is tried again on the next import", type(exc).__name__)
+            _osm_count(counts, "not_copied_database_error")
+            out["owed"] = True
+            continue
+        if status != "complete":
+            counts["not_finished_in_backup"] += 1
+            continue
+        if newer_format:
+            _osm_count(counts, "made_by_a_newer_version")
+            continue
+        staged: dict[str, dict[str, int]] = {}
+        try:
+            history = _osm_validate(conn, alpha3, live_objects)
+        except sqlite3.OperationalError as exc:
+            _LOG.warning("a country of the maps backup could not be read (%s); it is tried again on the next import", type(exc).__name__)
+            _osm_count(counts, "not_copied_database_error")
+            out["owed"] = True
+            continue
+        except (_OsmRefused, sqlite3.Error, ValueError, OverflowError) as exc:
+            _osm_count(counts, exc.reason if isinstance(exc, _OsmRefused) else "refused_unreadable")
+            continue
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            # A writer (the daily update, a cut) held the store past the wait. The countries
+            # already copied stay copied; this one is owed, and the next import copies it.
+            _LOG.warning("the maps store was busy; a country of the backup was not copied (%s)", type(exc).__name__)
+            _osm_count(counts, "not_copied_store_busy")
+            out["owed"] = True
+            continue
+        try:
+            _osm_copy_country(conn, alpha3, history, staged)
+            conn.execute("COMMIT")
+        except sqlite3.OperationalError as exc:
+            # This machine's state (busy, interrupted, disk full), not the backup's content.
+            _osm_rollback(conn)
+            _LOG.warning("a country of the maps backup was not copied (%s); nothing of it was kept", type(exc).__name__)
+            _osm_count(counts, "not_copied_database_error")
+            out["owed"] = True
+            continue
+        except (_OsmRefused, sqlite3.Error, ValueError) as exc:
+            _osm_rollback(conn)
+            if not isinstance(exc, _OsmRefused):
+                _LOG.warning("a country of the maps backup was not copied (%s); nothing of it was kept", type(exc).__name__)
+            reason = exc.reason if isinstance(exc, _OsmRefused) else "refused_unreadable"
+            _osm_count(counts, reason)
+            if reason == "kept_here":
+                # A cut of this country started here meanwhile: reported as any country both hold.
+                with contextlib.suppress(sqlite3.Error):
+                    now = conn.execute("SELECT status FROM main.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone()
+                    if now is not None and now[0] != "complete":
+                        out["osm_unfinished_here"].append(alpha3)
+                    elif now is not None and _osm_backup_is_newer(conn, alpha3):
+                        out["osm_newer_in_backup"].append(alpha3)
+            continue
+        except BaseException:
+            _osm_rollback(conn)
+            raise
+        counts["copied"] += 1
+        out["osm_copied"].append(alpha3)
+        if history:
+            out["osm_history_copied"].append(alpha3)
+        for table, sub in staged.items():
+            slot = tables.setdefault(table, {})
+            for k, v in sub.items():
+                slot[k] = slot.get(k, 0) + v
+
+
+def _after_osm(out: dict[str, Any]) -> None:
+    """Rebuild, from the copied rows, every index and summary a local cut builds at its end. Never raises.
+
+    The same builders the cut and the history job call; a failure leaves that index reading as
+    not matching the country, which its own job rebuilds, exactly as after a local cut.
+    """
+    from src.monitoring.secret_scrub import log_failure
+    from src.osm.places import build_search_index
+    from src.osm.places_summary import build_quietly as build_places_summary
+    from src.osm.view import build_view_index
+
+    builders = (("search index", build_search_index), ("map index", build_view_index), ("places summary", build_places_summary))
+    for alpha3 in out.get("osm_copied") or ():
+        for name, build in builders:
+            try:
+                build(alpha3)
+            except Exception as exc:  # noqa: BLE001 - the country is copied; only an index is missing
+                log_failure(_LOG, f"the {alpha3} {name} after the backup import failed", exc, level=logging.WARNING)
+    for alpha3 in out.get("osm_history_copied") or ():
+        try:
+            from src.osm.prior_summary import build_quietly
+
+            build_quietly(alpha3)
+        except Exception as exc:  # noqa: BLE001 - the history is copied; only its summary is missing
+            log_failure(_LOG, f"the {alpha3} history summary after the backup import failed", exc, level=logging.WARNING)
+
+
 _STEPS = {
     "wiki": (_merge_shared, _merge_walk, _merge_warm),
     "law": (_merge_shared, _merge_law),
+    # The maps lane is never merged row by row: each country is its own transaction (R739).
+    "osm": (_merge_osm,),
 }
+
+#: Lanes whose step opens one transaction per unit itself, instead of one for the store.
+_OWN_TRANSACTIONS = frozenset({"osm"})
+
+#: Work done after the lane's connection is closed: the derived indexes a local job builds.
+_AFTER = {"osm": _after_osm}
 
 
 # --------------------------------------------------------------------------- #
 #  Entry points
 # --------------------------------------------------------------------------- #
 def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[str, Any]:
-    """Merge one staged lane snapshot into this machine's lane. One transaction."""
-    from src.database.connect import connect
-    from src.versioned.store import create_lane, dispose_lane, lane_path
+    """Merge one staged lane snapshot into this machine's lane. One transaction (one per country for maps)."""
+    from src.versioned.store import create_lane, dispose_lane
 
     if kind not in _STEPS:
         raise LaneMergeError(f"this build cannot merge the {kind} lane yet")
     t0 = time.monotonic()
     create_lane(kind)  # idempotent; refuses by name while locked or beside an encrypted corpus in the clear
     out: dict[str, Any] = {"kind": kind, "tables": {}, "newly_followed": 0, "warm_texts_dropped": 0}
+    try:
+        _merge_into(kind, path, keys, out)
+    finally:
+        # Engines built before the merge may hold pages cached from the old file state; a lane
+        # engine re-reads on its next checkout, so disposing is cheap insurance, never required.
+        dispose_lane(kind)
+        # A unit-by-unit lane keeps what it committed even when a later unit raised, so the
+        # indexes of what was copied are built either way.
+        after = _AFTER.get(kind)
+        if after is not None:
+            after(out)
+    out["seconds"] = round(time.monotonic() - t0, 3)
+    out["budget"] = _budget_after(kind)
+    return out
+
+
+def _merge_into(kind: str, path: Path, keys: Iterable[str | None], out: dict[str, Any]) -> None:
+    """``merge_lane_file``'s work on the lane's own connection."""
+    from src.database.connect import connect
+    from src.versioned.store import lane_path
+
     conn = connect(lane_path(kind), check_same_thread=False)
     try:
         conn.isolation_level = None
@@ -1055,24 +1608,22 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
                 # Read before the lane's write lock is taken, so a law poller is not held
                 # behind a corpus read; a link added meanwhile only waits for a re-import.
                 _corpus_law_links(conn)
-            conn.execute("BEGIN IMMEDIATE")
-            try:
+            if kind in _OWN_TRANSACTIONS:
                 for step in _STEPS[kind]:
                     step(conn, out)
-                conn.execute("COMMIT")
-            except BaseException:
-                conn.execute("ROLLBACK")
-                raise
+            else:
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    for step in _STEPS[kind]:
+                        step(conn, out)
+                    conn.execute("COMMIT")
+                except BaseException:
+                    conn.execute("ROLLBACK")
+                    raise
         finally:
             conn.execute("DETACH DATABASE inc")
     finally:
         conn.close()
-    # Engines built before the merge may hold pages cached from the old file state; a lane
-    # engine re-reads on its next checkout, so disposing is cheap insurance, never required.
-    dispose_lane(kind)
-    out["seconds"] = round(time.monotonic() - t0, 3)
-    out["budget"] = _budget_after(kind)
-    return out
 
 
 def _budget_after(kind: str) -> dict[str, Any] | None:
@@ -1138,7 +1689,9 @@ def merge_staged_lanes(
         path = Path(staging_dir) / member_name(kind)
         try:
             res = merge_lane_file(kind, path, keys)
-            res["state"] = "merged"
+            # ``partial``: some units were left by this machine's state (R739's maps store, a
+            # busy store) and are owed to the next import of this backup.
+            res["state"] = "partial" if res.pop("owed", False) else "merged"
             report["lanes"].append(res)
         except (LaneMergeError, DatabaseLockedError, PlaintextLaneRefused) as exc:
             # This module's own sentences, and the lane store's named refusals (locked; a
@@ -1244,7 +1797,7 @@ def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
     if not digest:
         return
     lanes = [x for x in living.get("lanes") or () if isinstance(x, dict)]
-    owed = sorted({str(x.get("kind")) for x in lanes if x.get("state") in ("failed", "deferred")})
+    owed = sorted({str(x.get("kind")) for x in lanes if x.get("state") in ("failed", "deferred", "partial")})
     if living.get("error"):
         owed = owed or ["all"]
 

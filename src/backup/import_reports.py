@@ -577,7 +577,7 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
         owed = sum(
             1
             for x in living.get("lanes") or ()
-            if isinstance(x, dict) and x.get("state") in ("deferred", "failed")
+            if isinstance(x, dict) and x.get("state") in ("deferred", "failed", "partial")
         ) or (1 if living.get("error") else 0)
         if owed:
             out["lanes_owed"] = owed
@@ -674,10 +674,17 @@ def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
             continue
         title = _LANE_TITLES.get(str(lane.get("kind")), "Unknown store")
         state = lane.get("state")
-        if state != "merged":
+        if state not in ("merged", "partial"):
             lines.append(f"- {title}: not merged ({lane.get('reason') or state}). This store here is unchanged.")
             continue
-        lines.append(f"- {title}: merged in {lane.get('seconds')} s.")
+        if state == "partial":
+            lines.append(
+                f"- {title}: merged in part in {lane.get('seconds')} s. **Some of it could not be copied because "
+                "this computer's store was busy or could not be written; importing this backup again copies the rest.** "
+                "What was copied stays."
+            )
+        else:
+            lines.append(f"- {title}: merged in {lane.get('seconds')} s.")
         for table, counts in sorted((lane.get("tables") or {}).items()):
             if isinstance(counts, dict):
                 shown = ", ".join(f"{k.replace('_', ' ')} {_fmt_count(v)}" for k, v in counts.items())
@@ -688,6 +695,24 @@ def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
                 f"  - **This store is now over its budget**: it holds {_fmt_gb(budget.get('bytes'))} GB and its "
                 f"budget is {_fmt_count(budget.get('budget_gb'))} GB. Nothing was removed. It fetches nothing new "
                 "until it is back under budget or the budget is raised (Settings > Storage)."
+            )
+        newer = [str(c) for c in (lane.get("osm_newer_in_backup") or ()) if isinstance(c, str)]
+        if newer:
+            # R739: a country both computers hold keeps this computer's copy whole, even when
+            # the backup's stands later; that is said, never done silently.
+            noun = "country" if len(newer) == 1 else "countries"
+            lines.append(
+                f"  - **The backup holds a newer copy of {_fmt_count(len(newer))} {noun} this computer already has** "
+                f"({', '.join(newer)}). This computer's copy was kept whole; nothing in it was replaced. Its daily "
+                "update, or cutting the country again, brings it forward."
+            )
+        unfinished = [str(c) for c in (lane.get("osm_unfinished_here") or ()) if isinstance(c, str)]
+        if unfinished:
+            noun = "country" if len(unfinished) == 1 else "countries"
+            lines.append(
+                f"  - **The backup holds a finished copy of {_fmt_count(len(unfinished))} {noun} whose cut on this "
+                f"computer never finished** ({', '.join(unfinished)}). This computer's copy was kept as it is; cutting "
+                "the country again here finishes it."
             )
         dropped = lane.get("warm_texts_dropped")
         if dropped:
