@@ -28,6 +28,7 @@ import ast
 import importlib.util
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -665,7 +666,7 @@ def test_the_real_step_is_in_the_jobs_the_script_is_for():
     assert [job for job, _run in _real_steps()] == ["test", "core-only"]
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="the step's shell is bash")
+@pytest.mark.skipif(shutil.which("bash") is None or os.name == "nt", reason="the step's shell is bash, on the Linux lanes (Windows' bash.exe is the WSL launcher)")
 @pytest.mark.parametrize("job_name", ["test", "core-only"])
 def test_the_output_of_the_real_step_is_read_by_the_script(job_name, tmp_path):
     """Run the step's own ``run`` text under bash with a stub ``python`` and a summary file, then parse what it printed (stdout and the summary)."""
@@ -712,7 +713,7 @@ def test_the_output_of_the_real_step_is_read_by_the_script(job_name, tmp_path):
     ]
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="the step's shell is bash")
+@pytest.mark.skipif(shutil.which("bash") is None or os.name == "nt", reason="the step's shell is bash, on the Linux lanes (Windows' bash.exe is the WSL launcher)")
 def test_the_real_step_without_the_runner_variables_prints_unknown_and_is_still_read(tmp_path):
     run = dict(_real_steps())["test"]
     bin_dir = tmp_path / "bin"

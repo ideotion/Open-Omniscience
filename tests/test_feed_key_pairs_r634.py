@@ -552,7 +552,7 @@ def test_no_module_that_answers_reports_or_shows_names_the_feed_key():
     file itself (a full backup carries the kept key beside ``rss_url``, by design)."""
     root = Path(__file__).resolve().parents[1]
     files = [p for p in (root / "src").rglob("*") if p.is_file() and p.suffix in {".py", ".js", ".html", ".css", ".json"}]
-    said = {str(p.relative_to(root)): p.read_text(encoding="utf-8", errors="replace") for p in files}
+    said = {p.relative_to(root).as_posix(): p.read_text(encoding="utf-8", errors="replace") for p in files}
     named = {path for path, body in said.items() if "feed_key" in body}
     assert named <= _NAMES_FEED_KEY | set(_WRITES_THE_KEY_MASKED), sorted(named - _NAMES_FEED_KEY - set(_WRITES_THE_KEY_MASKED))
     generic = {path for path, body in said.items() if _READS_EVERY_COLUMN.search(body)}
