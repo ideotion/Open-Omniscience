@@ -189,4 +189,4 @@ def shown_feed_key(stored_key: str | None) -> str | None:
         end = start + len(KEY_USERINFO_MASK) + (end - at - 1)
     # R734: the query's values masked but for an allowlisted harmless one, the fragment dropped; the authority is never read as a query
     # (it ends at the first ?), so its mask above stands as written.
-    return FEED_PREFIX + body[:end] + masked_address(body[end:])
+    return FEED_PREFIX + body[:end] + masked_address(body[end:], authority=False)
