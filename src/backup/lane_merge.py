@@ -1480,12 +1480,15 @@ def _after_osm(out: dict[str, Any]) -> None:
     not matching the country, which its own job rebuilds, exactly as after a local cut.
     """
     from src.monitoring.secret_scrub import log_failure
+    from src.osm.places import build_search_index
+    from src.osm.places_summary import build_quietly as build_places_summary
+    from src.osm.view import build_view_index
 
+    builders = (("search index", build_search_index), ("map index", build_view_index), ("places summary", build_places_summary))
     for alpha3 in out.get("osm_copied") or ():
-        for module, name in (("src.osm.places", "build_search_index"), ("src.osm.view", "build_view_index"),
-                             ("src.osm.places_summary", "build_quietly")):
+        for name, build in builders:
             try:
-                getattr(__import__(module, fromlist=[name]), name)(alpha3)
+                build(alpha3)
             except Exception as exc:  # noqa: BLE001 - the country is copied; only an index is missing
                 log_failure(_LOG, f"the {alpha3} {name} after the backup import failed", exc, level=logging.WARNING)
     for alpha3 in out.get("osm_history_copied") or ():

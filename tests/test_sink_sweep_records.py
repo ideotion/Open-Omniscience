@@ -57,6 +57,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # R689 (1): ``_await_unless_stopped`` hands a queued generation's exception from its thread to the waiting caller, which
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
+    # R739: the maps merge reads ``_OsmRefused.reason``, one of the module's own fixed counter names (``refused_unreadable`` ...),
+    # to count a refused country; the exception carries no text from the backup, and nothing is logged or stored but that name
+    "src/backup/lane_merge.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
     "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     # R695: ``_deadline_stopped(exc)`` answers whether a caught error is a statement deadline's stop: an isinstance test, then the
     # driver text compared to the one fixed word ``interrupted``; it stores nothing and logs nothing, and the two callers only re-raise
