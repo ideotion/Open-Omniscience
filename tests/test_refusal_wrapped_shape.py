@@ -276,7 +276,9 @@ def test_failure_url_leaves_no_character_the_reader_would_end_the_token_on(space
 
 def test_failure_url_changes_nothing_else():
     url = "https://h.example:8443/p%20q/r'\"()[]~@!$*+,;=/é?format=rss&page=2"
-    assert failure_url(url) == url
+    # R736: a path parameter is written with its value masked, and one with no readable name (``;=``) is masked whole (fail closed)
+    assert failure_url(url) == url.replace(";=/", ";***/")
+    assert failure_url(url.replace(";=", "")) == url.replace(";=", "")
     # R734: but for the query's values (an allowlisted harmless one kept) and the fragment, which is dropped
     assert failure_url("https://h.example/r?x=1&y=2&lang=en#frag") == "https://h.example/r?x=***&y=***&lang=en"
     assert failure_url("https://h.example/\ud800 x") == "https://h.example/\ud800%20x"  # a lone surrogate is kept and never raises
