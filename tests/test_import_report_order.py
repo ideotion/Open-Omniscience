@@ -79,7 +79,8 @@ def test_equal_stamps_fall_back_to_the_mtime_then_the_filename(monkeypatch):
     c = ir.persist_import_report("restore", {"outcome": "ok"}, run_id="cc")
     _tie(a, b, c)
     assert _names() == [c.name, b.name, a.name], "equal stamp and mtime: the filename decides, newest name first"
-    os.utime(a, ns=(_SAME_MTIME_NS + 1, _SAME_MTIME_NS + 1))
+    later = _SAME_MTIME_NS + 1_000_000_000  # a whole second: NTFS keeps mtime in 100 ns ticks, so +1 ns would not land
+    os.utime(a, ns=(later, later))
     assert _names() == [a.name, c.name, b.name], "equal stamp: the later mtime is listed first"
 
 
