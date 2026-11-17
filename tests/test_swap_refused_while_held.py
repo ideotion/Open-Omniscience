@@ -79,6 +79,13 @@ def test_only_a_positive_answer_about_this_process_refuses(monkeypatch, tmp_path
     assert str(busy.value) == merge.OWN_HOLDER_BUSY
     monkeypatch.setattr(merge, "_this_process_holds", lambda path, **kw: False)
     assert merge._refuse_if_this_process_holds(_held(target)) is None
+    # a refused REPLACE names the source in ``filename`` and the destination in ``filename2``: the one asked about is the destination
+    asked: list[Path] = []
+    monkeypatch.setattr(merge, "_this_process_holds", lambda path, **kw: asked.append(path) or False)
+    working = tmp_path / "working.db"
+    replace_refused = _HeldOpen(13, "refused", str(working), None, str(target))
+    assert merge._refuse_if_this_process_holds(replace_refused) is None
+    assert asked == [target], "a refused replace must ask about the live file it would replace, not the copy it would move"
     no_name = _HeldOpen(13, "refused")  # a refusal that names no file cannot be asked about
     monkeypatch.setattr(merge, "_this_process_holds", lambda path, **kw: pytest.fail("asked about no file"))
     assert merge._refuse_if_this_process_holds(no_name) is None
@@ -279,6 +286,40 @@ def test_an_error_that_is_not_a_held_file_is_not_called_one(wal_store, monkeypat
     scope_os(monkeypatch, encrypt_tool, replace=replace)
     with pytest.raises(PermissionError):
         encrypt_tool.encrypt_database(wal_store, _KEY)
+
+
+def test_only_a_removed_write_ahead_log_changes_the_words():
+    """The ``-shm`` is an index SQLite rebuilds; the file is whole without it. Only a removed ``-wal`` (which carries saves) makes
+    the snapshot the complete copy."""
+    assert encrypt_tool._held_words([]) == encrypt_tool.HELD_UNTOUCHED
+    assert encrypt_tool._held_words(["-shm"]) == encrypt_tool.HELD_UNTOUCHED
+    assert encrypt_tool._held_words(["-wal"]) == encrypt_tool.HELD_LOG_REMOVED
+    assert encrypt_tool._held_words(["-wal", "-shm"]) == encrypt_tool.HELD_LOG_REMOVED
+
+
+def test_a_probe_thread_that_cannot_start_is_cannot_tell(monkeypatch, tmp_path):
+    class _NoStart:
+        def __init__(self, *a, **kw):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(merge.threading, "Thread", _NoStart)
+    assert merge._this_process_holds(tmp_path / "live.db") is False
+
+
+def test_a_held_store_other_than_the_library_keeps_its_own_error(wal_store, monkeypatch):
+    """``encrypt_all`` encrypts the corpus FIRST, so a later store refused as held follows a library that is already ciphertext: the
+    library's "not encrypted, untouched" words would be false there, so they are kept for ``library=True`` alone."""
+
+    def replace(src, dst):
+        raise _held(dst)
+
+    scope_os(monkeypatch, encrypt_tool, replace=replace)
+    with pytest.raises(_HeldOpen):
+        encrypt_tool.encrypt_database(wal_store, _KEY)
+    assert not is_encrypted_file(wal_store)
 
 
 def test_the_two_refusals_are_keyed_in_every_locale_and_the_page_translates_them():

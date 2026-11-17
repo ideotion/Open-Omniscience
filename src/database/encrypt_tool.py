@@ -110,10 +110,13 @@ def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> di
                 os.replace(enc_tmp, p)  # atomic on the same filesystem
         except OSError as refused:
             # Windows: a request of this app or another program still had the file open (R741, row 145). No retry here: the gate this
-            # holds may be what that request waits on. Fixed words, the chain cut (the OS's text names a path).
+            # holds may be what that request waits on. Fixed words, the chain cut (the OS's text names a path). ONLY for the library:
+            # the words name the library file and say it was not encrypted, which is true only for the corpus, the FIRST store
+            # ``encrypt_all`` encrypts. A later store (the custody log, a lane) refused after the corpus became ciphertext keeps the
+            # error it always raised, never a sentence that would tell the operator nothing was encrypted.
             from src.backup.merge import _file_is_locked
 
-            if not _file_is_locked(refused):
+            if not library or not _file_is_locked(refused):
                 raise
             raise EncryptToolError(_held_words(removed)) from None
     finally:
@@ -139,13 +142,14 @@ HELD_UNTOUCHED = (
 )
 HELD_LOG_REMOVED = (
     "A request of this app or another program was still using the library file, so it was not encrypted. The library file itself was not "
-    "replaced, but its log files were already removed, so the plaintext snapshot made just before (pre-encrypt-…) is the complete copy. "
+    "replaced, but its write-ahead log was already removed, so the plaintext snapshot made just before (pre-encrypt-…) is the complete copy. "
     "Try again when the app is idle."
 )
 
 
 def _held_words(removed: list[str]) -> str:
-    return HELD_LOG_REMOVED if removed else HELD_UNTOUCHED
+    # Only the ``-wal`` carries saves; a removed ``-shm`` is an index SQLite rebuilds, so the file is still whole without it.
+    return HELD_LOG_REMOVED if "-wal" in removed else HELD_UNTOUCHED
 
 
 @contextmanager

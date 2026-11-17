@@ -340,7 +340,10 @@ def _this_process_holds(path: Path, *, timeout_s: float = _OWN_HOLDER_PROBE_S) -
             answer.append(False)
 
     worker = threading.Thread(target=probe, name="swap-own-holder-probe", daemon=True)
-    worker.start()
+    try:
+        worker.start()
+    except Exception:  # noqa: BLE001 - a thread that cannot start is "cannot tell", never a raise through the swap
+        return False
     worker.join(timeout_s)
     return bool(answer) and answer[0]
 
@@ -353,8 +356,10 @@ OWN_HOLDER_BUSY = (
 
 def _refuse_if_this_process_holds(exc: OSError) -> None:
     """The swap's ``after_grace``: raise :class:`~src.database.library_generation.LibraryBusy` when the refused file is held by this
-    process, and return (the wait goes on) for any other holder or when that cannot be told."""
-    name = getattr(exc, "filename", None)
+    process, and return (the wait goes on) for any other holder or when that cannot be told. The file asked about is the one refused:
+    for ``os.replace(working, target)`` that is the DESTINATION, which the OS puts in ``filename2`` (``filename`` is the source); an
+    unlink has only ``filename``."""
+    name = getattr(exc, "filename2", None) or getattr(exc, "filename", None)
     if not name or not _this_process_holds(Path(name)):
         return
     from src.database.library_generation import LibraryBusy
