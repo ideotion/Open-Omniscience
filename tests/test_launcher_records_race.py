@@ -294,15 +294,17 @@ def test_a_row_that_times_out_is_written_under_the_lock_after_the_holder_trims_n
     h, env = _helpers(tmp_path, no_flock=no_flock)
     f = tmp_path / "x.jsonl"
     _seed(f, 60)
-    slow = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; _slow() {{ tail -n 20 "$1" > "$1.tmp.slow"; sleep 1.5; mv -f "$1.tmp.slow" "$1"; }}; '
+    # The holder's trim sleeps 6 s. What is checked is the ORDER: the appender returns while the holder is still inside its trim (its temporary file is still
+    # there and it has not exited). A wall-clock budget (took < 1.0 s) failed on macOS runners at 1.02 s and 1.18 s (run 44052134860) with the order right; the
+    # 6 s gives a slow runner ample room, and a launcher that waited for the lock could only return after the holder's mv, so it still fails this.
+    slow = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; _slow() {{ tail -n 20 "$1" > "$1.tmp.slow"; sleep 6; mv -f "$1.tmp.slow" "$1"; }}; '
             f'oo_rec_locked "{f}" _slow "{f}"')
+    trimming = tmp_path / "x.jsonl.tmp.slow"
     holder = subprocess.Popen(["bash", "-c", slow], env=env)
     try:
-        time.sleep(0.4)  # the holder is inside its slow trim
-        t = time.monotonic()
+        assert _wait_for(trimming.exists, 30), "the holder never started its trim"
         subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; oo_rec_append "{f}" \'{{"pid":7}}\' 40 20'], env=env, check=True, timeout=30)
-        took = time.monotonic() - t
-        assert took < 1.0, f"the launcher handed the row on and went; it did not wait for the holder ({took:.2f} s)"
+        assert trimming.exists() and holder.poll() is None, "the launcher handed the row on and went; it did not wait for the holder"
         assert {"pid": 7} not in _rows(f)[0], "nothing is written while the lock is held by someone else"
         holder.wait(timeout=30)
         assert _wait_for(lambda: {"pid": 7} in _rows(f)[0]), "the deferred row never landed"
@@ -1111,10 +1113,13 @@ def test_a_dead_takers_mark_is_cleared_by_one_clearer_at_a_time_and_a_live_taker
 
 
 @posix_only
+@pytest.mark.parametrize("links", [True, False], ids=["hard-links", "no-hard-links"])
 @pytest.mark.parametrize("case", ["move-fails", "owner-alive-again"])
-def test_a_taker_that_does_not_take_the_lock_over_removes_its_own_mark(tmp_path, case):
+def test_a_taker_that_does_not_take_the_lock_over_removes_its_own_mark(tmp_path, case, links):
     """Under its mark the taker moves the lock only if the owner is STILL dead (a recycled pid is never taken for the dead owner) and only if the move works;
-    in either other case it removes its own mark, so nobody waits behind it for ever, and leaves the lock where it is."""
+    in either other case it leaves the lock where it is. With hard links it removes its own mark (exclusively, by inode). Without them it takes only its pid
+    out and leaves the mark directory: by the time it would remove the mark, that name can be another taker's live mark in a newer lock, and removing it lets
+    two takers in (Opus read, 17 Nov). A pid-less mark keeps others out and goes with the lock."""
     h, env = _helpers(tmp_path, no_flock=True)
     f = tmp_path / "x.jsonl"
     _seed(f, 3)
@@ -1128,11 +1133,17 @@ def test_a_taker_that_does_not_take_the_lock_over_removes_its_own_mark(tmp_path,
     else:  # the owner's pid reads dead at the first look and alive under the mark
         shim = (f'oo_pid_alive() {{ if [ "$1" = {owner.pid} ]; then [ -e "{tmp_path}/looked" ] && return 0; : > "{tmp_path}/looked"; return 1; fi; '
                 'kill -0 "$1" 2>/dev/null; }; ')
+    if not links:
+        shim = 'ln() { return 1; }; ' + shim
     r = subprocess.run(["bash", "-c", f'. "{h}"; {shim}OO_REC_LOCK_WAIT_MS=100; oo_rec_locked "{f}" true; echo "rc=$?"'],
                        env=env, capture_output=True, text=True, timeout=30)
     assert "rc=99" in r.stdout, (r.stdout, r.stderr)
     assert lock.is_dir() and (lock / "pid").read_text(encoding="utf-8").strip() == str(owner.pid), "the lock was not moved"
-    assert [p.name for p in lock.iterdir()] == ["pid"], "and no mark or temp file was left in it"
+    if links:
+        assert [p.name for p in lock.iterdir()] == ["pid"], "and no mark or temp file was left in it"
+    else:
+        assert sorted(p.name for p in lock.iterdir()) == ["pid", "reap"], "the mark stays, and nothing else was left in it"
+        assert list((lock / "reap").iterdir()) == [], "with its pid taken out: a taker that gave up never removes a mark by its name"
 
 
 @posix_only
@@ -1196,3 +1207,79 @@ def test_where_the_filesystem_has_no_hard_links_a_dead_owners_lock_is_still_take
     finally:
         live.kill()
         live.wait()
+
+
+@posix_only
+@pytest.mark.parametrize("mv_kind", ["native", "replaces"])
+def test_without_hard_links_a_mark_that_appears_meanwhile_is_never_replaced_whatever_mv_does(tmp_path, mv_kind):
+    """The directory mark (no hard links) must be exclusive on every system. It was first made under a temp name and RENAMED into place, which relied on `mv`
+    moving a directory INTO a name that already exists; an `mv` that replaces the existing directory instead let a second taker take a live taker's mark from
+    under it, and two launchers held the lock (CI, 17 Nov, the no-hard-links round of the eight-taker test). Here a live taker's mark appears just before this
+    taker makes its own, under an `mv` that moves into (native) and one that replaces: either way the live mark stays as it was and the lock is not moved."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    owner = subprocess.Popen(["true"])
+    owner.wait()
+    live = subprocess.Popen(["sleep", "120"])
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+    appear = (f'if command mkdir "{tmp_path}/appeared" 2>/dev/null; then command mkdir "{lock}/reap"; '
+              f'printf "%s\\n" {live.pid} > "{lock}/reap/pid"; fi')
+    shims = ('ln() { return 1; }; '
+             f'mktemp() {{ [ "$1" != -d ] || {{ {appear}; }}; command mktemp "$@"; }}; mkdir() {{ case "$1" in */reap) {appear} ;; esac; command mkdir "$@"; }}; ')
+    if mv_kind == "replaces":
+        shims += 'mv() { if [ $# -eq 2 ] && [ -d "$1" ] && [ -d "$2" ]; then command rm -rf "$2"; fi; command mv "$@"; }; '
+    try:
+        r = subprocess.run(["bash", "-c", f'. "{h}"; {shims}OO_REC_LOCK_WAIT_MS=200; oo_rec_locked "{f}" true; echo "rc=$?"'],
+                           env=env, capture_output=True, text=True, timeout=30)
+        assert "rc=99" in r.stdout, (r.stdout, r.stderr)
+        assert (lock / "reap" / "pid").read_text(encoding="utf-8").strip() == str(live.pid), "the live taker's mark is still its own"
+        assert (lock / "pid").read_text(encoding="utf-8").strip() == str(owner.pid) and not list(tmp_path.glob("x.jsonl.lock.d.*")), "the lock was not moved"
+    finally:
+        live.kill()
+        live.wait()
+
+
+@posix_only
+def test_without_hard_links_a_mark_left_with_no_pid_is_cleared_after_a_minute_of_the_waiters_own_clock_only(tmp_path):
+    """A directory mark is made by mkdir and gets its pid just after, so a taker that dies between the two leaves a mark with no pid. A waiter clears it only
+    once it has itself seen that same mark without a pid for a minute (bash's SECONDS), never by the mark's mtime, which a skewed SMB server or a FUSE exFAT
+    driver can make look old at birth, and only if every look in that minute found it so: a mark with an old mtime is left alone, looks with gaps between them
+    never add up, and a minute of looks a second apart clears it and the lock is taken over."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    owner = subprocess.Popen(["true"])
+    owner.wait()
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
+    (lock / "reap").mkdir()
+    os.utime(lock / "reap", (time.time() - 3600, time.time() - 3600))
+    base = f'. "{h}"; ln() {{ return 1; }}; '
+    r = subprocess.run(["bash", "-c", base + f'OO_REC_LOCK_WAIT_MS=200; oo_rec_locked "{f}" true; echo "rc=$?"'], env=env, capture_output=True, text=True, timeout=30)
+    assert "rc=99" in r.stdout and (lock / "reap").is_dir(), ("an hour-old mtime alone clears nothing", r.stdout, r.stderr)
+    # looks a second apart for a minute clear it; looks three seconds apart (the waiter was not watching in between) never add up
+    gap3 = subprocess.run(["bash", "-c", base + f'sleep() {{ SECONDS=$((SECONDS + 3)); command sleep "$@"; }}; OO_REC_LOCK_WAIT_MS=2000; oo_rec_locked "{f}" true; echo "rc=$?"'],
+                          env=env, capture_output=True, text=True, timeout=60)
+    assert "rc=99" in gap3.stdout and (lock / "reap").is_dir(), ("looks with gaps never clear it", gap3.stdout, gap3.stderr)
+    r = subprocess.run(["bash", "-c", base + f'sleep() {{ SECONDS=$((SECONDS + 1)); command sleep "$@"; }}; OO_REC_LOCK_WAIT_MS=2000; oo_rec_locked "{f}" true; echo "rc=$?"'],
+                       env=env, capture_output=True, text=True, timeout=60)
+    assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+    assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.*")), "the mark was cleared, the lock taken over, nothing left behind"
+
+
+def test_the_filter_is_handed_every_helper_the_lock_calls():
+    """The stderr filter's shell gets the helpers as text (oo_rec_lib) and has nothing else: a helper the lock calls but the text leaves out is "command not
+    found" there, silently. The no-hard-links mark was such a helper (read of 17 Nov), so on such a drive the filter could never take a dead owner's lock over
+    and its rows waited for ever. Every record helper that a handed helper calls must be handed too."""
+    src = LAUNCH_SH.read_text(encoding="utf-8")
+    block = src[src.index("OO_REC_LOCK_WAIT_MS="):src.index("# --- end of the evidence file helpers")]
+    bodies = dict(re.findall(r"^([A-Za-z_][A-Za-z0-9_]*)\(\) \{(.*?)^\}", block, re.M | re.S))
+    bodies.update(re.findall(r"^([A-Za-z_][A-Za-z0-9_]*)\(\) \{(.*?)\}$", block, re.M))
+    handed = set(re.search(r"oo_rec_lib\(\) \{ declare -f ([^;]+);", block).group(1).split())
+    called = {name for h in handed for name in bodies if name != h and re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", bodies.get(h, ""))}
+    assert "_oo_rec_reap_dir" in called, "the lock calls the no-hard-links mark"
+    assert called <= handed, sorted(called - handed)
