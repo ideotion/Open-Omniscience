@@ -836,9 +836,10 @@ def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files
     (home / "thesis.odt").write_bytes(b"years of work")
     (home / "models").mkdir()
     (home / "models" / "mine.bin").write_bytes(b"weights")
-    latin = os.fsdecode(b"caf\xe9.txt")
+    latin = None  # Windows names are UTF-16 and cannot carry a byte that is not UTF-8: there is no such name to meet there
     made_latin = False
     if os.name == "posix":
+        latin = os.fsdecode(b"caf\xe9.txt")
         try:
             (home / latin).write_bytes(b"latin-1 name")
             made_latin = True
@@ -856,7 +857,7 @@ def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files
     assert home.is_dir()
     left = sorted(os.listdir(home))
     assert "models" in left and "thesis.odt" in left and "keys" not in left
-    assert (latin in left) is made_latin  # the operator's non-UTF-8 name stays where the drive could hold one
+    assert latin is None or (latin in left) is made_latin  # the operator's non-UTF-8 name stays where the drive could hold one
     assert not {"open_omniscience.db", "app_settings.json.tmp", "session_state.json", "wiki_dumps"} & set(left)
     assert (home / "thesis.odt").read_bytes() == b"years of work"
     assert (home / "models" / "mine.bin").read_bytes() == b"weights"
