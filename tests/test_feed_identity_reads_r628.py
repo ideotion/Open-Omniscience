@@ -21,7 +21,6 @@ The credentials are fakes; nothing leaves the process (every fetch is a stand-in
 from __future__ import annotations
 
 import contextlib
-
 import logging
 import sqlite3
 from pathlib import Path
