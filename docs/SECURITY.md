@@ -120,6 +120,38 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`src/catalog/thesaurus_store.py`), and the summary the operator sends back holds counts and hashes, no label and no path.
   Code: `scripts/thesaurus_build.py` · `src/catalog/thesaurus_store.py`.
 
+  **Not a lane of the app: maintainer build scripts reach the network directly (row 129).** These scripts run in their own
+  process with raw `urllib.request` or `requests`, so none of the app's guards apply to them: no kill switch (it is installed on
+  app boot only), no socket guard, no robots.txt read, and the maintainer's own transport with no Tor or proxy setting read.
+  None is run or scheduled by the app. These are maintainer builds whose output is a file committed to this repository after
+  review: `scripts/enrich_sources_wikidata.py`, `scripts/generate_wikidata_rings.py` (both
+  `www.wikidata.org`, the Action API), `scripts/generate_wikidata_elections.py` (one SPARQL request to `query.wikidata.org`),
+  `scripts/build_country_polygons.py`, `scripts/build_disputed_areas.py`, `scripts/build_world_outline.py` (Natural Earth
+  GeoJSON from `raw.githubusercontent.com`), `scripts/build_ip_geo.py` (the DB-IP country table from `download.db-ip.com`, with
+  `raw.githubusercontent.com` as its mirror). `scripts/build_world_news_catalog.py` (`query.wikidata.org`, SPARQL) writes
+  `configs/world_news_sources.yml`, which is not committed; when that file exists the app seeds its sources beside the curated
+  catalogue (`src/ingest/seed_sources.py`, provenance `wikidata`; seeding registers sources and fetches nothing). **One is pointed at users, and it is a known gap:** `scripts/build_city_gazetteer.py`
+  (`query.wikidata.org`, SPARQL, raw `requests`) writes `configs/cities.yml`, which is not committed (only
+  `configs/cities.sample.yml` ships) and which the app reads in preference to the sample; the Map's empty state and the user
+  manual tell the user to run it. It has no `--online` consent flag, reads no transport setting and has no kill switch, so a
+  user running it goes out over clearnet whatever the app's transport. Until it is moved onto `guarded_session` behind
+  `--online` like `scripts/build_place_gazetteer.py`, run it only on the transport you intend. Three more reach the network and write nothing the app reads:
+  `scripts/verify_worldbank_indicators.py` (`api.worldbank.org`, to check the curated indicator codes),
+  `scripts/analysis/phase2_verifier.py` (a HEAD or GET of each URL in an extracted references file) and
+  `scripts/check_upstream_updates.py` (`api.github.com`, run by the weekly freshness CI job, never on a user's machine).
+  `scripts/analysis/run_stage_a.py`, the catalogue kit the maintainer runs on their own machine, makes one informational GET to
+  each of four fixed hosts (`PROBE_HOSTS`: `pypi.org`, `feeds.bbci.co.uk`, `www.lemonde.fr`, `theanguillian.com`) with no
+  robots read, and a child `pip install -r requirements.txt` that reaches PyPI whenever its requirements stamp is missing or changed; the feeds it judges go
+  through the ethical fetcher. Four import a socket library for loopback only, or for no
+  connection at all: `scripts/apply_update.py` (a TCP connect to the app's own port on `127.0.0.1` or `::1`; its `git fetch` is
+  the App updates row above), `scripts/fault_harness.py` and `scripts/ui_clickthrough_run.py` (test harnesses talking to a
+  throwaway app on `127.0.0.1`), and `scripts/analytics45_generate.py` (it imports `socket` to install a tripwire that refuses
+  every non-loopback connection for its whole run). Scripts that a user or operator runs for the app take the guarded path
+  instead, behind an `--online` flag that is the run's consent: `scripts/stat_news_check.py` (the ethical fetcher, robots
+  read), `scripts/thesaurus_build.py` and `scripts/build_place_gazetteer.py` (above). A ratchet keeps this list whole:
+  `tests/test_network_consent.py::test_no_new_socket_capable_importers_in_scripts` fails on any new script that imports a
+  socket-capable library until it is listed there with a written reason and named in this paragraph.
+
   **Not a lane of the app either: the 0.4 release run reads one Hugging Face URL.** The Diagnostics release run
   (`POST /api/diagnostics/release-run`, an acceptance run the operator starts by one press; the press passes the one network consent,
   whose text names "the probes") has an online-probes phase that is on unless the operator turns it off (`online_probes`). In it,
