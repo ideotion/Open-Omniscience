@@ -1717,7 +1717,8 @@ _DISCOVERY_ROBOTS = {
     ),
     "unavailable": (
         "DuckDuckGo's robots.txt could not be read, so nothing was searched: the app searches only when robots.txt can be "
-        "read and allows it. Try again later."
+        "read and allows it. After a failed read the app waits before asking again, so a search soon after this one is refused "
+        "the same way."
     ),
 }
 

@@ -756,7 +756,7 @@ def require_robots_allow(url: str, allowed_hosts: Iterable[str], *, user_agents:
     robots.txt that redirects elsewhere is a failure to read it, not a reason to follow. The address is checked against the
     fetcher's own User-Agent AND each of ``user_agents`` (the agent the caller's session actually sends): any one disallowed
     refuses."""
-    from src.ingest import RobotsDisallowed
+    from src.ingest import RobotsDisallowed, RobotsUnavailable
 
     hosts = _checked_hosts(allowed_hosts)
     if not hosts:
@@ -766,7 +766,9 @@ def require_robots_allow(url: str, allowed_hosts: Iterable[str], *, user_agents:
     host_key, _target = f._robots_target(url)
     parsed = urlparse(url)
     f._enforce_robots(url, host_key, parsed)
-    parser = f._get_robots(host_key, parsed)
+    parser = f._get_robots(host_key, parsed) if user_agents else None
+    if user_agents and parser is None:  # the decision just read expired in between: unread, so refuse as unavailable
+        raise RobotsUnavailable(f"robots.txt for {_robots_shown(url)} could not be determined; refusing to fetch")
     for agent in user_agents:
         if parser is None or not parser.can_fetch(agent, url):
             raise RobotsDisallowed(f"robots.txt disallows {_robots_shown(url)} for the agent this request sends")

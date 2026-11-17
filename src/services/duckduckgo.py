@@ -127,7 +127,8 @@ class DuckDuckGoSearch:
         """Raise :class:`SearchRefusedByRobots` unless ``html.duckduckgo.com/robots.txt`` allows ``BASE_URL``, for the app's
         own crawler agent and for ``USER_AGENT``, the one the search sends. Read through the ethical fetcher held to
         ``ALLOWED_HOSTS``. Any other failure of the read (the kill switch, which names itself; a protected mode with no proxy)
-        propagates unchanged: none of them is a robots verdict."""
+        leaves this method unchanged, never as a robots verdict; ``discover_sources_by_topic`` still folds those into ``[]``, as
+        it does for the same failures of the search request itself, and its route names the kill switch on its own."""
         from src.ingest import RobotsDisallowed, RobotsUnavailable
         from src.safety.fetcher import require_robots_allow
 

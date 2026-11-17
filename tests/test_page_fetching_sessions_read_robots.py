@@ -229,23 +229,24 @@ def test_the_live_ipcc_path_asks_robots_first(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 #: Modules whose guarded sessions call a published API or download a data or dump file, so they do not read robots.txt
-#: (SECURITY.md, Transport): ``{path: text of the SECURITY.md row or paragraph that names it}``. Zero slack, both ways.
+#: (SECURITY.md, Transport): ``{path: (text that names its SECURITY.md row or paragraph, words in that same row or paragraph that
+#: say what it calls: an API or a data file)}``. Zero slack, both ways.
 API_OR_DATA_FILE = {
-    "src/analytics/ring_loader.py": "**Keyword translations**",
-    "src/catalog/discover.py": "**Source discovery**",
-    "src/catalog/wikidata_apply.py": "**Source discovery**",
-    "src/entities/gazetteer_build.py": "`scripts/build_place_gazetteer.py` reaches `www.wikidata.org`",
-    "src/entities/items.py": "**Places and people**",
-    "src/geo/osm_downloads.py": "**Maps / OpenStreetMap**",
-    "src/ingest/segmented_download.py": "**Maps / OpenStreetMap**",
-    "src/llm/installer.py": "**Local AI install & weights**",
-    "src/maintenance/self_update.py": "**App updates**",
-    "src/monitoring/release_run.py": "the 0.4 release run reads one Hugging Face URL",
-    "src/osm/replication.py": "**Maps / OpenStreetMap**",
-    "src/stats/fetch.py": "**Official statistics**",
-    "src/wiki/client.py": "**Wikipedia / Wikimedia**",
-    "src/wiki/dumps.py": "**Wikipedia / Wikimedia**",
-    "src/wiki/ores.py": "**Wikipedia / Wikimedia**",
+    "src/analytics/ring_loader.py": ("**Keyword translations**", "the Action API"),
+    "src/catalog/discover.py": ("**Source discovery**", "the SPARQL endpoint"),
+    "src/catalog/wikidata_apply.py": ("**Source discovery**", "the Action API"),
+    "src/entities/gazetteer_build.py": ("`scripts/build_place_gazetteer.py` reaches `www.wikidata.org`", "the Action API"),
+    "src/entities/items.py": ("**Places and people**", "the Action API"),
+    "src/geo/osm_downloads.py": ("**Maps / OpenStreetMap**", "data files, so no robots.txt read"),
+    "src/ingest/segmented_download.py": ("**Maps / OpenStreetMap**", "data files, so no robots.txt read"),
+    "src/llm/installer.py": ("| **Local AI install & weights**", "`api.github.com`"),
+    "src/maintenance/self_update.py": ("| **App updates**", "`api.github.com`"),
+    "src/monitoring/release_run.py": ("the 0.4 release run reads one Hugging Face URL", "https://huggingface.co/api/models/"),
+    "src/osm/replication.py": ("**Maps / OpenStreetMap**", "data files, so no robots.txt read"),
+    "src/stats/fetch.py": ("**Official statistics**", "published APIs, so no robots.txt read"),
+    "src/wiki/client.py": ("**Wikipedia / Wikimedia**", "an API or a dump file, so no robots.txt read"),
+    "src/wiki/dumps.py": ("**Wikipedia / Wikimedia**", "an API or a dump file, so no robots.txt read"),
+    "src/wiki/ores.py": ("**Wikipedia / Wikimedia**", "an API or a dump file, so no robots.txt read"),
 }
 #: Modules whose guarded session fetches a page or a document, so they call ``require_robots_allow`` first.
 READS_ROBOTS = {"src/ingest/ipcc_spm.py", "src/services/duckduckgo.py"}
@@ -291,10 +292,26 @@ def test_every_guarded_session_is_an_api_or_data_file_exemption_or_reads_robots(
     )
 
 
+def _blocks(text: str) -> list[str]:
+    """SECURITY.md cut into table rows and paragraphs: a row is one line, a paragraph runs to the next blank line."""
+    out: list[str] = []
+    for chunk in text.split("\n\n"):
+        lines = chunk.split("\n")
+        rows = [ln for ln in lines if ln.startswith("|")]
+        out.extend(rows)
+        rest = "\n".join(ln for ln in lines if not ln.startswith("|"))
+        if rest.strip():
+            out.append(rest)
+    return out
+
+
 def test_each_exemption_is_stated_in_security_md():
-    security = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
-    missing = {path: row for path, row in API_OR_DATA_FILE.items() if row not in security}
-    assert not missing, f"the SECURITY.md row each exemption names is gone: {missing}"
+    """The row or paragraph that names each exemption also says what it calls, in the same block: naming the lane is not enough."""
+    blocks = _blocks((ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8"))
+    missing = {
+        path: (row, says) for path, (row, says) in API_OR_DATA_FILE.items() if not any(row in b and says in b for b in blocks)
+    }
+    assert not missing, f"no SECURITY.md row or paragraph both names these exemptions and says what they call: {missing}"
 
 
 def test_each_robots_reader_calls_the_gate():
