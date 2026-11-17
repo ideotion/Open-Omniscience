@@ -17,6 +17,8 @@ import pathlib
 
 import pytest
 
+from tests.js_source_helper import python_function_source
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("bloc_roster_check", ROOT / "scripts" / "bloc_roster_check.py")
 M = importlib.util.module_from_spec(_spec)
@@ -294,4 +296,4 @@ def test_the_session_is_the_apps_own_for_this_endpoint_and_asks_only_it():
     src = (ROOT / "scripts" / "bloc_roster_check.py").read_text(encoding="utf-8")
     assert "_session_for(settings, user_agent=DEFAULT_USER_AGENT, allowed_hosts=(WDQS_HOST,))" in src
     assert "urllib.request" not in src and "import requests" not in src
-    assert "blocs.py" not in src.split('if __name__ == "__main__":')[0].split("def main(")[1]
+    assert "blocs.py" not in python_function_source(src, "main")
