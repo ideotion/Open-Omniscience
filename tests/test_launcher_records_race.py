@@ -1160,14 +1160,24 @@ def test_eight_launchers_taking_over_one_dead_owners_lock_never_hold_it_two_at_o
         lock.mkdir()
         (lock / "pid").write_text(str(owner.pid), encoding="utf-8")
         held, log = tmp_path / f"held{r}", tmp_path / f"log{r}"
-        body = (f'hold() {{ mkdir "{held}" 2>/dev/null || echo twice >> "{log}"; echo in >> "{log}"; sleep 0.05; rmdir "{held}" 2>/dev/null; }}; '
+        # The detector names both holders: a holder writes its pid into the exclusive directory with a builtin (no fork) the moment it has made it, and
+        # one that finds the directory already there reads that pid again 20 ms later (inside the other's 50 ms hold), so "twice" always names two live
+        # pids. A failed mkdir with no directory, or a directory with no pid in it, is written as what it is (a tool or fork failure under load, a
+        # leftover), never as a second holder: CI saw one "twice" (17 Nov, shard 3, hard-links round) that no local run, uutils or loaded, reproduced.
+        body = (f'hold() {{ if mkdir "{held}" 2>/dev/null; then echo "$BASHPID" > "{held}/who"; '
+                f'elif [ -d "{held}" ]; then sleep 0.02; o=$(cat "{held}/who" 2>/dev/null); '
+                f'if [ -n "$o" ]; then echo "twice:$BASHPID:$o" >> "{log}"; else echo "leftover:$BASHPID" >> "{log}"; fi; '
+                f'else echo "mkdirfail:$BASHPID" >> "{log}"; fi; '
+                f'echo in >> "{log}"; sleep 0.05; rm -f "{held}/who"; rmdir "{held}" 2>/dev/null; }}; '
                 f'. "{h}"; {"" if links else "ln() { return 1; }; "}OO_REC_LOCK_WAIT_MS=20000; oo_rec_locked "{f}" hold; echo "rc=$?" >> "{log}"')
         procs = [subprocess.Popen(["bash", "-c", body], env=env) for _ in range(8)]
         for p in procs:
             p.wait(timeout=60)
         lines = log.read_text(encoding="utf-8").split()
-        assert "twice" not in lines, f"round {r}: two launchers held the lock at once"
-        assert lines.count("in") == 8 and lines.count("rc=0") == 8, (r, lines)
+        tools = subprocess.run(["bash", "-c", "for t in mv ln mkdir; do printf '%s ' \"$(readlink -f \"$(command -v $t)\")\"; $t --version 2>&1 | head -n 1; done"],
+                               env=env, capture_output=True, text=True).stdout
+        assert not [x for x in lines if x.startswith("twice:")], f"round {r}: two launchers held the lock at once {lines} (tools: {tools})"
+        assert lines.count("in") == 8 and lines.count("rc=0") == 8, (r, lines, tools)
         assert not lock.exists() and not list(tmp_path.glob(f"r{r}.jsonl.lock.d.*")), "no lock or leftover stays behind"
 
 
