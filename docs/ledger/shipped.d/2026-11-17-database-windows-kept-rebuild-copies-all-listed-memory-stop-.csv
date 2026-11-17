@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,database/windows,Kept rebuild copies all listed; memory-stop record LF (row 144),shipped,PR #2105,src/database/rebuild.py;src/scheduler/memstop.py,"Windows: kept_copies keyed copies on scandir st_ino (0 there) so only one was listed; now os.stat, path when no id. The memory-stop record is written with LF so its measured size is its size on disk."
