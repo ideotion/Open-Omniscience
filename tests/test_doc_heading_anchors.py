@@ -196,7 +196,7 @@ def test_a_drafts_leading_banner_comment_is_not_drawn(tmp_path):
     own banner, so the comment is dropped before rendering instead of showing as a raw "<!-- ... -->" paragraph
     above the title (R677). Only the LEADING comment goes: the body below renders as before."""
     doc = tmp_path / "draft.md"
-    doc.write_text("<!-- xx: AI-drafted translation, two\nlines -->\n\n# Titre\n\nTexte.\n", encoding="utf-8")
+    doc.write_text("<!-- xx: AI-drafted translation, two\nlines -->\n\n# Titre\n\nTexte.\n", encoding="utf-8", newline="\n")
     harness = f"""
 {_extract_esc()}
 {_extract_settings_slice()}

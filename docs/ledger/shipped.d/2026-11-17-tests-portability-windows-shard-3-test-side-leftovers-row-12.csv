@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,tests/portability,Windows shard 3 test-side leftovers (row 125),shipped,PR #2099,tests/test_ci_shards.py; tests/test_crash_trace_report.py; tests/test_doc_heading_anchors.py; tests/test_clickthrough_rewalk_b28.py,Windows observation leg: the aggregator tests run under Git for Windows' bash instead of the WSL launcher (skip with reason otherwise); the crash-trace and doc-heading fixtures are written with LF; node gets SYSTEMROOT so it starts. Tests only.
