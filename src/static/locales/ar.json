@@ -2073,6 +2073,7 @@
   "Fetch mode saved.": "تم حفظ وضع الجلب.",
   "Fetch official statistics figures": "جلب أرقام الإحصاءات الرسمية",
   "Fetch once and apply the rule": "اجلب مرة واحدة وطبّق القاعدة",
+  "Fetch one calendar feed from its publisher": "جلب موجز تقويم واحد من ناشره",
   "Fetch station": "اجلب المحطة",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "يجلب المؤشرات القياسية لكل دولة من البنك الدولي (عبر الإنترنت، يطلب الموافقة أولاً). كما يتقدم هذا تلقائيًا ببضعة مؤشرات في كل دورة جمع عبر الإنترنت (إعداد الجدولة country_data_per_pass، القيمة 0 لتعطيله)؛ هذا الزر يشغّل الكتالوج بأكمله الآن فقط. بعد التحميل، تُحدَّث الإصدارات الجديدة تلقائيًا بعد ذلك في الخلفية.",
   "Fetch weather context": "جلب السياق الجوي",

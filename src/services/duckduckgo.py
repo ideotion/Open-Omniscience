@@ -67,6 +67,26 @@ def _logged_domain(domain: object) -> str:
         return "<unreadable domain>"
 
 
+class SearchRefusedByRobots(Exception):
+    """The search was not sent because DuckDuckGo's robots.txt does not allow it (:class:`SearchDisallowedByRobots`) or could
+    not be read (:class:`SearchRobotsUnavailable`: fail closed). The search page is a page for people, not a published API, so
+    the robots.txt rule applies to it (SECURITY.md, Transport); a refusal is never worked around. ``reason`` is fixed by the
+    class, so a caller reads it without reading the exception's words."""
+
+    reason = ""
+
+    def __init__(self) -> None:
+        super().__init__(f"robots.txt {self.reason}")
+
+
+class SearchDisallowedByRobots(SearchRefusedByRobots):
+    reason = "disallowed"
+
+
+class SearchRobotsUnavailable(SearchRefusedByRobots):
+    reason = "unavailable"
+
+
 class DuckDuckGoSearch:
     """
     A class for performing web searches using DuckDuckGo.
@@ -113,6 +133,23 @@ class DuckDuckGoSearch:
         cls.last_request_time = time.time()
 
     @classmethod
+    def _robots_allow(cls) -> None:
+        """Raise :class:`SearchRefusedByRobots` unless ``html.duckduckgo.com/robots.txt`` allows ``BASE_URL``, for the app's
+        own crawler agent and for ``USER_AGENT``, the one the search sends. Read through the ethical fetcher held to
+        ``ALLOWED_HOSTS``. Any other failure of the read (the kill switch, which names itself; a protected mode with no proxy)
+        leaves this method unchanged, never as a robots verdict; ``discover_sources_by_topic`` still folds those into ``[]``, as
+        it does for the same failures of the search request itself, and its route names the kill switch on its own."""
+        from src.ingest import RobotsDisallowed, RobotsUnavailable
+        from src.safety.fetcher import require_robots_allow
+
+        try:
+            require_robots_allow(cls.BASE_URL, cls.ALLOWED_HOSTS, user_agents=(cls.USER_AGENT,))
+        except RobotsDisallowed:
+            raise SearchDisallowedByRobots() from None
+        except RobotsUnavailable:
+            raise SearchRobotsUnavailable() from None
+
+    @classmethod
     def search(
         cls,
         query: str,
@@ -139,8 +176,10 @@ class DuckDuckGoSearch:
             - domain: The domain of the result
 
         Raises:
+            SearchRefusedByRobots: robots.txt does not allow the search page, or could not be read (fail closed)
             Exception: If the search fails
         """
+        cls._robots_allow()
         cls._enforce_rate_limit()
 
         params = {
@@ -627,6 +666,8 @@ class DuckDuckGoSearch:
             logger.info(f"Discovered {len(sources)} sources for topic: {topic}")
             return sources
 
+        except SearchRefusedByRobots:
+            raise  # a refusal, not an empty result: the caller says which (never "Discovered 0 sources")
         except Exception as exc:  # last resort: degrade gracefully, but never opaquely
             log_failure(logger, f"Unexpected error discovering sources for topic {topic!r}", exc)
             return []

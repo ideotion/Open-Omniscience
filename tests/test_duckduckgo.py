@@ -44,8 +44,9 @@ from src.ingest import FetchError
 class TestDuckDuckGoSearch:
     """Test DuckDuckGo search functionality."""
 
+    @patch("src.safety.fetcher.require_robots_allow")  # robots.txt allows (its own tests: test_page_fetching_sessions_read_robots)
     @patch("src.safety.fetcher.guarded_session")
-    def test_search_success(self, mock_guarded):
+    def test_search_success(self, mock_guarded, _robots):
         """Search goes through the guarded session (kill switch + proxy)."""
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -70,8 +71,9 @@ class TestDuckDuckGoSearch:
         assert isinstance(results, list)
         mock_session.post.assert_called_once()
 
+    @patch("src.safety.fetcher.require_robots_allow")
     @patch("src.safety.fetcher.guarded_session")
-    def test_search_failure(self, mock_guarded):
+    def test_search_failure(self, mock_guarded, _robots):
         """A transport (or kill-switch) failure surfaces honestly to the caller."""
         mock_session = MagicMock()
         mock_session.post.side_effect = Exception("Request failed")

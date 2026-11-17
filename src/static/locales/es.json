@@ -2073,6 +2073,7 @@
   "Fetch mode saved.": "Modo de obtención guardado.",
   "Fetch official statistics figures": "Obtener cifras de estadísticas oficiales",
   "Fetch once and apply the rule": "Obtener una vez y aplicar la regla",
+  "Fetch one calendar feed from its publisher": "Obtener un feed de calendario de su editor",
   "Fetch station": "Obtener estación",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "Obtiene los indicadores estándar por país para cada país desde el Banco Mundial (en línea, pide consentimiento primero). Esto también avanza AUTOMÁTICAMENTE unos pocos indicadores por cada pase de recolección en línea (ajuste del planificador country_data_per_pass, 0 lo desactiva); este botón simplemente ejecuta todo el catálogo ahora. Una vez cargados, las nuevas versiones se actualizan luego automáticamente en segundo plano.",
   "Fetch weather context": "Obtener el contexto meteorológico",

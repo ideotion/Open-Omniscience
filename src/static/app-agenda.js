@@ -1144,8 +1144,13 @@
       if (_feedDir && st && st.textContent.trim()) renderFeedDir();
     }
     async function feedAction(id, action) {
+      // Both actions fetch from the feed's publisher, so they pass the ONE consent first, like every other fetch button (#14).
+      if (typeof ensureOnline === "function" && !await ensureOnline(_bulT("Fetch one calendar feed from its publisher"))) return;
       try {
-        const r = await api(`/api/events/feeds/${encodeURIComponent(id)}/${action}`, {method: "POST"});
+        // The two routes are spelled out (never `${action}`), so the consent ratchet can see each one is asked for first.
+        const r = action === "import"
+          ? await api(`/api/events/feeds/${encodeURIComponent(id)}/import`, {method: "POST"})
+          : await api(`/api/events/feeds/${encodeURIComponent(id)}/verify`, {method: "POST"});
         if (r && r.skipped_offline) {
           // The kill switch refused the fetch: no verdict was stored and the feed was not checked, so no "Checked." (invariant #14e).
           toast(_bulT("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn");

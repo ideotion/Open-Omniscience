@@ -527,9 +527,11 @@ def test_the_duckduckgo_search_asks_for_its_list():
     from src.services.duckduckgo import DuckDuckGoSearch
 
     refuse_unlisted_host(DuckDuckGoSearch.BASE_URL, DuckDuckGoSearch.ALLOWED_HOSTS)
-    with patch("src.safety.fetcher.guarded_session") as factory:
+    with patch("src.safety.fetcher.guarded_session") as factory, patch("src.safety.fetcher.require_robots_allow") as robots:
         factory.return_value.post.return_value = MagicMock(text="", raise_for_status=lambda: None)
         DuckDuckGoSearch.search("q", max_results=1)
+    # The robots.txt read is held to the same list (test_page_fetching_sessions_read_robots covers the read itself).
+    assert robots.call_args.args[1] == DuckDuckGoSearch.ALLOWED_HOSTS
     assert factory.call_args.kwargs["allowed_hosts"] == DuckDuckGoSearch.ALLOWED_HOSTS
 
 

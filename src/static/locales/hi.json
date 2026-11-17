@@ -2073,6 +2073,7 @@
   "Fetch mode saved.": "फ़ेच मोड सहेजा गया।",
   "Fetch official statistics figures": "आधिकारिक सांख्यिकी के आँकड़े प्राप्त करें",
   "Fetch once and apply the rule": "एक बार प्राप्त करें और नियम लागू करें",
+  "Fetch one calendar feed from its publisher": "एक कैलेंडर फ़ीड उसके प्रकाशक से प्राप्त करें",
   "Fetch station": "स्टेशन प्राप्त करें",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "विश्व बैंक से हर देश के मानक देश संकेतक प्राप्त करता है (ऑनलाइन, पहले सहमति माँगता है)। यह हर ऑनलाइन संग्रहण पास में कुछ संकेतकों को स्वतः भी आगे बढ़ाता है (शेड्यूलर सेटिंग country_data_per_pass, 0 इसे बंद करता है); यह बटन बस अभी पूरी सूची चला देता है। लोड होने के बाद, नए संस्करण फिर बैकग्राउंड में स्वतः अपडेट होते रहते हैं।",
   "Fetch weather context": "मौसम संदर्भ प्राप्त करें",

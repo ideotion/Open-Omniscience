@@ -2073,6 +2073,7 @@
   "Fetch mode saved.": "Режим загрузки сохранён.",
   "Fetch official statistics figures": "Получить данные официальной статистики",
   "Fetch once and apply the rule": "Загрузить один раз и применить правило",
+  "Fetch one calendar feed from its publisher": "Загрузить один календарный канал у его издателя",
   "Fetch station": "Загрузить станцию",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "Загружает стандартные показатели по каждой стране из Всемирного банка (онлайн, сначала запрашивает согласие). Это также АВТОМАТИЧЕСКИ продвигает несколько показателей за каждый онлайн-проход сбора (настройка планировщика country_data_per_pass, 0 отключает); эта кнопка просто запускает весь каталог сейчас. После загрузки новые версии затем автоматически обновляются в фоновом режиме.",
   "Fetch weather context": "Получить метеоконтекст",

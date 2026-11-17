@@ -121,6 +121,24 @@ def _default_getter(url: str) -> Any:
     )
 
 
+def _default_robots(url: str) -> None:
+    """Refuse unless www.ipcc.ch's robots.txt allows ``url``. The reports are documents on a website, not a published API or a
+    data file, so the robots.txt rule applies (SECURITY.md, Transport) and fails closed: read through the ethical fetcher held to
+    the IPCC host, a robots.txt that disallows the address or cannot be read refuses the fetch, and nothing works around it."""
+    from src.ingest import RobotsDisallowed, RobotsUnavailable
+    from src.safety.fetcher import require_robots_allow
+
+    try:
+        require_robots_allow(url, API_HOSTS)
+    except RobotsDisallowed:
+        raise ValueError(f"robots.txt on {IPCC_HOST} does not allow this report to be fetched, so it was not fetched") from None
+    except RobotsUnavailable:
+        raise ValueError(
+            f"robots.txt on {IPCC_HOST} could not be read, so the report was not fetched (it is fetched only when robots.txt "
+            "can be read and allows it)"
+        ) from None
+
+
 def _read_declared(resp: Any, label: str) -> bytes:
     """Read the body, bounded by the length the server DECLARED (never a constant).
 
@@ -167,8 +185,11 @@ def _read_declared(resp: Any, label: str) -> bytes:
     return data
 
 
-def fetch_spm(key: str, *, get: Getter | None = None) -> bytes:
-    """Fetch one SPM PDF live (kill switch refuses UP FRONT) and return its bytes.
+def fetch_spm(key: str, *, get: Getter | None = None, robots: Callable[[str], None] | None = None) -> bytes:
+    """Fetch one SPM PDF live (kill switch refuses UP FRONT, then robots.txt) and return its bytes.
+
+    ``robots`` checks the address first and raises to refuse it; the default reads www.ipcc.ch's robots.txt
+    (:func:`_default_robots`). A test that hands its own ``get`` and no ``robots`` makes no robots read: it has no network.
 
     Raises ``ValueError`` for a body that cannot be the document: not a PDF, empty, or a
     length that disagrees with the one the server declared (truncated). The bound is the
@@ -179,6 +200,9 @@ def fetch_spm(key: str, *, get: Getter | None = None) -> bytes:
     entry = spm_entry(key)
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
+    check = robots if robots is not None else (_default_robots if get is None else None)
+    if check is not None:
+        check(entry.url)
     resp = (get or _default_getter)(entry.url)
     label = f"IPCC {entry.working_group} SPM"
     try:

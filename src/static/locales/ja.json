@@ -2073,6 +2073,7 @@
   "Fetch mode saved.": "取得モードを保存しました。",
   "Fetch official statistics figures": "公式統計の数値を取得",
   "Fetch once and apply the rule": "一度取得してルールを適用",
+  "Fetch one calendar feed from its publisher": "1件のカレンダーフィードを発行元から取得する",
   "Fetch station": "観測所を取得",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "世界銀行から各国の標準的な国別指標を取得します（オンライン、まず同意を求めます）。これはまた、オンライン収集パスごとにいくつかの指標を自動的に進めます（スケジューラ設定 country_data_per_pass、0で無効化）。このボタンは今すぐカタログ全体を実行するだけです。読み込まれると、新しいバージョンはその後バックグラウンドで自動的に更新されます。",
   "Fetch weather context": "気象コンテキストを取得",

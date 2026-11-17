@@ -2073,6 +2073,7 @@
   "Fetch mode saved.": "Abrufmodus gespeichert.",
   "Fetch official statistics figures": "Offizielle Statistikwerte abrufen",
   "Fetch once and apply the rule": "Einmal abrufen und die Regel anwenden",
+  "Fetch one calendar feed from its publisher": "Einen Kalender-Feed von seinem Herausgeber abrufen",
   "Fetch station": "Station abrufen",
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.": "Ruft die Standard-Länderindikatoren für jedes Land von der Weltbank ab (online, fragt zuerst um Zustimmung). Dies schreitet außerdem AUTOMATISCH bei jedem Online-Sammeldurchgang um einige Indikatoren voran (Scheduler-Einstellung country_data_per_pass, 0 deaktiviert); dieser Button führt einfach den gesamten Katalog jetzt aus. Nach dem Laden werden neue Fassungen dann automatisch im Hintergrund aktualisiert.",
   "Fetch weather context": "Wetterkontext abrufen",
