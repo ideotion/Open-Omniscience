@@ -172,8 +172,10 @@ class AdvancedSearch:
         if self.published_from:
             conds.append(Article.published_at >= datetime.fromisoformat(self.published_from))
         if self.published_to:
-            # `<=` midnight, exactly as `/api/articles`' own `end_date` reads it.
-            conds.append(Article.published_at <= datetime.fromisoformat(self.published_to))
+            # A day bound includes that whole day, as `collected_to` does: publication times now carry
+            # their time of day (row 66), so `<=` midnight would drop the day's articles. A full timestamp
+            # stays an exact `<=` bound, as `/api/articles`' own `end_date` reads it.
+            conds.append(published_until(self.published_to))
         if self.collected_from:
             conds.append(Article.created_at >= datetime.fromisoformat(self.collected_from))
         if self.collected_to:
@@ -197,6 +199,16 @@ class AdvancedSearch:
                 sub.append(ArticleMentionedDate.mentioned_on <= date.fromisoformat(self.mentions_to))
             conds.append(exists().where(and_(*sub)))
         return conds
+
+
+def published_until(bound: str):
+    """``published_at`` up to ``bound``: the whole day for a date (``2026-05-03``), exactly ``<=`` for a
+    timestamp (``2026-05-03T14:00:00``)."""
+    from src.database.models import Article
+
+    if len(bound.strip()) <= 10:
+        return Article.published_at < _day_after(bound)
+    return Article.published_at <= datetime.fromisoformat(bound)
 
 
 def _day_after(iso: str) -> datetime:

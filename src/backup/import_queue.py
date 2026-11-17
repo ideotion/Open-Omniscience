@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backup import collector_exit, restore_marker
-from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import holding, log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -355,6 +355,9 @@ class _CheckpointGroup:
     #: Their artifact digests, so a duplicate later in the SAME group is skipped
     #: rather than merged twice -- the live corpus cannot answer that question yet.
     digests: set[str] = field(default_factory=set)
+    #: R729: the lane members of held items, merged into the live lanes when the group
+    #: commits (``(item id, held_lanes)``), never before -- the corpus is not live until then.
+    held_lanes: list[tuple[str, dict]] = field(default_factory=list)
 
     @property
     def working(self) -> Path:
@@ -555,6 +558,7 @@ class ImportQueueManager:
         can import backups locked with different passphrases while the common case is typed once. Every key is held in
         memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
         scrubbed from every record the run writes."""
+        self._refuse_unreadable_backup_manifests(items)
         self._refuse_wrong_backup_passphrases(items, passphrase)
         with self._lock:
             if self._state == "running" and self._thread is not None and self._thread.is_alive():
@@ -652,6 +656,45 @@ class ImportQueueManager:
             return self.status()
 
     @staticmethod
+    def _refuse_unreadable_backup_manifests(items: list[dict]) -> None:
+        """Refuse the start, before anything runs, when a backup's manifest is one the restore always refuses (row 97).
+
+        A manifest that lists a volume twice, points at a link or names an unsafe path can never import, with any
+        passphrase. Inside a run it fails that backup and discards the backups staged in the same checkpoint group,
+        which is many minutes each on a large import. Here it costs a manifest read and a stat per volume, and the
+        message names each such backup and why, so the run can be started again without it."""
+        from src.backup.stream_backup import backup_manifest_refusal
+
+        refused = []
+        for raw in items or []:
+            if raw.get("kind") != "corpus" or not raw.get("path"):
+                continue
+            if not raw.get("force") and ImportQueueManager._already_merged(str(raw["path"])):
+                continue  # the run skips it without reading it (volume_job's already-merged answer), so it cannot stop the start
+            reason = backup_manifest_refusal(str(raw["path"]))
+            if reason:
+                refused.append(f"{raw.get('label') or Path(str(raw.get('path'))).name} ({reason})")
+        if refused:
+            raise ValueError(
+                "These backups cannot be imported: " + "; ".join(refused) + ". Nothing was started; remove them from "
+                "the list and import again."
+            )
+
+    @staticmethod
+    def _already_merged(path: str) -> bool:
+        """True when the run will skip this backup as already merged, the answer ``volume_job`` gives before it reads anything: a
+        committed import of the same artifact whose living sources are not still owed (R729). Any doubt answers False, so the
+        manifest is checked: "cannot tell" is never "already done"."""
+        try:
+            from src.backup.lane_merge import lanes_pending
+            from src.backup.merge import artifact_source_digest, find_completed_import
+
+            digest = artifact_source_digest(path)
+            return bool(digest) and find_completed_import(digest) is not None and not lanes_pending(digest)
+        except Exception:  # noqa: BLE001 - an unanswerable question is a "no": the manifest is checked as for any other item
+            return False
+
+    @staticmethod
     def _refuse_wrong_backup_passphrases(items: list[dict], passphrase: str) -> None:
         """Refuse the whole run, before anything starts, when a backup's passphrase is certainly wrong.
 
@@ -666,6 +709,8 @@ class ImportQueueManager:
             str(raw.get("label") or Path(str(raw.get("path"))).name)
             for raw in items or []
             if raw.get("kind") == "corpus" and raw.get("path")
+            # a backup the run skips as already merged is never opened, so an old passphrase for it cannot stop the start
+            and (raw.get("force") or not ImportQueueManager._already_merged(str(raw["path"])))
             and backup_passphrase_is_wrong(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
         ]
         if wrong:
@@ -706,7 +751,9 @@ class ImportQueueManager:
     @restore_marker.marked  # R712: an export refuses to start or resume while the queue runs
     def _run(self) -> None:
         try:
-            self._run_with_keys()
+            # row 111: the run's keys are held while it runs, so a third-party logger's record is scrubbed of them too
+            with holding(*self._secrets()):
+                self._run_with_keys()
         finally:
             # Whatever way the run ends, an error escaping it included, the keys go with it.
             with self._lock:
@@ -1128,21 +1175,64 @@ class ImportQueueManager:
         group = self._release_group()
         if group is None:
             return
-        shutil.rmtree(group.dir, ignore_errors=True)
-        if not group.item_ids:
-            return
         landed: list[dict] = []
-        with self._lock:
-            for it in self._items:
-                if it.get("id") in group.item_ids and it.get("state") == "staged":
-                    it["state"] = "done"
-                    landed.append(it)
-            self._save()
+        if group.item_ids:
+            with self._lock:
+                for it in self._items:
+                    if it.get("id") in group.item_ids and it.get("state") == "staged":
+                        it["state"] = "done"
+                        landed.append(it)
+                self._save()
+        # The corpus of every held item is live AND recorded as done now, so their living
+        # sources merge now: after the save, so a kill during a long lane merge never leaves
+        # a live corpus labelled "staged" (and later "discarded"); before the group's
+        # directory, which holds their members, goes. A kill here leaves the lanes owed.
+        self._merge_held_lanes(group)
+        shutil.rmtree(group.dir, ignore_errors=True)
+        if not landed:
+            return
         # AFTER the states above are recorded, never before: the report is a record of
         # what happened, and a report that cannot be written must not be able to change
         # what the run says it imported.
         for it in landed:
             self._persist_held_report(it, committed_by)
+
+    def _merge_held_lanes(self, group: _CheckpointGroup) -> None:
+        """Merge the held items' lane members (R729). Never raises; each item's report
+        says what its lanes did, and a lane that does not merge stays owed for a re-import."""
+        if not group.held_lanes:
+            return
+        try:
+            from src.backup.lane_merge import (
+                mark_lanes_owed,
+                merge_staged_lanes,
+                record_lane_outcome,
+            )
+            from src.database.connect import get_passphrase
+        except Exception as exc:  # noqa: BLE001 - the commit stands whatever the lanes do
+            _LOG.warning("could not merge the held living sources (%s)", type(exc).__name__)
+            return
+        by_id = {str(it.get("id")): it for it in self._items}
+        for item_id, held in group.held_lanes:
+            item = by_id.get(item_id)
+            if item is None:
+                continue
+            try:
+                backup_key, corpus_key = self._keys_for(item)
+                # Counts an attempt, as the non-held path does, so a held lane that keeps
+                # failing at commit runs out of attempts like any other.
+                mark_lanes_owed(held.get("digest"), held.get("members") or [])
+                living = merge_staged_lanes(
+                    Path(str(held.get("dir"))), held.get("members") or [], [corpus_key, get_passphrase(), backup_key]
+                )
+                record_lane_outcome(held.get("digest"), living)
+                summary = item.get("summary")
+                rep = summary.get("report") if isinstance(summary, dict) else None
+                if isinstance(rep, dict):
+                    rep["living_sources"] = living  # what _persist_held_report writes
+            except Exception as exc:  # noqa: BLE001 - one item's lanes never cost the commit
+                # log_failure also takes out every secret the process holds (the live key included).
+                log_failure(_LOG, "merging a held backup's living sources failed", exc, *self._secrets(), level=logging.WARNING)
 
     # -- the persisted record (2026-09-26, I7) -------------------------------- #
     def _run_stamp(self, item: dict) -> dict:
@@ -1223,6 +1313,8 @@ class ImportQueueManager:
                     group.item_ids.append(str(item.get("id")))
                     if summary.get("source_digest"):
                         group.digests.add(str(summary["source_digest"]))
+                    if isinstance(summary.get("held_lanes"), dict):
+                        group.held_lanes.append((str(item.get("id")), summary["held_lanes"]))
             return
         if item.get("kind") == "legacy":
             # The legacy path returns run_restore's report itself.
@@ -1355,6 +1447,8 @@ class ImportQueueManager:
             "held": bool(summary.get("held")),
             "source_digest": summary.get("source_digest"),
         }
+        if isinstance(summary.get("held_lanes"), dict):
+            out["held_lanes"] = summary["held_lanes"]
         # An artifact already merged completes in milliseconds with no report. Say so
         # explicitly: a fast, empty success is otherwise indistinguishable from a
         # failure that produced nothing, and the queue's own log is where the

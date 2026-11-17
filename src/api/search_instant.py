@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from src.database import fts_title
 from src.database.models import Article, Source
 from src.database.session import get_db
+from src.database.source_names import shown_source_name
 from src.jobs.background import BackgroundJob, register_job
 
 _LOG = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def instant(
     hits: list[dict] = []
     if ids:
         rows = db.execute(
-            select(Article.id, Article.title, Article.published_at, Source.name)
+            select(Article.id, Article.title, Article.published_at, Source.name, Source.domain)
             .join(Source, Source.id == Article.source_id, isouter=True)
             .where(Article.id.in_(ids))
         ).all()
@@ -63,7 +64,7 @@ def instant(
                     "id": i,
                     "title": r[1],
                     "published_at": r[2].isoformat() if r[2] is not None else None,
-                    "source": r[3],
+                    "source": shown_source_name(r[3], r[4]),
                 })
     st = fts_title._state(conn)  # one-row read: whether the history backfill reached its end
     return {

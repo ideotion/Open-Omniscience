@@ -56,7 +56,7 @@ from src.api.ratelimit import limiter
 
 
 def _shown(url: str | None) -> str | None:
-    """A source's ``rss_url`` (or a discovered feed URL) as an answer or a log line shows it (R637): its login masked as ``***@``
+    """A source's ``rss_url`` (or a discovered feed URL) as an ANSWER shows it (R637; a log line takes ``reported_url``, R734): its login masked as ``***@``
     by the fetcher's own ``failure_url``. The stored value, the fetch and the exports keep the URL as written. Imported on use, as
     every reader of the mask imports it (``src.ingest`` is heavy)."""
     from src.ingest.fetch_verdict import shown_url
@@ -64,10 +64,14 @@ def _shown(url: str | None) -> str | None:
     return shown_url(url)
 
 
-def _shown_data(data: Any) -> Any:
-    """A request body as a log line writes it: a dict's ``rss_url`` shown as :func:`_shown` shows it, everything else as sent."""
+def _reported_data(data: Any) -> Any:
+    """A request body as a LOG LINE writes it (R734): a dict's ``rss_url`` through ``reported_url`` (login, every query value but a
+    harmless one, and the fragment masked), everything else as sent. Never :func:`_shown`: a log line is a report, not an answer
+    a form sends back (the second security read on R734)."""
     if isinstance(data, dict) and isinstance(data.get("rss_url"), str):
-        return {**data, "rss_url": _shown(data["rss_url"])}
+        from src.ingest.fetch_verdict import reported_url
+
+        return {**data, "rss_url": reported_url(data["rss_url"])}
     return data
 
 
@@ -1004,7 +1008,7 @@ def create_source(request: Request, source_data: dict, db: Session = Depends(get
     """
     Create a new source.
     """
-    logger.info(f"Create source request: {_shown_data(source_data)}")
+    logger.info(f"Create source request: {_reported_data(source_data)}")
 
     required_fields = ["name", "domain"]
     for field in required_fields:
@@ -1069,7 +1073,7 @@ def update_source(
     allowlisted field with the wrong type is a clean 400, not the generic 500 a bad
     value used to surface as at commit() time.
     """
-    logger.info(f"Update source request: source_id={source_id}, data={_shown_data(source_data)}")
+    logger.info(f"Update source request: source_id={source_id}, data={_reported_data(source_data)}")
 
     updates: dict[str, Any] = {}
     for field, expected_type in _SOURCE_UPDATE_FIELD_TYPES.items():

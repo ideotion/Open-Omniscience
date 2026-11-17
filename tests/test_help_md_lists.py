@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -37,11 +38,21 @@ def _render(md: str) -> str:
             function_source(read_static("app-settings.js"), "mdToHtml"),
         )
     )
-    # The document goes in on stdin: the whole manual is too long for an argv string.
-    harness = fns + "\nprocess.stdout.write(mdToHtml(require('fs').readFileSync(0, 'utf8')));\n"
-    r = subprocess.run(
-        ["node", "-e", harness], input=md, capture_output=True, text=True, timeout=60
-    )
+    # The document goes in a UTF-8 file named on argv, not on stdin (row 98): on Windows the whole manual through a
+    # pipe ran to the 60 s bound (shard 1 of run 43815715599) while the short documents did not, the shape of the
+    # stdin hang #2052 removed from test_export_job. A file is how every node test that passes on Windows is fed.
+    # Encoding pinned: Windows would otherwise use the ANSI code page for node's output.
+    harness = fns + "\nprocess.stdout.write(mdToHtml(require('fs').readFileSync(process.argv[1], 'utf8')));\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        doc = Path(tmp) / "doc.md"
+        doc.write_text(md, encoding="utf-8", newline="\n")
+        r = subprocess.run(
+            ["node", "-e", harness, str(doc)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=120,
+        )
     assert r.returncode == 0, f"node failed:\n{r.stdout}\n{r.stderr}"
     return r.stdout
 

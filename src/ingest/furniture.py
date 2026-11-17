@@ -41,6 +41,10 @@ APP_BANNER_PHRASES = (
     "for at din app skal fortsette å fungere",
 )
 _BANNER_MAX_WORDS = 40
+# The button that follows an app banner, as its own line ("Uppdatera nu!" under the hbl.fi banner,
+# field report 2026-11-14 section 7.1). Stripped ONLY right after a banner line was stripped: on its
+# own, "update now" can be an ordinary short line.
+APP_BANNER_BUTTONS = frozenset({"uppdatera nu", "oppdater nå", "opdater nu", "päivitä nyt", "update now"})
 
 # Subscriber prompts that sit INSIDE a thin extracted body (the English set lives in non_article).
 # Matched as WHOLE WORDS inside a SHORT line (<= _PROMPT_MAX_WORDS): a prompt is its own line.
@@ -98,9 +102,7 @@ def is_furniture(paragraph: str) -> bool:
     low = paragraph.casefold().strip(_EDGE)
     if low in AD_PLACEHOLDERS:
         return True
-    return len(paragraph.split()) <= _BANNER_MAX_WORDS and any(
-        phrase in paragraph.casefold() for phrase in APP_BANNER_PHRASES
-    )
+    return _is_banner(paragraph)
 
 
 LEARN_MAX_WORDS = 12
@@ -140,21 +142,34 @@ def learn_repeated_lines(texts: list[str], *, min_share: float = 0.3, min_articl
     return {"examined": n, "candidates": rows}
 
 
+def _is_banner(paragraph: str) -> bool:
+    return len(paragraph.split()) <= _BANNER_MAX_WORDS and any(
+        phrase in paragraph.casefold() for phrase in APP_BANNER_PHRASES
+    )
+
+
 def strip_furniture(text: str) -> tuple[str, int]:
     """``(text without furniture lines, how many were removed)``. Only the matched lines go (plus
     one blank separator line after each); every other byte is kept, so text without furniture
-    comes back identical, and a removed line never merges the paragraphs around it."""
+    comes back identical, and a removed line never merges the paragraphs around it. A banner's
+    own button line ("Uppdatera nu!") goes too, but only as the next line after a stripped banner."""
     lines = (text or "").splitlines(keepends=True)
     kept: list[str] = []
     removed = 0
     skip_blank = False
     tail_removed = False
+    after_banner = False
     for line in lines:
         if skip_blank and not line.strip():
             skip_blank = False
             continue
         skip_blank = False
-        if line.strip() and is_furniture(line.strip()):
+        stripped = line.strip()
+        button = after_banner and stripped.casefold().strip(_EDGE) in APP_BANNER_BUTTONS
+        if stripped:
+            after_banner = False
+        if stripped and (button or is_furniture(stripped)):
+            after_banner = _is_banner(stripped)
             removed += 1
             # The blank after a removed line goes only when a blank (or the start) already precedes
             # it; otherwise it is the separator between two paragraphs and must stay.

@@ -81,17 +81,8 @@
           const kit = $("mm-kit");
           if (kit) $("corpus-mm-host").appendChild(kit);
           await renderMindmap(_corpusTerm);
-        } else if (which === "links") {
-          const d = await api(`/api/links/shared?term=${encodeURIComponent(_corpusTerm)}`);
-          const rows = d.shared || [];
-          el.innerHTML =
-            `<div class="hint">${esc(t("Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation."))}</div>` +
-            (rows.length ? rows.map(r =>
-              `<div class="note" style="max-width:none;margin-bottom:6px">
-                 <div style="font-size:12.5px;word-break:break-all"><b>${r.cited_by_articles}×</b> ${esc(r.url)}</div>
-                 <div class="muted" style="font-size:12px">${esc(t("citing sources:"))} ${r.citing_sources} — ${esc(r.note)}</div>
-               </div>`).join("")
-             : `<div class="muted">${esc(t("No outbound link is shared by more than one member article."))}</div>`);
+        // The "links" branch (/api/links/shared) left with row 101: this window is retired (corpusTab has no
+        // callers, see above), and Explore > Links (/api/links/corpus) is the live view of shared origins.
         } else if (which === "sentiment") {
           // Reuse the EXACT Insights framing renderer (loadFraming → /api/framing)
           // by CALLING it into a fresh host — no DOM relocation, Insights untouched.
@@ -2203,9 +2194,98 @@
       const panels = terms.map(x => ({label: x.term, term: x.term, points: x.series.map(p => ({date: p.date, count: p.count}))}));
       box.innerHTML = `<h2 style="font-size:13px">${esc(t("Small multiples"))} — ${esc(LAB[wk.label] || wk.label)}</h2>` + smallMultiplesSvg(panels, {});
     }
+    // Weather signals: a toggleable layer, OFF by default (row 122, register ruling G7). The state is per
+    // device: held in memory, seeded once from localStorage and mirrored back to it, both inside try, so a
+    // blocked store still lets the switch turn on AND off (it is then kept for this page only). While off
+    // nothing is fetched; on, the one read is the local GET /api/signals/weather-signals, which sends
+    // nothing anywhere. Every paint bumps a sequence number, so a read that comes back after the switch
+    // moved again (on then off, or on twice) draws nothing.
+    const _WSIG_KEY = "oo.trends.weatherSignals";
+    let _wsigOn = null;
+    let _wsigSeq = 0;
+    // What the layer last showed: null, {failed: true} or the payload read.
+    let _wsigView = null;
+    function weatherSignalsOn() {
+      if (_wsigOn === null) {
+        try { _wsigOn = localStorage.getItem(_WSIG_KEY) === "1"; } catch (e) { _wsigOn = false; }
+      }
+      return _wsigOn;
+    }
+    function toggleWeatherSignals() {
+      _wsigOn = !weatherSignalsOn();
+      try { if (_wsigOn) localStorage.setItem(_WSIG_KEY, "1"); else localStorage.removeItem(_WSIG_KEY); } catch (e) { /* kept for this page only */ }
+      return paintWeatherSignals();
+    }
+    function _wsigT() {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      return { T, TF };
+    }
+    // The switch and the rows sit in data-i18n-dyn hosts (the walker would freeze text it first saw already
+    // translated), so they are drawn here in the active language and redrawn on a language switch from what
+    // was last read -- never a second request.
+    function _wsigDraw() {
+      const { T, TF } = _wsigT();
+      const on = weatherSignalsOn();
+      const btn = $("trd-wsig-toggle"), host = $("trd-wsig");
+      if (!btn || !host) return;
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+      btn.textContent = on ? T("Weather signals: on") : T("Weather signals: off");
+      btn.title = T("A separate layer of signals deduced from your articles. Off by default, and never mixed with the keywords above. Turning it on reads a file on this computer and sends nothing.");
+      btn.style.borderColor = on ? "var(--accent)" : "";
+      btn.style.color = on ? "var(--accent)" : "";
+      host.textContent = "";
+      const data = _wsigView;
+      if (!on || !data) return;
+      if (data.failed) { host.innerHTML = `<div class="muted">${esc(T("Could not read the weather signals."))}</div>`; return; }
+      const rows = Array.isArray(data.signals) ? data.signals : [];
+      if (!rows.length) {
+        host.innerHTML = `<div class="muted">${esc(T("No weather signal has been derived yet."))}</div>`;
+        return;
+      }
+      const when = data.derived_at ? ooIsoDate(data.derived_at) : "";
+      const head = document.createElement("div");
+      head.className = "hint";
+      head.textContent = when
+        ? TF("Derived {when} from your articles · {n} signals", {when, n: rows.length})
+        : TF("Derived from your articles · {n} signals", {n: rows.length});
+      host.appendChild(head);
+      const list = document.createElement("div");
+      rows.forEach((r) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.style.cssText = "display:block;text-align:start;margin:3px 0;padding:0;background:none;border:0;color:var(--accent);cursor:pointer;font:inherit";
+        const name = r.label || r.signal || "";
+        const place = r.place ? (r.place_country ? `${r.place} (${r.place_country})` : String(r.place)) : "";
+        const span = (r.window_start && r.window_end) ? ooLtrIsolate(`${r.window_start} – ${r.window_end}`) : "";
+        const count = (typeof r.n_articles === "number") ? TF("{n} articles", {n: r.n_articles}) : "";
+        b.textContent = [name, place, span, count, T("anomaly not checked")].filter(Boolean).join(" · ");
+        if (r.threshold_rule) b.title = String(r.threshold_rule);
+        const ids = Array.isArray(r.article_ids) ? r.article_ids : [];
+        b.addEventListener("click", () => openAnalysisForIds(ids, [name, place].filter(Boolean).join(" · ")));
+        list.appendChild(b);
+      });
+      host.appendChild(list);
+    }
+    // Registered in app-boot's ONE oo:langchange listener. Redraws from the last reading; never fetches.
+    function repaintWeatherSignals() { _wsigDraw(); }
+    async function paintWeatherSignals() {
+      const seq = ++_wsigSeq;
+      _wsigView = null;
+      _wsigDraw();
+      if (!weatherSignalsOn() || !$("trd-wsig")) return;
+      let data;
+      try { data = await api("/api/signals/weather-signals"); }
+      catch (e) { data = { failed: true }; }
+      if (seq !== _wsigSeq || !weatherSignalsOn()) return;  // the switch moved while the read was on its way
+      _wsigView = data || { signals: [] };
+      _wsigDraw();
+    }
     // Switch the Trends chart lens (Windows / Rate slope / Small multiples). All three
     // read the SAME _trendWindowsData (already fetched); no extra request. Global —
     // reached from the inline onclick, matching the Trends subtab's local convention.
+
     function setTrendLens(which) {
       _trdLens = (which === "slope" || which === "multiples") ? which : "windows";
       const winOn = _trdLens === "windows";

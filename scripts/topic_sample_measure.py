@@ -5,16 +5,18 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 OFFLINE: reads the labelled sample (``src/catalog/data/topic_sample_law_titles.json``) and ONE
-operator-built thesaurus artifact (default ``src/catalog/data/skos/eurovoc.json``, written by
-``src.catalog.skos.build_artifact`` after the licence fetch). Nothing here opens a socket.
+operator-built thesaurus. By default that is the one ``scripts/thesaurus_build.py`` built into the data
+directory (``<data dir>/thesauri/<scheme>.json``), read through ``src.catalog.thesaurus_store``, which uses it
+only when its format and SHA-256 hold (R737); ``--artifact PATH`` reads a file directly instead, unchecked
+(fixtures). Nothing here opens a socket.
 
 Prints, as JSON: the measurement (``src.catalog.topic_tagging.measure``, with the ≈ share and
 ``n`` on every figure), the sample labels the thesaurus does not carry (``unresolved``, never
-matched loosely), and the thesaurus's own vintage and licence. With no artifact built it prints
-``"status": "not-measured"`` with the reason and exits 3, so "not measured yet" can never be
-read as a figure.
+matched loosely), and the thesaurus's own vintage and licence. With no artifact built, or one set
+aside by the check, it prints ``"status": "not-measured"`` with the reason and exits 3, so "not
+measured yet" can never be read as a figure.
 
-Usage:  python scripts/topic_sample_measure.py [--artifact PATH] [--sample PATH]
+Usage:  python scripts/topic_sample_measure.py [--scheme eurovoc] [--artifact PATH] [--sample PATH]
 """
 
 from __future__ import annotations
@@ -28,11 +30,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.catalog import skos  # noqa: E402
+from src.catalog import skos, thesaurus_store  # noqa: E402
 from src.catalog import topic_tagging as tt  # noqa: E402
 
 DEFAULT_SAMPLE = ROOT / "src" / "catalog" / "data" / "topic_sample_law_titles.json"
-DEFAULT_ARTIFACT = ROOT / "src" / "catalog" / "data" / "skos" / "eurovoc.json"
 NOT_MEASURED = 3
 
 
@@ -77,17 +78,25 @@ def _artifact_problem(art: dict[str, Any]) -> str | None:
     return None
 
 
-def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
+def _read_sample(sample_path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """(the sample document or None, the output's head, or the not-measured answer when the sample is unreadable)."""
     try:
         doc = json.loads(sample_path.read_text(encoding="utf-8"))
         problem = _sample_problem(doc)
     except (OSError, ValueError) as exc:
         problem = str(exc)
     if problem:
-        return NOT_MEASURED, {"sample": _shown(sample_path), "status": "not-measured",
-                              "reason": f"the labelled sample could not be read: {problem}"}
-    head = {"sample": _shown(sample_path),
-            "sample_as_of": doc.get("as_of"), "labelled_by": doc.get("labelled_by"), "n_sample": len(doc["items"])}
+        return None, {"sample": _shown(sample_path), "status": "not-measured",
+                      "reason": f"the labelled sample could not be read: {problem}"}
+    return doc, {"sample": _shown(sample_path),
+                 "sample_as_of": doc.get("as_of"), "labelled_by": doc.get("labelled_by"), "n_sample": len(doc["items"])}
+
+
+def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
+    """Measure against the thesaurus file at ``artifact_path``, read directly (unchecked: fixtures and old builds)."""
+    doc, head = _read_sample(sample_path)
+    if doc is None:
+        return NOT_MEASURED, head
     if not artifact_path.exists():
         return NOT_MEASURED, {**head, "status": "not-measured",
                               "reason": f"no thesaurus artifact at {artifact_path.name}: it is built by the operator "
@@ -96,6 +105,29 @@ def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
         art = skos.load_artifact(artifact_path)
     except (OSError, ValueError) as exc:  # SkosError is a ValueError; a JSON error is one too
         return NOT_MEASURED, {**head, "status": "not-measured", "reason": f"the artifact could not be read: {exc}"}
+    return _measure(head, doc, art)
+
+
+def run_store(scheme: str, sample_path: Path, base: Path | None = None) -> tuple[int, dict[str, Any]]:
+    """Measure against the thesaurus built into the data directory, used only when its format and hash hold."""
+    doc, head = _read_sample(sample_path)
+    if doc is None:
+        return NOT_MEASURED, head
+    try:
+        art, status = thesaurus_store.load_thesaurus(scheme, base)
+    except (OSError, ValueError) as exc:
+        return NOT_MEASURED, {**head, "status": "not-measured", "reason": f"the thesaurus could not be read: {exc}"}
+    if art is None:
+        reason = status["reason"]
+        if status["state"] == "missing":
+            reason += " (after reading the publisher's licence: S06-02 S4); nothing is measured without it"
+        return NOT_MEASURED, {**head, "status": "not-measured", "thesaurus_state": status["state"], "reason": reason}
+    out = _measure(head, doc, art)
+    out[1]["thesaurus_sha256"] = status.get("sha256")
+    return out
+
+
+def _measure(head: dict[str, Any], doc: dict[str, Any], art: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     problem = _artifact_problem(art)
     if problem:  # checked up front, so an exception below is a bug and surfaces as one, never as "not measured"
         return NOT_MEASURED, {**head, "status": "not-measured", "reason": f"the artifact is malformed inside: {problem}"}
@@ -109,10 +141,13 @@ def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--artifact", type=Path, default=DEFAULT_ARTIFACT)
+    ap.add_argument("--scheme", default="eurovoc", choices=skos.SCHEMES,
+                    help="the thesaurus built into the data directory (default: eurovoc)")
+    ap.add_argument("--artifact", type=Path, default=None,
+                    help="read this thesaurus file directly instead, without the format and hash check")
     ap.add_argument("--sample", type=Path, default=DEFAULT_SAMPLE)
     a = ap.parse_args(argv)
-    code, out = run(a.artifact, a.sample)
+    code, out = run(a.artifact, a.sample) if a.artifact is not None else run_store(a.scheme, a.sample)
     print(json.dumps(out, ensure_ascii=False, indent=1))
     return code
 

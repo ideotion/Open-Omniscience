@@ -80,8 +80,8 @@ def test_confirm_list_and_withdraw(world, monkeypatch):
     assert renoted["confirmed_at"] == first and renoted["note"] == "x"
     listed = c.get(f"/api/quarantine/host-pairs?source_id={sid}").json()
     assert listed["confirmed"] == 1 and listed["rows"][0]["article_site"] == "example.net"
-    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=example.net").json() == {"removed": 1}
-    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=example.net").json() == {"removed": 0}
+    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=example.net").json()["removed"] == 1
+    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=example.net").json()["removed"] == 0
     assert c.get("/api/quarantine/host-pairs").json()["confirmed"] == 0
 
 
@@ -262,7 +262,7 @@ def test_a_short_local_note_inside_an_incoming_one_or_the_label_survives_the_mer
 def test_withdraw_accepts_any_spelling_the_confirm_accepted(world, monkeypatch):
     c, sid = _client(monkeypatch, world), _sid(world)
     assert c.post("/api/quarantine/host-pairs", json={"source_id": sid, "article_site": "CDN.example.net"}).status_code == 200
-    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=CDN.example.net").json() == {"removed": 1}
+    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=CDN.example.net").json()["removed"] == 1
 
 
 def test_an_idn_site_stored_in_unicode_can_be_confirmed(world, monkeypatch):
@@ -276,4 +276,4 @@ def test_an_idn_site_stored_in_unicode_can_be_confirmed(world, monkeypatch):
     r = c.post("/api/quarantine/host-pairs", json={"source_id": sid, "article_site": "bücher.de"})
     assert r.status_code == 200, r.text
     assert r.json()["article_site"] == "xn--bcher-kva.de"
-    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=bücher.de").json() == {"removed": 1}
+    assert c.delete(f"/api/quarantine/host-pairs?source_id={sid}&article_site=bücher.de").json()["removed"] == 1

@@ -476,6 +476,56 @@ def select_due_disqualified(
     return due
 
 
+#: R728 C: a never-measured qualified source is judged from its stored articles only once it has
+#: at least this many, so the verdict reads a real sample rather than a handful of pages.
+UNMEASURED_MIN_STORED = 10
+
+
+def select_unmeasured_qualified(session: Session, *, limit: int, exclude: set[int] | None = None) -> list[Source]:
+    """R728 C: enabled qualified sources that were NEVER judged here (no ``JUDGING_VERDICTS`` attempt:
+    a curated or inherited stamp, never measured) and have at least ``UNMEASURED_MIN_STORED`` stored
+    articles, least-recently-attempted first (the same rotation as :func:`select_unqualified`, so one
+    that keeps producing no evidence cannot block the rest). They are judged OFFLINE from what is
+    already stored: no trial fetch. A judged one leaves the pool, because its verdict is a judging
+    attempt. ``enabled`` is required because a qualified verdict sets it (Q1101), and a source the
+    operator switched off is the operator's.
+
+    The field test (2026-11-14 report 5.3) found 6,411 curated sources and 0 measured on every
+    instance: the curated clock defers a re-check by a full interval, so before this no curated
+    source had ever been judged on its own pages."""
+    from sqlalchemy import exists, select, true
+
+    from src.database.models import Article, Source
+    from src.database.models import SourceQualificationAttempt as A
+
+    if limit <= 0:
+        return []
+    judged = exists().where(A.source_id == Source.id, A.verdict.in_(JUDGING_VERDICTS))
+    last_attempt = (
+        session.query(A.source_id.label("source_id"), func.max(A.attempted_at).label("last_at"))
+        .group_by(A.source_id).subquery()
+    )
+    # Enough stored articles, tested IN SQL so the rotation below only ever orders eligible rows (a
+    # Python filter after the LIMIT let a few low-id sources with too few pages fill the window on
+    # every pass, since they never get an attempt row that would move them back). The N-th article
+    # exists: an index seek on the source that reads at most UNMEASURED_MIN_STORED rows. Quarantined
+    # articles do not count, because the verdict does not read them either.
+    enough = (
+        select(Article.id).where(Article.source_id == Source.id, Article.quarantined.isnot(True))
+        .limit(1).offset(UNMEASURED_MIN_STORED - 1).exists()
+    )
+    skip = ~Source.id.in_(sorted(exclude)) if exclude else true()
+    return (
+        session.query(Source)
+        .outerjoin(last_attempt, last_attempt.c.source_id == Source.id)
+        .filter(Source.status == STATUS_QUALIFIED, Source.enabled.is_(True), ~judged, enough, skip,
+                not_a_stand_in_source())
+        .order_by(last_attempt.c.last_at.asc().nullsfirst(), Source.id.asc())
+        .limit(limit)
+        .all()
+    )
+
+
 def _last_clock_subquery(session: Session):
     """``{source_id: newest attempt that RESET this instance's re-verification clock}``.
 
@@ -1729,6 +1779,15 @@ def run_qualification_pass(
     rechecks, slot_contested = allocate_rechecks_detail(
         forced, dq_pool, ql_pool, total, odd_to_list=odd_to_list)
     forced_ids = set(forced_all)
+    # R728 C: the re-check slots the due queues left unused go to never-measured qualified sources,
+    # judged offline from their stored articles. Inside the same budget, and only while qualified
+    # re-verification is on (`recheck_per_pass > 0`), so "off" keeps meaning off.
+    unmeasured: list[Source] = []
+    if reserved > 0 and total > len(rechecks):
+        taken = {int(x.id) for x in [*new_candidates, *rechecks]}
+        unmeasured = select_unmeasured_qualified(session, limit=total - len(rechecks), exclude=taken)
+        rechecks = [*rechecks, *unmeasured]
+    offline_ids = {int(x.id) for x in unmeasured}
 
     # One source is evaluated once per pass: a row reset to unqualified can be both a new
     # candidate and (stale) on the forced list, and a flagged one can also be due in a pool.
@@ -1747,9 +1806,13 @@ def run_qualification_pass(
         from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
         started = time.monotonic()
-        attempted: list[Source] = []
+        # R728 C: judged from what is stored, so no request is made for them and no budget, pause or
+        # Stop below can defer them.
+        attempted: list[Source] = [x for x in candidates if int(x.id) in offline_ids]
         stopped = False
         for source in candidates:
+            if int(source.id) in offline_ids:
+                continue
             # This candidate's trial window (R614), from before its first request to the read below: a Stop pressed and cleared
             # again anywhere inside it is a Stop, as when the switch is still engaged.
             epoch = kill_switch_epoch()
@@ -1761,7 +1824,7 @@ def run_qualification_pass(
                 break
             # The first candidate is always tried; after that a pass gives up on the rest when
             # its wall-clock budget is spent or the memory guard says stop.
-            if attempted and (
+            if any(int(x.id) not in offline_ids for x in attempted) and (
                 time.monotonic() - started > _TRIAL_FETCH_BUDGET_S
                 or (should_pause is not None and should_pause())
             ):
@@ -1861,6 +1924,23 @@ def run_qualification_pass(
     judged = [s for s in candidates if s.id in per]
     no_evidence = [s for s in candidates if s.id not in per]
 
+    # R728 A, inside judging: a candidate whose recent pages were answered by another site is HELD
+    # (an off-site attempt row, ``disqualified``), whatever its extraction looks like -- a casino page
+    # extracts cleanly. It is taken out of the extraction verdict so it gets exactly one attempt row.
+    from src.catalog import off_site as _off_site
+
+    held_off_site: list[tuple[int, str]] = []
+    # A source that was qualified before (held as such, or re-admitted and then undone) keeps that standing
+    # when a re-check holds it again: confirming the pair then re-admits it rather than requeueing it.
+    _prior_versions = _off_site.latest_attempt_versions(session, [int(s.id) for s in judged])
+    _was_qualified = (_off_site.CRITERIA_VERSION, _off_site.CONFIRMED_CRITERIA_VERSION)
+    for s in list(judged):
+        finding = _off_site.evaluate(session, int(s.id), s.domain)
+        candidate = not (s.status == STATUS_QUALIFIED or _prior_versions.get(int(s.id)) in _was_qualified)
+        if _off_site.hold(session, s, finding, now=now, candidate=candidate):
+            held_off_site.append((int(s.id), str(finding.other_site)))
+            judged.remove(s)
+
     # The label follows the cohort ACTUALLY used, not the plan: a caller's provider (the bulk
     # job freezes once per run) may have frozen under a different plan than this pass read.
     sampled = frozen.get("sample_articles") is not None
@@ -1886,8 +1966,18 @@ def run_qualification_pass(
     # and the odd slot of an odd budget changes hands.
     if forced:
         record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
+    # R728 B: the reversible mark on a held candidate's off-site articles, after the hold is committed.
+    # The hold queued them in its own transaction, so a failure here leaves them owed, never lost.
+    off_site_marked = 0
+    if held_off_site:
+        off_site_marked, _failed = _off_site.apply_pending_marks(
+            session, source_ids=[sid for sid, _site in held_off_site], now=now)
 
     for sid in tally.get("qualified_ids", []):
+        if int(sid) in offline_ids:
+            # R728 C makes no network call: a source judged offline was already collecting, and the
+            # verdict queues no history backfill for it.
+            continue
         try:
             from src.ingest.archive_backfill import enqueue_source
 
@@ -1901,11 +1991,16 @@ def run_qualification_pass(
         # were not attempted, so they are first in line next pass.
         "deferred": deferred,
         "no_evidence": len(no_evidence),
+        # R728: candidates held because their recent pages came from another site, and the articles marked for it.
+        "off_site_held": len(held_off_site),
+        "off_site_articles_marked": off_site_marked,
         # Reported apart because they answer different questions: "is the backlog draining"
         # and "is the recurrent verification actually running". One number cannot say both,
         # and it was precisely the absence of the second that hid a ladder that never ran.
         "new_candidates": len(new_candidates),
         "rechecks": len(rechecks),
+        # R728 C: of those, never-measured qualified sources judged offline from their stored articles.
+        "unmeasured_judged": sum(1 for x in rechecks if int(x.id) in offline_ids),
         # Of those, the ones taken from the forced list (a measured verdict an imported history
         # disagrees with): reported apart so a reader can see the list draining.
         "forced_rechecks": sum(1 for x in rechecks if int(x.id) in forced_ids),

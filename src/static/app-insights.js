@@ -96,7 +96,7 @@
         v.style.display = (v.id === "ins-" + cat) ? "" : "none");
       if (!_insLoaded.has(cat)) {
         _insLoaded.add(cat);
-        if (cat === "trends") loadTrends();
+        if (cat === "trends") { loadTrends(); paintWeatherSignals(); }
         if (cat === "map") loadMap();
         if (cat === "sources") loadCitedSources();
         if (cat === "families") loadFamilies();
@@ -1320,9 +1320,14 @@
                 _tfn("⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.",
                   { n: String(c.shared_origin_links) }))}</div>`
             : "";
+          // Row 99: links shared only because one outlet carries them on most of its pages, counted apart.
+          const furn = (c.shared_origin_furniture_links > 0)
+            ? `<div class="muted" style="font-size:11px;margin-top:2px" title="${esc(t("A link counts as an outlet's page furniture (a footer, app or subscription link) when at least half of the articles stored from that source carry it, and the source has at least 20 stored articles. Measured on your corpus."))}">${esc(
+                _tfn("{n} more shared links are one outlet's page furniture and are not counted.", { n: String(c.shared_origin_furniture_links) }))}</div>`
+            : "";
           return `<div class="cs-row" style="display:block;padding:8px 0;border-bottom:1px solid var(--border)">
             <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">${head}${counts}</div>
-            ${srcLine}${warn}</div>`;
+            ${srcLine}${warn}${furn}</div>`;
         }).join("");
         const total = d.clusters_total != null ? d.clusters_total : clusters.length;
         const more = (total > clusters.length)

@@ -172,8 +172,9 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/backup/export_summary.py": {("export_facts", "attribution, attribution_error = [], str(exc)"): 1},
     # ``_ExportRefused`` is this module's own refusal with fixed words (_NO_SPACE and the like); any other failure is its class.
     "src/backup/newsletter_export.py": {("drop_newsletters_encrypted", "reason = str(exc) if refused else type(exc).__name__"): 1},
-    # ``refused`` is a RestoreRefused: its ``served_text`` is a fixed sentence the code wrote, naming the holder of a lock.
-    "src/backup/volume_job.py": {("VolumeBackupManager._run_backup", 'self._state, self._error = "error", refused.served_text'): 1},
+    # ``refused`` is a NewsletterFilterRefused: its ``served_text`` is one of two fixed sentences the code wrote. Carried out of the
+    # handler as text, served once the handler has ended (row 111).
+    "src/backup/volume_job.py": {("VolumeBackupManager._run_backup", "refused.served_text,"): 1},
 }
 
 #: Operator-facing text that nothing stores: a dump lookup's HTTP
@@ -282,6 +283,13 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # The repair reads its OWN refusals (``Declined``, ``salvage.SalvageRefused``: fixed sentences the code wrote, a code key and numbers) and
     # one salvage failure (``SalvageFailed``: a table or index name and the class and fixed label of the driver's error); ``refusal.detail``
     # reaches a record and a log only through ``exception_text``, and tests/test_refusal_detail_source.py reads what each refusal may be made of.
+    # The rebuild (R702) reads its OWN refusals the same way: the code key, and the words through ``_words_of`` (``record_text``). And
+    # the code of the repair's refusal from the log fold it borrows, said again in its own words (never the repair's text).
+    'src/database/rebuild.py': {
+        ('_run', 'code = refusal.code'): 1,
+        ('_run', 'report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))'): 1,
+        ('_switch', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
+    },
     'src/database/repair.py': {
         ('run', 'code = refusal.code'): 2,
         ('run', 'report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)'): 1,

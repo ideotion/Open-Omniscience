@@ -45,7 +45,7 @@ import logging
 import os
 from pathlib import Path
 
-from src.ingest.fetch_verdict import failure_url, userinfo_secrets
+from src.ingest.fetch_verdict import address_secrets, failure_url
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
@@ -249,7 +249,7 @@ def advance_backfill(
             key = "error"
             # the URL masked, and its userinfo taken out of the error's words too (R620, Steward 3 #1)
             log_failure(
-                _LOG, f"archive backfill: fetching {failure_url(url)!r} failed", exc, *userinfo_secrets(url), level=logging.WARNING
+                _LOG, f"archive backfill: fetching {failure_url(url)!r} failed", exc, *address_secrets(url), level=logging.WARNING
             )
             # A failure that reached here can include an uncommitted/failed
             # transaction (store_fetched only catches IntegrityError itself --

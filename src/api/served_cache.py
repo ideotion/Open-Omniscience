@@ -82,6 +82,8 @@ from src.monitoring.secret_scrub import log_failure
 _LOG = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
+#: Signalled, under ``_LOCK``, each time a build lock is released, so an inline waiter retakes it under ``_LOCK`` too.
+_BUILD_RELEASED = threading.Condition(_LOCK)
 # key -> {"payload", "built_at", "checked_at", "probe", "bind"}
 _CACHE: dict[str, dict] = {}
 # One build lock PER KEY: a cold /figures must not block a warm /stats behind it.
@@ -261,17 +263,27 @@ def refresh(key: str, compute, *, probe: int | None = None) -> dict | None:
         return None
 
 
-def _kick_background_refresh(key: str, compute) -> None:
+def _kick_background_refresh(key: str, compute) -> float | None:
     """Kick ONE background recompute for ``key`` when none is already in flight.
 
     Non-blocking: the stale-but-real value keeps being served meanwhile, which is
     the entire point -- a poll must never wait on the scan.
+
+    Returns when the recompute in flight started: the one this call started, or the one already running, or ``None`` when
+    none is (one that was running has just ended). The caller takes the start from HERE, never from a second read after
+    the kick: a compute fast enough to end before that read has already taken its start out of ``_RECOUNT_STARTED``, which
+    answered a cold poll "computing" with no start time (``pending_since: null``, seen on CI, run 43808845357).
     """
     lock = _build_lock(key)
-    if not lock.acquire(blocking=False):
-        return  # a rebuild for this key is already running
+    # The build lock and the recorded start change together, under ``_LOCK``, here and where the compute ends: a lock that is
+    # held always has a start beside it, so a poll that finds the lock taken never reads "running, since nothing". Taking
+    # the build lock without waiting while ``_LOCK`` is held cannot deadlock (the inline path's order, build lock then
+    # ``_LOCK``, never waits on ``_LOCK`` while another thread waits on it for the build lock).
     with _LOCK:
-        _RECOUNT_STARTED[key] = time.time()
+        if not lock.acquire(blocking=False):
+            return _RECOUNT_STARTED.get(key)  # a rebuild for this key is already running
+        started = time.time()
+        _RECOUNT_STARTED[key] = started
 
     def _run() -> None:
         # The probe is read BEFORE the compute: a write that lands mid-scan must
@@ -283,7 +295,8 @@ def _kick_background_refresh(key: str, compute) -> None:
         finally:
             with _LOCK:
                 _RECOUNT_STARTED.pop(key, None)
-            lock.release()
+                lock.release()
+                _BUILD_RELEASED.notify_all()
 
     try:
         threading.Thread(target=_run, name=f"served-cache-{key}", daemon=True).start()
@@ -291,8 +304,10 @@ def _kick_background_refresh(key: str, compute) -> None:
         # A thread that never started must not look in flight, nor hold the lock.
         with _LOCK:
             _RECOUNT_STARTED.pop(key, None)
-        lock.release()
+            lock.release()
+            _BUILD_RELEASED.notify_all()
         raise
+    return started
 
 
 def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None) -> dict:
@@ -340,8 +355,24 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
     if cold_payload is not None:
         # Non-blocking cold start: one background compute (a second caller finds the lock taken and starts nothing), the cheap
         # part answered now. The cheap part is read BEFORE the kick returns control to the poll, never after the scan.
-        _kick_background_refresh(key, compute)
-        started = _recount_started(key)
+        started = _kick_background_refresh(key, compute)
+        if started is None:
+            started = _recount_started(key)  # a kick that reports nothing (a stand-in): read what is in flight
+        if started is None:
+            # Defence in depth: every holder of the build lock records its start under ``_LOCK`` (the kick and
+            # ``_hold_with_start``), so a real kick always reports one. This keeps a stand-in kick, or a holder added later
+            # without a start, from answering "computing" with no start time: if nothing is in flight, the compute has
+            # ENDED, and its value is the answer if it stored one.
+            with _LOCK:
+                entry = _CACHE.get(key)
+                done = dict(entry) if (entry is not None and _same_bind(session, entry.get("bind"))) else None
+            if done is not None:
+                later = change_probe()
+                return _decorate(done, ttl_s=ttl_s, cached=True, now=time.time(),
+                                 verified=later is not None and later == done["probe"])
+            # It ended without storing (it failed, or its payload was not to be kept): start one again, so this answer is
+            # "computing" with a real start, as on any other cold poll.
+            started = _kick_background_refresh(key, compute)
         out = _decorate(
             {"payload": cold_payload(session), "built_at": time.time()},
             ttl_s=ttl_s, cached=False, now=time.time(), verified=False, recount_started=started,
@@ -353,16 +384,19 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
     # Cold (or a bind we may not answer for): compute ONCE, under the per-key
     # build lock, and let concurrent cold callers reuse that one result.
     lock = _build_lock(key)
-    with lock:
+    _hold_with_start(key, lock)
+    try:
         with _LOCK:
             entry = _CACHE.get(key)
             servable = entry is not None and _same_bind(session, entry.get("bind"))
             snapshot = dict(entry) if (servable and entry is not None) else None
         if snapshot is not None:
             later = change_probe()
+            # This thread holds the build lock, so no other compute of the key is running: the start beside the lock is
+            # this call's own, which is a read of the cache, not a recount.
             return _decorate(snapshot, ttl_s=ttl_s, cached=True, now=time.time(),
                              verified=later is not None and later == snapshot["probe"],
-                             recount_started=_recount_started(key))
+                             recount_started=None)
         generation = _generation(key)  # BEFORE the compute reads anything
         fresh = compute(session)
         _store(key, fresh, _bind_of(session), probe, generation)
@@ -370,6 +404,26 @@ def cached(key: str, compute, session: Session, *, ttl_s: int, cold_payload=None
         later = change_probe()
         return _decorate(built, ttl_s=ttl_s, cached=False, now=time.time(),
                          verified=probe is not None and later == probe)
+    finally:
+        with _LOCK:
+            _RECOUNT_STARTED.pop(key, None)
+            lock.release()
+            _BUILD_RELEASED.notify_all()
+
+
+def _hold_with_start(key: str, lock: threading.Lock) -> None:
+    """Take ``key``'s build lock for the inline path, recording its start beside it as the background kick does.
+
+    The lock is only ever TAKEN under ``_LOCK`` (without waiting), so a held build lock always has a start beside it,
+    whichever path holds it: a cold poll that finds it taken reads a real "running since". The wait is on
+    ``_BUILD_RELEASED``, which gives ``_LOCK`` up while waiting and is signalled under it at every release, never on the
+    build lock itself: a waiter that took the build lock to learn it was free would hold it, for that instant, with no
+    start beside it.
+    """
+    with _LOCK:
+        while not lock.acquire(blocking=False):
+            _BUILD_RELEASED.wait(timeout=1.0)  # a release that skipped the notify costs a second, never a stuck request
+        _RECOUNT_STARTED[key] = time.time()
 
 
 def invalidate(key: str | None = None) -> None:

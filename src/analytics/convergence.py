@@ -142,6 +142,8 @@ class ConvergenceCluster:
     includes_future_mentions: bool
     baseline_share: float  # this span's share of the place's OWN all-time mentions
     place_total_mentions: int  # the denominator behind baseline_share, disclosed
+    # Row 99: URLs that were shared only as one outlet's page furniture -- counted apart, never in the figure above.
+    shared_origin_furniture_links: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -159,6 +161,7 @@ class ConvergenceCluster:
             "article_ids": self.article_ids,
             "shared_origin_links": self.shared_origin_links,
             "shared_origin_examples": self.shared_origin_examples,
+            "shared_origin_furniture_links": self.shared_origin_furniture_links,
             "steps": self.steps,
             "peak_step_index": self.peak_step_index,
             "includes_future_mentions": self.includes_future_mentions,
@@ -388,7 +391,8 @@ def find_convergences(
         for cc in {src_country.get(a) for a in ids_sorted}:
             if cc:
                 countries[cc] = len({a for a in ids_sorted if src_country.get(a) == cc})
-        shared_n, shared_examples = _shared_origin(session, ids_sorted)
+        shared = shared_origin_detail(session, ids_sorted)
+        shared_n, shared_examples = shared["count"], shared["examples"]
         meta = place_meta[key]
 
         steps_out = [
@@ -425,6 +429,7 @@ def find_convergences(
                 article_ids=ids_sorted,
                 shared_origin_links=shared_n,
                 shared_origin_examples=shared_examples,
+                shared_origin_furniture_links=shared["furniture_count"],
                 steps=steps_out,
                 peak_step_index=peak_idx,
                 includes_future_mentions=full_end > today,
@@ -492,11 +497,28 @@ def _shared_origin(session, article_ids: list[int]) -> tuple[int, list[str]]:
     not independent corroboration. We surface the structure (count + examples),
     never a verdict. The count is an aggregate over the HAVING-filtered grouped
     query (no LIMIT); only the returned EXAMPLES are bounded (top-3 by citing-
-    article count).
+    article count). An outlet's own page furniture (row 99: a footer link most of
+    its articles carry) is not a shared origin; :func:`shared_origin_detail`
+    counts it apart.
     """
+    d = shared_origin_detail(session, article_ids)
+    return d["count"], d["examples"]
+
+
+def shared_origin_detail(session, article_ids: list[int]) -> dict:
+    """The shared-origin count, with an outlet's page furniture counted apart (row 99).
+
+    Returns ``{"count", "examples", "furniture_count", "furniture_examples"}``. A link counts toward ``count`` only
+    through the articles whose source does NOT carry it as furniture (``link_furniture.furniture_pairs``, the one
+    measure the reader uses); a URL that was shared only because one outlet's articles all carry it in their footer
+    goes to ``furniture_count`` instead. Both are exact.
+    """
+    out: dict = {"count": 0, "examples": [], "furniture_count": 0, "furniture_examples": []}
     if len(article_ids) < 2:
-        return 0, []
+        return out
     from sqlalchemy import func
+
+    from src.analytics.link_furniture import furniture_pairs
 
     n_cited = func.count(func.distinct(ArticleLink.article_id))
     # ONE scan of the id set. The old shape ran the grouped query twice (``.count()`` wrapping it as a
@@ -515,10 +537,39 @@ def _shared_origin(session, article_ids: list[int]) -> tuple[int, list[str]]:
         .having(n_cited > 1)
         .all()
     )
-    exact_count = len(rows)  # EXACT — never capped, however many groups qualify
-    top = sorted(rows, key=lambda r: (-r[1], r[0] or ""))[:3]
-    examples = [url for url, _ in top if url]
-    return exact_count, examples
+    if not rows:
+        return out
+    shared = {str(u) for u, _ in rows if u}
+    # Who carries each shared URL: the id set is read again from the article side (the same covering index) and only
+    # the shared URLs kept -- going in by URL would read every link of a popular URL in the whole corpus.
+    carriers: dict[str, set[int]] = {u: set() for u in shared}
+    for i in range(0, len(article_ids), 500):
+        for url, aid in (
+            session.query(ArticleLink.normalized_url, ArticleLink.article_id)
+            .filter(ArticleLink.article_id.in_(article_ids[i : i + 500]), ArticleLink.normalized_url.isnot(None))
+            .all()
+        ):
+            if url in carriers:
+                carriers[url].add(int(aid))
+    member_ids = sorted(set().union(*carriers.values()))
+    source_of: dict[int, int | None] = {}
+    for i in range(0, len(member_ids), 500):
+        for aid, sid in session.query(Article.id, Article.source_id).filter(Article.id.in_(member_ids[i : i + 500])).all():
+            source_of[int(aid)] = sid
+    furniture = furniture_pairs(session, ((source_of.get(a), u) for u, ids in carriers.items() for a in ids))
+    kept: list[tuple[str, int]] = []
+    only_furniture: list[tuple[str, int]] = []
+    for url, ids in carriers.items():
+        independent = [a for a in ids if (source_of.get(a), url) not in furniture]
+        if len(independent) > 1:
+            kept.append((url, len(independent)))
+        else:
+            only_furniture.append((url, len(ids)))
+    out["count"] = len(kept)  # EXACT — never capped, however many groups qualify
+    out["examples"] = [u for u, _ in sorted(kept, key=lambda r: (-r[1], r[0]))[:3]]
+    out["furniture_count"] = len(only_furniture)
+    out["furniture_examples"] = [u for u, _ in sorted(only_furniture, key=lambda r: (-r[1], r[0]))[:3]]
+    return out
 
 
 def _empty(

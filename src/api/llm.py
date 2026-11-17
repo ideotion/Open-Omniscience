@@ -2435,7 +2435,7 @@ def synthesize_articles(
     parts = []
     members = []
     for i, a in enumerate(ordered, 1):
-        src = a.source.name if a.source else "unknown source"
+        src = a.source.display_name if a.source else "unknown source"
         pub = a.published_at.date().isoformat() if a.published_at else "undated"
         parts.append(
             f"[{i}] {a.title or '(untitled)'} ({src}, {pub})\n{a.content[:per_article]}"

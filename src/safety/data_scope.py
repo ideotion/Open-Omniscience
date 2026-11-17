@@ -64,7 +64,7 @@ APP_FILES: frozenset[str] = frozenset({
 #: Top-level FOLDERS the app writes into its data folder.
 APP_DIRS: frozenset[str] = frozenset({
     "annotations", "bench", "bulletin", "cache", "diagnostics", "duckdb_tmp", "import_reports", "ip_geo", "keys",
-    "leases", "models", "osm_borders", "osm_regions", "osm_work", "rings", "run_logs", "runtime", "triage",
+    "leases", "models", "osm_borders", "osm_regions", "osm_work", "rings", "run_logs", "runtime", "thesauri", "triage",
     "vllm_failed_starts", "vllm_venv", "weather_context", "wiki_dumps", ".oo_scrub",
 })
 
@@ -88,7 +88,7 @@ _DB_NAMES = ("open_omniscience.db", "custody_log.db", "anchors.db")
 #: salvage and damaged copies, a backup or restore staging folder, a reassembling archive part, a free-space scrub file.
 _PREFIXES = ("pre-restore-", "pre-encrypt-", ".bak-build-", ".restore-", ".oo-vllm-pip-build", ".oo-backup-", ".oo_scrub_", ".merge-probe-",
              "oo-osm-reference-run-")
-_INFIXES = (".salvage-", ".damaged-")
+_INFIXES = (".salvage-", ".damaged-", ".rebuild-", ".pre-rebuild-")
 _SUFFIXES = (".oopart", ".reassembling")
 
 
@@ -123,7 +123,8 @@ def owned_spec(lanes: tuple[str, ...] | None = None, *, shared: bool = False) ->
     prefixes = [*_PREFIXES]
     for db in dbs:
         stem = db.rsplit(".", 1)[0]
-        # a repair's salvage and damaged copies (src/database/repair.py) and an encryption's in-progress copy (encrypt_tool.py)
+        # a repair's salvage and damaged copies (src/database/repair.py), a rebuild's copy and kept file (rebuild.py, R702) and an
+        # encryption's in-progress copy (encrypt_tool.py)
         prefixes += [stem + i for i in _INFIXES] + [db + ".enc-"]
     return {"names": sorted(names), "prefixes": prefixes, "suffixes": list(_SUFFIXES), "strip": STRIP_RE}
 
