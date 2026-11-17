@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,tests,"Windows test fixes: line endings, paths, POSIX-only checks, GET program table (row 140)",shipped,PR #2106,tests/test_get_routes_side_effects.py;tests/test_data_location.py;tests/test_crypto_erase.py,"Tests only: Windows CRLF, IsADirectoryError vs PermissionError, UTF-16 names, ACL mode bits, WSL bash, node UTF-8, as_posix paths; Windows pipe-reader thread accepted only on routes whose programs are allowed; windows-locks entry dropped (POST since #2103)."
