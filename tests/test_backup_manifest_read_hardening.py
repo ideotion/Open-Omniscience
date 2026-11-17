@@ -182,3 +182,62 @@ def test_a_directory_swapped_in_after_the_check_is_refused_and_its_descriptor_cl
     with pytest.raises(VolumeError, match="not a regular file"):
         load_manifest(folder)
     assert opened and closed == opened
+
+
+# ---------------------------------------------------------------- row 124: the Windows read path
+def test_the_manifest_reads_where_set_blocking_refuses_a_file(tmp_path, monkeypatch):
+    """Row 124: ``os.set_blocking`` works on pipes only on Windows, and every manifest read there failed with "cannot be read
+    (OSError)" (8 backup and parity tests on the Windows observation leg). The read never switches the descriptor back."""
+    import src.backup.volumes as V
+
+    def _windows_set_blocking(fd, blocking):
+        raise OSError(22, "Invalid argument")
+
+    scope_os(monkeypatch, V, set_blocking=_windows_set_blocking)
+    assert load_manifest(_manifest(tmp_path / "set"))["kind"] == STREAM_KIND
+
+
+def test_a_file_other_than_the_one_examined_is_refused_and_its_descriptor_closed(tmp_path, monkeypatch):
+    """Where there is no O_NOFOLLOW (Windows), a name swapped for a link after the lstat would open the link's target: the file
+    opened must be the file examined."""
+    import os as _os
+
+    import src.backup.volumes as V
+
+    folder = _manifest(tmp_path / "set")
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_text((folder / MANIFEST_NAME).read_text(encoding="utf-8"), encoding="utf-8")
+    real_open, real_close, opened, closed = _os.open, _os.close, [], []
+
+    def _open_the_target(path, flags, *a):
+        # the name is swapped for a link after the lstat, and an open with no O_NOFOLLOW follows it to its target
+        Path(path).unlink()
+        try:
+            Path(path).symlink_to(elsewhere)
+        except OSError:
+            pytest.skip("this account cannot make a symbolic link")
+        fd = real_open(elsewhere, flags & ~getattr(_os, "O_NOFOLLOW", 0), *a)
+        opened.append(fd)
+        return fd
+
+    scope_os(monkeypatch, V, open=_open_the_target, close=lambda fd: closed.append(fd) or real_close(fd))
+    with pytest.raises(VolumeError, match="changed while it was being opened"):
+        load_manifest(folder)
+    assert opened and closed == opened
+
+
+def test_an_identity_reported_differently_by_the_two_calls_still_reads_when_the_name_is_unchanged(tmp_path, monkeypatch):
+    """The security read of row 124: on FAT/exFAT or an SMB share, Windows may give lstat and fstat the same file's identity at
+    different widths. The name is looked at again, and a manifest still in place is read, not refused."""
+    import os as _os
+
+    import src.backup.volumes as V
+
+    real_fstat = _os.fstat
+
+    def _other_width(fd):
+        r = real_fstat(fd)
+        return _os.stat_result((r.st_mode, r.st_ino, r.st_dev + 1, *tuple(r)[3:]))
+
+    scope_os(monkeypatch, V, fstat=_other_width)
+    assert load_manifest(_manifest(tmp_path / "set"))["kind"] == STREAM_KIND
