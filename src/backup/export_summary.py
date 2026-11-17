@@ -54,6 +54,7 @@ from src.backup.attribution import (
     PendingRulingError,
     attribution_dicts,
     files_signal,
+    lane_signal,
     signals_from_tables,
 )
 from src.backup.export_folder import REQUEST_NAME, read_export_request
@@ -139,6 +140,20 @@ def _folder_manifest(dest: Path) -> dict[str, Any] | None:
     return m if isinstance(m, dict) else None
 
 
+def _lane_kinds(manifest: dict[str, Any] | None) -> list[str]:
+    """The living-source stores the folder's backup carries (R729), read from its own volume manifest.
+
+    Each one is a measured signal for its source's credit line (Q823 = a: OpenStreetMap's credit
+    and the ODbL wherever map data leaves the machine). No manifest, or no list in it, names none.
+    """
+    from src.backup.lane_merge import valid_member
+
+    members = (manifest or {}).get("lane_members")
+    if not isinstance(members, list):
+        return []
+    return sorted({k for k in (valid_member(e) for e in members) if k})
+
+
 def _file_categories(manifest: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Files copied per category, from the folder backup's OWN manifest.
 
@@ -216,9 +231,14 @@ def export_facts(
     tables = facts_block.get("tables") if isinstance(facts_block.get("tables"), dict) else None
     folder = _folder_manifest(d)
     files = _file_categories(folder)
+    # Whether the corpus is IN this folder is read off the folder (its volume manifest),
+    # never inferred from what this process still remembers. The in-memory summary only
+    # decides whether the export's own MEASUREMENTS can be reported beside it.
+    manifest = _volume_manifest(d)
 
     signals = signals_from_tables(tables)
     signals |= {files_signal(c["category"]) for c in files}
+    signals |= {lane_signal(k) for k in _lane_kinds(manifest)}
     try:
         attribution = attribution_dicts(signals)
         attribution_error = None
@@ -229,10 +249,6 @@ def export_facts(
         attribution, attribution_error = [], str(exc)
 
     corpus_s = summary.get("wall_s") if summary else None
-    # Whether the corpus is IN this folder is read off the folder (its volume manifest),
-    # never inferred from what this process still remembers. The in-memory summary only
-    # decides whether the export's own MEASUREMENTS can be reported beside it.
-    manifest = _volume_manifest(d)
     if summary is not None:
         corpus_facts: str | None = "measured"
     elif manifest is not None:
