@@ -711,6 +711,37 @@ class HostMismatchConfirmed(Base):
         return f"<HostMismatchConfirmed(source={self.source_id} site={self.article_site!r})>"
 
 
+class IpccPrediction(Base):
+    """A person's decision on ONE sentence the app suggested as a prediction in an IPCC SPM (row 121, G4).
+
+    The suggestions themselves are never stored (``src/ingest/ipcc_predictions.py`` recomputes them
+    from the stored report): a row exists only once someone KEPT a sentence as a prediction or SET IT
+    ASIDE. ``sentence`` is the app's own copy of the stored report's sentence, looked up by the server
+    from ``sentence_hash``, never text a caller sent.
+
+    KEYED on (the SPM catalog key, the sentence's hash): both are the same on every install, so a
+    restore matches rows without any id map. OPERATOR data: carried by a restore
+    (``src.backup.merge._merge_ipcc_predictions``), local wins, never rebuilt by a derived job.
+    """
+
+    __tablename__ = "ipcc_predictions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    spm_key: Mapped[str] = mapped_column(String(16), nullable=False)
+    sentence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    sentence: Mapped[str] = mapped_column(Text, nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)  # "kept" | "set_aside"
+    method_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("spm_key", "sentence_hash", name="uq_ipcc_prediction_sentence"),
+    )
+
+    def __repr__(self):
+        return f"<IpccPrediction({self.spm_key} {self.sentence_hash[:12]} {self.decision})>"
+
+
 class SourceQualificationAttempt(Base):
     """One row per qualification/re-qualification ATTEMPT (append-only -- the vintage
     convention, matching StatFigure/law-document versioning: a re-attempt is a NEW row,
