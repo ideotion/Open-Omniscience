@@ -22,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,12 @@ def _scrubbed(report: dict[str, Any], secrets: tuple[str | None, ...]) -> dict[s
     return out if isinstance(out, dict) else {"withheld": UNREADABLE_TEXT}
 
 
+#: When the report file was last written, in nanoseconds since the epoch (row 137). The history lists reports by it rather than
+#: by the file's mtime alone: NTFS stamps mtime from the coarse system clock (about 15.6 ms), so the reports of one checkpoint
+#: tied there and listed in filename order instead of the order they were written.
+_WRITTEN_AT_NS = "written_at_ns"
+
+
 def persist_import_report(
     kind: str, report: dict[str, Any], *, run_id: str | None = None, secrets: tuple[str | None, ...] = ()
 ) -> Path:
@@ -75,7 +82,8 @@ def persist_import_report(
     dest = d / name
     tmp = dest.with_name(dest.name + ".tmp")
     try:
-        tmp.write_text(json.dumps(_scrubbed(report, secrets), indent=2, default=str), encoding="utf-8")
+        body = {**_scrubbed(report, secrets), _WRITTEN_AT_NS: time.time_ns()}
+        tmp.write_text(json.dumps(body, indent=2, default=str), encoding="utf-8")
         os.replace(tmp, dest)
     finally:
         tmp.unlink(missing_ok=True)
@@ -100,6 +108,9 @@ def annotate_import_report(
     if not added:
         return
     data.update(_scrubbed(added, secrets))
+    # Written again, so it is listed as written now, as its mtime says on a system that stamps files in nanoseconds; a
+    # bookkeeping stamp, never a figure the restore measured, so the additive-only rule above does not cover it.
+    data[_WRITTEN_AT_NS] = time.time_ns()
     tmp = path.with_name(path.name + ".tmp")
     try:
         tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
@@ -555,6 +566,9 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
         return {"outcome": "unknown"}
     outcome = str(data.get("outcome") or "ok")
     out: dict[str, Any] = {"outcome": outcome}
+    stamp = data.get(_WRITTEN_AT_NS)
+    if isinstance(stamp, int) and not isinstance(stamp, bool) and stamp > 0:
+        out[_WRITTEN_AT_NS] = stamp
     # WHICH IMPORT RUN, and which backup of it (2026-09-26, I7): one run of several
     # backups leaves one report per backup, and the "Last import" line sums a run's
     # reports rather than quoting whichever backup happened to finish last.
@@ -614,6 +628,7 @@ def list_import_reports() -> list[dict[str, Any]]:
     if not d.is_dir():
         return []
     out: list[dict[str, Any]] = []
+    order: list[tuple[int, int, str]] = []
     for p in sorted(d.glob("*.json")):
         try:
             stat = p.stat()
@@ -621,6 +636,11 @@ def list_import_reports() -> list[dict[str, Any]]:
             continue
         # filename shape: <kind>-<timestamp>-<id>.json
         kind = p.stem.split("-", 1)[0]
+        facts = _report_facts(p, stat.st_size)
+        # newest first by when each was WRITTEN: the report's own stamp, else (a report from before row 137, or one that could
+        # not be read) its mtime; equal stamps fall back to the mtime and then the filename, so the order is the same on every read
+        written = facts.pop(_WRITTEN_AT_NS, None) or stat.st_mtime_ns
+        order.append((written, stat.st_mtime_ns, p.name))
         out.append(
             {
                 "filename": p.name,
@@ -633,13 +653,12 @@ def list_import_reports() -> list[dict[str, Any]]:
                 # ONE parse, several facts: the outcome AND the article figure the
                 # report headlines, so the quiet "last import" line (Q201 = a) and
                 # the history list (Q222 = b) need no second read per entry.
-                **_report_facts(p, stat.st_size),
+                **facts,
                 "created_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                 "size_bytes": stat.st_size,
             }
         )
-    out.sort(key=lambda r: r["created_at"], reverse=True)
-    return out
+    return [r for _key, r in sorted(zip(order, out, strict=True), key=lambda kr: kr[0], reverse=True)]
 
 
 def read_import_report(filename: str) -> dict[str, Any]:
@@ -649,7 +668,10 @@ def read_import_report(filename: str) -> dict[str, Any]:
     p = _safe_report_path(filename)
     if p is None or not p.is_file():
         raise FileNotFoundError(filename)
-    return json.loads(p.read_text(encoding="utf-8"))
+    data = json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        data.pop(_WRITTEN_AT_NS, None)  # row 137: an ordering stamp, never part of the report shown or downloaded
+    return data
 
 
 _LANE_TITLES = {"wiki": "Wikipedia", "law": "Law", "osm": "Maps (OpenStreetMap)"}
