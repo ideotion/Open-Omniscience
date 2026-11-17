@@ -47,7 +47,7 @@ def _no_session(s):
 def _gates(monkeypatch, *, transport="direct", named=True, get=None):
     monkeypatch.setattr(M, "_settings_once", lambda: "S")
     monkeypatch.setattr(M, "_transport", lambda s: transport)
-    monkeypatch.setattr(M, "_transport_named", lambda: named)
+    monkeypatch.setattr(M, "_direct_chosen", lambda: named)
     monkeypatch.setattr(M, "_getter", (lambda s: get) if get is not None else _no_session)
 
 
@@ -68,19 +68,42 @@ def test_a_refused_or_unknown_transport_stops_before_anything_is_sent(tmp_path, 
     assert f"transport is {kind}" in capsys.readouterr().err
 
 
-def test_a_transport_nobody_named_needs_clearnet_said_out_loud(tmp_path, monkeypatch, capsys):
+def test_a_direct_transport_nobody_chose_needs_clearnet_said_out_loud(tmp_path, monkeypatch, capsys):
     _gates(monkeypatch, transport="direct", named=False)
     assert M.main(["--online", "--out", str(tmp_path / "c.yml")]) == 2
     assert "--clearnet" in capsys.readouterr().err
     _gates(monkeypatch, transport="direct", named=False, get=lambda u: _answer(PARIS))
     assert M.main(["--online", "--clearnet", "--out", str(tmp_path / "c.yml")]) == 0
+    # a proxy or a pool is protected mode, which the operator chose; no --clearnet is asked for
+    _gates(monkeypatch, transport="proxy", named=False, get=lambda u: _answer(PARIS))
+    assert M.main(["--online", "--out", str(tmp_path / "c2.yml")]) == 0
+
+
+def test_a_proxy_variable_alone_does_not_choose_direct(monkeypatch, tmp_path):
+    from src.safety import settings as safety
+
+    monkeypatch.setattr(safety, "_read_raw", lambda: None)
+    monkeypatch.delenv("OO_FETCH_MODE", raising=False)
+    monkeypatch.setenv("OO_HTTP_PROXY", "socks5h://127.0.0.1:9050")
+    assert M._direct_chosen() is False
+    monkeypatch.setenv("OO_FETCH_MODE", "transparent")
+    assert M._direct_chosen() is True
+    monkeypatch.delenv("OO_FETCH_MODE")
+    monkeypatch.setattr(safety, "_read_raw", lambda: {"fetch_mode": "transparent"})
+    assert M._direct_chosen() is True
+
+    def boom():
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(safety, "_read_raw", boom)
+    assert M._direct_chosen() is False
 
 
 def test_the_session_gets_the_settings_the_transport_was_read_from(tmp_path, monkeypatch):
     seen = []
     monkeypatch.setattr(M, "_settings_once", lambda: "S1")
     monkeypatch.setattr(M, "_transport", lambda s: (seen.append(("transport", s)), "proxy")[1])
-    monkeypatch.setattr(M, "_transport_named", lambda: True)
+    monkeypatch.setattr(M, "_direct_chosen", lambda: True)
     monkeypatch.setattr(M, "_getter", lambda s: (seen.append(("session", s)), (lambda u: _answer(PARIS)))[1])
     assert M.main(["--online", "--out", str(tmp_path / "c.yml")]) == 0
     assert seen == [("transport", "S1"), ("session", "S1")]
@@ -211,3 +234,83 @@ def test_no_raw_client_is_left_in_the_script():
     assert "import requests" not in src and "urllib.request" not in src and "requests.Session" not in src
     getter = python_function_source(src, "_getter")
     assert "_session_for(settings, user_agent=DEFAULT_USER_AGENT, allowed_hosts=(WDQS_HOST,))" in getter
+
+
+def test_hostile_rows_are_skipped_one_by_one_and_the_rest_is_written(tmp_path, monkeypatch, capsys):
+    bad = [
+        _city("\ud800", 2.0, 48.0, "FR", 10),                     # a lone surrogate: valid JSON, unloadable YAML
+        _city("Inf", 2.0, "1" + "9" * 400, "FR", 10),                # lat overflows to inf
+        _city("Far", 500.0, 999.0, "FR", 10),                        # out of range
+        {**_city("Huge", 2.0, 48.0, "FR", 1), "population": {"value": "1e400"}},  # overflows int()
+        {**_city("Dots", 2.0, 48.0, "FR", 1), "coord": {"value": "Point(1.2.3 4)"}},
+        {**_city("Odd", 2.0, 48.0, "FR", 1), "cityLabel": "not a dict"},
+        _city("Code", 2.0, 48.0, "FRA", 10),                         # not an ISO alpha-2
+        _city("Neg", 2.0, 48.0, "FR", -5),
+        _city("x" * 500, 2.0, 48.0, "FR", 10),
+    ]
+    out = tmp_path / "cities.yml"
+    _gates(monkeypatch, get=lambda u: _answer(PARIS, *bad, PARIS_TX))
+    assert M.main(["--online", "--out", str(out)]) == 0
+    from src.catalog.cities import _load_file
+
+    loaded = _load_file(out)  # the app's own loader reads what was written
+    assert sorted(c.country for c in loaded) == ["fr", "us"]
+    assert "rows skipped by reason" in capsys.readouterr().err
+
+
+def test_a_file_the_app_could_not_load_never_replaces_the_one_it_has(tmp_path, monkeypatch):
+    out = tmp_path / "cities.yml"
+    out.write_text("cities: [kept]\n", encoding="utf-8")
+    import src.catalog.cities as cities
+
+    monkeypatch.setattr(cities, "_load_file", lambda p: [])  # the read-back finds fewer rows than were written
+    with pytest.raises(ValueError):
+        M.write_atomic(out, [{"name": "Paris", "lat": 48.0, "lon": 2.0, "country": "fr", "population": 1}])
+    assert out.read_text(encoding="utf-8") == "cities: [kept]\n"
+    assert not list(tmp_path.glob(".cities-*"))
+
+
+def test_an_out_that_cannot_be_written_fails_cleanly(tmp_path, monkeypatch, capsys):
+    folder = tmp_path / "a-folder"
+    folder.mkdir()
+    _gates(monkeypatch, get=lambda u: _answer(PARIS))
+    assert M.main(["--online", "--out", str(folder)]) == 1
+    assert "could not be written" in capsys.readouterr().err
+    assert folder.is_dir() and not list(tmp_path.glob(".cities-*"))
+
+
+def test_the_written_file_is_readable_by_others_like_the_one_it_replaces(tmp_path):
+    import os
+    import stat
+
+    out = tmp_path / "cities.yml"
+    M.write_atomic(out, [{"name": "Paris", "lat": 48.0, "lon": 2.0, "country": "fr", "population": 1}])
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE(out.stat().st_mode) == 0o644 & ~umask
+
+
+def test_a_trickling_server_is_cut_at_the_deadline(monkeypatch):
+    import threading
+
+    class _Trickle(_Resp):
+        def __init__(self):
+            super().__init__()
+            self._closed = threading.Event()
+
+        def iter_content(self, n):
+            yield b" "
+            # the next chunk never completes: the socket keeps getting a byte under its timeout, so only closing ends it
+            if not self._closed.wait(10):
+                pytest.fail("nothing closed the response at the deadline")
+            raise OSError("connection closed")
+
+        def close(self):
+            self.closed = True
+            self._closed.set()
+
+    monkeypatch.setattr(M, "READ_DEADLINE_S", 0.3)
+    resp = _Trickle()
+    with pytest.raises(M.AnswerTooLarge):
+        _getter_with(monkeypatch, resp)(M.query_url(1000))
+    assert resp.closed
