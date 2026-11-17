@@ -294,7 +294,7 @@ def test_a_row_that_times_out_is_written_under_the_lock_after_the_holder_trims_n
     h, env = _helpers(tmp_path, no_flock=no_flock)
     f = tmp_path / "x.jsonl"
     _seed(f, 60)
-    slow = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; _slow() {{ tail -n 20 "$1" > "$1.tmp.slow"; sleep 1.5; mv -f "$1.tmp.slow" "$1"; }}; '
+    slow = (f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; _slow() {{ tail -n 20 "$1" > "$1.tmp.slow"; sleep 4; mv -f "$1.tmp.slow" "$1"; }}; '
             f'oo_rec_locked "{f}" _slow "{f}"')
     holder = subprocess.Popen(["bash", "-c", slow], env=env)
     try:
@@ -302,7 +302,9 @@ def test_a_row_that_times_out_is_written_under_the_lock_after_the_holder_trims_n
         t = time.monotonic()
         subprocess.run(["bash", "-c", f'. "{h}"; OO_REC_LOCK_WAIT_MS=100; oo_rec_append "{f}" \'{{"pid":7}}\' 40 20'], env=env, check=True, timeout=30)
         took = time.monotonic() - t
-        assert took < 1.0, f"the launcher handed the row on and went; it did not wait for the holder ({took:.2f} s)"
+        # Judged by the holder, not by a clock: it still holds the lock when the launcher is back, so the launcher did not wait for it. A 1.0 s bound
+        # against a 1.5 s trim read 1.26 s on a loaded macOS runner (row 109) without the launcher having waited.
+        assert holder.poll() is None, f"the launcher handed the row on and went; it did not wait for the holder ({took:.2f} s)"
         assert {"pid": 7} not in _rows(f)[0], "nothing is written while the lock is held by someone else"
         holder.wait(timeout=30)
         assert _wait_for(lambda: {"pid": 7} in _rows(f)[0]), "the deferred row never landed"

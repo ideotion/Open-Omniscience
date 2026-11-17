@@ -83,7 +83,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from src.monitoring import storage_events
@@ -395,17 +395,35 @@ _SAFE_VOL_NAME = re.compile(r"[A-Za-z0-9._-]+")
 def _require_safe_member_name(name: str) -> None:
     """Member names come from a manifest ANYONE can self-sign — the reassembly
     must never write outside its staging dir (the zip path's _safe_extract
-    equivalent). Absolute paths, drive letters, backslashes and '..' refuse."""
-    p = Path(name)
+    equivalent). Absolute paths, drive letters and '..' refuse. A "\\" is read as "/" first (``artifact.member_name``): builds before
+    row 109 named a Windows backup's annotations and keys with it, and the name is judged as it will be written, so a "\\" can
+    never hide a '..' or a drive."""
+    from src.backup.artifact import member_name, member_segment_is_safe
+
+    name = member_name(name)
+    p = PurePosixPath(name)
     if (
         not name
         or p.is_absolute()
-        or "\\" in name
+        or Path(name).is_absolute()
         or ".." in p.parts
         or name.startswith("/")
-        or ":" in name.split("/", 1)[0]
+        or not all(member_segment_is_safe(seg) for seg in name.split("/"))  # a drive in ANY segment, not only the first
     ):
         raise VolumeError(f"unsafe member path in the volume manifest: {name!r}")
+
+
+def _require_distinct_member_names(m: dict[str, Any]) -> None:
+    """Two members that name one staged file ("a\\b" and "a/b", "./a" and "a") are refused: the second would overwrite what the first was
+    checked as. Run AFTER ``_require_each_volume_read_once``, whose reason ("listed more than once") names a volume listed twice more exactly."""
+    from src.backup.artifact import member_name
+
+    seen: set[str] = set()
+    for mm in m.get("members") or []:
+        spelled = str(PurePosixPath(member_name(str(mm.get("name") or ""))))
+        if spelled in seen:
+            raise VolumeError(f"two members of the volume manifest name the same file: {spelled!r}")
+        seen.add(spelled)
 
 
 def _require_safe_volume_name(name: str) -> None:
@@ -1173,12 +1191,12 @@ def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
     ann = base / _ANNOTATIONS_DIR
     if ann.is_dir():
         for p in sorted(ann.rglob("*.json")):
-            _stage(str(p.relative_to(base)), "annotations", p)
+            _stage(p.relative_to(base).as_posix(), "annotations", p)
     keys = base / _KEYS_DIR
     if keys.is_dir():
         for p in sorted(keys.iterdir()):
             if p.is_file():
-                _stage(str(p.relative_to(base)), "keys", p)
+                _stage(p.relative_to(base).as_posix(), "keys", p)
     return members
 
 
@@ -2016,6 +2034,7 @@ def verify_stream_backup(
     if m.get("kind") == STREAM_KIND:
         _require_safe_manifest_names(m)
         _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
     report: dict[str, Any] = {
         "kind": m.get("kind"),
         "ok": True,
@@ -2225,6 +2244,7 @@ def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
         # The restore's own volume checks first (a link, a volume listed twice): this runs before the run is started, so
         # it must not read anything the restore itself would refuse to read.
         _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
         _refuse_a_wrong_backup_passphrase(src, m, passphrase)
     except EncryptionError:
         return True
@@ -2253,6 +2273,7 @@ def read_stream_backup(
         raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
     _require_safe_manifest_names(m)
     _require_each_volume_read_once(m, src)
+    _require_distinct_member_names(m)
     sig_state = _manifest_signature_state(m)
     if sig_state == "bad-signature":
         raise VolumeError(
@@ -2294,9 +2315,13 @@ def read_stream_backup(
         try:
             write_owner_marker(staging)
             t1 = time.monotonic()
+            from src.backup.artifact import member_path
+
             vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
             for mm in m.get("members") or []:
-                out_path = staging / mm["name"]
+                out_path = member_path(staging, mm["name"])
+                if out_path is None:  # verify refused it already; never joined
+                    raise VolumeError(f"unsafe member path in the volume manifest: {mm['name']!r}")
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 h = hashlib.sha256()
                 # What a member may write is the plaintext size its manifest declares, the size the staging preflight
@@ -2419,6 +2444,7 @@ def backup_manifest_refusal(src_dir: Path | str) -> str | None:
     try:
         _require_safe_manifest_names(m)
         _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
     except VolumeError as exc:
         from src.monitoring.secret_scrub import record_text
 

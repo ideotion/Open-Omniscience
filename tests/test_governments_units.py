@@ -38,7 +38,7 @@ def _run_js(snippet: str) -> dict:
     ) + "\n".join(function_source(app, n) for n in ("fmtNum", "_govCompact", "_govFmt", "_axisNum"))
     proc = subprocess.run(
         [NODE, "-e", harness + "\n" + snippet],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
@@ -163,7 +163,7 @@ def test_a_single_point_series_labels_the_year_not_a_month_and_day():
           daily:  _pointLabelFmt("2026-07-15"),
           hourly: _pointLabelFmt("2026-07-15T13:00:00Z"),
         }));"""],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)

@@ -938,6 +938,29 @@ _HANG_LIMIT_S = float(os.environ.pop("OO_TEST_HANG_LIMIT_S", "") or 0)
 _HANG_REPORT_PATH = (os.environ.pop("OO_TEST_HANG_REPORT", "") or "test-hang-report.txt") + _WORKER_SUFFIX
 _SLOW_S = float(os.environ.pop("OO_TEST_SLOW_S", "") or 0)
 _SLOW_REPORT_PATH = (os.environ.pop("OO_TEST_SLOW_REPORT", "") or "test-slow-report.txt") + _WORKER_SUFFIX
+# A FAILURE IS WRITTEN DOWN AS IT HAPPENS (row 109). ``-rsfE`` prints its failure list only once the run ends, and a Windows leg the
+# 90-minute cap stops never gets there: run 43960518216 showed some 170 F marks across shards 2 and 3 and not one reason. With
+# ``OO_TEST_FAIL_REPORT`` set, every failed phase is appended, as it ends, to that file: the test, the phase, the crash location and the
+# first lines of its message (never the locals, never a whole traceback: a report is read by people, and a message can be long).
+_FAIL_REPORT_PATH = os.environ.pop("OO_TEST_FAIL_REPORT", "")
+_FAIL_REPORT = open(_FAIL_REPORT_PATH + _WORKER_SUFFIX, "w", encoding="utf-8") if _FAIL_REPORT_PATH else None  # noqa: SIM115 - one line block per failure
+_FAIL_MESSAGE_CHARS = 600
+
+
+def pytest_runtest_logreport(report):
+    if _FAIL_REPORT is None or not report.failed:
+        return
+    try:
+        crash = getattr(report.longrepr, "reprcrash", None)
+        where = f"{crash.path}:{crash.lineno}" if crash is not None else "?"
+        message = crash.message if crash is not None else str(report.longrepr)
+        message = " | ".join(line.strip() for line in message.splitlines() if line.strip())[:_FAIL_MESSAGE_CHARS]
+        _FAIL_REPORT.write(f"FAILED ({report.when}) {report.nodeid}\n    at {where}\n    {message}\n")
+        _FAIL_REPORT.flush()
+    except Exception:  # noqa: BLE001 - a report line is never worth failing the run for
+        pass
+
+
 _HANG_DEADLINE: list[float] = []  # the running test's deadline on the monotonic clock, while one runs
 _HANG_REPORT = None
 _SLOW_REPORT = None

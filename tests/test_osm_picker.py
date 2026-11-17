@@ -40,12 +40,22 @@ def settings_file(tmp_path, monkeypatch):
 def no_network(monkeypatch):
     """Any resolution or connection fails the test: the picker reads local files only."""
 
-    def refuse(*_a, **_k):
-        raise AssertionError("the picker touched the network")
+    # Loopback passes: on Windows, ``socket.socketpair`` (which the test client's event loop makes) is a connect to 127.0.0.1, and a
+    # connection to this machine is not the network (row 109). Anything else fails the test.
+    loopback = {"127.0.0.1", "::1", "localhost"}
+    real = {"getaddrinfo": socket.getaddrinfo, "create_connection": socket.create_connection, "connect": socket.socket.connect}
 
-    monkeypatch.setattr(socket, "getaddrinfo", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
-    monkeypatch.setattr(socket.socket, "connect", refuse)
+    def guard(name, host_of):
+        def check(*a, **k):
+            if host_of(a) not in loopback:
+                raise AssertionError("the picker touched the network")
+            return real[name](*a, **k)
+
+        return check
+
+    monkeypatch.setattr(socket, "getaddrinfo", guard("getaddrinfo", lambda a: a[0] if a else None))
+    monkeypatch.setattr(socket, "create_connection", guard("create_connection", lambda a: a[0][0] if a and a[0] else None))
+    monkeypatch.setattr(socket.socket, "connect", guard("connect", lambda a: a[1][0] if len(a) > 1 and isinstance(a[1], tuple) else None))
 
 
 # --------------------------------------------------------------------------- #
