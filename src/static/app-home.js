@@ -1765,7 +1765,7 @@
     // swapped (it read "SOURCE LAUNDERING" in every language). A type added later and not
     // yet listed still shows its id, as before.
     const _CARD_TYPE_LABELS = {
-      rising: "Rising", framing_split: "Framing split", record_reshaped: "Record reshaped",
+      rising: "Rising", rising_held: "Rising", framing_split: "Framing split", record_reshaped: "Record reshaped",
       price_narrative: "Price vs coverage", stale_data: "Stale data", diet_self_audit: "Reading diet",
       echo_chamber: "Echo chamber", lonely_signal: "Lonely signal",
       capacity_implausible: "Implausible capacity", emotion_profile: "Emotion profile",

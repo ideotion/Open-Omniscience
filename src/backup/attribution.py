@@ -22,6 +22,8 @@ The signals are cheap strings the carrier already knows:
   * ``files:<category>`` -- a large-data category copied beside the artifact;
   * ``card:<producer>`` -- a briefing card the document SHOWS whose producer reads a lane
     that carries a licence (a bulletin holds cards, not tables).
+  * ``lane:<kind>`` -- a living-source store a backup carries as a member (R729): its
+    rows are the source's own text, so the store itself is the measured signal.
 
 ONE REFUSAL, and one line that used to be a refusal:
 
@@ -116,6 +118,11 @@ def files_signal(category: str) -> str:
     return f"files:{category}"
 
 
+def lane_signal(kind: str) -> str:
+    """``lane:<kind>``: a backup carries this living-source store (``wiki``, ``law``, ``osm``) as a member."""
+    return f"lane:{kind}"
+
+
 def signals_from_tables(tables: dict[str, int] | None) -> set[str]:
     """``table:<name>`` for every table that actually holds rows.
 
@@ -145,6 +152,7 @@ def _wikipedia_because(signals: set[str]) -> str | None:
         for s in signals
         if s in (table_signal("wiki_pages"), table_signal("wiki_revisions"))
         or (s.startswith("domain:") and s.endswith(".wikipedia.org"))
+        or s == lane_signal("wiki")
     )
     return ", ".join(hits) if hits else None
 
@@ -156,6 +164,7 @@ def _law_because(signals: set[str]) -> str | None:
         if s in (table_signal("law_documents"), table_signal("law_revisions"))
         or s in (source_type_signal("law"), source_type_signal("legal"))
         or (s.startswith("domain:law.") and s.endswith(".local"))
+        or s == lane_signal("law")
     )
     return ", ".join(hits) if hits else None
 
@@ -193,6 +202,7 @@ def _openstreetmap_because(signals: set[str]) -> str | None:
             any(s[len("table:"):].startswith(p) for p in OSM_DERIVED_TABLE_PREFIXES)
             or s[len("table:"):] in OSM_DERIVED_TABLES))
         or s == files_signal("osm_regions")
+        or s == lane_signal("osm")
         or s in {card_signal(p) for p in OSM_DERIVED_CARDS}
     )
     return ", ".join(hits) if hits else None
