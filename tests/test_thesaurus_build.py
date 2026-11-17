@@ -72,7 +72,9 @@ def test_the_summary_is_small_counts_and_hashes_with_no_label_and_no_path(tmp_pa
     assert len(raw) < tb.SUMMARY_MAX_BYTES < 200 * 1024
     assert json.loads(raw) == s
     assert s["tool_version"] == ts.BUILD_TOOL_VERSION and s["format"] == ts.FORMAT_VERSION
-    assert s["source"]["name"] == MINI.name and str(tmp_path) not in raw.decode("utf-8"), "a file name, never a path"
+    assert "name" not in s["source"] and MINI.name not in raw.decode("utf-8") and str(tmp_path) not in raw.decode("utf-8"), \
+        "no file name and no path: the hash identifies the source"
+    assert s["source"]["kind"] == "xml" and s["source"]["member_sha256"] is None
     built = json.loads((tmp_path / "out" / "eurovoc.json").read_text(encoding="utf-8"))
     for c in built["concepts"].values():
         for label in c["pref"].values():
@@ -86,7 +88,9 @@ def test_a_zip_source_is_read_and_a_zip_with_several_xml_members_needs_one_named
         zf.write(MINI, "eurovoc.rdf")
         zf.writestr("readme.txt", "x")
     s = _build(tmp_path / "z", source=one)
-    assert s["source"]["member"] == "eurovoc.rdf"
+    assert s["source"]["member"] == "eurovoc.rdf" and s["source"]["kind"] == "zip"
+    assert s["source"]["member_sha256"] == hashlib.sha256(MINI.read_bytes()).hexdigest(), "the member's own bytes"
+    assert (tmp_path / "z" / "eurovoc.json").stat().st_mode & 0o777 == 0o644, "readable by the app as another user"
     two = tmp_path / "two.zip"
     with zipfile.ZipFile(two, "w") as zf:
         zf.write(MINI, "a.rdf")
@@ -96,7 +100,7 @@ def test_a_zip_source_is_read_and_a_zip_with_several_xml_members_needs_one_named
     assert _build(tmp_path / "y", source=two, member="b.rdf")["source"]["member"] == "b.rdf"
 
 
-def test_a_member_larger_than_the_cap_is_refused_whatever_its_header_says(tmp_path):
+def test_a_member_larger_than_the_cap_is_refused_whatever_its_header_says(tmp_path, monkeypatch):
     z = tmp_path / "big.zip"
     with zipfile.ZipFile(z, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.write(MINI, "eurovoc.rdf")
@@ -105,6 +109,21 @@ def test_a_member_larger_than_the_cap_is_refused_whatever_its_header_says(tmp_pa
     # The streaming cap, apart from the declared size: a member whose header understates it.
     with open(MINI, "rb") as fh, pytest.raises(tb._TooLarge):
         tb._Capped(fh, 100, "m").read(10_000)
+    # And through the build: a header that understates the member is caught by the ZIP reader's own size check
+    # (BadZipFile, named as an unreadable source), before _Capped's bound is ever reached; never a quiet over-read.
+    real = tb._pick_member
+
+    def lying(zf, member):
+        info = real(zf, member)
+        info.file_size = 1
+        return info
+
+    monkeypatch.setattr(tb, "_pick_member", lying)
+    from src.catalog import skos
+
+    with pytest.raises(skos.SkosError, match="BadZipFile"):
+        _build(tmp_path / "o2", source=z, max_bytes=100)
+    assert not (tmp_path / "o2").exists()
 
 
 # --- the check the app runs ----------------------------------------------------------------------------------------
@@ -288,3 +307,60 @@ def test_the_law_panel_wires_the_status_line():
     js = (ROOT / "src" / "static" / "app-living.js").read_text(encoding="utf-8")
     assert 'id="law-thesauri"' in html
     assert 'api("/api/law/thesauri")' in js and "loadLawThesauri();" in js and "renderLawThesauri();" in js
+
+
+def test_a_crafted_or_odd_file_is_a_state_never_a_crash(tmp_path):
+    d = tmp_path / "th"
+    _build(d)
+    path, spath = d / "eurovoc.json", d / "eurovoc.summary.json"
+    good, summary = path.read_bytes(), spath.read_bytes()
+    # Deeply nested JSON makes the parser raise RecursionError: unreadable, and the other schemes still answer.
+    path.write_bytes(b"[" * 100_000)
+    assert ts.thesaurus_status("eurovoc", d)["state"] == "unreadable"
+    assert [s["state"] for s in ts.statuses(d)].count("missing") == 3
+    path.write_bytes(good)
+    spath.write_bytes(b"[" * 100_000)
+    assert ts.thesaurus_status("eurovoc", d)["state"] == "unverified"
+    spath.write_bytes(summary)
+    if hasattr(os, "mkfifo"):  # a FIFO would block a read: refused by its type, never opened
+        path.unlink()
+        os.mkfifo(path)
+        assert ts.thesaurus_status("eurovoc", d)["state"] == "unreadable"
+
+
+def test_a_same_size_rewrite_with_its_old_mtime_put_back_is_still_caught(tmp_path):
+    d = tmp_path / "th"
+    _build(d)
+    path = d / "eurovoc.json"
+    good = path.read_bytes()
+    st = path.stat()
+    assert ts.thesaurus_status("eurovoc", d)["state"] == "ok"  # memoised now
+    doc = json.loads(good)
+    doc["vintage"] = "2026-11-02"  # the same length as 2026-11-01
+    changed = ts.canonical_bytes(doc)
+    assert len(changed) == len(good)
+    path.write_bytes(changed)
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert ts.thesaurus_status("eurovoc", d)["state"] == "hash_mismatch"
+    assert ts.load_thesaurus("eurovoc", d)[0] is None
+
+
+def test_the_bytes_do_not_depend_on_the_hash_seed(tmp_path):
+    import subprocess
+    import sys
+
+    outs = []
+    for seed in ("1", "2"):
+        out = tmp_path / seed
+        r = subprocess.run([sys.executable, str(ROOT / "scripts" / "thesaurus_build.py"), "--source", str(MINI),
+                            "--vintage", "v", "--license", "l", "--languages", "all", "--out-dir", str(out)],
+                           capture_output=True, text=True, timeout=120, cwd=ROOT,
+                           env={**os.environ, "PYTHONHASHSEED": seed})
+        assert r.returncode == 0, r.stderr
+        outs.append((out / "eurovoc.json").read_bytes() + (out / "eurovoc.summary.json").read_bytes())
+    assert outs[0] == outs[1]
+
+
+def test_online_without_a_fetch_url_is_refused_not_ignored(tmp_path, capsys):
+    assert tb.main(["--source", str(MINI), "--online", "--vintage", "v", "--license", "l", "--out-dir", str(tmp_path)]) == 2
+    assert "--fetch-url" in capsys.readouterr().err and not any(tmp_path.iterdir())

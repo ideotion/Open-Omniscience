@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 import threading
 from pathlib import Path
 from typing import Any
@@ -54,8 +55,16 @@ _DISPLAY_NAMES = {
 }
 
 _lock = threading.Lock()
-_hash_memo: dict[str, tuple[int, int, str]] = {}  # path -> (size, mtime_ns, sha256)
-_head_memo: dict[str, tuple[int, int, dict[str, Any] | None]] = {}  # path -> (size, mtime_ns, head or None)
+#: A file's identity for the memos: size, mtime, inode and ctime. ctime cannot be set from user space, so a file
+#: rewritten to the same size with its old mtime put back still misses the memo.
+_Stamp = tuple[int, int, int, int]
+_hash_memo: dict[str, tuple[_Stamp, str]] = {}  # path -> (stamp, sha256)
+_head_memo: dict[str, tuple[_Stamp, dict[str, Any] | None]] = {}  # path -> (stamp, head or None)
+#: The largest thesaurus or summary read (a guard against a file that is not one: EuroVoc in five languages is tens of MB).
+MAX_FILE_BYTES = 512 * 1024 * 1024
+#: What a file that cannot be read as a thesaurus raises here: OSError, a JSON or UTF-8 error (ValueError), and the
+#: parser's RecursionError on deeply nested input.
+_READ_ERRORS = (OSError, ValueError, RecursionError)
 _HEAD_KEYS = ("scheme", "vintage", "license", "n_concepts", "languages", "format")
 
 
@@ -92,16 +101,27 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def _hash_cached(path: Path) -> str:
+def _stamp(path: Path) -> _Stamp:
+    """The memo key of a regular file, refusing anything else (a FIFO would block, a device never ends) and a file
+    larger than :data:`MAX_FILE_BYTES`."""
     st = path.stat()
+    if not stat.S_ISREG(st.st_mode):
+        raise OSError(f"{path.name} is not a regular file")
+    if st.st_size > MAX_FILE_BYTES:
+        raise OSError(f"{path.name} is larger than {MAX_FILE_BYTES} bytes")
+    return (st.st_size, st.st_mtime_ns, st.st_ino, st.st_ctime_ns)
+
+
+def _hash_cached(path: Path) -> str:
+    stamp = _stamp(path)
     key = str(path)
     with _lock:
         hit = _hash_memo.get(key)
-        if hit and hit[0] == st.st_size and hit[1] == st.st_mtime_ns:
-            return hit[2]
+        if hit and hit[0] == stamp:
+            return hit[1]
     digest = sha256_file(path)
     with _lock:
-        _hash_memo[key] = (st.st_size, st.st_mtime_ns, digest)
+        _hash_memo[key] = (stamp, digest)
     return digest
 
 
@@ -109,19 +129,19 @@ def _read_head(path: Path) -> dict[str, Any] | None:
     """The file's top-level fields (not its concepts), or ``None`` when it is not a thesaurus document.
 
     Memoised by size and mtime like the hash: a thesaurus is several MB, and the status is read on every view.
-    Raises ``OSError``/``ValueError`` for a file that cannot be read as JSON (not memoised: said each time)."""
-    st = path.stat()
+    Raises one of :data:`_READ_ERRORS` for a file that cannot be read as JSON (not memoised: said each time)."""
+    stamp = _stamp(path)
     key = str(path)
     with _lock:
         hit = _head_memo.get(key)
-        if hit and hit[0] == st.st_size and hit[1] == st.st_mtime_ns:
-            return hit[2]
+        if hit and hit[0] == stamp:
+            return hit[1]
     with open(path, encoding="utf-8") as fh:
         doc = json.load(fh)
     head = ({k: doc.get(k) for k in _HEAD_KEYS} if isinstance(doc, dict) and isinstance(doc.get("concepts"), dict)
             else None)
     with _lock:
-        _head_memo[key] = (st.st_size, st.st_mtime_ns, head)
+        _head_memo[key] = (stamp, head)
     return head
 
 
@@ -143,7 +163,7 @@ def thesaurus_status(scheme: str, base: Path | None = None) -> dict[str, Any]:
                 "reason": f"no {path.name} in the data directory's thesauri folder: run scripts/thesaurus_build.py"}
     try:
         head = _read_head(path)
-    except (OSError, ValueError) as exc:
+    except _READ_ERRORS as exc:
         return {**out, "state": "unreadable", "reason": f"{path.name} is not readable JSON ({type(exc).__name__})"}
     if head is None or head.get("scheme") != scheme:
         return {**out, "state": "unreadable", "reason": f"{path.name} is not a built {scheme} thesaurus"}
@@ -151,17 +171,21 @@ def thesaurus_status(scheme: str, base: Path | None = None) -> dict[str, Any]:
                languages=head.get("languages"), format=head.get("format"))
     if head.get("format") != FORMAT_VERSION:
         return {**out, "state": "old_format",
-                "reason": f"{path.name} has format {head.get('format')!r}; this version reads format {FORMAT_VERSION}"}
+                "reason": f"{path.name} has format {str(head.get('format'))[:40]!r}; this version reads format {FORMAT_VERSION}"}
     try:
+        _stamp(spath)
         summary = json.loads(spath.read_text(encoding="utf-8"))
         recorded = summary["output"]["sha256"]
         if not isinstance(recorded, str):
             raise TypeError("no string output.sha256")
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (*_READ_ERRORS, KeyError, TypeError) as exc:
         return {**out, "state": "unverified",
                 "reason": f"{spath.name} is missing or unreadable ({type(exc).__name__}), so the hash cannot be checked"}
     out["built_at_tool"] = summary.get("tool_version")
-    actual = _hash_cached(path)
+    try:
+        actual = _hash_cached(path)
+    except OSError as exc:  # removed or replaced by something else since the read above
+        return {**out, "state": "unreadable", "reason": f"{path.name} could not be read ({type(exc).__name__})"}
     out["sha256"] = actual
     if actual != recorded:
         return {**out, "state": "hash_mismatch",
@@ -175,16 +199,26 @@ def load_thesaurus(scheme: str, base: Path | None = None) -> tuple[dict[str, Any
     if status["state"] != "ok":
         return None, status
     # The bytes parsed are the bytes hashed: a file replaced between the check and the read is caught here.
-    data = thesaurus_path(scheme, base).read_bytes()
+    path = thesaurus_path(scheme, base)
+    _stamp(path)
+    data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != status["sha256"]:
         return None, {**status, "state": "hash_mismatch",
                       "reason": f"{scheme}.json changed while it was being read; read it again"}
     doc = json.loads(data.decode("utf-8"))
-    if not isinstance(doc, dict) or "concepts" not in doc or doc.get("scheme") != scheme:
+    if (not isinstance(doc, dict) or not isinstance(doc.get("concepts"), dict) or doc.get("scheme") != scheme
+            or doc.get("format") != FORMAT_VERSION):
         return None, {**status, "state": "unreadable", "reason": f"{scheme}.json is not a built {scheme} thesaurus"}
     return doc, status
 
 
 def statuses(base: Path | None = None) -> list[dict[str, Any]]:
     """Every known scheme's status, in :data:`src.catalog.skos.SCHEMES` order."""
-    return [thesaurus_status(s, base) for s in skos.SCHEMES]
+    out = []
+    for s in skos.SCHEMES:
+        try:
+            out.append(thesaurus_status(s, base))
+        except Exception as exc:  # noqa: BLE001 - one bad file never takes the whole list down
+            out.append({"scheme": s, "name": _DISPLAY_NAMES.get(s, s), "format_expected": FORMAT_VERSION,
+                        "state": "unreadable", "reason": f"the status could not be read ({type(exc).__name__})"})
+    return out

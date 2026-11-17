@@ -31,7 +31,11 @@ named unless --clearnet is given: a silent clearnet default would be a downgrade
 the thesaurus (``<scheme>.source``) so the next build can run offline. Run it with the app stopped: the app's
 airplane state lives in the app's process and is not visible from here, so --online is this run's consent.
 
-Exit status: 0 built; 2 refused (the reason is printed); 1 the source could not be read as a thesaurus.
+Exit status: 0 built; 2 refused, or a file could not be read or written (the reason is printed); 1 the source
+could not be read as a thesaurus.
+
+The output records the source file's SHA-256 (and, for a ZIP, the member's own): the same RDF re-zipped by the
+publisher gives another archive hash, so another output hash, and the member hash shows the content is the same.
 """
 
 from __future__ import annotations
@@ -127,24 +131,47 @@ def _pick_member(zf: zipfile.ZipFile, member: str | None) -> zipfile.ZipInfo:
     raise BuildRefused(f"the ZIP holds {len(xml)} RDF/XML members ({names}); name one with --member")
 
 
-def parse_source(path: Path, *, member: str | None, max_bytes: int) -> tuple[dict[str, Any], str | None]:
-    """Parse the SKOS RDF/XML in ``path`` (a file, or one member of a ZIP); returns (parsed, member name or None)."""
+class _Hashing(io.RawIOBase):
+    """Hashes what the parser reads, so a ZIP's member is identified by its own bytes as well as by the archive's."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner, self.sha = inner, hashlib.sha256()
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b: Any) -> int:
+        n = self._inner.readinto(b)
+        self.sha.update(memoryview(b)[:n])
+        return n
+
+
+def parse_source(path: Path, *, member: str | None, max_bytes: int) -> tuple[dict[str, Any], str | None, str | None]:
+    """Parse the SKOS RDF/XML in ``path`` (a file, or one member of a ZIP).
+
+    Returns (parsed, member name or None, the member's own SHA-256 or None): the same RDF re-zipped by the publisher
+    gives another archive hash, and the member's hash says it is the same content."""
     if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as zf:
             info = _pick_member(zf, member)
             if info.file_size > max_bytes:
                 raise BuildRefused(f"{info.filename} declares {info.file_size} bytes, more than --max-mb allows")
             with zf.open(info) as raw:
+                hashing = _Hashing(_Capped(raw, max_bytes, info.filename))
                 try:
-                    return skos.parse_rdfxml(io.BufferedReader(_Capped(raw, max_bytes, info.filename))), info.filename
+                    parsed = skos.parse_rdfxml(io.BufferedReader(hashing))
                 except _TooLarge as exc:
                     raise BuildRefused(str(exc)) from None
+                # The parser may stop before the end (trailing whitespace): the rest counts towards the member's hash.
+                while hashing.read(1 << 20):
+                    pass
+                return parsed, info.filename, hashing.sha.hexdigest()
     if member is not None:
         raise BuildRefused("--member names a ZIP member, and the source is not a ZIP")
     if path.stat().st_size > max_bytes:
         raise BuildRefused(f"{path.name} is larger than --max-mb allows")
     with open(path, "rb") as fh:
-        return skos.parse_rdfxml(fh), None
+        return skos.parse_rdfxml(fh), None, None
 
 
 def canonical_artifact(artifact: dict[str, Any], *, source_sha256: str) -> dict[str, Any]:
@@ -194,6 +221,8 @@ def _write_atomic(path: Path, data: bytes) -> None:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        # mkstemp makes 0600; public reference data the app may read as another user (a build run under sudo).
+        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
@@ -209,14 +238,16 @@ def build(scheme: str, source_path: Path, out_dir: Path, *, vintage: str, licens
     if not source_path.is_file():
         raise BuildRefused(f"no file at {source_path}")
     src_sha, src_bytes = sha256_path(source_path)
-    parsed, picked = parse_source(source_path, member=member, max_bytes=max_bytes)
+    parsed, picked, member_sha = parse_source(source_path, member=member, max_bytes=max_bytes)
     art = skos.build_artifact(scheme, parsed, vintage=vintage, license=license, upstream=upstream, languages=languages)
     art = canonical_artifact(art, source_sha256=src_sha)
     data = thesaurus_store.canonical_bytes(art)
     out_name = thesaurus_store.thesaurus_path(scheme, out_dir).name
     summary = summarise(
         art, parsed,
-        source={"name": source_path.name, "member": picked, "sha256": src_sha, "bytes": src_bytes},
+        # No file name: the operator's own download name could say something about them. The hash identifies it.
+        source={"kind": "zip" if picked is not None else "xml", "member": picked, "member_sha256": member_sha,
+                "sha256": src_sha, "bytes": src_bytes},
         output={"name": out_name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)},
         fetched_from_host=fetched_from_host,
     )
@@ -328,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     try:
+        if args.fetch_url is None and (args.online or args.clearnet):
+            raise BuildRefused("--online and --clearnet go with --fetch-url; a --source build opens no connection")
         langs = _languages(args.languages, args.scheme)
         out_dir = args.out_dir if args.out_dir is not None else thesaurus_store.thesauri_dir()
         max_bytes = max(1, args.max_mb) << 20
