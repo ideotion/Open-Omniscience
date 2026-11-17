@@ -2197,6 +2197,63 @@
     // Switch the Trends chart lens (Windows / Rate slope / Small multiples). All three
     // read the SAME _trendWindowsData (already fetched); no extra request. Global —
     // reached from the inline onclick, matching the Trends subtab's local convention.
+    // Weather signals: a toggleable layer, OFF by default (row 122, register ruling G7). The state is per
+    // device (localStorage, read and written inside try: a blocked store reads as off). While off nothing is
+    // fetched; on, the one read is the local GET /api/signals/weather-signals, which sends nothing anywhere.
+    const _WSIG_KEY = "oo.trends.weatherSignals";
+    function weatherSignalsOn() {
+      try { return localStorage.getItem(_WSIG_KEY) === "1"; } catch (e) { return false; }
+    }
+    function toggleWeatherSignals() {
+      const on = !weatherSignalsOn();
+      try { if (on) localStorage.setItem(_WSIG_KEY, "1"); else localStorage.removeItem(_WSIG_KEY); } catch (e) { /* kept for this view only */ }
+      paintWeatherSignals(on);
+    }
+    async function paintWeatherSignals(forced) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const on = (forced === true || forced === false) ? forced : weatherSignalsOn();
+      const btn = $("trd-wsig-toggle"), host = $("trd-wsig");
+      if (!btn || !host) return;
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+      btn.textContent = on ? T("Weather signals: on") : T("Weather signals: off");
+      btn.style.borderColor = on ? "var(--accent)" : "";
+      btn.style.color = on ? "var(--accent)" : "";
+      host.textContent = "";
+      if (!on) return;
+      let data;
+      try { data = await api("/api/signals/weather-signals"); }
+      catch (e) { host.innerHTML = `<div class="muted">${esc(T("Could not read the weather signals."))}</div>`; return; }
+      if (!weatherSignalsOn() && forced !== true) return;  // switched off while the read was on its way
+      const rows = Array.isArray(data && data.signals) ? data.signals : [];
+      if (!rows.length) {
+        host.innerHTML = `<div class="muted">${esc(T("No weather signal has been derived yet."))}</div>`;
+        return;
+      }
+      const when = data.derived_at ? String(data.derived_at).slice(0, 10) : "";
+      const head = document.createElement("div");
+      head.className = "hint";
+      head.textContent = TF("Derived {when} from your articles · {n} signals", {when, n: rows.length});
+      host.appendChild(head);
+      const list = document.createElement("div");
+      rows.forEach((r) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.style.cssText = "display:block;text-align:start;margin:3px 0;padding:0;background:none;border:0;color:var(--accent);cursor:pointer;font:inherit";
+        const place = r.place_country ? `${r.place || ""} (${r.place_country})` : (r.place || "");
+        b.textContent = [r.label || r.signal || "", place,
+          `${r.window_start || ""} – ${r.window_end || ""}`,
+          TF("{n} articles", {n: r.n_articles != null ? r.n_articles : 0}),
+          T("anomaly not checked")].filter(Boolean).join(" · ");
+        if (r.threshold_rule) b.title = String(r.threshold_rule);
+        const ids = Array.isArray(r.article_ids) ? r.article_ids : [];
+        b.addEventListener("click", () => openAnalysisForIds(ids, `${r.label || r.signal || ""} · ${place}`));
+        list.appendChild(b);
+      });
+      host.appendChild(list);
+    }
+
     function setTrendLens(which) {
       _trdLens = (which === "slope" || which === "multiples") ? which : "windows";
       const winOn = _trdLens === "windows";
