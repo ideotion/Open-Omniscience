@@ -1122,12 +1122,13 @@ def test_the_per_holder_table_counts_holds_and_seconds_and_is_bounded():
     from src.database import writer
 
     gate = writer.WriterGate()
-    for name in ("alpha", "beta", "alpha"):
+    # alpha holds 0.15 s twice and beta not at all: a 10 ms sleep each overslept on a loaded macOS runner past two others (row 109)
+    for name, held in (("alpha", 0.15), ("beta", 0.0), ("alpha", 0.15)):
         with _Holder(gate, name):
-            time.sleep(0.01)
+            time.sleep(held)
     by = {r["holder"]: r for r in gate.stats()["by_holder"]}
     assert by["alpha"]["holds"] == 2 and by["beta"]["holds"] == 1
-    assert by["alpha"]["held_s"] >= 0.02 and by["alpha"]["longest_s"] <= by["alpha"]["held_s"]
+    assert by["alpha"]["held_s"] >= 0.3 and by["alpha"]["longest_s"] <= by["alpha"]["held_s"]
     assert gate.stats()["by_holder"][0]["holder"] == "alpha", "most seconds held first"
     for i in range(writer._HOLDER_NAMES_MAX + 6):
         with _Holder(gate, f"pool-worker-{i}"):
