@@ -128,9 +128,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `www.wikidata.org`, the Action API), `scripts/generate_wikidata_elections.py` (one SPARQL request to `query.wikidata.org`),
   `scripts/build_country_polygons.py`, `scripts/build_disputed_areas.py`, `scripts/build_world_outline.py` (Natural Earth
   GeoJSON from `raw.githubusercontent.com`), `scripts/build_ip_geo.py` (the DB-IP country table from `download.db-ip.com`, with
-  `raw.githubusercontent.com` as its mirror). `scripts/build_world_news_catalog.py` (`query.wikidata.org`, SPARQL) writes a
-  candidate list, `configs/world_news_sources.yml`, which is not committed and which the maintainer reviews before anything
-  reaches `configs/sources.yml`. **One is pointed at users, and it is a known gap:** `scripts/build_city_gazetteer.py`
+  `raw.githubusercontent.com` as its mirror). `scripts/build_world_news_catalog.py` (`query.wikidata.org`, SPARQL) writes
+  `configs/world_news_sources.yml`, which is not committed; when that file exists the app seeds its sources beside the curated
+  catalogue (`src/ingest/seed_sources.py`, provenance `wikidata`; seeding registers sources and fetches nothing). **One is pointed at users, and it is a known gap:** `scripts/build_city_gazetteer.py`
   (`query.wikidata.org`, SPARQL, raw `requests`) writes `configs/cities.yml`, which is not committed (only
   `configs/cities.sample.yml` ships) and which the app reads in preference to the sample; the Map's empty state and the user
   manual tell the user to run it. It has no `--online` consent flag, reads no transport setting and has no kill switch, so a
@@ -141,7 +141,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `scripts/check_upstream_updates.py` (`api.github.com`, run by the weekly freshness CI job, never on a user's machine).
   `scripts/analysis/run_stage_a.py`, the catalogue kit the maintainer runs on their own machine, makes one informational GET to
   each of four fixed hosts (`PROBE_HOSTS`: `pypi.org`, `feeds.bbci.co.uk`, `www.lemonde.fr`, `theanguillian.com`) with no
-  robots read, and on its first run a child `pip install -r requirements.txt` that reaches PyPI; the feeds it judges go
+  robots read, and a child `pip install -r requirements.txt` that reaches PyPI whenever its requirements stamp is missing or changed; the feeds it judges go
   through the ethical fetcher. Four import a socket library for loopback only, or for no
   connection at all: `scripts/apply_update.py` (a TCP connect to the app's own port on `127.0.0.1` or `::1`; its `git fetch` is
   the App updates row above), `scripts/fault_harness.py` and `scripts/ui_clickthrough_run.py` (test harnesses talking to a

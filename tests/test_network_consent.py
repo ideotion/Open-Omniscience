@@ -260,8 +260,8 @@ _ALLOWED_SCRIPT_SOCKET_IMPORTERS: dict[str, str] = {
         "guarded_session like build_place_gazetteer.py",
     "scripts/build_world_news_catalog.py":
         "maintainer build: requests to query.wikidata.org (SPARQL) for news-outlet "
-        "candidates into configs/world_news_sources.yml (not committed, reviewed by "
-        "the maintainer before sources.yml). No kill switch, no robots (an API)",
+        "candidates into configs/world_news_sources.yml (not committed; the app seeds "
+        "it beside the catalogue when present). No kill switch, no robots (an API)",
     "scripts/enrich_sources_wikidata.py":
         "maintainer build: urllib to www.wikidata.org (Action API) to fill source_type "
         "in configs/sources.yml. No kill switch, no robots (an API)",
@@ -295,7 +295,7 @@ _ALLOWED_SCRIPT_SOCKET_IMPORTERS: dict[str, str] = {
     "scripts/analysis/run_stage_a.py":
         "maintainer catalogue kit run on the maintainer's own machine: an "
         "informational urllib GET of four fixed hosts (PROBE_HOSTS) and a child pip "
-        "install from PyPI on first run; the feed "
+        "install from PyPI when its requirements stamp changes; the feed "
         "judging itself goes through verify_candidate_feeds' EthicalFetcher",
     # -- loopback only, or no connection at all --
     "scripts/apply_update.py":
