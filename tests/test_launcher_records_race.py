@@ -672,7 +672,8 @@ def test_the_rows_are_the_bytes_they_were_before_the_lock(tmp_path):
         time.sleep(0.05)
 
     def shape(name):
-        return re.sub(r'"(at|started_at)":"[^"]*"|"pid":\d+|"boot_id":"[^"]*"', lambda m: m.group(0).split(":")[0] + ":X", (b.data / "diagnostics" / name).read_text(encoding="utf-8"))
+        # boot_id is null where the system keeps no boot id (macOS has no /proc): the field is there either way, which is what this pins
+        return re.sub(r'"(at|started_at)":"[^"]*"|"pid":\d+|"boot_id":(?:"[^"]*"|null)', lambda m: m.group(0).split(":")[0] + ":X", (b.data / "diagnostics" / name).read_text(encoding="utf-8"))
 
     assert shape("launcher_exits.jsonl") == '{"schema":"oo-launcher-exit-1","at":X,"started_at":X,"pid":X,"boot_id":X,"status":3,"signal":null}\n'
     assert shape("launcher_stops.jsonl") == '{"schema":"oo-launcher-stop-1","at":X,"pid":X,"boot_id":X,"signal":"SIGTERM"}\n'
@@ -682,6 +683,7 @@ def test_the_rows_are_the_bytes_they_were_before_the_lock(tmp_path):
 
 
 @posix_only
+@pytest.mark.skipif(shutil.which("flock") is None, reason="no flock(1) here (macOS ships none): the launcher takes the mkdir lock, pinned by test_the_mkdir_lock_leaves_nothing_after_a_normal_exit")
 def test_after_a_normal_exit_only_the_empty_flock_files_are_left(tmp_path):
     pids, f = _exits_round(tmp_path, 3)
     left = sorted(x.name for x in f.parent.iterdir())

@@ -56,6 +56,7 @@ NOT_A_SOURCE_COUNT = {
     ("src/analytics/store.py", "catch_up_source_counters"): "the ids whose counters a pass end recounts",
     ("src/backup/merge.py", "_touched_source_ids"): "the ids whose counters a restore recounts",
     ("src/bulletin/evidence.py", "period_source_rows"): "distinct (source type, domain) rows listed for licence review, one per domain already",
+    ("src/catalog/off_site.py", "sweep"): "the ids of the sources new articles belong to, which the off-site rule then checks",
     ("src/catalog/qualification.py", "qualification_queue"): "ids that have an attempt, an anti-join for the queue",
     ("src/catalog/qualification.py", "stamp_curated_catalog"): "ids already judged, an anti-join for the stamp",
     ("src/catalog/qualification_export.py", "_curated_stamp_ids"): "ids carrying the curated stamp, the export's selector",

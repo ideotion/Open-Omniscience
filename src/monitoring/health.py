@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from enum import Enum
 
 from src.ingest import EthicalFetcher, FetchError, RobotsDisallowed, RobotsUnavailable
-from src.ingest.fetch_verdict import shown_url
+from src.ingest.fetch_verdict import reported_url
 from src.monitoring.secret_scrub import record_text
 
 
@@ -44,7 +44,7 @@ class SourceHealth:
         return {
             "source_id": self.source_id,
             "name": self.name,
-            "url": shown_url(self.url),  # the probed feed's login shown as ***@ (R637); the probe itself used the URL as stored
+            "url": reported_url(self.url),  # a report nothing sends back (R734): login, query values, fragment masked; the probe used it as stored
             "status": self.status.value,
             "latency_ms": self.latency_ms,
             "checked_at": self.checked_at.isoformat(),

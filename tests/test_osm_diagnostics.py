@@ -319,3 +319,21 @@ def test_a_machine_that_reports_nothing_says_so_per_field(monkeypatch):
     monkeypatch.setattr(D, "platform", types.SimpleNamespace(system=lambda: "", machine=lambda: "x86_64"))
     got = D._machine()
     assert set(got["unreported"]) == {"os", "cpus"} and got["arch"]
+
+
+def test_the_field_data_route_answers_the_zips_own_member_with_the_measured_cost(cut, osm_lane_dir):
+    """Row 117: the Field data button saves ``/api/osm/change-files``, which runs the Diagnostics zip's ``osm-change-files.json`` slot, so
+    the cost a person sends back is the zip's member byte for byte, within its budget, and nothing goes online."""
+    from fastapi.testclient import TestClient
+
+    from src.api.diagnostics_slots import budget_of
+    from src.api.main import app
+
+    _run(osm_lane_dir, 102, {101: DAY1, 102: DAY2})
+    got = TestClient(app).get("/api/osm/change-files")
+    assert got.status_code == 200
+    body = got.json()
+    (c,) = body["countries"]
+    assert c["cost"]["bytes_fetched"]["total"] == len(DAY1) + len(DAY2) and c["cost"]["fetch_seconds"]["n"] == 2
+    assert body == json.loads(json.dumps(D.diagnostics_member(budget_of("osm-change-files.json")))), "the zip's own member"
+    assert len(got.content) <= 200_000, "inside the Field data size every returned file keeps"

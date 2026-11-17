@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,routes/links,/api/links/shared listed as superseded by /api/links/corpus,SHIPPED,PR #2078; row 101,configs/routes_without_ui.tsv src/static/app-corpus.js,"Its only caller was the links branch of corpusTab in the retired corpus window (THEME-3: corpusTab has no callers), so route_callers still counted it as called. The dead branch is removed and the route is listed superseded; removing the route itself is a separate PR after the owning lane confirms (invariant 35)."

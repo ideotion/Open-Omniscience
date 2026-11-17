@@ -273,7 +273,7 @@ def law_ingest_report(session: Session) -> dict:
             "none of these markers, never no chrome. `re_extracted` is not a count of "
             "documents still to heal: the next unchanged poll records `unchanged`, so a "
             "fully healed install shows few or none. Whether a given document ever healed "
-            "is not recorded anywhere. A `verdict` of error, deferred, robots_blocked, "
+            "is not recorded anywhere. A `verdict` of error, deferred, robots_blocked, robots_unread, "
             "empty or never_checked says its last check stored no fresh body, so it is a "
             "CANDIDATE for still holding pre-strip text, never proof: a document that healed "
             "long ago and fails today reads the same. A small revision is not a "

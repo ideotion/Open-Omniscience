@@ -1,0 +1,120 @@
+# The whole suite on requirements.lock's own pins, once a week (row 114).
+#
+# Open Omniscience - Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# The PR test jobs (ci.yml `test`) install `-e ".[...]"` unbounded, so they run on the NEWEST release of every
+# dependency; R318/R412 kept that on purpose, and added only a mypy pass on the lock. A user who installs from the
+# lock runs on its pins, where nothing ran the suite: five tests failed on SQLAlchemy 2.0.51 (the lock) that were
+# green on 2.1.x (row 113). This runs the same three shards as `test`, with every package the lock names held to its
+# pin through a plain name==version constraints file (scripts/lock_suite.py constraints), then keeps ONE rolling issue
+# (label `lock-suite`) open while any shard is not green and closes it when all are. Weekly and on demand, never on a
+# PR, so it costs no PR its CI line. A failure here gates nothing; it is read from the issue.
+name: Lock suite
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"  # Mondays 07:00 UTC, an hour after ci.yml's weekly audit and freshness.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lock-suite
+  cancel-in-progress: false
+
+jobs:
+  shards:
+    runs-on: ubuntu-latest
+    name: Suite on the lock's pins (shard ${{ matrix.shard }} of 3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    timeout-minutes: 75  # as ci.yml `test`: a hung job holds a runner slot for the default six hours (R475)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      # The binaries ci.yml `test` installs, so the same tests run rather than skip (see the notes there).
+      - name: Install tesseract and two more awk implementations
+        run: |
+          prev="$(readlink -f /usr/bin/awk)"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr original-awk gawk
+          command -v tesseract
+          command -v original-awk
+          command -v gawk
+          sudo update-alternatives --set awk "$prev"
+
+      - name: Install (the extras ci.yml `test` installs, held to the lock's pins)
+        run: |
+          python -m pip install --upgrade pip
+          python scripts/lock_suite.py constraints requirements.lock "$RUNNER_TEMP/lock-constraints.txt"
+          python -m pip install -c "$RUNNER_TEMP/lock-constraints.txt" -e ".[analysis,dev,segmentation,pdf,ocr,geo]"
+
+      - name: Plan this shard (which test files it runs)
+        run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out "$RUNNER_TEMP/shard.args"
+
+      - name: Test (pytest)
+        run: python -m pytest -q -n auto --dist loadfile -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
+
+      - name: Installed versions (kept on red as well as green)
+        if: always()
+        run: |
+          {
+            echo "### Installed versions (lock profile, shard ${{ matrix.shard }})"
+            echo '```'
+            python -m pip list --format=freeze
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload this shard's junit report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lock-suite-junit-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 14
+
+  report:
+    needs: [shards]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Open, update or close the lock-suite issue
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read  # gh run download reads this run's junit artifacts
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      # The matrix's one result covers all three shards; each shard's own conclusion is read from the run's jobs.
+      - name: Collect each shard's outcome and junit report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATRIX_RESULT: ${{ needs.shards.result }}
+        run: |
+          mkdir -p lock-suite
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --pattern 'lock-suite-junit-*' --dir lock-suite || echo "no junit artifact downloaded"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --paginate \
+            --jq '[.jobs[] | select(.name | startswith("Suite on the lock")) | {key: .name, value: (.conclusion // "unfinished")}] | from_entries' \
+            > lock-suite/outcomes.json || echo "{\"matrix\": \"$MATRIX_RESULT\"}" > lock-suite/outcomes.json
+          cat lock-suite/outcomes.json
+
+      - name: Open / update / close the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/lock_suite.py report lock-suite
