@@ -28,6 +28,7 @@ import pytest
 
 from src.api import diagnostics_plan as plan
 from src.api.diagnostics import bundle as B
+from src.api.diagnostics import scan_estimate
 
 # Four scans with estimates that sort differently from the order they are listed in, and two records.
 SCANS = {"s-slow.json": 200.0, "s-fast.json": 20.0, "s-mid.json": 60.0, "s-tiny.json": 5.0}
@@ -39,6 +40,8 @@ def _small_table(monkeypatch):
     monkeypatch.setattr(plan, "SCAN_BUDGET_S", 100.0)
     monkeypatch.setattr(plan, "SCAN_FLOOR_S", 30.0)
     monkeypatch.setattr(B, "ram_declined_reason", lambda *a, **k: None)
+    # No machine history here unless a test gives one: the stored scan times of the test process never order these scans.
+    monkeypatch.setattr(scan_estimate, "scan_table", lambda: plan.machine_table(None, None))
 
 
 class _Clock:
@@ -255,12 +258,35 @@ def test_quick_skips_the_scans_the_budget_cannot_reach_and_names_each(monkeypatc
     assert man["mode"] == "quick" and man["scan_budget_s"] == 100.0
     scans = man["scans"]
     assert scans["planned"] == [
-        {"file": "s-tiny.json", "est_s": 5.0}, {"file": "s-fast.json", "est_s": 20.0},
-        {"file": "s-mid.json", "est_s": 60.0}, {"file": "s-slow.json", "est_s": 200.0},
+        {"file": "s-tiny.json", "est_s": 5.0, "est_from": "field-median"},
+        {"file": "s-fast.json", "est_s": 20.0, "est_from": "field-median"},
+        {"file": "s-mid.json", "est_s": 60.0, "est_from": "field-median"},
+        {"file": "s-slow.json", "est_s": 200.0, "est_from": "field-median"},
     ]
     assert scans["ran"] == ["s-tiny.json", "s-fast.json"]
     assert [s["file"] for s in scans["skipped"]] == ["s-mid.json", "s-slow.json"]
     assert scans["skipped"][1]["est_s"] == 200.0 and scans["skipped"][1]["reason"]
+
+
+def test_quick_orders_by_this_machines_own_times_and_says_where_each_figure_came_from(monkeypatch):
+    """Field report 2026-11-14 row 74: the card audit sat at 60.5 s in the field table and took about 300 s on that machine, so it ran
+    early and spent the budget the scans after it were planned to have. A scan this machine has timed is ordered by that time."""
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    history = {"s-tiny.json": {"wall_s": 45.0, "rows": 1_000, "at": "x"}}  # 5 s in the table, 90 s here at today's 2,000 rows
+    monkeypatch.setattr(scan_estimate, "scan_table", lambda: plan.machine_table(history, 2_000))
+    members = _members(clock, window, seen, costs={"s-fast.json": 40.0, "s-mid.json": 40.0})
+    results, man, _names, _read = _build(members, mode="quick", scan_window=window)
+    assert [n for n, _ in seen if n.startswith("s-")] == ["s-fast.json", "s-mid.json"]
+    assert man["scans"]["planned"] == [
+        {"file": "s-fast.json", "est_s": 20.0, "est_from": "field-median"},
+        {"file": "s-mid.json", "est_s": 60.0, "est_from": "field-median"},
+        {"file": "s-tiny.json", "est_s": 90.0, "est_from": "this-machine"},
+        {"file": "s-slow.json", "est_s": 200.0, "est_from": "field-median"},
+    ]
+    by = {r["file"]: r for r in results}
+    assert by["s-tiny.json"]["outcome"] == "skipped-budget" and by["s-tiny.json"]["est_s"] == 90.0
+    assert "about 90 s" in by["s-tiny.json"]["skipped_reason"]
 
 
 def test_a_quick_build_is_never_a_complete_profile_and_says_why(monkeypatch):

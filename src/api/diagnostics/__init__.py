@@ -490,7 +490,7 @@ from .field_cards import (
 )
 # What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
 # run, whose eight routes test_release_run pins as the package's last.
-from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
+from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate, scan_table
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -897,4 +897,5 @@ __all__ = [
     "_mention_rows",
     "_remember_scan_walls",
     "all_diagnostics_estimate",
+    "scan_table",
 ]

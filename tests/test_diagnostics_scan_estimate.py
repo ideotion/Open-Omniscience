@@ -45,6 +45,29 @@ def test_a_damaged_history_is_ignored_not_trusted():
         assert plan.thorough_estimate(bad, 100)["from_this_machine"] == 0
 
 
+def test_the_machine_table_is_what_a_build_orders_by_and_names_each_figure_s_source():
+    hist = {"card-audit.json": {"wall_s": 290.0, "rows": 20_000_000, "at": "x"}, "benchmark.json": {"wall_s": True, "rows": 5}}
+    costs, basis = plan.machine_table(hist, 20_000_000)
+    assert costs["card-audit.json"] == 290.0 and basis["card-audit.json"] == "this-machine"
+    assert costs["benchmark.json"] == 300.0 and basis["benchmark.json"] == "field-median", "a bool is not a time"
+    assert set(costs) == set(basis) == set(plan.SCAN_EST_S)
+    records, scans = plan.split_members([(n, None) for n in plan.SCAN_EST_S], costs)
+    order = [n for n, _ in scans]
+    assert order.index("card-audit.json") > order.index("keyword-engine.json"), "290 s here runs after the 231 s scans, not fourth"
+    assert plan.thorough_estimate(hist, 20_000_000)["est_s"] == round(sum(costs.values()))
+
+
+def test_scan_table_falls_back_to_the_field_medians_when_the_store_cannot_be_read(monkeypatch):
+    import src.config.kv_store as kv
+
+    def boom(_key):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(kv, "kv_get_json", boom)
+    costs, basis = scan_estimate.scan_table()
+    assert costs == {k: min(300.0, v) for k, v in plan.SCAN_EST_S.items()} and set(basis.values()) == {"field-median"}
+
+
 def test_est_s_still_only_orders_the_scans():
     assert plan.scan_est_s("card-audit.json") == 60.5, "the plan's own table is untouched"
 
