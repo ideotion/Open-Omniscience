@@ -1496,7 +1496,13 @@ def _merge_osm(conn: Any, out: dict[str, Any]) -> None:
             reason = exc.reason if isinstance(exc, _OsmRefused) else "refused_unreadable"
             _osm_count(counts, reason)
             if reason == "kept_here":
-                out["osm_unfinished_here"].append(alpha3)  # a cut started here meanwhile; it is not finished yet
+                # A cut of this country started here meanwhile: reported as any country both hold.
+                with contextlib.suppress(sqlite3.Error):
+                    now = conn.execute("SELECT status FROM main.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone()
+                    if now is not None and now[0] != "complete":
+                        out["osm_unfinished_here"].append(alpha3)
+                    elif now is not None and _osm_backup_is_newer(conn, alpha3):
+                        out["osm_newer_in_backup"].append(alpha3)
             continue
         except BaseException:
             _osm_rollback(conn)
