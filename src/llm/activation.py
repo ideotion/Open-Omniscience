@@ -63,7 +63,7 @@ import logging
 import os
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from src.monitoring.secret_scrub import log_failure, record_text
 
@@ -307,7 +307,8 @@ def _plan_for(
             # on a machine where vLLM has never actually started the destination's
             # parent does not exist yet and a bare `mv` would fail. A command an
             # operator pastes has to work on the machine that is in this state.
-            dst_parent = str(Path(dst_path).parent) if dst_path else ""
+            # A POSIX path stays one (the command is a POSIX shell's, and vLLM runs on Linux): ``Path`` on Windows would spell it with "\\".
+            dst_parent = str((PurePosixPath if dst_path.startswith("/") else Path)(dst_path).parent) if dst_path else ""
             out["blocker"] = (
                 f"{model} IS downloaded — at {src_path} — but the server is started "
                 f"pointed at the app's own model folder, so it would fetch the weights "

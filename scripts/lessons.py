@@ -179,6 +179,9 @@ def create_exclusive(path: Path, text: str) -> int:
     ``open(path, "x")`` is one atomic step, so two creators cannot both succeed and a dangling symlink is
     refused instead of written through; the LF newline keeps the fragment byte-identical on Windows."""
     path.parent.mkdir(exist_ok=True)
+    if path.is_symlink():  # Windows: an exclusive create goes THROUGH a dangling symlink and makes its target (row 109); POSIX refuses it anyway
+        print(f"{path} already exists (a symlink)", file=sys.stderr)
+        return 1
     try:
         with open(path, "x", encoding="utf-8", newline="\n") as fh:
             fh.write(text)

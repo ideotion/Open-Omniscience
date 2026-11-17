@@ -80,9 +80,9 @@ def _allow_install(monkeypatch, *, ram=32 * 1024**3, free=200 * 1024**3, ram_bac
 
 def _fake_venv(with_pip=True):
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     if with_pip:
-        V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8")
+        V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -99,7 +99,7 @@ def test_is_installed_requires_both_marker_and_python():
     # marker exists but no venv python -> still not installed (honest).
     assert V.is_installed() is False
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     assert V.is_installed() is True
     info = V.install_info()
     assert info["version"] == "0.25.1"
@@ -202,7 +202,7 @@ def test_server_argv_falls_back_to_module_invocation_without_the_console_script(
 
 def test_server_argv_prefers_the_console_script_when_present():
     V.venv_bin("vllm").parent.mkdir(parents=True, exist_ok=True)
-    V.venv_bin("vllm").write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_bin("vllm").write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     argv = V.server_argv("my-model")
     assert argv[0] == str(V.venv_bin("vllm"))
     assert argv[1:3] == ["serve", "my-model"]
@@ -338,7 +338,7 @@ def test_start_refuses_when_not_installed(monkeypatch):
 
 def test_start_refuses_on_a_cpu_only_machine(monkeypatch, tmp_path):
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     V._write_marker("0.25.1")
     monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": False})
     with pytest.raises(V.VllmUnsupportedError):
@@ -347,7 +347,7 @@ def test_start_refuses_on_a_cpu_only_machine(monkeypatch, tmp_path):
 
 def test_start_launches_the_subprocess_when_gpu_is_present(monkeypatch):
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     V._write_marker("0.25.1")
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
@@ -378,7 +378,7 @@ def test_start_puts_the_computed_eager_decision_on_the_real_command_line(
     source: a decision computed and then never passed to the subprocess would leave
     compute_server_args' tests green while the server still captured graphs."""
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     V._write_marker("0.25.1")
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": vram_mb}
@@ -404,7 +404,7 @@ def test_start_puts_the_computed_eager_decision_on_the_real_command_line(
 
 def test_start_is_a_no_op_when_already_running(monkeypatch):
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     V._write_marker("0.25.1")
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
@@ -497,8 +497,8 @@ def test_install_job_creates_the_venv_first_when_absent(monkeypatch):
             # subsequent pip-install phase's own venv_bin("pip") lookup is moot
             # here (the fake pip call below never actually touches disk).
             V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-            V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
-            V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8")
+            V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
+            V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
             yield "__exit__ 0"
             return
         yield "Successfully installed vllm-0.25.1"
@@ -1114,7 +1114,7 @@ def test_a_venv_with_python_but_no_pip_is_REPAIRED_not_blamed_on_the_system(monk
     def fake_runner(argv, env=None, should_stop=None):
         calls.append(argv)
         if "venv" in argv:
-            V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8")  # ensurepip finishes
+            V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")  # ensurepip finishes
         yield "__exit__ 0"
 
     assert V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)["installed"] is True
@@ -1166,7 +1166,7 @@ def test_the_pip_unpack_dir_is_swept_before_use_not_only_after(monkeypatch):
     monkeypatch.setattr(V, "_package_present", lambda venv, name: True)
     residue = V.pip_tmpdir()
     residue.mkdir(parents=True, exist_ok=True)
-    (residue / "half-unpacked-torch.whl").write_text("x" * 1024, encoding="utf-8")
+    (residue / "half-unpacked-torch.whl").write_text("x" * 1024, encoding="utf-8", newline="\n")
     seen = {}
 
     def fake_runner(argv, env=None, should_stop=None):
@@ -1182,7 +1182,7 @@ def test_a_torn_marker_does_not_read_as_installed(monkeypatch):
     report vLLM installed while `install_info()` returned None. "Installed" is a claim;
     an unreadable record cannot support it."""
     _fake_venv()
-    V._marker_path().write_text("", encoding="utf-8")  # a torn write
+    V._marker_path().write_text("", encoding="utf-8", newline="\n")  # a torn write
     assert V.install_info() is None
     assert V.is_installed() is False
 
@@ -1290,7 +1290,7 @@ def _record(calls, *, uv_ok=True, install_exit="0"):
         calls.append(list(argv))
         if argv[-1] == "uv":
             if uv_ok:
-                V.venv_bin("uv").write_text("#!/bin/sh\n", encoding="utf-8")
+                V.venv_bin("uv").write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
                 yield "__exit__ 0"
             else:
                 yield "__exit__ 1"
@@ -1310,11 +1310,11 @@ def test_the_install_uses_uv_for_the_big_resolve(monkeypatch):
     V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls))
 
     bootstrap, big = calls[0], calls[-1]
-    assert bootstrap[-1] == "uv" and bootstrap[0].endswith("/pip"), (
+    assert bootstrap[-1] == "uv" and Path(bootstrap[0]).name == "pip", (
         "uv comes from PyPI over HTTPS into the unprivileged venv -- the SAME channel "
         "this module already trusts, never a piped shell script from a vendor site"
     )
-    assert big[0].endswith("/uv") and big[1:3] == ["pip", "install"]
+    assert Path(big[0]).name == "uv" and big[1:3] == ["pip", "install"]
     assert "--python" in big and str(V.venv_python()) in big, (
         "uv otherwise resolves against its own idea of an interpreter, not the one "
         "that will run the server"
@@ -1331,7 +1331,7 @@ def test_a_uv_bootstrap_failure_falls_back_to_pip(monkeypatch):
     out = V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls, uv_ok=False))
 
     big = calls[-1]
-    assert big[0].endswith("/pip") and big[-1] == "vllm==0.26.0"
+    assert Path(big[0]).name == "pip" and big[-1] == "vllm==0.26.0"
     assert "--retries" in big, "the pip path keeps its own long-download flags"
     assert out["installed"] is True
 
@@ -1343,7 +1343,7 @@ def test_the_resolver_can_be_forced_back_to_pip(monkeypatch):
     calls: list[list[str]] = []
     V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls))
     assert len(calls) == 1, "no uv bootstrap at all"
-    assert calls[0][0].endswith("/pip")
+    assert Path(calls[0][0]).name == "pip"
 
 
 def test_a_failure_names_the_resolver_that_actually_ran(monkeypatch):
@@ -1382,7 +1382,7 @@ def test_an_interrupted_download_is_not_reported_as_cached(monkeypatch, tmp_path
     # "Invalid repository ID or local directory specified ... ensure the presence of
     # a 'config.json'". A file count cannot separate the two; only the loader's own
     # required file can.
-    (rev / "model-00001-of-00002.safetensors").write_text("weights", encoding="utf-8")
+    (rev / "model-00001-of-00002.safetensors").write_text("weights", encoding="utf-8", newline="\n")
     st = V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")
     assert st["cached"] is False, "files without the loader's config file are not a model"
     assert "config.json" in (st["incomplete"] or ""), (
@@ -1391,7 +1391,7 @@ def test_an_interrupted_download_is_not_reported_as_cached(monkeypatch, tmp_path
     )
     assert st["bytes"] == 7, "the wasted bytes are reported, so the operator can see them"
 
-    (rev / "config.json").write_text("{}", encoding="utf-8")
+    (rev / "config.json").write_text("{}", encoding="utf-8", newline="\n")
     st = V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")
     assert st["cached"] is True and st["bytes"] == 9
     assert st["incomplete"] is None
@@ -1411,7 +1411,7 @@ def test_an_already_cached_model_is_not_re_downloaded(monkeypatch, tmp_path):
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     rev = tmp_path / "models--org--m" / "snapshots" / "r1"
     rev.mkdir(parents=True)
-    (rev / "config.json").write_text("{}", encoding="utf-8")
+    (rev / "config.json").write_text("{}", encoding="utf-8", newline="\n")
     _fake_venv()
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
 
@@ -1467,7 +1467,7 @@ def test_a_real_download_reports_the_cache_it_produced(monkeypatch, tmp_path):
         assert argv[5] == "", "an unpinned model passes an EMPTY revision, never 'main'"
         rev = tmp_path / "models--org--m" / "snapshots" / "r1"
         rev.mkdir(parents=True)
-        (rev / "config.json").write_text("{}", encoding="utf-8")
+        (rev / "config.json").write_text("{}", encoding="utf-8", newline="\n")
         yield "Fetching 3 files:  33%"
         yield f"__downloaded__ {rev}"
         yield "__exit__ 0"
@@ -1673,7 +1673,7 @@ def test_context_lines_are_whole_lines_never_a_truncated_fragment():
 
 def test_failure_excerpt_finds_the_signature_in_a_real_shaped_log():
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8")
+    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8", newline="\n")
     out = V.failure_excerpt(limit=V._JOURNAL_EXCERPT_CHARS)
     assert out["signature"] == "engine-init"
     assert "EngineCore failed to start" in out["excerpt"]
@@ -1694,7 +1694,7 @@ def test_the_start_journal_lives_outside_the_venv():
 def test_an_in_venv_journal_is_migrated_once_and_not_lost():
     legacy = V._legacy_start_history_path()
     legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text('{"at":1,"event":"spawned","pid":11}\n', encoding="utf-8")
+    legacy.write_text('{"at":1,"event":"spawned","pid":11}\n', encoding="utf-8", newline="\n")
     V._record_start_attempt({"at": 2, "event": "exited", "pid": 11, "returncode": 1})
     hist = V.start_history()
     assert [h["at"] for h in hist] == [1, 2], "the old entries survive the move"
@@ -1703,13 +1703,13 @@ def test_an_in_venv_journal_is_migrated_once_and_not_lost():
 def test_history_still_reads_a_legacy_journal_before_the_first_new_write():
     legacy = V._legacy_start_history_path()
     legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text('{"at":7,"event":"spawned","pid":9}\n', encoding="utf-8")
+    legacy.write_text('{"at":7,"event":"spawned","pid":9}\n', encoding="utf-8", newline="\n")
     assert [h["at"] for h in V.start_history()] == [7]
 
 
 def test_a_failed_start_keeps_its_whole_log_before_the_next_start_truncates_it():
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8")
+    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8", newline="\n")
     kept = V._preserve_failed_log(4242, 1)
     assert kept is not None
     # Now the next start truncates the live log, exactly as production does.
@@ -1720,7 +1720,7 @@ def test_a_failed_start_keeps_its_whole_log_before_the_next_start_truncates_it()
 
 def test_preserved_logs_are_capped_so_they_cannot_grow_without_bound():
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("boom", encoding="utf-8")
+    V.server_log_path().write_text("boom", encoding="utf-8", newline="\n")
     for pid in range(V._FAILED_LOG_KEEP + 4):
         V._preserve_failed_log(pid, 1)
     assert len(V.failed_start_logs()) == V._FAILED_LOG_KEEP
@@ -1736,7 +1736,7 @@ def test_an_empty_or_absent_server_log_preserves_nothing_rather_than_an_empty_fi
 
 def test_the_bundle_carries_the_newest_failed_log_whole_when_it_is_small():
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8")
+    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8", newline="\n")
     V._preserve_failed_log(1, 1)
     out = V.newest_failed_start_log()
     assert out["available"] is True and out["truncated"] is False
@@ -1745,7 +1745,7 @@ def test_the_bundle_carries_the_newest_failed_log_whole_when_it_is_small():
 
 def test_a_long_failed_log_is_split_with_the_gap_stated():
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("A" * 500 + "B" * 500, encoding="utf-8")
+    V.server_log_path().write_text("A" * 500 + "B" * 500, encoding="utf-8", newline="\n")
     V._preserve_failed_log(1, 1)
     out = V.newest_failed_start_log(limit=100)
     assert out["truncated"] is True
@@ -1851,7 +1851,7 @@ def _cached_repo(tmp_path, name: str, *, weights_mb: int, extra_mb: int = 0) -> 
     blobs, rev = repo / "blobs", repo / "snapshots" / "rev1"
     blobs.mkdir(parents=True)
     rev.mkdir(parents=True)
-    (rev / "config.json").write_text("{}", encoding="utf-8")
+    (rev / "config.json").write_text("{}", encoding="utf-8", newline="\n")
     # SPARSE: st_size is the logical length, which is what the measurement reads, so
     # a 6 GB fixture costs no disk. Writing real zeros filled the sandbox volume.
     blob = blobs / "sha256-weights"
@@ -1935,7 +1935,7 @@ def test_the_measured_footprint_is_applied_in_both_directions(monkeypatch, tmp_p
     # Drive the REAL start() through its own injectable popen seam, so the value
     # asserted is the one the production path computes rather than one a stub chose.
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     V._write_marker("0.25.1")
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu",
@@ -2123,7 +2123,7 @@ def test_a_preserved_failed_log_is_copied_with_the_held_passphrase_taken_out(mon
     """The copy is scrubbed line by line as it is written: the preserved file (carried in the Diagnostics bundle) never holds the key."""
     _hold_key(monkeypatch)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text(f"starting\nloading from /home/u/{_KEY}/weights\nTHE ACTUAL CAUSE\n", encoding="utf-8")
+    V.server_log_path().write_text(f"starting\nloading from /home/u/{_KEY}/weights\nTHE ACTUAL CAUSE\n", encoding="utf-8", newline="\n")
     kept = V._preserve_failed_log(7, 1)
     assert kept is not None
     body = Path(kept).read_text(encoding="utf-8")
@@ -2134,7 +2134,7 @@ def test_a_preserved_log_that_cannot_be_scrubbed_is_not_kept_and_never_copied_ra
     """Fail closed: when the scrub or the write fails, NOTHING is preserved (no raw copy, no half-clean file, no temporary file) and the
     caller is given the reason."""
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text(f"first\n{_KEY}\nlast\n", encoding="utf-8")
+    V.server_log_path().write_text(f"first\n{_KEY}\nlast\n", encoding="utf-8", newline="\n")
 
     def broken(text, *a, **k):
         raise RuntimeError("scrub unavailable")
@@ -2149,7 +2149,7 @@ def test_a_preserved_log_that_cannot_be_scrubbed_is_not_kept_and_never_copied_ra
 def test_the_bundle_scrubs_a_failed_log_an_older_build_left_raw_on_the_disk(monkeypatch):
     """A log preserved before logs were scrubbed on copy is raw on the disk; the reader takes the key out before it cuts the text."""
     V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
-    (V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log").write_text("a" * 40 + _KEY + "b" * 90, encoding="utf-8")  # the 50-byte head cut lands inside the key
+    (V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log").write_text("a" * 40 + _KEY + "b" * 90, encoding="utf-8", newline="\n")  # the 50-byte head cut lands inside the key
     _hold_key(monkeypatch)
     out = V.newest_failed_start_log(limit=100)
     assert out["available"] is True
@@ -2164,7 +2164,7 @@ def test_the_live_server_log_is_scrubbed_before_its_head_and_tail_are_cut(monkey
     limit, head_limit = 100, 50
     # the tail starts at size - limit: put the key across that point, and another across the head's end
     body = "h" * (head_limit - 10) + _KEY + "m" * 200 + "t" * (limit - 10) + _KEY + "e" * 10
-    V.server_log_path().write_text(body, encoding="utf-8")
+    V.server_log_path().write_text(body, encoding="utf-8", newline="\n")
     out = V.server_log_tail(limit=limit, head_limit=head_limit)
     assert out["available"] is True
     shown = (out.get("head") or "") + (out.get("tail") or "")
@@ -2183,7 +2183,7 @@ def test_a_tail_window_that_starts_inside_a_key_leaves_no_prefix_of_it(monkeypat
     rest = limit - (len(_KEY) - 5) - 20 - 1
     body = before + after_key + "q" * (rest - 1) + "\n"
     assert len(body) - limit == key_at + 5, "the tail window must start inside the key"
-    V.server_log_path().write_text(body, encoding="utf-8")
+    V.server_log_path().write_text(body, encoding="utf-8", newline="\n")
     out = V.server_log_tail(limit=limit, head_limit=20)
     shown = (out.get("head") or "") + (out.get("tail") or "")
     assert out["truncated"] is True
@@ -2197,7 +2197,7 @@ def test_a_big_log_is_never_withheld_and_every_byte_is_counted(monkeypatch):
     lines = [f"line {i} " + "x" * 80 + "\n" for i in range(3000)]
     lines[1500] = f"leak {_KEY} here\n"
     lines[-1] = f"final {_KEY}\n"  # the last line is shown, so the key is there to be taken out
-    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    V.server_log_path().write_text("".join(lines), encoding="utf-8", newline="\n")
     size = V.server_log_path().stat().st_size
     out = V.server_log_tail()
     assert out["available"] is True and out["truncated"] is True
@@ -2215,7 +2215,7 @@ def test_a_status_poll_bounds_its_read_but_says_so_and_still_scrubs_both_ends(mo
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     lines = [f"line {i} " + "x" * 80 + "\n" for i in range(400)]
     lines[-3] = f"end {_KEY} end\n"
-    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    V.server_log_path().write_text("".join(lines), encoding="utf-8", newline="\n")
     size = V.server_log_path().stat().st_size
     out = V.server_log_tail(limit=300, head_limit=100, scan_bound=1000)
     assert out["available"] is True and out["scanned_whole"] is False and out["scrubbed_bytes"] is None
@@ -2230,7 +2230,7 @@ def test_failure_excerpt_does_not_cut_a_key_at_its_read_bound(monkeypatch):
     monkeypatch.setattr(V, "_EXCERPT_READ_BYTES", 120)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     text = "RuntimeError: first\n" + "m" * 80 + "\n" + "t" * 5 + _KEY + "\n"  # the 120-byte bound falls inside the key
-    V.server_log_path().write_text(text, encoding="utf-8")
+    V.server_log_path().write_text(text, encoding="utf-8", newline="\n")
     out = V.failure_excerpt(limit=2000)
     assert out["available"] is True
     assert _KEY[:5] not in (out.get("excerpt") or "")
@@ -2241,7 +2241,7 @@ def test_the_newest_failed_log_is_streamed_with_its_file_size_and_scrubbed_size_
     V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
     p = V.failed_start_log_dir() / "20260101T000000-pid1-rc1.log"
     body = "".join(f"row {i} " + "y" * 60 + "\n" for i in range(500)) + f"tail {_KEY}\n"
-    p.write_text(body, encoding="utf-8")
+    p.write_text(body, encoding="utf-8", newline="\n")
     out = V.newest_failed_start_log(limit=400)
     assert out["bytes"] == p.stat().st_size and out["scrubbed_bytes"] != out["bytes"]
     assert out["truncated"] is True and out["elided_bytes"] > 0
@@ -2250,10 +2250,10 @@ def test_the_newest_failed_log_is_streamed_with_its_file_size_and_scrubbed_size_
 
 def test_a_failure_to_remove_an_older_copy_does_not_turn_the_new_copy_into_not_kept(monkeypatch):
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.server_log_path().write_text("hello\n", encoding="utf-8", newline="\n")
     V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
     for i in range(7):
-        (V.failed_start_log_dir() / f"2025010{i}T000000-pid1-rc1.log").write_text("old\n", encoding="utf-8")
+        (V.failed_start_log_dir() / f"2025010{i}T000000-pid1-rc1.log").write_text("old\n", encoding="utf-8", newline="\n")
     real_unlink = Path.unlink
 
     def refuse(self, *a, **k):
@@ -2268,12 +2268,12 @@ def test_a_failure_to_remove_an_older_copy_does_not_turn_the_new_copy_into_not_k
 
 def test_a_half_written_copy_left_by_a_killed_process_is_swept_at_the_next_copy():
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.server_log_path().write_text("hello\n", encoding="utf-8", newline="\n")
     V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
     old = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
     fresh = V.failed_start_log_dir() / "20250101T000001-pid2-rc1.log.tmp"
     for f in (old, fresh):
-        f.write_text("half", encoding="utf-8")
+        f.write_text("half", encoding="utf-8", newline="\n")
     long_ago = time.time() - 3600
     os.utime(old, (long_ago, long_ago))
     assert V._preserve_failed_log_result(9, 1)[0] is not None
@@ -2283,10 +2283,10 @@ def test_a_half_written_copy_left_by_a_killed_process_is_swept_at_the_next_copy(
 
 def test_a_sweep_that_cannot_remove_a_leftover_does_not_stop_the_copy(monkeypatch):
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("hello\n", encoding="utf-8")
+    V.server_log_path().write_text("hello\n", encoding="utf-8", newline="\n")
     V.failed_start_log_dir().mkdir(parents=True, exist_ok=True)
     old = V.failed_start_log_dir() / "20250101T000000-pid1-rc1.log.tmp"
-    old.write_text("half", encoding="utf-8")
+    old.write_text("half", encoding="utf-8", newline="\n")
     long_ago = time.time() - 3600
     os.utime(old, (long_ago, long_ago))
     real_unlink = Path.unlink
@@ -2307,7 +2307,7 @@ def test_a_line_too_long_to_hold_is_replaced_by_a_marker_and_never_shown_in_part
     monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     big = "ZQ" * 400 + _KEY  # 826 bytes, no line break inside
-    V.server_log_path().write_text("first\n" + big + "\nlast\n", encoding="utf-8")
+    V.server_log_path().write_text("first\n" + big + "\nlast\n", encoding="utf-8", newline="\n")
     out = V.server_log_tail(limit=1000, head_limit=10)
     shown = json.dumps(out)
     assert "ZQZQ" not in shown and _KEY[:10] not in shown
@@ -2317,7 +2317,7 @@ def test_a_line_too_long_to_hold_is_replaced_by_a_marker_and_never_shown_in_part
 def test_a_final_line_of_exactly_the_bound_with_no_line_break_is_shown_whole(monkeypatch):
     monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("ok\n" + "y" * 100, encoding="utf-8")
+    V.server_log_path().write_text("ok\n" + "y" * 100, encoding="utf-8", newline="\n")
     out = V.server_log_tail(limit=1000)
     assert out["tail"] == "ok\n" + "y" * 100
 
@@ -2325,7 +2325,7 @@ def test_a_final_line_of_exactly_the_bound_with_no_line_break_is_shown_whole(mon
 def test_the_preserved_copy_of_a_huge_line_holds_a_marker_and_not_the_line(monkeypatch):
     monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("first\n" + "ZQ" * 400 + "\nlast\n", encoding="utf-8")
+    V.server_log_path().write_text("first\n" + "ZQ" * 400 + "\nlast\n", encoding="utf-8", newline="\n")
     kept = V._preserve_failed_log(7, 1)
     body = Path(kept).read_text(encoding="utf-8")
     assert "ZQZQ" not in body and "first" in body and "last" in body and "a line of 801 bytes is not shown" in body
@@ -2334,7 +2334,7 @@ def test_the_preserved_copy_of_a_huge_line_holds_a_marker_and_not_the_line(monke
 def test_a_big_log_whose_end_holds_no_line_break_says_why_its_tail_is_empty(monkeypatch):
     monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("start\n" + "p" * 5000, encoding="utf-8")  # a progress bar to the end of the file
+    V.server_log_path().write_text("start\n" + "p" * 5000, encoding="utf-8", newline="\n")  # a progress bar to the end of the file
     out = V.server_log_tail(limit=200, head_limit=3, scan_bound=100)
     assert out["available"] is True and out["tail"] == "" and "no line break" in out["tail_note"]
 
@@ -2351,7 +2351,7 @@ def test_a_status_seek_that_lands_inside_a_key_drops_that_whole_line(monkeypatch
     k = limit - (len(_KEY) - 5) - 20 - 1 - 1
     body = before + after_key + "q" * k + "\n"
     assert len(body) - limit == len(before) + 5, "the seek must land 5 bytes into the key"
-    V.server_log_path().write_text(body, encoding="utf-8")
+    V.server_log_path().write_text(body, encoding="utf-8", newline="\n")
     out = V.server_log_tail(limit=limit, head_limit=20, scan_bound=100)
     assert out["scanned_whole"] is False
     assert _KEY[-10:] not in out["tail"] and _KEY[:10] not in out["tail"]
@@ -2381,7 +2381,7 @@ def test_the_failure_excerpt_window_is_scrubbed_where_the_log_is_read(monkeypatc
     """Arbitration, activation and the backend only ever see the excerpt: the key is taken out of the log before the window is cut."""
     _hold_key(monkeypatch)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text(f"loading\nRuntimeError: bad config {_KEY} end\nmore\n", encoding="utf-8")
+    V.server_log_path().write_text(f"loading\nRuntimeError: bad config {_KEY} end\nmore\n", encoding="utf-8", newline="\n")
     out = V.failure_excerpt(limit=40)
     assert out["available"] is True
     assert _KEY[:10] not in (out.get("excerpt") or "")
@@ -2391,9 +2391,9 @@ def test_a_journal_line_an_older_build_wrote_raw_is_scrubbed_when_it_is_read(mon
     """The install and start journals are served to the UI and the bundle: a line already on the disk is read through the scrub."""
     _hold_key(monkeypatch)
     V._history_path().parent.mkdir(parents=True, exist_ok=True)
-    V._history_path().write_text(json.dumps({"at": 1, "error": f"old {_KEY} line"}) + "\n", encoding="utf-8")
+    V._history_path().write_text(json.dumps({"at": 1, "error": f"old {_KEY} line"}) + "\n", encoding="utf-8", newline="\n")
     V._start_history_path().parent.mkdir(parents=True, exist_ok=True)
-    V._start_history_path().write_text(json.dumps({"at": 1, "excerpt": f"old {_KEY} line"}) + "\n", encoding="utf-8")
+    V._start_history_path().write_text(json.dumps({"at": 1, "excerpt": f"old {_KEY} line"}) + "\n", encoding="utf-8", newline="\n")
     assert _KEY not in json.dumps(V.install_history()) and _KEY not in json.dumps(V.start_history())
 
 
@@ -2402,7 +2402,7 @@ def test_a_status_poll_shows_no_line_twice_and_counts_the_gap_between_the_halves
     monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 500)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     lines = [f"line {i:03d} " + "x" * 80 + "\n" for i in range(25)]
-    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    V.server_log_path().write_text("".join(lines), encoding="utf-8", newline="\n")
     out = V.server_log_tail(limit=300, head_limit=10_000_000, scan_bound=2000)
     assert out["scanned_whole"] is False
     head_lines = [ln for ln in out["head"].splitlines() if ln.startswith("line ")]
@@ -2415,7 +2415,7 @@ def test_the_gap_between_head_and_tail_is_counted_in_file_bytes(monkeypatch):
     monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 0)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     lines = [f"line {i:03d} " + "x" * 80 + "\n" for i in range(400)]
-    V.server_log_path().write_text("".join(lines), encoding="utf-8")
+    V.server_log_path().write_text("".join(lines), encoding="utf-8", newline="\n")
     size = V.server_log_path().stat().st_size
     out = V.server_log_tail(limit=300, head_limit=200, scan_bound=1000)
     shown = len(out["head"].encode()) + len(out["tail"].encode())
@@ -2426,7 +2426,7 @@ def test_a_status_poll_of_overlong_lines_stops_at_its_bound(monkeypatch):
     monkeypatch.setattr(V, "_MAX_LINE_BYTES", 100)
     monkeypatch.setattr(V, "_TAIL_ALIGN_MARGIN", 500)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text(("z" * 250 + "\n") * 400, encoding="utf-8")
+    V.server_log_path().write_text(("z" * 250 + "\n") * 400, encoding="utf-8", newline="\n")
     reads = []
     real = V._read_line
 
@@ -2447,7 +2447,7 @@ def test_failure_excerpt_cuts_back_to_a_carriage_return_when_the_read_ends_mid_l
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     text = "OSError: gone\r" + "p" * 150 + "\r" + "t" * 12 + _KEY + "\r"
     assert text.index(_KEY) < 200 < text.index(_KEY) + len(_KEY)
-    V.server_log_path().write_text(text, encoding="utf-8")
+    V.server_log_path().write_text(text, encoding="utf-8", newline="\n")
     out = V.failure_excerpt(limit=2000)
     assert _KEY[:8] not in json.dumps(out)
     assert out["available"] is True and "OSError: gone" in out["excerpt"], "the read is cut back to the last carriage return, not given up"
@@ -2458,7 +2458,7 @@ def test_failure_excerpt_keeps_a_last_line_that_ends_exactly_at_the_bound(monkey
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
     text = "x" * 20 + "\n" + "RuntimeError: the real cause here______"  # 21 + 39 = 60 bytes, no final newline
     assert len(text) == 60
-    V.server_log_path().write_text(text, encoding="utf-8")
+    V.server_log_path().write_text(text, encoding="utf-8", newline="\n")
     out = V.failure_excerpt(limit=2000)
     assert "the real cause" in (out.get("excerpt") or "")
 
@@ -2468,7 +2468,7 @@ def test_an_unfinished_last_line_of_a_running_servers_log_is_held_back(monkeypat
     _hold_key(monkeypatch)
     monkeypatch.setattr(V, "process_alive", lambda: True)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("RuntimeError: boom\nloading " + _KEY[:12], encoding="utf-8")
+    V.server_log_path().write_text("RuntimeError: boom\nloading " + _KEY[:12], encoding="utf-8", newline="\n")
     out = V.server_log_tail()
     assert _KEY[:8] not in json.dumps(out) and out["held_back_bytes"] == len("loading " + _KEY[:12]) and "held back" in out["held_back_note"]
     assert "boom" in out["tail"]
@@ -2480,12 +2480,12 @@ def test_an_unfinished_last_line_of_a_running_servers_log_is_held_back(monkeypat
 def test_start_notes_an_unpolled_exit_and_waits_for_its_copy_before_it_truncates_the_log(monkeypatch):
     """The old server exited and nobody polled: start() itself notes it, and the copy reads the log BEFORE the new start opens it "wb"."""
     V.venv_python().parent.mkdir(parents=True, exist_ok=True)
-    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     V._write_marker("0.25.1")
     monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192})
     monkeypatch.setattr(V, "is_running", lambda: False)
     V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
-    V.server_log_path().write_text("the old server's reason\n", encoding="utf-8")
+    V.server_log_path().write_text("the old server's reason\n", encoding="utf-8", newline="\n")
 
     class _Dead:
         pid = 31337

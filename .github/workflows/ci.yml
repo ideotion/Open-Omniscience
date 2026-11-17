@@ -414,6 +414,7 @@ jobs:
         # construction and a new release arrives as its own Dependabot PR, whose run re-measures it.
         # 2026-11-11: ruff 0.17.4 (Dependabot #1874, merged with this lane red) reads 415 on the same
         # tree: four new SIM102 findings. They were fixed and the ceiling lowered to the 411 left.
+        # 2026-11-17: ruff 0.17.5 (Dependabot #2054) reads the same 411, the same findings line for line.
         # There is no spare slot now:
         # CI measures the merge of the PR into the base tip as it stands when the run starts, so a
         # finding another PR lands first reddens the next run of whichever PR merges second (and
@@ -925,6 +926,7 @@ jobs:
           OO_TEST_HANG_REPORT: test-hang-report.txt
           OO_TEST_SLOW_S: "20"
           OO_TEST_SLOW_REPORT: test-slow-report.txt
+          OO_TEST_FAIL_REPORT: test-fail-report.txt
         run: python -m pytest -q -rsfE @shard.args
 
       - name: Name a test that hung, and the slow tests
@@ -942,6 +944,13 @@ jobs:
             echo "Tests slower than ${OO_TEST_SLOW_S:-20} s, slowest first:"
             sort -rn test-slow-report.txt > test-slow-sorted.txt  # no pipe into head: under pipefail a closed pipe fails the step
             head -n 60 test-slow-sorted.txt
+          fi
+          # Every failure as it happened (tests/conftest.py, row 109): a leg the cap stops never prints pytest's own list.
+          if [ -s test-fail-report.txt ]; then
+            echo "Failures, in the order they happened ($(grep -c '^FAILED' test-fail-report.txt)):"
+            cat test-fail-report.txt
+          else
+            echo "No test failed before the run ended."
           fi
         env:
           OO_TEST_SLOW_S: "20"

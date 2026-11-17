@@ -39,7 +39,7 @@ import zipfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from src.paths import data_dir
 
@@ -195,13 +195,41 @@ class StagedArtifact:
     key_passphrase_roles: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     def member_paths(self, role: str) -> list[tuple[str, Path]]:
+        """``(name, staged path)`` of each member of ``role``, its name spelled with "/" whatever build wrote it (:func:`member_name`).
+        A name that would leave the staging folder is skipped, never joined."""
         out = []
         for m in self.members:
             if m.get("role") == role:
-                p = self.staging_dir / m["name"]
-                if p.exists():
-                    out.append((m["name"], p))
+                p = member_path(self.staging_dir, m["name"])
+                if p is not None and p.exists():
+                    out.append((member_name(m["name"]), p))
         return out
+
+
+def member_name(name: str) -> str:
+    """A manifest member name spelled with "/". Builds before row 109 wrote the annotations, import reports, bulletins and keys of a backup
+    made on Windows with "\\" (``str`` of a relative path), while their zip entries were spelled with "/" (``zipfile`` converts ``os.sep``):
+    read back as written, such a member was "missing from archive" on every other system, and a bulletin or import report was refused even
+    on Windows (its folder check compares with "/"). No member name this app writes holds a "\\" of its own."""
+    return name.replace("\\", "/")
+
+
+def member_path(staging: Path, name: str) -> Path | None:
+    """Where member ``name`` sits under ``staging``, or None for a name that is absolute or climbs out (``..``) once spelled with "/":
+    the extraction already refused such a zip entry, but a manifest name is joined here, and a "\\" that becomes "/" must not open a
+    way out that the literal name did not have."""
+    parts = PurePosixPath(member_name(name)).parts
+    if not parts or parts[0].startswith("/") or ".." in parts or not all(member_segment_is_safe(seg) for seg in parts):
+        return None
+    out = staging / "/".join(parts)  # ONE string: joinpath re-reads each part, and on Windows a "C:x" part replaces what came before
+    return out if out.is_relative_to(staging) else None
+
+
+def member_segment_is_safe(seg: str) -> bool:
+    """False for a path segment Windows reads as a drive or a root ("C:", "C:x", "\\server"): ANY segment, not only the first, since a
+    drive-relative segment after the first one still moves a join onto that drive. A ":" elsewhere ("ab:c") is a plain name; NUL never is."""
+    w = PureWindowsPath(seg)
+    return "\0" not in seg and not w.drive and not w.root
 
 
 def key_passphrases_for(corpus_passphrase: str | None, backup_passphrase: str | None) -> tuple[str, ...]:
@@ -528,7 +556,7 @@ def _collect_members(
     ann = base / _ANNOTATIONS_DIR
     if ann.is_dir():
         for p in sorted(ann.rglob("*.json")):
-            members.append(Member(str(p.relative_to(base)), "annotations", p))
+            members.append(Member(p.relative_to(base).as_posix(), "annotations", p))
     reports = base / _IMPORT_REPORTS_DIR
     if reports.is_dir():
         for p in sorted(reports.rglob("*.json")):
@@ -537,20 +565,20 @@ def _collect_members(
             # It is a JSON DOCUMENT, so it is checked as one (parsed, every value checked, written again): a line-by-line copy would
             # rewrite a number or a key that the passphrase happens to be, and tear the document. One that does not parse is withheld
             # whole and says so. Size and sha are taken on the staged copy.
-            rel = str(p.relative_to(base))
+            rel = p.relative_to(base).as_posix()
             staged_report = tmp_dir / rel
             _stage_json_report(p, staged_report)
             members.append(Member(rel, "import_reports", staged_report))
     editions = base / _BULLETIN_EDITIONS_DIR
     if editions.is_dir():
         for p in sorted(editions.rglob("*.json")):
-            members.append(Member(str(p.relative_to(base)), "bulletin", p))
+            members.append(Member(p.relative_to(base).as_posix(), "bulletin", p))
     if include_keys:
         keys = base / _KEYS_DIR
         if keys.is_dir():
             for p in sorted(keys.iterdir()):
                 if p.is_file():
-                    members.append(Member(str(p.relative_to(base)), "keys", p))
+                    members.append(Member(p.relative_to(base).as_posix(), "keys", p))
     return members
 
 
@@ -994,8 +1022,10 @@ def _finalize_staged(
     for m in manifest.get("members", []):
         if m["name"] in verified_absent:
             continue  # checksum-verified during streamed reassembly, then converted
-        p = staging / m["name"]
-        if not p.exists():
+        p = member_path(staging, m["name"])
+        if p is None:
+            hash_failures.append(f"{m['name']}: unsafe member name")
+        elif not p.exists():
             hash_failures.append(f"{m['name']}: missing from archive")
         elif _sha256_file(p) != m.get("sha256"):
             hash_failures.append(f"{m['name']}: sha256 mismatch (corrupted or altered)")

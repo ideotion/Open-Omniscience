@@ -163,4 +163,5 @@ configs/population_table.json
 # Per-test hang and slow-test reports written by tests/conftest.py when OO_TEST_HANG_LIMIT_S / OO_TEST_SLOW_S are set (row 93)
 test-hang-report.txt*
 test-slow-report.txt*
+test-fail-report.txt*
 test-slow-sorted.txt

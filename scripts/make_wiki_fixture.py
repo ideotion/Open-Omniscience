@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = json.dumps(build(), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(payload, encoding="utf-8")
+    out.write_text(payload, encoding="utf-8", newline="\n")  # LF on every OS: the digest in PROVENANCE.md is of these bytes
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     print(f"wrote {out} ({len(payload)} bytes)")
     print(f"sha256 {digest}")
