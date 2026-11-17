@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import time
 import urllib.parse
@@ -60,14 +61,15 @@ WDQS_HOST = "query.wikidata.org"
 MAX_REPORT_BYTES = 200_000
 #: A single answer larger than this is refused rather than parsed (a bloc has at most a few hundred member statements).
 MAX_ANSWER_BYTES = 5_000_000
-#: Seconds between two reads of the endpoint.
+#: Seconds between two reads of the endpoint, and the most one answer may take to arrive in total.
 PAUSE_S = 1.0
+READ_DEADLINE_S = 180.0
 
 #: The blocs ``src/catalog/blocs.py`` holds empty, keyed as there, each with its English Wikipedia article title. The title is
 #: how the bloc is FOUND, so no item id is typed from memory; the report shows the item and label it resolved to.
 BLOCS: tuple[tuple[str, str], ...] = (
     ("brics", "BRICS"),
-    ("g7", "Group of Seven"),
+    ("g7", "G7"),
     ("g20", "G20"),
     ("nato", "NATO"),
     ("african-union", "African Union"),
@@ -93,7 +95,7 @@ NOT_ASKED_FOR = [
 ]
 
 QUERY_TEMPLATE = """\
-SELECT ?bloc ?blocLabel ?member ?iso2 ?via ?start ?sp ?end ?ep WHERE {
+SELECT ?bloc ?blocLabel ?member ?iso2 ?via ?stmt ?start ?sp ?end ?ep WHERE {
   ?article schema:about ?bloc ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name "{title}"@en .
   OPTIONAL { ?bloc rdfs:label ?blocLabel . FILTER(LANG(?blocLabel) = "en") }
   OPTIONAL {
@@ -108,9 +110,18 @@ SELECT ?bloc ?blocLabel ?member ?iso2 ?via ?start ?sp ?end ?ep WHERE {
 }
 """
 
+_QID = re.compile(r"^Q[1-9]\d{0,11}$")
+#: A statement's id as WDQS writes it (``Q33-0A1B...``); on the item's page it is the anchor ``Q33$0A1B...``.
+_STMT = re.compile(r"^(Q[1-9]\d{0,11})-([0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$")
+_DATE_SHAPE = {10: re.compile(r"^\d{4}-\d{2}-\d{2}$"), 7: re.compile(r"^\d{4}-\d{2}$"), 4: re.compile(r"^\d{4}$")}
+_VIAS = ("P463", "P527")
+#: Labels and items kept per bloc, and the length any string from the answer is cut to.
+MAX_LISTED = 5
+MAX_TEXT = 200
+
 
 def build_query(title: str) -> str:
-    if '"' in title or "\\" in title or "\n" in title:
+    if any(c in title for c in '"\\\r\n'):
         raise ValueError("a bloc title is plain text")
     return QUERY_TEMPLATE.replace("{title}", title)
 
@@ -119,81 +130,110 @@ def query_url(query: str) -> str:
     return f"{WDQS_ENDPOINT}?{urllib.parse.urlencode({'query': query, 'format': 'json'})}"
 
 
-def _val(binding: dict[str, Any], key: str) -> str:
-    cell = binding.get(key)
-    return str(cell.get("value", "")).strip() if isinstance(cell, dict) else ""
+def _val(binding: Any, key: str) -> str:
+    cell = binding.get(key) if isinstance(binding, dict) else None
+    value = cell.get("value", "") if isinstance(cell, dict) else ""
+    return value.strip()[:MAX_TEXT] if isinstance(value, str) else ""
 
 
-def _qid(uri: str) -> str:
-    return uri.rsplit("/", 1)[-1] if uri.startswith("http") else uri
+def _qid(uri: str) -> str | None:
+    """``http://www.wikidata.org/entity/Q33`` -> ``Q33``; anything that is not an item id -> None."""
+    tail = uri.rsplit("/", 1)[-1]
+    return tail if _QID.match(tail) else None
+
+
+def _statement_anchor(uri: str) -> str | None:
+    """The statement's anchor on its item's page (``Q33$0A1B...``), or None when WDQS did not give a well-formed one."""
+    m = _STMT.match(uri.rsplit("/", 1)[-1])
+    return f"{m.group(1)}${m.group(2)}" if m else None
 
 
 def stated_date(value: str, precision: str) -> tuple[str | None, str | None]:
     """A WDQS time at its stated precision: ``("2023-04-04", None)``, ``("1949", None)``, or ``(None, reason)``. A year is kept as
-    a year, never written as 1 January."""
+    a year, never written as 1 January; anything that does not read as a date is refused, never cut to length."""
     if not value:
         return None, None
     keep = _PRECISION.get(precision)
     if keep is None:
         return None, f"precision {precision or 'unstated'} is coarser than a year"
     day = value.split("T", 1)[0]
-    if day.startswith(("+", "-")):
-        if day.startswith("-"):
-            return None, "a date before the common era"
-        day = day[1:]
-    if len(day) < keep:
-        return None, "the time value is shorter than its precision"
+    if day.startswith("-"):
+        return None, "a date before the common era"
+    day = day.removeprefix("+")
+    if not _DATE_SHAPE[keep].match(day[:keep]):
+        return None, "the time value does not read as a date"
     return day[:keep], None
 
 
-def rows_from_answer(payload: dict[str, Any], *, bloc_key: str, fetched_at: str) -> dict[str, Any]:
-    """One bloc's proposal from one WDQS answer: the item and label the title resolved to, and the proposed rows."""
-    bindings = (payload.get("results") or {}).get("bindings") or []
-    items = sorted({_qid(_val(b, "bloc")) for b in bindings if _val(b, "bloc")})
-    out: dict[str, Any] = {"key": bloc_key, "resolved_items": items, "proposed": [], "refused": []}
+def rows_from_answer(payload: Any, *, bloc_key: str, fetched_at: str) -> dict[str, Any]:
+    """One bloc's proposal from one WDQS answer: the item and label the title resolved to, and the proposed rows.
+    An answer of the wrong shape is a verdict, never an exception."""
+    results = payload.get("results") if isinstance(payload, dict) else None
+    bindings = results.get("bindings") if isinstance(results, dict) else None
+    if not isinstance(bindings, list):
+        return {"key": bloc_key, "verdict": "bad_shape", "resolved_items": [], "proposed": [], "refused": {}}
+    bindings = [b for b in bindings if isinstance(b, dict)]
+    items = sorted({q for q in (_qid(_val(b, "bloc")) for b in bindings) if q})
+    out: dict[str, Any] = {"key": bloc_key, "resolved_items": items[:MAX_LISTED], "proposed": [], "refused": {}}
     if not items:
         out["verdict"] = "unresolved"
         return out
-    labels = sorted({_val(b, "blocLabel") for b in bindings if _val(b, "blocLabel")})
-    out["resolved_labels"] = labels
-    seen: set[tuple[str, ...]] = set()
+    if len(items) > 1:
+        # One title, several items: the reviewer must pick, so no row is proposed as this bloc's.
+        out.update(verdict="ambiguous", n_items=len(items))
+        return out
+    bloc_item = items[0]
+    out["resolved_labels"] = sorted({_val(b, "blocLabel") for b in bindings if _val(b, "blocLabel")})[:MAX_LISTED]
+
+    def refuse(reason: str) -> None:
+        out["refused"][reason] = out["refused"].get(reason, 0) + 1
+
+    seen: set[str] = set()
     for b in bindings:
-        iso2, member, via = _val(b, "iso2").lower(), _qid(_val(b, "member")), _val(b, "via")
-        if not member:
+        if not _val(b, "member"):
+            continue  # the title row, with no member statement joined to it
+        member, via, iso2 = _qid(_val(b, "member")), _val(b, "via"), _val(b, "iso2").lower()
+        if member is None:
+            refuse("the member is not an item id")
+            continue
+        if via not in _VIAS:
+            refuse("the statement is neither P463 nor P527")
             continue
         if len(iso2) != 2 or not iso2.isascii() or not iso2.isalpha():
-            out["refused"].append({"member": member, "reason": "no two-letter ISO code"})
+            refuse("no two-letter ISO code")
             continue
+        anchor = _statement_anchor(_val(b, "stmt"))
         joined, jwhy = stated_date(_val(b, "start"), _val(b, "sp"))
         left, lwhy = stated_date(_val(b, "end"), _val(b, "ep"))
-        key = (iso2, via, joined or "", left or "", _qid(_val(b, "bloc")))
-        if key in seen:
-            continue
-        seen.add(key)
-        subject = member if via == "P463" else _qid(_val(b, "bloc"))
+        identity = anchor or f"{member}|{via}|{iso2}|{joined}|{left}|{jwhy}|{lwhy}"
+        if identity in seen:
+            continue  # one statement met twice through the joins
+        seen.add(identity)
+        subject = member if via == "P463" else bloc_item
         row: dict[str, Any] = {
             "area": iso2,
             "member_item": member,
             "joined": joined,
             "left": left,
             "via": via,
-            "source": f"https://www.wikidata.org/wiki/{subject}#{via}",
+            "source": f"https://www.wikidata.org/wiki/{subject}#{anchor or via}",
             "fetched_at": fetched_at,
         }
         notes = [w for w in (jwhy and f"start: {jwhy}", lwhy and f"end: {lwhy}") if w]
         if joined is None and not jwhy:
             notes.append("no start date stated")
-        if notes:
-            row["notes"] = notes
+        if left is None and not lwhy:
+            notes.append("no end date stated: a member that left may read as current")
+        if anchor is None:
+            notes.append("the statement id was not given: the link opens the property, not the statement")
+        row["notes"] = notes
         out["proposed"].append(row)
-    out["proposed"].sort(key=lambda r: (r["area"], r["joined"] or "", r["left"] or ""))
+    out["proposed"].sort(key=lambda r: (r["area"], r["joined"] or "", r["left"] or "", r["member_item"]))
     out["verdict"] = "proposed" if out["proposed"] else "no_member_rows"
-    if len(items) > 1:
-        out["verdict"] = "ambiguous"  # one title, several items: the reviewer must pick, so nothing is proposed as one bloc's
     return out
 
 
-def build_report(blocs: list[dict[str, Any]], *, transport: str, queries: dict[str, str]) -> dict[str, Any]:
+def build_report(blocs: list[dict[str, Any]], *, transport: str, queries: dict[str, str], interrupted: bool = False) -> dict[str, Any]:
     counts: dict[str, int] = {}
     for b in blocs:
         counts[b["verdict"]] = counts.get(b["verdict"], 0) + 1
@@ -202,6 +242,7 @@ def build_report(blocs: list[dict[str, Any]], *, transport: str, queries: dict[s
         "as_of": datetime.now(UTC).isoformat(timespec="seconds"),
         "source": WDQS_ENDPOINT,
         "transport": transport,
+        "interrupted": interrupted,
         "query_template_sha256": hashlib.sha256(QUERY_TEMPLATE.encode("utf-8")).hexdigest(),
         "query_template": QUERY_TEMPLATE,
         "method": (
@@ -222,73 +263,143 @@ def build_report(blocs: list[dict[str, Any]], *, transport: str, queries: dict[s
     return fit(report)
 
 
-def fit(report: dict[str, Any], limit: int = MAX_REPORT_BYTES) -> dict[str, Any]:
-    """Keep the report within ``limit`` bytes: the template text goes first, then rows from the largest bloc, each cut counted."""
-    def size() -> int:
-        return len(json.dumps(report, ensure_ascii=False, indent=1).encode("utf-8"))
+def _size(obj: Any) -> int:
+    return len(json.dumps(obj, ensure_ascii=False, indent=1).encode("utf-8")) + 1  # the trailing newline the file gets
 
+
+def fit(report: dict[str, Any], limit: int = MAX_REPORT_BYTES) -> dict[str, Any]:
+    """Keep the report within ``limit`` bytes, in linear time. The template text goes first (its sha256 stays), then rows from
+    the end of the largest blocs, each row measured once and every cut counted. Raises when even a report with no rows does not
+    fit, so an oversized report is never written."""
     report["rows_dropped_to_fit"] = {}
-    if size() > limit:
-        report["query_template"] = None  # its sha256 stays, and the template is in this script
-    while size() > limit:
-        biggest = max(report["blocs"], key=lambda b: len(b.get("proposed") or []), default=None)
-        if not biggest or not biggest.get("proposed"):
-            break
+    if _size(report) > limit:
+        report["query_template"] = None
+    excess = _size(report) - limit
+    if excess > 0:
+        # a row costs more inside the report than alone (its lines are indented there), so each bloc's rows are scaled to
+        # what the bloc really adds, measured once per bloc
+        cuts: list[tuple[int, int, dict[str, Any], float]] = []
+        for b in report["blocs"]:
+            rows = b["proposed"]
+            if not rows:
+                continue
+            alone = [_size(r) for r in rows]
+            b["proposed"] = []
+            scale = (excess + limit - _size(report)) / sum(alone)
+            b["proposed"] = rows
+            cuts.extend((i, len(rows), b, alone[i] * scale) for i in range(len(rows)))
+        cuts.sort(key=lambda t: (-t[0], -t[1]))
+        drop: dict[str, int] = {}
+        for _i, _n, b, cost in cuts:  # the deepest row first, so the cut levels the largest blocs down before a small one loses a row
+            if excess <= 0:
+                break
+            drop[b["key"]] = drop.get(b["key"], 0) + 1
+            excess -= cost
+        for b in report["blocs"]:
+            n = drop.get(b["key"], 0)
+            if n:
+                del b["proposed"][len(b["proposed"]) - n:]
+        report["rows_dropped_to_fit"] = drop
+    while _size(report) > limit:  # the per-row estimate fell short: drop one more row each pass from the largest
+        biggest = max(report["blocs"], key=lambda b: len(b["proposed"]), default=None)
+        if biggest is None or not biggest["proposed"]:
+            raise ValueError("the report does not fit the send-back size even with no rows")
         biggest["proposed"].pop()
         report["rows_dropped_to_fit"][biggest["key"]] = report["rows_dropped_to_fit"].get(biggest["key"], 0) + 1
     return report
 
 
+class AnswerTooLarge(Exception):
+    """The answer passed MAX_ANSWER_BYTES, or the read passed its deadline, before it was complete."""
+
+
+class HttpStatus(Exception):
+    def __init__(self, status: int) -> None:
+        super().__init__("HTTP status")
+        self.status = status
+
+
 def check_bloc(key: str, title: str, get: Callable[[str], bytes]) -> dict[str, Any]:
     fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
-    base = {"key": key, "title": title, "fetched_at": fetched_at}
+    base = {"key": key, "title": title, "fetched_at": fetched_at, "proposed": [], "refused": {}}
     try:
         body = get(query_url(build_query(title)))
+    except AnswerTooLarge:
+        return {**base, "verdict": "answer_too_large"}
+    except HttpStatus as exc:
+        return {**base, "verdict": "refused", "error_class": "HttpStatus", "http_status": exc.status}
     except Exception as exc:  # noqa: BLE001 - a refusal is this bloc's verdict, recorded by class, never by its text
-        return {**base, "verdict": "refused", "error_class": type(exc).__name__, "proposed": [], "refused": []}
+        return {**base, "verdict": "refused", "error_class": type(exc).__name__}
     if len(body) > MAX_ANSWER_BYTES:
-        return {**base, "verdict": "answer_too_large", "proposed": [], "refused": []}
+        return {**base, "verdict": "answer_too_large"}
     try:
         payload = json.loads(body)
-    except ValueError:
-        return {**base, "verdict": "not_json", "proposed": [], "refused": []}
-    return {**base, **rows_from_answer(payload, bloc_key=key, fetched_at=fetched_at)}
+        return {**base, **rows_from_answer(payload, bloc_key=key, fetched_at=fetched_at)}
+    except Exception as exc:  # noqa: BLE001 - not JSON, nested past the parser's depth, any shape surprise: this bloc only
+        return {**base, "verdict": "bad_answer", "error_class": type(exc).__name__}
 
 
-def _transport() -> str:
-    """How the requests would leave, read from the app's safety settings before anything is sent: ``direct``, ``proxy``,
-    ``pool``, ``refused`` or ``unknown`` (the settings could not be read). A token, never an address."""
-    from src.safety.fetcher import transport_summary
+def _settings_once() -> Any:
+    """The app's safety settings, read ONCE, so the transport printed is the transport used. None when unreadable."""
     from src.safety.settings import load_settings
 
     try:
-        kind = str(transport_summary(load_settings()).get("kind", "unknown"))
-    except Exception:  # noqa: BLE001 - an unreadable settings store is "unknown", which refuses below
+        return load_settings()
+    except Exception:  # noqa: BLE001 - an unreadable settings store reads as "unknown", which refuses
+        return None
+
+
+def _transport(settings: Any = None) -> str:
+    """How the requests would leave: ``direct``, ``proxy``, ``pool``, ``refused`` or ``unknown``. A token, never an address."""
+    from src.safety.fetcher import transport_summary
+
+    if settings is None:
+        return "unknown"
+    try:
+        kind = str(transport_summary(settings).get("kind", "unknown"))
+    except Exception:  # noqa: BLE001
         return "unknown"
     return kind if kind in ("direct", "proxy", "pool", "refused") else "unknown"
 
 
-def _getter() -> Callable[[str], bytes]:
-    """The app's own session for this endpoint: protected-mode proxy, no silent downgrade, only ``query.wikidata.org``."""
+def _getter(settings: Any) -> Callable[[str], bytes]:
+    """The app's own session for this endpoint, built from the SAME settings the transport was read from: protected-mode proxy,
+    no silent downgrade, only ``query.wikidata.org``. The answer is streamed: refused past MAX_ANSWER_BYTES (decoded) or past
+    READ_DEADLINE_S in total, never held whole first."""
     from src.ingest import DEFAULT_USER_AGENT
-    from src.safety.fetcher import guarded_session
+    from src.safety.fetcher import _session_for
 
-    session = guarded_session(user_agent=DEFAULT_USER_AGENT, allowed_hosts=(WDQS_HOST,))
+    session = _session_for(settings, user_agent=DEFAULT_USER_AGENT, allowed_hosts=(WDQS_HOST,))
 
     def get(url: str) -> bytes:
         if not url.startswith(WDQS_ENDPOINT + "?"):
             raise ValueError("only the Wikidata Query Service endpoint is asked")
-        resp = session.get(url, timeout=120, headers={"Accept": "application/sparql-results+json"})
-        if resp.status_code != 200:
-            raise RuntimeError(f"HTTP {resp.status_code}")
-        return resp.content
+        resp = session.get(url, stream=True, timeout=(10, 30), headers={"Accept": "application/sparql-results+json"})
+        try:
+            if resp.status_code != 200:
+                raise HttpStatus(int(resp.status_code))
+            declared = resp.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > MAX_ANSWER_BYTES:
+                raise AnswerTooLarge()
+            deadline = time.monotonic() + READ_DEADLINE_S
+            chunks, total = [], 0
+            for chunk in resp.iter_content(65536):
+                total += len(chunk)
+                if total > MAX_ANSWER_BYTES or time.monotonic() > deadline:
+                    raise AnswerTooLarge()
+                chunks.append(chunk)
+            return b"".join(chunks)
+        finally:
+            resp.close()
 
     return get
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    ap.add_argument("--online", action="store_true", help="your consent for this run to ask query.wikidata.org")
+    ap.add_argument("--online", action="store_true",
+                    help="your consent for this run to ask query.wikidata.org (the app's airplane mode lives in the app and "
+                         "cannot be seen from here, so this flag is the only gate)")
     ap.add_argument("--out", type=Path, required=True, help="the JSON report to write")
     ap.add_argument("--only", default="", help="comma-separated bloc keys (default: all thirteen)")
     args = ap.parse_args(argv)
@@ -301,7 +412,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(f"{len(blocs)} blocs; this run asks one host, {len(blocs)} times:")
     print(f"  {WDQS_HOST}")
-    transport = _transport()
+    settings = _settings_once()
+    transport = _transport(settings)
     print(f"transport: {transport} (from the app's safety settings in this data folder)")
     if transport in ("refused", "unknown"):
         print(f"refused: the transport is {transport}, so nothing would leave as your settings say. Nothing was sent.", file=sys.stderr)
@@ -310,18 +422,27 @@ def main(argv: list[str] | None = None) -> int:
         print("refused: add --online to consent to these requests. Nothing was sent.", file=sys.stderr)
         return 2
     try:
-        get = _getter()
+        get = _getter(settings)
     except Exception as exc:  # noqa: BLE001 - protected mode with no proxy, an unreadable settings file
         print(f"refused before any request: the session could not be built ({type(exc).__name__})", file=sys.stderr)
         return 2
-    rows = []
-    for n, (key, title) in enumerate(blocs, 1):
-        if n > 1:
-            time.sleep(PAUSE_S)
-        row = check_bloc(key, title, get)
-        print(f"[{n}/{len(blocs)}] {key}: {row['verdict']} ({len(row.get('proposed') or [])} rows)")
-        rows.append(row)
-    report = build_report(rows, transport=transport, queries=dict(blocs))
+    rows: list[dict[str, Any]] = []
+    interrupted = False
+    try:
+        for n, (key, title) in enumerate(blocs, 1):
+            if n > 1:
+                time.sleep(PAUSE_S)
+            row = check_bloc(key, title, get)
+            print(f"[{n}/{len(blocs)}] {key}: {row['verdict']} ({len(row.get('proposed') or [])} rows)")
+            rows.append(row)
+    except KeyboardInterrupt:
+        interrupted = True  # the blocs already read are still written
+        print("interrupted: writing the blocs read so far", file=sys.stderr)
+    try:
+        report = build_report(rows, transport=transport, queries=dict(blocs), interrupted=interrupted)
+    except ValueError:
+        print("refused: the report would not fit the 200 KB send-back size. Nothing was written.", file=sys.stderr)
+        return 1
     args.out.write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"wrote {args.out} ({args.out.stat().st_size} bytes): {report['verdicts']}")
     return 0
