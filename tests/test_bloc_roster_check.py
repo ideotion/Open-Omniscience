@@ -186,7 +186,7 @@ def test_without_online_it_names_the_host_and_transport_and_sends_nothing(tmp_pa
     assert M.main(["--out", str(tmp_path / "r.json")]) == 2
     out = capsys.readouterr()
     listed = {line.strip() for line in out.out.splitlines()}
-    assert "query.wikidata.org" in listed and "transport: proxy" in out.out and "--online" in out.err
+    assert {"query.wikidata.org"} <= listed and "transport: proxy" in out.out and "--online" in out.err
     assert not (tmp_path / "r.json").exists()
     assert M.main(["--out", str(tmp_path / "r.json"), "--only", "nope"]) == 2
 
