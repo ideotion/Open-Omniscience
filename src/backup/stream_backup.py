@@ -398,7 +398,7 @@ def _require_safe_member_name(name: str) -> None:
     equivalent). Absolute paths, drive letters and '..' refuse. A "\\" is read as "/" first (``artifact.member_name``): builds before
     row 109 named a Windows backup's annotations and keys with it, and the name is judged as it will be written, so a "\\" can
     never hide a '..' or a drive."""
-    from src.backup.artifact import member_name
+    from src.backup.artifact import member_name, member_segment_is_safe
 
     name = member_name(name)
     p = PurePosixPath(name)
@@ -408,7 +408,7 @@ def _require_safe_member_name(name: str) -> None:
         or Path(name).is_absolute()
         or ".." in p.parts
         or name.startswith("/")
-        or ":" in name.split("/", 1)[0]
+        or not all(member_segment_is_safe(seg) for seg in name.split("/"))  # a drive in ANY segment, not only the first
     ):
         raise VolumeError(f"unsafe member path in the volume manifest: {name!r}")
 
@@ -452,8 +452,15 @@ def _require_safe_manifest_names(m: dict[str, Any]) -> None:
         _require_safe_volume_name(str(v.get("name") or ""))
     for pv in (m.get("parity") or {}).get("volumes") or []:
         _require_safe_volume_name(str(pv.get("name") or ""))
+    from src.backup.artifact import member_name
+
+    seen: set[str] = set()
     for mm in m.get("members") or []:
         _require_safe_member_name(str(mm.get("name") or ""))
+        spelled = str(PurePosixPath(member_name(str(mm.get("name") or ""))))
+        if spelled in seen:  # "a\\b" and "a/b" are one staged file: the second would overwrite what the first was checked as
+            raise VolumeError(f"two members of the volume manifest name the same file: {spelled!r}")
+        seen.add(spelled)
         for vname in mm.get("volumes") or []:
             _require_safe_volume_name(str(vname or ""))
     if m.get("corpus_member") is not None:

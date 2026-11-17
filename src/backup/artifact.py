@@ -39,7 +39,7 @@ import zipfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from src.paths import data_dir
 
@@ -219,9 +219,17 @@ def member_path(staging: Path, name: str) -> Path | None:
     the extraction already refused such a zip entry, but a manifest name is joined here, and a "\\" that becomes "/" must not open a
     way out that the literal name did not have."""
     parts = PurePosixPath(member_name(name)).parts
-    if not parts or parts[0].startswith("/") or ":" in parts[0] or ".." in parts:  # ":" first: a drive ("C:") on Windows
+    if not parts or parts[0].startswith("/") or ".." in parts or not all(member_segment_is_safe(seg) for seg in parts):
         return None
-    return staging.joinpath(*parts)
+    out = staging / "/".join(parts)  # ONE string: joinpath re-reads each part, and on Windows a "C:x" part replaces what came before
+    return out if out.is_relative_to(staging) else None
+
+
+def member_segment_is_safe(seg: str) -> bool:
+    """False for a path segment Windows reads as a drive or a root ("C:", "C:x", "\\server"): ANY segment, not only the first, since a
+    drive-relative segment after the first one still moves a join onto that drive. A ":" elsewhere ("ab:c") is a plain name; NUL never is."""
+    w = PureWindowsPath(seg)
+    return "\0" not in seg and not w.drive and not w.root
 
 
 def key_passphrases_for(corpus_passphrase: str | None, backup_passphrase: str | None) -> tuple[str, ...]:

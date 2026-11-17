@@ -141,7 +141,22 @@ def test_a_volume_backup_made_on_windows_by_the_old_build_restores(tmp_path, mon
 
 
 @pytest.mark.parametrize(
-    "name", ["..\\..\\x", "keys\\..\\..\\x", "C:\\windows\\x", "\\\\server\\share\\x", "/etc/x", ""]
+    "name",
+    [
+        "..\\..\\x",
+        "keys\\..\\..\\x",
+        "C:\\windows\\x",
+        "\\\\server\\share\\x",
+        "/etc/x",
+        "",
+        # a drive in a LATER segment: on Windows a join re-reads "C:evil" as a path on drive C:, so it is refused wherever it sits
+        "a/C:evil",
+        "a\\C:evil",
+        "x/C:..\\..\\Users\\Public\\evil.dll",
+        "a/b:ads",
+        "a/\\\\?\\C:\\x",
+        "a/b\0",
+    ],
 )
 def test_a_backslash_never_opens_a_way_out(tmp_path, name):
     """The "\\" is read as "/" BEFORE the guard, so it cannot hide a '..', a drive or an absolute path from it."""
@@ -158,3 +173,20 @@ def test_the_writers_spell_every_member_name_with_a_slash():
         assert "str(p.relative_to(base))" not in text, (
             f"{name} names a member with the OS's separator"
         )
+
+
+def test_two_spellings_of_one_member_are_refused():
+    """ "a\\b" and "a/b" are one staged file: a volume manifest naming both would overwrite what the first was checked as."""
+    from src.backup.stream_backup import _require_safe_manifest_names
+
+    with pytest.raises(VolumeError):
+        _require_safe_manifest_names({"members": [{"name": "keys/a.key"}, {"name": "keys\\a.key"}]})
+    _require_safe_manifest_names({"members": [{"name": "keys/a.key"}, {"name": "keys/b.key"}]})
+
+
+def test_a_log_member_named_like_a_drive_is_refused_not_appended():
+    """The logs reader keeps only the base name; on Windows "C:x" joined to the data dir is a path on drive C:."""
+    from src.backup.artifact import member_segment_is_safe
+
+    assert not member_segment_is_safe("C:x")
+    assert member_segment_is_safe("app.log") and member_segment_is_safe("ab:c")
