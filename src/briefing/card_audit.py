@@ -1476,6 +1476,7 @@ N_COUNTS_BY_TYPE: dict[str, str] = {
     "recycled_claim": "articles",
     "headline_body_mismatch": "articles",
     "manufactured_emergence": "articles",
+    "rising_held": "articles",  # R732: n is the evidence articles shown, never the held terms
     "flooded_topic": "articles",
     "copypasta": "articles",
     "disputed_chronology": "articles",
