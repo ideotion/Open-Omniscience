@@ -414,6 +414,7 @@ jobs:
         # construction and a new release arrives as its own Dependabot PR, whose run re-measures it.
         # 2026-11-11: ruff 0.17.4 (Dependabot #1874, merged with this lane red) reads 415 on the same
         # tree: four new SIM102 findings. They were fixed and the ceiling lowered to the 411 left.
+        # 2026-11-17: ruff 0.17.5 (Dependabot #2054) reads the same 411, the same findings line for line.
         # There is no spare slot now:
         # CI measures the merge of the PR into the base tip as it stands when the run starts, so a
         # finding another PR lands first reddens the next run of whichever PR merges second (and
