@@ -280,10 +280,13 @@ _REQUEST_EXEMPT = {
     "articles stay stored, the run is started again from the same panel)",
     "_pruneCore": "garbage-collects keywords with ZERO mentions: derived rows nothing references, rebuilt by the next index",
     "dismissRetiredMode": "clears one informational 'retired mode' notice flag in the scheduler config",
+    "dismissSettingsRepair": "clears one informational 'settings were repaired' notice in the scheduler config (row 94)",
     "ooKeywordUndoButton": "the UNDO of a hidden keyword (R685): it shows the keyword again (/api/insights/include); Hide hides it again",
     "ooPaintBriefDismissed": "brings every dismissed Lead BACK (R685, /api/briefing/dismissed/clear): it removes nothing, it un-hides",
     "ooRestoreCard": "brings one dismissed Lead BACK from the Undo left in its place (R685, /api/briefing/restore); Dismiss hides it again",
     "overlayMerge": "posts the picked export files and reads back a merged REPORT; it writes no corpus row",
+    "rebuildStop": "stops a running rebuild at its next safe point (job control, bound by addEventListener): the library stays "
+    "exactly as it was, the unfinished copy is removed, and the rebuild can be started again from the same panel",
     "runLangDetect": "no caller in src/static (dead code); its cancel half would stop a running detection pass (job control)",
     "stopWikiLane": "switches the wiki lane off in the scheduler config (job control; the toggle switches it on again)",
     "undoAdmission": "reverses ONE automatic admission from the audit list; the audit row stays",

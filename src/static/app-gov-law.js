@@ -1059,7 +1059,7 @@
     // table but never surfaced loudly -- classify it (verdict, from the API) into
     // a small coloured badge, keeping the REAL message on hover (never invented).
     const _LAW_VERDICT_PILL = {
-      never_checked: "", robots_blocked: "warn", error: "warn", empty: "warn",
+      never_checked: "", robots_blocked: "warn", robots_unread: "warn", error: "warn", empty: "warn",
       changed: "ok", reverted: "", baselined: "ok", unchanged: "", other: "",
       re_extracted: "ok",
       // A deferral (R406, Q1013 = a) is neither a warning nor a success: the host's own Crawl-delay put the check off.
@@ -1069,6 +1069,8 @@
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const labels = {
         never_checked: tr("not checked yet"), robots_blocked: tr("robots-blocked"),
+        // robots.txt could not be read, so the fetch was refused (fail-closed): not the host's rule.
+        robots_unread: tr("robots.txt not readable"),
         error: tr("fetch error"), empty: tr("no usable text"), changed: tr("changed"),
         reverted: tr("reverted"), baselined: tr("baselined"), unchanged: tr("unchanged"),
         other: tr("other"), re_extracted: tr("re-read by us"), deferred: tr("deferred"),

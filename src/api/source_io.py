@@ -161,6 +161,12 @@ def list_sources(
     for f in filters:
         total = total.filter(f)
     total_n = total.scalar() or 0
+    # Row 71: how many of those rows are discovery candidates (enabled=False, awaiting review), so the headline count
+    # says what it holds -- 13k to 31k of the field's 20k to 37k "sources" were Wikidata candidates with no article.
+    candidates_n = (
+        total_n if enabled is False else 0 if enabled is True
+        else int(total.filter(Source.enabled.is_(False)).scalar() or 0)
+    )
 
     from datetime import UTC, datetime, timedelta
 
@@ -207,11 +213,29 @@ def list_sources(
         aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
         return "exact" if (_now - aware) < timedelta(hours=24) else "estimated"
 
+    # R728 A: a held source shows its hold, with the two sites, IN THE ROW (visible by default, never behind a toggle),
+    # and a source with operator-confirmed pairs shows them so a confirmation can be withdrawn.
+    from src.catalog.off_site import held_payloads
+    from src.database.models import HostMismatchConfirmed
+
     # The list shows a feed's login as ***@ (R637); the CSV export below keeps the URL as written, so it imports back unchanged.
+    from src.catalog.qid_labels import source_label
     from src.ingest.fetch_verdict import shown_url
+
+    holds = held_payloads(db, sources)
+    pairs: dict[int, list[str]] = {}
+    page_ids = [int(s.id) for s in sources]
+    if page_ids:
+        for sid, site in (
+            db.query(HostMismatchConfirmed.source_id, HostMismatchConfirmed.article_site)
+            .filter(HostMismatchConfirmed.source_id.in_(page_ids))
+            .order_by(HostMismatchConfirmed.article_site)
+        ):
+            pairs.setdefault(int(sid), []).append(str(site))
 
     return {
         "total": int(total_n),
+        "candidates": int(candidates_n),
         "limit": limit,
         "offset": offset,
         "sort": sort_key,
@@ -220,6 +244,7 @@ def list_sources(
             {
                 "id": s.id,
                 "name": s.name,
+                "display_name": source_label(s.name, s.domain),
                 "domain": s.domain,
                 "rss_url": shown_url(s.rss_url),
                 "enabled": s.enabled,
@@ -231,6 +256,8 @@ def list_sources(
                 "article_count": _count(s),
                 "count_basis": _basis(s),  # exact (fresh) | estimated (stale) | live (NULL)
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],
+                "hold": holds.get(int(s.id)),
+                "confirmed_sites": pairs.get(int(s.id), []),
             }
             for s in sources
         ],

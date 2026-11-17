@@ -18,7 +18,7 @@ import os
 import threading
 import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 import trafilatura
 from dateutil import parser as date_parser
@@ -195,7 +195,7 @@ def _extract_locked(html: str, *, url: str | None = None) -> ExtractedDoc | None
             include_tables=False,
             no_fallback=False,
             with_metadata=True,
-            date_extraction_params=set_date_params(extensive_date_search_enabled()),
+            date_extraction_params=_date_params(),
         )
     except Exception:
         # A RAISE is a fault, not a verdict. ``bare_extraction`` RETURNS None for every
@@ -267,9 +267,7 @@ def _extract_resiliently(html: str, *, url: str | None = None) -> ExtractedDoc |
     title = author = language = canonical = None
     published_at: datetime | None = None
     try:
-        meta = trafilatura.extract_metadata(
-            html, default_url=url, extensive=extensive_date_search_enabled()
-        )
+        meta = trafilatura.extract_metadata(html, default_url=url, date_config=_date_params())
     except Exception:
         meta = None
     if meta is not None:
@@ -295,12 +293,38 @@ def _clean(value: str | None) -> str | None:
     return value or None
 
 
+# htmldate's default output is the DAY ("%Y-%m-%d"), which threw away the time every structured placement
+# carries (``article:published_time`` "2026-11-14T10:23:45+02:00"): field report 2026-11-14 section 5.5 found
+# ~94% of stored publication times at exactly midnight. Asking for the time and the offset keeps them. A page
+# that states only a day still comes back as that day at midnight, exactly as before.
+_DATE_OUTPUT_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+
+
+def _date_params() -> dict:
+    """htmldate's parameters for one article: the default set (the extensive-search flag read ONCE here, see
+    :func:`extensive_date_search_enabled`) plus an output format that keeps the time of day."""
+    params = set_date_params(extensive_date_search_enabled())
+    params["outputformat"] = _DATE_OUTPUT_FORMAT
+    # trafilatura passes today's DATE as the latest allowed, which htmldate reads as today at 00:00: with
+    # the time kept, every article published later today would be "in the future" and fall back to
+    # midnight. htmldate's own default is the end of the current day.
+    params.pop("max_date", None)
+    return params
+
+
 def _parse_date(value) -> datetime | None:
+    """The publication moment as the store keeps every timestamp: naive UTC. A stated offset is applied
+    (10:23 at +02:00 is 08:23 UTC), so the moment is right whatever zone the page was written in; a time
+    with no offset, and a day with no time, are kept as written, which is what was stored before."""
     if not value:
         return None
     if isinstance(value, datetime):
-        return value
-    try:
-        return date_parser.parse(str(value))
-    except (ValueError, OverflowError, TypeError):
-        return None
+        parsed = value
+    else:
+        try:
+            parsed = date_parser.parse(str(value))
+        except (ValueError, OverflowError, TypeError):
+            return None
+    if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed

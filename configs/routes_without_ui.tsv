@@ -139,6 +139,7 @@ GET	/api/keywords/process	superseded			legacy free-text keyword toolkit (/api/ke
 GET	/api/keywords/statistics	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/keywords/top	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/law/documents/{document_id}/provision-timeline	internal		api	the JSON form of the law reader's Provisions fold, which /api/law/documents/{document_id}/view renders server-side from the same payload (PR #1959); kept for API callers
+GET	/api/links/shared	superseded			Explore > Links reads /api/links/corpus; the retired corpus window was its only caller (row 101)
 GET	/api/links/stats	feature	3	Explore > Links (N)	corpus-wide link totals
 POST	/api/llm/bulk	superseded			the synchronous bulk summarize/translate; R600 PR2 (#1938) moved the UI to /api/llm/bulk/queue
 POST	/api/llm/generate	internal		api	single-shot generation for programmatic callers
@@ -163,7 +164,6 @@ GET	/api/search/spell-index	feature	3	Settings > Maintenance (N)	state of the 'd
 POST	/api/search/spell-index/build	feature	3	Settings > Maintenance (N)	rebuild it
 GET	/api/signals/dismiss-reasons	internal		diagnostics	counts of dismissal reasons, for tuning
 POST	/api/signals/hazards/snapshot	internal		api	population path of the local hazard snapshot
-GET	/api/signals/weather-signals	internal		api	derived signal keywords read by producers
 POST	/api/signals/weather-signals/refresh	internal		api	derives those keywords
 POST	/api/sources/batch/disable	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 POST	/api/sources/batch/enable	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}

@@ -401,6 +401,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
     it), while the file lock is held only to read the queue and, at the end, to remove
     what this drain settled -- re-reading first, so an entry queued meanwhile survives."""
     from src.custody.log import CustodyAction
+    from src.custody.signing import PostQuantumUnavailable
     from src.custody.timestamp import TimestampRefusedOffline
 
     with _DRAIN_LOCK:
@@ -430,7 +431,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": len(first),
                     "settings_unreadable": True}
         settled: list[dict[str, Any]] = []
-        recorded = already = gone = refused = 0
+        recorded = already = gone = refused = pqc_missing = 0
         need = _ids_missing_columns(todo)
         read: dict[int, dict[str, Any]] | None = {}
         read_error: str | None = None
@@ -502,6 +503,11 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                         # every later one is refused the same way). This entry and the rest of this drain's share stay owed, counted.
                         refused = len(todo) - at
                         break
+                    if isinstance(exc, PostQuantumUnavailable):
+                        # R717: post-quantum signing is on and the library is missing, so every later entry is refused the
+                        # same way: the drain stops here, and this entry and the rest stay owed, in their order.
+                        pqc_missing = len(todo) - at
+                        break
         finally:
             with contextlib.suppress(Exception):
                 log.close()
@@ -524,6 +530,8 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                            "still_pending": len(remaining)}
     if refused:
         out["refused_offline"] = refused  # present ONLY when the kill switch stopped the drain (OpenTimestamps mode, R618)
+    if pqc_missing:
+        out["pqc_unavailable"] = pqc_missing  # present ONLY when a missing post-quantum library stopped the drain (R717)
     if read_error:
         out["read_error"] = read_error
     if queue_error:

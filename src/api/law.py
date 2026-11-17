@@ -53,6 +53,19 @@ def _verdict_of(last_status: str | None) -> str:
         # Crawl-delay, so the text cannot tell the two apart, and calling a failed request "deferred" would hide it. It keeps
         # reading as an error until the document is checked again and the row is rewritten.
         return "deferred"
+    if "robots.txt disallows" in s:
+        # The host's own rule, read and applied. Judged first, so an address that happens to
+        # carry the words below cannot turn a disallow into the other case.
+        return "robots_blocked"
+    if "robots" in s and "could not be determined" in s:
+        # The fail-closed refusal when robots.txt could not be READ (the host's 401/403, a
+        # 5xx, or no answer at all: a DNS failure on the operator's own machine reads the
+        # same). Not the host's rule: called "robots-blocked" it told the operator the
+        # publisher forbids this document, which nothing measured (field test 2026-11-14,
+        # row 72: laws-lois.justice.gc.ca's robots.txt "unreachable" counted as blocked).
+        # The fetch is still refused either way; only the name of the reason changes, and
+        # the stored message (with its cause) stays the hover.
+        return "robots_unread"
     if "robots" in s:
         return "robots_blocked"
     if s.startswith("fetch error") or s.startswith("error:"):
@@ -906,6 +919,17 @@ def law_topics(
     from src.law.analytics import topic_by_jurisdiction
 
     return topic_by_jurisdiction(db, q)
+
+
+@router.get("/thesauri")
+def law_thesauri() -> dict:
+    """The topic thesauri built on this computer (R737): each one's state and reason, read from the data directory.
+
+    Only a file whose format and SHA-256 hold (``ok``) is ever used; any other state is said with its reason. Local
+    reads only: no connection, no database."""
+    from src.catalog.thesaurus_store import statuses
+
+    return {"thesauri": statuses()}
 
 
 @router.get("/amendment-map")

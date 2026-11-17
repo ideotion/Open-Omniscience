@@ -10,6 +10,7 @@ as it was.
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -300,7 +301,7 @@ def test_the_import_report_says_what_the_living_sources_added(tmp_path, monkeypa
     rows = {r["filename"]: r for r in import_reports.list_import_reports()}
     assert rows[path2.name]["lanes_owed"] == 1
     md = import_reports.render_import_report_markdown({"outcome": "committed", "living_sources": held})
-    assert "importing this backup again merges them" in md
+    assert "importing this backup again merges them" in md and "when the group is saved" in md
 
 
 def test_the_export_request_records_the_living_sources_and_a_resume_keeps_them(tmp_path):
@@ -529,3 +530,113 @@ def test_the_merge_keeps_the_pages_with_text_count_equal_to_the_rows(machines, t
     with store.lane_session("wiki") as s:
         (ed,) = s.execute(select(WikiWarmEdition)).scalars()
         assert (ed.edition, ed.pages_with_text, ed.texts_fetched) == ("en", 1, 0)
+
+
+def test_held_lanes_merge_when_the_import_group_commits(machines, tmp_path, monkeypatch):
+    """R729 amendment (coordinator 2026-11-16): the mass-import path holds corpora on a
+    working copy; their lanes wait beside it and merge when the group commits, never before."""
+    from src.backup import import_queue
+    from src.backup.import_queue import ImportQueueManager, _CheckpointGroup
+
+    a, b, use = machines
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    monkeypatch.setattr("src.database.connect._passphrase", "machine pass", raising=False)
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    shutil.copy2(snap, staging / "lanes" / "wiki.db")
+    entry = {"name": "lanes/wiki.db", "kind": "wiki", "sqlcipher": True}
+    group_dir = tmp_path / ".restore-group"
+    # A plaintext member is never kept beside the working copy: it stays owed.
+    assert lane_merge.hold_lane_members(staging, [dict(entry, sqlcipher=False)], group_dir, "dg") is None
+    held = lane_merge.hold_lane_members(staging, [entry], group_dir, "dg")
+    assert held and Path(held["dir"]).is_relative_to(group_dir)
+    shutil.rmtree(staging)  # the item's staging is gone by the time its group commits
+    lane_merge.record_lane_outcome("dg", lane_merge.deferred_report([entry]))
+    assert lane_merge.lanes_pending("dg")
+
+    before = _snapshot_state()
+    mgr = ImportQueueManager(state_path=tmp_path / "queue.json")
+    item = {"id": "i1", "summary": {"report": {"held": True, "living_sources": {"lanes": []}}}}
+    mgr._items = [item]
+    monkeypatch.setattr(import_queue, "log_failure", lambda *a, **k: None)
+    # Discarded group: nothing merges, the lanes stay owed.
+    mgr._merge_held_lanes(_CheckpointGroup(dir=group_dir))
+    assert _snapshot_state() == before
+    group = _CheckpointGroup(dir=group_dir)
+    group.held_lanes.append(("i1", held))
+    mgr._merge_held_lanes(group)
+    living = item["summary"]["report"]["living_sources"]
+    assert living["lanes"][0]["state"] == "merged", living
+    assert _snapshot_state() != before
+    assert not lane_merge.lanes_pending("dg")
+
+
+def test_group_commit_records_done_before_the_lane_merge_and_counts_an_attempt(tmp_path, monkeypatch):
+    """A lane merge can take minutes: the held items are saved as done FIRST, so a kill during
+    it never relabels a live corpus "discarded"; and each held merge counts an attempt."""
+    from src.backup import import_queue
+    from src.backup.import_queue import ImportQueueManager, _CheckpointGroup
+
+    mgr = ImportQueueManager(state_path=tmp_path / "queue.json")
+    item = {"id": "i1", "state": "staged", "summary": {"report": {"held": True}}}
+    mgr._items = [item]
+    group_dir = tmp_path / ".restore-group"
+    group_dir.mkdir()
+    group = _CheckpointGroup(dir=group_dir)
+    group.item_ids.append("i1")
+    group.held_lanes.append(("i1", {"dir": str(group_dir), "members": [], "digest": "dg2"}))
+    mgr._group = group
+    seen: list[str] = []
+    saved: list[str] = []
+    real_save = mgr._save
+    monkeypatch.setattr(mgr, "_save", lambda: (saved.append(item["state"]), real_save()))
+    monkeypatch.setattr(mgr, "_merge_held_lanes", lambda g: seen.append(str(item.get("state"))))
+    monkeypatch.setattr(mgr, "_persist_held_report", lambda *a, **k: None)
+    mgr._commit_group()
+    assert saved and saved[0] == "done"
+    assert seen == ["done"]
+    assert not group_dir.exists()
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(lane_merge, "mark_lanes_owed", lambda d, m: calls.append(("owed", d)))
+    monkeypatch.setattr(lane_merge, "merge_staged_lanes", lambda *a, **k: calls.append(("merge",)) or {"lanes": []})
+    monkeypatch.setattr(lane_merge, "record_lane_outcome", lambda *a, **k: calls.append(("outcome",)))
+    monkeypatch.setattr(mgr, "_keys_for", lambda it: ("b", "c"), raising=False)
+    monkeypatch.setattr(import_queue, "log_failure", lambda *a, **k: None)
+    ImportQueueManager._merge_held_lanes(mgr, group)
+    assert [c[0] for c in calls] == ["owed", "merge", "outcome"]
+
+
+def test_held_members_never_leave_the_group_dir_and_must_read_encrypted(machines, tmp_path, monkeypatch):
+    """Second security read on #2051: the digest can come from a backup's manifest, so it never
+    names a path; and the manifest's sqlcipher flag is checked against the file itself."""
+    a, b, use = machines
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    monkeypatch.setattr("src.database.connect._passphrase", "machine pass", raising=False)
+    snap = _seed_b(b, use, tmp_path)
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    shutil.copy2(snap, staging / "lanes" / "wiki.db")
+    entry = {"name": "lanes/wiki.db", "kind": "wiki", "sqlcipher": True, "extra": "x" * 5000}
+    group_dir = tmp_path / "grp" / ".restore-group"
+    for hostile in ("../../../escaped/./././././././.", str(tmp_path / "abs") + "/" * 32):
+        held = lane_merge.hold_lane_members(staging, [entry], group_dir, hostile)
+        assert held and Path(held["dir"]).resolve().is_relative_to(group_dir.resolve())
+        assert held["members"] == [{"name": "lanes/wiki.db", "kind": "wiki", "sqlcipher": True}]
+    assert not (tmp_path / "escaped").exists() and not (tmp_path / "abs").exists()
+    # A plaintext file the manifest calls encrypted is not kept.
+    plain = tmp_path / "plain"
+    (plain / "lanes").mkdir(parents=True)
+    sqlite3.connect(plain / "lanes" / "wiki.db").execute("create table t(x)").connection.close()
+    assert lane_merge.hold_lane_members(plain, [entry], group_dir, "dg3") is None
+
+
+def test_a_non_hex_top_level_digest_is_no_identity(tmp_path, monkeypatch):
+    from src.backup import merge, volumes
+
+    monkeypatch.setattr(volumes, "load_manifest", lambda src: {"plaintext_sha256": "../" + "a" * 61})
+    assert merge.artifact_source_digest(tmp_path) is None
+    monkeypatch.setattr(volumes, "load_manifest", lambda src: {"plaintext_sha256": "a" * 64})
+    assert merge.artifact_source_digest(tmp_path) == "a" * 64

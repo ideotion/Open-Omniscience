@@ -1458,6 +1458,138 @@
       } finally { btn.disabled = false; }
     }
 
+    // ---- R702: rebuild at the current storage settings (main library only) ---- //
+    // The duration estimate is the project's own measurement (R702 bench, 2026-11-14). The copy alone:
+    // 7-8 s per GB with the file in the page cache and 12-13 s per GB from a cold cache (encrypted 4 KiB
+    // stores of 0.53 and 3.2 GB). The whole rebuild with its check (quick_check, a row count per table on
+    // both files) on a 0.88 GB store with the app's schema: 19 s, about 21 s per GB, warm. Hence a range
+    // of 15-35 s per GB: never a countdown.
+    const REBUILD_LO_S_PER_GB = 15, REBUILD_HI_S_PER_GB = 35;
+    let _rebuildWired = false, _rebuildPoll = null, _rebuildSt = null;
+    function _rbT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
+    function _rbTf(s, v) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v) : s.replace(/\{(\w+)\}/g, (_, k) => v[k]);
+    }
+    function _rbSettings(c) {
+      const t = _rbT();
+      if (!c) return "—";
+      const kib = Math.round((c.page_size || 0) / 1024);
+      return _rbTf("{kib} KiB pages", {kib: fmtNum(kib, 0)}) + " · " +
+        (c.auto_vacuum === 2 ? t("space given back gradually") : c.auto_vacuum === 1 ? t("space given back at each save") : t("space kept until compacted"));
+    }
+    function _rbPaint(st) {
+      const t = _rbT();
+      _rebuildSt = st;
+      const box = $("rebuild-status"), btn = $("rebuild-btn"), stop = $("rebuild-stop-btn"), kept = $("rebuild-kept");
+      if (!box) return;
+      const job = st.job || {};
+      const running = job.state === "running";
+      stop.style.display = running ? "" : "none";
+      if (!st.supported) {
+        box.textContent = t("There is no library file here to rebuild.");
+        btn.disabled = true;
+      } else if (!st.current) {
+        box.textContent = t("The library's settings could not be read, so a rebuild is not offered.");
+        btn.disabled = true;
+      } else {
+        const now = _rbSettings(st.current), want = _rbSettings(st.target);
+        let line = _rbTf("Now: {now}. A rebuild gives: {want}.", {now, want});
+        if (!st.needed) line += " " + t("This library already has the current settings; nothing to rebuild.");
+        const pf = st.preflight || {};
+        if (st.needed && pf.sufficient === false) {
+          line += " " + _rbTf("Not enough free space: the new file needs about {need} and the drive has {free}.",
+            {need: _fmtBytes(pf.needed_bytes), free: _fmtBytes(pf.free_bytes)});
+          if (pf.kept_copies_bytes) line += " " + _rbTf("Files earlier rebuilds kept take {kept}; you can remove them below.", {kept: _fmtBytes(pf.kept_copies_bytes)});
+        } else if (st.needed && pf.sufficient == null) {
+          line += " " + t("The free space on the library's drive could not be read, so it was not checked.");
+        }
+        box.textContent = line;
+        btn.disabled = running || !st.needed || pf.sufficient === false;
+      }
+      // The job's own progress line, in the UI language through its keyed frame.
+      const res = $("rebuild-result");
+      if (running) {
+        delete res.dataset.keep;  // a start that did go ahead replaces the refusal shown before it
+        res.textContent = job.detail_i18n ? _rbTf(t(job.detail_i18n), job.detail_vars || {}) : t("Rebuilding…");
+      } else if (st.last && st.last.outcome && !res.dataset.keep) {
+        const L = st.last;
+        if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild finished in {secs} s. The old file was kept as {name}.", {secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
+        else if (L.outcome === "stopped") res.textContent = t("The last rebuild was stopped. The library is as it was.");
+        else if (L.outcome === "declined") res.textContent = ooLabelText(t("The last rebuild did not start"), L.reason_text || L.reason || "");
+        else if (L.outcome === "failed") res.textContent = ooLabelText(t("The last rebuild failed"), L.failure || "") +
+          (L.switched ? "" : " " + t("The library is as it was."));
+      }
+      // The files earlier rebuilds kept: name, size, date, and a Remove button each (Q-a).
+      const list = st.kept_copies || [];
+      kept.innerHTML = list.length ? (
+        `<div class="muted">${esc(t("Files earlier rebuilds kept (the library as it was before each rebuild):"))}</div>` +
+        list.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
+          `<button class="secondary" data-rebuild-remove="${esc(k.name)}">${esc(t("Remove"))}</button></div>`).join("")
+      ) : "";
+      if (running && !_rebuildPoll) _rebuildPoll = setInterval(loadRebuild, 2000);
+      if (!running && _rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; }
+    }
+    async function loadRebuild() {
+      if (!_rebuildWired) {
+        _rebuildWired = true;
+        const b = $("rebuild-btn"), s = $("rebuild-stop-btn"), bk = $("rebuild-backup-btn"), kept = $("rebuild-kept");
+        if (b) b.addEventListener("click", rebuildNow);
+        if (s) s.addEventListener("click", rebuildStop);
+        if (bk) bk.addEventListener("click", () => openUnifiedExport());
+        if (kept) kept.addEventListener("click", (ev) => {
+          const x = ev.target && ev.target.closest ? ev.target.closest("button[data-rebuild-remove]") : null;
+          if (x) rebuildRemoveKept(x);
+        });
+        const sec = document.querySelector('details[data-adv="safety"]');
+        if (sec) sec.addEventListener("toggle", () => { if (sec.open) loadRebuild(); else if (_rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; } });
+      }
+      try { _rbPaint(await api("/api/database/rebuild", {polled: true})); }
+      catch (e) { const box = $("rebuild-status"); if (box) box.textContent = ooLabelText(_rbT()("Could not read the rebuild status"), e.message); }
+    }
+    async function rebuildNow() {
+      const t = _rbT(), st = _rebuildSt;
+      if (!st || !st.needed) return;
+      const gb = (st.bytes_in_use || 0) / 1e9;
+      const lo = Math.max(1, Math.round(gb * REBUILD_LO_S_PER_GB)), hi = Math.max(1, Math.round(gb * REBUILD_HI_S_PER_GB));
+      const about = _rbTf("The library holds about {size}; a rebuild typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark), plus any wait for work already in progress to finish. Collection and every other job wait while it runs.",
+        {size: _fmtBytes(st.bytes_in_use || 0), lo: fmtNum(lo, 0), hi: fmtNum(hi, 0)});
+      // The backup question first, and two separate answers: "I have one" is not the same consent as "go on without one". On the
+      // no-backup path a reflexive OK lands on the backup export, never on the rebuild: going on without one takes a Cancel and
+      // then an explicit OK on a dialog that says so.
+      let answer = null;
+      if (window.confirm(about + "\n\n" + t("Do you have a recent backup of this library? OK = yes, I have one. Cancel = I have none."))) answer = "have_backup";
+      else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
+      else if (window.confirm(t("Rebuild WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
+      if (!answer) return;
+      const res = $("rebuild-result");
+      delete res.dataset.keep;
+      $("rebuild-btn").disabled = true;
+      try {
+        await api("/api/database/rebuild", {method: "POST", body: JSON.stringify({backup_answer: answer})});
+        res.textContent = t("Rebuilding…");
+      } catch (e) {
+        res.dataset.keep = "1";
+        res.textContent = ooLabelText(t("The rebuild did not start"), e.message);
+      }
+      loadRebuild();
+    }
+    async function rebuildStop() {
+      const t = _rbT();
+      try { await api("/api/jobs/rebuild-database/cancel", {method: "POST"}); toast(t("Stopping the rebuild at the next safe point. The library stays as it was."), "ok"); }
+      catch (e) { toast(ooLabelText(t("Could not stop the rebuild"), e.message), "err"); }
+      loadRebuild();
+    }
+    async function rebuildRemoveKept(btn) {
+      const t = _rbT(), name = btn.dataset.rebuildRemove;
+      if (!window.confirm(_rbTf("Remove {name}? It is the library as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name}))) return;
+      btn.disabled = true;
+      try {
+        const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, confirm: true})});
+        toast(_rbTf("Removed. {size} freed.", {size: _fmtBytes(r.bytes || 0)}), "ok");
+      } catch (e) { toast(ooLabelText(t("Could not remove the file"), e.message), "err"); btn.disabled = false; }
+      loadRebuild();
+    }
+
     // Local fixity audit (B-2): re-hash the corpus vs the capture-time hash. Loud,
     // read-only; nothing is auto-fixed. Backend: /api/integrity/fixity.
     async function runFixity(btn) {

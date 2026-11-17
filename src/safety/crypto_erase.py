@@ -371,7 +371,7 @@ def _resolve(data_dir: Path | None) -> dict:
 
 
 # The names the app gives a copy of one of its databases, kept beside it (row 29): a repair's salvage and damaged copies
-# (src/database/repair.py), an encryption's pre-encrypt snapshot and in-progress copy (src/database/encrypt_tool.py), and,
+# (src/database/repair.py), a rebuild's copy and the file it kept (src/database/rebuild.py, R702), an encryption's pre-encrypt snapshot and in-progress copy (src/database/encrypt_tool.py), and,
 # in the data folder only, a retained pre-restore snapshot (src/backup/merge.py). Each with the side files the app gives it.
 _STAMP = r"\d{8}T\d{6}Z"
 _COPY_TAIL = r"(?:(?:\.partial)?(?:-wal|-shm|-journal)?|\.json)"
@@ -384,7 +384,7 @@ def _copy_patterns(folder: Path, base: Path, dbs: list[Path]) -> list[re.Pattern
         if db.parent != folder:
             continue
         stem, suffix = re.escape(db.stem), re.escape(db.suffix)
-        pats.append(re.compile(rf"{stem}\.(?:salvage|damaged)-{_STAMP}(?:-\d+)?{suffix}{_COPY_TAIL}"))
+        pats.append(re.compile(rf"{stem}\.(?:salvage|damaged|rebuild|pre-rebuild)-{_STAMP}(?:-\d+)?{suffix}{_COPY_TAIL}"))
         pats.append(re.compile(rf"pre-encrypt-{_STAMP}-{re.escape(db.name)}{_COPY_TAIL}"))
         pats.append(re.compile(rf"{re.escape(db.name)}\.enc-{_STAMP}{_COPY_TAIL}"))
     if folder == base:

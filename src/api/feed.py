@@ -191,7 +191,7 @@ def _card(a: Any, keywords: list[dict]) -> dict:
         "id": a.id,
         "title": a.title,
         "url": a.url,
-        "source": a.source.name if a.source else None,
+        "source": a.source.display_name if a.source else None,
         # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
         # source's, so the card can say so beside the source it credits (both null when not recorded or nothing to compare).
         **fetched_host_fields(a.fetched_host, a.source.domain if a.source else None),

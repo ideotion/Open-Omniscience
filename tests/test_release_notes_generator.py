@@ -1227,3 +1227,19 @@ def test_the_TERMINAL_refusal_names_the_reason_not_just_FAILED(monkeypatch, tmp_
     err = capsys.readouterr().err
     assert "No module named pytest" in err, "the terminal refusal still says nothing useful"
     assert "ratchet FAILED" in err, "and it must still say the ratchet failed"
+
+
+def test_a_warnings_only_summary_with_a_nothing_ran_exit_is_still_no_tests_ran():
+    """Row 115: a plugin's import warning (the lock's anyio 4.14.0 under pytest 9.2) turns "no tests ran in 0.00s"
+    into "1 warning in 0.00s"; with exit 4 or 5 that line is still the no-tests verdict, and stderr's reason stays."""
+    out = "=== warnings summary ===\nPytestRemovedIn10Warning: ...\n-- Docs: https://docs.pytest.org\n1 warning in 0.00s\n"
+    for rc in (4, 5):
+        got = _no_verdict("ERROR: file or directory not found: /tmp/x.py\n", stdout=out, rc=rc)
+        assert (got.summary or "").startswith("no tests ran (1 warning in 0.00s)"), got.summary
+        assert "file or directory not found" in (got.summary or "")
+
+
+def test_a_warnings_only_summary_after_a_run_that_did_run_is_not_called_no_tests_ran():
+    """Exit 1 (tests failed) or 2 (interrupted) is not "nothing ran": the warnings line is not turned into a verdict."""
+    got = _no_verdict("boom\n", stdout="3 warnings in 1.20s\n", rc=2)
+    assert "no tests ran" not in (got.summary or "")

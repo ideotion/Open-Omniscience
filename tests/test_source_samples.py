@@ -210,3 +210,23 @@ def test_a_source_without_an_article_writes_its_kept_key_masked(db):
     assert b"hunter2" not in _open(data).read("manifest.json")
     man = json.loads(_open(data).read("manifest.json"))
     assert man["sources_without_article"]["rows"] == [[1, "news.example", "f:***@news.example/rss"]]
+
+
+def test_every_address_column_is_written_as_a_report_writes_it(db):
+    """Row 104 on R734/R736: the sample's own rows (the source's feed address, its catalogue baseline's, the article's two
+    addresses) hide their query values and path tokens; the article's body is the sample and is left as stored."""
+    import json as _json
+
+    uuid = "3f2b9c1e-1a2b-4c3d-8e9f-0123456789ab"
+    db.add(Source(id=1, name="S1", domain="s1.example", rss_url="https://s1.example/rss?token=SourceTokenAAAA1111",
+                  catalog_baseline=_json.dumps({"rss_url": "https://s1.example/rss?key=BaselineTokenBBBB2222", "region": "EU"})))
+    db.flush()
+    db.add(Article(url="https://s1.example/a?sid=ArticleTokenCCCC3333", canonical_url=f"https://s1.example/p/{uuid}",
+                   source_id=1, title="t", content="body keeps https://s1.example/x?sid=BodyLinkDDDD4444", hash="1" * 64))
+    db.commit()
+    data = build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]
+    everything = b"".join(_open(data).read(n) for n in _open(data).namelist())
+    for secret in (b"SourceTokenAAAA1111", b"BaselineTokenBBBB2222", b"ArticleTokenCCCC3333", uuid.encode()):
+        assert secret not in everything, secret
+    assert b"BodyLinkDDDD4444" in everything, "the article's body is the sample: its words are kept"
+    assert b'"region": "EU"' in everything or b'\\"region\\": \\"EU\\"' in everything, "the baseline's other fields were lost"

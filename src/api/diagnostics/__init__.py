@@ -454,12 +454,16 @@ from .source_samples import (
     SAMPLE_ZIP_MAX_BYTES,
     _BATCH,
     _BODY_COLUMNS,
+    _JSON_TEXT_MAX,
     _RESERVE_BYTES,
     _SECRETISH,
     _TEXT_MAX_BYTES,
+    _WHOLE_ADDRESS,
     _newsletter_source_ids,
     _pick,
     _plain,
+    _reported_addresses,
+    _reported_column,
     _row_dict,
     _shown_source_columns,
     build_sample_zip,
@@ -490,7 +494,7 @@ from .field_cards import (
 )
 # What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
 # run, whose eight routes test_release_run pins as the package's last.
-from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
+from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate, scan_table
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -513,12 +517,16 @@ __all__ = [
     "SAMPLE_ZIP_MAX_BYTES",
     "_BODY_COLUMNS",
     "_BATCH",
+    "_JSON_TEXT_MAX",
     "_RESERVE_BYTES",
     "_SECRETISH",
     "_TEXT_MAX_BYTES",
+    "_WHOLE_ADDRESS",
     "_newsletter_source_ids",
     "_pick",
     "_plain",
+    "_reported_addresses",
+    "_reported_column",
     "_row_dict",
     "_shown_source_columns",
     "build_sample_zip",
@@ -897,4 +905,5 @@ __all__ = [
     "_mention_rows",
     "_remember_scan_walls",
     "all_diagnostics_estimate",
+    "scan_table",
 ]

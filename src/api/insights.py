@@ -35,6 +35,7 @@ from src.api.search_filters import AdvancedSearch, advanced_search_params
 from src.catalog.countries import country_param
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.session import get_db
+from src.database.source_names import shown_source_name
 from src.database.stand_in import (
     not_a_stand_in_article,
     not_a_stand_in_article_id,
@@ -1657,8 +1658,8 @@ def _intensity_with_titles(db: Session, intensity: dict) -> dict:
     if not ids:
         return intensity
     meta = {
-        int(aid): (title, src, pub)
-        for aid, title, src, pub in db.query(Article.id, Article.title, Source.name, Article.published_at)
+        int(aid): (title, shown_source_name(src, dom), pub)
+        for aid, title, src, dom, pub in db.query(Article.id, Article.title, Source.name, Source.domain, Article.published_at)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(Article.id.in_(ids))
         .all()

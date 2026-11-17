@@ -50,9 +50,9 @@ from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
 from src.ingest.fetch_verdict import (
     KILL_SWITCH_REFUSAL,
     KILL_SWITCH_REFUSAL_HEAD,
+    address_secrets,
     failure_netloc,
     failure_url,
-    userinfo_secrets,
 )
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
@@ -563,7 +563,7 @@ def _persist_robots_entry(
         # the fetcher's key names the host only (R621: it holds no userinfo), so this writes the host; the mask and the secrets stay
         # for any other caller's key, which could carry one (R620, Steward 3 #2)
         log_failure(
-            _LOG, f"robots cache persistence failed for {failure_url(host_key)}", exc, *userinfo_secrets(host_key), level=logging.DEBUG
+            _LOG, f"robots cache persistence failed for {failure_url(host_key)}", exc, *address_secrets(host_key), level=logging.DEBUG
         )
 
 
@@ -730,7 +730,7 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
             _LOG,
             f"host schedule persistence failed for {failure_netloc(netloc)}",
             exc,
-            *userinfo_secrets(f"//{netloc}"),
+            *address_secrets(f"//{netloc}"),
             level=logging.DEBUG,
         )
 
@@ -1015,6 +1015,15 @@ def activate_kill_switch() -> None:
     with _KILL_EPOCH_LOCK:
         _KILL.set()
         _KILL_EPOCH += 1
+    # The resolver-blip memory (src/ingest/dns_stale.py) is emptied too: going offline is
+    # where a network change usually passes, and an answer from the old network must not be
+    # handed back on the new one.
+    try:
+        from src.ingest import dns_stale
+
+        dns_stale.clear()
+    except Exception:  # noqa: BLE001 - going offline must never fail on a cache
+        pass
     # Going offline is a HARD close: an egress window (the consented "install the
     # local AI without starting the collector" exemption) must never outlive the
     # operator's decision to go offline, or the airplane button would stop meaning
@@ -1660,7 +1669,7 @@ class EthicalFetcher:
                     # them, stated: a hop with no http(s) scheme, no host or an authority urllib3 cannot parse (the URLs requests quotes)
                     # is refused before it is requested, by the hop check, _guard_target and _refuse_parser_mismatch.
                     transient = FetchFailed(
-                        f"request error for {failure_url(url)}: {record_text(exc, *userinfo_secrets(url), typed=False)}"
+                        f"request error for {failure_url(url)}: {record_text(exc, *address_secrets(url), typed=False)}"
                     )
                 finally:
                     # the host last requested: the first, or the host of the hop the chain ended on (the hosts it left were
@@ -2283,7 +2292,7 @@ class EthicalFetcher:
                     _LOG,
                     f"could not read environment proxies for {failure_url(url)!r}",
                     exc,
-                    *userinfo_secrets(url),
+                    *address_secrets(url),
                     level=logging.DEBUG,
                 )
         merged.update(explicit or {})

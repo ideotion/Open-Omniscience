@@ -195,6 +195,19 @@ def update_country_route(code: str, req: UpdateConsent) -> dict:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
 
 
+@router.get("/change-files")
+def change_files() -> dict:
+    """The daily change files each cut country has applied and what they cost (bytes fetched, fetch and apply seconds, per file and as
+    a measured summary), for the Field data button (row 117). The SAME answer as the Diagnostics zip's ``osm-change-files.json``: it
+    runs that member's slot, so its budget (about 20 KB), its cuts and the scrub every slot answer passes through are the zip's own.
+    Read-only and local: counts, times and sizes, never an object, a tag, a path or a URL.
+    """
+    from src.api.diagnostics_slots import SLOTS, thunk
+
+    slot = next(s for s in SLOTS if s.name == "osm-change-files.json")
+    return thunk(slot)()
+
+
 @router.get("/updates")
 def update_jobs() -> dict:
     """The daily-update jobs this run has queued or ended (read-only, nothing persisted)."""

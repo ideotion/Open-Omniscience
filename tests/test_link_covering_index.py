@@ -109,7 +109,9 @@ def _shared_origin_sql(eng, ids: list[int]) -> tuple[str, list[str]]:
     seen: list[tuple[str, object]] = []
 
     def _look(conn, cursor, statement, parameters, context, executemany):
-        if "article_links" in statement and "GROUP BY" in statement:
+        # The scan of the id set only: a source's page-furniture read (row 99, link_furniture.source_furniture) joins
+        # articles and reads ONE source's links, a different statement that this pin is not about.
+        if "article_links" in statement and "GROUP BY" in statement and "JOIN articles" not in statement:
             seen.append((statement, parameters))
 
     event.listen(eng, "before_cursor_execute", _look)
@@ -145,7 +147,13 @@ def test_without_it_the_plan_reads_the_rows_and_the_answer_is_the_same(tmp_path)
     )
     with sessionmaker(bind=eng)() as s:
         assert _shared_origin(s, ids) == with_index, "an index changes the cost, never the answer"
-    assert with_index[0] == 2 and len(with_index[1]) == 2, with_index
+    # The fixture's two shared origins sit on all 60 articles of its ONE source, which is exactly that source's page
+    # furniture (row 99): counted apart, not as a shared origin -- the two readings together still hold both.
+    from src.analytics.convergence import shared_origin_detail
+
+    with sessionmaker(bind=eng)() as s:
+        d = shared_origin_detail(s, ids)
+    assert with_index == (0, []) and d["furniture_count"] == 2 and len(d["furniture_examples"]) == 2, d
 
 
 def test_the_model_the_deferred_self_heal_and_the_migration_are_one_statement():

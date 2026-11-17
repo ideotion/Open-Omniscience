@@ -705,28 +705,13 @@ def scroll_by(ch: int, page: int) -> int | None:
 
 
 def pid_alive(pid: int | None) -> bool:
-    """Whether a process with this pid exists. NEVER ``os.kill`` on Windows: there it terminates the process instead of testing it."""
+    """Whether a process with this pid exists. NEVER ``os.kill`` on Windows: there it terminates the process instead of testing it.
+    The one probe for every platform is ``src/pid_probe.py`` (row 98)."""
     if not pid:
         return True
-    if IS_WINDOWS:
-        try:
-            import psutil
+    from src.pid_probe import pid_alive as _probe
 
-            return bool(psutil.pid_exists(pid))
-        except Exception:  # noqa: BLE001 - no way to tell: say alive, the caller has its own fallback
-            return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    # A zombie (ended, not reaped yet: launch.sh reaps its server only after the panel ends) still answers os.kill; on Linux its
-    # state letter in /proc says so.
-    with contextlib.suppress(OSError, IndexError), open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:
-        if f.read().rsplit(")", 1)[1].split()[0] == "Z":
-            return False
-    return True
+    return bool(_probe(pid))
 
 
 class ServerProcess:

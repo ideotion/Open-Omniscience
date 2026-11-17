@@ -1490,7 +1490,13 @@ reports `refused_offline`.
 
 Verify a bundle anywhere, without this app. The checker fails closed: it refuses by name a bundle with no
 entries, one cut mid-record, one whose signing key changes with no key-rotation record, one whose entries do not match the signed head its
-export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
+export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). The signed
+head commits to every entry's hash, so an entry swapped, added or removed anywhere in the bundle is refused by name. A
+bundle from a development build whose head commits only to its count and last entry (an older export format) still
+verifies, but the result says plainly that it is the weaker format, and the command line exits 3 rather than 0: in a
+one-item bundle any entry but the last could have been swapped for another one signed by the same key (a whole-log
+bundle's links still cover each entry). Export it again for the full check. The format is read from the signed head,
+never from the bundle's top-level `bundle_format`, which is informational. A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
 A verified bundle proves it is consistent and signed by one key, or by a line of keys each handed on to the next by
 a key-rotation record. To know the last key is the real signer's (and so that nobody cut the log and re-signed it
@@ -1507,9 +1513,12 @@ someone who took the old key (from a stolen laptop, say) can endorse a key of th
 no record is refused. An unendorsed rotation stays
 unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
 call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
-held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one (a
-stretch whose key-rotation record names no post-quantum key, like the stretch before the first rotation, is held to its
-Ed25519 key only). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
+held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one. A
+stretch whose key-rotation record was written by 0.5.1 or later is held to exactly the identity that record names, and a
+head signature with its post-quantum half stripped off is refused. In every mode, an entry that drops or replaces the
+post-quantum key its signing key had shown, with no record, is refused: someone holding only the Ed25519 key could sign
+exactly that. A log whose post-quantum signing was turned off before 0.5.1 shows that mark, so its bundles now need
+`--accept-unendorsed-rotation` (the in-app **Verify** names it instead). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
 verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`. An export made after
 the key changed, before anything new was logged, writes the record first, since the new key signs the export. A
 verified bundle that crosses a rotation prints its line of keys, from the first to the last: compare any key you
@@ -1517,13 +1526,24 @@ already know with that line. With `--accept-unendorsed-rotation`, `--pin` proves
 last key, because a log cut and re-signed by someone else carries exactly such a record. The in-app **Verify** button
 follows the key through the same records and names each rotation. On your own store it accepts an unendorsed one on its
 word, and a key change with no record at all, which is what a log written before 0.5.1 shows when its key was
-re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Changing only
-the post-quantum key (or turning it off with no rotation) writes no record, and a pinned check then refuses the log.
+re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Since 0.5.1,
+changing only the post-quantum key writes a key-rotation record too, and every record names the whole previous key,
+its post-quantum half included. Turning post-quantum signing on is followed without being asked. Turning it off is
+endorsed by the old post-quantum key, which is still in the key folder, so it is followed too, when the post-quantum
+library is installed (without it, the record is unendorsed). A re-created post-quantum
+key cannot be endorsed and is refused unless you pass `--accept-unendorsed-rotation`, because someone who could forge the
+Ed25519 key alone would write the same record. If post-quantum signing is on and this machine lacks the post-quantum
+library, nothing is signed until it is installed or the setting is turned off; entries on ingest wait meanwhile. A
+checker older than 0.5.1 refuses a log with such a record rather than misreading it.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 python scripts/verify_evidence.py bundle.json [signer_pubkey]
 ```
+
+The custody checker exits 0 when verified, 3 for the older, weaker bundle format, and 4 when it verified only
+because you passed `--accept-unendorsed-rotation`: its VERIFIED line then says the key change was unendorsed, never a
+plain "verified", since accepting it proves nothing about who made that change.
 
 The full design — and exactly what each mechanism does and does **not** prove — is
 in [`docs/USER_MANUAL.md`](USER_MANUAL.md). *(A planned overhaul to make
@@ -2227,7 +2247,7 @@ native name; `region` is kept only as descriptive metadata — no continent `gro
 `?scope=dumps` adds inline `~GB` size estimates); dumps under `/api/wiki/dumps…`.
 
 **Chain of custody** — `POST /api/custody/log`; `GET /api/custody/{item}` (+
-`/verify`); `POST /api/custody/verify`; `GET /api/custody/export`;
+`/verify`); `POST /api/custody/verify`; `POST /api/custody/export`;
 `GET /api/custody/providers`; `POST /api/custody/anchor`;
 `GET/PUT /api/custody/settings`; `POST /api/custody/reconcile` (an INGEST entry that
 could not be written when its article was stored is queued and written later, at the end
@@ -3449,7 +3469,7 @@ python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorse
 ```
 
 REST: `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`,
-`GET /api/custody/export`, `POST /api/custody/verify`.
+`POST /api/custody/export`, `POST /api/custody/verify`.
 
 Opt‑in auto‑logging on ingest: set `OO_CUSTODY_ON_INGEST=1`
 (`Config.custody_on_ingest`). It is **off by default** — an explicit evidentiary

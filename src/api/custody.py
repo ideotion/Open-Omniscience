@@ -14,8 +14,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.custody import signing
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import (
+    ACCEPTED_UNENDORSED_NOTE,
     ROTATION_ITEM,
     CustodyAction,
     CustodyLog,
@@ -30,13 +32,17 @@ from src.custody.settings import (
     load_settings,
     save_settings,
 )
-from src.custody.signing import HybridSigner, SigningError
+from src.custody.signing import HybridSigner, PostQuantumUnavailable, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
 
 
+_PQC_UNAVAILABLE = ("post-quantum signing is on and this custody log's key has an ML-DSA half, but the post-quantum "
+                    "library is not installed here, so nothing was signed: install the 'pqc' extra. Turning post-quantum "
+                    "signing off instead is recorded unendorsed, since the old post-quantum key cannot vouch for it "
+                    "without the library, and a pinned check then asks for that record to be accepted by name")
 _KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was signed: unlock the app with its "
                    "passphrase, or check the key folder")
 
@@ -84,10 +90,16 @@ def log_action(req: LogRequest) -> dict:
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except ValueError:
+        # The one ValueError left after the checks above: a lone surrogate, which no signature can cover (row 46).
+        raise HTTPException(status_code=400, detail="a text field holds a character with no UTF-8 form (a lone "
+                            "surrogate), so no signature can cover it") from None
     except CustodySettingsUnreadable:
         # The custody settings could not be read: nothing is signed under guessed preferences (PQC off, local anchoring).
         raise HTTPException(status_code=503, detail="the custody settings could not be read, so no entry was signed "
                             "under guessed preferences: try again once the database can be read") from None
+    except PostQuantumUnavailable:
+        raise HTTPException(status_code=503, detail=_PQC_UNAVAILABLE) from None
     except TimestampUnavailable as exc:
         # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
         # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
@@ -118,6 +130,8 @@ def export(item_id: str | None = None) -> dict:
         # written under guessed preferences.
         raise HTTPException(status_code=503, detail="the signing key changed and its key-rotation record is owed, but "
                             "the custody settings could not be read: export again once they can be") from None
+    except PostQuantumUnavailable:
+        raise HTTPException(status_code=503, detail=_PQC_UNAVAILABLE) from None
     except SigningError:
         # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
         # bundle is signed and nothing is written. The answer says what to do.
@@ -295,7 +309,10 @@ def verify_item(item_id: str) -> dict:
         if not log.entries_for(item_id):
             raise HTTPException(status_code=404, detail=_NO_ENTRIES)
         # The chain's links and signatures, and its signing key followed through every key-rotation record.
-        return log.verify_report()
+        report = log.verify_report()
+        # R716: an accepted unendorsed or unrecorded key change says so beside the verdict, as on POST /verify.
+        report["accepted_unendorsed_note"] = ACCEPTED_UNENDORSED_NOTE if report.get("accepted_unendorsed") else None
+        return report
     finally:
         log.close()
 
@@ -307,14 +324,37 @@ class VerifyBundleRequest(BaseModel):
     accept_unendorsed_rotation: bool = False
 
 
+def _held_ml_dsa_pub() -> str | None:
+    """The ML-DSA public key this installation still holds in its keys folder, or ``None`` (no key file, no post-quantum
+    library, or unreadable). Read while it signs without post-quantum, so that what it signed with both halves before
+    stays its own, and an ML-DSA key it never held is never called its own. Opened as a reader: nothing is made."""
+    try:
+        return HybridSigner(use_pqc=True, create=False).public_identity().ml_dsa_pub
+    except Exception:  # noqa: BLE001 - no key or no library: nothing signed with both halves is credited
+        return None
+
+
 def _local_identity():
     """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
     be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
     ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
-    key file already exists. It is opened as a reader (``create=False``, R694): nothing is made, the keys
+    key file already exists and post-quantum signing is on. It is opened as a reader (``create=False``, R694): nothing is made, the keys
     folder included, and a legacy plaintext key file is left as it is."""
+    # Its identity as it signs NOW: with post-quantum signing off it is the Ed25519 key alone, though an old ML-DSA key
+    # file may still be in the folder, so the verdict is not held to a post-quantum key nothing signs with any more.
     try:
-        return HybridSigner(use_pqc=True, create=False).public_identity()
+        settings = load_settings()
+        # An unreadable store answers with defaults (post-quantum off) rather than raising: hold the verdict to every
+        # key there is then, as when reading the settings fails outright.
+        use_pqc = bool(settings.pqc_enabled) or bool(getattr(settings, "store_unreadable", False))
+    except Exception:  # noqa: BLE001 - unreadable settings: hold the verdict to every key there is
+        use_pqc = True
+    if use_pqc and not signing.PQC_AVAILABLE:
+        # Post-quantum signing on and its library missing: the ML-DSA key cannot be read, and an identity of the
+        # Ed25519 key alone would call a forgery signed with that key alone this installation's. Say it is unread.
+        return None
+    try:
+        return HybridSigner(use_pqc=use_pqc, create=False).public_identity()
     except FileNotFoundError:
         return None
     except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
@@ -326,15 +366,19 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
     """Verify a posted custody bundle offline (no DB needed), and say by whom it is signed (R681):
     ``verified`` never travels without ``signed_by`` and a ``verdict`` that tells "verified against
     your keys" from "signatures valid, signer not yours"; every key rotation crossed is named in ``notes``."""
+    local = _local_identity()
     out = describe_export(
         req.bundle,
-        local=_local_identity(),
+        local=local,
+        held_ml_dsa_pub=_held_ml_dsa_pub() if local is not None and not local.ml_dsa_pub else None,
         require_signer=req.require_signer,
         accept_unendorsed_rotation=req.accept_unendorsed_rotation,
     )
     # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
     # every key rotation crossed is named in the notes.
     out["scope"] = scope_note(req.bundle, out["notes"]) if out["verified"] else None
+    # R716: a verdict that accepted an unendorsed key change says so beside it, never as a plain "verified".
+    out["accepted_unendorsed_note"] = ACCEPTED_UNENDORSED_NOTE if out["accepted_unendorsed"] else None
     return out
 
 

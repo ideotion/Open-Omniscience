@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,stats/ingest,Statistics ingest flushes its new sources,SHIPPED,PR #2078; row 108,src/stats/ingest.py tests/test_stats_ingest.py,"The session does not autoflush, so the domain check could not see a row added earlier in the same call (two agencies on one domain gave two sources) and a caller reading back in its own session counted none. test_ingest_is_idempotent failed when run alone (29 == 0) and passed after any test that had already ingested. The ingest now flushes each new row; a new test pins both."

@@ -127,4 +127,5 @@ def test_portability_is_not_part_of_a_pull_request_and_fits_its_cap():
     job = _jobs()["portability"]
     assert job["if"] == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
     assert job["strategy"]["matrix"]["shard"] == [1, 2, 3]
-    assert job["timeout-minutes"] == 60 and job["continue-on-error"] is True
+    # 90 min for a Windows leg, 60 for macOS (row 93): the only expression this guard accepts, so a cap cannot quietly grow
+    assert job["timeout-minutes"] == "${{ matrix.os == 'windows-latest' && 90 || 60 }}" and job["continue-on-error"] is True
