@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,tests,"Windows test fixes: paths, child env, held-handle swaps (row 139)",shipped,PR #2104,tests/_child_env.py;tests/test_library_generation.py;tests/test_repair.py;src/database/read_only_uri.py,"Shard 1 Windows reds that were test assumptions: separator-independent path compares, Windows system variables kept in child envs, swap-over-held-handle tests skipped on Windows with reasons; read_only_uri POSIX branch uses posixpath (no behaviour change)."
