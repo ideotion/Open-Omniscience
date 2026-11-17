@@ -235,6 +235,10 @@ def decode_coords(data: bytes) -> list[tuple[float, float]]:
             if not b & 0x80:
                 return result
             shift += 7
+            if shift > 63:
+                # A 64-bit number takes at most ten bytes. A longer run is damage (or a blob
+                # built to make each read cost more than the last: the result grows with it).
+                raise ValueError("a coordinate blob holds a number longer than 64 bits")
 
     n = rd()
     out = []
@@ -284,6 +288,10 @@ def decode_rings(data: bytes) -> list[list[tuple[float, float]]]:
             if not b & 0x80:
                 return result
             shift += 7
+            if shift > 63:
+                # A 64-bit number takes at most ten bytes. A longer run is damage (or a blob
+                # built to make each read cost more than the last: the result grows with it).
+                raise ValueError("a coordinate blob holds a number longer than 64 bits")
 
     count = rd()
     rings: list[list[tuple[float, float]]] = []

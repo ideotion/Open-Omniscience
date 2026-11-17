@@ -244,6 +244,21 @@ def _ruin_the_cursor(con) -> None:
     con.execute("UPDATE osm_countries SET diff_sequence = 7")
 
 
+def _ruin_a_name_map(con) -> None:
+    con.execute("""UPDATE osm_objects SET names = '{"name:en":{"x":[1,2]}}' WHERE id = (SELECT min(id) FROM osm_objects)""")
+
+
+def _ruin_the_bbox(con) -> None:
+    con.execute("""UPDATE osm_countries SET border_json = '{"bbox":["x",0,1,1]}'""")
+
+
+def _a_shape_too_long_for_its_nodes(con) -> None:
+    # 300 KB of continuation bytes: once a read whose cost grew with the square of its length.
+    con.execute("UPDATE osm_objects SET geom = zeroblob(300000) WHERE id = (SELECT min(id) FROM osm_objects WHERE osm_type = 'w')")
+    con.execute("UPDATE osm_objects SET geom = CAST(replace(CAST(geom AS TEXT), char(0), char(255)) AS BLOB) "
+                "WHERE id = (SELECT min(id) FROM osm_objects WHERE osm_type = 'w')")
+
+
 def _drop_an_object(con) -> None:
     con.execute("DELETE FROM osm_objects WHERE id = (SELECT max(id) FROM osm_objects)")
 
@@ -258,6 +273,9 @@ def _drop_an_object(con) -> None:
         (_ruin_a_text_column, "refused_unreadable"),
         (_ruin_the_other_tags, "refused_unreadable"),
         (_ruin_the_cursor, "refused_unreadable"),
+        (_ruin_a_name_map, "refused_unreadable"),
+        (_ruin_the_bbox, "refused_unreadable"),
+        (_a_shape_too_long_for_its_nodes, "refused_unreadable"),
         (_drop_an_object, "refused_incomplete"),
     ],
 )
@@ -390,3 +408,141 @@ def test_an_encrypted_maps_store_rides_with_its_virtual_tables_and_merges(machin
     assert rep["lanes"][0]["state"] == "merged", rep
     assert rep["lanes"][0]["tables"]["osm_countries"]["copied"] == 1
     assert (_objects(), _country_row(), _records()) == (want_objects, want_country, want_records)
+
+
+def test_a_coordinate_number_longer_than_64_bits_is_refused_at_once():
+    import time
+
+    from src.osm.geometry import decode_coords, decode_rings
+
+    t0 = time.monotonic()
+    for decode in (decode_coords, decode_rings):
+        with pytest.raises(ValueError):
+            decode(b"\x01" + b"\xff" * 200_000)
+    assert time.monotonic() - t0 < 1.0
+
+
+def _a_db_edit(sql: str, *args) -> None:
+    con = sqlite3.connect(_db_path())
+    try:
+        con.execute(sql, args)
+        con.commit()
+    finally:
+        con.close()
+    store.dispose_lane("osm")
+
+
+def test_a_failure_half_way_through_the_copy_leaves_nothing_of_the_country(machines, tmp_path, monkeypatch):
+    a, b, use = machines
+    use(b)
+    _cut_here(b, day1=True)
+    snap = _snap(b, use, tmp_path)
+    use(a)
+    real = lane_merge._insert_select
+
+    def failing(conn, table, **kw):
+        if table == "versioned_changes":  # after the row, the objects, the tag changes and the runs
+            raise sqlite3.IntegrityError("injected")
+        return real(conn, table, **kw)
+
+    monkeypatch.setattr(lane_merge, "_insert_select", failing)
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    assert rep["tables"]["osm_countries"]["refused_unreadable"] == 1 and not rep.get("owed")
+    assert _country_row() is None and _objects() == {} and _records() == {k: [] for k in _records()}
+
+
+def test_a_country_this_machine_could_not_write_is_owed_and_the_next_import_copies_it(machines, tmp_path, monkeypatch):
+    import shutil
+
+    a, b, use = machines
+    use(b)
+    _cut_here(b, day1=True)
+    want = _b_state(b, use)
+    snap = _snap(b, use, tmp_path)
+    staging = tmp_path / "staging"
+    (staging / "lanes").mkdir(parents=True)
+    shutil.copy2(snap, staging / "lanes" / "osm.db")
+    member = [{"name": "lanes/osm.db", "kind": "osm"}]
+    use(a)
+    real = lane_merge._insert_select
+
+    def busy(conn, table, **kw):
+        if table == "osm_diff_runs":
+            raise sqlite3.OperationalError("database is locked")
+        return real(conn, table, **kw)
+
+    with monkeypatch.context() as m:
+        m.setattr(lane_merge, "_insert_select", busy)
+        rep = lane_merge.merge_staged_lanes(staging, member, [None])
+    lane = rep["lanes"][0]
+    assert lane["state"] == "partial" and lane["tables"]["osm_countries"]["not_copied_database_error"] == 1
+    assert _country_row() is None and _objects() == {}
+    lane_merge.mark_lanes_owed("d", member)
+    lane_merge.record_lane_outcome("d", rep)
+    assert lane_merge.lanes_pending("d") is True, "a partial lane keeps the backup owed"
+    rep = lane_merge.merge_staged_lanes(staging, member, [None])
+    assert rep["lanes"][0]["state"] == "merged"
+    assert (_objects(), _country_row(), _records()) == want
+    lane_merge.record_lane_outcome("d", rep)
+    assert lane_merge.lanes_pending("d") is False
+
+
+def test_a_gap_the_countrys_feed_published_travels_with_it(machines, tmp_path):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path, edit=lambda con: con.execute(
+        "INSERT INTO versioned_gaps (feed, detected_at, from_token, to_token, reason) "
+        "VALUES ('osm-daily:ZZZ', '2025-02-01 00:00:00.000000', '90', '100', 'retention')"
+    ))
+    use(a)
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    assert rep["tables"]["versioned_gaps"]["inserted"] == 1
+    from src.versioned.feed import open_gaps
+
+    with store.lane_session("osm") as s:
+        assert [(g.from_token, g.to_token, g.reason) for g in open_gaps(s, A.feed_name("ZZZ"))] == [("90", "100", "retention")]
+
+
+def test_the_first_update_after_an_import_publishes_no_gap(machines, tmp_path):
+    from src.versioned.feed import open_gaps
+
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path)
+    use(a)
+    lane_merge.merge_lane_file("osm", snap, [None])
+    A.update_country("ZZ", T.Mirror(101, {101: T.DAY1}), workdir=a / "w", kill_switch=lambda: False)
+    with store.lane_session("osm") as s:
+        assert open_gaps(s, A.feed_name("ZZZ")) == []
+
+
+def test_a_backup_copy_dated_past_this_machines_clock_is_never_called_newer(machines, tmp_path):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path, edit=lambda con: con.execute(
+        "UPDATE osm_countries SET extract_vintage = '2999-01-01 00:00:00.000000', extract_sequence = 999"
+    ))
+    use(a)
+    _cut_here(a)
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    assert rep["osm_newer_in_backup"] == []
+
+
+def test_a_finished_backup_copy_of_a_cut_that_never_finished_here_is_said_apart(machines, tmp_path):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path)
+    use(a)
+    _cut_here(a)
+    _a_db_edit("UPDATE osm_countries SET status = 'failed'")
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    assert rep["osm_unfinished_here"] == ["ZZZ"] and rep["osm_newer_in_backup"] == []
+    from src.backup.import_reports import _living_sources_markdown
+
+    lines: list[str] = []
+    _living_sources_markdown(lines, {"lanes": [{**rep, "state": "merged"}]})
+    assert "never finished" in "\n".join(lines)
