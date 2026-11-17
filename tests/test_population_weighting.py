@@ -92,7 +92,8 @@ def test_a_table_that_cannot_state_itself_or_has_a_bad_row_is_refused_whole(tmp_
 
 def test_an_unreadable_path_is_reported_by_class_only(tmp_path):
     t = population.load_population_table(tmp_path)  # a directory
-    assert t["status"] == "unreadable" and "IsADirectoryError" in t["reason"]
+    # opening a folder is IsADirectoryError on POSIX and PermissionError on Windows (row 144): a class name either way, never a path
+    assert t["status"] == "unreadable" and ("IsADirectoryError" in t["reason"] or "PermissionError" in t["reason"])
 
 
 # --------------------------------------------------------------------------- fill_gaps

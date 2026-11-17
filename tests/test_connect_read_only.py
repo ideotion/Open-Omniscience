@@ -192,6 +192,7 @@ def test_a_windows_data_directory_is_a_uri_sqlite_accepts(path, uri):
     assert _read_only_uri(PureWindowsPath(path)) == uri
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="shown on a POSIX path, where //tmp/... is /tmp/... (row 144)")
 def test_the_empty_authority_form_is_what_sqlite_reads_as_a_double_slash_path(tmp_path):
     """The form built for a UNC path (``file:////server/share/x``) opens the file at ``//server/share/x``: shown on a POSIX path, where
     ``//tmp/...`` is ``/tmp/...``, since there is no share to open here."""

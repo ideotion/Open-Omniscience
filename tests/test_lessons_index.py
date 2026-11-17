@@ -10,6 +10,7 @@ protocol facts the ruling changed, so the text and the tool cannot drift apart.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -70,6 +71,18 @@ def test_a_heading_lesson_is_found_by_its_own_words_and_shown_whole():
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.startswith("## 2026-09-18")
+
+
+def test_a_console_that_cannot_encode_an_arrow_still_gets_the_entry():
+    """Row 144: on a cp1252 Windows console an arrow in an entry raised UnicodeEncodeError half-way through --show. An ASCII
+    stdout reproduces it on any platform."""
+    lines, entries = _entries()
+    e = next(x for x in entries if any("\u2192" in ln for ln in lines[x.line - 1:x.end]))
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "lessons.py"), "--show", str(e.line)],
+        capture_output=True, check=False, env={**os.environ, "PYTHONIOENCODING": "ascii"},
+    )
+    assert proc.returncode == 0 and b"Traceback" not in proc.stderr, proc.stderr[-400:]
 
 
 def test_an_empty_query_or_an_unknown_flag_is_refused_not_everything():

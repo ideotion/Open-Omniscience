@@ -175,4 +175,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    # A console whose encoding cannot write the arrows and markers these lines carry (cp1252 on Windows) gets a "?" for each,
+    # never a UnicodeEncodeError half-way through the answer (row 144)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     raise SystemExit(main(sys.argv[1:]))

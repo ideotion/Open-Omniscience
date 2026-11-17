@@ -691,7 +691,7 @@ def test_scrubbed_value_checks_a_leaf_that_is_not_a_string_as_the_text_it_is_wri
     """A report round-tripped through ``json.dumps(default=str)`` writes bytes, a path or an exception as text; the walk
     checks that text instead of passing the object. MUTATION TARGET: the leaf branch (back to pass-through), a ``str()`` that
     raises, the held passphrases."""
-    from pathlib import Path
+    from pathlib import PurePosixPath
 
     monkeypatch.setattr(ss, "held_passphrases", lambda: (OTHER,))
 
@@ -701,7 +701,7 @@ def test_scrubbed_value_checks_a_leaf_that_is_not_a_string_as_the_text_it_is_wri
 
     value = {
         "raw": b"bytes " + KEY.encode(),
-        "path": Path(f"/tmp/{OTHER}/x"),
+        "path": PurePosixPath(f"/tmp/{OTHER}/x"),  # a POSIX path: str() writes it with "/" on every system (row 144)
         "error": RuntimeError(f"key {KEY}"),
         "set": {OTHER},
         "rude": _Rude(),
