@@ -15,6 +15,8 @@ import pathlib
 import re
 import subprocess
 
+from tests.js_source_helper import function_body
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
 
@@ -72,7 +74,7 @@ def test_every_string_exists_in_all_twelve_locales():
 
 def test_the_read_is_local_and_the_route_is_no_longer_listed_as_uncalled():
     js = (STATIC / "app-corpus.js").read_text(encoding="utf-8")
-    body = js[js.index("async function paintWeatherSignals("):js.index("function setTrendLens(")]
+    body = function_body(js, "paintWeatherSignals")
     assert body.count("api(") == 1 and 'api("/api/signals/weather-signals")' in body
     assert body.index("if (!weatherSignalsOn()") < body.index("api("), "off returns before anything is read"
     boot = (STATIC / "app-boot.js").read_text(encoding="utf-8")
