@@ -5834,6 +5834,7 @@
   "This report is not stored in your corpus yet: fetch it first.": "此报告尚未保存在您的语料库中:请先获取。",
   "This run did not compare sites (tick “Also compare each article's site with its source's site” before you start it). These counts were not measured, which is not the same as zero.": "本次运行没有比较站点（开始前请勾选“同时比较每篇文章所在站点与其来源站点”）。这些数字没有测量过，这与零不是一回事。",
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "这次搜索匹配的是该概念在语义环覆盖的所有语言，而不仅是你输入的词。大多数词语不在任何语义环中，不受影响。",
+  "This sentence is no longer suggested, so once removed it cannot be kept again. Remove your decision?": "此句已不再被建议,一旦移除便无法再次保留。要移除您的决定吗?",
   "This single-file download is capped at about 2 GiB. For a larger corpus use the Export / Back up… flow (Settings → Data & backup), which streams to a folder with no size limit.": "此单文件下载上限约为 2 GiB。对于更大的语料库，请使用“导出 / 备份…”流程（设置 → 数据与备份），它会以无大小限制的方式流式写入文件夹。",
   "This source no longer exists": "该来源已不存在",
   "This source really publishes on that site: count it as “confirmed by you” in the next dry run. Nothing is marked or removed.": "此来源确实在该站点发布：在下次试运行中将其计为“已由您确认”。不会标记或删除任何内容。",

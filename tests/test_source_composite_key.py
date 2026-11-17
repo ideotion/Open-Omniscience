@@ -238,7 +238,9 @@ def test_the_alembic_revision_takes_the_same_path_on_a_staged_copy(tmp_path):
         conn.exec_driver_sql("INSERT INTO alembic_version VALUES ('c3a91f5e7b24')")
     before = _counts(engine)
     engine.dispose()
-    assert upgrade_database_file(tmp_path / "legacy.db") == "f61a2b3c4d5e"
+    from src.database.migrate import _head_revision
+
+    assert upgrade_database_file(tmp_path / "legacy.db") == _head_revision()  # the head, never a pinned id a new migration breaks
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}", future=True)
     try:
         assert _counts(engine) == before

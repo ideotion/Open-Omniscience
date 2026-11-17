@@ -5842,8 +5842,8 @@ def _merge_ipcc_predictions(con, batch_id, results) -> None:
     """A person's decisions on suggested IPCC predictions (row 121, G4): carried, local wins.
 
     Identity is the schema's own ``uq_ipcc_prediction_sentence``, (SPM catalog key, sentence hash), the same on every
-    install, so no id map is joined. A decision only the incoming corpus holds is INSERTED and tracked in ``merged_rows``
-    (an undo of the restore removes it). Where both hold the sentence, the local decision stays, as everywhere else in
+    install, so no id map is joined. A decision only the incoming corpus holds is INSERTED and recorded in ``merged_rows``
+    (the restore's provenance). Where both hold the sentence, the local decision stays, as everywhere else in
     the merge; a different incoming decision is COUNTED as a conflict and sampled, never applied.
     """
     d = DomainResult()

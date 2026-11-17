@@ -5834,6 +5834,7 @@
   "This report is not stored in your corpus yet: fetch it first.": "この報告書はまだコーパスに保存されていません。先に取得してください。",
   "This run did not compare sites (tick “Also compare each article's site with its source's site” before you start it). These counts were not measured, which is not the same as zero.": "この実行ではサイトを比較していません（開始前に「各記事のサイトを情報源のサイトとも比較する」にチェックを入れてください）。この数は測っていないもので、ゼロとは違います。",
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "この検索は、入力した語だけでなく、リングが含むすべての言語でこの概念に一致しました。ほとんどの語はどのリングにも属さず、影響を受けません。",
+  "This sentence is no longer suggested, so once removed it cannot be kept again. Remove your decision?": "この文はもう候補になっていないため、一度削除すると再び保持できません。決定を削除しますか?",
   "This single-file download is capped at about 2 GiB. For a larger corpus use the Export / Back up… flow (Settings → Data & backup), which streams to a folder with no size limit.": "この単一ファイルのダウンロードは約2 GiBに制限されています。より大きなコーパスにはエクスポート／バックアップ…（設定 → データとバックアップ）を使ってください。サイズ制限なくフォルダーへストリーミングします。",
   "This source no longer exists": "このソースはもう存在しません",
   "This source really publishes on that site: count it as “confirmed by you” in the next dry run. Nothing is marked or removed.": "このソースは本当にそのサイトで公開しています：次のドライランで「確認済み」として数えます。何もマークも削除もされません。",

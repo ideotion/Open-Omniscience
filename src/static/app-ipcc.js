@@ -78,7 +78,7 @@
       _predWired = true;
       host.addEventListener("click", (ev) => {
         const b = ev.target.closest("button[data-ipcc-decide]");
-        if (b) ipccDecide(b.getAttribute("data-ipcc-hash"), b.getAttribute("data-ipcc-decide"));
+        if (b) ipccDecide(b.getAttribute("data-ipcc-hash"), b.getAttribute("data-ipcc-decide"), b.hasAttribute("data-ipcc-orphan"));
       });
       host.addEventListener("change", (ev) => {
         if (ev.target && ev.target.id === "ipcc-pred-filter") { _predFilter = ev.target.value; _renderPredictions(); }
@@ -121,7 +121,7 @@
     const opt = (v, label) => `<option value="${v}"${_predFilter === v ? " selected" : ""}>${esc(_tx(label))}</option>`;
     const filter = `<label class="hint">${esc(_tx("Show"))} <select id="ipcc-pred-filter">${opt("all", "all suggestions")}${opt("undecided", "not decided yet")}${opt("kept", "kept as a prediction")}${opt("set_aside", "set aside")}</select></label>`;
     const want = (dec) => _predFilter === "all" || (_predFilter === "undecided" ? !dec : dec === _predFilter);
-    const btn = (h, value, label, on) => `<button type="button" data-ipcc-hash="${esc(h)}" data-ipcc-decide="${value}" aria-pressed="${on ? "true" : "false"}">${esc(_tx(label))}</button>`;
+    const btn = (h, value, label, on, orphan) => `<button type="button" data-ipcc-hash="${esc(h)}" data-ipcc-decide="${value}"${orphan ? " data-ipcc-orphan" : ""} aria-pressed="${on ? "true" : "false"}">${esc(_tx(label))}</button>`;
     const row = (i) => {
       const cues = [].concat((i.cues || {}).likelihood || [], (i.cues || {}).confidence || [], (i.cues || {}).future || []);
       const undo = i.decision ? btn(i.hash, "undecided", "Undo", false) : "";
@@ -135,13 +135,16 @@
     const orphans = (d.not_suggested_now || []).filter((o) => want(o.decision));
     const orphanList = orphans.length ? `<h4 style="margin:10px 0 0;font-size:12px">${esc(_tx("Decided earlier, no longer suggested by this method"))}</h4>
       <ul style="padding-left:18px">${orphans.map((o) => `<li style="margin-top:6px"><div>&ldquo;${esc(o.sentence)}&rdquo;</div>
-        <div class="muted">${esc(_decisionLabel(o.decision))}</div><div class="row" style="gap:6px;margin-top:4px">${btn(o.hash, "undecided", "Undo", false)}</div></li>`).join("")}</ul>` : "";
-    host.innerHTML = head + counts + filter + list + orphanList;
+        <div class="muted">${esc(_decisionLabel(o.decision))}</div><div class="row" style="gap:6px;margin-top:4px">${btn(o.hash, "kept", "Keep as a prediction", o.decision === "kept")}${btn(o.hash, "set_aside", "Set aside", o.decision === "set_aside")}${btn(o.hash, "undecided", "Undo", false, true)}</div></li>`).join("")}</ul>` : "";
+    host.innerHTML = head + counts + `<div id="ipcc-pred-msg" class="hint" role="status" aria-live="polite"></div>` + filter + list + orphanList;
   }
 
-  async function ipccDecide(hash, decision) {
+  async function ipccDecide(hash, decision, orphan) {
     if (!_predKey || !hash) return;
-    const st = document.getElementById("ipcc-status");
+    // A sentence this method no longer suggests cannot be decided on again once its decision is gone: say so first.
+    if (orphan && decision === "undecided"
+        && !window.confirm(_tx("This sentence is no longer suggested, so once removed it cannot be kept again. Remove your decision?"))) return;
+    const st = document.getElementById("ipcc-pred-msg") || document.getElementById("ipcc-status");
     try {
       await api("/api/ipcc/spm/" + encodeURIComponent(_predKey) + "/predictions/decide",
         {method: "POST", body: JSON.stringify({sentence_hash: hash, decision: decision})});

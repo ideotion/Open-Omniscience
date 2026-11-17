@@ -87,6 +87,29 @@ def test_e_g_does_not_end_a_sentence():
     assert [x.sentence for x in ip.suggest(s, "2021-08-07").suggestions] == [s]
 
 
+def test_the_spm_layout_splits_where_statements_end_and_quotes_what_the_report_printed():
+    """The independent read's reproducers: citations, glued footnotes, compounds broken across lines, abbreviations."""
+    t = (
+        "A.1 Warming will very likely continue (high confidence). {2.3, 4.3, 4.5} (Figure SPM.4) B.1.1 Compared to "
+        "1850\u20131900, warming is likely to reach 1.5\u00b0C by 2040. Sea level is projected to rise under SSP5-8.5.21 Sea "
+        "level will very likely rise by 2100. Ice will likely melt (high confidence).23 More text here follows today. "
+        "The Arctic will very likely warm (Fig. 3) in the long-\nterm future. Global emis-\nsions are projected to be "
+        "likely high by mid-\ncentury. Warming under SSP1\u20111.9 is very likely limited. The budget is 2390 \u00b1 240 "
+        "GtCO2 and is likely the largest. Warming of 1.5 Global was likely projected."
+    )
+    got = ip._sentences(t)
+    assert "A.1 Warming will very likely continue (high confidence)." in got, "a statement id read as a footnote"
+    assert got[1].startswith("B.1.1 Compared"), "a citation glued the next statement on"
+    assert not any("{" in x or "Figure SPM" in x for x in got)
+    assert "Sea level will very likely rise by 2100." in got and "More text here follows today." in got, "a footnote glued two"
+    assert "The Arctic will very likely warm (Fig. 3) in the long-term future." in got, "Fig. split or long-term lost its hyphen"
+    assert "Global emissions are projected to be likely high by mid-century." in got
+    assert "Warming of 1.5 Global was likely projected." in got, "a decimal read as a footnote"
+    cues = {x.sentence: x.future for x in ip.suggest(t, "2021-08-07").suggestions}
+    assert "SSP1\u20111.9" in cues["Warming under SSP1\u20111.9 is very likely limited."], "a non-breaking hyphen hid the scenario"
+    assert "The budget is 2390 \u00b1 240 GtCO2 and is likely the largest." not in cues, "a quantity read as a year"
+
+
 # ------------------------------------------------------------------ the routes
 @pytest.fixture
 def world():
@@ -178,6 +201,9 @@ def test_a_decision_the_method_no_longer_suggests_stays_listed_in_full(world):
     d = c.get("/api/ipcc/spm/wg1/predictions").json()
     assert d["items"] == []
     assert [(o["hash"], o["sentence"], o["decision"]) for o in d["not_suggested_now"]] == [(item["hash"], item["sentence"], "kept")]
+    # it can be switched without being taken back, since a removed one can never be kept again
+    assert c.post("/api/ipcc/spm/wg1/predictions/decide", json={"sentence_hash": item["hash"], "decision": "set_aside"}).status_code == 200
+    assert c.get("/api/ipcc/spm/wg1/predictions").json()["not_suggested_now"][0]["decision"] == "set_aside"
     # and it can still be taken back
     assert c.post("/api/ipcc/spm/wg1/predictions/decide", json={"sentence_hash": item["hash"], "decision": "undecided"}).status_code == 200
     assert c.get("/api/ipcc/spm/wg1/predictions").json()["not_suggested_now"] == []
@@ -261,6 +287,7 @@ def test_the_panel_keeps_the_caveat_visible_puts_the_method_one_click_away_and_a
     assert "<details" in pred and "d.method" in pred, "the method is not one click away"
     assert "ensureOnline" not in pred, "a local read or write asked for the network consent"
     assert "data-ipcc-decide" in pred and "onclick" not in js
+    assert "window.confirm(" in pred and "orphan" in pred, "removing a decision that can never be made again asks first"
 
 
 def test_the_new_strings_ship_in_every_locale():
