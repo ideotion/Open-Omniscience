@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,backup,import history order on Windows (row 137),shipped,PR #2101,src/backup/import_reports.py; tests/test_import_report_order.py,"Reports carry a written_at_ns stamp; the import history orders by stamp, then mtime, then filename, so NTFS mtime ties no longer fall back to a random filename order. Pre-stamp reports list by mtime; the stamp is never listed or read back."
