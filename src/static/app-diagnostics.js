@@ -3157,6 +3157,9 @@
       // for review (scripts/propose_source_additions.py). Nothing is added to a catalogue without a reviewed pull request.
       {kind: "file", url: "/api/diagnostics/source-qualification-export?download=1", name: "oo-field-{press}-source-qualification.json"},
       {kind: "file", method: "POST", url: "/api/diagnostics/field-candidate-sources", name: "oo-field-{press}-candidate-sources.zip"},
+      // OSM daily change files (row 117, 0.6 gate row B): what each applied file cost (bytes, fetch and apply seconds), the
+      // Diagnostics zip's own osm-change-files.json member (about 20 KB), so the measured daily diff cost can be sent back.
+      {kind: "file", url: "/api/osm/change-files", name: "oo-field-{press}-osm-change-files.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte
