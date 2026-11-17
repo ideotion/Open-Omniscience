@@ -2840,7 +2840,8 @@ def test_the_child_writes_a_result_with_the_passphrase_taken_out_of_every_string
     text = child._result_text(result, NEEDLE)
     assert NEEDLE not in text
     out = json.loads(text)
-    assert out["backup"] == "/b/***redacted***" and out["path"] == "/x/***redacted***", "a default=str value too"
+    # a Path is written through default=str, so it carries the running system's separator
+    assert out["backup"] == "/b/***redacted***" and out["path"] == str(Path("/x/***redacted***")), "a default=str value too"
     assert out["restore"] == {"refused": "bad ***redacted***", "committed": False}
     assert out["rows"] == ["***redacted***!", 1.5, None] and out["n"] == 2
     assert json.loads(child._result_text({"ok": True}, "")) == {"ok": True}, "no passphrase, nothing replaced"

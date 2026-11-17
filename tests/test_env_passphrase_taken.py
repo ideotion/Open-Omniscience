@@ -8,6 +8,7 @@ them from there. These tests start real processes, and read what the paths that 
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 
 from src.monitoring import core_guard, engine_text
 from src.monitoring import secret_scrub as S
+from tests._child_env import windows_system_env
 from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +69,7 @@ def _run(code: str, tmp_path, **extra) -> subprocess.CompletedProcess:
         cwd=ROOT,
         env={
             "PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "OO_DATA_DIR": str(tmp_path / "data"),
-            "PYTHONDONTWRITEBYTECODE": "1", "OO_DB_PASSPHRASE": PASS, "OO_KEY_PASSPHRASE": KEY_PASS, **extra,
+            "PYTHONDONTWRITEBYTECODE": "1", "OO_DB_PASSPHRASE": PASS, "OO_KEY_PASSPHRASE": KEY_PASS, **windows_system_env(), **extra,
         },
         capture_output=True, text=True, timeout=120,
     )
@@ -151,6 +153,7 @@ def test_a_key_typed_into_the_unlock_page_is_not_handed_to_the_restarted_process
     assert "typed-into-the-page-91" not in repr(seen["env"]) and "OO_DB_PASSPHRASE" not in seen["env"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the claim is about a machine with no windll: on Windows the real calls answer")
 def test_the_windows_calls_themselves_return_none_and_never_raise_where_there_is_no_windows(monkeypatch):
     """The seams the Windows tests stand in for, run for real with the platform name set: on a machine with no ``windll`` or
     ``ucrtbase`` they answer ``None`` and do nothing, so a platform check that was wrong would be a quiet failure, not a crash."""

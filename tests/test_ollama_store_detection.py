@@ -36,7 +36,8 @@ def _make_store(root: Path, ref_tag: str = "3b") -> Path:
 def test_candidate_stores_env_first_then_linux_service(monkeypatch):
     monkeypatch.setenv("OLLAMA_MODELS", "/custom/models")
     monkeypatch.setattr(sys, "platform", "linux")
-    cands = [str(p) for p in om.candidate_stores()]
+    # compared as forward-slash spellings: on Windows the same Path prints with backslashes
+    cands = [p.as_posix() for p in om.candidate_stores()]
     assert cands[0] == "/custom/models", "OLLAMA_MODELS must come first"
     assert any(c.endswith("/usr/share/ollama/.ollama/models") for c in cands), (
         "the protected Linux systemd service store must be a candidate"
