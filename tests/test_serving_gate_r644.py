@@ -138,6 +138,11 @@ def test_the_own_launcher_on_a_fresh_locked_store_serves_the_unlock_page(tmp_pat
         "OO_LLM_AUTOSTART": "0",
         "PYTHONPATH": str(ROOT),
     }
+    # Windows: a child without SYSTEMROOT cannot seed its random numbers or open a socket, so it dies before it serves anything;
+    # the real launcher always inherits it. Carried through when present, never set where the parent has none.
+    for name in ("SYSTEMROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA"):
+        if name in os.environ:
+            env[name] = os.environ[name]
     proc = subprocess.Popen(
         [sys.executable, "-m", "src.api.main"], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
@@ -154,6 +159,9 @@ def test_the_own_launcher_on_a_fresh_locked_store_serves_the_unlock_page(tmp_pat
                 break
             except OSError:
                 time.sleep(0.25)
+        if status is None and proc.poll() is not None:
+            out, _ = proc.communicate(timeout=30)
+            pytest.fail(f"the launcher exited ({proc.returncode}) before serving /unlock: {out[-2000:]!r}")
         assert status == 200, f"/unlock answered {status}: {body[:300]!r}"
     finally:
         proc.terminate()
