@@ -246,18 +246,13 @@ def test_no_new_socket_capable_importers():
 # library reaches the network with neither, and reads no robots.txt unless it
 # goes through the EthicalFetcher itself. The scripts that need the network
 # for a user or operator (stat_news_check.py, thesaurus_build.py,
-# build_place_gazetteer.py) import the guarded path from src/ and so are not
-# listed here. Everything below was read before it was listed; docs/SECURITY.md
+# build_place_gazetteer.py, bloc_roster_check.py, and build_city_gazetteer.py
+# since row 132) import the guarded path from src/ and so are not listed here. Everything below was read before it was listed; docs/SECURITY.md
 # names the egressing ones ("Maintainer build scripts").
 _SCRIPTS = _SRC.parent / "scripts"
 
 _ALLOWED_SCRIPT_SOCKET_IMPORTERS: dict[str, str] = {
     # -- real egress, maintainer-run; the output is a committed repository file --
-    "scripts/build_city_gazetteer.py":
-        "KNOWN GAP (row 129): requests to query.wikidata.org (SPARQL) writing "
-        "configs/cities.yml, NOT committed; the Map empty state and the manual point "
-        "users to it. No --online, no transport read, no kill switch; to move onto "
-        "guarded_session like build_place_gazetteer.py",
     "scripts/build_world_news_catalog.py":
         "maintainer build: requests to query.wikidata.org (SPARQL) for news-outlet "
         "candidates into configs/world_news_sources.yml (not committed; the app seeds "

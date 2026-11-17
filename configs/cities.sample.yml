@@ -3,7 +3,8 @@
 #
 # Coordinates are public geographic facts (lat, lon in degrees). For full
 # worldwide coverage, generate configs/cities.yml from Wikidata (CC0):
-#   python scripts/build_city_gazetteer.py
+#   python scripts/build_city_gazetteer.py --online
+# (it names its host and transport first; see the script's own help).
 # When that file exists it is preferred over this sample.
 
 cities:
