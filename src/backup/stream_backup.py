@@ -413,6 +413,19 @@ def _require_safe_member_name(name: str) -> None:
         raise VolumeError(f"unsafe member path in the volume manifest: {name!r}")
 
 
+def _require_distinct_member_names(m: dict[str, Any]) -> None:
+    """Two members that name one staged file ("a\\b" and "a/b", "./a" and "a") are refused: the second would overwrite what the first was
+    checked as. Run AFTER ``_require_each_volume_read_once``, whose reason ("listed more than once") names a volume listed twice more exactly."""
+    from src.backup.artifact import member_name
+
+    seen: set[str] = set()
+    for mm in m.get("members") or []:
+        spelled = str(PurePosixPath(member_name(str(mm.get("name") or ""))))
+        if spelled in seen:
+            raise VolumeError(f"two members of the volume manifest name the same file: {spelled!r}")
+        seen.add(spelled)
+
+
 def _require_safe_volume_name(name: str) -> None:
     """Volume file names must be plain basenames — never a path that could make
     verify/restore read or write outside the set directory."""
@@ -452,15 +465,8 @@ def _require_safe_manifest_names(m: dict[str, Any]) -> None:
         _require_safe_volume_name(str(v.get("name") or ""))
     for pv in (m.get("parity") or {}).get("volumes") or []:
         _require_safe_volume_name(str(pv.get("name") or ""))
-    from src.backup.artifact import member_name
-
-    seen: set[str] = set()
     for mm in m.get("members") or []:
         _require_safe_member_name(str(mm.get("name") or ""))
-        spelled = str(PurePosixPath(member_name(str(mm.get("name") or ""))))
-        if spelled in seen:  # "a\\b" and "a/b" are one staged file: the second would overwrite what the first was checked as
-            raise VolumeError(f"two members of the volume manifest name the same file: {spelled!r}")
-        seen.add(spelled)
         for vname in mm.get("volumes") or []:
             _require_safe_volume_name(str(vname or ""))
     if m.get("corpus_member") is not None:
@@ -2028,6 +2034,7 @@ def verify_stream_backup(
     if m.get("kind") == STREAM_KIND:
         _require_safe_manifest_names(m)
         _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
     report: dict[str, Any] = {
         "kind": m.get("kind"),
         "ok": True,
@@ -2237,6 +2244,7 @@ def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
         # The restore's own volume checks first (a link, a volume listed twice): this runs before the run is started, so
         # it must not read anything the restore itself would refuse to read.
         _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
         _refuse_a_wrong_backup_passphrase(src, m, passphrase)
     except EncryptionError:
         return True
@@ -2265,6 +2273,7 @@ def read_stream_backup(
         raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
     _require_safe_manifest_names(m)
     _require_each_volume_read_once(m, src)
+    _require_distinct_member_names(m)
     sig_state = _manifest_signature_state(m)
     if sig_state == "bad-signature":
         raise VolumeError(
@@ -2435,6 +2444,7 @@ def backup_manifest_refusal(src_dir: Path | str) -> str | None:
     try:
         _require_safe_manifest_names(m)
         _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
     except VolumeError as exc:
         from src.monitoring.secret_scrub import record_text
 

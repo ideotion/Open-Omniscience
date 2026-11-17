@@ -177,11 +177,11 @@ def test_the_writers_spell_every_member_name_with_a_slash():
 
 def test_two_spellings_of_one_member_are_refused():
     """ "a\\b" and "a/b" are one staged file: a volume manifest naming both would overwrite what the first was checked as."""
-    from src.backup.stream_backup import _require_safe_manifest_names
+    from src.backup.stream_backup import _require_distinct_member_names
 
     with pytest.raises(VolumeError):
-        _require_safe_manifest_names({"members": [{"name": "keys/a.key"}, {"name": "keys\\a.key"}]})
-    _require_safe_manifest_names({"members": [{"name": "keys/a.key"}, {"name": "keys/b.key"}]})
+        _require_distinct_member_names({"members": [{"name": "keys/a.key"}, {"name": "keys\\a.key"}]})
+    _require_distinct_member_names({"members": [{"name": "keys/a.key"}, {"name": "keys/b.key"}]})
 
 
 def test_a_log_member_named_like_a_drive_is_refused_not_appended():
