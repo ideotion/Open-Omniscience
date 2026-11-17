@@ -106,6 +106,7 @@ def _replaced_inside_the_window(tmp_path: Path, live: Path) -> Path:
 # --------------------------------------------------------------------------- #
 #  the defect, and the guard
 # --------------------------------------------------------------------------- #
+@posix_swap_over_a_held_handle
 def test_without_the_guard_a_save_through_a_checked_out_connection_lands_in_the_kept_file(tmp_path):
     """The defect, reproduced: the evidence that the guard below is what stops it."""
     live = tmp_path / "live.db"
@@ -124,6 +125,7 @@ def test_without_the_guard_a_save_through_a_checked_out_connection_lands_in_the_
         engine.dispose()
 
 
+@posix_swap_over_a_held_handle
 def test_a_checked_out_connection_from_before_the_switch_is_refused_and_the_save_lands_nowhere(world):
     tmp_path, live, engine = world
     with engine.connect() as conn:
@@ -139,6 +141,7 @@ def test_a_checked_out_connection_from_before_the_switch_is_refused_and_the_save
     assert _bodies(live) == ["before", "saved after"] and _bodies(kept) == ["before"]
 
 
+@posix_swap_over_a_held_handle
 def test_a_read_on_a_stale_connection_is_refused_too_and_a_connection_made_after_the_window_is_not(world):
     tmp_path, live, engine = world
     with engine.connect() as conn:
@@ -152,6 +155,7 @@ def test_a_read_on_a_stale_connection_is_refused_too_and_a_connection_made_after
         assert fresh.execute(text("SELECT count(*) FROM notes")).scalar() == 1
 
 
+@posix_swap_over_a_held_handle
 def test_the_stale_connection_never_returns_to_the_pool(world):
     tmp_path, live, engine = world
     conn = engine.connect()
@@ -167,6 +171,7 @@ def test_the_stale_connection_never_returns_to_the_pool(world):
 # --------------------------------------------------------------------------- #
 #  NEW-1 (a): the COMMIT is not a cursor statement
 # --------------------------------------------------------------------------- #
+@posix_swap_over_a_held_handle
 def test_a_commit_after_the_switch_is_refused_and_the_row_is_in_neither_file(world):
     """begin, INSERT, bump, commit: the INSERT ran on a valid connection, so only the COMMIT's own guard stops it."""
     tmp_path, live, engine = world
@@ -191,6 +196,7 @@ def test_a_commit_on_a_current_connection_still_commits(world):
 # --------------------------------------------------------------------------- #
 #  the pool: idle connections, several of them
 # --------------------------------------------------------------------------- #
+@posix_swap_over_a_held_handle
 def test_idle_pooled_connections_from_before_the_switch_are_not_handed_out(world):
     tmp_path, live, engine = world
     held = [engine.connect() for _ in range(3)]
@@ -211,6 +217,7 @@ def test_idle_pooled_connections_from_before_the_switch_are_not_handed_out(world
 # --------------------------------------------------------------------------- #
 #  NEW-1: the open and the swap share one lock
 # --------------------------------------------------------------------------- #
+@posix_swap_over_a_held_handle
 def test_a_connection_opened_while_the_swap_waits_for_the_window_is_stamped_before_it_and_is_never_used(tmp_path):
     """A connect that straddles the swap (read the generation, was opening the file) is on the OLD file: it is stamped with the OLD
     generation, the swap waits for it, and the checkout that follows refuses it, so the thread that opened it is given a connection
@@ -470,6 +477,7 @@ def test_a_window_whose_source_still_exists_gives_the_old_connections_their_vali
     assert "saved after a refused swap" in _bodies(live)
 
 
+@posix_swap_over_a_held_handle
 def test_a_connection_the_swap_itself_opens_before_the_replace_is_an_old_connection(world):
     """The data-version read and the log fold open connections inside the window, on the OLD file: they must not be handed out after the
     replace under the new generation (the first version of the lock stamped them with it)."""
@@ -487,6 +495,7 @@ def test_a_connection_the_swap_itself_opens_before_the_replace_is_an_old_connect
         assert fresh.connection.info[gen._KEY] == gen.current()
 
 
+@posix_swap_over_a_held_handle
 def test_a_window_whose_source_is_gone_leaves_the_old_connections_stale(world):
     tmp_path, live, engine = world
     with engine.connect() as conn:

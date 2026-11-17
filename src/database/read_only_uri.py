@@ -14,6 +14,7 @@ form, which is a different spelling of the same file and one SQLite reads differ
 from __future__ import annotations
 
 import os
+import posixpath
 import sqlite3
 from pathlib import Path
 from urllib.parse import quote
@@ -43,7 +44,7 @@ def read_only_uri(path: os.PathLike[str] | str, *, windows: bool | None = None) 
         if p.startswith("//"):  # UNC: \\server\share\x -> an empty authority, path //server/share/x
             return "file://" + quote(p, safe="/:") + "?mode=ro"
         return "file:///" + quote(p, safe="/:") + "?mode=ro"
-    p = os.path.abspath(raw)
+    p = posixpath.abspath(raw)  # the POSIX flavour asked for, whatever system runs it (os.path is posixpath on POSIX)
     return "file://" + quote(p, safe="/") + "?mode=ro"
 
 
