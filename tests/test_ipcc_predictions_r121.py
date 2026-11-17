@@ -30,6 +30,7 @@ from src.database.models import Article, Base, IpccPrediction
 from src.database.session import get_db
 from src.ingest import ipcc_predictions as ip
 from src.ingest.ipcc_spm import ensure_ipcc_source, spm_entry
+from tests.js_source_helper import function_source
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -280,7 +281,9 @@ def test_the_panel_keeps_the_caveat_visible_puts_the_method_one_click_away_and_a
     js = (_ROOT / "src/static/app-ipcc.js").read_text(encoding="utf-8")
     html = (_ROOT / "src/static/index.html").read_text(encoding="utf-8")
     assert 'id="ipcc-pred"' in html
-    pred = js[js.index("async function loadIpccPredictions"):]
+    pred = "\n".join(
+        function_source(js, name) for name in ("loadIpccPredictions", "_renderPredictions", "ipccDecide")
+    )
     assert '/predictions"' in pred and "/predictions/decide" in pred
     assert re.search(r'/predictions/decide",\s*\{method: "POST"', pred), "a decision is a write: a POST (R694)"
     assert 'class="card-caveat"' in pred and "d.caveat" in pred, "the short caveat is not visible"
