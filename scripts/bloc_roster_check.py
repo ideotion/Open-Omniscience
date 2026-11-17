@@ -274,7 +274,7 @@ def fit(report: dict[str, Any], limit: int = MAX_REPORT_BYTES) -> dict[str, Any]
     report["rows_dropped_to_fit"] = {}
     if _size(report) > limit:
         report["query_template"] = None
-    excess = _size(report) - limit
+    excess: float = _size(report) - limit
     if excess > 0:
         # a row costs more inside the report than alone (its lines are indented there), so each bloc's rows are scaled to
         # what the bloc really adds, measured once per bloc
