@@ -255,7 +255,16 @@ def damage_encrypted_table(path: Path, table: str, *, count: int = 2, seed: int 
             # the start-up's own per-table check, so "damaged" here is exactly what the app would file; a schema page that was hit
             # makes the OPEN fail (unchecked), and the schema is not the table under test
             corrupt = verify.check_table(path, table, opener=lambda p: open_store(p, key=key))["verdict"] == verify.VERDICT_DAMAGED
-        except Exception:  # noqa: BLE001 - check_table never raises; belt and braces for a test helper
+            # A page of the SCHEMA can also make the table's check answer damaged (measured on the SQLCipher floor build, once
+            # the schema grew onto a page the seeded order reached): that file's table list is unreadable, which is a different
+            # damage from the one the caller asked for, so the page is put back.
+            if corrupt:
+                con = open_store(path, key=key)
+                try:
+                    con.execute("SELECT name, sql FROM sqlite_master").fetchall()
+                finally:
+                    con.close()
+        except Exception:  # noqa: BLE001 - a schema page was hit (the read above raised); check_table itself never raises
             corrupt = False
         if corrupt:
             hit.append(pg)

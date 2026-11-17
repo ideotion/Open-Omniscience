@@ -370,6 +370,7 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/insights/subjectivity": f"/api/insights/subjectivity?article_id={a}",
         "/api/insights/trend-articles": f"/api/insights/trend-articles?term=flood&start={date.today() - timedelta(days=7)}&end={date.today()}",
         "/api/integrity/profile": f"/api/integrity/profile?source={_MARK}-a",
+        "/api/ipcc/spm/{key}/predictions": "/api/ipcc/spm/wg1/predictions",
         "/api/law/documents/{document_id}": f"/api/law/documents/{d}",
         "/api/law/documents/{document_id}/compare": f"/api/law/documents/{d}/compare?from={ids.rev_old}&to={ids.rev_new}",
         "/api/law/documents/{document_id}/provision-timeline": f"/api/law/documents/{d}/provision-timeline",
