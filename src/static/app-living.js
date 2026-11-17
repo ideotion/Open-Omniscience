@@ -756,6 +756,7 @@
       loadLawWeek();
       loadLivingLawDocs();
       loadLawFloor();
+      loadLawThesauri();
       loadLawAmendMap();
       loadLawVelocity();
     }
@@ -1040,6 +1041,54 @@
       else _wikiReader = ooVersionReader(host, base, {});
     }
 
+    // -- the topic thesauri built on this computer (R737, row 119) --
+    // Only a file whose format and SHA-256 hold is ever used; every other state is said, with the server's reason in
+    // the hover. The release date is shown as the publisher gave it, never judged old: no age has been ruled stale.
+    function lawThesaurusWords(x, t, tf) {
+      const st = x && x.state;
+      if (st === "ok") {
+        const n = Number(x.n_concepts) || 0;
+        return tf("ready: release {vintage}, {n} concepts", {
+          vintage: String(x.vintage || "—"), n: typeof fmtNum === "function" ? fmtNum(n, 0) : String(n) });
+      }
+      if (st === "missing") return t("not built on this computer yet: scripts/thesaurus_build.py builds it");
+      if (st === "unreadable") return t("set aside: not a file this version can read");
+      if (st === "old_format") return t("set aside: built by an older version, build it again");
+      if (st === "hash_mismatch") return t("set aside: the file changed after it was built, build it again");
+      if (st === "unverified") return t("set aside: its build summary is missing, so it cannot be checked");
+      return String(st); // a state this build does not know is shown as sent, never mapped onto the nearest known word
+    }
+    // The hover: the server's reason as a translated template with its parameters (file names, hash prefixes, an
+    // error's class name), so it reads in the reader's language; the English text only when no template came.
+    function lawThesaurusWhy(x, tf) {
+      if (x && x.reason_key && x.reason_params && typeof x.reason_params === "object") return tf(String(x.reason_key), x.reason_params);
+      return x && x.reason ? String(x.reason) : "";
+    }
+    function livingThesauriHtml(d, t, tf) {
+      const list = d && Array.isArray(d.thesauri) ? d.thesauri : [];
+      if (!list.length) return "";
+      const ready = list.filter((x) => x && x.state === "ok").length;
+      // A file set aside opens the fold: its reason is something to read now, not one click away.
+      const aside = list.some((x) => x && x.state !== "ok" && x.state !== "missing");
+      const rows = list.map((x) => { const why = lawThesaurusWhy(x, tf); return `<li${why ? ` title="${esc(why)}"` : ""}>`
+        + `${ooLabelHtml(esc(String(x.name || x.scheme || "")), esc(lawThesaurusWords(x, t, tf)))}</li>`; }).join("");
+      return `<details class="hint"${aside ? " open" : ""}><summary>`
+        + `${esc(tf("Topic thesauri on this computer: {ok} of {n} ready to use", { ok: String(ready), n: String(list.length) }))}`
+        + `</summary><ul>${rows}</ul></details>`;
+    }
+    let _lawThesauriLast = null;
+    function renderLawThesauri() {
+      const box = $("law-thesauri");
+      if (!box || !_lawThesauriLast) return;
+      box.innerHTML = livingThesauriHtml(_lawThesauriLast, _livingT(), _livingTf());
+    }
+    async function loadLawThesauri() {
+      const box = $("law-thesauri");
+      if (!box) return;
+      try { _lawThesauriLast = await api("/api/law/thesauri"); renderLawThesauri(); }  // loopback: a read of the data folder
+      catch (e) { _lawThesauriLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
+
     // -- analytic 3: a topic across jurisdictions --
     function renderLawTopic() {
       const t = _livingT();
@@ -1134,7 +1183,7 @@
     }
 
     function repaintLawEvolutionFromCache() {
-      renderLawWeek(); renderLivingLawDocs(); renderLawFloor(); renderLawPit(); renderLawTopic(); renderLawVelocity();
+      renderLawWeek(); renderLivingLawDocs(); renderLawFloor(); renderLawPit(); renderLawThesauri(); renderLawTopic(); renderLawVelocity();
       const tc = $("law-tc-title");
       if (tc && _lawTc && !_lawTc.title) tc.textContent = "";
       void renderLawAmendMap();
