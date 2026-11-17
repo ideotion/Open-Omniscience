@@ -1828,21 +1828,23 @@ def discover_sources_by_topic(
             "message": _DISCOVERY_OFFLINE,
         }
 
-    from src.services.duckduckgo import SearchRefusedByRobots
+    from src.services.duckduckgo import SearchDisallowedByRobots, SearchRefusedByRobots
 
     with SourceManager(session=db) as manager:
         try:
             sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
         except SearchRefusedByRobots as refused:
             # Refused, not empty: present only when robots.txt caused it, beside the reason, so it never reads as "0 found".
+            # The reason is the CLASS's, read by isinstance: the exception's words are never served.
+            reason = "disallowed" if isinstance(refused, SearchDisallowedByRobots) else "unavailable"
             return {
                 "topic": topic,
                 "max_sources": max_sources,
                 "region": region,
                 "sources": [],
                 "count": 0,
-                "refused_by_robots": refused.reason,
-                "message": _DISCOVERY_ROBOTS[refused.reason],
+                "refused_by_robots": reason,
+                "message": _DISCOVERY_ROBOTS[reason],
             }
 
         out: dict[str, Any] = {

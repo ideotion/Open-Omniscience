@@ -788,8 +788,8 @@ def _host_held_fetcher(hosts: tuple[str, ...]) -> EthicalFetcher:
     def _get(u: str, *a: Any, **kw: Any) -> Any:
         try:
             refuse_unlisted_host(u, hosts)
-        except RedirectRefused as exc:
-            raise BlockedTarget(f"refused: {exc}") from None
+        except RedirectRefused:
+            raise BlockedTarget("refused: the address is not one this read may reach") from None
         kw["allow_redirects"] = False  # hops are walked one judged hop at a time by the fetcher, never by the library
         return real_get(u, *a, **kw)
 

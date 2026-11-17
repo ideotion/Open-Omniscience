@@ -68,13 +68,23 @@ def _logged_domain(domain: object) -> str:
 
 
 class SearchRefusedByRobots(Exception):
-    """The search was not sent because DuckDuckGo's robots.txt does not allow it (``reason == "disallowed"``) or could not be
-    read (``reason == "unavailable"``: fail closed). The search page is a page for people, not a published API, so the
-    robots.txt rule applies to it (SECURITY.md, Transport); a refusal is never worked around."""
+    """The search was not sent because DuckDuckGo's robots.txt does not allow it (:class:`SearchDisallowedByRobots`) or could
+    not be read (:class:`SearchRobotsUnavailable`: fail closed). The search page is a page for people, not a published API, so
+    the robots.txt rule applies to it (SECURITY.md, Transport); a refusal is never worked around. ``reason`` is fixed by the
+    class, so a caller reads it without reading the exception's words."""
 
-    def __init__(self, reason: str) -> None:
-        super().__init__(f"robots.txt {reason}")
-        self.reason = reason
+    reason = ""
+
+    def __init__(self) -> None:
+        super().__init__(f"robots.txt {self.reason}")
+
+
+class SearchDisallowedByRobots(SearchRefusedByRobots):
+    reason = "disallowed"
+
+
+class SearchRobotsUnavailable(SearchRefusedByRobots):
+    reason = "unavailable"
 
 
 class DuckDuckGoSearch:
@@ -135,9 +145,9 @@ class DuckDuckGoSearch:
         try:
             require_robots_allow(cls.BASE_URL, cls.ALLOWED_HOSTS, user_agents=(cls.USER_AGENT,))
         except RobotsDisallowed:
-            raise SearchRefusedByRobots("disallowed") from None
+            raise SearchDisallowedByRobots() from None
         except RobotsUnavailable:
-            raise SearchRefusedByRobots("unavailable") from None
+            raise SearchRobotsUnavailable() from None
 
     @classmethod
     def search(

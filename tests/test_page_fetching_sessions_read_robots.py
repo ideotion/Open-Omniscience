@@ -161,13 +161,14 @@ def test_the_route_says_robots_refused_it_never_that_nothing_was_found(monkeypat
 
     from src.api.main import app
     from src.safety.settings import SafetySettings
-    from src.services.duckduckgo import SearchRefusedByRobots
 
     monkeypatch.setattr("src.safety.settings.load_settings", lambda: SafetySettings(discovery_external_enabled=True))
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
 
+    from src.services.duckduckgo import SearchDisallowedByRobots, SearchRobotsUnavailable
+
     def _refused(self, topic, max_sources, region="wt-wt"):
-        raise SearchRefusedByRobots(reason)
+        raise (SearchDisallowedByRobots if reason == "disallowed" else SearchRobotsUnavailable)()
 
     monkeypatch.setattr("src.database.source_manager.SourceManager.discover_sources_by_topic", _refused)
     body = TestClient(app).post("/api/sources/discover/topic?topic=press+freedom").json()
