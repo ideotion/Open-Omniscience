@@ -544,7 +544,7 @@ def test_a_file_where_the_folder_should_be_is_refused_where_lstat_reads_it_as_ab
             raise FileNotFoundError(2, "The system cannot find the path specified", str(p))
         return real(p, *args, **kwargs)
 
-    monkeypatch.setattr(cm.os, "lstat", windows_lstat)
+    scope_os(monkeypatch, cm, lstat=windows_lstat)
     con = _live(a)
     try:
         with pytest.raises(cm.MigrationRefused) as caught:
