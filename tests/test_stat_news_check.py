@@ -118,7 +118,8 @@ def test_without_online_it_names_the_hosts_and_sends_nothing(tmp_path, monkeypat
     monkeypatch.setattr(M, "_transport", lambda: "direct")
     assert M.main(["--out", str(tmp_path / "r.json"), "--only", "fr-insee,uk-ons"]) == 2
     out = capsys.readouterr()
-    assert "www.insee.fr" in out.out and "www.ons.gov.uk" in out.out and "--online" in out.err
+    listed = {line.strip() for line in out.out.splitlines()}  # the hosts are listed one per line, compared whole
+    assert {"www.insee.fr", "www.ons.gov.uk"} <= listed and "--online" in out.err
     assert not (tmp_path / "r.json").exists()
     assert M.main(["--out", str(tmp_path / "r.json"), "--only", "nope"]) == 2
 
