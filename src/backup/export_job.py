@@ -75,7 +75,7 @@ from src.backup.export_folder import (
     write_export_request,
 )
 from src.jobs.background import BackgroundJob, register_job, stop_all_count
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import holding, record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -498,21 +498,27 @@ class ExportJobManager:
             return self._end_stopped(asked, PHASE_VOLUMES, ctx)
         if not pw:
             return self._fail("passphrase-missing", NEEDS_PASSPHRASE, PHASE_VOLUMES)
+        refused: str | None = None
         try:
-            began = vol.start_backup(
-                dest,
-                pw,
-                include_newsletters=bool(req.get("include_newsletters", True)),
-                include_blobs=list(req.get("categories") or []) if req.get("inside") else None,
-                verify_after_write=bool(req.get("verify_after_write", True)),
-                _backup_fn=self._seams.get("_backup_fn"),
-                # Passed only when asked for, so a volume job that predates R729 runs as before.
-                **({"include_lanes": True} if req.get("lanes") else {}),
-            )
+            # Held while the start runs (row 111): a library's record written inside it is scrubbed of the passphrase too.
+            with holding(pw):
+                began = vol.start_backup(
+                    dest,
+                    pw,
+                    include_newsletters=bool(req.get("include_newsletters", True)),
+                    include_blobs=list(req.get("categories") or []) if req.get("inside") else None,
+                    verify_after_write=bool(req.get("verify_after_write", True)),
+                    _backup_fn=self._seams.get("_backup_fn"),
+                    # Passed only when asked for, so a volume job that predates R729 runs as before.
+                    **({"include_lanes": True} if req.get("lanes") else {}),
+                )
         except Exception as exc:  # noqa: BLE001 - a refusal is the export's failure, written without the passphrase
-            text = record_text(exc, pw, typed=False)
+            refused = record_text(exc, pw, typed=False)
+        if refused is not None:
+            # Failed OUTSIDE the handler (row 111): what _fail writes cannot raise or log with the refusal, which may quote the
+            # passphrase, as its context.
             pw = ""
-            return self._fail("volumes-refused", text, PHASE_VOLUMES)
+            return self._fail("volumes-refused", refused, PHASE_VOLUMES)
         pw = ""  # the volumes phase has started: this orchestrator holds no passphrase from here on
         self._note_started(began)
         st = self._wait(ctx, vol)

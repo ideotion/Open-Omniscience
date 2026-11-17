@@ -187,9 +187,42 @@ def test_ratchet_no_scrub_takes_the_userinfo_alone():
 _FEED_ADDRESS_KEYS = frozenset({"rss_url", "feed_key", "feed_url", "source_url", "final_url", "feed_address"})
 _WRITERS = frozenset({"reported_url", "failure_url", "shown_feed_key", "shown_url", "_shown_feed"})
 #: Report, field data and diagnostics writers: every feed address they put in a row goes through a writer above.
-_REPORT_MODULE_PREFIXES = ("src/api/diagnostics/", "src/analytics/", "src/monitoring/", "src/backup/", "src/scheduler/")
-#: Pinned: a dict that is a DATABASE write's parameters, not a row of a report (the key is stored, never shown).
-_NOT_A_REPORT_ROW = frozenset({"src/analytics/source_topics.py:feed_key=key"})
+_REPORT_MODULE_PREFIXES = (
+    "src/api/diagnostics/", "src/analytics/", "src/monitoring/", "src/backup/", "src/scheduler/",
+    "src/catalog/", "src/ingest/",  # row 106: the catalogue's reports and the collector's records write rows too
+)
+#: Pinned, each with why it is not a row of a report: written as ``path:key=expression``.
+_NOT_A_REPORT_ROW = frozenset(
+    {
+        "src/analytics/source_topics.py:feed_key=key",  # a DATABASE write's parameters: the key is stored, never shown
+        "src/catalog/qualification.py:feed_key=key",  # the same: the parameters of an UPDATE of the sources table
+        "src/ingest/seed_sources.py:rss_url=row.rss_url",  # a lookup table read beside the catalogue's value, never written out
+    }
+)
+
+
+def _report_row_writes(tree: ast.AST):
+    """Every ``(key, value)`` a module puts in a row: a dict literal's entries, ``dict(key=value)`` and ``row["key"] = value``
+    (row 106: the last two were not read, so a row built by assignment passed unread)."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    yield key.value, value
+        elif isinstance(node, ast.Call) and _called_name(node) == "dict":
+            for kw in node.keywords:
+                if kw.arg is not None:
+                    yield kw.arg, kw.value
+        elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.slice, ast.Constant)
+                    and isinstance(target.slice.value, str)
+                    and node.value is not None
+                ):
+                    yield target.slice.value, node.value
 
 
 def test_ratchet_report_rows_never_write_a_feed_address_raw():
@@ -197,24 +230,37 @@ def test_ratchet_report_rows_never_write_a_feed_address_raw():
     for rel, tree in _src_trees():
         if not rel.startswith(_REPORT_MODULE_PREFIXES):
             continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Dict):
+        for key, value in _report_row_writes(tree):
+            if key not in _FEED_ADDRESS_KEYS or isinstance(value, ast.Constant):
                 continue
-            for key, value in zip(node.keys, node.values, strict=True):
-                if not (isinstance(key, ast.Constant) and key.value in _FEED_ADDRESS_KEYS) or isinstance(value, ast.Constant):
-                    continue
-                branches = [value.body, value.orelse] if isinstance(value, ast.IfExp) else [value]  # both arms of a conditional
-                if all(
-                    isinstance(b, ast.Constant)
-                    or (isinstance(b, ast.Call) and _called_name(b) in _WRITERS)
-                    or (isinstance(b, ast.Name) and b.id in _WRITERS)  # a column -> writer table (source_samples)
-                    for b in branches
-                ):
-                    continue
-                if f"{rel}:{key.value}={ast.unparse(value)}" in _NOT_A_REPORT_ROW:
-                    continue
-                offenders.append(f"{rel}:{value.lineno}: {key.value}={ast.unparse(value)[:60]}")
+            branches = [value.body, value.orelse] if isinstance(value, ast.IfExp) else [value]  # both arms of a conditional
+            if all(
+                isinstance(b, ast.Constant)
+                or (isinstance(b, ast.Call) and _called_name(b) in _WRITERS)
+                or (isinstance(b, ast.Name) and b.id in _WRITERS)  # a column -> writer table (source_samples)
+                for b in branches
+            ):
+                continue
+            if f"{rel}:{key}={ast.unparse(value)}" in _NOT_A_REPORT_ROW:
+                continue
+            offenders.append(f"{rel}:{value.lineno}: {key}={ast.unparse(value)[:60]}")
     assert offenders == [], offenders
+
+
+def test_the_report_row_ratchet_reads_assignments_and_dict_calls():
+    """Row 106: the three ways a row is built are all read (a planted offender of each kind is found)."""
+    planted = ast.parse(
+        "row = {'rss_url': src.rss_url}\nrow2 = dict(feed_url=s.url)\nrow3 = {}\nrow3['final_url'] = r.url\nrow3['rss_url'] = reported_url(u)\n"
+    )
+    seen = [(k, ast.unparse(v)) for k, v in _report_row_writes(planted) if k in _FEED_ADDRESS_KEYS]
+    assert ("rss_url", "src.rss_url") in seen and ("feed_url", "s.url") in seen and ("final_url", "r.url") in seen
+    assert ("rss_url", "reported_url(u)") in seen  # read too, and passed by the writer check
+
+
+def test_every_pinned_report_row_still_exists():
+    """A pin whose expression is gone is a pin that would excuse the next one written the same way."""
+    live = {f"{rel}:{k}={ast.unparse(v)}" for rel, tree in _src_trees() for k, v in _report_row_writes(tree)}
+    assert live >= _NOT_A_REPORT_ROW, sorted(_NOT_A_REPORT_ROW - live)
 
 
 _LOG_CALLS = frozenset({"debug", "info", "warning", "warn", "error", "exception", "critical", "log", "log_failure", "print"})

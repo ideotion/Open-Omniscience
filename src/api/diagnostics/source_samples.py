@@ -77,15 +77,61 @@ def _plain(value: Any) -> Any:
     return value
 
 
+#: A value that IS an address (a scheme and ``://``, or a scheme-relative ``//host``), with nothing around it: written as a report
+#: writes an address (R734). A text that only CONTAINS one (an article's body) is not matched, so its words are left as stored.
+_WHOLE_ADDRESS = re.compile(r"\s*(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//\S*\s*")
+#: A JSON text is read only when it looks like one, and only this long: a catalogue baseline is a few hundred bytes.
+_JSON_TEXT_MAX = 64 * 1000
+
+
+def _reported_addresses(value: Any, report: Callable[[str], Any]) -> Any:
+    """``value`` with every string that is a whole address written through ``report``, at any depth of a list or a dict."""
+    if isinstance(value, str):
+        return report(value) if _WHOLE_ADDRESS.fullmatch(value) else value
+    if isinstance(value, list):
+        return [_reported_addresses(v, report) for v in value]
+    if isinstance(value, dict):
+        return {k: _reported_addresses(v, report) for k, v in value.items()}
+    return value
+
+
+def _reported_column(value: Any, report: Callable[[str], Any]) -> Any:
+    """A column's value with any address in it written as a report writes it (row 104 on R734): a whole-address value, and every
+    address inside a JSON text (``sources.catalog_baseline`` holds the catalogue's ``rss_url``). Any column, not a named list, so a
+    column added later that holds an address is covered without anyone remembering it here."""
+    if not isinstance(value, str):
+        return value
+    if _WHOLE_ADDRESS.fullmatch(value):
+        return report(value)
+    stripped = value.lstrip()
+    if stripped[:1] in ("{", "[") and len(value) <= _JSON_TEXT_MAX:
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            return value
+        written = _reported_addresses(parsed, report)
+        return value if written == parsed else json.dumps(written, ensure_ascii=False)
+    return value
+
+
 def _row_dict(obj: Any, shown: dict[str, Callable[[Any], Any]] | None = None) -> dict[str, Any]:
-    """Every mapped column of ``obj`` but a secret-looking one, each named in ``shown`` written through its function."""
+    """Every mapped column of ``obj`` but a secret-looking one, each named in ``shown`` written through its function, and every
+    other column's addresses as a report writes them (R734, :func:`_reported_column`). The body columns are left as stored: an
+    article's text is the sample, and its own links are words in it."""
+    from src.ingest.fetch_verdict import reported_url
+
     out: dict[str, Any] = {}
     state = inspect(obj)   # the instance state: its attrs read each loaded column without a dynamic getattr
     for prop in inspect(type(obj)).column_attrs:
         if _SECRETISH.search(prop.key):
             continue
         value = _plain(state.attrs[prop.key].value)
-        out[prop.key] = shown[prop.key](value) if shown and prop.key in shown else value
+        if shown and prop.key in shown:
+            out[prop.key] = shown[prop.key](value)
+        elif prop.key in _BODY_COLUMNS:
+            out[prop.key] = value
+        else:
+            out[prop.key] = _reported_column(value, reported_url)
     return out
 
 

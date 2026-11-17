@@ -2627,6 +2627,8 @@ def _all_diagnostics_manifest(
     phases: dict | None = None,
     machine: dict | None = None,
     thorough_budget_s: float | None = None,
+    scan_costs: dict[str, float] | None = None,
+    scan_basis: dict[str, str] | None = None,
 ) -> dict:
     import platform
     import sys as _sys
@@ -2745,7 +2747,9 @@ def _all_diagnostics_manifest(
         "scan_budget_set_by": (
             "product" if mode == "quick" else ("operator" if thorough_budget_s is not None else None)
         ),
-        "scans": _plan.scans_block(results, mode=mode, budget_s=_plan.scan_budget_for(mode, thorough_budget_s)),
+        "scans": _plan.scans_block(
+            results, mode=mode, budget_s=_plan.scan_budget_for(mode, thorough_budget_s), table=scan_costs, basis=scan_basis
+        ),
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
         # so "all diagnostics" states its own boundary instead of implying totality.
         "excluded": [
@@ -2912,7 +2916,12 @@ def _write_all_diagnostics_zip(
     results: list[dict] = []
     mode = _plan.resolve_mode(mode)
     budget_s = _plan.scan_budget_for(mode, thorough_budget_s)
-    records, scans = _plan.split_members(list(members))
+    # The scans run shortest first by THIS machine's own last times where it has them (row 74: the card audit's field median
+    # was 60.5 s and it took about 300 s here, so it ran early and spent the budget planned for the scans after it).
+    from .scan_estimate import scan_table
+
+    scan_costs, scan_basis = scan_table()
+    records, scans = _plan.split_members(list(members), scan_costs)
     # A record that reads what the scans write (kpi.json) runs after them, or it reports the previous build's figures.
     records, tail = _plan.after_scans(records)
     ordered = records + scans + tail
@@ -3031,7 +3040,7 @@ def _write_all_diagnostics_zip(
                 skipped_reason = (
                     f"{whose} of {budget_s:.0f} s was spent ({elapsed_s:.0f} s "
                     f"used by the scans before this one); this scan is expected to take about "
-                    f"{_plan.scan_est_s(name):.0f} s. "
+                    f"{_plan.scan_est_s(name, scan_costs):.0f} s. "
                     + ("Run the Thorough build to collect it" if mode == "quick"
                        else "Run it again with a longer budget, or none, to collect it")
                 )
@@ -3161,7 +3170,7 @@ def _write_all_diagnostics_zip(
                 if nbytes > slot_budget:
                     entry["over_budget"] = True
             if is_scan_member:
-                entry["est_s"] = _plan.scan_est_s(name)
+                entry["est_s"] = _plan.scan_est_s(name, scan_costs)
                 if deadline_used is not None:
                     entry["deadline_s"] = round(deadline_used, 1)
                 if budget_cut:
@@ -3304,6 +3313,7 @@ def _write_all_diagnostics_zip(
         exclusive=exclusive if exclusive is not None else scan_claim, profile=profile,
         previous_runs=previous_block, read_release=read_release if db is not None else None,
         mode=mode, phases=phases, machine=machine, thorough_budget_s=thorough_budget_s,
+        scan_costs=scan_costs, scan_basis=scan_basis,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the

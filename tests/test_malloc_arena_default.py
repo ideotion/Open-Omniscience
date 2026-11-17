@@ -483,19 +483,26 @@ def test_the_cap_really_bounds_the_allocators_arenas_on_this_machine():
 
 
 @linux_only
-def test_a_variable_set_twice_counts_as_its_first_value_because_that_is_the_one_glibc_applies():
-    """MUTATION TARGET (taking the LAST entry). Measured, glibc 2.39: a block naming
-    ``MALLOC_ARENA_MAX`` as 3 and then as 1 gives 3 arenas, and ``os.environ`` reads 3 too. A
-    reading that took the later one would say "capped at 1" for an allocator that kept three,
-    and the reverse order would say "capped at 8" for one that kept one. Both ends are checked
-    against the real allocator, which is what stops a later glibc from making this a guess."""
+def test_a_variable_set_twice_is_claimed_only_where_this_glibc_was_measured_to_apply_one_copy():
+    """MUTATION TARGET (taking the LAST entry on 2.39, or claiming a copy on a glibc nobody measured). Which copy
+    of a variable named twice glibc applies changed between releases (row 116). Measured, glibc 2.39: a block
+    naming ``MALLOC_ARENA_MAX`` as 3 and then as 1 gives 3 arenas, the reverse gives 1, so the first copy wins
+    and the reading may say so. Measured on the ubuntu-26.04 runners' glibc: the same blocks gave 1 and 3, the
+    LAST copy won, and a reading that kept 2.39's rule said "capped at 3" for an allocator that kept one. So on a
+    glibc not listed in ``_FIRST_COPY_WINS`` the reading claims neither copy. Both ends are checked against the
+    real allocator, and the arenas are asserted to be ONE of the two copies on any glibc."""
     _arena_baseline()
-    first_wins = _count_arenas(twice=("MALLOC_ARENA_MAX", "3", "1"))
-    assert first_wins["reading"]["arena_cap"] == 3
-    assert first_wins["arenas"] == 3, "glibc applied the first value, as the reading says"
-    last_is_bigger = _count_arenas(twice=("MALLOC_ARENA_MAX", "1", "3"))
-    assert last_is_bigger["reading"]["arena_cap"] == 1
-    assert last_is_bigger["arenas"] == 1, "glibc applied the first value here too"
+    three_then_one = _count_arenas(twice=("MALLOC_ARENA_MAX", "3", "1"))
+    one_then_three = _count_arenas(twice=("MALLOC_ARENA_MAX", "1", "3"))
+    libc = three_then_one["reading"]["allocator"]
+    assert {three_then_one["arenas"], one_then_three["arenas"]} == {1, 3}, (libc, three_then_one, one_then_three)
+    if libc in session_hwm._FIRST_COPY_WINS:
+        assert three_then_one["arenas"] == 3 and one_then_three["arenas"] == 1, f"{libc} applied the first copy"
+        assert three_then_one["reading"]["arena_cap"] == 3 and one_then_three["reading"]["arena_cap"] == 1
+    else:
+        for got in (three_then_one, one_then_three):
+            assert got["reading"]["effective"] is None and got["reading"]["arena_cap"] is None, (libc, got)
+            assert "more than once" in got["reading"]["note"] and libc in got["reading"]["note"], got["reading"]
 
 
 # The values glibc IGNORES (it reads the whole value and gives up on one that is not a number it takes): a trailing
@@ -523,12 +530,19 @@ def test_a_first_value_glibc_reads_as_a_huge_number_applies_so_a_negative_one_bo
     """The coordinator's delta check of #1312, N2: the table's ``-2`` row said glibc IGNORES a negative number, and a
     machine with three or more CPUs could not tell (a value ignored and a cap past every arena both keep 17 there).
     glibc reads the value with ``strtoul``, which takes a sign and wraps: ``-2`` reads as 2**64 - 2, a cap so large
-    it bounds nothing, and named first it keeps every arena even with ``2`` behind it (measured, glibc 2.39: 17
-    against 2). The reading does not claim it (``unknown``), which is modest and not wrong. The row now says what
-    glibc did."""
+    it bounds nothing, and on a glibc where the first copy wins it keeps every arena even with ``2`` behind it
+    (measured, glibc 2.39: 17 against 2). Where the LAST copy wins (the ubuntu-26.04 runners' glibc) the ``2``
+    applies instead (measured: 2). The reading does not claim ``-2`` (``unknown``) on either, which is modest and
+    not wrong, and on a glibc not measured to apply the first copy it claims neither copy."""
     for first in ("-2", "9" * 18):
         got = _count_arenas(twice=("MALLOC_ARENA_MAX", first, "2"))
-        assert got["arenas"] == arena_ceiling, (first, got["arenas"], arena_ceiling)
+        libc = got["reading"]["allocator"]
+        if libc in session_hwm._FIRST_COPY_WINS:
+            assert got["arenas"] == arena_ceiling, (libc, first, got["arenas"], arena_ceiling)
+        else:  # whichever copy this glibc applies, it is one of the two
+            assert got["arenas"] in {arena_ceiling, min(2, arena_ceiling)}, (libc, first, got["arenas"], arena_ceiling)
+        if first == "-2" or libc not in session_hwm._FIRST_COPY_WINS:
+            assert got["reading"]["effective"] is None and got["reading"]["arena_cap"] is None, (libc, first, got)
 
 
 @linux_only
@@ -690,7 +704,9 @@ def _started_with(monkeypatch, **variables: str | None) -> None:
     values.update(variables)
     monkeypatch.setattr(
         session_hwm, "_starting_values",
-        lambda *names: ({name: values.get(name) for name in names}, "the environment the process started with"),
+        lambda *names, repeated=None: (
+            {name: values.get(name) for name in names}, "the environment the process started with",
+        ),
     )
 
 
@@ -742,6 +758,28 @@ def test_a_variable_set_twice_reads_as_its_first_value_as_glibc_and_os_environ_d
     _starting_block(monkeypatch, b"MALLOC_ARENA_MAX=3\0MALLOC_ARENA_MAX=1\0GLIBC_TUNABLES=glibc.malloc.tcache_count=0\0")
     got, _source = session_hwm._starting_values("MALLOC_ARENA_MAX", "GLIBC_TUNABLES")
     assert got == {"MALLOC_ARENA_MAX": "3", "GLIBC_TUNABLES": "glibc.malloc.tcache_count=0"}, "only the tunables are joined"
+
+
+def test_a_repeated_arena_variable_is_claimed_only_on_a_glibc_measured_to_apply_the_first_copy(monkeypatch):
+    """Row 116, the unit half: the block's repeated names are reported, and a ``MALLOC_ARENA_MAX`` named twice
+    reads as capped by its first copy on glibc 2.39 only. On any other glibc (the ubuntu-26.04 runners' applies
+    the LAST copy) it reads as not known and the note names the version; a single copy reads as before."""
+    _loaded(monkeypatch, "python3", "libc.so.6")
+    _starting_block(monkeypatch, b"MALLOC_ARENA_MAX=3\0X=1\0MALLOC_ARENA_MAX=1\0GLIBC_TUNABLES=a\0GLIBC_TUNABLES=b\0")
+    seen: set[str] = set()
+    session_hwm._starting_values("MALLOC_ARENA_MAX", "GLIBC_TUNABLES", "LD_PRELOAD", repeated=seen)
+    assert seen == {"MALLOC_ARENA_MAX", "GLIBC_TUNABLES"}
+    monkeypatch.setattr(session_hwm, "_glibc_version", lambda: "glibc 2.39")
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is True and got["arena_cap"] == 3, got
+    for other in ("glibc 2.42", "glibc 2.35"):
+        monkeypatch.setattr(session_hwm, "_glibc_version", lambda other=other: other)
+        got = session_hwm.allocator_setting()
+        assert got["effective"] is None and got["arena_cap"] is None, (other, got)
+        assert "more than once" in got["note"] and other in got["note"] and "'3'" in got["note"], got
+    _starting_block(monkeypatch, b"MALLOC_ARENA_MAX=3\0")
+    got = session_hwm.allocator_setting()
+    assert got["effective"] is True and got["arena_cap"] == 3, "one copy is read on any glibc"
 
 
 def test_where_the_starting_environment_cannot_be_read_os_environ_stands_in_and_says_so(monkeypatch):
@@ -1042,7 +1080,7 @@ def test_the_glibc_version_is_asked_of_the_c_library_and_anything_else_is_not_gl
 
 
 def test_a_reading_that_breaks_degrades_to_unmeasured_and_never_raises(monkeypatch):
-    def boom(*names):
+    def boom(*names, repeated=None):
         raise RuntimeError("procfs on fire")
 
     monkeypatch.setattr(session_hwm, "_starting_values", boom)

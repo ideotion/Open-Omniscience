@@ -17,7 +17,7 @@ import threading
 import time
 from collections.abc import Callable, Collection
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 # Module-level, not lazy: _on_prog fires once per merged article (~700k times on
 # a large import), and even a sys.modules lookup does not belong on that path.
@@ -28,7 +28,13 @@ from src.monitoring import storage_events
 
 # The passphrase never reaches a status, a log record or the run journal through a caught exception: every
 # handler below writes its text through these (stdlib only, so this cannot cycle either).
-from src.monitoring.secret_scrub import exception_text, log_failure, record_text, record_traceback
+from src.monitoring.secret_scrub import (
+    exception_text,
+    held_during,
+    log_failure,
+    record_text,
+    record_traceback,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -197,6 +203,17 @@ def _envelope_facts(envelope: dict | None) -> dict:
         "encrypted": manifest.get("encrypted"),
         "tables": {str(k): int(v or 0) for k, v in tables.items()},
     }
+
+
+class _Failure(NamedTuple):
+    """A failed run, as the texts its handler made with the passphrases taken out (row 111): what is recorded after the handler has
+    ended, so the failure itself (whose words can quote a passphrase) is never in flight while the journals write."""
+
+    refused: bool
+    cls: str
+    msg: str
+    traceback: str
+    served: str
 
 
 class VolumeBackupManager:
@@ -405,6 +422,7 @@ class VolumeBackupManager:
             "method": method,
         }
 
+    @held_during("passphrase")  # row 111: a third-party logger's record is scrubbed of it too
     def _run_backup(
         self,
         destp,
@@ -430,119 +448,126 @@ class VolumeBackupManager:
         # never ended". The free bytes come after the open record: a stat that hangs on a dead mount leaves the run open, which is the fact.
         note = storage_events.run_started("export", via="volume-set")
         storage_events.run_free_space(note, "dest_free_bytes", destp)
+        # Row 111: an outcome is recorded OUTSIDE the handler that caught it, from texts the handler scrubbed. The journals write to
+        # the store, and an exception raised (or logged by a library, SQLAlchemy's pool among them) while a failure is being handled
+        # carries that failure as its ``__context__``, whose text can quote the passphrase; out here none is in flight to chain to,
+        # and the failure itself is not carried out of its handler.
+        stopped = False
+        failure: _Failure | None = None
         try:
-            fn = backup_fn
-            if fn is None:
-                from src.backup.artifact import write_volume_backup
+            try:
+                fn = backup_fn
+                if fn is None:
+                    from src.backup.artifact import write_volume_backup
 
-                fn = write_volume_backup
-            summary = fn(
-                destp,
-                passphrase,
-                include_newsletters=include_newsletters,
-                parity_fraction=parity_fraction,
-                should_stop=self._stop.is_set,
-                progress_cb=self._on_prog,
-                include_blobs=include_blobs,
-                # Passed only when asked for, so an injected writer that predates R729 runs as before.
-                **({"include_lanes": True} if include_lanes else {}),
-            )
-            kept = {k: v for k, v in summary.items() if k != "envelope"}
-            # The envelope itself stays out of the polled status (it carries the
-            # signature and the public key, which a progress payload has no business
-            # repeating) -- but the FACTS inside it are exactly what Q208's completion
-            # panel lists, and throwing them away here is why the export used to end
-            # in one line. Lifted into a small, flat block instead.
-            kept["facts"] = _envelope_facts(summary.get("envelope"))
-            kept["verify"] = self._verify_after_write(destp, verify_after_write)
-            done_status = {"mode": "backup", "state": "done", "dest": str(destp), "summary": kept}
-            with self._lock:
-                self._remember_backup(destp, kept)
-            # BACKUP_SUMMARY.md, from the job and BEFORE "done" is published (J2): a
-            # page that sees "done" and reads the folder must find the file already
-            # there, and a page that was reloaded mid-export is not needed at all.
-            from src.backup.export_summary import write_summary_for_export_job
+                    fn = write_volume_backup
+                summary = fn(
+                    destp,
+                    passphrase,
+                    include_newsletters=include_newsletters,
+                    parity_fraction=parity_fraction,
+                    should_stop=self._stop.is_set,
+                    progress_cb=self._on_prog,
+                    include_blobs=include_blobs,
+                    # Passed only when asked for, so an injected writer that predates R729 runs as before.
+                    **({"include_lanes": True} if include_lanes else {}),
+                )
+                kept = {k: v for k, v in summary.items() if k != "envelope"}
+                # The envelope itself stays out of the polled status (it carries the
+                # signature and the public key, which a progress payload has no business
+                # repeating) -- but the FACTS inside it are exactly what Q208's completion
+                # panel lists, and throwing them away here is why the export used to end
+                # in one line. Lifted into a small, flat block instead.
+                kept["facts"] = _envelope_facts(summary.get("envelope"))
+                kept["verify"] = self._verify_after_write(destp, verify_after_write)
+                done_status = {"mode": "backup", "state": "done", "dest": str(destp), "summary": kept}
+                with self._lock:
+                    self._remember_backup(destp, kept)
+                # BACKUP_SUMMARY.md, from the job and BEFORE "done" is published (J2): a
+                # page that sees "done" and reads the folder must find the file already
+                # there, and a page that was reloaded mid-export is not needed at all.
+                from src.backup.export_summary import write_summary_for_export_job
 
-            write_summary_for_export_job(destp, volume_status=done_status, run_note=note)
-            with self._lock:
-                self._state = "done"
-                self._summary = kept
-                self._progress = {**self._progress, "phase": "done"}
-            runlog.end(
-                "ok",
-                volumes=summary.get("volumes"),
-                bytes=summary.get("total_bytes") or summary.get("bytes"),
-                # The ENGINE's own wall_s, kept beside (never instead of) the
-                # journal's: they measure slightly different spans and both are real.
-                engine_wall_s=summary.get("wall_s"),
-                gate_held_s=summary.get("gate_held_s"),
-            )
-            storage_events.run_ended(
-                note,
-                "ok",
-                volumes=summary.get("volumes"),
-                bytes=summary.get("total_bytes") or summary.get("bytes"),
-                engine_wall_s=summary.get("wall_s"),
-                gate_held_s=summary.get("gate_held_s"),
-                snapshot_s=summary.get("snapshot_s"),
-                snapshot_bytes=summary.get("snapshot_bytes"),
-                verify=kept["verify"].get("state"),
-            )
-        except VolumeStopped:
-            with self._lock:
-                paused = self._pause_requested
-            if paused:
-                # PAUSE keeps the finished volumes + the resume log: starting the
-                # backup again continues from them (the engine re-verifies every
-                # slice, so a resumed set is still one consistent snapshot). The
-                # partial set has NO final manifest, so it can never be mistaken
-                # for a good backup meanwhile.
+                write_summary_for_export_job(destp, volume_status=done_status, run_note=note)
                 with self._lock:
-                    self._state = "paused"
-                runlog.end("paused")
-                storage_events.run_ended(note, "paused")
-            else:
-                # END AFTER the cleanup, not before: deleting the partial set is
-                # part of this run, it touches the destination drive, and it is
-                # exactly the step an operator would want timed if a cancel ever
-                # appears to hang.
-                runlog.milestone("stage_begin", name="cleanup_partial")
-                self._cleanup_partial(destp)
-                runlog.milestone("stage_end", name="cleanup_partial")
+                    self._state = "done"
+                    self._summary = kept
+                    self._progress = {**self._progress, "phase": "done"}
+                runlog.end(
+                    "ok",
+                    volumes=summary.get("volumes"),
+                    bytes=summary.get("total_bytes") or summary.get("bytes"),
+                    # The ENGINE's own wall_s, kept beside (never instead of) the
+                    # journal's: they measure slightly different spans and both are real.
+                    engine_wall_s=summary.get("wall_s"),
+                    gate_held_s=summary.get("gate_held_s"),
+                )
+                storage_events.run_ended(
+                    note,
+                    "ok",
+                    volumes=summary.get("volumes"),
+                    bytes=summary.get("total_bytes") or summary.get("bytes"),
+                    engine_wall_s=summary.get("wall_s"),
+                    gate_held_s=summary.get("gate_held_s"),
+                    snapshot_s=summary.get("snapshot_s"),
+                    snapshot_bytes=summary.get("snapshot_bytes"),
+                    verify=kept["verify"].get("state"),
+                )
+            except VolumeStopped:
+                stopped = True
+            except NewsletterFilterRefused as refused:
+                # A stopped newsletter-free backup is served as it is: its text is one of two fixed
+                # sentences whose only slot holds this module's own text or a class name, and the page
+                # matches it whole (a passphrase that is a word in it would otherwise redact the match).
+                # The log and the journal are written as for any failure below.
+                log_failure(_LOG, "volume backup failed", refused, passphrase)
+                failure = _Failure(
+                    True,
+                    type(refused).__name__,
+                    record_text(refused, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
+                    record_traceback(refused, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
+                    refused.served_text,
+                )
+            except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+                # The passphrase is in scope: what the exception says is scrubbed where it is made, for the log, the
+                # journal and the status an endpoint serves (the cut comes after the scrub, never before it).
+                log_failure(_LOG, "volume backup failed", exc, passphrase)
+                said = record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+                failure = _Failure(
+                    False, type(exc).__name__, said, record_traceback(exc, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :], said
+                )
+            if stopped:
                 with self._lock:
-                    self._state = "cancelled"
-                runlog.end("cancelled")
-                storage_events.run_ended(note, "cancelled")
-        except NewsletterFilterRefused as refused:
-            # A stopped newsletter-free backup is served as it is: its text is one of two fixed
-            # sentences whose only slot holds this module's own text or a class name, and the page
-            # matches it whole (a passphrase that is a word in it would otherwise redact the match).
-            # The log and the journal are written as for any failure below.
-            log_failure(_LOG, "volume backup failed", refused, passphrase)
-            runlog.milestone(
-                "error",
-                cls=type(refused).__name__,
-                msg=record_text(refused, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
-                traceback=record_traceback(refused, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
-            )
-            runlog.end("error", cls=type(refused).__name__)
-            storage_events.run_ended(note, "refused", failure=type(refused).__name__)
-            with self._lock:
-                self._state, self._error = "error", refused.served_text
-        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            # The passphrase is in scope: what the exception says is scrubbed where it is made, for the log, the
-            # journal and the status an endpoint serves (the cut comes after the scrub, never before it).
-            log_failure(_LOG, "volume backup failed", exc, passphrase)
-            runlog.milestone(
-                "error",
-                cls=type(exc).__name__,
-                msg=record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP),
-                traceback=record_traceback(exc, passphrase)[-runlog.FAILURE_TRACEBACK_KEEP :],
-            )
-            runlog.end("error", cls=type(exc).__name__)
-            storage_events.run_ended(note, "error", failure=type(exc).__name__)
-            with self._lock:
-                self._state, self._error = "error", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+                    paused = self._pause_requested
+                if paused:
+                    # PAUSE keeps the finished volumes + the resume log: starting the
+                    # backup again continues from them (the engine re-verifies every
+                    # slice, so a resumed set is still one consistent snapshot). The
+                    # partial set has NO final manifest, so it can never be mistaken
+                    # for a good backup meanwhile.
+                    with self._lock:
+                        self._state = "paused"
+                    runlog.end("paused")
+                    storage_events.run_ended(note, "paused")
+                else:
+                    # END AFTER the cleanup, not before: deleting the partial set is
+                    # part of this run, it touches the destination drive, and it is
+                    # exactly the step an operator would want timed if a cancel ever
+                    # appears to hang.
+                    runlog.milestone("stage_begin", name="cleanup_partial")
+                    self._cleanup_partial(destp)
+                    runlog.milestone("stage_end", name="cleanup_partial")
+                    with self._lock:
+                        self._state = "cancelled"
+                    runlog.end("cancelled")
+                    storage_events.run_ended(note, "cancelled")
+            elif failure is not None:
+                # Recorded OUTSIDE the handler, from texts already scrubbed (row 111); the journal names a refusal as such.
+                runlog.milestone("error", cls=failure.cls, msg=failure.msg, traceback=failure.traceback)
+                runlog.end("error", cls=failure.cls)
+                storage_events.run_ended(note, "refused" if failure.refused else "error", failure=failure.cls)
+                with self._lock:
+                    self._state, self._error = "error", failure.served
         finally:
             # The same net as the restore path: a no-op whenever an outcome was
             # recorded, and honest about its own ignorance when one was not.
@@ -621,6 +646,7 @@ class VolumeBackupManager:
             return self.status()
 
     @restore_marker.marked  # R712: an export refuses to start or resume while this runs
+    @held_during("passphrase", "corpus_passphrase")  # row 111
     def _run_restore(
         self,
         srcp,
@@ -1208,26 +1234,32 @@ class VolumeBackupManager:
             self._start_worker(self._thread)
             return self.status()
 
+    @held_during("passphrase")  # row 111
     def _run_verify(self, srcp, passphrase, verify_fn):
         note = storage_events.run_started("verify", via="volume-set")  # written open; see _run_backup
+        failure: _Failure | None = None
         try:
-            fn = verify_fn
-            if fn is None:
-                from src.backup.stream_backup import verify_stream_backup
+            try:
+                fn = verify_fn
+                if fn is None:
+                    from src.backup.stream_backup import verify_stream_backup
 
-                fn = verify_stream_backup
-            report = fn(srcp, passphrase)
-            with self._lock:
-                self._state = "done"
-                self._summary = {"report": report}
-                self._progress = {"phase": "done"}
-            # The run finished; whether the SET passed is its own fact (a verification that found a bad set is not a failed run).
-            storage_events.run_ended(note, "ok", set_ok=report.get("ok") if isinstance(report, dict) else None)
-        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            log_failure(_LOG, "volume verify failed", exc, passphrase)
-            storage_events.run_ended(note, "error", failure=type(exc).__name__)
-            with self._lock:
-                self._state, self._error = "error", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
+                    fn = verify_stream_backup
+                report = fn(srcp, passphrase)
+                with self._lock:
+                    self._state = "done"
+                    self._summary = {"report": report}
+                    self._progress = {"phase": "done"}
+                # The run finished; whether the SET passed is its own fact (a verification that found a bad set is not a failed run).
+                storage_events.run_ended(note, "ok", set_ok=report.get("ok") if isinstance(report, dict) else None)
+            except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+                log_failure(_LOG, "volume verify failed", exc, passphrase)
+                failure = _Failure(False, type(exc).__name__, "", "", record_text(exc, passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP))
+            if failure is not None:
+                # Recorded OUTSIDE the handler (row 111, as in _run_backup): nothing written here can chain the failure.
+                storage_events.run_ended(note, "error", failure=failure.cls)
+                with self._lock:
+                    self._state, self._error = "error", failure.served
         finally:
             storage_events.run_ended(note, "ended-without-a-recorded-outcome")  # a no-op once an outcome was written
 

@@ -718,6 +718,16 @@ def _is_type_name_of_a_name(node: ast.expr) -> bool:
     )
 
 
+def _is_a_failures_class(path, node: ast.expr) -> bool:
+    """``failure.cls`` in the volume job, where a failed run is recorded after its handler has ended (row 111): the field every
+    ``_Failure(...)`` there is built with ``type(x).__name__`` in (asserted here, so the field cannot come to hold a message)."""
+    if path != "src/backup/volume_job.py" or ast.unparse(node) != "failure.cls":
+        return False
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    built = [c for c in ast.walk(tree) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "_Failure"]
+    return bool(built) and all(len(c.args) >= 2 and _is_type_name_of_a_name(c.args[1]) and not c.keywords for c in built)
+
+
 def _constants_of(node: ast.expr) -> set[str] | None:
     """The string constants an outcome argument can be: one constant, or a conditional of constants; ``None`` for anything else."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -760,7 +770,9 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
             for kw in call.keywords:
                 assert kw.arg is not None, f"{where}: a ** mapping can carry anything"
                 if kw.arg in ("failure", "summary_error"):
-                    assert _is_type_name_of_a_name(kw.value), f"{where}: {kw.arg} must be type(exc).__name__, never a message"
+                    assert _is_type_name_of_a_name(kw.value) or _is_a_failures_class(path, kw.value), (
+                        f"{where}: {kw.arg} must be type(exc).__name__, never a message"
+                    )
                 elif kw.arg == "reason":
                     assert isinstance(kw.value, ast.Constant) and kw.value.value in se.RUN_REFUSALS, where
                 elif kw.arg == "via":
@@ -777,7 +789,7 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
     # Per file, so a file whose hooks were deleted cannot hide behind the others' count. EXACT at the time of writing (29, 1, 8, 8 and 17; R659's refusal added the 28th and the 7th and 8th, R702's rebuild refusal the 29th):
     # a hook added or removed here moves the number in the same change, which is the point of a ratchet; a floor with slack let one
     # missing hook through.
-    counts = {"src/backup/volume_job.py": 29, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 8, "src/ingest/import_job.py": 8,
+    counts = {"src/backup/volume_job.py": 28, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 8, "src/ingest/import_job.py": 8,
               "src/backup/folder_backup.py": 18}  # R712: a large-data restore refused while a backup export runs
     for path, expected in counts.items():
         assert seen.get(path, 0) == expected, f"the scan found {seen.get(path, 0)} hooks in {path}, expected {expected}"

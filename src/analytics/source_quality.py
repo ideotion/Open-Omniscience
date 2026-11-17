@@ -719,12 +719,13 @@ def link_dense_article_ids(
         dense: set[int] = set()
         linked = sorted(counts)
         for chunk in _chunks(linked):
-            for aid, wc, sid, lang in (
-                session.query(Article.id, Article.word_count, Article.source_id, Article.language)
+            for aid, wc, sid, lang, deduced in (
+                session.query(Article.id, Article.word_count, Article.source_id, Article.language,
+                              Article.detected_language)
                 .filter(Article.quarantined.isnot(True))
                 .filter(Article.id.in_(chunk))
             ):
-                if sid is None or not _word_signals_apply(lang):
+                if sid is None or not _word_signals_apply(_cohort_lang(lang, deduced)):
                     continue
                 wc_i = int(wc) if wc is not None else None
                 if wc_i is None or wc_i <= 0:
@@ -733,9 +734,9 @@ def link_dense_article_ids(
                     dense.add(int(aid))
         return dense
 
-    art_q = session.query(Article.id, Article.word_count, Article.source_id, Article.language).filter(
-        Article.quarantined.isnot(True)
-    )
+    art_q = session.query(
+        Article.id, Article.word_count, Article.source_id, Article.language, Article.detected_language
+    ).filter(Article.quarantined.isnot(True))
     if since is not None:
         # The SAME window and the SAME column collect_article_stats uses. Two criteria
         # measured over different populations would make one verdict's n a lie about the
@@ -744,10 +745,11 @@ def link_dense_article_ids(
     if source_ids is not None:
         art_q = art_q.filter(Article.source_id.in_(sorted(source_ids)))
     dense = set()
-    for aid, wc, sid, lang in art_q:
+    for aid, wc, sid, lang, deduced in art_q:
         # The label and the selector do not assess link density for an unsegmented language (its
-        # word count is not a count of words), so the criterion does not either.
-        if sid is None or not _word_signals_apply(lang):
+        # word count is not a count of words), so the criterion does not either. The language is the
+        # cohort one: stated, else deduced (row 110), the same one the sample record reports.
+        if sid is None or not _word_signals_apply(_cohort_lang(lang, deduced)):
             continue
         links = counts.get(int(aid), 0)
         if not links:
@@ -793,12 +795,13 @@ def select_cheap_signals(
         counts[int(aid)] = int(cnt)
 
     per_source: dict[int, list[int]] = {}
-    for aid, wc, sid, quarantined, lang in session.query(
-        Article.id, Article.word_count, Article.source_id, Article.quarantined, Article.language
+    for aid, wc, sid, quarantined, lang, deduced in session.query(
+        Article.id, Article.word_count, Article.source_id, Article.quarantined, Article.language,
+        Article.detected_language,
     ).filter(Article.quarantined.isnot(True)):
         if quarantined or sid is None or int(sid) not in audited_ids:
             continue
-        if not _word_signals_apply(lang):  # the label would not fire, so the selector does not pick
+        if not _word_signals_apply(_cohort_lang(lang, deduced)):  # the label would not fire, so no pick
             continue
         wc_i = int(wc) if wc is not None else None
         links = counts.get(int(aid), 0)
@@ -971,7 +974,7 @@ def build_sample_records(
             "is_newsletter": is_newsletter,
             "text_head_gated": gated,
             "pre_label": _pre_label(text_head, word_count=art.word_count, external_links=ext_links,
-                                    language=art.language),
+                                    language=_cohort_lang(art.language, art.detected_language)),
             "text_head": text_head,
         })
     return records

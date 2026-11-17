@@ -108,6 +108,7 @@ import logging
 import os
 import shutil
 import sys
+import threading
 import traceback
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
@@ -218,11 +219,82 @@ def held_passphrases() -> tuple[str, ...] | None:
         store = sys.modules.get("src.database.connect")
         session = None if store is None else vars(store).get("_passphrase")
         # BOTH values of a name: one set in the environment after the take (a test, an operator's code) must not hide the one taken
-        values = (session, *(v for name in HELD_ENV_VARS for v in (os.environ.get(name), _TAKEN.get(name))))
+        values = (
+            session,
+            *(v for name in HELD_ENV_VARS for v in (os.environ.get(name), _TAKEN.get(name))),
+            *(secret for _token, secret in _JOB_HELD),
+        )
         found = tuple(dict.fromkeys(p for p in values if p))
         return found if all(isinstance(p, str) for p in found) else None
     except Exception:  # noqa: BLE001 - what is held could not be read: the callers withhold
         return None
+
+
+#: The passphrases a running job holds that are not the session's (row 111, 2026-11-17): a backup's, an export's, an import's or a
+#: verification's, each as ``(token, passphrase)`` for as long as the job that took it runs (:func:`holding`). ONE tuple, replaced
+#: whole under :data:`_JOB_LOCK` and read without it, so :func:`held_passphrases` (which a handler calls from inside whatever
+#: failed) never waits on a lock and never sees one half-changed.
+_JOB_HELD: tuple[tuple[int, str], ...] = ()
+_JOB_LOCK = threading.Lock()
+_JOB_TOKENS = iter(range(1, 1 << 62))
+
+
+@contextlib.contextmanager
+def holding(*secrets: str | None) -> Iterator[None]:
+    """For the length of the block, ``secrets`` are passphrases the process holds (:func:`held_passphrases`), so every net that reads
+    what it holds takes them out: above all :class:`SecretFilter`, on every handler, whoever logs the record.
+
+    WHY (row 111): a job that takes a passphrase the session does not hold (a backup's, an import's) scrubs what IT writes, through
+    :func:`log_failure` and the record helpers it hands the passphrase to, but a THIRD-PARTY logger writes its own record: SQLAlchemy's
+    pool logged "Exception during reset" with ``exc_info``, and that exception's ``__context__`` was the job's failure, whose text
+    quoted the backup passphrase. No handler filter could take it out, because the process did not "hold" it. Entered by each job
+    thread that takes one, around the whole run; on leaving, the passphrases go and the one cache of their shapes is emptied
+    (:func:`forget_held`). A secret under :data:`MIN_SECRET_CHARS` is NOT held (the second security read on row 111): every text
+    holding one of its shapes would be withheld whole, in every thread, for the hours a backup runs; the job's own records still
+    withhold it, through the scrubs it is handed to. Never raises on entry or exit."""
+    tokens: list[int] = []
+    global _JOB_HELD
+    try:
+        # Taken inside the try (R161's shape): an interrupt between a take and the yield still meets the give-back below, which
+        # removes only the tokens this block took and is a no-op for none.
+        with _JOB_LOCK:
+            for secret in secrets:
+                if _scrubbable(secret):
+                    token = next(_JOB_TOKENS)
+                    tokens.append(token)
+                    _JOB_HELD = (*_JOB_HELD, (token, secret))
+        yield
+    finally:
+        with _JOB_LOCK:
+            _JOB_HELD = tuple(entry for entry in _JOB_HELD if entry[0] not in tokens)
+        forget_held()
+
+
+def held_during(*names: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """A decorator for a job's run function: the arguments named ``names`` (passphrases the function is handed) are held
+    (:func:`holding`) for as long as the call runs. Read from the call's own arguments, by name or by place, so a caller cannot
+    hand one past it. For the thread targets that take a backup's, an export's, an import's or a verification's passphrase."""
+
+    def wrap(fn: Callable[..., Any]) -> Callable[..., Any]:
+        import inspect
+
+        signature = inspect.signature(fn)
+        missing = [n for n in names if n not in signature.parameters]
+        if missing:
+            raise TypeError(f"{fn.__qualname__} takes no argument named {', '.join(missing)}")
+
+        @functools.wraps(fn)
+        def run(*args: Any, **kwargs: Any) -> Any:
+            try:
+                bound = signature.bind_partial(*args, **kwargs).arguments
+            except TypeError:  # the call itself is wrong: it raises as it would have
+                return fn(*args, **kwargs)
+            with holding(*(bound.get(n) for n in names)):
+                return fn(*args, **kwargs)
+
+        return run
+
+    return wrap
 
 
 def _scrubbable(secret: object) -> TypeGuard[str]:
@@ -350,7 +422,10 @@ def _held_forms(held: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]
     if seen != held:
         forms = tuple(dict.fromkeys(form for secret in held for form in _forms(secret)))
         short = tuple(dict.fromkeys(form for secret in held for form in _short_shapes(secret)))
-        _HELD_FORMS = (held, forms, short)
+        # Kept only while it is still what the process holds: a hold that ended (or a passphrase cleared) while the shapes were
+        # being made must not be written back after its forget_held() (the first security read on row 111).
+        if held_passphrases() == held:
+            _HELD_FORMS = (held, forms, short)
     return forms, short
 
 
@@ -957,11 +1032,24 @@ class scrub_and_reraise:  # noqa: N801 - read as a statement: ``with scrub_and_r
         self._what = what
         self._secrets = secrets
         self._passthrough = _framework_responses() if passthrough is None else tuple(passthrough)
+        self._hold: contextlib.AbstractContextManager[None] | None = None
 
     def __enter__(self) -> None:
+        # Row 111: the keys the block takes are held while it runs, so a library's record written inside it (a pool's reset logged
+        # with the block's failure as its context) is scrubbed of them by the filter every handler holds.
+        self._hold = holding(*self._secrets)
+        self._hold.__enter__()
         return None
 
     def __exit__(self, exc_type: object, exc: BaseException | None, tb: object) -> Literal[False]:
+        hold, self._hold = self._hold, None
+        try:
+            return self._converted(exc)
+        finally:
+            if hold is not None:
+                hold.__exit__(None, None, None)
+
+    def _converted(self, exc: BaseException | None) -> Literal[False]:
         if exc is None or not isinstance(exc, Exception) or isinstance(exc, self._passthrough):
             return False
         with contextlib.suppress(Exception):  # a log that cannot be written must not replace the conversion
