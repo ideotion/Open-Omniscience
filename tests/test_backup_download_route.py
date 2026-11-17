@@ -899,12 +899,14 @@ def test_without_the_handler_the_same_sigterm_leaves_the_snapshot_directory(tmp_
 def test_the_stop_cleanup_takes_sigterm_and_nothing_else():
     """The read of the bundle, N4. A source scan cannot tell a registration for SIGTERM from one for SIGINT that sits beside it, and a
     SIGINT handler that restores the default would bring the leak back for Ctrl+C."""
-    watched = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    # Windows has no SIGHUP (row 136): there the check is that SIGINT is left alone and SIGTERM taken, which is all it can be.
+    watched = tuple(getattr(signal, n) for n in ("SIGINT", "SIGTERM", "SIGHUP") if hasattr(signal, n))
     before = {s: signal.getsignal(s) for s in watched}
     try:
         assert dbapi.install_stop_signal_cleanup() == ["SIGTERM"]
         assert signal.getsignal(signal.SIGINT) is before[signal.SIGINT]
-        assert signal.getsignal(signal.SIGHUP) is before[signal.SIGHUP]
+        if hasattr(signal, "SIGHUP"):
+            assert signal.getsignal(signal.SIGHUP) is before[signal.SIGHUP]
         assert signal.getsignal(signal.SIGTERM) is not before[signal.SIGTERM]
     finally:
         for s, h in before.items():

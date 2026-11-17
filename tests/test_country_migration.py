@@ -531,6 +531,31 @@ def test_a_place_that_cannot_be_examined_is_refused_by_class_and_never_read_as_f
     assert cf.read_form(sqlite3.connect(a)) == "alpha2"
 
 
+def test_a_file_where_the_folder_should_be_is_refused_where_lstat_reads_it_as_absent(tmp_path, monkeypatch):
+    """Row 136, the Windows answer: ``lstat`` of a name under a FILE says "path not found" there, not NotADirectoryError, and
+    the copy then failed in ``mkdir`` with a raw FileExistsError. Simulated here by answering as Windows does."""
+    a = _new_store(tmp_path / "a.db", articles=12)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file where a folder should be", encoding="utf-8")
+    real = os.lstat
+
+    def windows_lstat(p, *args, **kwargs):
+        if Path(p).parent == blocker:
+            raise FileNotFoundError(2, "The system cannot find the path specified", str(p))
+        return real(p, *args, **kwargs)
+
+    monkeypatch.setattr(cm.os, "lstat", windows_lstat)
+    con = _live(a)
+    try:
+        with pytest.raises(cm.MigrationRefused) as caught:
+            cm.take_verified_backup(con, a, blocker / "x.db")
+    finally:
+        con.close()
+    assert "could not be examined (NotADirectoryError)" in str(caught.value) and "Nothing was changed" in str(caught.value)
+    assert not list(tmp_path.glob("blocker*.partial")) and blocker.is_file()
+    assert cf.read_form(sqlite3.connect(a)) == "alpha2"
+
+
 def test_a_relative_backup_folder_is_journalled_as_an_absolute_path(tmp_path, monkeypatch):
     db = _new_store(tmp_path / "s.db")
     monkeypatch.chdir(tmp_path)

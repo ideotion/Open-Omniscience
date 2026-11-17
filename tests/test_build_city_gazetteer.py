@@ -285,6 +285,12 @@ def test_the_written_file_is_readable_by_others_like_the_one_it_replaces(tmp_pat
 
     out = tmp_path / "cities.yml"
     M.write_atomic(out, [{"name": "Paris", "lat": 48.0, "lon": 2.0, "country": "fr", "population": 1}])
+    if os.name == "nt":
+        # Windows keeps one permission bit, read-only: 0o644 there reads back as 0o666, the mode of any ordinary file (row 136).
+        plain = tmp_path / "plain.yml"
+        plain.write_bytes(b"")
+        assert stat.S_IMODE(out.stat().st_mode) == stat.S_IMODE(plain.stat().st_mode)
+        return
     umask = os.umask(0)
     os.umask(umask)
     assert stat.S_IMODE(out.stat().st_mode) == 0o644 & ~umask
