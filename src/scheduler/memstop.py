@@ -116,7 +116,9 @@ def _write(record: dict[str, Any]) -> int | None:
                 record = {k: record[k] for k in ("kind", "session_id", "pid", "at", "uptime_s", "decision", "cut") if k in record}
                 record["cut"]["left_out"] = sorted(set(record["cut"]["left_out"]) | {"steps", "in_flight_at_start", "exclusive"})
                 text = json.dumps(record, indent=1, default=str)
-        atomic_replace(_path(), text, fsync=False)
+        # newline="\n": the size above is measured on these bytes, and a text-mode write on Windows would add a CR to every
+        # line, so a record cut to fit could land over the bound and be refused by the reader
+        atomic_replace(_path(), text, fsync=False, newline="\n")
         return len(text.encode("utf-8"))
     except OSError as exc:
         log_failure(_LOG, "memory stop: the record could not be written", exc, level=logging.WARNING)
