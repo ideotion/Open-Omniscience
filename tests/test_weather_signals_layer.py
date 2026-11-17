@@ -29,6 +29,8 @@ KEYS = (
     "Could not read the weather signals.",
     "No weather signal has been derived yet.",
     "Derived {when} from your articles · {n} signals",
+    "Derived from your articles · {n} signals",
+    "{n} articles",
     "anomaly not checked",
 )
 
@@ -72,6 +74,8 @@ def test_the_read_is_local_and_the_route_is_no_longer_listed_as_uncalled():
     js = (STATIC / "app-corpus.js").read_text(encoding="utf-8")
     body = js[js.index("async function paintWeatherSignals("):js.index("function setTrendLens(")]
     assert body.count("api(") == 1 and 'api("/api/signals/weather-signals")' in body
-    assert body.index("if (!on) return;") < body.index("api("), "off returns before anything is read"
+    assert body.index("if (!weatherSignalsOn()") < body.index("api("), "off returns before anything is read"
+    boot = (STATIC / "app-boot.js").read_text(encoding="utf-8")
+    assert "repaintWeatherSignals()" in boot, "a language switch redraws the layer from its last reading"
     tsv = (ROOT / "configs" / "routes_without_ui.tsv").read_text(encoding="utf-8")
     assert not any(line.startswith("GET\t/api/signals/weather-signals\t") for line in tsv.splitlines())

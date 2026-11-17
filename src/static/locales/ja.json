@@ -1534,6 +1534,7 @@
   "Deleting…": "削除中…",
   "Demography": "人口動態",
   "Density": "密度",
+  "Derived from your articles · {n} signals": "記事から推定 · シグナル {n} 件",
   "Derived on this machine from your own corpus. A reading aid, never a verdict.": "このマシン上で、あなた自身のコーパスから導き出したもの。読むための手がかりであり、判定ではありません。",
   "Derived {when} from your articles · {n} signals": "{when} に記事から推定 · シグナル {n} 件",
   "Descending": "降順",

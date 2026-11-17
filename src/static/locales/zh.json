@@ -1534,6 +1534,7 @@
   "Deleting…": "正在删除…",
   "Demography": "人口",
   "Density": "密度",
+  "Derived from your articles · {n} signals": "从你的文章推断 · {n} 个信号",
   "Derived on this machine from your own corpus. A reading aid, never a verdict.": "在本机上从您自己的语料库推导而来。是阅读辅助，绝非结论。",
   "Derived {when} from your articles · {n} signals": "{when} 从你的文章推断 · {n} 个信号",
   "Descending": "降序",

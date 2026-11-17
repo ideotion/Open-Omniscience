@@ -1538,11 +1538,11 @@
       <div id="trd-wsig-wrap" style="margin-top:14px">
         <div class="row" style="gap:8px;align-items:center">
           <h2 style="font-size:13px;margin:0">Weather signals</h2>
-          <button id="trd-wsig-toggle" class="tiny secondary" role="switch" aria-checked="false" data-on-click="toggleWeatherSignals()"
+          <button id="trd-wsig-toggle" class="tiny secondary" data-i18n-dyn role="switch" aria-checked="false" data-on-click="toggleWeatherSignals()"
             title="A separate layer of signals deduced from your articles. Off by default, and never mixed with the keywords above. Turning it on reads a file on this computer and sends nothing.">Weather signals: off</button>
         </div>
         <p id="trd-wsig-caveat" class="hint card-caveat" style="margin:4px 0">A weather signal is deduced from several articles that name a climate event, a place and a time window. It is not a confirmed event, and no anomaly has been checked against a baseline.</p>
-        <div id="trd-wsig"></div>
+        <div id="trd-wsig" data-i18n-dyn></div>
       </div>
     </section>
 
