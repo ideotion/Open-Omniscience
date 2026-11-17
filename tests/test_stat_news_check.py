@@ -144,3 +144,15 @@ def test_the_report_is_cut_to_the_send_back_size_and_counts_what_went():
              "candidates": [{"url": "https://x.test/" + "a" * 5000}] * 3} for i in range(40)]
     rep = M.fit({"agencies": rows}, limit=100_000)
     assert len(json.dumps(rep).encode()) <= 100_000 and rep["candidates_dropped_to_fit"] > 0
+
+
+def test_a_malformed_link_or_a_hostile_page_costs_one_candidate_never_the_run():
+    import time
+
+    bad_home = '<a href="http://[::1/news">news</a><a href="/news">News</a>'
+    sites = _Sites({"https://www.insee.fr": ("https://www.insee.fr/", bad_home), "https://www.insee.fr/news": "<" * 300_000})
+    started = time.monotonic()
+    row = M.check_agency(_agency(), sites)
+    assert time.monotonic() - started < 5, "the tag strip stays linear on a page of '<' with no '>'"
+    (only,) = row["candidates"]
+    assert only["url"] == "https://www.insee.fr/news" and only["outcome"] == "read" and row["verdict"] == "candidates_not_list_shaped"

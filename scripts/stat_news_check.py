@@ -174,7 +174,10 @@ def candidates(html: str, base_url: str, home_site: str, limit: int = MAX_CANDID
     seen = {urldefrag(base_url)[0]}
 
     def add(href: str, why: str) -> None:
-        url = urldefrag(urljoin(base_url, href.strip()))[0]
+        try:
+            url = urldefrag(urljoin(base_url, href.strip()))[0]
+        except ValueError:  # a malformed address (an unclosed IPv6 bracket) is not a candidate, and never ends the run
+            return
         if len(out) < limit and url not in seen and in_scope(url, home_site):
             seen.add(url)
             out.append({"url": url, "why": why})
@@ -218,8 +221,14 @@ def shape(body: str, final_url: str, home_site: str) -> dict[str, Any]:
         parser.close()
     except Exception:  # noqa: BLE001
         pass
-    links = {urldefrag(urljoin(final_url, h))[0] for h, _t in parser.anchors}
-    dates = distinct_dates(re.sub(r"<[^>]+>", " ", body))
+    links: set[str] = set()
+    for h, _t in parser.anchors:
+        try:
+            links.add(urldefrag(urljoin(final_url, h))[0])
+        except ValueError:  # a malformed address is not a link
+            continue
+    # ``<[^<>]*>``, not ``<[^>]+>``: on a page of ``<`` with no ``>`` the latter is quadratic (measured, security read 1).
+    dates = distinct_dates(re.sub(r"<[^<>]*>", " ", body))
     return {"kind": "page", "distinct_dates": dates, "same_site_links": sum(1 for u in links if in_scope(u, home_site)),
             "list_shaped": dates >= MIN_ITEMS}
 
@@ -252,7 +261,9 @@ def check_agency(agency: Any, fetch: Fetch) -> dict[str, Any]:
     """One agency, end to end. ``fetch(url, *, require_html, redirect_scope)`` is ``EthicalFetcher.fetch`` (a stand-in in tests)."""
     home = agency.home_url
     home_site = site(home)
-    row: dict[str, Any] = {"code": agency.code, "name": agency.name, "home_url": home, "known_news_url": agency.news_url}
+    row: dict[str, Any] = {"code": agency.code, "name": agency.name, "home_url": home, "known_news_url": agency.news_url,
+                           # every request of this agency is held to this domain (unstats.un.org's is all of un.org)
+                           "scope": home_site}
     if not home_site or not in_scope(home, home_site):
         return {**row, "verdict": "home_url_unusable", "candidates": [], "proposed": None}
 
@@ -279,7 +290,10 @@ def check_agency(agency: Any, fetch: Fetch) -> dict[str, Any]:
             c["outcome"] = "redirect_out_of_scope"
             continue
         c.update({"outcome": "read", "status": got.status_code, "final_url": got.final_url})
-        c.update(shape(got.content or "", got.final_url, home_site))
+        try:
+            c.update(shape(got.content or "", got.final_url, home_site))
+        except Exception as exc:  # noqa: BLE001 - a body no reader can measure is this candidate's verdict, not the run's end
+            c.update({"outcome": "unmeasurable", "error_class": type(exc).__name__})
     proposed = next((c["final_url"] for c in found if c.get("list_shaped")), None)
     return {**row, "verdict": "proposed" if proposed else "candidates_not_list_shaped", "candidates": found, "proposed": proposed}
 
@@ -359,7 +373,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 2
     rows = []
     for n, agency in enumerate(agencies, 1):
-        row = check_agency(agency, fetcher.fetch)
+        try:
+            row = check_agency(agency, fetcher.fetch)
+        except Exception as exc:  # noqa: BLE001 - one agency's surprise never costs the others' rows
+            row = {"code": agency.code, "name": agency.name, "home_url": agency.home_url, "verdict": "error",
+                   "error_class": type(exc).__name__, "candidates": [], "proposed": None}
         print(f"[{n}/{len(agencies)}] {agency.code}: {row['verdict']}" + (f" -> {row['proposed']}" if row["proposed"] else ""))
         rows.append(row)
     report = build_report(rows, fetcher_mode=mode)
