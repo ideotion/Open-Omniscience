@@ -364,7 +364,7 @@ def _refuse_a_file_in_the_way(dest: Path, *, hint: str = _BACKUP_DIR_HINT) -> No
         if not stat.S_ISDIR(st.st_mode) and not (stat.S_ISLNK(st.st_mode) and os.path.isdir(probe)):
             raise MigrationRefused(
                 f"the place for the safety copy could not be examined (NotADirectoryError): {dest}. Nothing was changed. {hint}"
-            )
+            ) from None  # the same shape as the lstat refusal: no OS error chained behind it
         return
 
 

@@ -552,6 +552,7 @@ def test_a_file_where_the_folder_should_be_is_refused_where_lstat_reads_it_as_ab
     finally:
         con.close()
     assert "could not be examined (NotADirectoryError)" in str(caught.value) and "Nothing was changed" in str(caught.value)
+    assert caught.value.__suppress_context__ and caught.value.__cause__ is None, "the same shape as the POSIX refusal"
     assert not list(tmp_path.glob("blocker*.partial")) and blocker.is_file()
     assert cf.read_form(sqlite3.connect(a)) == "alpha2"
 
