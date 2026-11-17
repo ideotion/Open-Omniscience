@@ -52,9 +52,9 @@ def scan_table() -> tuple[dict[str, float], dict[str, str]]:
         from src.config.kv_store import kv_get_json
 
         history = kv_get_json(_plan.SCAN_WALLS_KEY)
-    except Exception:  # noqa: BLE001 - no history is the field medians, said as such per scan
-        history = None
-    return _plan.machine_table(history, _mention_rows() if history else None)
+        return _plan.machine_table(history, _mention_rows() if history else None)
+    except Exception:  # noqa: BLE001 - no usable history is the field medians, said as such per scan; a build never fails on its order
+        return _plan.machine_table(None, None)
 
 
 def _mention_rows() -> int | None:

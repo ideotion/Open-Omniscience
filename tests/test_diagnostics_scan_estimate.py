@@ -57,6 +57,29 @@ def test_the_machine_table_is_what_a_build_orders_by_and_names_each_figure_s_sou
     assert plan.thorough_estimate(hist, 20_000_000)["est_s"] == round(sum(costs.values()))
 
 
+def test_a_cheap_run_here_never_orders_a_scan_before_its_field_median():
+    """leads-quality takes 0.01 s from a fresh Home feed and up to 240 s without one: ordered first on the cheap run, it would spend
+    the budget the way the card audit did (row 74). The Thorough estimate, a sum rather than an order, still uses the figure here."""
+    hist = {"leads-quality.json": {"wall_s": 0.0, "rows": 1_000, "at": "x"}}
+    costs, basis = plan.machine_table(hist, 1_000)
+    assert costs["leads-quality.json"] == 275.0 and basis["leads-quality.json"] == "field-median"
+    raw, raw_basis = plan.machine_table(hist, 1_000, at_least_median=False)
+    assert raw["leads-quality.json"] == 0.0 and raw_basis["leads-quality.json"] == "this-machine"
+    assert plan.thorough_estimate(hist, 1_000)["from_this_machine"] == 1
+
+
+def test_a_stored_figure_too_large_for_a_float_is_no_figure_and_never_fails_the_build():
+    for h in ({"wall_s": 10**400, "rows": 5}, {"wall_s": 5.0, "rows": 10**400}, {"wall_s": float("nan"), "rows": 5}):
+        costs, basis = plan.machine_table({"card-audit.json": h}, 100)
+        assert costs["card-audit.json"] == 60.5 and basis["card-audit.json"] == "field-median"
+
+
+def test_a_scan_that_finished_under_a_deadline_the_budget_shortened_is_remembered():
+    """Otherwise a scan Quick runs late (after 300 s of its budget) could never be timed lower than its last figure."""
+    got = plan.walls_to_remember([{"file": "card-audit.json", "outcome": "ok", "wall_s": 40.0, "budget_cut": True}], 1_000, "x")
+    assert got == {"card-audit.json": {"wall_s": 40.0, "rows": 1_000, "at": "x"}}
+
+
 def test_scan_table_falls_back_to_the_field_medians_when_the_store_cannot_be_read(monkeypatch):
     import src.config.kv_store as kv
 
