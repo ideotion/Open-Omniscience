@@ -172,8 +172,9 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/backup/export_summary.py": {("export_facts", "attribution, attribution_error = [], str(exc)"): 1},
     # ``_ExportRefused`` is this module's own refusal with fixed words (_NO_SPACE and the like); any other failure is its class.
     "src/backup/newsletter_export.py": {("drop_newsletters_encrypted", "reason = str(exc) if refused else type(exc).__name__"): 1},
-    # ``refused`` is a RestoreRefused: its ``served_text`` is a fixed sentence the code wrote, naming the holder of a lock.
-    "src/backup/volume_job.py": {("VolumeBackupManager._run_backup", 'self._state, self._error = "error", refused.served_text'): 1},
+    # ``refused`` is a NewsletterFilterRefused: its ``served_text`` is one of two fixed sentences the code wrote. Carried out of the
+    # handler as text, served once the handler has ended (row 111).
+    "src/backup/volume_job.py": {("VolumeBackupManager._run_backup", "refused.served_text,"): 1},
 }
 
 #: Operator-facing text that nothing stores: a dump lookup's HTTP
