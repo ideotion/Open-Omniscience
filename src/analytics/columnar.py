@@ -126,9 +126,9 @@ def duckdb_available() -> bool:
 
 def budget_snapshot() -> dict:
     """What a rollup build is sized from, read ONCE when it starts (R147): DuckDB's limit and threads, the machine's
-    total RAM they were derived from, and when they were read. ``budget()`` is fixed at boot, so this changes nothing
-    today; the snapshot is the build's own state and the build never asks the budget again, so a budget that does
-    move (a later change to resolve it again) cannot cut one build's shards from two different limits."""
+    total RAM they were derived from, and when they were read. ``budget()`` can move UP while the app runs (R731), and
+    the snapshot is the build's own state: the build never asks the budget again, so a budget that moves mid-build
+    cannot cut one build's shards from two different limits; the next build reads the new one."""
     from datetime import UTC, datetime
 
     from src.config.memory_budget import budget

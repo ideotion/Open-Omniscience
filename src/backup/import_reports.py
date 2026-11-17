@@ -108,6 +108,16 @@ def annotate_import_report(
         tmp.unlink(missing_ok=True)
 
 
+def _fmt_gb(n: Any) -> str:
+    """Bytes in the budget's own unit (``src.versioned.budget.BYTES_PER_GB``), one decimal."""
+    from src.versioned.budget import BYTES_PER_GB
+
+    try:
+        return f"{int(n) / BYTES_PER_GB:,.1f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
 def _fmt_count(n: Any) -> str:
     try:
         return f"{int(n):,}"
@@ -672,6 +682,13 @@ def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
             if isinstance(counts, dict):
                 shown = ", ".join(f"{k.replace('_', ' ')} {_fmt_count(v)}" for k, v in counts.items())
                 lines.append(f"  - {table}: {shown}")
+        budget = lane.get("budget")
+        if isinstance(budget, dict) and budget.get("over"):
+            lines.append(
+                f"  - **This store is now over its budget**: it holds {_fmt_gb(budget.get('bytes'))} GB and its "
+                f"budget is {_fmt_count(budget.get('budget_gb'))} GB. Nothing was removed. It fetches nothing new "
+                "until it is back under budget or the budget is raised (Settings > Storage)."
+            )
         dropped = lane.get("warm_texts_dropped")
         if dropped:
             lines.append(

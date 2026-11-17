@@ -134,10 +134,10 @@ def _lane_member() -> dict:
 #: The three sentences the Living sources row can show, each a key in all 12 locale files
 #: (the dialog looks them up with t(); tests/test_backup_inventory.py is their gate).
 LANES_ABSENT = "No living-source store on this computer yet."
-LANES_WAITING = "This version backs up the Wikipedia store; the law and maps stores follow in a later version."
+LANES_WAITING = "This version backs up the Wikipedia and law stores; the maps store follows in a later version."
 LANES_NOTE = (
     "Living sources always travel inside the encrypted backup, so they need the corpus ticked. "
-    "This version carries the Wikipedia store; law and maps follow later."
+    "This version carries the Wikipedia and law stores; maps follow later."
 )
 
 

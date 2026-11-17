@@ -49,6 +49,7 @@ from a NEWER build that this one does not know is left unmerged and reported as 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import sqlite3
@@ -61,8 +62,8 @@ from typing import Any
 
 _LOG = logging.getLogger("backup.lane_merge")
 
-#: The lanes this build both exports and merges. Law and OSM join in their own PRs.
-MERGEABLE_KINDS: tuple[str, ...] = ("wiki",)
+#: The lanes this build both exports and merges. OSM joins in its own PR.
+MERGEABLE_KINDS: tuple[str, ...] = ("wiki", "law")
 
 #: Member-name prefix inside the volume set. A namespace of its own, like ``blobs/``.
 LANE_PREFIX = "lanes"
@@ -219,6 +220,9 @@ _READ_TABLES = frozenset(
         "versioned_entity_facts",
         "wiki_walk_pages",
         "wiki_warm_pages",
+        "law_identities",
+        "law_document_meta",
+        "law_provisions",
     }
 )
 
@@ -628,8 +632,396 @@ def _recount_warm_editions(conn: Any) -> None:
     )
 
 
+# --------------------------------------------------------------------------- #
+#  The law lane (R729, PR 2): identities, per-language metadata, provisions
+# --------------------------------------------------------------------------- #
+#: Identity columns filled from the backup when the local row has none (never replaced).
+#: ``status`` and ``legal_system`` are NOT here: they are never NULL ("unknown" is a real
+#: value), and the law lane records no date for them, so no later reading can be told apart.
+_LAW_IDENTITY_FILL = ("issuing_body", "enacted_on", "published_on", "commenced_on", "repealed_on")
+#: The same for one language version of a law.
+_LAW_META_FILL = ("title", "source_url")
+#: Filled only when the backup's row states the SAME provenance and licence as the local one:
+#: ``translated_by`` is read as a pair with ``translation_kind`` (``model.provenance_of``) and
+#: ``source_authority`` comes from the same catalogue row as ``licence_id``, so a value
+#: filled across a different pair would name the wrong body beside this machine's claim.
+_LAW_META_PAIRED_FILL = ("translated_by", "source_authority")
+_LAW_TRIPLE = (
+    "m.identity_scheme = i.identity_scheme AND m.jurisdiction_alpha3 = i.jurisdiction_alpha3 "
+    "AND m.document_identity = i.document_identity"
+)
+_LAW_DATE = "length({v}) <= 32 AND {v} GLOB '[0-9][0-9][0-9][0-9]*'"
+#: What a free-text value from a backup must look like to be copied: TEXT, within the
+#: column's own length (SQLite does not enforce ``String(n)``), and for the dates and the
+#: URL the shape the app itself writes. A value that fails is not copied (NULL on insert,
+#: no fill), never truncated into something the source did not say.
+_LAW_TEXT_CHECKS = {
+    "issuing_body": "length({v}) <= 256",
+    "enacted_on": _LAW_DATE,
+    "published_on": _LAW_DATE,
+    "commenced_on": _LAW_DATE,
+    "repealed_on": _LAW_DATE,
+    "title": "length({v}) <= 512",
+    "source_url": (
+        "length({v}) <= 1000 AND (lower(substr({v}, 1, 8)) = 'https://' OR lower(substr({v}, 1, 7)) = 'http://')"
+    ),
+    "translated_by": "length({v}) <= 256",
+    "source_authority": "length({v}) <= 256",
+    "num": "length({v}) <= 64",
+    "heading": "length({v}) <= 512",
+}
+
+
+def _law_ok(col: str, alias: str) -> str:
+    """The SQL test a backup value must pass before it is copied (``_LAW_TEXT_CHECKS``)."""
+    v = f'{alias}."{col}"'
+    return f"(typeof({v}) = 'text' AND " + _LAW_TEXT_CHECKS[col].format(v=v) + ")"
+
+
+def _law_checked(col: str, alias: str) -> str:
+    """The value itself where it passes ``_law_ok``, otherwise NULL."""
+    return f'CASE WHEN {_law_ok(col, alias)} THEN {alias}."{col}" END'
+
+
+def _law_in(expr: str, name: str, values: Any, params: dict[str, Any]) -> str:
+    """``expr IN (...)`` over a closed vocabulary, every value a bound parameter."""
+    keys = []
+    for n, v in enumerate(values):
+        params[f"{name}{n}"] = v
+        keys.append(f":{name}{n}")
+    return f"{expr} IN ({', '.join(keys)})"
+
+
+def _law_fit(overrides: dict[str, str], inc_cols: set[str], derived: set[str], defaults: dict[str, str]) -> dict[str, str]:
+    """Keep an override only where the backup has the column it reads.
+
+    A backup from an older or newer build may lack a column. An override that reads it
+    would fail the whole lane; a NOT NULL column falls back to the model's own default and
+    a nullable one is left out (NULL). ``derived`` overrides read other tables or columns.
+    """
+    out: dict[str, str] = {}
+    for col, expr in overrides.items():
+        if col in derived or col in inc_cols:
+            out[col] = expr
+        elif col in defaults:
+            out[col] = defaults[col]
+    return out
+
+
+def _law_sha256(text: Any) -> str | None:
+    if not isinstance(text, str):
+        return None
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _corpus_law_links(conn: Any, *, own_transaction: bool = True) -> None:
+    """The live corpus's law links, in two temp tables of the lane connection.
+
+    ``law.db`` links into ``corpus.db`` by minted strings (``src/law/lane_models.py``). A
+    language version or a provision whose string the live corpus does not hold would be a
+    member of a law group with no document behind it, so only linked rows are merged; the
+    rest are counted. A provision's ``document_lane_key`` is read from the corpus, never
+    from the backup: the corpus merge files an incoming version under THIS machine's copy
+    of the same law, whose key is this machine's own.
+    """
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    conn.execute("DROP TABLE IF EXISTS temp.lm_law_doc")
+    conn.execute("DROP TABLE IF EXISTS temp.lm_law_rev")
+    conn.execute("CREATE TEMP TABLE lm_law_doc (lane_key TEXT PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE lm_law_rev (lane_key TEXT PRIMARY KEY, doc_key TEXT NOT NULL)")
+    # The corpus does not make a key unique: a key held by two documents (or a version key
+    # under two documents, one of them unkeyed) names no one document, so it links nothing
+    # rather than an arbitrary one of them.
+    with session_scope() as db:
+        docs = db.execute(
+            text("SELECT lane_key FROM law_documents WHERE lane_key IS NOT NULL GROUP BY lane_key HAVING count(*) = 1")
+        ).all()
+        revs = db.execute(
+            text(
+                "SELECT r.lane_key, max(d.lane_key) FROM law_revisions r JOIN law_documents d ON d.id = r.document_id "
+                "WHERE r.lane_key IS NOT NULL GROUP BY r.lane_key "
+                "HAVING count(DISTINCT r.document_id) = 1 AND count(d.lane_key) = count(*)"
+            )
+        ).all()
+    # A version links only through a document key that itself names one document.
+    unique_docs = {r[0] for r in docs}
+    revs = [r for r in revs if r[1] in unique_docs]
+    if own_transaction:
+        conn.execute("BEGIN")  # the temp database only: no lock on the lane file
+    try:
+        conn.executemany("INSERT OR IGNORE INTO temp.lm_law_doc VALUES (?)", [tuple(r) for r in docs])
+        conn.executemany("INSERT OR IGNORE INTO temp.lm_law_rev VALUES (?, ?)", [tuple(r) for r in revs])
+        if own_transaction:
+            conn.execute("COMMIT")
+    except BaseException:
+        if own_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def _merge_law(conn: Any, out: dict[str, Any]) -> None:
+    from src.law.model import (
+        DOC_TYPES,
+        GRANULARITIES,
+        IDENTITY_SCHEMES,
+        JURISDICTION_LEVELS,
+        LEGAL_SYSTEMS,
+        LICENCES,
+        STATUSES,
+        TRANSLATION_KINDS,
+    )
+
+    tables: dict[str, dict[str, int]] = out["tables"]
+    if not (_has(conn, "inc", "law_identities") and _has(conn, "inc", "law_document_meta")):
+        return
+    if not _has(conn, "temp", "lm_law_doc"):  # read before the transaction by merge_lane_file
+        _corpus_law_links(conn, own_transaction=False)
+    params: dict[str, Any] = {"horizon": _horizon()}
+    # A language version this machine lacks and whose document the live corpus holds.
+    linked_new = (
+        "i.lane_key IN (SELECT lane_key FROM temp.lm_law_doc) "
+        "AND NOT EXISTS (SELECT 1 FROM main.law_document_meta m WHERE m.lane_key = i.lane_key)"
+    )
+
+    live_cols = set(_columns(conn, "main", "law_identities"))
+    inc_cols = set(_columns(conn, "inc", "law_identities"))
+    fill = [c for c in _LAW_IDENTITY_FILL if c in live_cols and c in inc_cols]
+    filled = 0
+    if fill:
+        sets = ", ".join(f'"{c}" = COALESCE(m."{c}", {_law_checked(c, "i")})' for c in fill)
+        gaps = " OR ".join(f'(m."{c}" IS NULL AND {_law_ok(c, "i")})' for c in fill)
+        # Only a law this merge LINKS: the backup carries a version of it whose document the
+        # live corpus holds, and that version is (or will be) filed under THIS identity. An
+        # identity triple is public (ELI, CELEX), so a bare identity row naming someone
+        # else's law fills nothing.
+        linked_here = (
+            "EXISTS (SELECT 1 FROM inc.law_document_meta im WHERE im.identity_id = i.id "
+            "AND im.lane_key IN (SELECT lane_key FROM temp.lm_law_doc) "
+            "AND NOT EXISTS (SELECT 1 FROM main.law_document_meta mm WHERE mm.lane_key = im.lane_key "
+            "AND mm.identity_id != m.id))"
+        )
+        conn.execute(
+            f"UPDATE main.law_identities AS m SET {sets} FROM inc.law_identities AS i "  # noqa: S608  # nosec B608 # columns from the module's _LAW_IDENTITY_FILL list
+            f"WHERE {_LAW_TRIPLE} AND {linked_here} AND ({gaps})"
+        )
+        filled = _changes(conn)
+    # A new identity must be one the model could have written: its triple already in the
+    # model's normal form (``document_identity_for``) and every closed vocabulary in its
+    # list. Anything else would split one law into two groups or put a value no reader
+    # knows on screen, so it is not inserted and its versions count as not linked.
+    well_formed = " AND ".join(
+        (
+            _law_in("i.identity_scheme", "s", IDENTITY_SCHEMES, params),
+            "typeof(i.jurisdiction_alpha3) = 'text' AND length(i.jurisdiction_alpha3) = 3 "
+            "AND i.jurisdiction_alpha3 GLOB '[A-Z][A-Z][A-Z]'",
+            "typeof(i.document_identity) = 'text' AND length(i.document_identity) BETWEEN 1 AND 256 "
+            "AND i.document_identity = lower(trim(i.document_identity)) "
+            "AND instr(i.document_identity, '  ') = 0 AND instr(i.document_identity, char(9)) = 0 "
+            "AND instr(i.document_identity, char(10)) = 0 AND instr(i.document_identity, char(11)) = 0 "
+            "AND instr(i.document_identity, char(12)) = 0 AND instr(i.document_identity, char(13)) = 0",
+            _law_in("i.jurisdiction_level", "v", JURISDICTION_LEVELS, params),
+            _law_in("i.doc_type", "d", DOC_TYPES, params),
+        )
+    )
+    id_overrides = {c: _law_checked(c, "i") for c in fill}
+    id_overrides["legal_system"] = (
+        f"CASE WHEN {_law_in('i.legal_system', 'y', LEGAL_SYSTEMS, params)} THEN i.legal_system ELSE 'unknown' END"
+    )
+    id_overrides["status"] = f"CASE WHEN {_law_in('i.status', 't', STATUSES, params)} THEN i.status ELSE 'unknown' END"
+    id_overrides["created_at"] = "MIN(i.created_at, :horizon)"
+    # Only identities a merged language version will belong to: an identity with no
+    # document behind it would be an empty law group on this machine.
+    inserted = _insert_select(
+        conn,
+        "law_identities",
+        source_from="inc.law_identities i",
+        overrides=_law_fit(
+            {k: v for k, v in id_overrides.items() if k in live_cols},
+            inc_cols,
+            set(),
+            {"legal_system": "'unknown'", "status": "'unknown'", "created_at": ":horizon"},
+        ),
+        where=(
+            f"NOT EXISTS (SELECT 1 FROM main.law_identities m WHERE {_LAW_TRIPLE}) AND {well_formed} "  # noqa: S608  # nosec B608 # module-literal clauses, values bound
+            f"AND i.id IN (SELECT i.identity_id FROM inc.law_document_meta i WHERE {linked_new})"
+        ),
+        source_alias="i",
+        params=params,
+    )
+    tables["law_identities"] = {"inserted": inserted, "filled": filled}
+
+    conn.execute("DROP TABLE IF EXISTS temp.lm_lid")
+    conn.execute("CREATE TEMP TABLE lm_lid (inc_id INTEGER PRIMARY KEY, loc_id INTEGER NOT NULL)")
+    conn.execute(f"INSERT INTO temp.lm_lid SELECT i.id, m.id FROM inc.law_identities i JOIN main.law_identities m ON {_LAW_TRIPLE}")  # noqa: S608  # nosec B608 # a module literal
+
+    meta_live = set(_columns(conn, "main", "law_document_meta"))
+    meta_inc = set(_columns(conn, "inc", "law_document_meta"))
+    mfill = [c for c in _LAW_META_FILL if c in meta_live and c in meta_inc]
+    paired = [c for c in _LAW_META_PAIRED_FILL if c in meta_live and c in meta_inc]
+    if not {"translation_kind", "licence_id"} <= (meta_live & meta_inc):
+        paired = []
+    gaps1 = " OR ".join(f'(m."{c}" IS NULL AND {_law_ok(c, "i")})' for c in mfill) or "0"
+    same_pair = "i.translation_kind = m.translation_kind AND i.licence_id = m.licence_id" if paired else "0"
+    gaps2 = " OR ".join(f'(m."{c}" IS NULL AND {_law_ok(c, "i")})' for c in paired) or "0"
+    # Counted once per row, whichever of the two fills reaches it.
+    mfilled = int(
+        conn.execute(
+            "SELECT count(*) FROM main.law_document_meta m JOIN inc.law_document_meta i ON i.lane_key = m.lane_key "  # noqa: S608  # nosec B608 # columns from the module's fill lists
+            f"WHERE ({gaps1}) OR ({same_pair} AND ({gaps2}))"
+        ).fetchone()[0]
+    )
+    if mfill:
+        sets = ", ".join(f'"{c}" = COALESCE(m."{c}", {_law_checked(c, "i")})' for c in mfill)
+        conn.execute(
+            f"UPDATE main.law_document_meta AS m SET {sets} FROM inc.law_document_meta AS i "  # noqa: S608  # nosec B608 # columns from the module's _LAW_META_FILL list
+            f"WHERE i.lane_key = m.lane_key AND ({gaps1})"
+        )
+    if paired:
+        sets = ", ".join(f'"{c}" = COALESCE(m."{c}", {_law_checked(c, "i")})' for c in paired)
+        conn.execute(
+            f"UPDATE main.law_document_meta AS m SET {sets} FROM inc.law_document_meta AS i "  # noqa: S608  # nosec B608 # columns from the module's _LAW_META_PAIRED_FILL list
+            f"WHERE i.lane_key = m.lane_key AND {same_pair} AND ({gaps2})"
+        )
+    unlinked = int(
+        conn.execute(
+            "SELECT count(*) FROM inc.law_document_meta i WHERE i.lane_key NOT IN (SELECT lane_key FROM temp.lm_law_doc) "
+            "AND NOT EXISTS (SELECT 1 FROM main.law_document_meta m WHERE m.lane_key = i.lane_key)"
+        ).fetchone()[0]
+    )
+    # A linked version whose identity the member does not hold (or holds in a form this
+    # build would not write) belongs to no law: counted too.
+    unlinked += int(
+        conn.execute(
+            f"SELECT count(*) FROM inc.law_document_meta i WHERE {linked_new} "  # noqa: S608  # nosec B608 # a module literal
+            "AND NOT EXISTS (SELECT 1 FROM temp.lm_lid l WHERE l.inc_id = i.identity_id)"
+        ).fetchone()[0]
+    )
+    # The closed vocabularies are the model's own (``src/law/model.py``): a value this build
+    # does not know is stored as the honest unknown, never as a claim the reader would
+    # render (an unknown kind would otherwise read as "published by another government").
+    # ``register_document`` folds case and surrounding whitespace for the kind and the
+    # granularity, and takes the licence only as an exact catalogue key; so does this.
+    ws = "char(32, 9, 10, 11, 12, 13)"
+    kind = f"lower(trim(i.translation_kind, {ws}))"
+    grain = f"lower(trim(i.granularity, {ws}))"
+    lang = f"lower(trim(i.language, {ws}))"
+    meta_overrides = {c: _law_checked(c, "i") for c in (*_LAW_META_FILL, *_LAW_META_PAIRED_FILL)}
+    meta_overrides["identity_id"] = "l.loc_id"
+    meta_overrides["language"] = (
+        f"CASE WHEN typeof(i.language) = 'text' AND length({lang}) BETWEEN 1 AND 16 THEN {lang} ELSE 'und' END"
+    )
+    meta_overrides["translation_kind"] = (
+        f"CASE WHEN {_law_in(kind, 'k', TRANSLATION_KINDS, params)} THEN {kind} ELSE 'unrecorded' END"
+    )
+    meta_overrides["licence_id"] = (
+        f"CASE WHEN {_law_in('i.licence_id', 'l', LICENCES, params)} THEN i.licence_id ELSE 'unknown' END"
+    )
+    meta_overrides["granularity"] = f"CASE WHEN {_law_in(grain, 'g', GRANULARITIES, params)} THEN {grain} ELSE 'act' END"
+    meta_overrides["first_seen_at"] = "MIN(i.first_seen_at, :horizon)"
+    meta_overrides["updated_at"] = "MIN(i.updated_at, :horizon)"
+    n = _insert_select(
+        conn,
+        "law_document_meta",
+        source_from="inc.law_document_meta i JOIN temp.lm_lid l ON l.inc_id = i.identity_id",
+        overrides=_law_fit(
+            {k: v for k, v in meta_overrides.items() if k in meta_live},
+            meta_inc,
+            {"identity_id"},
+            {
+                "language": "'und'",
+                "translation_kind": "'unrecorded'",
+                "licence_id": "'unknown'",
+                "granularity": "'act'",
+                "first_seen_at": ":horizon",
+                "updated_at": ":horizon",
+            },
+        ),
+        where=linked_new,
+        source_alias="i",
+        params=params,
+    )
+    tables["law_document_meta"] = {"inserted": n, "filled": mfilled, "not_linked": unlinked}
+
+    if _has(conn, "inc", "law_provisions"):
+        # A provision belongs to one VERSION, and a version's provisions are ONE parse:
+        # ``model.store_provisions`` replaces them as a whole, because a per-address merge
+        # leaves a set no parse produced. So a version this machine already holds keeps its
+        # own parse whole, and the backup's provisions for it are counted, never mixed in.
+        # One whose version the corpus does not hold under the same key is counted too
+        # (its text is in the backup's corpus).
+        local_parse = "EXISTS (SELECT 1 FROM main.law_provisions m WHERE m.revision_lane_key = p.revision_lane_key)"
+        same_row = (
+            "EXISTS (SELECT 1 FROM main.law_provisions m "
+            "WHERE m.revision_lane_key = p.revision_lane_key AND m.address = p.address)"
+        )
+        identical = (
+            "EXISTS (SELECT 1 FROM main.law_provisions m WHERE m.revision_lane_key = p.revision_lane_key "
+            "AND m.address = p.address AND m.text = p.text)"
+        )
+        well_shaped = "typeof(p.text) = 'text' AND typeof(p.address) = 'text' AND length(p.address) BETWEEN 1 AND 512"
+        p_unlinked = int(
+            conn.execute(
+                "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key NOT IN (SELECT lane_key FROM temp.lm_law_rev) "  # noqa: S608  # nosec B608 # module literals
+                f"AND NOT {same_row}"
+            ).fetchone()[0]
+        )
+        kept = int(
+            conn.execute(
+                "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key IN (SELECT lane_key FROM temp.lm_law_rev) "  # noqa: S608  # nosec B608 # module literals
+                f"AND {local_parse} AND NOT {identical}"
+            ).fetchone()[0]
+        )
+        # A linked provision of a new version that is not one the model could have stored
+        # (no text, an address outside the column) is counted rather than dropped unseen.
+        refused = int(
+            conn.execute(
+                "SELECT count(*) FROM inc.law_provisions p WHERE p.revision_lane_key IN (SELECT lane_key FROM temp.lm_law_rev) "  # noqa: S608  # nosec B608 # module literals
+                f"AND NOT {local_parse} AND NOT ({well_shaped})"
+            ).fetchone()[0]
+        )
+        p_inc = set(_columns(conn, "inc", "law_provisions"))
+        # The hash is recomputed from the text: a stored hash that does not match its text
+        # would make a changed provision read as unchanged.
+        try:
+            conn.create_function("oo_law_sha256", 1, _law_sha256, deterministic=True)
+        except TypeError:  # an older DB-API without the keyword
+            conn.create_function("oo_law_sha256", 1, _law_sha256)
+        pn = _insert_select(
+            conn,
+            "law_provisions",
+            source_from="inc.law_provisions p JOIN temp.lm_law_rev r ON r.lane_key = p.revision_lane_key",
+            overrides=_law_fit(
+                {
+                    "document_lane_key": "r.doc_key",
+                    "content_hash": "oo_law_sha256(p.text)",
+                    "ordinal": "CASE WHEN typeof(p.ordinal) = 'integer' THEN p.ordinal ELSE 0 END",
+                    "num": _law_checked("num", "p"),
+                    "heading": _law_checked("heading", "p"),
+                    "created_at": "MIN(p.created_at, :horizon)",
+                },
+                p_inc,
+                {"document_lane_key", "content_hash"},
+                {"ordinal": "0", "created_at": ":horizon"},
+            ),
+            where=f"NOT {local_parse} AND {well_shaped}",  # noqa: S608  # nosec B608 # module literals
+            source_alias="p",
+            params=params,
+        )
+        tables["law_provisions"] = {"inserted": pn, "not_linked": p_unlinked}
+        if kept:
+            tables["law_provisions"]["kept_local_parse"] = kept
+        if refused:
+            tables["law_provisions"]["refused"] = refused
+    for t in ("lm_lid", "lm_law_doc", "lm_law_rev"):
+        conn.execute(f"DROP TABLE IF EXISTS temp.{t}")
+
+
 _STEPS = {
     "wiki": (_merge_shared, _merge_walk, _merge_warm),
+    "law": (_merge_shared, _merge_law),
 }
 
 
@@ -659,6 +1051,10 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
             # stamp, or with another kind's, is not this lane. The stamp is never echoed.
             if meta is None or meta[0] != kind:
                 raise LaneMergeError(f"the member named {kind} is not a {kind} lane; refusing to merge it")
+            if kind == "law":
+                # Read before the lane's write lock is taken, so a law poller is not held
+                # behind a corpus read; a link added meanwhile only waits for a re-import.
+                _corpus_law_links(conn)
             conn.execute("BEGIN IMMEDIATE")
             try:
                 for step in _STEPS[kind]:
@@ -675,7 +1071,30 @@ def merge_lane_file(kind: str, path: Path, keys: Iterable[str | None]) -> dict[s
     # engine re-reads on its next checkout, so disposing is cheap insurance, never required.
     dispose_lane(kind)
     out["seconds"] = round(time.monotonic() - t0, 3)
+    out["budget"] = _budget_after(kind)
     return out
+
+
+def _budget_after(kind: str) -> dict[str, Any] | None:
+    """The lane's size against its budget after a merge (Lane F's note on #2036/#2047).
+
+    The merge never refuses for size and never removes anything to make room: a budget here
+    pauses FETCHING (``tiers.BudgetState.exhausted``), it does not delete, so an import that
+    takes a lane past its budget is merged and SAID to be over it, with both figures. ``None``
+    when the lane has no budget or nothing could be measured. Never raises.
+    """
+    try:
+        from src.scheduler.settings import load_settings
+        from src.versioned.budget import _budget_block, lane_bytes, load_table
+
+        size = lane_bytes(kind)
+        block = _budget_block(load_table().row(kind), load_settings(), size)
+    except Exception as exc:  # noqa: BLE001 - a budget reading never costs the merge
+        _LOG.warning("could not read the %s lane's budget after the merge (%s)", kind, type(exc).__name__)
+        return None
+    if block.get("gb") is None or size is None:
+        return None
+    return {"bytes": int(size), "budget_gb": int(block["gb"]), "over": bool(block.get("exhausted"))}
 
 
 #: The longest failure reason a lane row keeps.

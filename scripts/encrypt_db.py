@@ -43,6 +43,9 @@ def main() -> int:
         print(f"{p.name} is already encrypted")
         return 0
 
+    print("Stop the app first. A running app keeps what it built from the plaintext file, and the")
+    print("temporary files that hold it, until it restarts. While it runs, use Settings -> Safety ->")
+    print("'Encrypt this corpus', which closes them.")
     print("This encrypts your corpus and custody log IN PLACE (SQLCipher 4).")
     print("There is NO recovery and NO decryption alternative if the passphrase")
     print("is lost. A plaintext snapshot is kept as your escape hatch -- delete")

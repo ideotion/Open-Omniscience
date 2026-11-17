@@ -1187,7 +1187,8 @@ def _previous_peaks() -> dict[str, Any] | None:
         "which C allocator the session ran on and whether its malloc arenas were capped "
         "(R114), read from the environment the process started with; memory_budget is "
         "the memory tier the session was resolved to (tier, RAM total, logical CPUs, whether the "
-        "in-memory rollup is on by default, and when: resolved once per process); a record "
+        "in-memory rollup is on by default, and when: resolved at the start of the process and again only upward, "
+        "R731, when the machine grew into a higher tier); a record "
         "written before either was kept has none. A field that could not be measured is "
         "ABSENT rather than zero."
     )
@@ -1654,7 +1655,8 @@ def _render_allocator(alloc: Any) -> list[str]:
 def _render_memory_budget(reading: Any) -> list[str]:
     """The memory tier the session was resolved to, as one line beside the peaks it bounds:
     the pool and the page caches (unless the operator set them), DuckDB's limit and whether
-    the in-memory keyword rollup runs by default were all decided from it, once, at start. The
+    the in-memory keyword rollup runs by default were all decided from it at start, and DuckDB's limit and the rollup
+    default again, upward only, when the machine grew (R731; the record then carries every change). The
     line states the tier's default and not an operator's own ``OO_COLUMNAR_SERVE`` choice, which
     only the session ledger records (``rollup_serve_mode``), and says so. A record written
     before it was kept has none,
@@ -1681,10 +1683,19 @@ def _render_memory_budget(reading: Any) -> list[str]:
         else "this tier leaves the in-memory keyword rollup off by default" if serve is False
         else "whether this tier leaves the in-memory keyword rollup on by default is not recorded"
     )
+    changes = [c for c in (reading.get("regrown") or []) if isinstance(c, dict)]
+    if changes:
+        steps = "; ".join(
+            f"{c.get('from_tier')} to {c.get('to_tier')} at {c.get('at')} ({c.get('to_total_ram_mb')} MiB)" for c in changes
+        )
+        since = f" (first resolved at {reading['first_resolved_at']})" if reading.get("first_resolved_at") else ""
+        how = f"re-resolved upward while running{since}: {steps}; the pool and page cache kept their start sizes"
+    else:
+        how = ("resolved when the process started and not re-resolved after it, so a total that fell afterwards, or "
+               "grew inside its tier, is not in it")
     return [
         f"  - memory tier ({tier}; {seen}{when}): {rollup} (an operator's own OO_COLUMNAR_SERVE "
-        "choice is in chronology.json, not here); resolved once, when the process started, so a "
-        "total that moved afterwards is not in it"
+        f"choice is in chronology.json, not here); {how}"
     ]
 
 
