@@ -180,6 +180,23 @@ def test_ingest_is_idempotent(client):
     assert count_after_second == count_after_first  # no duplicates
 
 
+def test_the_caller_sees_the_new_rows_in_its_own_session(client, monkeypatch):
+    # Row 108: the session does not autoflush, so the rows were invisible until commit.
+    # Two agencies on one domain must also give one row, not two.
+    from src.database.session import session_scope
+    from src.stats import ingest as mod
+
+    real = mod.list_agencies()
+    twin = real[0]
+    monkeypatch.setattr(mod, "list_agencies", lambda: [twin, twin])
+    with session_scope() as s:
+        before = len(_stat_sources(s))
+        out = mod.ingest_agencies_as_sources(s)
+        assert len(_stat_sources(s)) == before + out["created"]
+        assert out["created"] <= 1
+        s.rollback()
+
+
 def test_ingest_skips_an_existing_source_without_clobbering(client):
     from src.database.models import Source
     from src.database.session import session_scope

@@ -611,7 +611,7 @@ def law_coverage_report(
             "Per-jurisdiction tracked-document counts, baseline coverage, freshness "
             "ages (hours since last_checked_at), and -- for documents that have "
             "actually been checked at least once -- their last_status classified "
-            "into a small honest verdict set (robots_blocked / error / empty / "
+            "into a small honest verdict set (robots_blocked / robots_unread / error / empty / "
             "changed / reverted / baselined / unchanged / re_extracted / deferred / other — the same "
             "classification the Governments -> Law UI shows). A document never yet "
             "checked has no outcome to classify, so it is counted only in "

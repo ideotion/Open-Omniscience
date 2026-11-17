@@ -1532,6 +1532,18 @@
         <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top <span id="trd-basis"></span></h2><div id="trd-top"></div></div>
       </div>
       <div id="trd-method" class="hint" style="margin-top:8px"></div>
+      <!-- Weather signals (row 122, register ruling G7: a toggleable layer, OFF by default). Signals deduced
+           from article clusters (src/analytics/weather_signals.py), never mixed into the keyword lists above. The
+           switch is remembered per device; while off nothing is read. The caveat stays visible in both states. -->
+      <div id="trd-wsig-wrap" style="margin-top:14px">
+        <div class="row" style="gap:8px;align-items:center">
+          <h2 style="font-size:13px;margin:0">Weather signals</h2>
+          <button id="trd-wsig-toggle" class="tiny secondary" data-i18n-dyn role="switch" aria-checked="false" data-on-click="toggleWeatherSignals()"
+            title="A separate layer of signals deduced from your articles. Off by default, and never mixed with the keywords above. Turning it on reads a file on this computer and sends nothing.">Weather signals: off</button>
+        </div>
+        <p id="trd-wsig-caveat" class="hint card-caveat" style="margin:4px 0">A weather signal is deduced from several articles that name a climate event, a place and a time window. It is not a confirmed event, and no anomaly has been checked against a baseline.</p>
+        <div id="trd-wsig" data-i18n-dyn></div>
+      </div>
     </section>
 
     <section class="panel ins-view" id="ins-sources" style="display:none">
@@ -1830,6 +1842,7 @@
           <button type="submit">Compare</button>
         </form>
         <div id="law-topic-results"></div>
+        <div id="law-thesauri"></div>
         <h3 class="lib-sub">Amendment activity on the map</h3>
         <div id="law-amend-vintage" class="hint"></div>
         <div id="law-amend-map"></div>
@@ -2813,6 +2826,14 @@
            feeds, and markets, law, hazards, discovery, the crawl supplement and the
            Wikipedia stream run BESIDE it as lanes. An install migrated from a retired
            mode is told what changed here, once, until it dismisses the line. -->
+      <!-- Row 94 (field test 2026-11-14): an unreadable settings value replaced by a save is
+           said here, once, until dismissed: what went back to its default, which switches
+           were turned OFF, and whether the Wikipedia lane was paused. Built by
+           renderSettingsRepair from the server's repair_notice. -->
+      <div id="sch-repaired" class="card-caveat" hidden>
+        <span id="sch-repaired-text"></span>
+        <button class="secondary" type="button" data-on-click="dismissSettingsRepair(this)">Dismiss</button>
+      </div>
       <div id="sch-retired" class="card-caveat" hidden>
         <span id="sch-retired-text"></span>
         <button class="secondary" type="button" data-on-click="dismissRetiredMode(this)">Dismiss</button>

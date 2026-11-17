@@ -225,8 +225,32 @@ def test_a_failed_corpus_phase_never_starts_the_copy(mgrs, tmp_path):
 # --------------------------------------------------------------------------- #
 #  The passphrase rule
 # --------------------------------------------------------------------------- #
+class _Written(logging.Handler):
+    """A handler as the app builds one (behind the passphrase filter): what it would write to a log file, kept in a list."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.setFormatter(logging.Formatter("%(name)s %(levelname)s %(message)s"))
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(self.format(record))
+
+
 def test_no_passphrase_in_the_record_the_status_the_registry_or_the_logs(mgrs, tmp_path, caplog):
+    from src.monitoring.secret_scrub import SecretFilter
+
     caplog.set_level(logging.DEBUG)
+    written = _Written()
+    written.addFilter(SecretFilter())
+    logging.getLogger().addHandler(written)
+    try:
+        _no_passphrase_anywhere(mgrs, tmp_path, caplog, written)
+    finally:
+        logging.getLogger().removeHandler(written)
+
+
+def _no_passphrase_anywhere(mgrs, tmp_path, caplog, written):
     exp, _vol, _fold = mgrs
     drive = tmp_path / "drive"
     seen: list[str] = []
@@ -238,9 +262,18 @@ def test_no_passphrase_in_the_record_the_status_the_registry_or_the_logs(mgrs, t
     assert exp._secret == [], "the orchestrator still holds the passphrase after the corpus phase started"
     seen.append(json.dumps(st))
 
-    # A failure whose own text quotes the passphrase.
+    # A failure whose own text quotes the passphrase, and, while it is being handled, a LIBRARY's record that carries it as the
+    # context of its own exception: what SQLAlchemy's pool wrote on #2059's run 43987377156 ("Exception during reset"), made
+    # here every time instead of when a connection happens to be reset from another thread (row 111).
     def leaky(dest, pw, **kw):
-        raise RuntimeError(f"could not open the key {pw}")
+        try:
+            raise RuntimeError(f"could not open the key {pw}")
+        except RuntimeError:
+            try:
+                raise OSError("the connection was closed from another thread")
+            except OSError:
+                logging.getLogger("sqlalchemy.pool.impl.SingletonThreadPool").error("Exception during reset or similar", exc_info=True)
+            raise
 
     exp2_drive = tmp_path / "drive2"
     exp.start(str(exp2_drive), corpus=True, categories=[], passphrase=_PASS, _backup_fn=leaky)
@@ -253,8 +286,18 @@ def test_no_passphrase_in_the_record_the_status_the_registry_or_the_logs(mgrs, t
             if f.is_file() and f.suffix in (".json", ".md"):
                 seen.append(f.read_text(encoding="utf-8", errors="replace"))
         assert (folder / REQUEST_NAME).is_file()
-    seen.append(caplog.text)
+    # The app's own records hold no passphrase as they are made (pytest's capture has no filter in front of it, on purpose); a
+    # library's record is scrubbed by the filter every handler of the app holds, because the job HOLDS the passphrase while it
+    # runs. Both are asserted: the library's record must have been written, and written without it.
+    ours = [r for r in caplog.records if r.name == "src" or r.name.startswith("src.")]
+    seen.extend(logging.Formatter("%(message)s").format(r) for r in ours)
     seen.extend(r.getMessage() for r in caplog.records)
+    # The planted record, by its own words: the real pool can write one of its own during the run as well (CI's core-only shard did,
+    # a SQLite connection reset from another thread), and that one meets the same filter and the same assertion below.
+    planted = [line for line in written.lines if "the connection was closed from another thread" in line]
+    assert planted, written.lines
+    assert planted[0].startswith("sqlalchemy.pool") and "Exception during reset" in planted[0], planted[0]
+    seen.extend(written.lines)
     for i, text in enumerate(seen):
         assert _PASS not in text, f"the passphrase leaked into item {i}: {text[:300]}"
 

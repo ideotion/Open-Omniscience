@@ -57,6 +57,7 @@ from src.ingest.fetch_verdict import (
     classify_fetch_failure,
     failure_url,
     is_kill_switch_refusal,
+    shown_url,
 )
 from src.monitoring.secret_scrub import record_text
 
@@ -452,7 +453,11 @@ _CREDENTIALED = [
 
 @pytest.mark.parametrize(("url", "written"), _CREDENTIALED)
 def test_the_userinfo_is_masked(url, written):
-    out = failure_url(url)
+    """The userinfo mask, read through ``shown_url`` (R637's form, which keeps the query): since R734 ``failure_url`` also masks every
+    query value but a harmless one and drops the fragment (tests/test_address_mask_r734.py), so its userinfo is checked below."""
+    out = shown_url(url)
+    reported = failure_url(url)
+    assert "alice" not in reported and "hunt" not in reported and "%69" not in reported, repr(reported)
     assert out == written, repr(out)
     assert re.fullmatch(r"\S+", out), repr(out)
     assert "alice" not in out and "hunt" not in out and "%69" not in out, repr(out)
@@ -496,7 +501,7 @@ def test_a_backslash_before_the_at_is_masked_the_wider_way():
     ],
 )
 def test_an_at_that_is_not_the_authoritys_is_left_alone(url):
-    assert failure_url(url) == url
+    assert shown_url(url) == url  # the userinfo mask alone (R637's form); failure_url masks the query too since R734
 
 
 class _Hostile(str):

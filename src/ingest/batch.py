@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
-from src.ingest.fetch_verdict import failure_url, userinfo_secrets
+from src.ingest.fetch_verdict import address_secrets, failure_url
 from src.monitoring.secret_scrub import log_failure
 from src.utils.url_utils import fetched_host as _fetched_host_of
 
@@ -291,7 +291,7 @@ class ArticleBatch:
                         _LOG,
                         f"collect redo: unexpected error storing {failure_url(e.requested_url)}; recounted as an error, re-fetched next pass",
                         exc,
-                        *userinfo_secrets(e.requested_url),
+                        *address_secrets(e.requested_url),
                         level=logging.WARNING,
                     )
 

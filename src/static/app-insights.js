@@ -96,7 +96,7 @@
         v.style.display = (v.id === "ins-" + cat) ? "" : "none");
       if (!_insLoaded.has(cat)) {
         _insLoaded.add(cat);
-        if (cat === "trends") loadTrends();
+        if (cat === "trends") { loadTrends(); paintWeatherSignals(); }
         if (cat === "map") loadMap();
         if (cat === "sources") loadCitedSources();
         if (cat === "families") loadFamilies();

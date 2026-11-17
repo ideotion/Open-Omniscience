@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from src.backup import collector_exit, restore_marker
-from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
+from src.monitoring.secret_scrub import holding, log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -558,6 +558,7 @@ class ImportQueueManager:
         can import backups locked with different passphrases while the common case is typed once. Every key is held in
         memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
         scrubbed from every record the run writes."""
+        self._refuse_unreadable_backup_manifests(items)
         self._refuse_wrong_backup_passphrases(items, passphrase)
         with self._lock:
             if self._state == "running" and self._thread is not None and self._thread.is_alive():
@@ -655,6 +656,45 @@ class ImportQueueManager:
             return self.status()
 
     @staticmethod
+    def _refuse_unreadable_backup_manifests(items: list[dict]) -> None:
+        """Refuse the start, before anything runs, when a backup's manifest is one the restore always refuses (row 97).
+
+        A manifest that lists a volume twice, points at a link or names an unsafe path can never import, with any
+        passphrase. Inside a run it fails that backup and discards the backups staged in the same checkpoint group,
+        which is many minutes each on a large import. Here it costs a manifest read and a stat per volume, and the
+        message names each such backup and why, so the run can be started again without it."""
+        from src.backup.stream_backup import backup_manifest_refusal
+
+        refused = []
+        for raw in items or []:
+            if raw.get("kind") != "corpus" or not raw.get("path"):
+                continue
+            if not raw.get("force") and ImportQueueManager._already_merged(str(raw["path"])):
+                continue  # the run skips it without reading it (volume_job's already-merged answer), so it cannot stop the start
+            reason = backup_manifest_refusal(str(raw["path"]))
+            if reason:
+                refused.append(f"{raw.get('label') or Path(str(raw.get('path'))).name} ({reason})")
+        if refused:
+            raise ValueError(
+                "These backups cannot be imported: " + "; ".join(refused) + ". Nothing was started; remove them from "
+                "the list and import again."
+            )
+
+    @staticmethod
+    def _already_merged(path: str) -> bool:
+        """True when the run will skip this backup as already merged, the answer ``volume_job`` gives before it reads anything: a
+        committed import of the same artifact whose living sources are not still owed (R729). Any doubt answers False, so the
+        manifest is checked: "cannot tell" is never "already done"."""
+        try:
+            from src.backup.lane_merge import lanes_pending
+            from src.backup.merge import artifact_source_digest, find_completed_import
+
+            digest = artifact_source_digest(path)
+            return bool(digest) and find_completed_import(digest) is not None and not lanes_pending(digest)
+        except Exception:  # noqa: BLE001 - an unanswerable question is a "no": the manifest is checked as for any other item
+            return False
+
+    @staticmethod
     def _refuse_wrong_backup_passphrases(items: list[dict], passphrase: str) -> None:
         """Refuse the whole run, before anything starts, when a backup's passphrase is certainly wrong.
 
@@ -669,6 +709,8 @@ class ImportQueueManager:
             str(raw.get("label") or Path(str(raw.get("path"))).name)
             for raw in items or []
             if raw.get("kind") == "corpus" and raw.get("path")
+            # a backup the run skips as already merged is never opened, so an old passphrase for it cannot stop the start
+            and (raw.get("force") or not ImportQueueManager._already_merged(str(raw["path"])))
             and backup_passphrase_is_wrong(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
         ]
         if wrong:
@@ -709,7 +751,9 @@ class ImportQueueManager:
     @restore_marker.marked  # R712: an export refuses to start or resume while the queue runs
     def _run(self) -> None:
         try:
-            self._run_with_keys()
+            # row 111: the run's keys are held while it runs, so a third-party logger's record is scrubbed of them too
+            with holding(*self._secrets()):
+                self._run_with_keys()
         finally:
             # Whatever way the run ends, an error escaping it included, the keys go with it.
             with self._lock:

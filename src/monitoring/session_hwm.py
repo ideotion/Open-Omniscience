@@ -285,7 +285,15 @@ _MALLOC_REPLACEMENTS = ("jemalloc", "tcmalloc", "mimalloc", "tbbmalloc_proxy", "
 _PLAIN_COUNT = re.compile(r"[ \t]*([1-9][0-9]{0,17})")
 
 
-def _starting_values(*names: str) -> tuple[dict[str, str | None], str]:
+# The glibc versions MEASURED to apply the FIRST accepted copy of a variable the starting environment names twice
+# (R114 row 116). glibc 2.39 (Ubuntu 24.04) does; the glibc of the ubuntu-26.04 runners applies the LAST copy
+# (measured in CI: "3" then "1" kept 1 arena, "-2" then "2" kept 2). Which copy applies is the C library's choice
+# and it changed between releases, so a duplicate is read as a cap only on a version listed here: anywhere else
+# it reads as not known, never as the copy one release happened to pick.
+_FIRST_COPY_WINS = frozenset({"glibc 2.39"})
+
+
+def _starting_values(*names: str, repeated: set[str] | None = None) -> tuple[dict[str, str | None], str]:
     """The value each of ``names`` had when this process STARTED, and where that was read
     (``None`` for a variable that was not set).
 
@@ -298,7 +306,8 @@ def _starting_values(*names: str) -> tuple[dict[str, str | None], str]:
     one it ignores, such as ``"4 "``, lets the second apply), which the number check does not
     claim: an ignored first value reads as not known, never as the second. ``GLIBC_TUNABLES``
     is the exception: glibc parses EVERY copy of it, so the copies are joined with ``:`` and a
-    later one that names ``glibc.malloc.arena_max`` is not missed."""
+    later one that names ``glibc.malloc.arena_max`` is not missed. ``repeated``, when given, is filled with
+    every name the block holds more than once (the ``os.environ`` stand-in cannot tell, and adds none)."""
     try:
         block = Path("/proc/self/environ").read_bytes()
     except OSError:
@@ -316,7 +325,10 @@ def _starting_values(*names: str) -> tuple[dict[str, str | None], str]:
         text = value.decode("utf-8", errors="replace")
         if found[name] is None:
             found[name] = text
-        elif name == _TUNABLES_VAR:
+            continue
+        if repeated is not None:
+            repeated.add(name)
+        if name == _TUNABLES_VAR:
             found[name] = f"{found[name]}:{text}"
     return found, _STARTING_ENVIRONMENT
 
@@ -398,11 +410,13 @@ def allocator_setting() -> dict[str, Any]:
     that loaded under another name is), because the variable does nothing there. None where it
     cannot be told: a value glibc may have ignored or read differently (not a plain positive whole
     number), ``GLIBC_TUNABLES`` naming ``glibc.malloc.arena_max``, which outranks the variable and
-    is not interpreted here, or an ``LD_PRELOAD`` naming a replacement while the loaded files
-    cannot be read. The variables are the process's STARTING environment (``source`` says where
+    is not interpreted here, an ``LD_PRELOAD`` naming a replacement while the loaded files
+    cannot be read, or ``MALLOC_ARENA_MAX`` set more than once on a glibc not measured to apply the
+    first copy (``_FIRST_COPY_WINS``; newer glibc applies the last). The variables are the process's STARTING environment (``source`` says where
     they were read), never a later ``os.environ``."""
     try:
-        env, source = _starting_values(_ARENA_VAR, _TUNABLES_VAR, _PRELOAD_VAR)
+        repeated: set[str] = set()
+        env, source = _starting_values(_ARENA_VAR, _TUNABLES_VAR, _PRELOAD_VAR, repeated=repeated)
         raw = env[_ARENA_VAR]
         libc = _glibc_version()
         loaded = _loaded_files()
@@ -448,6 +462,12 @@ def allocator_setting() -> dict[str, Any]:
             out["note"] = (
                 f"MALLOC_ARENA_MAX was set to {raw!r}, which is not a plain positive whole "
                 "number: whether glibc applied it is not known"
+            )
+        elif _ARENA_VAR in repeated and libc not in _FIRST_COPY_WINS:
+            out["effective"] = None
+            out["note"] = (
+                f"MALLOC_ARENA_MAX was set more than once (the first copy is {raw!r}), and which copy {libc} "
+                "applies has not been measured: whether the arenas are capped is not known"
             )
         else:
             out["effective"] = True

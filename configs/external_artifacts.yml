@@ -847,6 +847,25 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-11-07"
 
+  - id: open-meteo-archive-shape
+    title: Open-Meteo historical weather (archive) API request and answer shape
+    kind: dated-data
+    description: >-
+      The archive endpoint (ARCHIVE_BASE), the daily variable names the app may ask for
+      (ALLOWED_DAILY), timezone=UTC, the answer's daily.time and daily_units keys and the 1940
+      floor, as src/weather/openmeteo.py builds and reads them; src/weather/anomaly.py compares
+      temperature_2m_max, temperature_2m_min and precipitation_sum with the 1991-2020 baseline
+      from the same archive. Written from Open-Meteo's published API documentation and NOT
+      verified against a live answer -- the build sandbox cannot reach the host. Used only on a
+      consented click (the SECURITY.md Weather row), with the place rounded to 0.1 degree.
+    upstream: "https://open-meteo.com/en/docs/historical-weather-api"
+    check_upstream: "on a networked machine, open the historical weather API page and confirm the path, the daily variable names and the daily/daily_units answer keys; one Climate > Your place fetch shows a real answer"
+    license: "Open-Meteo data CC BY 4.0, attribution shown at the point of use (LICENSE_NOTE)"
+    pin: {file: src/weather/openmeteo.py, const: OPENMETEO_AS_OF}
+    refresh: "verify the documented shape, or one live answer, update tests/test_weather_anomaly.py and tests/test_weather_context_r683.py fixtures if it moved, bump OPENMETEO_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-17"
+
   - id: wikimedia-scoring-endpoint
     title: Wikimedia edit-scoring endpoint (ORES / Lift Wing)
     kind: dated-data
@@ -1192,19 +1211,22 @@ artifacts:
     title: EuroVoc multilingual thesaurus (topic tagging, C-L3)
     kind: vendored-data
     description: >
-      src/catalog/data/skos/eurovoc.json: the EuroVoc multilingual thesaurus reduced to concept -> prefLabel /
-      altLabel per language (+ broader), written by src.catalog.skos.build_artifact from the
-      operator's downloaded SKOS RDF/XML. Read by src/catalog/topic_tagging.py, whose rules
+      The EuroVoc multilingual thesaurus reduced to concept -> prefLabel / altLabel per language (+ broader),
+      BUILT ON THE OPERATOR'S MACHINE by scripts/thesaurus_build.py (R737) from the SKOS RDF/XML (or its ZIP) the
+      operator downloaded, into <data dir>/thesauri/eurovoc.json beside a small eurovoc.summary.json (counts and
+      hashes: the one file sent back). The build is deterministic (same source and options, same SHA-256); the app
+      uses the file only when its format and SHA-256 match its build summary (src/catalog/thesaurus_store.py) and
+      says why otherwise (GET /api/law/thesauri, the Law panel). The repository path below stays empty. Read by src/catalog/topic_tagging.py, whose rules
       assign topics as a lens, never a verdict, with the approximate share stated (Q913, Q1146 = a).
       Languages: en, fr, de, es, pt (the five of ours EuroVoc carries); the other seven UI languages are reached through Wikidata's EuroVoc-ID property, whose id (P5437) is FROM MEMORY and must be confirmed first. OPERATOR-BUILT AFTER A LICENCE FETCH: absent until then, and this entry
       reads "not built yet" -- nothing is bundled before the licence is read (S06-02 S4). The
       24-month window is a proposed default, not a ruling.
     upstream: https://op.europa.eu/en/web/eu-vocabularies/dataset/-/resource?uri=http://publications.europa.eu/resource/dataset/eurovoc
-    fetched_from: a SKOS RDF/XML file the operator downloaded; the build opens no connection
+    fetched_from: a SKOS RDF/XML file the operator downloaded (the build then opens no connection), or, only with --fetch-url URL --online, the publisher's own hosts (op.europa.eu, publications.europa.eu), every redirect held to them
     check_upstream: "thesaurus releases are periodic; rebuild when the window lapses"
     license: "CC0 -- TO CONFIRM by the licence fetch (the sheet records one result saying CC0); until confirmed the file is not bundled"
     pin: {path: src/catalog/data/skos/eurovoc.json, sha256: "", vintage_key: vintage, optional: true}
-    refresh: "build_artifact('eurovoc', parse_rdfxml(<file.rdf>), vintage=..., license=..., upstream=...) from src/catalog/skos.py, written as JSON to the path above"
+    refresh: "python scripts/thesaurus_build.py --source <file.rdf|.zip> --vintage YYYY-MM-DD --license '<as read>' (writes <data dir>/thesauri/eurovoc.json + eurovoc.summary.json)"
     freshness: {max_age_months: 24}
     last_verified: "2026-11-07"
 

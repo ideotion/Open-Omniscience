@@ -388,7 +388,8 @@ def _write_json_atomic(path: Path, payload: Any) -> None:
     os.replace(tmp, path)
 
 
-_SAFE_VOL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+#: Matched with ``fullmatch``: ``$`` also matches before a final newline, so ``^...$`` with ``match`` let ``"v1\n"`` through.
+_SAFE_VOL_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def _require_safe_member_name(name: str) -> None:
@@ -410,7 +411,7 @@ def _require_safe_member_name(name: str) -> None:
 def _require_safe_volume_name(name: str) -> None:
     """Volume file names must be plain basenames — never a path that could make
     verify/restore read or write outside the set directory."""
-    if not name or not _SAFE_VOL_NAME.match(name):
+    if not name or name in {".", ".."} or not _SAFE_VOL_NAME.fullmatch(name):
         raise VolumeError(f"unsafe volume file name in the volume manifest: {name!r}")
 
 
@@ -2395,6 +2396,36 @@ def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -
         if key in seen:
             raise VolumeError(f"the volumes {seen[key]} and {name} are the same file; refusing to read it twice")
         seen[key] = name
+
+
+def backup_manifest_refusal(src_dir: Path | str) -> str | None:
+    """The reason the restore would refuse this volume set's manifest outright, or None.
+
+    The import queue asks this of every backup before its run starts (row 97). A manifest that names an unsafe path,
+    lists a volume twice or points at a link is refused by the restore before it reads anything, whatever the
+    passphrase, so that backup can never import. Found inside a run, it fails there and discards the backups staged in
+    the same checkpoint group with it; found here, the start is refused with the backup and the reason named, and the
+    run starts without it. Only these structural checks answer, the same two the restore runs first, so they cannot
+    disagree with it: anything else that cannot be read (no manifest, a missing or damaged volume that parity may
+    still recover) answers None and is left to the restore, exactly as before. Reads the manifest and stats the
+    volumes; opens no volume."""
+    src = Path(src_dir)
+    try:
+        m = load_manifest(src)
+    except Exception:  # noqa: BLE001 - no verdict: the restore reads the set itself and says what is wrong with it
+        return None
+    if m.get("kind") != STREAM_KIND:
+        return None
+    try:
+        _require_safe_manifest_names(m)
+        _require_each_volume_read_once(m, src)
+    except VolumeError as exc:
+        from src.monitoring.secret_scrub import record_text
+
+        return record_text(exc)  # a volume name and why (the restore's own sentence), scrubbed as every record is
+    except Exception:  # noqa: BLE001 - a manifest of an unexpected shape: the restore reports it
+        return None
+    return None
 
 
 def _preflight_staging(

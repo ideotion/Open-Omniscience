@@ -56,6 +56,8 @@ _UTILITY_SEGMENTS = frozenset({
     "account", "accounts", "glossary", "sitemap", "sitemaps", "rss", "feed", "feeds", "print",
     "cart", "checkout", "download", "downloads", "wp-login", "wp-admin", "admin",
 })
+# A whole path that is a feed page (the door-only rule in classify_non_article).
+_FEED_PATHS = frozenset({"rss", "feed", "feeds"})
 # Taxonomy segments — a LISTING when followed by a short taxonomy value, not an article slug.
 _TAXONOMY_SEGMENTS = frozenset({
     "tag", "tags", "category", "categories", "topic", "topics", "author", "authors",
@@ -77,6 +79,12 @@ _WALL_PHRASES = (
     "page not found", "access denied", "you don't have permission",
     "this content is not available", "content is no longer available",
     "you have reached your", "to continue reading", "your free articles",
+    # WordPress's untouched default post, stored as an article on four sites in the 8-instance field
+    # test (2026-11-14, report 5.2). The PHP, JavaScript and Flash notices of the same report are
+    # handled at the door (src/ingest/page_notices.py, PR #2056).
+    # The stock text, not just its first sentence: "this is your first post" alone matched real briefs
+    # ("This is your first posting abroad", "your first post-season win").
+    "this is your first post. edit or delete it",
 )
 # The load-bearing guard: a body at/above this many words is a real article, KEPT regardless of
 # URL. The recall-gap non-article pages had ~30-50 extracted words; real articles run far longer.
@@ -121,6 +129,17 @@ _ITEM_ID_PARAM = re.compile(
     r"^(?:(?:article|story|post|item|entry|content|doc|news|obj|page|thread|topic)_?)?id$|^p$|^[ans]id$"
 )
 
+# A BARE SLUG as the whole query string (``/?Benin-le-gouvernement-annonce-...``): some CMSes put the
+# article's slug there with no name and no ``=``. FIELD EVIDENCE (8-instance field test, 2026-11-14,
+# report 5.2): 24haubenin.info stored 899 real articles at such URLs and every one read as the site
+# homepage (listing_url_rate 1.0). Narrow on purpose, like the id rule: the query must be ONE token
+# with no ``=`` or ``&``, at least 12 characters and three hyphens, the shape of a title, not
+# starting with a tracking or view word.
+_QUERY_SLUG = re.compile(r"^[^\W_][\w-]{11,}$")
+#: First words of query tokens that are tracking or view switches, never a title.
+_NOT_A_SLUG_HEAD = frozenset({"utm", "fbclid", "gclid", "amp", "lang", "ref", "source", "view", "print",
+                              "sort", "preview", "mc", "filter"})
+
 
 def _has_item_identifier(url: str) -> bool:
     """True if ``url``'s QUERY STRING addresses one specific item (see ``_ITEM_ID_PARAM``).
@@ -130,9 +149,16 @@ def _has_item_identifier(url: str) -> bool:
     path segments and are unaffected.
     """
     try:
-        params = parse_qsl(urlparse(url).query, keep_blank_values=False)
+        query = urlparse(url).query
+        params = parse_qsl(query, keep_blank_values=False)
     except (ValueError, UnicodeDecodeError):  # a malformed URL is not an item address
         return False
+    from urllib.parse import unquote
+
+    bare = unquote(query).strip()
+    if ("=" not in bare and "&" not in bare and bare.count("-") >= 3 and _QUERY_SLUG.match(bare)
+            and re.split(r"[-_]", bare, maxsplit=1)[0].lower() not in _NOT_A_SLUG_HEAD):
+        return True
     return any(
         _ITEM_ID_PARAM.match(name.strip().lower()) and any(ch.isdigit() for ch in value)
         for name, value in params
@@ -141,7 +167,7 @@ def _has_item_identifier(url: str) -> bool:
 
 def classify_non_article(
     url: str, *, title: str | None = None, text: str | None = None, word_count: int | None = None,
-    language: str | None = None,
+    language: str | None = None, door: bool = False,
 ) -> NonArticleVerdict | None:
     """Return a verdict if ``url``/``text`` is CLEARLY a non-article, else ``None`` (keep it).
 
@@ -150,8 +176,23 @@ def classify_non_article(
     THIN body proceeds to the wall / URL rules (order: boilerplate wall → utility path → pagination
     → taxonomy listing → homepage → section landing). Conservative — when in doubt, keep.
     ``language`` is the asserted/detected article language, if known (passed through to the prose
-    gate's best-matching-language search; optional, additive)."""
+    gate's best-matching-language search; optional, additive).
+
+    ``door=True`` (the ingest door only) adds the two URL shapes no article can have, whatever the body
+    length: a bare homepage (no path AND no query string) and a feed page (the whole path is ``rss``,
+    ``feed`` or ``feeds``). Field report 2026-11-14 (row 66): rnz.co.nz ``/rss``, the thediplomat.com and
+    vietnamnews.vn homepages were stored as articles because their long bodies cleared the guard. The
+    retroactive scans and the quarantine job leave ``door`` off, so stored articles are judged as before."""
     wc: int | None = word_count if word_count is not None else (len(text.split()) if text else None)
+
+    if door:
+        parsed = urlparse(url)
+        door_path = parsed.path.strip("/").lower()
+        # a single-page site routes its story in the fragment ("#/story/12", "#!/a"); "#main" is the homepage
+        if not door_path and not parsed.query and not parsed.fragment.startswith(("/", "!")):
+            return NonArticleVerdict("url_homepage", "site homepage / front page — no article path")
+        if door_path in _FEED_PATHS:
+            return NonArticleVerdict("url_utility", f"feed page '/{door_path}', not an article")
 
     # THE guard: a real article has a substantial extracted body — keep it whatever the URL shape,
     # UNLESS the PROSE GATE (below) catches word-rich nav soup that cleared this word-count floor.

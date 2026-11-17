@@ -29,7 +29,10 @@ WHERE THE ESTIMATES COME FROM. ``est_s`` is the member's median wall time over t
 read on 2026-10-06 (``members.csv`` of the plan), taken over the builds in which it had work to do
 and capped at the 300 s deadline every scan already ran under. Three members cost under a second in
 the median over all 17 only because eleven builds declined them (the Light profile) or the machine
-did; their figures here are the cost where they ran (300, 300 and 167 s). An estimate only ORDERS the
+did; their figures here are the cost where they ran (300, 300 and 167 s). A build orders by THIS machine's own
+figure for a scan it has timed before (:func:`machine_table`: its last wall time, scaled by the mention rows), and by
+the field median only for one it has not: the card audit sits at 60.5 s in the table and took about 300 s on the
+largest corpus every build (field report 2026-11-14 row 74). An estimate only ORDERS the
 scans (shortest first, so that a Quick build runs as many as fit); it never decides that a scan is
 too long: a scan starts if :data:`SCAN_FLOOR_S` are left, whatever it is expected to cost, and is
 asked to stop at the time that is left. That bounds the pause, not to the second: a database scan stops at its next
@@ -37,7 +40,7 @@ progress check, Python work after its last query is not interrupted, and a scan 
 its thread, which runs on, so a scan can hold the window past the budget by that overrun (its ``wall_s`` against its ``deadline_s`` says by how much).
 
 A scan an owner adds states its estimate by one line in :data:`SCAN_EST_S` (the slot table has no
-estimate field); one that states none counts as :data:`DEFAULT_SCAN_S`. This module is a table and four small functions. It reads nothing, opens no
+estimate field); one that states none counts as :data:`DEFAULT_SCAN_S`. This module is a table and a few small functions. It reads nothing, opens no
 file and imports nothing heavy, so the tests can pin it.
 """
 
@@ -180,8 +183,8 @@ def split_members(
 ) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]]]:
     """``(records, scans)`` from a member list: records in the order given, scans shortest first.
 
-    Ties keep the order of the list, so the same corpus produces the same order every build, which
-    is what lets a reader compare two manifests."""
+    Ties keep the order of the list. With :func:`machine_table`'s figures the order also follows this machine's earlier builds, so
+    two manifests can order the same corpus differently; each ``planned`` entry says which figure it was ordered by (``est_from``)."""
     est = SCAN_EST_S if table is None else table
     records = [m for m in members if m[0] not in est]
     scans = [m for m in members if m[0] in est]
@@ -246,7 +249,7 @@ def scan_deadline_s(cap_s: float, elapsed_s: float, budget_s: float | None) -> t
 
 def scans_block(
     results: list[dict[str, Any]], *, mode: str, budget_s: float | None,
-    table: dict[str, float] | None = None,
+    table: dict[str, float] | None = None, basis: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The manifest's ``scans`` block: what was planned, what ran, what was cut and what was skipped.
 
@@ -257,7 +260,10 @@ def scans_block(
     its own estimate and the reason."""
     est = SCAN_EST_S if table is None else table
     scans = [r for r in results if r.get("file") in est]
-    planned = [{"file": r["file"], "est_s": scan_est_s(r["file"], est)} for r in scans]
+    planned = [
+        {"file": r["file"], "est_s": scan_est_s(r["file"], est), **({"est_from": basis[r["file"]]} if basis and r["file"] in basis else {})}
+        for r in scans
+    ]
     ran = [r["file"] for r in scans if r.get("outcome") not in ("skipped-budget", "declined-ram", "declined-light")]
     partial = [r["file"] for r in scans if r.get("outcome") == "partial-deadline"]
     skipped = [
@@ -277,7 +283,10 @@ def scans_block(
         "mode": mode,
         "scan_budget_s": budget_s,
         "floor_s": SCAN_FLOOR_S if budget_s is not None else None,
-        "order": "shortest estimate first (est_s), ties in the build's own order",
+        "order": (
+            "shortest estimate first (est_s: this machine's last time for the scan, scaled by its mention rows, where it has one "
+            "and it is above the field median, else the field median; est_from says which), ties in the build's own order"
+        ),
         "planned": planned,
         "ran": ran,
         "partial": partial,
@@ -295,14 +304,17 @@ SCAN_WALLS_KEY = "diagnostics.scan_walls.v1"
 def walls_to_remember(results: list[dict[str, Any]], rows_now: int | None, at_iso: str) -> dict[str, dict[str, Any]]:
     """What a finished build teaches the next estimate: for each scan that did its own work, its wall time and the mention rows then.
 
-    A scan that did not begin, was declined, or ended on the BUDGET's deadline (not its own) says nothing about its cost and is left out; one
-    that reached its own 300 s deadline is kept at that figure (it cost at least that). No rows reading, nothing to scale by: nothing kept."""
+    A scan that did not begin, was declined, or was stopped by the BUDGET's deadline (not its own) says nothing about its cost and is left
+    out; one that FINISHED under a deadline the budget had shortened is kept (that is its whole cost, and without it a scan Quick runs late
+    could never be timed lower); one that reached its own 300 s deadline is kept at that figure (it cost at least that). No rows reading, nothing to scale by: nothing kept."""
     if not rows_now or rows_now <= 0:
         return {}
     out: dict[str, dict[str, Any]] = {}
     for r in results:
         name = r.get("file")
-        if name not in SCAN_EST_S or r.get("budget_cut") or r.get("outcome") not in ("ok", "partial-deadline"):
+        if name not in SCAN_EST_S or r.get("outcome") not in ("ok", "partial-deadline"):
+            continue
+        if r.get("budget_cut") and r.get("outcome") != "ok":  # stopped by the BUDGET's deadline: says nothing of its own cost
             continue
         wall = r.get("wall_s")
         if isinstance(wall, int | float) and wall >= 0:
@@ -310,36 +322,64 @@ def walls_to_remember(results: list[dict[str, Any]], rows_now: int | None, at_is
     return out
 
 
+def machine_table(
+    history: dict[str, Any] | None, rows_now: int | None, table: dict[str, float] | None = None, *, at_least_median: bool = True
+) -> tuple[dict[str, float], dict[str, str]]:
+    """Every scan's expected cost on THIS machine, and where each figure comes from (``this-machine`` or ``field-median``).
+
+    A scan this machine has timed costs what it took here last time, scaled by the mention rows now against the rows then (an
+    assumption: cost grows with them), and never more than its 300 s deadline; one it has not timed, or whose kept figure cannot be
+    read as a time, costs the field median of :data:`SCAN_EST_S`. Field report 2026-11-14 row 74: the card audit, at 60.5 s in the
+    field table, took about 300 s on that corpus every build, so Quick ran it fourth and it spent half the budget the scans after it
+    were planned to have.
+
+    ``at_least_median`` (what a build ORDERS by): a figure here below the field median is not used, because one cheap run is not the
+    next run's cost (``leads-quality`` takes 0.01 s from a fresh Home feed and up to 240 s without one), and a scan ordered first on a
+    cheap run would spend the budget exactly as the card audit did. Underestimating is the harm this table exists to stop; a scan
+    ordered later than it needed only waits. The Thorough estimate (a sum, not an order) passes ``False``."""
+    est = SCAN_EST_S if table is None else table
+    hist = history if isinstance(history, dict) else {}
+    out: dict[str, float] = {}
+    basis: dict[str, str] = {}
+    for name, table_s in est.items():
+        median = min(DEFAULT_SCAN_S, float(table_s))
+        h = hist.get(name)
+        wall, rows = (h.get("wall_s"), h.get("rows")) if isinstance(h, dict) else (None, None)
+        here: float | None = None
+        if (
+            isinstance(wall, int | float) and not isinstance(wall, bool)
+            and isinstance(rows, int) and not isinstance(rows, bool) and rows > 0 and rows_now and rows_now > 0
+        ):
+            try:  # a damaged store can hold an integer too large for a float: that is no figure, never a failed build
+                scaled = float(wall) * rows_now / rows
+            except (OverflowError, ValueError):
+                scaled = math.nan
+            if math.isfinite(scaled) and scaled >= 0:
+                here = round(min(DEFAULT_SCAN_S, scaled), 1)
+        if here is not None and (not at_least_median or here > median):
+            out[name], basis[name] = here, "this-machine"
+        else:
+            out[name], basis[name] = median, "field-median"
+    return out, basis
+
+
 def thorough_estimate(
     history: dict[str, Any] | None, rows_now: int | None, table: dict[str, float] | None = None
 ) -> dict[str, Any]:
     """How long a Thorough build is expected to hold the machine, read from THIS machine's earlier builds where it has them.
 
-    Per scan: the wall time it took here last time, scaled by the mention rows now against the rows then (a scan's cost is assumed to grow
-    with them: an assumption, named in ``basis``), and never above its 300 s deadline, which every scan in Thorough runs under. A scan this
-    machine has not timed uses the field median of :data:`SCAN_EST_S`. The figure is the SUM, because the scans run one after another. It is an
-    estimate and says so: the field table's own medians undershot on the largest corpus read (card-audit 60.5 s expected, 302 s taken)."""
-    est = SCAN_EST_S if table is None else table
-    hist = history if isinstance(history, dict) else {}
-    total = 0.0
-    from_history = 0
-    for name, table_s in est.items():
-        h = hist.get(name)
-        wall, rows = (h.get("wall_s"), h.get("rows")) if isinstance(h, dict) else (None, None)
-        if isinstance(wall, int | float) and isinstance(rows, int) and rows > 0 and rows_now and rows_now > 0:
-            total += min(DEFAULT_SCAN_S, float(wall) * rows_now / rows)
-            from_history += 1
-        else:
-            total += min(DEFAULT_SCAN_S, float(table_s))
+    The SUM of :func:`machine_table`, because the scans run one after another. It is an estimate and says so: the field table's own
+    medians undershot on the largest corpus read (card-audit 60.5 s expected, 302 s taken)."""
+    costs, basis = machine_table(history, rows_now, table, at_least_median=False)
+    from_history = sum(1 for b in basis.values() if b == "this-machine")
     return {
-        "est_s": round(total),
-        "scans": len(est),
+        "est_s": round(sum(costs.values())),
+        "scans": len(costs),
         "from_this_machine": from_history,
-        "from_field_medians": len(est) - from_history,
+        "from_field_medians": len(costs) - from_history,
         "basis": (
             "each scan's time on this machine's last build, scaled by today's mention rows against that day's (an assumption: cost grows with them), "
             "never above its 300 s deadline; a scan not yet timed here uses the field median"
         ),
         "pauses_collection": True,
     }
-

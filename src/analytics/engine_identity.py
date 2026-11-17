@@ -218,6 +218,10 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "reader sees exactly the rows a pass wrote; it changes how they are read, never what "
         "extraction writes"
     ),
+    "src/database/address_mask.py": (
+        "writes a feed or source address as a report, a log line or a field data file shows it (R734: query values masked); "
+        "feed_key.py imports it for that display only, and an index pass neither shows an address nor writes one"
+    ),
     "src/database/feed_key.py": (
         "derives sources.feed_key from a source's feed URL when a source row is written; an index pass reads "
         "sources and never writes them, so it cannot change what a pass writes"

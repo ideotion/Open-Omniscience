@@ -13,6 +13,7 @@ not reported as a failed backup.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -52,7 +53,7 @@ def test_the_dated_folder_is_allocated_once_and_reaches_both_phases():
     assert "/api/backup/export-folder" not in run
     job = (_ROOT / "src/backup/export_job.py").read_text(encoding="utf-8")
     assert python_function_source(job, "start").count("allocate_export_folder(") == 1
-    assert "vol.start_backup(\n                dest," in python_function_source(job, "_run_volumes")
+    assert re.search(r"vol\.start_backup\(\s*dest,", python_function_source(job, "_run_volumes"))  # held since row 111: indented
     assert "fold.start(\n                dest," in python_function_source(job, "_run_folder"), (
         "the large-data phase does not get the same folder"
     )
