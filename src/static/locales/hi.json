@@ -7057,7 +7057,7 @@
   "not a recognised country code": "अपरिचित देश कोड",
   "not a usable edition code": "उपयोग योग्य संस्करण कोड नहीं",
   "not an ISO code": "यह आईएसओ कोड नहीं है",
-  "not an article (menu or index page)": "लेख नहीं (मेनू या सूची पेज)",
+  "not an article (menu, index or notice page)": "लेख नहीं (मेनू, सूची या सूचना पेज)",
   "not an iCal file": "iCal फ़ाइल नहीं",
   "not available for {backend}": "{backend} के लिए उपलब्ध नहीं",
   "not checked": "जाँचा नहीं गया",

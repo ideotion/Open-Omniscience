@@ -766,7 +766,7 @@ def test_the_zip_writes_every_other_source_column_as_stored(db):
         (_legacy(_CRED), f"f:***@{_DOMAIN}/rss"),
         (_K, _K),
         (f"f:{_DOMAIN}/@me/rss", f"f:{_DOMAIN}/@me/rss"),  # an @ in the path is today's key, not a userinfo
-        (f"f:{_DOMAIN}/rss?to=a@b", f"f:{_DOMAIN}/rss?to=a@b"),
+        (f"f:{_DOMAIN}/rss?to=a@b", f"f:{_DOMAIN}/rss?to=***"),  # R734: the query's value is masked, its @ with it
         (f"f:a@b:{_NEEDLE}@{_DOMAIN}/rss", f"f:***@{_DOMAIN}/rss"),  # everything before the LAST @
         (f"f:https://alice:{_NEEDLE}@[::1/x", "f:https://***@[::1/x"),  # an unreadable URL's text, scheme first
         (f"f://alice:{_NEEDLE}@[::1/x", "f://***@[::1/x"),

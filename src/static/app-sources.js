@@ -800,7 +800,7 @@
         fetch_failed: "could not be downloaded",
         crawl_delay_deferred: "left for later (the site asked to wait)",
         extract_failed: "no readable text",
-        non_article: "not an article (menu or index page)",
+        non_article: "not an article (menu, index or notice page)",
         errors: "could not be saved",
       };
       const label = (k) => Object.prototype.hasOwnProperty.call(words, k) ? tr(words[k]) : k;

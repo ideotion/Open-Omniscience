@@ -56,7 +56,7 @@ from src.ingest import (
     clear_kill_switch,
 )
 from src.ingest.crawl import CrawlConfig, crawl_source
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.monitoring import preflight
 from src.monitoring.feed_preflight import _check_host_robots
@@ -1170,7 +1170,7 @@ def test_a_same_host_hop_to_an_empty_path_and_a_query_is_checked_as_the_root(tmp
     f = _fetcher(tmp_path, s)
     with pytest.raises(RobotsDisallowed) as caught:
         _fetch(f, f"{A}/x")
-    assert record_text(caught.value, typed=False) == f"robots.txt disallows {A}?x {_NOTE}"
+    assert record_text(caught.value, typed=False) == f"robots.txt disallows {failure_url(f'{A}?x')} {_NOTE}"  # R734: query masked
     assert s.fetched == [f"{A}/robots.txt", f"{A}/x"]
 
 

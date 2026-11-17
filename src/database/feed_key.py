@@ -33,7 +33,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-if TYPE_CHECKING:  # annotations only: no src module is imported here (engine_identity triages this file)
+from src.database.address_mask import masked_address
+
+if TYPE_CHECKING:  # annotations only: the one src module imported here is address_mask, itself import-free (engine_identity triages both)
     from collections.abc import Container, Iterable, Sequence
 
 #: ``Source.feed_key`` column width, the same as ``Source.rss_url``.
@@ -44,7 +46,7 @@ FEED_KEY_MAX = 500
 FEED_PREFIX = "f:"
 
 #: What a report writes in place of a userinfo a stored key kept: the mask the answers write a URL's userinfo in
-#: (``src.ingest.fetch_verdict.USERINFO_MASK``, not imported: this module imports no src module).
+#: (``src.ingest.fetch_verdict.USERINFO_MASK``, not imported: this module imports no src module but the import-free address_mask).
 KEY_USERINFO_MASK = "***@"
 
 
@@ -151,7 +153,8 @@ def lookup_key(rss_url: str | None, held_keys: Container[str]) -> str:
 
 def shown_feed_key(stored_key: str | None) -> str | None:
     """A stored key as a report writes it (the independent read's M1 on R637): a userinfo it holds written as
-    :data:`KEY_USERINFO_MASK`, the rest as stored; ``None``, ``''`` and a value that is not a feed key stay what they are. Only a
+    :data:`KEY_USERINFO_MASK`, its query's values masked but for an allowlisted harmless one and a fragment dropped (R734,
+    ``src.database.address_mask``), the rest as stored; ``None``, ``''`` and a value that is not a feed key stay what they are. Only a
     key stored before R628 holds one (kept beside its twin, R634, or not yet rewritten).
 
     The reading is WIDE, as the URL mask's is (R620): after :data:`FEED_PREFIX` a key is the authority (host and port, a kept
@@ -182,5 +185,8 @@ def shown_feed_key(stored_key: str | None) -> str | None:
         return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK.rstrip("@")
     at = body.rfind("@", start, end)
     if at >= 0:
-        return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK + body[at + 1 :]
-    return stored_key
+        body = body[:start] + KEY_USERINFO_MASK + body[at + 1 :]
+        end = start + len(KEY_USERINFO_MASK) + (end - at - 1)
+    # R734: the query's values masked but for an allowlisted harmless one, the fragment dropped; the authority is never read as a query
+    # (it ends at the first ?), so its mask above stands as written.
+    return FEED_PREFIX + body[:end] + masked_address(body[end:])
