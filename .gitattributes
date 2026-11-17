@@ -10,3 +10,6 @@ docs/ledger/shipped.csv merge=union
 # a .cmd checked out with bare LF can misparse multi-line blocks under cmd.exe.
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# Never converted, whatever their bytes look like (text=auto takes a NUL-free binary for text)
+*.pdf binary

@@ -83,7 +83,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from src.monitoring import storage_events
@@ -395,12 +395,17 @@ _SAFE_VOL_NAME = re.compile(r"[A-Za-z0-9._-]+")
 def _require_safe_member_name(name: str) -> None:
     """Member names come from a manifest ANYONE can self-sign — the reassembly
     must never write outside its staging dir (the zip path's _safe_extract
-    equivalent). Absolute paths, drive letters, backslashes and '..' refuse."""
-    p = Path(name)
+    equivalent). Absolute paths, drive letters and '..' refuse. A "\\" is read as "/" first (``artifact.member_name``): builds before
+    row 109 named a Windows backup's annotations and keys with it, and the name is judged as it will be written, so a "\\" can
+    never hide a '..' or a drive."""
+    from src.backup.artifact import member_name
+
+    name = member_name(name)
+    p = PurePosixPath(name)
     if (
         not name
         or p.is_absolute()
-        or "\\" in name
+        or Path(name).is_absolute()
         or ".." in p.parts
         or name.startswith("/")
         or ":" in name.split("/", 1)[0]
@@ -2294,9 +2299,13 @@ def read_stream_backup(
         try:
             write_owner_marker(staging)
             t1 = time.monotonic()
+            from src.backup.artifact import member_path
+
             vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
             for mm in m.get("members") or []:
-                out_path = staging / mm["name"]
+                out_path = member_path(staging, mm["name"])
+                if out_path is None:  # verify refused it already; never joined
+                    raise VolumeError(f"unsafe member path in the volume manifest: {mm['name']!r}")
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 h = hashlib.sha256()
                 # What a member may write is the plaintext size its manifest declares, the size the staging preflight

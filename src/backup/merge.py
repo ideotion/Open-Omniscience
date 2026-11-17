@@ -6971,7 +6971,10 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             # though verify already checked them: EVERY name-to-path field runs
             # through a guard, not only the ones that motivated the rule.
             rel = Path(name)
-            if rel.is_absolute() or ".." in rel.parts or not str(rel).startswith(subdir):
+            # compared by parts: the name is spelled with "/" (member_paths), str() of it on Windows is spelled with "\\", which no
+            # subdir matched (row 109); and parts never let "bulletin/editionsX" pass for "bulletin/editions"
+            want = tuple(subdir.split("/"))
+            if rel.is_absolute() or ".." in rel.parts or rel.parts[: len(want)] != want or len(rel.parts) <= len(want):
                 refused.append(name)
                 continue
             local = base / rel
