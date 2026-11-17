@@ -254,11 +254,14 @@ _SCRIPTS = _SRC.parent / "scripts"
 _ALLOWED_SCRIPT_SOCKET_IMPORTERS: dict[str, str] = {
     # -- real egress, maintainer-run; the output is a committed repository file --
     "scripts/build_city_gazetteer.py":
-        "maintainer build: requests to query.wikidata.org (SPARQL) for the city "
-        "gazetteer, a committed repo file. No kill switch, no robots (an API)",
+        "KNOWN GAP (row 129): requests to query.wikidata.org (SPARQL) writing "
+        "configs/cities.yml, NOT committed; the Map empty state and the manual point "
+        "users to it. No --online, no transport read, no kill switch; to move onto "
+        "guarded_session like build_place_gazetteer.py",
     "scripts/build_world_news_catalog.py":
         "maintainer build: requests to query.wikidata.org (SPARQL) for news-outlet "
-        "candidates, merged into configs/sources.yml. No kill switch, no robots (an API)",
+        "candidates into configs/world_news_sources.yml (not committed, reviewed by "
+        "the maintainer before sources.yml). No kill switch, no robots (an API)",
     "scripts/enrich_sources_wikidata.py":
         "maintainer build: urllib to www.wikidata.org (Action API) to fill source_type "
         "in configs/sources.yml. No kill switch, no robots (an API)",
@@ -291,7 +294,8 @@ _ALLOWED_SCRIPT_SOCKET_IMPORTERS: dict[str, str] = {
         "resolve (loopback skipped). No kill switch, no robots; never run by the app",
     "scripts/analysis/run_stage_a.py":
         "maintainer catalogue kit run on the maintainer's own machine: an "
-        "informational urllib GET of four fixed hosts (PROBE_HOSTS); the feed "
+        "informational urllib GET of four fixed hosts (PROBE_HOSTS) and a child pip "
+        "install from PyPI on first run; the feed "
         "judging itself goes through verify_candidate_feeds' EthicalFetcher",
     # -- loopback only, or no connection at all --
     "scripts/apply_update.py":
@@ -334,9 +338,15 @@ def test_no_new_socket_capable_importers_in_scripts():
 
 def test_every_script_socket_allowance_states_a_reason_and_is_documented():
     security = (_SRC.parent / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    start = security.index("maintainer build scripts reach the network directly (row 129)")
+    end = security.find("\n\n", start)
+    paragraph = security[start:end if end != -1 else None]
     for path, reason in _ALLOWED_SCRIPT_SOCKET_IMPORTERS.items():
         assert len(reason.strip()) > 30, f"{path}: justification too thin: {reason!r}"
-        assert path in security, f"{path} is allowed to reach the network but docs/SECURITY.md does not name it"
+        assert f"`{path}`" in paragraph, (
+            f"{path} is allowed to reach the network but the scripts paragraph of "
+            "docs/SECURITY.md does not name it"
+        )
 
 
 @pytest.mark.parametrize(
