@@ -64,7 +64,7 @@ APP_FILES: frozenset[str] = frozenset({
 #: Top-level FOLDERS the app writes into its data folder.
 APP_DIRS: frozenset[str] = frozenset({
     "annotations", "bench", "bulletin", "cache", "diagnostics", "duckdb_tmp", "import_reports", "ip_geo", "keys",
-    "leases", "models", "osm_borders", "osm_regions", "osm_work", "rings", "run_logs", "runtime", "triage",
+    "leases", "models", "osm_borders", "osm_regions", "osm_work", "rings", "run_logs", "runtime", "thesauri", "triage",
     "vllm_failed_starts", "vllm_venv", "weather_context", "wiki_dumps", ".oo_scrub",
 })
 
