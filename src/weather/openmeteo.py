@@ -33,6 +33,13 @@ _LOG = logging.getLogger(__name__)
 
 ARCHIVE_BASE = "https://archive-api.open-meteo.com/v1/archive"
 
+#: When the archive API's request and answer, as this module and :mod:`src.weather.anomaly` use them, were
+#: last written down: the path, the ``daily`` variable names in :data:`ALLOWED_DAILY`, ``timezone=UTC``,
+#: the answer's ``daily.time`` and ``daily_units``, and the 1940 floor. Taken from Open-Meteo's published
+#: API documentation, NOT from a live answer (the build sandbox cannot reach the host). Registered as
+#: ``open-meteo-archive-shape`` in ``configs/external_artifacts.yml``.
+OPENMETEO_AS_OF = "2026-11-17"
+
 # Daily reanalysis variables the corroboration rules may request (allowlist —
 # the endpoint never relays arbitrary parameters to the upstream API).
 ALLOWED_DAILY = frozenset({

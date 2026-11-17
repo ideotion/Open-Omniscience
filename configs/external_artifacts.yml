@@ -847,6 +847,25 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-11-07"
 
+  - id: open-meteo-archive-shape
+    title: Open-Meteo historical weather (archive) API request and answer shape
+    kind: dated-data
+    description: >-
+      The archive endpoint (ARCHIVE_BASE), the daily variable names the app may ask for
+      (ALLOWED_DAILY), timezone=UTC, the answer's daily.time and daily_units keys and the 1940
+      floor, as src/weather/openmeteo.py builds and reads them; src/weather/anomaly.py compares
+      temperature_2m_max, temperature_2m_min and precipitation_sum with the 1991-2020 baseline
+      from the same archive. Written from Open-Meteo's published API documentation and NOT
+      verified against a live answer -- the build sandbox cannot reach the host. Used only on a
+      consented click (the SECURITY.md Weather row), with the place rounded to 0.1 degree.
+    upstream: "https://open-meteo.com/en/docs/historical-weather-api"
+    check_upstream: "on a networked machine, open the historical weather API page and confirm the path, the daily variable names and the daily/daily_units answer keys; one Climate > Your place fetch shows a real answer"
+    license: "Open-Meteo data CC BY 4.0, attribution shown at the point of use (LICENSE_NOTE)"
+    pin: {file: src/weather/openmeteo.py, const: OPENMETEO_AS_OF}
+    refresh: "verify the documented shape, or one live answer, update tests/test_weather_anomaly.py and tests/test_weather_context_r683.py fixtures if it moved, bump OPENMETEO_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-17"
+
   - id: wikimedia-scoring-endpoint
     title: Wikimedia edit-scoring endpoint (ORES / Lift Wing)
     kind: dated-data
