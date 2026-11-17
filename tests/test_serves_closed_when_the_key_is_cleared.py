@@ -7,8 +7,8 @@ A PERSISTED serve (the encrypted columnar cache) keeps the key it was opened wit
 goes on answering with the rows it had. ``set_passphrase(None)`` is called by three places (a failed unlock, a failed create and
 the crypto-erase), and the pooled SQLCipher connections were already dropped with it; the serves were not. The three now call
 ``release.close_serves_for_cleared_key`` right after the clearing (the erase, before a byte is touched, as the lane engines are
-disposed there), which never waits and never raises: a serve whose lock is held (a query, a persisted refresh merging) is left
-open and NAMED, because closing a DuckDB connection under a running statement is what the lock exists to prevent.
+disposed there), which never waits and never raises: a serve whose lock is held (a query, a persisted refresh merging) is NAMED and closed
+once free (open-on-main row 85), because closing a DuckDB connection under a running statement is what the lock exists to prevent.
 
 The persisted branch is dormant today (no build carries the httpfs binary it needs), so these tests use the serves' own state with a
 handle that records what was done to it.
@@ -225,9 +225,12 @@ def test_a_serve_in_use_during_the_erase_does_not_hold_it_up_and_is_logged(serve
         report = _without_waiting(lambda: crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path))
     assert report["removed"] is True, "the erase finished while a serve held its lock"
     assert cons["rollup_serve"].closed == 0 and cons["map_serve"].closed == 1
-    assert any("left open" in r.getMessage() and "rollup_serve" in r.getMessage() for r in caplog.records), [
+    assert any("as soon as it is free" in r.getMessage() and "rollup_serve" in r.getMessage() for r in caplog.records), [
         r.getMessage() for r in caplog.records
     ]
+    for t in [t for t in threading.enumerate() if t.name == "close-rollup_serve-cleared-key"]:
+        t.join(5)
+    assert cons["rollup_serve"].closed == 1, "the serve that was in use kept the cleared key once free"
 
 
 def test_a_close_that_fails_never_stops_the_erase(serves, monkeypatch, tmp_path):
