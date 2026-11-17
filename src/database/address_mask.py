@@ -13,6 +13,10 @@ writers, that:
 * the FRAGMENT is dropped;
 * it FAILS CLOSED: an unknown name is masked, a name that does not read as a plain name is masked WITH its value, a bare item (no
   ``=``) is kept only when it is an allowlisted name;
+* R736 (2026-11-17) adds the PATH: a ``;name=value`` path parameter's value is always masked (the name kept), and a path segment
+  shaped like a credential (a UUID; 16+ hex digits; 24+ base64url characters holding a letter and a digit that are not lower-case
+  words joined by ``-``/``_``) is masked, a short file extension kept. Slugs, dates, numeric ids and short segments read as they
+  are; STATED LIMIT: a short or unusually shaped path token can still appear;
 * it is STABLE: the same address gives the same text on every instance (no salt, no per-run state), so rows of two instances' reports
   still match on domain + the written key. Stated limit: two addresses that differ only in a masked value are written the same.
 
@@ -114,13 +118,125 @@ def masked_query(query: str) -> str:
         return QUERY_VALUE_MASK
 
 
-def masked_address(text: str) -> str:
-    """``text`` (an address, or a feed key's body) with its fragment dropped and its query masked by :func:`masked_query`. The query
-    starts at the FIRST ``?`` (an authority cannot hold one: every parser ends it there), the fragment at the first ``#``. Everything
-    before the query is returned as given, so the userinfo mask the caller applies is its own concern. NEVER raises."""
+# --------------------------------------------------------------------------------------------------------------- R736: the path
+#: A UUID, any case (``/feed/3f2b...-...``).
+_UUID_RE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+#: Sixteen or more hex digits and nothing else (a hex token, a digest).
+_HEX_TOKEN_RE = re.compile(r"[0-9A-Fa-f]{16,}")
+#: Twenty-four or more base64url characters (padding allowed)...
+_B64URL_TOKEN_RE = re.compile(r"[A-Za-z0-9_\-]{24,}={0,2}")
+#: ...unless shaped like lower-case words joined by hyphens or underscores (an article slug, ``2026-11-16-climate-report-2025``). A
+#: "word" is at most 20 characters: a 30-character run with an underscore before it (``ghp_<30 chars>``) is a token, not a word.
+_WORDS_RE = re.compile(r"[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+")
+#: A short file extension kept after a masked token (``/feeds/<token>.xml`` -> ``/feeds/***.xml``): the extension tells the format.
+_EXTENSION_TAIL_RE = re.compile(r"[A-Za-z0-9]{1,5}")
+
+
+def _split_extension(text: str) -> tuple[str, str] | None:
+    """``(the rest, ".ext")`` when ``text`` ends in a dot and one to five letters or digits after a non-empty rest, else ``None``.
+    Split at the last dot, with no backtracking regex over the rest (CodeQL's polynomial-regex alert on the first cut)."""
+    rest, dot, ext = text.rpartition(".")
+    if dot and rest and _EXTENSION_TAIL_RE.fullmatch(ext):
+        return rest, "." + ext
+    return None
+
+
+def _looks_like_a_credential(segment: str) -> bool:
+    """R736 (2): a path segment (percent-decoded) shaped like a token: a UUID; sixteen or more hex digits only; or twenty-four or
+    more base64url characters holding a letter AND a digit that are not lower-case words joined by ``-``/``_`` (a "word" of twelve
+    or more characters mixing letters and digits is not one: ``tok_abcdefghij1234567890``). Slugs, dates, numeric ids and short
+    segments read as they are. Over-masking is the accepted cost (R736 (3))."""
+    if _UUID_RE.fullmatch(segment) or _HEX_TOKEN_RE.fullmatch(segment):
+        return True
+    if not _B64URL_TOKEN_RE.fullmatch(segment):
+        return False
+    if not (any(c.isalpha() for c in segment) and any(c.isdigit() for c in segment)):
+        return False
+    bare = segment.rstrip("=")
+    if not _WORDS_RE.fullmatch(bare):
+        return True
+    return any(len(w) >= 12 and any(c.isalpha() for c in w) and any(c.isdigit() for c in w) for w in re.split(r"[-_]", bare))
+
+
+#: What a token is cut at inside a segment (``token=<hex>``, ``u:<hex>``, ``<a>,<b>``, ``x\<uuid>``, a JWT's dots).
+_PIECE_SPLIT_RE = re.compile(r"[^A-Za-z0-9_\-]+")
+#: Inside a segment: a UUID or a run of sixteen hex digits anywhere (``aaaa<uuid>``, ``<hex>-<hex>`` joined like a slug).
+_HEX_INSIDE_RE = re.compile(r"[0-9A-Fa-f]{16,}")
+#: The characters a standard-base64 token or a split one carries that base64url does not (``+``, ``/``, ``=``, ``.``, ``~``):
+#: taken out, what is left is tested whole (the second security read on R736).
+_JOINERS_RE = re.compile(r"[+/=.~]")
+
+
+def _holds_a_credential(text: str) -> bool:
+    """Whether a decoded segment is, or holds, a credential-shaped token (R736 (2), read wide after the security reads): the
+    segment whole, a UUID or a sixteen-hex run anywhere in it, any piece of it between characters a token cannot hold, or the
+    segment with the joiners of a standard-base64 or split token taken out."""
+    if _looks_like_a_credential(text) or _UUID_RE.search(text) or _HEX_INSIDE_RE.search(text):
+        return True
+    if any(_looks_like_a_credential(piece) for piece in _PIECE_SPLIT_RE.split(text) if piece):
+        return True
+    joined = _JOINERS_RE.sub("", text)
+    return joined != text and _looks_like_a_credential(joined)
+
+
+def _masked_segment_value(text: str) -> str:
+    """One segment's own text (before any ``;`` parameter) masked whole when it is or holds a credential-shaped token; a short
+    extension after it kept when the rest alone holds the token (``/feeds/<token>.xml`` -> ``/feeds/***.xml``)."""
+    decoded = _decoded(text)
+    if not _holds_a_credential(decoded):
+        return text
+    found = _split_extension(decoded)
+    if found and _holds_a_credential(found[0]) and not _holds_a_credential(found[1][1:]):
+        return QUERY_VALUE_MASK + found[1]
+    return QUERY_VALUE_MASK
+
+
+def _masked_segment(segment: str) -> str:
+    """R736 (1)+(2): a path segment with each ``;name=value`` parameter's VALUE masked (the name kept; a bare ``;item`` masked whole)
+    and its own text masked when it is shaped like a credential."""
+    own, semi, params = segment.partition(";")
+    out = _masked_segment_value(own)
+    if not semi:
+        return out
+    written = []
+    for param in params.split(";"):
+        name, eq, _value = param.partition("=")
+        written.append(name + "=" + QUERY_VALUE_MASK if eq and _NAME_RE.fullmatch(name) else (param and QUERY_VALUE_MASK))
+    return out + ";" + ";".join(written)
+
+
+def _path_start(base: str) -> int:
+    """Where the path of ``base`` (an address without its query and fragment) starts: after the authority when there is one
+    (``scheme://`` or ``//``), else at 0 (a feed key's body after its host, or a bare path)."""
+    found = base.find("://")
+    if found >= 0 and "/" not in base[:found]:
+        slash = base.find("/", found + 3)
+        return len(base) if slash < 0 else slash
+    if base.startswith("//"):
+        slash = base.find("/", 2)
+        return len(base) if slash < 0 else slash
+    return 0
+
+
+def masked_path(path: str) -> str:
+    """``path`` with every segment written by :func:`_masked_segment` (R736). The ``/`` separators are kept as written. NEVER raises."""
+    try:
+        return "/".join(_masked_segment(segment) for segment in path.split("/"))
+    except Exception:  # noqa: BLE001 - written from inside reports and failures; a path it cannot read is withheld whole
+        return QUERY_VALUE_MASK
+
+
+def masked_address(text: str, *, authority: bool = True) -> str:
+    """``text`` (an address, or a feed key's body) with its fragment dropped, its query masked by :func:`masked_query` (R734) and its
+    path by :func:`masked_path` (R736). The query starts at the FIRST ``?`` (an authority cannot hold one: every parser ends it there),
+    the fragment at the first ``#``. The authority is returned as given, so the userinfo mask the caller applies is its own concern.
+    ``authority=False`` for a text that is already the part from the path on (a feed key's, whose path can open with ``//``: the
+    first security read on R736 found its first segment read as a host). NEVER raises."""
     try:
         head = text.split("#", 1)[0]
         base, mark, query = head.partition("?")
+        start = _path_start(base) if authority else 0
+        base = base[:start] + masked_path(base[start:])
         return base + mark + masked_query(query) if mark else base
     except Exception:  # noqa: BLE001 - see masked_query
         return QUERY_VALUE_MASK
@@ -152,7 +268,27 @@ def _written_forms(part: str) -> list[str]:
     return out
 
 
-def query_secrets(text: str, *, floor: int = 4) -> tuple[str, ...]:
+def _path_secrets(path: str) -> list[str]:
+    """The path tokens and path-parameter values :func:`masked_path` masks (R736), as written in ``path``."""
+    out: list[str] = []
+    for segment in path.split("/"):
+        own, semi, params = segment.partition(";")
+        if _masked_segment_value(own) != own:
+            decoded = _decoded(own)
+            out.append(own)
+            found = _split_extension(decoded)
+            if found:
+                out.append(found[0])
+            # each piece that is itself a token, for a library that quotes only part of the segment
+            out += [piece for piece in _PIECE_SPLIT_RE.split(decoded) if piece and _holds_a_credential(piece)]
+        if semi:
+            for param in params.split(";"):
+                name, eq, value = param.partition("=")
+                out += [value] if eq and _NAME_RE.fullmatch(name) else [param]
+    return [p for p in out if p]
+
+
+def query_secrets(text: str, *, floor: int = 4, authority: bool = True) -> tuple[str, ...]:
     """The query values :func:`masked_address` masks in ``text``, each as written and percent-decoded, for a scrub to take out of an
     exception's text that quotes the address in its own words (requests writes ``url: /rss?token=...``). Only values of at least
     ``floor`` characters (the scrub withholds a WHOLE text that holds a part under its floor, so passing a short one would withhold
@@ -160,11 +296,9 @@ def query_secrets(text: str, *, floor: int = 4) -> tuple[str, ...]:
     exception's text (the address itself, written by :func:`masked_address`, never shows it). Each value is given in every spelling
     :func:`_written_forms` lists. Empty when there is no query or it cannot be read. NEVER raises."""
     try:
-        query = text.split("#", 1)[0].partition("?")[2]
-        if not query:
-            return ()
-        out: list[str] = []
-        for item in _SEPARATOR_RE.split(query)[::2]:
+        base, _mark, query = text.split("#", 1)[0].partition("?")
+        out: list[str] = _path_secrets(base[_path_start(base) if authority else 0 :])
+        for item in (_SEPARATOR_RE.split(query)[::2] if query else []):
             name, eq, value = item.partition("=")
             if not eq:
                 if item and not (_NAME_RE.fullmatch(item) and _is_harmless(item)):
