@@ -21,6 +21,7 @@ import os
 import pytest
 
 from src.database import repair
+from tests.os_scope import scope_os
 
 fcntl = pytest.importorskip("fcntl") if os.name != "nt" else None
 
@@ -37,7 +38,7 @@ def windows_fsync(monkeypatch):
             raise OSError(errno.EBADF, "Bad file descriptor")
         real(fd)
 
-    monkeypatch.setattr(repair.os, "fsync", refusing)
+    scope_os(monkeypatch, repair, fsync=refusing)  # repair's own view of os only (R351), never the whole process's
 
 
 def test_the_sidecar_is_written_where_windows_refuses_to_flush_a_read_only_handle(tmp_path, windows_fsync):
