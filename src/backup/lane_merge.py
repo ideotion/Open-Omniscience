@@ -257,6 +257,11 @@ def _refuse_unsafe_inc(conn: Any) -> None:
     for typ, name, sql in rows:
         if typ != "table" or str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL"):
             raise LaneMergeError("the lane member holds a table this build does not merge from (not a plain table); refusing to merge it")
+        if "COLLATE" in str(sql or "").upper():
+            # A collation declared by the backup decides how its own "=" and "IN" compare: a
+            # NOCASE country column would let 'zzz' rows pass a filter on 'ZZZ' and land here
+            # outside every country. No lane this build writes declares one.
+            raise LaneMergeError("the lane member holds a table with a declared collation; refusing to merge it")
         hidden = [r for r in conn.execute(f'PRAGMA inc.table_xinfo("{name}")').fetchall() if int(r[6] or 0) != 0]
         if hidden:
             raise LaneMergeError("the lane member holds a table with computed columns; refusing to merge it")
@@ -1211,6 +1216,30 @@ def _osm_check_objects(conn: Any, alpha3: str, live: set[str]) -> None:
             raise _OsmRefused("refused_unreadable")
 
 
+def _osm_check_inside(conn: Any, alpha3: str) -> None:
+    """Every node and way of the country stands inside its own border, the rule the cut and the daily update keep.
+
+    Without it a backup could label another country's objects as this one's: they would take
+    those OpenStreetMap ids here, and that country's own cut would then fail on them. A country
+    with no stored border (cut before borders were kept) cannot be checked and is not copied.
+    """
+    from src.osm.geometry import Border, decode_rings
+
+    rings = conn.execute("SELECT border_rings FROM inc.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone()[0]
+    if rings is None:
+        raise _OsmRefused("not_copied_no_border")
+    try:
+        border = Border(decode_rings(bytes(rings)))
+    except Exception:  # noqa: BLE001 - a border that does not build is a refusal
+        raise _OsmRefused("refused_unreadable") from None
+    cur = conn.execute(
+        "SELECT lat, lon FROM inc.osm_objects WHERE country_alpha3 = ? AND osm_type IN ('n', 'w')", (alpha3,)
+    )
+    for lat, lon in cur:
+        if not border.contains(float(lat), float(lon)):
+            raise _OsmRefused("refused_outside_border")
+
+
 def _osm_check_counts(conn: Any, alpha3: str) -> None:
     """A country never updated holds exactly the objects its cut counted, kind by kind (the cut's own record)."""
     from src.osm import tags as T
@@ -1278,6 +1307,7 @@ def _osm_validate(conn: Any, alpha3: str, live_objects: set[str]) -> bool:
     """
     _osm_check_country(conn, alpha3)
     _osm_check_objects(conn, alpha3, live_objects)
+    _osm_check_inside(conn, alpha3)
     _osm_check_counts(conn, alpha3)
     return _osm_check_history(conn, alpha3)
 
@@ -1289,6 +1319,10 @@ def _osm_copy_country(conn: Any, alpha3: str, with_history: bool, tables: dict[s
     """
     from src.osm.apply import FEED_PREFIX
 
+    if conn.execute("SELECT 1 FROM main.osm_countries WHERE alpha3 = ?", (alpha3,)).fetchone() is not None:
+        # A cut of this country started here while the backup's copy was being checked: it is
+        # this machine's now, and kept like any country both hold.
+        raise _OsmRefused("kept_here")
     if _osm_partly_here(conn, alpha3):
         raise _OsmRefused("refused_partly_here")
     clash = conn.execute(
@@ -1307,17 +1341,17 @@ def _osm_copy_country(conn: Any, alpha3: str, with_history: bool, tables: dict[s
 
     _insert_select(
         conn, "osm_countries", source_from="inc.osm_countries i",
-        overrides={"started_at": "MIN(i.started_at, :horizon)", "finished_at": "MIN(i.finished_at, :horizon)"},
+        overrides={"started_at": "MIN(i.started_at, :horizon)", "finished_at": "MIN(i.finished_at, :horizon)", "alpha3": ":a"},
         where="i.alpha3 = :a", source_alias="i", params=params,
     )
     add("osm_objects", "inserted", _insert_select(
-        conn, "osm_objects", source_from="inc.osm_objects o", overrides={}, where="o.country_alpha3 = :a",
+        conn, "osm_objects", source_from="inc.osm_objects o", overrides={"country_alpha3": ":a"}, where="o.country_alpha3 = :a",
         source_alias="o", params=params,
     ))
     if _has(conn, "inc", "osm_tag_changes"):
         add("osm_tag_changes", "inserted", _insert_select(
             conn, "osm_tag_changes", source_from="inc.osm_tag_changes c",
-            overrides={"recorded_at": "MIN(c.recorded_at, :horizon)"},
+            overrides={"recorded_at": "MIN(c.recorded_at, :horizon)", "country_alpha3": ":a"},
             where=(
                 "c.country_alpha3 = :a AND c.osm_type IN ('n', 'w', 'r') AND typeof(c.osm_id) = 'integer' "
                 "AND typeof(c.key) = 'text' AND typeof(c.change) = 'text' AND length(c.change) BETWEEN 1 AND 8"
@@ -1327,7 +1361,7 @@ def _osm_copy_country(conn: Any, alpha3: str, with_history: bool, tables: dict[s
     if _has(conn, "inc", "osm_diff_runs"):
         add("osm_diff_runs", "inserted", _insert_select(
             conn, "osm_diff_runs", source_from="inc.osm_diff_runs r",
-            overrides={"applied_at": "MIN(r.applied_at, :horizon)"},
+            overrides={"applied_at": "MIN(r.applied_at, :horizon)", "alpha3": ":a"},
             where="r.alpha3 = :a AND typeof(r.sequence) = 'integer'", source_alias="r", params=params,
         ))
     if _has(conn, "inc", "versioned_changes"):
@@ -1338,7 +1372,8 @@ def _osm_copy_country(conn: Any, alpha3: str, with_history: bool, tables: dict[s
         add("versioned_changes", "inserted", _insert_select(
             conn, "versioned_changes", source_from="inc.versioned_changes c",
             overrides={k: "NULL" for k in ("entity_id", "ingested_revision_id") if k in live_vc}
-            | ({"recorded_at": "MIN(c.recorded_at, :horizon)"} if "recorded_at" in live_vc else {}),
+            | ({"recorded_at": "MIN(c.recorded_at, :horizon)"} if "recorded_at" in live_vc else {})
+            | {"feed": ":feed"},
             where=(
                 "c.feed = :feed AND typeof(c.change_ref) = 'text' AND typeof(c.change_kind) = 'text' "
                 "AND NOT EXISTS (SELECT 1 FROM main.versioned_changes m WHERE m.feed = c.feed AND m.change_ref = c.change_ref)"
@@ -1350,18 +1385,18 @@ def _osm_copy_country(conn: Any, alpha3: str, with_history: bool, tables: dict[s
         # count them, so they travel with the runs they explain.
         add("versioned_gaps", "inserted", _insert_select(
             conn, "versioned_gaps", source_from="inc.versioned_gaps g",
-            overrides={"detected_at": "MIN(g.detected_at, :horizon)"},
+            overrides={"detected_at": "MIN(g.detected_at, :horizon)", "feed": ":feed"},
             where="g.feed = :feed AND typeof(g.reason) = 'text'", source_alias="g", params=params,
         ))
     if with_history:
         _insert_select(
             conn, "osm_history_cuts", source_from="inc.osm_history_cuts c",
-            overrides={"started_at": "MIN(c.started_at, :horizon)", "finished_at": "MIN(c.finished_at, :horizon)"},
+            overrides={"started_at": "MIN(c.started_at, :horizon)", "finished_at": "MIN(c.finished_at, :horizon)", "alpha3": ":a"},
             where="c.alpha3 = :a", source_alias="c", params=params,
         )
         add("osm_history_cuts", "inserted", 1)
         add("osm_history_changes", "inserted", _insert_select(
-            conn, "osm_history_changes", source_from="inc.osm_history_changes h", overrides={},
+            conn, "osm_history_changes", source_from="inc.osm_history_changes h", overrides={"country_alpha3": ":a"},
             where="h.country_alpha3 = :a", source_alias="h", params=params,
         ))
 
@@ -1458,7 +1493,10 @@ def _merge_osm(conn: Any, out: dict[str, Any]) -> None:
             _osm_rollback(conn)
             if not isinstance(exc, _OsmRefused):
                 _LOG.warning("a country of the maps backup was not copied (%s); nothing of it was kept", type(exc).__name__)
-            _osm_count(counts, exc.reason if isinstance(exc, _OsmRefused) else "refused_unreadable")
+            reason = exc.reason if isinstance(exc, _OsmRefused) else "refused_unreadable"
+            _osm_count(counts, reason)
+            if reason == "kept_here":
+                out["osm_unfinished_here"].append(alpha3)  # a cut started here meanwhile; it is not finished yet
             continue
         except BaseException:
             _osm_rollback(conn)

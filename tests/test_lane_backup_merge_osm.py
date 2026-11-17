@@ -546,3 +546,69 @@ def test_a_finished_backup_copy_of_a_cut_that_never_finished_here_is_said_apart(
     lines: list[str] = []
     _living_sources_markdown(lines, {"lanes": [{**rep, "state": "merged"}]})
     assert "never finished" in "\n".join(lines)
+
+
+def _collated_country_column(con) -> None:
+    # Rebuild osm_objects with a NOCASE country column and split the country's rows in two spellings.
+    sql = con.execute("SELECT sql FROM sqlite_master WHERE name = 'osm_objects'").fetchone()[0]
+    con.execute("ALTER TABLE osm_objects RENAME TO old_objects")
+    con.execute(sql.replace("country_alpha3 VARCHAR(3)", "country_alpha3 VARCHAR(3) COLLATE NOCASE", 1))
+    con.execute("INSERT INTO osm_objects SELECT * FROM old_objects")
+    con.execute("DROP TABLE old_objects")
+    con.execute("UPDATE osm_objects SET country_alpha3 = 'zzz' WHERE id % 2 = 0")
+
+
+def test_a_backup_table_declaring_a_collation_is_refused(machines, tmp_path):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path, edit=_collated_country_column)
+    use(a)
+    with pytest.raises(lane_merge.LaneMergeError, match="collation"):
+        lane_merge.merge_lane_file("osm", snap, [None])
+    assert _country_row() is None and _objects() == {}
+
+
+def test_a_country_holding_objects_outside_its_own_border_is_refused(machines, tmp_path):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path, edit=lambda con: con.execute(
+        "UPDATE osm_objects SET lat = 45.0, lon = 2.0 WHERE id = (SELECT min(id) FROM osm_objects WHERE osm_type = 'n')"
+    ))
+    use(a)
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    assert rep["tables"]["osm_countries"]["refused_outside_border"] == 1
+    assert _country_row() is None and _objects() == {}
+
+
+def test_a_country_with_no_stored_border_is_not_copied(machines, tmp_path):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path, edit=lambda con: con.execute("UPDATE osm_countries SET border_rings = NULL"))
+    use(a)
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    assert rep["tables"]["osm_countries"]["not_copied_no_border"] == 1 and _country_row() is None
+
+
+def test_a_cut_started_here_while_the_copy_was_checked_keeps_the_country(machines, tmp_path, monkeypatch):
+    a, b, use = machines
+    use(b)
+    _cut_here(b)
+    snap = _snap(b, use, tmp_path)
+    use(a)
+    real = lane_merge._osm_validate
+
+    def validate_then_cut_starts(conn, alpha3, live):
+        out = real(conn, alpha3, live)
+        conn.execute(
+            "INSERT INTO main.osm_countries (alpha2, alpha3, status, started_at) VALUES ('ZZ', 'ZZZ', 'ingesting', '2026-01-01 00:00:00.000000')"
+        )
+        return out
+
+    monkeypatch.setattr(lane_merge, "_osm_validate", validate_then_cut_starts)
+    rep = lane_merge.merge_lane_file("osm", snap, [None])
+    counts = rep["tables"]["osm_countries"]
+    assert counts["kept_here"] == 1 and counts["copied"] == 0 and "refused_unreadable" not in counts
+    assert rep["osm_unfinished_here"] == ["ZZZ"] and _objects() == {}

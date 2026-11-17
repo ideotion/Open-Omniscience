@@ -231,10 +231,14 @@ def export_facts(
     tables = facts_block.get("tables") if isinstance(facts_block.get("tables"), dict) else None
     folder = _folder_manifest(d)
     files = _file_categories(folder)
+    # Whether the corpus is IN this folder is read off the folder (its volume manifest),
+    # never inferred from what this process still remembers. The in-memory summary only
+    # decides whether the export's own MEASUREMENTS can be reported beside it.
+    manifest = _volume_manifest(d)
 
     signals = signals_from_tables(tables)
     signals |= {files_signal(c["category"]) for c in files}
-    signals |= {lane_signal(k) for k in _lane_kinds(_volume_manifest(d))}
+    signals |= {lane_signal(k) for k in _lane_kinds(manifest)}
     try:
         attribution = attribution_dicts(signals)
         attribution_error = None
@@ -245,10 +249,6 @@ def export_facts(
         attribution, attribution_error = [], str(exc)
 
     corpus_s = summary.get("wall_s") if summary else None
-    # Whether the corpus is IN this folder is read off the folder (its volume manifest),
-    # never inferred from what this process still remembers. The in-memory summary only
-    # decides whether the export's own MEASUREMENTS can be reported beside it.
-    manifest = _volume_manifest(d)
     if summary is not None:
         corpus_facts: str | None = "measured"
     elif manifest is not None:
