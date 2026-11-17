@@ -35,10 +35,21 @@ def test_the_attribution_block_credits_osm_rows_with_the_odbl():
     assert [ln.key for ln in lines] == ["openstreetmap"] and "ODbL" in lines[0].text
 
 
-def test_the_lane_file_is_a_backup_member_that_is_NOT_exportable():
+def test_the_lane_file_is_a_backup_member_that_is_NOT_exportable(tmp_path, monkeypatch):
+    # Hermetic (R729): the row reads the lanes present in the data directory, and law is
+    # mergeable now, so a law.db another test left behind would make the row exportable.
+    # The fact pinned here is the OSM lane's own: present, named in waiting, carried by nothing.
     from src.backup.inventory import _lane_member
+    from src.versioned import store
 
-    assert _lane_member()["exportable"] is False
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    try:
+        store.create_lane("osm")
+        row = _lane_member()
+    finally:
+        store.dispose_all()
+    assert row["exportable"] is False
+    assert "osm" in row["waiting"] and "osm" not in row["breakdown"]
 
 
 _CARRIERS = ("src/backup", "src/bulletin", "src/custody", "src/reporting", "src/verification")

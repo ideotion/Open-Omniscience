@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-16,backup,Living sources backup: law store carried and merged (R729 PR 2),SHIPPED,PR #2063,src/backup/lane_merge.py; src/backup/inventory.py; src/backup/import_reports.py; tests/test_lane_backup_merge_law.py,"Backups carry lanes/law.db. The merge links only rows whose lane_key the live corpus holds once, fills NULLs and never replaces, normalises vocabularies to the honest unknown, and flags (never refuses) a store an import pushes over its budget."

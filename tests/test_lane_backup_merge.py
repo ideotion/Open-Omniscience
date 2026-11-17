@@ -640,3 +640,26 @@ def test_a_non_hex_top_level_digest_is_no_identity(tmp_path, monkeypatch):
     assert merge.artifact_source_digest(tmp_path) is None
     monkeypatch.setattr(volumes, "load_manifest", lambda src: {"plaintext_sha256": "a" * 64})
     assert merge.artifact_source_digest(tmp_path) == "a" * 64
+
+
+def test_a_merge_that_takes_a_lane_over_its_budget_merges_and_says_so(machines, tmp_path, monkeypatch):
+    """Lane F's note on #2036: a budget pauses fetching and never deletes, so the merge is not
+    refused for size; the report says the store is over its budget, with both figures."""
+    from src.backup.import_reports import render_import_report_markdown
+    from src.scheduler import settings as sched_settings
+    from src.versioned import budget
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    gb = budget.load_table().row("wiki").budget_gb
+    monkeypatch.setattr(sched_settings, "load_settings", lambda: None)
+    monkeypatch.setattr(budget, "lane_bytes", lambda kind: (gb + 1) * budget.BYTES_PER_GB)
+    rep = lane_merge.merge_lane_file("wiki", snap, [None])
+    assert rep["budget"] == {"bytes": (gb + 1) * budget.BYTES_PER_GB, "budget_gb": gb, "over": True}
+    md = render_import_report_markdown(
+        {"living_sources": {"lanes": [dict(rep, state="merged")], "method": lane_merge.METHOD}}
+    )
+    assert "over its budget" in md and f"{gb:,} GB" in md and "Nothing was removed" in md
+    monkeypatch.setattr(budget, "lane_bytes", lambda kind: 1024)
+    assert lane_merge.merge_lane_file("wiki", snap, [None])["budget"]["over"] is False
