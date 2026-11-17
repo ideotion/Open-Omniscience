@@ -284,8 +284,8 @@ def scans_block(
         "scan_budget_s": budget_s,
         "floor_s": SCAN_FLOOR_S if budget_s is not None else None,
         "order": (
-            "shortest estimate first (est_s: this machine's last time for the scan, scaled by its mention rows, where it has one, "
-            "else the field median; est_from says which), ties in the build's own order"
+            "shortest estimate first (est_s: this machine's last time for the scan, scaled by its mention rows, where it has one "
+            "and it is above the field median, else the field median; est_from says which), ties in the build's own order"
         ),
         "planned": planned,
         "ran": ran,
