@@ -26,7 +26,8 @@ OFFLINE (the default; no connection is opened):
 ONLINE (only when asked, and only from the publisher's host): ``--fetch-url URL --online`` downloads the
 file first. The URL is the operator's, copied from the publisher's download page; it must be https on a host
 this command knows for that thesaurus (EuroVoc: op.europa.eu, publications.europa.eu), and so must every
-redirect. It goes out on the transport this data directory names (Tor or a proxy), and refuses when none is
+redirect. The publisher's robots.txt is read first, through the app's ethical fetcher, and the download is
+refused when it disallows the address OR cannot be read (fail closed, as for every page the app fetches). It goes out on the transport this data directory names (Tor or a proxy), and refuses when none is
 named unless --clearnet is given: a silent clearnet default would be a downgrade. The download is kept beside
 the thesaurus (``<scheme>.source``) so the next build can run offline. Run it with the app stopped: the app's
 airplane state lives in the app's process and is not visible from here, so --online is this run's consent.
@@ -204,6 +205,8 @@ def summarise(artifact: dict[str, Any], parsed: dict[str, Any], *, source: dict[
         "vintage": artifact["vintage"], "license": artifact["license"], "upstream": artifact["upstream"],
         "languages": artifact["languages"],
         "source": source, "output": output, "fetched_from_host": fetched_from_host,
+        # A fetched source passed the publisher's robots.txt (fail closed); a file the operator brought was not fetched.
+        "robots": "allowed" if fetched_from_host else "not fetched",
         "counts": {
             "concepts_seen": parsed.get("n_seen"), "concepts_kept": artifact["n_concepts"],
             "concepts_with_broader": with_broader,
@@ -275,6 +278,53 @@ def check_fetch_url(url: str, hosts: tuple[str, ...]) -> None:
         raise BuildRefused(f"refusing the fetch URL: {exc} (this thesaurus is fetched only from {', '.join(hosts)})") from None
 
 
+def _robots_fetcher(hosts: tuple[str, ...]) -> Any:
+    """The app's ethical fetcher (its robots cache, user agent, transport and kill switch), held to ``hosts``: every
+    request it makes for robots.txt, and every redirect hop of that read, is checked as a whole URL first."""
+    from src.ingest import BlockedTarget, EthicalFetcher
+    from src.safety.fetcher import RedirectRefused, make_fetcher, refuse_unlisted_host
+
+    fetcher = make_fetcher()
+    real_get = fetcher.session.get
+
+    def _get(u: str, *a: Any, **kw: Any) -> Any:
+        try:
+            refuse_unlisted_host(u, hosts)
+        except RedirectRefused as exc:
+            raise BlockedTarget(f"refused: {exc}") from None
+        kw["allow_redirects"] = False  # hops are walked one judged hop at a time by the fetcher, never by the library
+        return real_get(u, *a, **kw)
+
+    fetcher.session.get = _get
+    real_guard = fetcher._guard_target
+
+    def _guard(host: str) -> None:
+        if host not in hosts:
+            raise BlockedTarget(f"refused: {host!r} is not one of {', '.join(hosts)}")
+        real_guard(host)
+
+    fetcher._guard_target = _guard
+    assert isinstance(fetcher, EthicalFetcher)
+    return fetcher
+
+
+def check_robots(url: str, hosts: tuple[str, ...], fetcher: Any = None) -> None:
+    """Refuse unless the publisher's robots.txt allows ``url`` for the app's user agent. FAIL CLOSED: a robots.txt that
+    cannot be read (refused, unreachable, garbled) refuses the download, as it refuses any page the app fetches."""
+    from urllib.parse import urlparse
+
+    from src.ingest import RobotsDisallowed, RobotsUnavailable
+
+    f = fetcher if fetcher is not None else _robots_fetcher(hosts)
+    host_key, _target = f._robots_target(url)
+    try:
+        f._enforce_robots(url, host_key, urlparse(url))
+    except RobotsDisallowed as exc:
+        raise BuildRefused(f"refused by robots.txt: {exc}") from None
+    except RobotsUnavailable as exc:
+        raise BuildRefused(f"refused by robots.txt (fail closed): {exc}") from None
+
+
 def fetch_source(url: str, hosts: tuple[str, ...], dest: Path, *, max_bytes: int, session: Any = None) -> str:
     """Download ``url`` to ``dest`` through the guarded session held to ``hosts``; returns the host that answered."""
     from urllib.parse import urlparse
@@ -283,12 +333,19 @@ def fetch_source(url: str, hosts: tuple[str, ...], dest: Path, *, max_bytes: int
     from src.safety.fetcher import guarded_session
 
     check_fetch_url(url, hosts)
+    robots = None
+    if session is None:  # a test hands its own session and checks robots apart (check_robots)
+        robots = _robots_fetcher(hosts)
+        check_robots(url, hosts, robots)
     s = session if session is not None else guarded_session(user_agent=DEFAULT_USER_AGENT, allowed_hosts=hosts)
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{dest.name}.", dir=str(dest.parent))
     try:
         with os.fdopen(fd, "wb") as fh, s.get(url, stream=True, timeout=60) as resp:
-            check_fetch_url(str(getattr(resp, "url", "") or ""), hosts)  # where the answer came from, after redirects
+            final = str(getattr(resp, "url", "") or "")
+            check_fetch_url(final, hosts)  # where the answer came from, after redirects
+            if robots is not None and final != url:  # a redirect landed elsewhere: its robots.txt is asked too
+                check_robots(final, hosts, robots)
             if resp.status_code != 200:
                 raise BuildRefused(f"the publisher answered HTTP {resp.status_code}")
             declared = resp.headers.get("Content-Length")

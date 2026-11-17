@@ -263,6 +263,7 @@ def test_the_real_session_is_the_guarded_one_held_to_the_publishers_hosts(monkey
         return _Session(_Resp("https://op.europa.eu/x", MINI.read_bytes()))
 
     monkeypatch.setattr(F, "guarded_session", fake)
+    monkeypatch.setattr(tb, "_robots_fetcher", lambda hosts: _RobotsStub())
     tb.fetch_source("https://op.europa.eu/x", tb.PUBLISHER_HOSTS["eurovoc"], tmp_path / "s", max_bytes=1 << 20)
     assert seen["allowed_hosts"] == ("op.europa.eu", "publications.europa.eu")
 
@@ -381,3 +382,64 @@ def test_every_reason_is_a_template_shipped_in_the_twelve_languages(tmp_path):
     assert st["reason_key"] in ts.REASONS.values()
     assert st["reason"] == st["reason_key"].format(**st["reason_params"])
     assert str(tmp_path) not in json.dumps(st), "a parameter is a file name, never a path"
+
+
+class _RobotsStub:
+    """Stands in for the ethical fetcher's robots decision: raises what the real one raises."""
+
+    def __init__(self, exc=None):
+        self.exc, self.asked = exc, []
+
+    @staticmethod
+    def _robots_target(url):
+        from urllib.parse import urlparse
+
+        p = urlparse(url)
+        return f"{p.scheme}://{p.netloc}", p.path
+
+    def _enforce_robots(self, url, host_key, parsed):
+        self.asked.append(url)
+        if self.exc is not None:
+            raise self.exc
+
+
+def test_robots_refuses_a_disallow_and_fails_closed_when_unreadable():
+    from src.ingest import RobotsDisallowed, RobotsUnavailable
+
+    hosts = tb.PUBLISHER_HOSTS["eurovoc"]
+    ok = _RobotsStub()
+    tb.check_robots("https://op.europa.eu/x.zip", hosts, ok)
+    assert ok.asked == ["https://op.europa.eu/x.zip"]
+    with pytest.raises(tb.BuildRefused, match="refused by robots.txt"):
+        tb.check_robots("https://op.europa.eu/x.zip", hosts, _RobotsStub(RobotsDisallowed("disallowed")))
+    with pytest.raises(tb.BuildRefused, match="fail closed"):
+        tb.check_robots("https://op.europa.eu/x.zip", hosts, _RobotsStub(RobotsUnavailable("unreachable")))
+
+
+def test_the_real_download_asks_robots_first_and_again_for_a_redirect_elsewhere(monkeypatch, tmp_path):
+    import src.safety.fetcher as F
+    from src.ingest import RobotsDisallowed
+
+    stub = _RobotsStub()
+    monkeypatch.setattr(tb, "_robots_fetcher", lambda hosts: stub)
+    monkeypatch.setattr(F, "guarded_session", lambda **kw: _Session(_Resp("https://publications.europa.eu/r/x", MINI.read_bytes())))
+    tb.fetch_source("https://op.europa.eu/x", tb.PUBLISHER_HOSTS["eurovoc"], tmp_path / "s", max_bytes=1 << 20)
+    assert stub.asked == ["https://op.europa.eu/x", "https://publications.europa.eu/r/x"]
+
+    stub.exc = RobotsDisallowed("no")
+    stub.asked.clear()
+    called = []
+    monkeypatch.setattr(F, "guarded_session", lambda **kw: called.append(1))
+    with pytest.raises(tb.BuildRefused, match="robots"):
+        tb.fetch_source("https://op.europa.eu/x", tb.PUBLISHER_HOSTS["eurovoc"], tmp_path / "s2", max_bytes=1 << 20)
+    assert not called and not (tmp_path / "s2").exists(), "a robots refusal asks for nothing more and writes nothing"
+
+
+def test_the_robots_fetcher_is_held_to_the_publishers_hosts(monkeypatch):
+    from src.ingest import BlockedTarget
+
+    f = tb._robots_fetcher(tb.PUBLISHER_HOSTS["eurovoc"])
+    with pytest.raises(BlockedTarget):
+        f.session.get("https://evil.example/robots.txt")
+    with pytest.raises(BlockedTarget):
+        f._guard_target("evil.example")
