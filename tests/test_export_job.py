@@ -292,9 +292,11 @@ def _no_passphrase_anywhere(mgrs, tmp_path, caplog, written):
     ours = [r for r in caplog.records if r.name == "src" or r.name.startswith("src.")]
     seen.extend(logging.Formatter("%(message)s").format(r) for r in ours)
     seen.extend(r.getMessage() for r in caplog.records)
-    library = [line for line in written.lines if line.startswith("sqlalchemy.pool")]
-    assert library and "Exception during reset" in library[0], written.lines
-    assert "the connection was closed from another thread" in library[0], "the library's record lost its own words"
+    # The planted record, by its own words: the real pool can write one of its own during the run as well (CI's core-only shard did,
+    # a SQLite connection reset from another thread), and that one meets the same filter and the same assertion below.
+    planted = [line for line in written.lines if "the connection was closed from another thread" in line]
+    assert planted, written.lines
+    assert planted[0].startswith("sqlalchemy.pool") and "Exception during reset" in planted[0], planted[0]
     seen.extend(written.lines)
     for i, text in enumerate(seen):
         assert _PASS not in text, f"the passphrase leaked into item {i}: {text[:300]}"
