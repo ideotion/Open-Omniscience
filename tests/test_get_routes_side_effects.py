@@ -77,9 +77,10 @@ from src.safety.file_lock import temp_name
 # disabled there: 464, reproduced by blocking numpy/pandas/scipy/sklearn/statsmodels (R283: a floor states both install profiles).
 # 2026-11-14 (R694, R278's proposals adopted): 6 egress/key-minting GETs and 21 heavy diagnostics GETs became POSTs, and the count
 # measured on that tree is the floor now: 461 full, 458 Core-only (the same 3 analysis routes apart). Then the custody export (F2)
-# became a POST too: 460 full, 457 Core-only.
-_OPERATIONS_FLOOR_FULL = 460
-_OPERATIONS_FLOOR_CORE_ONLY = 457
+# became a POST too: 460 full, 457 Core-only. Then the Windows lock report (row 142: two PowerShell reads, up to 40 s): 459 full,
+# 456 Core-only.
+_OPERATIONS_FLOOR_FULL = 459
+_OPERATIONS_FLOOR_CORE_ONLY = 456
 
 
 def _analysis_extra_installed() -> bool:

@@ -665,7 +665,7 @@ down is a RECORD of that date and carries its own disposition table.)*
   the signing key the first time; the custody reads, settings, an item's entries and verify, open only what exists and never
   make a key or the log), and the heavy diagnostics: `performance`, the benchmarks, `llm-bench`,
   `llm-throughput`, `rollup-benchmark`, `/all`, `/debug-bundle`, `recursive-loop` and every self-test, `/api/signals/fdr-selftest`
-  included (their buttons post and save the answer as a file). A `GET` there is answered 405 before any handler runs, and the `POST` sits
+  included, and `/windows-locks` (two PowerShell reads of up to 20 s each on Windows, row 142) (their buttons post and save the answer as a file). A `GET` there is answered 405 before any handler runs, and the `POST` sits
   behind layer 1 like every other state-changing route (`tests/test_get_cross_site_refusal.py::MOVED_TO_POST`).
   `/api/database/backup` has its own guard (`_refuse_cross_site` in
   `src/api/database.py`) with the same checks, judging Origin through the same `_foreign_origin`. The stated limit of both is a browser that sends none of the three

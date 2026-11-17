@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,security/diagnostics,Windows file-lock report is a POST (row 142),shipped,PR #2103; R694,src/api/diagnostics/system.py;tests/test_get_cross_site_refusal.py,"GET /api/diagnostics/windows-locks ran two PowerShell reads of up to 20 s each on Windows; it answers only POST now, the zip member unchanged, the GET walk floor 459/456."

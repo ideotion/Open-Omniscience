@@ -106,7 +106,7 @@ GET	/api/diagnostics/stall-forensics	internal		diagnostics	maintainer diagnostic
 GET	/api/diagnostics/storage-composition	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/vitals-history	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/wiki-lane-history	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/windows-locks	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
+POST	/api/diagnostics/windows-locks	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/write-gate	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/documents/pdf/imported-count	feature	3	Settings > Import (N)	PDF import shows no count of imported PDFs (newsletters do)
 GET	/api/entities/items/{qid}	internal		api	one cached Wikidata item for programmatic callers; no reader surface yet
