@@ -37,8 +37,8 @@ process started with.
 
 Since 2026-10-06 it also carries the reading the memory budget was resolved from
 (``memory_budget``: the tier, the RAM total, the logical CPUs, whether the in-memory rollup is on by
-default, and when). The budget is resolved once per process from the RAM total read at that
-instant, and a virtual machine whose memory is ballooned can resolve one tier at one boot and
+default, and when). The budget is resolved at start from the RAM total read at that
+instant (and since R731 again, upward only, when the machine grows), and a virtual machine whose memory is ballooned can resolve one tier at one boot and
 another at the next, so a death is read against the tier THAT session ran under.
 
 Since 2026-10-01 a machine that STAYS short is recorded too. The crash that began 091717's
@@ -493,6 +493,17 @@ def _memory_budget_reading() -> dict[str, Any]:
         return resolved_reading()
     except Exception as exc:  # noqa: BLE001 - an optional reading
         return {"error": type(exc).__name__}
+
+
+def note_memory_budget() -> None:
+    """R731: after the budget moved up, this session's record carries the tier it runs under from now on, with every
+    change, so a death after the change is not read against the start's tier. A session with no record yet keeps none."""
+    reading = _memory_budget_reading()
+    with _LOCK:
+        if not _MARKS:
+            return
+        _MARKS["memory_budget"] = reading
+        _write(dict(_MARKS))
 
 
 def _session_header() -> dict[str, Any]:
