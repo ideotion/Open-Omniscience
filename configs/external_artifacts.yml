@@ -1479,7 +1479,7 @@ artifacts:
     kind: ci-pin
     description: >
       GitHub Action SHAs (checkout, setup-python) + pinned mypy/bandit/pip-audit/ruff. mypy and ruff are exact == pins in pyproject [dev]
-      (ruff==0.17.3 since 2026-11-05, where it was a range; ruff==0.17.4 since 2026-11-11): the type-check and style counts are numbers about one release of the
+      (ruff==0.17.3 since 2026-11-05, where it was a range; ruff==0.17.4 since 2026-11-11; ruff==0.17.5 since 2026-11-17, same count): the type-check and style counts are numbers about one release of the
       tool, so a bump moves the pin and the ratchet's recorded figure in one commit.
     upstream: the respective repos
     check_upstream: "enable Dependabot for github-actions + pip; it opens PRs on new releases"
