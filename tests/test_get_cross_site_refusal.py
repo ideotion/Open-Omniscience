@@ -60,6 +60,8 @@ MOVED_TO_POST = [
     ("src.api.diagnostics.keywords", "/api/diagnostics/keyword-selftest"),
     ("src.api.diagnostics.ai", "/api/diagnostics/qualification-assist-selftest"),
     ("src.api.diagnostics.sources", "/api/diagnostics/source-audit-selftest"),
+    # two PowerShell reads of up to 20 s each on Windows (row 142)
+    ("src.api.diagnostics.system", "/api/diagnostics/windows-locks"),
     ("src.api.diagnostics.source_tags", "/api/diagnostics/source-tags-selftest"),
     ("src.api.signals", "/api/signals/fdr-selftest"),
 ]

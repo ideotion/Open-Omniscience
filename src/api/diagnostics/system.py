@@ -340,7 +340,7 @@ def storage_composition_report(
     return JSONResponse(body)
 
 
-@router.get("/windows-locks")
+@router.post("/windows-locks")
 def windows_locks_report(download: bool = Query(False)) -> JSONResponse:
     """Why Windows refused to replace the corpus during a restore — who holds the files.
 
@@ -355,7 +355,11 @@ def windows_locks_report(download: bool = Query(False)) -> JSONResponse:
     are swept within a stated budget; and Defender's real-time state and
     exclusion paths are read. Off Windows it reports honestly that none of it
     applies rather than a clean bill of health. Read-only, zero network, no score.
-    With ``download=1`` it returns as a dated attachment."""
+    With ``download=1`` it returns as a dated attachment.
+
+    A POST since row 142 (R694): on Windows it runs two PowerShell reads bounded at
+    ``_PS_TIMEOUT_S`` each, so up to about 40 s of work, which a page load or another
+    site's ``<img src>`` must not start. The diagnostics zip calls this function directly."""
     from src.monitoring.windows_locks import windows_lock_report
 
     payload = windows_lock_report()
