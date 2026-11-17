@@ -135,7 +135,7 @@ def _trim(path: Path) -> None:
     the process and the thread, so two writers never share one; one a killed process left behind is swept when its process no longer runs."""
     with file_lock(path):
         lines = path.read_text(encoding="utf-8").splitlines()[-_CAP:]
-        atomic_replace(path, "\n".join(lines) + "\n")
+        atomic_replace(path, "\n".join(lines) + "\n", newline="\n")  # LF on every OS: the kept lines are the bytes they were (row 109)
 
 
 _IN_APPEND = threading.local()
@@ -157,7 +157,7 @@ def _append(entry: dict) -> None:
         with _LOCK:
             path = _log_path()
             path.parent.mkdir(parents=True, exist_ok=True)
-            locked_append(path, line + "\n")
+            locked_append(path, line + "\n", newline="\n")  # one JSONL shape on every OS, so a trim keeps the bytes
             # Bounded by construction: trim once the file doubles the cap.
             if path.stat().st_size > 512 * 1024:
                 _trim(path)

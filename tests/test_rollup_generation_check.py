@@ -96,6 +96,15 @@ def world(tmp_path):
     w.close()
 
 
+#: Windows refuses to replace or unlink a file that an open handle holds (SQLite opens without FILE_SHARE_DELETE): the swap below would
+#: meet the batch's pooled connection with WinError 32, where the real swap waits its budget and refuses (tests/test_library_generation.py,
+#: row 98). The state these tests build, a pooled connection left on a replaced file, cannot exist there; the comparison itself is
+#: asserted on every platform by test_the_comparison_on_its_own_refuses_after_a_swap.
+posix_swap_over_a_pooled_handle = pytest.mark.skipif(
+    os.name == "nt", reason="Windows cannot replace a file a pooled connection holds: the real swap refuses instead (row 98)"
+)
+
+
 def _raised(hook, stage: str, rows: int = 0) -> BaseException | None:
     try:
         hook(stage, rows)
@@ -104,6 +113,7 @@ def _raised(hook, stage: str, rows: int = 0) -> BaseException | None:
     return None
 
 
+@posix_swap_over_a_pooled_handle
 def test_a_swap_between_two_batches_raises_nothing_in_the_session_and_is_refused_by_the_hook(world):
     hook = rollup_serve._make_on_batch(gen.current())
     assert world.batch() == "OLD"
@@ -119,6 +129,7 @@ def test_a_swap_between_two_batches_raises_nothing_in_the_session_and_is_refused
     assert rollup_serve._library_replaced(exc)
 
 
+@posix_swap_over_a_pooled_handle
 def test_a_swap_in_the_aggregate_stage_is_refused_when_the_aggregate_and_the_keywords_stage_begin(world):
     hook = rollup_serve._make_on_batch(gen.current())
     assert world.batch() == "OLD"
@@ -309,7 +320,7 @@ def _stub_the_build(monkeypatch, world, *, swap_in: str):
     return con
 
 
-@pytest.mark.parametrize("swap_in", ["between-batches", "aggregate", "final-checks"])
+@pytest.mark.parametrize("swap_in", [pytest.param("between-batches", marks=posix_swap_over_a_pooled_handle), "aggregate", "final-checks"])
 def test_the_build_is_stopped_and_nothing_is_swapped_in_when_the_swap_lands_at_each_boundary(monkeypatch, world, swap_in):
     con = _stub_the_build(monkeypatch, world, swap_in=swap_in)
     with pytest.raises(gen.StaleLibraryError):

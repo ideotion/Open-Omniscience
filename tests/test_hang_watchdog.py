@@ -26,6 +26,7 @@ _TEARDOWN_PROBE = "tests/test_hang_watchdog.py::test_the_probe_fails_and_then_ha
 def test_the_probe_returns_at_once_unless_asked_to_hang():
     if os.environ.get("OO_HANG_PROBE") == "1":
         time.sleep(120)
+    assert os.environ.get("OO_HANG_PROBE") != "fail", "the probe was asked to fail\non two lines"
 
 
 @pytest.fixture
@@ -74,7 +75,7 @@ def test_a_test_that_fails_and_then_hangs_in_teardown_is_still_caught(tmp_path):
 
 def test_the_report_variables_do_not_reach_a_child_pytest():
     """Read once and taken out of the environment, so a test that runs pytest in a child cannot empty this run's report files."""
-    mine = {"OO_TEST_HANG_LIMIT_S", "OO_TEST_HANG_REPORT", "OO_TEST_SLOW_S", "OO_TEST_SLOW_REPORT"}
+    mine = {"OO_TEST_HANG_LIMIT_S", "OO_TEST_HANG_REPORT", "OO_TEST_SLOW_S", "OO_TEST_SLOW_REPORT", "OO_TEST_FAIL_REPORT"}
     assert not mine & set(os.environ)
 
 
@@ -95,6 +96,7 @@ def test_the_portability_legs_arm_the_watchdog_and_print_its_report():
     printer = steps["Name a test that hung, and the slow tests"]
     assert printer.get("if") == "always()" and report in printer["run"] and "^Timeout (" in printer["run"]
     assert test_step["env"]["OO_TEST_SLOW_REPORT"] in printer["run"]
+    assert test_step["env"]["OO_TEST_FAIL_REPORT"] in printer["run"], "a leg the cap stops never prints pytest's own failure list (row 109)"
 
 
 def test_slow_tests_are_listed_as_they_end(tmp_path):
@@ -109,3 +111,20 @@ def test_slow_tests_are_listed_as_they_end(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     lines = report.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1 and lines[0].endswith(" s  " + _PROBE), lines
+
+
+def test_a_failure_is_written_down_as_it_happens(tmp_path):
+    """Row 109: a Windows leg the cap stopped showed some 170 F marks and no reason, because ``-rsfE`` prints only at the end."""
+    report = tmp_path / "fail.txt"
+    env = {**os.environ, "OO_TEST_FAIL_REPORT": str(report), "OO_HANG_PROBE": "fail"}
+    for key in ("PYTEST_XDIST_WORKER", "PYTEST_ADDOPTS", "OO_TEST_HANG_LIMIT_S", "OO_TEST_SLOW_S"):
+        env.pop(key, None)
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist", _PROBE],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    lines = report.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3 and lines[0] == f"FAILED (call) {_PROBE}", lines
+    assert lines[1].strip().startswith("at ") and "test_hang_watchdog.py:" in lines[1], lines
+    assert "the probe was asked to fail | on two lines" in lines[2], "the message is kept, on one line"

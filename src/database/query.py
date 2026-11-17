@@ -70,8 +70,7 @@ def grouped_counts(session, stmt, keep) -> tuple[dict[Any, Any], int]:
     Unlike :func:`keyset_scan`, this is ONE statement, open until the last group is
     read. That is the same read mark ``.all()`` held while it built its list. A GROUP BY
     over a date window that can be walked by days is read in short statements by
-    :func:`windowed_group_counts` instead; this stays for the groups that cannot (and for
-    ``emergence.py``, which was left as it was).
+    :func:`windowed_group_counts` instead; this stays for the groups that cannot.
     """
     kept: dict[Any, Any] = {}
     groups = 0

@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import signal
 import subprocess
 import sys
 import time
@@ -43,7 +42,7 @@ def _child(code: str, data: Path) -> subprocess.Popen:
 
 
 def _kill(proc: subprocess.Popen) -> None:
-    proc.send_signal(signal.SIGKILL)
+    proc.kill()  # SIGKILL on POSIX, TerminateProcess on Windows (which has no signal.SIGKILL): no exit handler runs either way
     proc.wait(timeout=30)
 
 
