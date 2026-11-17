@@ -124,3 +124,17 @@ def test_ordinary_paths_stay_readable_after_the_widening(address):
     from src.database.address_mask import masked_address
 
     assert masked_address(address) == address
+
+
+def test_a_long_segment_is_masked_in_linear_time():
+    """CodeQL's polynomial-regex alert on the first cut: the extension is split at the last dot, with no backtracking pattern."""
+    import time
+
+    from src.database.address_mask import masked_address, query_secrets
+
+    for tail in ("!", ".", ".x!", "." * 3):
+        address = "https://h/" + "a" * 200_000 + tail
+        began = time.monotonic()
+        masked_address(address)
+        query_secrets(address)
+        assert time.monotonic() - began < 2.0, tail

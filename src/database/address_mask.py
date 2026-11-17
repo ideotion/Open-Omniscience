@@ -129,7 +129,16 @@ _B64URL_TOKEN_RE = re.compile(r"[A-Za-z0-9_\-]{24,}={0,2}")
 #: "word" is at most 20 characters: a 30-character run with an underscore before it (``ghp_<30 chars>``) is a token, not a word.
 _WORDS_RE = re.compile(r"[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+")
 #: A short file extension kept after a masked token (``/feeds/<token>.xml`` -> ``/feeds/***.xml``): the extension tells the format.
-_EXTENSION_RE = re.compile(r"(.+?)(\.[A-Za-z0-9]{1,5})")
+_EXTENSION_TAIL_RE = re.compile(r"[A-Za-z0-9]{1,5}")
+
+
+def _split_extension(text: str) -> tuple[str, str] | None:
+    """``(the rest, ".ext")`` when ``text`` ends in a dot and one to five letters or digits after a non-empty rest, else ``None``.
+    Split at the last dot, with no backtracking regex over the rest (CodeQL's polynomial-regex alert on the first cut)."""
+    rest, dot, ext = text.rpartition(".")
+    if dot and rest and _EXTENSION_TAIL_RE.fullmatch(ext):
+        return rest, "." + ext
+    return None
 
 
 def _looks_like_a_credential(segment: str) -> bool:
@@ -176,9 +185,9 @@ def _masked_segment_value(text: str) -> str:
     decoded = _decoded(text)
     if not _holds_a_credential(decoded):
         return text
-    found = _EXTENSION_RE.fullmatch(decoded)
-    if found and _holds_a_credential(found.group(1)) and not _holds_a_credential(found.group(2)[1:]):
-        return QUERY_VALUE_MASK + found.group(2)
+    found = _split_extension(decoded)
+    if found and _holds_a_credential(found[0]) and not _holds_a_credential(found[1][1:]):
+        return QUERY_VALUE_MASK + found[1]
     return QUERY_VALUE_MASK
 
 
@@ -267,9 +276,9 @@ def _path_secrets(path: str) -> list[str]:
         if _masked_segment_value(own) != own:
             decoded = _decoded(own)
             out.append(own)
-            found = _EXTENSION_RE.fullmatch(decoded)
+            found = _split_extension(decoded)
             if found:
-                out.append(found.group(1))
+                out.append(found[0])
             # each piece that is itself a token, for a library that quotes only part of the segment
             out += [piece for piece in _PIECE_SPLIT_RE.split(decoded) if piece and _holds_a_credential(piece)]
         if semi:
