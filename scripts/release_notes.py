@@ -424,6 +424,12 @@ class TelemetryCheck:
 #: ``ERROR: file or directory not found: ...`` in capitals, on STDERR, and a
 #: case-sensitive pattern reads straight past the one line that says what went wrong.
 _SUMMARY_LINE = re.compile(r"^.*\b(passed|failed|error|errors|no tests ran)\b.*$", re.M | re.I)
+#: pytest's summary line when warnings are ALL it has to count: "1 warning in 0.00s". With no test run, pytest
+#: writes "no tests ran in 0.00s" -- unless a plugin raised a warning at import, and then this line replaces it
+#: (row 115: the lock's anyio 4.14.0 imports a name pytest 9.2 deprecates).
+_WARNINGS_ONLY_LINE = re.compile(r"^=*\s*\d+ warnings? in [\d.]+s\s*=*$", re.I)
+#: pytest's exit codes for "nothing ran": 4 a usage error (a missing node among them), 5 no tests collected.
+_NOTHING_RAN_EXIT = (4, 5)
 
 
 def run_telemetry_check(mode: str, node: str) -> TelemetryCheck:
@@ -465,6 +471,14 @@ def run_telemetry_check(mode: str, node: str) -> TelemetryCheck:
 
     summary = _last_match(proc.stdout or "")
     err = _last_match(proc.stderr or "")
+    if not summary and proc.returncode in _NOTHING_RAN_EXIT:
+        # A warning from any plugin turns pytest's "no tests ran in 0.00s" into "1 warning in 0.00s", which holds
+        # none of the vocabulary above, so the verdict was lost and only stderr's reason was reported (row 115,
+        # found by the weekly run on the lock's pins). With an exit code that means nothing ran, that line IS the
+        # no-tests verdict: said as such, with pytest's own words beside it.
+        last = _last_line(proc.stdout or "").strip("= ")
+        if _WARNINGS_ONLY_LINE.match(last):
+            summary = f"no tests ran ({last})"
     if not summary:
         # pytest never got as far as a verdict (a missing node, an import error), so
         # the reason is on stderr -- but it is frequently NOT in pytest's vocabulary,
