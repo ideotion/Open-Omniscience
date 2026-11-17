@@ -309,9 +309,10 @@ def per_source_metrics(
             # in 1,992 from 600 in 1,200, and the cohort-tail test cannot either when the
             # cohort's p90 is 0.0 -- see _MIN_PATHOLOGY_ARTICLES.
             "pathology_articles": d["pathology"],
-            # B6. Over ALL articles rather than the segmented ones: the ratio is
-            # links-per-word, which a segmenter does not change, and excluding unsegmented
-            # articles here would make a zh/ja source's link-farm invisible.
+            # B6. The denominator is ALL articles. The numerator (link_dense_article_ids)
+            # leaves out articles in an unsegmented language, stated or deduced (row 110),
+            # because their word count is not a count of words; so a zh/ja/th source's rate
+            # reads low here rather than being measured.
             "link_density_rate": round(d["link_dense"] / n, 4) if n else 0.0,
             # The raw count behind it, for the same reason pathology carries one: a rate
             # cannot tell 1 link-dense article in 1,992 from 600 in 1,200.

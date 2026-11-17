@@ -95,9 +95,9 @@ def test_the_patterns_find_what_they_are_meant_to_find():
 def test_the_swapped_sites_use_the_helper():
     core = (_STATIC / "app-core.js").read_text(encoding="utf-8")
     assert "function ooLtrIsolate(" in core and '"\\u2068" + v + "\\u2069"' in core
-    for name, n in (("app-agenda.js", 6), ("app-analysis.js", 5), ("app-core.js", 3), ("app-corpus.js", 1),
+    for name, n in (("app-agenda.js", 6), ("app-analysis.js", 5), ("app-core.js", 3), ("app-corpus.js", 2),
                     ("app-map.js", 5), ("app-ai-tools.js", 1), ("app-settings.js", 3), ("ooversions.js", 1),
-                    ("app-diagnostics.js", 3), ("app-library.js", 1), ("app-markets.js", 3), ("app-backup.js", 2)):  # markets +2: the ripple r and q
+                    ("app-diagnostics.js", 3), ("app-library.js", 1), ("app-markets.js", 3), ("app-backup.js", 2)):  # markets +2: the ripple r and q; corpus +1: the weather-signal window
         text = (_STATIC / name).read_text(encoding="utf-8")
         got = text.count("ooLtrIsolate(") - (1 if name == "app-core.js" else 0)
         assert got == n, (name, got, n)

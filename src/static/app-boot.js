@@ -80,6 +80,9 @@
       // S05-01: the advanced search's caveats, chips and mode hovers are drawn by JS from
       // t() and the cached facets -- the same frozen-locale class. Never fetches.
       try { if (typeof _advRepaintCaveats === "function") _advRepaintCaveats(); } catch (_e) {}
+      // Row 122: the Trends weather-signals switch and rows live in data-i18n-dyn hosts. Redraws
+      // from the last reading; never fetches.
+      try { if (typeof repaintWeatherSignals === "function") repaintWeatherSignals(); } catch (_e) {}
       // S04-14 (Q1124): the Patterns-lens gate panel is built at render time from
       // t() calls plus measured numbers, so the walker cannot repaint its composed
       // lines -- the same frozen-locale class. Measured in the Chromium walk: the

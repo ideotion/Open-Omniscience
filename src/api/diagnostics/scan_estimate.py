@@ -4,8 +4,8 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Read-only and cheap: one stored key and one indexed MAX, no scan. The figure is this machine's own earlier scan times scaled by today's
-mention rows, with the field medians for a scan never timed here (see ``diagnostics_plan.thorough_estimate``). It ORDERS nothing and
-decides nothing: ``est_s`` in the plan stays an ordering of the scans.
+mention rows, with the field medians for a scan never timed here (see ``diagnostics_plan.thorough_estimate``). The same per-scan
+figures (:func:`scan_table`) are what a build orders its scans by; they decide nothing else.
 
 A NEW slice imported LAST, so the split guard's pinned route positions stay where they were.
 """
@@ -43,6 +43,18 @@ def all_diagnostics_estimate() -> Response:
             "mention_rows": rows,
         }
     )
+
+
+def scan_table() -> tuple[dict[str, float], dict[str, str]]:
+    """The per-scan costs a build orders its scans by: this machine's own where it has them (``diagnostics_plan.machine_table``),
+    the field medians otherwise, and the field medians alone when the stored times cannot be read. Never raises."""
+    try:
+        from src.config.kv_store import kv_get_json
+
+        history = kv_get_json(_plan.SCAN_WALLS_KEY)
+        return _plan.machine_table(history, _mention_rows() if history else None)
+    except Exception:  # noqa: BLE001 - no usable history is the field medians, said as such per scan; a build never fails on its order
+        return _plan.machine_table(None, None)
 
 
 def _mention_rows() -> int | None:
