@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,release/0.6 gate,"0.6 gate text brought up to Q823, Q925 and RC12; row D progress note; R418 window closed",SHIPPED,PR #2117,docs/product/RELEASE_0.6_GATE.md,"Docs only. The gate still said Q823 and Q925 were pending (both answered a on 2026-09-29) and left G6 polls open (RC12 = c, 0.8). Row D got its progress note: both halves built, two operator runs owed. R418's window is closed (c9b1e6372 and f34c8b34d both on main after v0.5.0). No row changed status."
