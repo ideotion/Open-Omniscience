@@ -217,7 +217,7 @@ def test_a_short_key_that_encrypt_in_place_refused_is_answered_in_the_fixed_word
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-plaintext")
     monkeypatch.setattr("src.database.session.dispose_engine", lambda: None)
 
-    def refused(_passphrase):
+    def refused(_passphrase, **_kw):
         raise encrypt_tool.EncryptToolError("could not encrypt oo: the key is oo")
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", refused)

@@ -3896,14 +3896,56 @@
       const box = $("atrest-state"), d = _atRestDoc;
       if (!box || !d) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
-                        : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
+      const tfw = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      // Row 149: a store under another passphrase reads as that, and an unreadable one says why; neither reads as "not created yet".
+      const why = { permission: "permission refused",
+                    short_header: "the file is too short to be a database", io: "a read error" };
+      const word = (s) => !s ? t("not created yet")
+        : s.state === "encrypted" ? (s.key_checked === false ? t("Encrypted (SQLCipher 4), not yet checked against this passphrase") : t("Encrypted (SQLCipher 4)"))
+        : s.state === "plaintext" ? t("NOT encrypted")
+        : s.state === "not_this_key" ? t("Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)")
+        : s.state === "unreadable" ? tfw("Cannot be read: {why}", { why: t(why[s.reason] || why.io) })
+        : s.state === "busy" ? t("In use right now, try again in a moment")
+        : t("not created yet");
+      // A store named as its own line names it (row 153), never by its raw id.
+      const storeLabel = (id) => id === "corpus" ? t("Corpus") : id === "custody" ? t("Custody log")
+        : String(id).startsWith("lane:") ? tfw("Source store ({kind})", { kind: String(id).slice(5) }) : String(id);
+      const names = (ids) => ids.map(storeLabel).join(", ");
+      const ar = d.at_rest || { complete: false, pending: [], not_this_key: [], plaintext_snapshots: [] };
+      const pending = Array.isArray(ar.pending) ? ar.pending : [];
+      const foreign = Array.isArray(ar.not_this_key) ? ar.not_this_key : [];
+      // A busy store whose header could not be read is in "busy" but not in "unchecked": both are "not checked yet".
+      const unchecked = [...new Set([].concat(Array.isArray(ar.unchecked) ? ar.unchecked : [], Array.isArray(ar.busy) ? ar.busy : []))];
+      const snaps = Array.isArray(ar.plaintext_snapshots) ? ar.plaintext_snapshots : [];
+      // R742: the whole set first, and never "every store is encrypted" while one is not; a plaintext pre-encrypt copy still on
+      // the disk is said beside it, so "encrypted" is never read as "no plaintext anywhere".
+      let overall = "";
+      if (d.corpus.state === "encrypted" && pending.length) {
+        overall = `<div class="caveat"><b>${esc(tfw("Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.", { n: fmtNum(pending.length, 0) }))}</b></div>`;
+      } else if (ar.complete) {
+        overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
+      }
+      if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
+        // Row 153: while a store is in use, being encrypted or unreadable the summary says so (beside a pending line too).
+        overall += `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, being encrypted, or a read error). Until then, do not count them as encrypted. Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
+      }
+      if (foreign.length) {
+        overall += `<div class="caveat">${esc(tfw("These stores do not open with this passphrase (another passphrase, or a damaged file) and are left as they are: {names}.", { names: names(foreign) }))}</div>`;
+      }
+      if (snaps.length) {
+        overall += `<div class="caveat">${esc(tfw("Plaintext pre-encrypt copies still on the disk: {names}. Delete them once you have unlocked and are satisfied.", { names: snaps.join(", ") }))}</div>`;
+      }
+      const lanes = d.lanes && typeof d.lanes === "object" ? Object.keys(d.lanes).sort() : [];
       // Each line on the locale's label frame (R2), not an English colon.
-      box.innerHTML =
+      box.innerHTML = overall +
         `<div>${ooLabelHtml(esc(t("Corpus")), `<b>${esc(word(d.corpus))}</b>`)}` +
         (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
-        `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>`;
-      $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
+        `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>` +
+        lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: k })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
+      // The panel stays for a plaintext library, and (R742) for an encrypted one whose other stores are not finished.
+      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)) ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3922,9 +3964,13 @@
         const r = await api("/api/system/encrypt-db", { method: "POST", body: JSON.stringify({
           passphrase: field("atrest-pw1").value, confirm: field("atrest-pw2").value, consent: true })});
         msg.textContent = "";
-        toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
+        // "Encrypted" only when every store is (R742); the panel below says which are not.
+        if (r && r.encrypted) toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
         loadAtRestState();
-      } catch (e) { msg.textContent = t(e.message); }  // a keyed refusal (the library still in use, R741) is translated
+      } catch (e) {
+        msg.textContent = t(e.message);  // a keyed refusal (the library still in use R741, a partial run R742) is translated
+        loadAtRestState();  // a partial run changed the state: the library is encrypted and open with its key
+      }
       finally { btn.disabled = false; }
     }
 

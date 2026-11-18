@@ -71,6 +71,7 @@ from src.catalog.provenance import (
     provenance_of,
 )
 from src.config.kv_store import KvWriteRefused
+from src.database.file_identity import REPLACED_WORDS, StoreReplacedError
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -275,6 +276,21 @@ def _run_startup_upkeep() -> None:
     from src.api.startup_status import mark_phase
 
     _arm_database_check()
+    # R742: stores left plaintext beside an encrypted library (an encryption whose later steps failed, before or after this fix)
+    # are finished here, under the key just proven, in the background like the rest of the upkeep. A store that fails stays pending,
+    # is logged by class, and the app stays usable; Settings and the doctor say which.
+    _key = None
+    try:
+        from src.database.connect import get_passphrase
+
+        _key = get_passphrase()
+        if _key:
+            from src.database import at_rest_state
+
+            mark_phase("finishing the encryption of the other stores")
+            at_rest_state.finish_pending(_key)
+    except Exception as exc:  # noqa: BLE001 - upkeep must never block startup
+        log_failure(logger, "finishing the at-rest encryption of the other stores failed", exc, _key, level=logging.WARNING)
     mark_phase("refreshing search statistics")
     # Query-planner statistics (performance batch 2026-06-12): bounded ANALYZE
     # on first boot at a schema, PRAGMA optimize after — best-effort, never
@@ -1454,6 +1470,13 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "Too many requests. Please try again later."},
         headers=headers,
     )
+
+
+@app.exception_handler(StoreReplacedError)
+async def store_replaced_handler(request: Request, refused: StoreReplacedError):
+    """Row 148: a save through a custody or lane connection whose file was replaced (encrypted) since it was opened, refused with
+    nothing written. A 409 with the fixed words (keyed in every locale), never a 500: the operator does it again."""
+    return JSONResponse(status_code=409, content={"detail": REPLACED_WORDS})
 
 
 @app.exception_handler(KvWriteRefused)
