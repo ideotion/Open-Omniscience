@@ -37,6 +37,7 @@ from tests.os_scope import scope_os
 
 _REAL_ENCRYPT = encrypt_tool.encrypt_database
 _REAL_RECORD = at_rest_state.record_encrypted
+_REAL_HEADER = is_encrypted_file
 _KEY = "a-long-enough-passphrase-for-r742-7Kq"
 _OTHER = "another-long-enough-passphrase-0Zx"
 
@@ -84,10 +85,10 @@ def stores(tmp_path, monkeypatch):
 
 def _fail_for(monkeypatch, *names: str, exc: BaseException | None = None):
     """``encrypt_database`` raises for the stores whose file name is listed; the others run for real."""
-    def run(path, key, *, library=False):
+    def run(path, key, *, library=False, **_kw):
         if Path(path).name in names:
             raise exc or OSError(28, "No space left on device")
-        return _REAL_ENCRYPT(path, key, library=library)
+        return _REAL_ENCRYPT(path, key, library=library, **_kw)
 
     monkeypatch.setattr(encrypt_tool, "encrypt_database", run)
 
@@ -414,10 +415,10 @@ def test_a_crash_leftover_is_removed_at_the_next_unlock_only_beside_an_encrypted
     leftover = stores.parent / "custody_log.db.replaced-20261118T000000Z"
     _sqlite(leftover, "old plaintext")
     # beside a PLAINTEXT custody log the leftover may be the readable copy: it stays
-    assert at_rest_state.remove_leftover_replaced(stores) == 0 and leftover.exists()
+    assert at_rest_state.remove_leftover_replaced(stores, key=_KEY) == 0 and leftover.exists()
     assert leftover.name in at_rest_state.status(stores)["plaintext_snapshots"]
     encrypt_tool.encrypt_all(_KEY)
-    assert at_rest_state.remove_leftover_replaced(stores) == 1 and not leftover.exists()
+    assert at_rest_state.remove_leftover_replaced(stores, key=_KEY) == 1 and not leftover.exists()
     assert leftover.name not in at_rest_state.status(stores)["plaintext_snapshots"]
 
 
@@ -429,7 +430,7 @@ def test_a_second_name_of_the_store_itself_is_never_overwritten(stores):
     except OSError:
         pytest.skip("this file system cannot make a hard link")
     before = stores.read_bytes()
-    assert at_rest_state.remove_leftover_replaced(stores) == 0
+    assert at_rest_state.remove_leftover_replaced(stores, key=_KEY) == 0
     assert stores.read_bytes() == before and twin.exists()
 
 
@@ -454,3 +455,113 @@ def test_every_new_sentence_is_keyed_in_every_locale_and_the_page_uses_the_statu
         d = json.loads(loc.read_text(encoding="utf-8"))
         for k in keys:
             assert d.get(k), f"{loc.name} lacks {k[:40]!r}"
+
+
+# --- the review's findings (two security reads and an Opus read) -------------------------------------------------------
+
+
+def test_a_library_read_back_that_fails_after_the_swap_still_hands_the_key_over(stores, monkeypatch):
+    """The key is handed over the moment the library is ciphertext, before its read-back: a read-back that fails (an I/O error)
+    must not leave the app keyless against the file it has just encrypted."""
+    held: list[bool | None] = []
+
+    def unreadable(_p, _key):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(encrypt_tool, "_table_counts_safe", unreadable)
+    with pytest.raises(sqlite3.OperationalError):
+        encrypt_tool.encrypt_all(_KEY, on_library_encrypted=lambda: held.append(is_encrypted_file(stores)))
+    assert held == [True]
+
+
+def test_an_already_encrypted_library_hands_the_key_over_once_on_the_retry(stores, monkeypatch):
+    encrypt_tool.encrypt_database(stores, _KEY, library=True)
+    held: list[int] = []
+    encrypt_tool.encrypt_all(_KEY, on_library_encrypted=lambda: held.append(1))
+    assert held == [1]
+
+
+def test_an_automatic_retry_that_fails_before_touching_a_store_leaves_no_new_plaintext_copy(stores, monkeypatch):
+    _fail_for(monkeypatch, "custody_log.db")
+    with pytest.raises(encrypt_tool.EncryptPartial):
+        encrypt_tool.encrypt_all(_KEY)
+    kept = sorted(stores.parent.glob("pre-encrypt-*-custody_log.db"))
+    assert kept == [], "the injected failure came before any snapshot of the custody log"
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", _REAL_ENCRYPT)
+
+    def full(_p, _enc, _key):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(encrypt_tool, "reencrypt_plain_to", full)
+    for _boot in range(3):
+        assert at_rest_state.finish_pending(_KEY, stores)["still_pending"] == ["custody"]
+    assert sorted(stores.parent.glob("pre-encrypt-*-custody_log.db")) == [], "one more plaintext copy at every start"
+
+
+def test_the_operators_own_run_keeps_its_snapshot_when_a_store_fails(stores, monkeypatch):
+    def full(_p, _enc, _key):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(encrypt_tool, "reencrypt_plain_to", full)
+    with pytest.raises(OSError):
+        encrypt_tool.encrypt_database(stores.parent / "custody_log.db", _KEY)
+    assert list(stores.parent.glob("pre-encrypt-*-custody_log.db")), "the documented escape hatch of the operator's own run"
+
+
+def test_a_store_that_is_there_but_cannot_be_read_is_never_counted_absent(stores, monkeypatch):
+    encrypt_tool.encrypt_all(_KEY)
+    lane = stores.parent / "wiki.db"
+    monkeypatch.setattr("src.database.connect.is_encrypted_file",
+                        lambda p: None if Path(p) == lane else _REAL_HEADER(p))
+    st = at_rest_state.status(stores)
+    row = next(r for r in st["stores"] if r["store"] == "lane:wiki")
+    assert row["state"] == "unreadable" and st["complete"] is False and "lane:wiki" in st["pending"]
+
+
+def test_the_finish_takes_the_machine_and_leaves_everything_pending_while_work_is_in_flight(stores, monkeypatch):
+    _fail_for(monkeypatch, "custody_log.db")
+    with pytest.raises(encrypt_tool.EncryptPartial):
+        encrypt_tool.encrypt_all(_KEY)
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", _REAL_ENCRYPT)
+    from src.scheduler import runner
+
+    seen: list[bool] = []
+    monkeypatch.setattr("src.database.corpus_lease.wait_for_quiescence",
+                        lambda timeout=0, **kw: seen.append(runner.owns_the_machine()) or ["a re-index batch"])
+    out = at_rest_state.finish_pending(_KEY, stores)
+    assert seen == [True], "the wait runs inside the exclusive window, as the encrypt route's does"
+    assert out == {"finished": [], "still_pending": ["custody"]}
+    assert is_encrypted_file(stores.parent / "custody_log.db") is False, "nothing is touched while work is in flight"
+
+
+def test_the_custody_log_is_swapped_holding_its_own_append_lock(stores, monkeypatch):
+    from src.custody.log import _APPEND_LOCK
+
+    owned: dict[str, bool] = {}
+
+    def run(path, key, *, library=False, **kw):
+        owned[Path(path).name] = _APPEND_LOCK._is_owned()
+        return _REAL_ENCRYPT(path, key, library=library, **kw)
+
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", run)
+    encrypt_tool.encrypt_all(_KEY)
+    assert owned["custody_log.db"] is True and owned["corpus.db"] is False
+
+
+def test_a_leftover_beside_a_store_this_key_does_not_open_stays(stores):
+    custody = stores.parent / "custody_log.db"
+    encrypt_tool.encrypt_database(custody, _OTHER)
+    leftover = stores.parent / "custody_log.db.replaced-20261118T000000Z"
+    _sqlite(leftover, "maybe the only readable copy")
+    assert at_rest_state.remove_leftover_replaced(stores, key=_KEY) == 0 and leftover.exists()
+
+
+def test_the_doctor_reads_the_lanes_the_status_reads(stores, monkeypatch, tmp_path_factory):
+    """When ``data_dir()`` and the corpus folder differ, the per-lane lines and ``complete`` come from the same files."""
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    monkeypatch.setattr("src.paths.data_dir", lambda: elsewhere)
+    _sqlite(elsewhere / "custody_log.db")
+    encrypt_tool.encrypt_all(_KEY)
+    d = unlock_mod.doctor()
+    assert d["at_rest"]["complete"] is True
+    assert {v["state"] if isinstance(v, dict) else v for v in d["lanes"].values()} <= {"encrypted", "absent"}, d["lanes"]

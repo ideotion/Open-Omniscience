@@ -41,6 +41,8 @@ _LOG = logging.getLogger("database.at_rest_state")
 #: The record's file name, beside the corpus. Store names and times only.
 RECORD_NAME = "at_rest_encryption.json"
 RECORD_VERSION = 1
+#: How long the finish waits for work already in flight (a drain, a re-index batch) before leaving every store pending.
+FINISH_QUIESCE_S = 60.0
 
 #: The plaintext copy ``encrypt_database`` keeps beside each store ON PURPOSE (the operator's escape hatch, deleted by them once
 #: they have unlocked). Named here so the status can say it is still on the disk.
@@ -129,11 +131,12 @@ def _plaintext_snapshots(rows: list[tuple[str, Path]]) -> list[str]:
     return sorted(seen)
 
 
-def remove_leftover_replaced(main: Path | None = None) -> int:
+def remove_leftover_replaced(main: Path | None = None, *, key: str) -> int:
     """Overwrite and remove each ``<store>.replaced-<time>`` left by a crash between a store's swap and the overwrite of the file it
-    replaced, ONLY when that store now reads as encrypted (otherwise the leftover may be the only readable copy, and it stays). Never
-    raises; returns how many were removed."""
+    replaced, ONLY when that store now reads as encrypted AND opens with ``key`` (otherwise the leftover may be the only readable
+    copy, and it stays). Never raises; returns how many were removed."""
     from src.database.connect import is_encrypted_file
+    from src.database.encrypt_tool import _table_counts_safe
     from src.safety.crypto_erase import _shred
 
     rows = stores(main)
@@ -148,12 +151,26 @@ def remove_leftover_replaced(main: Path | None = None) -> int:
             if os.path.samefile(store, folder / n):  # never overwrite the store itself through a second name
                 continue
         try:
+            _table_counts_safe(store, key)
+        except Exception:  # noqa: BLE001 - a store that does not open with the key keeps every other copy beside it
+            continue
+        try:
             _seen, _overwritten, unlinked = _shred(folder / n)
         except Exception as exc:  # noqa: BLE001 - a leftover that cannot be removed stays named in the status
             log_failure(_LOG, "a replaced plaintext store could not be removed", exc, level=logging.WARNING)
             continue
         removed += int(bool(unlinked))
     return removed
+
+
+def _present(path: Path) -> bool:
+    """A non-empty file is there (or cannot be ruled out): only a clean "no such file" or a zero size reads as absent."""
+    try:
+        return os.stat(path).st_size > 0
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
 
 
 def status(main: Path | None = None) -> dict[str, Any]:
@@ -168,10 +185,15 @@ def status(main: Path | None = None) -> dict[str, Any]:
     out_rows = []
     for name, path in rows:
         header = is_encrypted_file(path)
-        state = "absent" if header is None else ("encrypted" if header else "plaintext")
+        if header is None:
+            # None is "missing or empty" AND "could not be read" (a Windows sharing refusal, a permission): a file that is there and
+            # unreadable is never counted as absent, so "complete" can never be said over it.
+            state = "unreadable" if _present(path) else "absent"
+        else:
+            state = "encrypted" if header else "plaintext"
         out_rows.append({"store": name, "state": state, "recorded_at": (record["stores"].get(name) or {}).get("encrypted_at")})
     corpus_encrypted = bool(out_rows) and out_rows[0]["state"] == "encrypted"
-    pending = [r["store"] for r in out_rows if r["state"] == "plaintext"] if corpus_encrypted else []
+    pending = [r["store"] for r in out_rows if r["state"] in ("plaintext", "unreadable")] if corpus_encrypted else []
     return {
         "corpus_encrypted": corpus_encrypted,
         "complete": corpus_encrypted and not pending,
@@ -182,30 +204,42 @@ def status(main: Path | None = None) -> dict[str, Any]:
 
 
 def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[..., dict] | None = None) -> dict[str, Any]:
-    """Encrypt every store still pending under ``key`` (the key the app holds). Held under the write gate, the lane pools closed
-    first, as ``encrypt_all`` does. Each store is its own step: one that fails is logged by class and stays pending, and the others
+    """Encrypt every store still pending under ``key`` (the key the app holds). Held as the encrypt route holds the machine: the
+    exclusive window (collection stands aside), the work in flight waited for, then the write gate, the lane pools closed first, and
+    the custody log's own append lock around its swap (``encrypt_store``). When the work in flight does not end, nothing is touched
+    and every store stays pending for the next unlock or the encrypt button. Each store is its own step: one that fails is logged by class and stays pending, and the others
     go on. Returns ``{"finished": [...], "still_pending": [...]}``. Does nothing when the corpus is not encrypted (there is nothing
     to finish: a plaintext corpus is encrypted by the operator's own request, never here)."""
     from src.database import encrypt_tool
+    from src.database.corpus_lease import wait_for_quiescence
     from src.database.writer import write_lock
+    from src.scheduler.runner import exclusive_window
 
     st = status(main)
     if st["corpus_encrypted"]:
-        remove_leftover_replaced(main)
+        remove_leftover_replaced(main, key=key)
     if not st["corpus_encrypted"] or not st["pending"]:
         return {"finished": [], "still_pending": []}
     run = encrypt or encrypt_tool.encrypt_store
     paths = dict(stores(main))
     finished: list[str] = []
     failed: list[str] = []
-    with write_lock():
-        encrypt_tool.dispose_lane_engines()
-        for name in st["pending"]:
-            try:
-                run(name, paths[name], key, main=main)
-            except Exception as exc:  # noqa: BLE001 - one store's failure never blocks the others or the app
-                log_failure(_LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING)
-                failed.append(name)
-            else:
-                finished.append(name)
+    with exclusive_window(resume_retries=0):
+        held = wait_for_quiescence(FINISH_QUIESCE_S)
+        if held:
+            _LOG.warning("the other stores were not encrypted yet: work still in flight (%s); they stay pending", ", ".join(held))
+            return {"finished": [], "still_pending": list(st["pending"])}
+        with write_lock():
+            encrypt_tool.dispose_lane_engines()
+            for name in st["pending"]:
+                try:
+                    # an automatic retry that fails before touching the store drops the snapshot it made (no copy per start)
+                    run(name, paths[name], key, main=main, keep_snapshot_on_failure=False)
+                except Exception as exc:  # noqa: BLE001 - one store's failure never blocks the others or the app
+                    log_failure(
+                        _LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING
+                    )
+                    failed.append(name)
+                else:
+                    finished.append(name)
     return {"finished": finished, "still_pending": failed}

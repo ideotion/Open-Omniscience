@@ -1876,7 +1876,9 @@ Official **figures** are not here at all — they are data, so they live under
     one *in place* (explicit consent, full verification before the swap, and a
     deliberate plaintext snapshot kept as your escape hatch — delete it once
     you've unlocked successfully). Encrypting does not securely erase the
-    disk: the earlier plaintext file is overwritten once and then deleted, but
+    disk: the earlier plaintext file is overwritten once and then deleted where
+    the file system allows it (one that cannot make a second link, such as FAT,
+    leaves it deleted only), but
     SSDs and copy-on-write file systems may keep its old blocks, and the app's
     temporary files (including the analytics offload folders) are deleted, not
     overwritten, so their contents may stay recoverable from the disk until it

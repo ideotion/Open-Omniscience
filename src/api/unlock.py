@@ -213,9 +213,15 @@ def doctor() -> dict:
     # is the honest state for a lane the operator has never opened.
     from src.versioned.lanes import all_lanes
 
-    lanes = {spec.kind: _store(data_dir() / spec.filename) for spec in all_lanes()}
     from src.database import at_rest_state
 
+    # R742: the per-lane lines read the SAME files the at-rest status (and ``encrypt_all``) reads, so the panel can never show
+    # "every store is encrypted" above a lane line that says otherwise. Without a SQLite corpus there is no list: the registry's
+    # names under the data folder, as before.
+    rows = dict(at_rest_state.stores())
+    lanes = {
+        spec.kind: _store(rows.get(f"lane:{spec.kind}", data_dir() / spec.filename)) for spec in all_lanes()
+    }
     at_rest = at_rest_state.status()
     return {
         "driver": have_driver(),

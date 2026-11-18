@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,7 +48,14 @@ def _table_counts(conn) -> dict[str, int]:
     return {n: conn.execute(f'SELECT COUNT(*) FROM "{n}"').fetchone()[0] for n in names}  # noqa: S608  # nosec B608 # identifier from the fixed store list, never input
 
 
-def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> dict:
+def encrypt_database(
+    path: Path | str,
+    key: str,
+    *,
+    library: bool = False,
+    on_swapped: Callable[[], object] | None = None,
+    keep_snapshot_on_failure: bool = True,
+) -> dict:
     """Encrypt one SQLite file in place: snapshot -> export -> verify -> swap.
 
     The live file is replaced only AFTER the encrypted copy passes
@@ -74,7 +81,45 @@ def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> di
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = p.with_name(f"pre-encrypt-{ts}-{p.name}")
     snapshot_to_plaintext(p, snapshot)
+    removed: list[str] = []  # the side files already gone when a step was refused: what the message may still claim
+    swapped = False
+    try:
+        swapped, retired = _export_and_swap(p, key, ts, library, removed)
+    except BaseException:
+        # R742: an AUTOMATIC retry (the next unlock) that fails before anything was touched drops the snapshot it just made, so a
+        # store that keeps failing (a held file, a full disk) does not leave one more full plaintext copy at every start. The
+        # operator's own run keeps it, as it always did: the snapshot is that run's documented escape hatch.
+        if not keep_snapshot_on_failure and not swapped and not removed:
+            try:
+                snapshot.unlink(missing_ok=True)
+            except OSError:
+                _LOG.warning("encrypt: a snapshot made for a retry that failed could not be removed")
+        raise
+    # R742: the key is handed over the moment the file is ciphertext, BEFORE the read-back: a read-back that fails must not leave the
+    # app keyless against a file it has just encrypted.
+    if on_swapped is not None:
+        on_swapped()
+    try:
+        tables = len(_table_counts_safe(p, key))  # read back with the key BEFORE the replaced file is overwritten
+    finally:
+        # Even when the read-back fails: the second name is a plaintext copy nobody asked for, and the deliberate escape hatch is
+        # the snapshot. A crash between the swap and here leaves it named ``*.replaced-<time>``; the next unlock removes it.
+        overwritten = _shred_retired(retired)
+    _LOG.info("encrypted %s (snapshot kept: %s)", p.name, snapshot.name)
+    return {
+        "path": str(p),
+        "encrypted": True,
+        "tables": tables,
+        "replaced_file_overwritten": overwritten,
+        "plaintext_snapshot": str(snapshot),
+        "snapshot_note": "kept ON PURPOSE as your escape hatch -- delete it once "
+        "you have unlocked successfully and are satisfied",
+    }
 
+
+def _export_and_swap(p: Path, key: str, ts: str, library: bool, removed: list[str]) -> tuple[bool, Path | None]:
+    """Export, verify and swap (the body of :func:`encrypt_database`). ``removed`` collects the side files removed inside the window.
+    Returns ``(True, the replaced file's second name or None)`` once the swap is made; raises otherwise."""
     enc_tmp = p.with_name(p.name + f".enc-{ts}")
     try:
         reencrypt_plain_to(p, enc_tmp, key)
@@ -96,7 +141,6 @@ def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> di
                 f"{got == want}); the original file is untouched"
             )
 
-        removed: list[str] = []  # the side files already gone when a step was refused: what the message may still claim
         retired = _retired_name(p, ts)
         try:
             with _library_window(enc_tmp) if library else nullcontext():
@@ -127,22 +171,7 @@ def encrypt_database(path: Path | str, key: str, *, library: bool = False) -> di
             raise EncryptToolError(_held_words(removed)) from None
     finally:
         enc_tmp.unlink(missing_ok=True)
-    try:
-        tables = len(_table_counts_safe(p, key))  # read back with the key BEFORE the replaced file is overwritten
-    finally:
-        # Even when the read-back fails: the second name is a plaintext copy nobody asked for, and the deliberate escape hatch is
-        # the snapshot. A crash between the swap and here leaves it named ``*.replaced-<time>``; the next unlock removes it.
-        overwritten = _shred_retired(retired)
-    _LOG.info("encrypted %s (snapshot kept: %s)", p.name, snapshot.name)
-    return {
-        "path": str(p),
-        "encrypted": True,
-        "tables": tables,
-        "replaced_file_overwritten": overwritten,
-        "plaintext_snapshot": str(snapshot),
-        "snapshot_note": "kept ON PURPOSE as your escape hatch -- delete it once "
-        "you have unlocked successfully and are satisfied",
-    }
+    return True, retired
 
 
 #: The two refusals of a swap Windows would not allow because the library file was still open (R741, row 145). FIXED words (keyed in every
@@ -244,12 +273,31 @@ def dispose_lane_engines() -> None:
 NOT_THIS_KEY = "a store is already encrypted, but not with this passphrase, so it was left as it is"
 
 
-def encrypt_store(name: str, path: Path, key: str, *, main: Path | None = None, library: bool = False) -> dict:
+def encrypt_store(
+    name: str,
+    path: Path,
+    key: str,
+    *,
+    main: Path | None = None,
+    library: bool = False,
+    on_swapped: Callable[[], object] | None = None,
+    keep_snapshot_on_failure: bool = True,
+) -> dict:
     """One store's step: encrypt it (idempotent: an already-encrypted store is skipped), read it back with the key, and only then
-    add it to the at-rest record (R742). An absent store is skipped and not recorded."""
+    add it to the at-rest record (R742). An absent store is skipped and not recorded. The custody log is swapped holding its own
+    append lock: its appends are serialised there, not on the write gate, so an entry can never land in the file being replaced."""
     from src.database import at_rest_state
 
-    report = encrypt_database(path, key, library=library)
+    if name == "custody":
+        from src.custody.log import _APPEND_LOCK
+
+        guard: AbstractContextManager[object] = _APPEND_LOCK
+    else:
+        guard = nullcontext()
+    with guard:
+        report = encrypt_database(
+            path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure
+        )
     if report.get("skipped") == "file does not exist":
         return report
     if report.get("skipped") == "already encrypted":
@@ -334,11 +382,19 @@ def encrypt_all(key: str, *, on_library_encrypted: Callable[[], object] | None =
     with write_lock():
         # The corpus FIRST, alone: a failure here leaves every store as it was (nothing is encrypted yet), so it is raised as before.
         name, path = rows[0]
-        reports[name] = encrypt_store(name, path, key, main=main, library=True)
-        # R742: the key is held the moment the library is ciphertext, before any other store is touched, so whatever happens next
-        # the app goes on with the library it can open, never keyless against an encrypted file.
-        if on_library_encrypted is not None:
-            on_library_encrypted()
+        # R742: the key is held the moment the library is ciphertext (``on_swapped``, before its read-back), so whatever happens next
+        # the app goes on with the library it can open, never keyless against an encrypted file. A library already encrypted (the
+        # retry) hands it over once it has read back with the key.
+        handed: list[int] = []
+
+        def _hand() -> None:
+            handed.append(1)
+            if on_library_encrypted is not None:
+                on_library_encrypted()
+
+        reports[name] = encrypt_store(name, path, key, main=main, library=True, on_swapped=_hand)
+        if not handed:
+            _hand()
         dispose_lane_engines()
         # Each other store is its own step; one that fails stays plaintext and is named, and the others go on.
         for name, path in rows[1:]:

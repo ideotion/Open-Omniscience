@@ -3639,7 +3639,7 @@
           <b>Choose something unique and remember it.</b>
           <span>There is no recovery and no decryption alternative.</span>
           <span>A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.</span>
-          <span>Encrypting does not securely erase the disk: the earlier plaintext file is overwritten once and then deleted, but SSDs and copy-on-write file systems may keep its old blocks, and the temporary files are deleted, not overwritten; the snapshot's contents may also stay recoverable after you delete it. Full-disk encryption that was on when they were written protects them; overwriting free space may help, but not reliably on SSDs or copy-on-write file systems.</span>
+          <span>Encrypting does not securely erase the disk: the earlier plaintext file is overwritten once and then deleted where the file system allows it, but SSDs and copy-on-write file systems may keep its old blocks, and the temporary files are deleted, not overwritten; the snapshot's contents may also stay recoverable after you delete it. Full-disk encryption that was on when they were written protects them; overwriting free space may help, but not reliably on SSDs or copy-on-write file systems.</span>
         </div>
         <div class="row">
           <div style="flex:1"><label for="atrest-pw1">Passphrase</label>

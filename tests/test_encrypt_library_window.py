@@ -111,7 +111,7 @@ def test_encrypt_all_asks_for_the_window_for_the_corpus_and_only_for_it(tmp_path
     calls: list[tuple[str, bool]] = []
     monkeypatch.setattr("src.api.unlock.main_db_path", lambda: tmp_path / "corpus.db")
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(encrypt_tool, "encrypt_database", lambda path, key, *, library=False: calls.append((path.name, library)) or {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", lambda path, key, *, library=False, **_kw: calls.append((path.name, library)) or {})
     monkeypatch.setattr("src.versioned.store.dispose_all", lambda: None)
     encrypt_tool.encrypt_all(_KEY)
     assert calls[0] == ("corpus.db", True) and calls[1] == ("custody_log.db", False)
