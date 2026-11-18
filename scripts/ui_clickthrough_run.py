@@ -44,7 +44,7 @@ STATE_C_URL = "http://127.0.0.1:8000"
 # the post-import screen's CONTENT path needs a real import to render, and importing into
 # state C mid-walk would mutate the corpus every other check depends on. The artifact is
 # built beforehand by the app's OWN volume-backup engine over the --mini seed corpus
-# (scripts/ui_clickthrough_seed.py --mini + src.backup.artifact.write_volume_backup); its
+# (OO_UIWALK_IMPORT_PASS=... scripts/ui_clickthrough_seed.py --mini --write-import-artifact DIR); its
 # folder + passphrase arrive via env so the runner never hardcodes a machine path.
 STATE_D_URL = "http://127.0.0.1:8003"
 IMPORT_ARTIFACT_DIR = os.environ.get("OO_UIWALK_IMPORT_ARTIFACT", "")
@@ -1220,6 +1220,12 @@ def drill_settings_ai_pill(driver: PlaywrightUiWalkDriver, report: Report) -> No
     lesson: only the SERVING backend's panel, with its honest prerequisite line)."""
     _log("T5b: drilling the AI pill + Settings AI panels")
     page = driver.page
+    # Walk-rerun 2026-11-18: this drill runs right after drill_task_manager_panels, which leaves the
+    # page on /tasks. That page has its OWN #llm, painted "pill warn" when offline with none of the
+    # SPA's ai-* classes, so the read below came back "unpainted" against the wrong document. Return
+    # to the app (Settings > AI, where the SPA itself re-reads the AI health) before reading the pill.
+    driver.goto(Surface("settings_ai_pill", "Settings > AI", nav_tab="settings",
+                        subtab="models", dom_id="set-models"))
     # Wait (bounded) for the pill's state class to be PAINTED before classifying: the
     # SPA sets ai-off/ai-starting only once its AI status poll answers, so a bare
     # "pill warn" read too early is UNPAINTED, not "serving" — the second full-matrix
@@ -1924,8 +1930,9 @@ def investigate_state_d_import(playwright, report: Report, shots: Path) -> None:
         report.add_coverage(
             surface="post_import_content", axis="default", result="blocked",
             note="OO_UIWALK_IMPORT_ARTIFACT / OO_UIWALK_IMPORT_PASS not set — the import "
-            "drill needs the pre-built volume-backup artifact (scripts/ui_clickthrough_seed.py "
-            "--mini + write_volume_backup); recorded, never silently skipped",
+            "drill needs the pre-built volume-backup artifact (OO_UIWALK_IMPORT_PASS=... "
+            "scripts/ui_clickthrough_seed.py --mini --write-import-artifact DIR, then a fresh "
+            "instance on 8003); recorded, never silently skipped",
         )
         return
     if not _wait_for_server(STATE_D_URL, timeout_s=30):
@@ -1981,12 +1988,26 @@ def investigate_state_d_import(playwright, report: Report, shots: Path) -> None:
             return
         # -- content-level assertions: the 2026-07-20 post-import-redesign rulings, live -- #
         text = summary_text
+        # Where two rulings MOVED a marker after this drill was written (walk rerun 2026-11-18):
+        # R68 (2026-09-29) put the "database records, all types" row-sum in the hover of the Articles
+        # caption, so it is read from the summary's title attributes, not its visible text; and the
+        # import lifecycle's stage rows now carry the re-index work ("Re-index the imported articles
+        # -- complete"), so indexing is read from the whole dialog, not the summary box alone.
+        summary_titles = page.evaluate(
+            "() => [...document.querySelectorAll('#ux-imp-summary [title]')]"
+            ".map(e => e.getAttribute('title')).join(' | ')"
+        )
+        dialog_text = page.evaluate(
+            "() => (document.getElementById('ux-import') || {innerText: ''}).innerText || ''"
+        )
         checks = [
             ("articles-first-headline", "grew by" in text and "articles" in text.lower()),
-            ("labeled-all-types-rowsum", "database records, all types" in text),
+            ("labeled-all-types-rowsum", "database records, all types" in summary_titles),
             ("before-after-delta", "BEFORE" in text and "AFTER" in text),
             ("qualification-carried", "Qualified sources" in text or "Judged by" in text),
-            ("work-induced-indexing", "index" in text.lower()),
+            ("work-induced-indexing", "is indexed" in dialog_text.lower()
+             or "awaiting indexing" in dialog_text.lower()
+             or "re-index picks up" in dialog_text.lower()),
             ("additive-statement", "replaced or deleted" in text),
         ]
         for axis, ok in checks:
