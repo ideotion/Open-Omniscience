@@ -115,14 +115,17 @@ def _install_socket_tripwire() -> None:
             return fn(self, *a, **kw)
         return wrapper
 
+    # Windows builds may have no AF_UNIX (row 150): there no socket can be one, and -1 matches no family.
+    _AF_UNIX = getattr(socket, "AF_UNIX", -1)
+
     def addr_host(self, address, *_a, **_kw):
-        return None if self.family == socket.AF_UNIX else address[0]
+        return None if self.family == _AF_UNIX else address[0]
 
     def sendto_host(self, data, *a, **_kw):
-        return None if self.family == socket.AF_UNIX else a[-1][0]
+        return None if self.family == _AF_UNIX else a[-1][0]
 
     def sendmsg_host(self, buffers, ancdata=(), flags=0, address=None):
-        return None if (address is None or self.family == socket.AF_UNIX) else address[0]
+        return None if (address is None or self.family == _AF_UNIX) else address[0]
 
     for name in ("connect", "connect_ex"):
         setattr(socket.socket, name, guarded(getattr(socket.socket, name), "a connection to", addr_host))
@@ -368,7 +371,10 @@ def main() -> int:
     if problems:
         print(json.dumps({"problems": problems}, indent=1), file=sys.stderr)
         return 3
-    print(json.dumps(truth, indent=1, ensure_ascii=False))
+    # UTF-8 whatever the console's code page: on Windows stdout is cp1252, which has no place for the stand-in world's names (row 150).
+    sys.stdout.flush()
+    sys.stdout.buffer.write((json.dumps(truth, indent=1, ensure_ascii=False) + "\n").encode("utf-8"))
+    sys.stdout.flush()
     return 0
 
 

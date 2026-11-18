@@ -44,7 +44,7 @@ print(json.dumps({"divs": divs, "att": att, "cands": cands}, default=str))
 def _run(code_args: list[str], data_dir: Path) -> str:
     env = {**os.environ, "OO_DATA_DIR": str(data_dir), "OO_DB_PLAINTEXT": "1", "OO_AUTOSEED": "0", "OO_NO_SCHEDULER": "1"}
     env.pop("DATABASE_URL", None)  # it overrides OO_DATA_DIR
-    done = subprocess.run([sys.executable, *code_args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=300)
+    done = subprocess.run([sys.executable, *code_args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", timeout=300)
     assert done.returncode == 0, done.stderr[-2500:]
     return done.stdout
 
