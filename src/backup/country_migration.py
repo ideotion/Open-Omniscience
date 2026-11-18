@@ -52,6 +52,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -341,6 +342,32 @@ def _path_exists(path: Path, *, follow: bool = False, hint: str = _BACKUP_DIR_HI
     return True
 
 
+def _refuse_a_file_in_the_way(dest: Path, *, hint: str = _BACKUP_DIR_HINT) -> None:
+    """Refuse when the nearest part of ``dest``'s folder that exists is not a folder.
+
+    On POSIX the ``lstat`` in ``_path_exists`` already raises NotADirectoryError for a file where a folder should be. Windows
+    answers "path not found" instead, which reads as absent, and the copy then failed in ``mkdir`` with a raw FileExistsError
+    (row 136). The same refusal, by class, on both."""
+    probe = dest.parent
+    while True:
+        try:
+            st = os.lstat(probe)
+        except FileNotFoundError:
+            if probe == probe.parent:
+                return
+            probe = probe.parent
+            continue
+        except OSError as exc:
+            raise MigrationRefused(
+                f"the place for the safety copy could not be examined ({type(exc).__name__}): {dest}. Nothing was changed. {hint}"
+            ) from None
+        if not stat.S_ISDIR(st.st_mode) and not (stat.S_ISLNK(st.st_mode) and os.path.isdir(probe)):
+            raise MigrationRefused(
+                f"the place for the safety copy could not be examined (NotADirectoryError): {dest}. Nothing was changed. {hint}"
+            ) from None  # the same shape as the lstat refusal: no OS error chained behind it
+        return
+
+
 def backup_name(db_path: Path, stamp: str) -> str:
     """A safety copy's file name: the store's own name, the run's time and a short digest of the store's full path, so two
     stores migrated into one folder never share a name."""
@@ -360,6 +387,7 @@ def take_verified_backup(con, db_path: Path, dest: Path) -> BackupInfo:
     dest = Path(dest).resolve()  # the journal keeps this path: a relative one would not be found from another folder
     if _path_exists(dest):
         raise MigrationRefused(_ALREADY_THERE.format(dest=dest))
+    _refuse_a_file_in_the_way(dest)
     need = int(store_bytes(db_path) * 1.1) + (1 << 20)
     free = _free_bytes(dest.parent)
     if free < need:
