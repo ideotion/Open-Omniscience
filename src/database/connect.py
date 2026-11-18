@@ -176,6 +176,12 @@ class WrongPassphraseError(RuntimeError):
     """The provided passphrase does not open this database (loud, typed)."""
 
 
+class StoreHeldError(WrongPassphraseError):
+    """Row 154: another connection held the file, so the passphrase was never checked. A ``WrongPassphraseError`` for every
+    caller that only needs "it did not open"; a caller that answers the person catches this first, by its class, and says
+    "in use, try again" instead of "wrong passphrase". The busy error is chained as its cause."""
+
+
 def set_passphrase(p: str | None) -> None:
     global _passphrase, _key_generation
     if p:
@@ -450,6 +456,7 @@ def _connect(
         last_error: list = []
         first_error: list = []
         past_page_one: list = []
+        held: BaseException | None = None
         for candidate in candidates:
             # Each attempt pays one key derivation: counted for the pass summary (``open_stats``; numbers only, it is
             # handed the path and whether the file opened, never the key or the exception).
@@ -467,12 +474,18 @@ def _connect(
                 if not past_page_one and getattr(last_error[0], "sqlite_errorcode", None) not in (None, 26):
                     past_page_one = list(last_error)
                 if held_by_another(last_error[0]):
+                    held = last_error[0]
                     # Row 154: the file is locked by another connection, which no page size changes: every later candidate
-                    # would wait out its own busy timeout and pay its own key derivation to fail the same way. The error
-                    # chained below is this busy one: the at-rest status reads it as busy and the unlock routes as "in use"
-                    # (409), never as a wrong passphrase. The trade: a lock released after the first busy timeout is not
-                    # waited out again by the next candidate (30 s at the default timeout, nine of them before).
+                    # would wait out its own busy timeout and pay its own key derivation to fail the same way. It raises
+                    # StoreHeldError, chained from this busy error even when an earlier candidate failed another way: the
+                    # at-rest status reads it as busy and the unlock routes as "in use" (409), never as a wrong passphrase.
+                    # The trade: a lock released after the first busy timeout is not waited out again by the next
+                    # candidate (30 s at the default timeout, nine of them before).
                     break
+        if conn is None and held is not None:
+            raise StoreHeldError(
+                f"another program is using {p.name} right now, so the passphrase could not be checked"
+            ) from held
         if conn is None:
             # Chained from the error of the candidate that got PAST page 1 (any code but 26, the HMAC check every wrong
             # page size and every wrong passphrase fails on), else the first candidate's: the LAST candidate is the

@@ -6532,6 +6532,7 @@
   "a proposal only; nothing about this source was changed.": "提案のみです。このソースについては何も変更されていません。",
   "a read error": "読み取りエラー",
   "a revision": "リビジョン",
+  "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; it was left as it is, try again in a moment": "ストアはすでに暗号化されていますが、別のプログラムが現在使用しているため、パスフレーズを確認できませんでした。そのままにしてあります。しばらくしてからもう一度お試しください",
   "a store is already encrypted, but not with this passphrase, so it was left as it is": "あるストアはすでに暗号化されていますが、このパスフレーズではないため、そのままにしました",
   "a strong, memorable passphrase": "強力で覚えやすいパスフレーズ",
   "a tally, never a score": "件数の集計であり、スコアではありません",

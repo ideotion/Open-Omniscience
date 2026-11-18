@@ -6532,6 +6532,7 @@
   "a proposal only; nothing about this source was changed.": "केवल एक प्रस्ताव; इस स्रोत के बारे में कुछ भी नहीं बदला गया।",
   "a read error": "पढ़ने में त्रुटि",
   "a revision": "एक संशोधन",
+  "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; it was left as it is, try again in a moment": "एक स्टोर पहले से एन्क्रिप्टेड है, लेकिन कोई दूसरा प्रोग्राम अभी इसका उपयोग कर रहा है, इसलिए पासफ़्रेज़ की जाँच नहीं हो सकी; इसे जैसा था वैसा छोड़ दिया गया, थोड़ी देर में फिर से प्रयास करें",
   "a store is already encrypted, but not with this passphrase, so it was left as it is": "एक स्टोर पहले से एन्क्रिप्टेड है, पर इस पासफ़्रेज़ से नहीं, इसलिए उसे जैसा था वैसा ही छोड़ दिया गया",
   "a strong, memorable passphrase": "एक मज़बूत, याद रहने वाला पासफ़्रेज़",
   "a tally, never a score": "केवल गिनती, कभी स्कोर नहीं",

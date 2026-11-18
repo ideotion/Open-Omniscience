@@ -324,10 +324,13 @@ def classify_error(exc: BaseException) -> tuple[str, str]:
     if found is not None:
         return VERDICT_DAMAGED, found["message"] or "SQLITE_CORRUPT"
     try:
-        from src.database.connect import DatabaseLockedError, WrongPassphraseError
+        from src.database.connect import DatabaseLockedError, StoreHeldError, WrongPassphraseError
 
         if isinstance(exc, DatabaseLockedError):
             return VERDICT_UNCHECKED, "the library is locked by its passphrase"
+        if isinstance(exc, StoreHeldError):
+            # Row 154: another program held the file, so the passphrase was never checked: busy, not "did not open".
+            return VERDICT_UNCHECKED, _SQLITE_REASONS[5]
         if isinstance(exc, WrongPassphraseError):
             return VERDICT_UNCHECKED, "the passphrase did not open the file"
     except Exception:  # noqa: BLE001

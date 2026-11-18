@@ -6532,6 +6532,7 @@
   "a proposal only; nothing about this source was changed.": "اقتراح فقط؛ لم يتغيّر أي شيء بخصوص هذا المصدر.",
   "a read error": "خطأ في القراءة",
   "a revision": "مراجعة",
+  "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; it was left as it is, try again in a moment": "مخزن مشفّر بالفعل، لكن برنامجًا آخر يستخدمه الآن، لذا تعذّر التحقق من عبارة المرور؛ تُرك كما هو، أعد المحاولة بعد قليل",
   "a store is already encrypted, but not with this passphrase, so it was left as it is": "أحد المخازن مشفّر بالفعل، لكن ليس بعبارة المرور هذه، لذا تُرك كما هو",
   "a strong, memorable passphrase": "عبارة مرور قوية يسهل تذكّرها",
   "a tally, never a score": "عدّ فقط، وليس تقييمًا أبدًا",

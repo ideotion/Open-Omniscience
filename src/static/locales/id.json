@@ -6532,6 +6532,7 @@
   "a proposal only; nothing about this source was changed.": "hanya sebuah usulan; tidak ada yang diubah pada sumber ini.",
   "a read error": "kesalahan baca",
   "a revision": "sebuah revisi",
+  "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; it was left as it is, try again in a moment": "sebuah penyimpanan sudah terenkripsi, tetapi program lain sedang menggunakannya, sehingga frasa sandi tidak dapat diperiksa; penyimpanan dibiarkan apa adanya, coba lagi sebentar lagi",
   "a store is already encrypted, but not with this passphrase, so it was left as it is": "sebuah penyimpanan sudah terenkripsi, tetapi bukan dengan frasa sandi ini, jadi dibiarkan apa adanya",
   "a strong, memorable passphrase": "frasa sandi yang kuat dan mudah diingat",
   "a tally, never a score": "sekadar hitungan, bukan skor",

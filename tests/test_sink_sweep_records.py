@@ -241,13 +241,6 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # Row 154: only the SQLite result code is read, to stop the page-size walk on a lock; nothing of the error is kept
         ('held_by_another', 'code = getattr(exc, "sqlite_errorcode", None)'): 1,
     },
-    # Row 154: the unlock routes read only whether the open's chained SQLite code was busy or locked, to answer "in use" (409) with
-    # fixed words instead of "wrong passphrase"; nothing of the error is kept, served or logged
-    'src/api/unlock.py': {
-        ('_refused_because_held', 'return held_by_another(exc.__cause__)'): 1,
-        ('_file_opens_with', 'if _refused_because_held(exc):'): 1,
-        ('_unlock_locked', 'if _refused_because_held(exc):'): 1,
-    },
     'src/database/damage.py': {
         ('driver_error', 'cur = exc'): 1,
         ('failure_label', 'code = exc.errno if isinstance(exc, OSError) else None'): 1,

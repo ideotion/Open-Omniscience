@@ -441,6 +441,7 @@ def test_every_new_sentence_is_keyed_in_every_locale_and_the_page_uses_the_statu
     keys = [
         encrypt_tool.PARTIAL,
         encrypt_tool.NOT_THIS_KEY,
+        encrypt_tool.ALREADY_ENCRYPTED_IN_USE,
         unlock_mod.FINISH_NEEDS_THE_SAME_PASSPHRASE,
         "every store is already encrypted",
         "Every store is encrypted.",

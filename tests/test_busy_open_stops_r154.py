@@ -71,6 +71,8 @@ def test_a_held_store_is_tried_once_and_the_busy_error_is_the_cause(store, attem
         holder.rollback()
         holder.close()
     assert len(attempts) == 1, attempts
+    assert isinstance(refused.value, connect_mod.StoreHeldError), "the unlock routes answer in use by this class"
+    assert "passphrase does not open" not in str(refused.value)
     assert getattr(refused.value.__cause__, "sqlite_errorcode", None) == 5
     assert at_rest_state._is_busy(refused.value.__cause__)
 
@@ -80,6 +82,7 @@ def test_positive_control_a_wrong_key_still_walks_every_candidate(store, attempt
     with pytest.raises(WrongPassphraseError) as refused:
         connect(store, key=_OTHER, check_same_thread=False, timeout=0.05, read_only=True)
     assert len(attempts) == len(connect_mod._PAGE_SIZE_CANDIDATES) + 1
+    assert not isinstance(refused.value, connect_mod.StoreHeldError)
     assert getattr(refused.value.__cause__, "sqlite_errorcode", None) == 26
 
 
@@ -179,3 +182,51 @@ def test_an_unlock_that_meets_a_held_store_is_409_and_not_counted_as_a_refused_k
     with pytest.raises(HTTPException) as wrong:
         unlock_mod._unlock_locked(unlock_mod.PassphraseBody(passphrase=_OTHER), store)
     assert wrong.value.status_code == 403 and unlock_mod._REFUSED_ATTEMPTS == 1
+
+
+def test_the_database_check_reads_a_held_store_as_busy_not_as_a_wrong_passphrase():
+    """Planner's sweep of every WrongPassphraseError catch: verify.classify_error answers a person, so a held store is busy there."""
+    from src.database import verify
+
+    assert verify.classify_error(connect_mod.StoreHeldError("held")) == (verify.VERDICT_UNCHECKED, "the file was busy")
+    assert verify.classify_error(WrongPassphraseError("wrong"))[1] == "the passphrase did not open the file"
+
+
+def test_encrypting_again_over_a_held_encrypted_store_says_in_use_not_another_passphrase(monkeypatch, tmp_path):
+    """Security read A on the StoreHeldError head: encrypt_store's read-back of an already-encrypted store said "not with this
+    passphrase" for any failure, a held store included."""
+    from src.database import encrypt_tool
+
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", lambda *a, **kw: {"skipped": "already encrypted"})
+
+    def held(*_a, **_kw):
+        raise connect_mod.StoreHeldError("held")
+
+    monkeypatch.setattr(encrypt_tool, "_table_counts_safe", held)
+    with pytest.raises(encrypt_tool.EncryptToolError) as refused:
+        encrypt_tool.encrypt_store("custody", tmp_path / "custody_log.db", _KEY, main=tmp_path / "x.db")
+    assert str(refused.value) == encrypt_tool.ALREADY_ENCRYPTED_IN_USE and refused.value.__suppress_context__
+
+    def wrong(*_a, **_kw):
+        raise WrongPassphraseError("wrong")
+
+    monkeypatch.setattr(encrypt_tool, "_table_counts_safe", wrong)
+    with pytest.raises(encrypt_tool.EncryptToolError) as refused:
+        encrypt_tool.encrypt_store("custody", tmp_path / "custody_log.db", _KEY, main=tmp_path / "x.db")
+    assert str(refused.value) == encrypt_tool.NOT_THIS_KEY
+
+
+def test_the_in_use_words_are_keyed_in_every_locale():
+    """Security read B: test_unlock_errors_are_translated reads only literal ``detail=`` strings, and these are constants."""
+    import json
+    from pathlib import Path
+
+    import src.api.unlock as unlock_mod
+    from src.database import encrypt_tool
+
+    locales = sorted((Path(__file__).resolve().parents[1] / "src" / "static" / "locales").glob("*.json"))
+    assert len(locales) == 12
+    for loc in locales:
+        d = json.loads(loc.read_text(encoding="utf-8"))
+        for k in (unlock_mod.STORE_IN_USE, encrypt_tool.ALREADY_ENCRYPTED_IN_USE):
+            assert d.get(k), f"{loc.name} lacks {k[:40]!r}"

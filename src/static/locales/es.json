@@ -6532,6 +6532,7 @@
   "a proposal only; nothing about this source was changed.": "solo una propuesta; no se cambió nada de esta fuente.",
   "a read error": "un error de lectura",
   "a revision": "una revisión",
+  "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; it was left as it is, try again in a moment": "un almacén ya está cifrado, pero otro programa lo está usando ahora mismo, por lo que no se pudo comprobar la frase de contraseña; se dejó como estaba, vuelva a intentarlo en un momento",
   "a store is already encrypted, but not with this passphrase, so it was left as it is": "un almacén ya está cifrado, pero no con esta frase de contraseña, así que se dejó como estaba",
   "a strong, memorable passphrase": "una frase de contraseña fuerte y memorable",
   "a tally, never a score": "un recuento, nunca una puntuación",

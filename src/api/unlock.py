@@ -931,13 +931,13 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     ``PRAGMA query_only`` does not prevent that (measured; see ``connect.connect``). A leftover log is what a crash
     leaves for whoever reads it next, and a question must not consume it. A read-only connection leaves the file and
     its log as they were."""
-    from src.database.connect import WrongPassphraseError, connect
+    from src.database.connect import StoreHeldError, WrongPassphraseError, connect
 
     try:
         conn = connect(p, key=passphrase, check_same_thread=False, read_only=True)
+    except StoreHeldError:
+        raise HTTPException(status_code=409, detail=STORE_IN_USE) from None
     except WrongPassphraseError as exc:
-        if _refused_because_held(exc):
-            raise HTTPException(status_code=409, detail=STORE_IN_USE) from None
         raise HTTPException(
             status_code=403,
             detail=http_detail(exc, "", passphrase, withheld="the passphrase does not open this file (or the file is damaged)"),
@@ -952,16 +952,9 @@ STORE_IN_USE = (
 )
 
 
-def _refused_because_held(exc: BaseException) -> bool:
-    """True when the open that raised ``exc`` (a ``WrongPassphraseError``) met a lock, by the SQLite code chained into it."""
-    from src.database.connect import held_by_another
-
-    return held_by_another(exc.__cause__)
-
-
 def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
     global _REFUSED_ATTEMPTS
-    from src.database.connect import WrongPassphraseError, connect, set_passphrase
+    from src.database.connect import StoreHeldError, WrongPassphraseError, connect, set_passphrase
     from src.monitoring import page_reading
 
     # The key typed into this request is not held until the verify below has accepted it, so no net that reads what the
@@ -989,10 +982,10 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             # folds the log into the file), which the reading says. Never raises; a fact (counts only), not a verdict.
             _pages = page_reading.from_connection(conn, p, refused_before=_REFUSED_ATTEMPTS)
             _close_after_checkpoint(conn, passphrase=body.passphrase)
+        except StoreHeldError:
+            # Not a refused key: nothing was checked, so nothing is counted, and the answer says what holds it.
+            raise HTTPException(status_code=409, detail=STORE_IN_USE) from None
         except WrongPassphraseError as exc:
-            if _refused_because_held(exc):
-                # Not a refused key: nothing was checked, so nothing is counted, and the answer says what holds it.
-                raise HTTPException(status_code=409, detail=STORE_IN_USE) from None
             _REFUSED_ATTEMPTS += 1
             # A wrong key under the floor of what can be taken out of a text (src/monitoring/secret_scrub.py,
             # MIN_SECRET_CHARS) withholds the message whole, so the withheld text is the message's fixed words, not

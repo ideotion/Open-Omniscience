@@ -6532,6 +6532,7 @@
   "a proposal only; nothing about this source was changed.": "только предложение; ничего в этом источнике не изменено.",
   "a read error": "ошибка чтения",
   "a revision": "версия страницы",
+  "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; it was left as it is, try again in a moment": "хранилище уже зашифровано, но сейчас его использует другая программа, поэтому парольную фразу не удалось проверить; оно оставлено как есть, повторите попытку через минуту",
   "a store is already encrypted, but not with this passphrase, so it was left as it is": "хранилище уже зашифровано, но не этой парольной фразой, поэтому оно оставлено как есть",
   "a strong, memorable passphrase": "надёжная, запоминающаяся парольная фраза",
   "a tally, never a score": "просто подсчёт, а не оценка",
