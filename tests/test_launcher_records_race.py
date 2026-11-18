@@ -1012,13 +1012,24 @@ def test_a_takeover_puts_back_a_lock_whose_owner_has_not_written_its_pid_yet_and
         assert not (lock / "reap").exists(), "the taker's mark is gone"
         assert {"pid": 6} not in _rows(f)[0], "nothing was written under a lock somebody else holds"
     finally:
-        pidfile = lock / "pid"
+        # The stand-in's lock is released the way the launcher releases one: renamed away in ONE step, and only then is its holder killed and the renamed
+        # copy removed. Row 171 (macOS, 4 workers, 18 Nov): the test killed the holder FIRST and then ran rm -rf on the lock in place. The deferred child
+        # polls every 10 ms and takes a dead owner's lock over, so it could start a takeover inside the lock while rm -rf was walking it: rm unlinked the
+        # pid file, the child read no owner under its mark and gave up, and rm's rmdir met the child's temp mark ("Directory not empty"). That leaves a
+        # lock directory with no pid file, which nobody takes over (an empty owner is a launcher that has not written its pid yet), so the row waited
+        # for ever. A rename cannot be half done, so the child sees the old lock or no lock, never a lock being taken apart.
+        gone = tmp_path / f"{case}.released"
+        with contextlib.suppress(FileNotFoundError):
+            os.rename(lock, gone)
+        pidfile = gone / "pid"
         held = pidfile.read_text(encoding="utf-8").strip() if pidfile.exists() else ""
         if held.isdigit():
             with contextlib.suppress(ProcessLookupError):
                 os.kill(int(held), signal.SIGKILL)
-        subprocess.run(["rm", "-rf", str(lock), str(lock) + ".stash"])
-    assert _wait_for(lambda: {"pid": 6} in _rows(f)[0], 30), "the deferred row lands once that lock is gone"
+        subprocess.run(["rm", "-rf", str(gone), str(lock) + ".stash"])
+    assert _wait_for(lambda: {"pid": 6} in _rows(f)[0], 30), \
+        ("the deferred row lands once that lock is gone", sorted(p.name for p in lock.iterdir()) if lock.is_dir() else "no lock",
+         sorted(p.name for p in tmp_path.iterdir()))
 
 
 def test_a_summary_row_that_arrives_after_the_look_is_waited_for(tmp_path):
