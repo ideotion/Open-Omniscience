@@ -920,11 +920,13 @@ jobs:
       # test-hang-report.txt after a line naming it, and every test slower than OO_TEST_SLOW_S is listed in test-slow-report.txt as it ends
       # (tests/conftest.py, row 93): a hang costs 10 minutes and names itself, instead of going silent until the 60-minute cap cancels the
       # leg (job 133057809613: shard 1 on Windows stopped at 23% for 30 minutes), and a leg the cap stops still says where its time went.
-      # FOUR WORKERS, EACH TEST FILE WHOLE ON ONE (row 163): run in one process, Windows shard 2 took 5,137 s for 11,587 tests (run 44334404721), 3.7
-      # times its Linux cost, and almost every Windows leg met its 90-minute cap. The time was spread over the file-heavy tests (the top 300 files held 94%,
-      # tests over 20 s only 290 s), so it was the single process, not one test. `-n 4`, not `auto`: these runners have four vCPUs and limited memory.
-      # `--dist loadfile` takes the suite's fixed file placement (tests/_xdist_placement.py), as the Linux jobs do. Each worker writes its own report
-      # files, the name plus `.gw0` ... (tests/conftest.py), which the next step prints.
+      # FOUR WORKERS ON macOS, ONE PROCESS ON WINDOWS (row 163). In one process, Windows shard 2 took 5,137 s for 11,587 tests (run 44334404721),
+      # 3.7 times its Linux cost, spread over the file-heavy tests (the top 300 files held 94%; tests over 20 s only 290 s). `-n 4 --dist loadfile`
+      # (four vCPUs and limited memory, so not `auto`; the suite's fixed file placement, tests/_xdist_placement.py, as on Linux) took the macOS legs
+      # from near 60 minutes to 16-21 (run 44355305198). On Windows it gained nothing: the same test took 4 to 6 times longer with four running
+      # (test_host_pairs' short-note test 28.8 s -> 184.4 s), and shard 2 reached 82% in 81 minutes against 100% in 86 alone, so the cost there is
+      # I/O serialized below the tests, not CPU. Windows stays in one process until that is settled. Under workers, each worker writes its own
+      # report files, the name plus `.gw0` ... (tests/conftest.py), which the next step prints.
       - name: Test (pytest)
         env:
           OO_TEST_HANG_LIMIT_S: "600"
@@ -932,7 +934,8 @@ jobs:
           OO_TEST_SLOW_S: "20"
           OO_TEST_SLOW_REPORT: test-slow-report.txt
           OO_TEST_FAIL_REPORT: test-fail-report.txt
-        run: python -m pytest -q -n 4 --dist loadfile -rsfE @shard.args
+          OO_PORTABILITY_WORKERS: ${{ matrix.os == 'macos-latest' && '-n 4 --dist loadfile' || '' }}
+        run: python -m pytest -q $OO_PORTABILITY_WORKERS -rsfE @shard.args
 
       - name: Name a test that hung, and the slow tests
         if: always()
