@@ -112,7 +112,7 @@ def test_a_store_that_fails_after_the_library_leaves_the_library_encrypted_the_k
         encrypt_tool.encrypt_all(_KEY, on_library_encrypted=lambda: held.append(is_encrypted_file(stores)))
     assert held == [True], "the key is handed over once, as soon as the library is ciphertext and before any other store"
     assert str(partial.value) == encrypt_tool.PARTIAL
-    name = dict((p.name, n) for n, p in at_rest_state.stores(stores))[failing]
+    name = {p.name: n for n, p in at_rest_state.stores(stores)}[failing]
     assert partial.value.pending == [name]
     st = at_rest_state.status(stores)
     assert st["corpus_encrypted"] and not st["complete"] and st["pending"] == [name]
@@ -469,9 +469,12 @@ def test_a_library_read_back_that_fails_after_the_swap_still_hands_the_key_over(
         raise sqlite3.OperationalError("disk I/O error")
 
     monkeypatch.setattr(encrypt_tool, "_table_counts_safe", unreadable)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(encrypt_tool.EncryptPartial) as partial:
         encrypt_tool.encrypt_all(_KEY, on_library_encrypted=lambda: held.append(is_encrypted_file(stores)))
-    assert held == [True]
+    assert held == [True], "the key is held before the read-back"
+    # the caller takes the partial path (keyed pool, plaintext serves retired); the other stores wait for the next unlock
+    assert set(partial.value.pending) == {n for n, _p in at_rest_state.stores(stores)} - {"corpus"}
+    assert not list(stores.parent.glob("corpus.db.replaced-*"))
 
 
 def test_an_already_encrypted_library_hands_the_key_over_once_on_the_retry(stores, monkeypatch):
@@ -565,3 +568,29 @@ def test_the_doctor_reads_the_lanes_the_status_reads(stores, monkeypatch, tmp_pa
     d = unlock_mod.doctor()
     assert d["at_rest"]["complete"] is True
     assert {v["state"] if isinstance(v, dict) else v for v in d["lanes"].values()} <= {"encrypted", "absent"}, d["lanes"]
+
+
+def test_an_automatic_retry_whose_snapshot_is_cut_short_leaves_no_partial_copy(stores, monkeypatch):
+    _fail_for(monkeypatch, "custody_log.db")
+    with pytest.raises(encrypt_tool.EncryptPartial):
+        encrypt_tool.encrypt_all(_KEY)
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", _REAL_ENCRYPT)
+
+    def cut_short(_src, dest):
+        Path(dest).write_bytes(b"SQLite format 3\x00 half a copy")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(encrypt_tool, "snapshot_to_plaintext", cut_short)
+    assert at_rest_state.finish_pending(_KEY, stores)["still_pending"] == ["custody"]
+    assert sorted(stores.parent.glob("pre-encrypt-*-custody_log.db")) == []
+
+
+def test_the_finish_at_unlock_leaves_a_store_pending_without_room_for_its_two_copies(stores, monkeypatch):
+    _fail_for(monkeypatch, "custody_log.db")
+    with pytest.raises(encrypt_tool.EncryptPartial):
+        encrypt_tool.encrypt_all(_KEY)
+    monkeypatch.setattr(encrypt_tool, "encrypt_database", _REAL_ENCRYPT)
+    monkeypatch.setattr(at_rest_state, "_room_for", lambda _p: False)
+    assert at_rest_state.finish_pending(_KEY, stores) == {"finished": [], "still_pending": ["custody"]}
+    assert is_encrypted_file(stores.parent / "custody_log.db") is False
+    assert sorted(stores.parent.glob("pre-encrypt-*-custody_log.db")) == []

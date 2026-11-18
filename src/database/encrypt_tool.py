@@ -80,10 +80,10 @@ def encrypt_database(
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = p.with_name(f"pre-encrypt-{ts}-{p.name}")
-    snapshot_to_plaintext(p, snapshot)
     removed: list[str] = []  # the side files already gone when a step was refused: what the message may still claim
     swapped = False
     try:
+        snapshot_to_plaintext(p, snapshot)  # inside: a snapshot a full disk cut short is a partial plaintext copy too
         swapped, retired = _export_and_swap(p, key, ts, library, removed)
     except BaseException:
         # R742: an AUTOMATIC retry (the next unlock) that fails before anything was touched drops the snapshot it just made, so a
@@ -285,7 +285,9 @@ def encrypt_store(
 ) -> dict:
     """One store's step: encrypt it (idempotent: an already-encrypted store is skipped), read it back with the key, and only then
     add it to the at-rest record (R742). An absent store is skipped and not recorded. The custody log is swapped holding its own
-    append lock: its appends are serialised there, not on the write gate, so an entry can never land in the file being replaced."""
+    append lock: its appends are serialised there, not on the write gate, so no append runs while the file is replaced. (A log a
+    caller opened BEFORE the swap and keeps open is kept out by the exclusive window and the wait for work in flight that both
+    callers take, not by this lock.)"""
     from src.database import at_rest_state
 
     if name == "custody":
@@ -392,7 +394,15 @@ def encrypt_all(key: str, *, on_library_encrypted: Callable[[], object] | None =
             if on_library_encrypted is not None:
                 on_library_encrypted()
 
-        reports[name] = encrypt_store(name, path, key, main=main, library=True, on_swapped=_hand)
+        try:
+            reports[name] = encrypt_store(name, path, key, main=main, library=True, on_swapped=_hand)
+        except Exception as exc:
+            if not handed:
+                raise  # nothing was swapped: every store is as it was, raised as before
+            # The library IS ciphertext and the key is held, but it did not read back: the other stores are left for the next
+            # unlock (or the encrypt button), and the caller takes the partial path (the keyed pool, the plaintext serves retired).
+            log_failure(_LOG, "the library is encrypted but did not read back with the key", exc, key, level=logging.WARNING)
+            raise EncryptPartial([n for n, p in rows[1:] if is_encrypted_file(p) is False]) from None
         if not handed:
             _hand()
         dispose_lane_engines()
