@@ -61,7 +61,7 @@ def test_only_the_carriers_that_credit_the_lane_ask_for_its_cards():
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", "")) == "run_all_bounded"
                     and any(k.arg == "lanes" for k in node.keywords)):
-                callers.append(str(path.relative_to(ROOT)))
+                callers.append(path.relative_to(ROOT).as_posix())  # one spelling on every system
     # Home's refresh, and the bulletin (whose edition credits OpenStreetMap against the lane
     # cards it shows). The lead report and the card audit have no attribution block.
     assert sorted(callers) == ["src/briefing/service.py", "src/bulletin/cards.py"], callers

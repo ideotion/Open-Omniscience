@@ -473,9 +473,26 @@ def test_valid_json_of_the_wrong_shape_is_left_out_and_counted_not_raised_on(wro
 
 
 # --- the Opus read of the boundary above (what it must not cost, and what it must not leave) -----------------------------------------
+def _deep(leaf: str) -> str:
+    """A store nested deeper than the Python recursion limit (so the surrogate walk cannot finish) that the platform's JSON parser still
+    reads. The parser's own depth limit is the C recursion limit, which is lower on Windows: 3000 levels parse on Linux and raise
+    RecursionError in ``json.loads`` on the Windows runner (row 136), so the depth is the deepest of a few that this platform parses."""
+    import sys
+
+    for depth in (3000, 2000, 1500, 1200):
+        text = '{"f":' * depth + leaf + "}" * depth
+        try:
+            json.loads(text)
+        except RecursionError:
+            continue
+        assert depth > sys.getrecursionlimit(), "the store must be deeper than the walk can go, or the test proves nothing"
+        return text
+    raise AssertionError("this platform's JSON parser reads no store deeper than the Python recursion limit")
+
+
 def test_a_deeply_nested_healthy_store_still_reads_and_merges_as_it_did_before(caplog):
-    """The surrogate walk recurses once per level; a healthy store of 3000 levels read cleanly before the boundary and must not raise RecursionError now."""
-    deep = '{"f":' * 3000 + "1" + "}" * 3000
+    """The surrogate walk recurses once per level; a healthy store deeper than the recursion limit (3000 levels where the parser allows) read cleanly before the boundary and must not raise RecursionError now."""
+    deep = _deep("1")
     _store("calendar_feed_checks.json").write_text(deep, "utf-8")
     with caplog.at_level("WARNING"):
         assert "f" in F._load_json("calendar_feed_checks.json")
@@ -484,7 +501,7 @@ def test_a_deeply_nested_healthy_store_still_reads_and_merges_as_it_did_before(c
 
 
 def test_a_store_nested_too_deeply_to_check_for_a_surrogate_reads_as_empty_and_says_so(caplog):
-    deep = '{"f":' * 3000 + '"\\ud800"' + "}" * 3000
+    deep = _deep('"\\ud800"')
     _store("calendar_feed_checks.json").write_text(deep, "utf-8")
     with caplog.at_level("WARNING"):
         assert F._load_json("calendar_feed_checks.json") == {}

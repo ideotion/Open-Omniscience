@@ -52,7 +52,7 @@ from itertools import groupby, islice
 from pathlib import Path
 from typing import Any
 
-from src.backup.artifact import StagedArtifact
+from src.backup.artifact import StagedArtifact, member_segment_is_safe
 from src.backup.fetch_history import resolve_trust_fetch_history
 from src.database.fts import index_articles, rebuild_index
 from src.database.stand_in import ARTICLE_HASH_END, ARTICLE_HASH_PREFIX
@@ -2423,6 +2423,8 @@ _MERGE_HANDLED = {
     "law_documents", "law_revisions", "commodity_prices", "market_extraction_rules",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
     "source_qualification_attempts", "host_mismatch_confirmed",
+    # 2026-11-17, row 121 (G4): a person's keep / set-aside decision on a suggested IPCC prediction.
+    "ipcc_predictions",
     # 2026-08-03, from the P0 validation on the operator's 16.5 GB corpus: these rode
     # inside every artifact and no handler copied them, so a FRESH-INSTALL restore
     # dropped them. Each has a unique constraint the schema itself defines, so its
@@ -2678,6 +2680,8 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
         # so it could sit anywhere; `ai_keyword` MUST follow the article step, whose
         # temp.map_articles it joins.
         ("watches", _merge_watches),
+        # Row 121: no FK, keyed by the SPM catalog key and the sentence hash, so it needs no id map.
+        ("IPCC predictions", _merge_ipcc_predictions),
         ("AI layer", _merge_ai_layer),
         # 2026-09-30, R71 (b). After `articles`, whose temp.map_articles a place's body joins.
         ("places", _merge_places),
@@ -5834,6 +5838,48 @@ def _merge_watches(con, batch_id, results) -> None:
     results["watch_matches"] = wm
 
 
+def _merge_ipcc_predictions(con, batch_id, results) -> None:
+    """A person's decisions on suggested IPCC predictions (row 121, G4): carried, local wins.
+
+    Identity is the schema's own ``uq_ipcc_prediction_sentence``, (SPM catalog key, sentence hash), the same on every
+    install, so no id map is joined. A decision only the incoming corpus holds is INSERTED and recorded in ``merged_rows``
+    (the restore's provenance). Where both hold the sentence, the local decision stays, as everywhere else in
+    the merge; a different incoming decision is COUNTED as a conflict and sampled, never applied.
+    """
+    d = DomainResult()
+    if not _inc_has_table(con, "ipcc_predictions"):
+        results["ipcc_predictions"] = d  # a backup written before the table existed carries none
+        return
+    key = "m.spm_key = i.spm_key AND m.sentence_hash = i.sentence_hash"
+    d.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.ipcc_predictions i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" WHERE EXISTS (SELECT 1 FROM ipcc_predictions m WHERE {key})",
+    )
+    d.conflict = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.ipcc_predictions i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" JOIN ipcc_predictions m ON {key} WHERE m.decision <> i.decision",
+    )
+    for row in _q(
+        con,
+        "SELECT i.spm_key, i.sentence_hash, i.decision, m.decision FROM inc.ipcc_predictions i"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" JOIN ipcc_predictions m ON {key} WHERE m.decision <> i.decision ORDER BY i.spm_key, i.sentence_hash"
+        f" LIMIT {_SAMPLE_LIMIT}",
+    ):
+        d.conflicts.append(
+            {"spm": row[0], "sentence_hash": row[1], "incoming_decision": row[2], "local_decision": row[3]}
+        )
+    d.new = _insert_tracked(
+        con, batch_id, "ipcc_predictions",
+        "INSERT INTO main.ipcc_predictions (spm_key, sentence_hash, sentence, decision, method_version, decided_at)"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " SELECT i.spm_key, i.sentence_hash, i.sentence, i.decision, i.method_version, i.decided_at"
+        " FROM inc.ipcc_predictions i"
+        f" WHERE NOT EXISTS (SELECT 1 FROM ipcc_predictions m WHERE {key})",
+    )
+    results["ipcc_predictions"] = d
+
+
 def _merge_ai_layer(con, batch_id, results) -> None:
     """The user's custom extractors and the AI-derived metadata they produce.
 
@@ -6908,6 +6954,9 @@ def merge_side_files(staged: StagedArtifact) -> dict:
     logs: dict = {}
     for name, path in staged.member_paths("logs"):
         fname = Path(name).name
+        if not member_segment_is_safe(fname):  # on Windows "C:x" joined to the data dir is a path on drive C:, outside it
+            logs[fname] = {"refused": "unsafe member name"}
+            continue
         local = base / fname
         try:
             incoming_lines, withheld = _log_lines(path)
@@ -6971,7 +7020,10 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             # though verify already checked them: EVERY name-to-path field runs
             # through a guard, not only the ones that motivated the rule.
             rel = Path(name)
-            if rel.is_absolute() or ".." in rel.parts or not str(rel).startswith(subdir):
+            # compared by parts: the name is spelled with "/" (member_paths), str() of it on Windows is spelled with "\\", which no
+            # subdir matched (row 109); and parts never let "bulletin/editionsX" pass for "bulletin/editions"
+            want = tuple(subdir.split("/"))
+            if rel.is_absolute() or ".." in rel.parts or rel.parts[: len(want)] != want or len(rel.parts) <= len(want):
                 refused.append(name)
                 continue
             local = base / rel

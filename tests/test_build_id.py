@@ -8,13 +8,14 @@ from src.monitoring import build_id
 
 
 def test_the_fingerprint_follows_the_bytes_and_the_names(tmp_path):
-    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    # Bytes, not text: write_text turns "\n" into "\r\n" on Windows, which is 7 bytes, not 6 (row 136).
+    (tmp_path / "a.py").write_bytes(b"x = 1\n")
     one = build_id.source_fingerprint(tmp_path)
     assert one["files"] == 1 and one["bytes"] == 6
     assert build_id.source_fingerprint(tmp_path) == one
-    (tmp_path / "a.py").write_text("x = 2\n", encoding="utf-8")
+    (tmp_path / "a.py").write_bytes(b"x = 2\n")
     assert build_id.source_fingerprint(tmp_path)["source_fingerprint"] != one["source_fingerprint"]
-    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "a.py").write_bytes(b"x = 1\n")
     (tmp_path / "b.py").write_text("", encoding="utf-8")
     assert build_id.source_fingerprint(tmp_path)["files"] == 2
 

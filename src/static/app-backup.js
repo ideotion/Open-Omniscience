@@ -3949,7 +3949,8 @@
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state.
         const rec = plaintext
           ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
-          : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.");
+          : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.") +
+            " " + t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.");
         // The file count is ONE keyed frame, its numbers grouped (R14).
         const tfw = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf

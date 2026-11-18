@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,database,Windows repair sidecar fsync and two Windows test fixes (row 138),shipped,PR #2102,src/database/repair.py; tests/test_repair_windows_fsync.py; tests/test_serving_gate_r644.py; tests/test_shutdown_wal.py,"Repair flushed its sidecar .tmp through a read-only handle, which Windows refuses (EBADF), so every repair failed there; now r+b, with a POSIX shim test. Serving-gate launcher test carries SYSTEMROOT; shutdown WAL fixture avoids ? on Windows."

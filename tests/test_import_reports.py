@@ -55,7 +55,9 @@ def test_persist_list_read_round_trip():
     assert path.suffix == ".json"
     # UTF-8, no BOM, real JSON on disk
     raw = path.read_text(encoding="utf-8")
-    assert json.loads(raw) == report
+    on_disk = json.loads(raw)
+    assert isinstance(on_disk.pop("written_at_ns"), int), "row 137: the ordering stamp is on disk"
+    assert on_disk == report
 
     listed = list_import_reports()
     assert len(listed) == 1

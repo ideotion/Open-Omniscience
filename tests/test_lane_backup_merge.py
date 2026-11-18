@@ -193,10 +193,13 @@ def test_a_failure_rolls_the_lane_back(machines, tmp_path, monkeypatch):
     assert _snapshot_state() == before
 
 
-def test_members_are_chosen_by_kind_never_by_name(tmp_path):
+def test_members_are_chosen_by_kind_never_by_name(tmp_path, monkeypatch):
     assert lane_merge.valid_member({"name": "lanes/wiki.db", "kind": "wiki"}) == "wiki"
     assert lane_merge.valid_member({"name": "../corpus.db", "kind": "wiki"}) is None
     assert lane_merge.valid_member({"name": "lanes/x.db", "kind": "x"}) is None
+    # Every lane this build knows merges since R739; a known lane this build cannot merge (as
+    # one a later version adds would be) is simulated by narrowing the list.
+    monkeypatch.setattr(lane_merge, "MERGEABLE_KINDS", ("wiki", "law"))
     rep = lane_merge.merge_staged_lanes(tmp_path, [{"name": "lanes/osm.db", "kind": "osm"}, "junk"], [])
     states = [x["state"] for x in rep["lanes"]]
     assert states == ["not-merged", "ignored"]
@@ -431,7 +434,9 @@ def test_owed_lanes_survive_a_kill_and_stop_after_three_attempts(tmp_path, monke
     for _ in range(5):
         lane_merge.record_lane_outcome("h", lane_merge.deferred_report([entry]))
     assert lane_merge.lanes_pending("h") is True
-    lane_merge.mark_lanes_owed("other", [{"name": "lanes/osm.db", "kind": "osm"}])
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(lane_merge, "MERGEABLE_KINDS", ("wiki", "law"))
+        lane_merge.mark_lanes_owed("other", [{"name": "lanes/osm.db", "kind": "osm"}])
     assert lane_merge.lanes_pending("other") is False  # a lane this build cannot merge is never owed
 
 
@@ -640,3 +645,26 @@ def test_a_non_hex_top_level_digest_is_no_identity(tmp_path, monkeypatch):
     assert merge.artifact_source_digest(tmp_path) is None
     monkeypatch.setattr(volumes, "load_manifest", lambda src: {"plaintext_sha256": "a" * 64})
     assert merge.artifact_source_digest(tmp_path) == "a" * 64
+
+
+def test_a_merge_that_takes_a_lane_over_its_budget_merges_and_says_so(machines, tmp_path, monkeypatch):
+    """Lane F's note on #2036: a budget pauses fetching and never deletes, so the merge is not
+    refused for size; the report says the store is over its budget, with both figures."""
+    from src.backup.import_reports import render_import_report_markdown
+    from src.scheduler import settings as sched_settings
+    from src.versioned import budget
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    gb = budget.load_table().row("wiki").budget_gb
+    monkeypatch.setattr(sched_settings, "load_settings", lambda: None)
+    monkeypatch.setattr(budget, "lane_bytes", lambda kind: (gb + 1) * budget.BYTES_PER_GB)
+    rep = lane_merge.merge_lane_file("wiki", snap, [None])
+    assert rep["budget"] == {"bytes": (gb + 1) * budget.BYTES_PER_GB, "budget_gb": gb, "over": True}
+    md = render_import_report_markdown(
+        {"living_sources": {"lanes": [dict(rep, state="merged")], "method": lane_merge.METHOD}}
+    )
+    assert "over its budget" in md and f"{gb:,} GB" in md and "Nothing was removed" in md
+    monkeypatch.setattr(budget, "lane_bytes", lambda kind: 1024)
+    assert lane_merge.merge_lane_file("wiki", snap, [None])["budget"]["over"] is False

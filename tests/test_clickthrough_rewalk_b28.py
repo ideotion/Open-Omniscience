@@ -328,7 +328,12 @@ def test_the_b28_node_suite_passes_on_the_servers_own_payloads() -> None:
     proc = subprocess.run(
         ["node", str(_ROOT / "tests" / "clickthrough_rewalk_b28_node_test.js")],
         capture_output=True, text=True, check=False,
-        env={"PATH": __import__("os").environ.get("PATH", ""), "B28_PAYLOADS": json.dumps(payloads)},
+        # SYSTEMROOT: without it node on Windows cannot reach its random source and aborts at start (ncrypto::CSPRNG, row 125)
+        env={
+            "PATH": __import__("os").environ.get("PATH", ""),
+            **{k: v for k in ("SYSTEMROOT",) if (v := __import__("os").environ.get(k))},
+            "B28_PAYLOADS": json.dumps(payloads),
+        },
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "all assertions passed" in proc.stdout

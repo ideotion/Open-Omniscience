@@ -1805,6 +1805,9 @@
     }
 
     async function runMarketRule(id) {
+      // The rule fetches the page it names, so it passes the ONE consent first, like every other fetch button (#14).
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Fetch once and apply the rule"))) return;
       toast("Fetching and applying rule…");
       try {
         const o = await api(`/api/markets/rules/${id}/run`, {method: "POST"});

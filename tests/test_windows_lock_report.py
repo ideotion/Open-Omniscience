@@ -302,7 +302,7 @@ def test_the_route_is_served_and_the_zip_member_is_the_same_function() -> None:
     served = {
         r.path
         for r in router.routes
-        if "GET" in getattr(r, "methods", set()) and "windows-locks" in r.path
+        if "POST" in getattr(r, "methods", set()) and "windows-locks" in r.path
     }
     assert served == {"/api/diagnostics/windows-locks"}, served
     assert '("windows-locks.json", lambda: windows_locks_report(download=False))' in diagnostics_source(), (

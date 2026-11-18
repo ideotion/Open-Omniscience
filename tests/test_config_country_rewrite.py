@@ -411,7 +411,8 @@ def _sandbox(tmp_path, monkeypatch, files: dict[str, str], *argv: str):
     mod = _script()
     (tmp_path / "configs").mkdir(exist_ok=True)
     for name, body in files.items():
-        (tmp_path / "configs" / name).write_text(body, encoding="utf-8")
+        # written as bytes: write_text would make every newline CRLF on Windows, and the tests compare bytes they spelled with LF
+        (tmp_path / "configs" / name).write_bytes(body.encode("utf-8"))
     monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "TARGETS", tuple(f"configs/{n}" for n in files))
     monkeypatch.setattr(sys, "argv", ["rewrite_config_countries.py", *argv])
@@ -509,7 +510,8 @@ def test_the_law_catalogue_reads_absent_as_empty_and_unreadable_as_an_error(tmp_
     assert law_catalog._read_catalog_yaml(tmp_path / "nope.yml") == {"sources": [], "documents": []}
     unreadable = tmp_path / "dir.yml"
     unreadable.mkdir()  # exists, cannot be read as a file: not the same fact as absent
-    with pytest.raises(law_catalog.LawCatalogUnreadable, match="IsADirectoryError"):
+    # opening a folder as a file is IsADirectoryError on POSIX and PermissionError on Windows: either way, unreadable, not absent
+    with pytest.raises(law_catalog.LawCatalogUnreadable, match="IsADirectoryError|PermissionError"):
         law_catalog._read_catalog_yaml(unreadable)
 
 

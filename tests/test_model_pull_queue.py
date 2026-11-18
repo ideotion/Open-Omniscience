@@ -37,6 +37,13 @@ class _FakeClient:
         self.pulled.append(model)
 
 
+@pytest.fixture(autouse=True)
+def _no_daemon_placement(monkeypatch):
+    """Where a pull lands is not what these tests measure. Left real, it asks the loopback port whether a daemon is
+    running, and on Windows a refused loopback connect takes about two seconds: three pulls then outlast the join."""
+    monkeypatch.setattr("src.llm.model_store.prepare_ollama_pull", lambda: {})
+
+
 def _mgr(fake):
     return ModelPullManager(client_factory=lambda: fake)
 

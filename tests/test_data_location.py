@@ -121,6 +121,7 @@ def test_an_empty_path_is_refused(tmp_path) -> None:
     assert dl.preflight("   ")["usable"] is False
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits: Windows keeps a folder's write permission in its ACL, not in chmod")
 def test_an_unwritable_folder_is_refused(tmp_path) -> None:
     if os.geteuid() == 0:  # root ignores the mode bits; the check is real for a user
         pytest.skip("running as root: the write permission cannot be withheld")
@@ -256,6 +257,7 @@ def test_persist_is_idempotent(tmp_path, env_file) -> None:
     assert env_file.read_text(encoding="utf-8") == first
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits: on Windows the file takes the install folder's ACL and chmod sets only read-only")
 def test_the_env_file_is_owner_only(tmp_path, env_file) -> None:
     """It sits in the install tree and names where the corpus and its keys live.
 

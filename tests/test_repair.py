@@ -32,9 +32,9 @@ import pytest
 
 from src.database import damage, repair, salvage, verify
 from src.database.damage import FILE_CORPUS, DamageRegistry
+from tests.os_scope import scope_os
 
 from . import damaged_store_helpers as H
-from tests.os_scope import scope_os
 
 UNCLEAN = {"clean": False, "at": "2026-10-06T01:00:00+00:00", "basis": "the liveness file"}
 
@@ -954,6 +954,10 @@ def test_a_record_with_no_measurement_of_the_drive_at_all_sets_no_removal_date(t
     assert measured.get("kept_file_removal_after") and "kept_file_removal_undated" not in measured
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows cannot replace a file a handle holds: the probe holds the library open, so no other file can be put under its name",
+)
 def test_a_file_put_under_the_library_name_during_the_swap_is_not_replaced_by_the_copy(tmp_path, monkeypatch, reg, engine_calls):
     """The data version belongs to the inode the probe opened, so a DIFFERENT file under the name moves nothing it can see; the file's
     identity, compared inside the window, is what catches it. Without that compare the copy of the old file replaces the new one."""
@@ -1726,6 +1730,10 @@ def test_the_data_version_alone_catches_a_save_the_fingerprint_cannot_see(tmp_pa
     assert _count_named(live, "saved during the copy") == 1
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows cannot replace a file a handle holds: a raw connection kept open across the swap refuses it (R741, row 143)",
+)
 def test_a_repair_over_a_log_with_saves_in_it_folds_it_and_is_not_mistaken_for_a_save_during_the_copy(
     tmp_path, monkeypatch, reg, engine_calls
 ):

@@ -77,9 +77,10 @@ from src.safety.file_lock import temp_name
 # disabled there: 464, reproduced by blocking numpy/pandas/scipy/sklearn/statsmodels (R283: a floor states both install profiles).
 # 2026-11-14 (R694, R278's proposals adopted): 6 egress/key-minting GETs and 21 heavy diagnostics GETs became POSTs, and the count
 # measured on that tree is the floor now: 461 full, 458 Core-only (the same 3 analysis routes apart). Then the custody export (F2)
-# became a POST too: 460 full, 457 Core-only.
-_OPERATIONS_FLOOR_FULL = 460
-_OPERATIONS_FLOOR_CORE_ONLY = 457
+# became a POST too: 460 full, 457 Core-only. Then the Windows lock report (row 142: two PowerShell reads, up to 40 s): 459 full,
+# 456 Core-only.
+_OPERATIONS_FLOOR_FULL = 459
+_OPERATIONS_FLOOR_CORE_ONLY = 456
 
 
 def _analysis_extra_installed() -> bool:
@@ -103,6 +104,7 @@ _AMBIENT_FILES = frozenset(
         "session_hwm.json",  # the session high-water-mark sampler
         "session_liveness.json",
         "session_pressure.json",
+        "session_pressure_light.json",  # the same sampler's light record, beside its sibling (seen on Windows charged to /dates)
         "criteria_calibration_cursor.json",
         "vitals_history.json",  # the vitals sampler's history
         "storage_events.json",
@@ -532,6 +534,17 @@ def test_only_the_listed_routes_open_a_loopback_socket(observed):
     assert not bad, f"these GETs opened a socket and are not in _LOOPBACK_ROUTES (the local model servers): {bad}; host (thread): {who}"
 
 
+# The standard library's capture thread: on Windows ``subprocess.run(capture_output=True)`` reads the pipes on threads named
+# ``Thread-N (_readerthread)`` (POSIX polls them instead). Accounted for only on a route whose every started program is allowed, so
+# the thread is never a way round the program table: the caller measured on Windows is /api/system/update/status (git); the
+# Windows file-lock report, which started powershell, is a POST since #2103 and is no longer walked here.
+_READER_THREAD = re.compile(r"Thread-\d+ \(_readerthread\)")
+
+
+def _programs_allowed(path: str) -> set[str]:
+    return set(_PROGRAMS_ALLOWED)
+
+
 def _file_and_thread_problems(seen: dict[str, _Monitor], routes: dict[str, tuple[frozenset[str], frozenset[str], str]]) -> list:
     """(route, 'file'|'thread', name) for every effect no table accounts for; shared with the seeded-data walk."""
     problems = []
@@ -543,6 +556,8 @@ def _file_and_thread_problems(seen: dict[str, _Monitor], routes: dict[str, tuple
             problems.append((path, "file", name))
         for name in sorted(set(m.threads)):
             if _AMBIENT_THREAD.fullmatch(name) or (_columnar_installed() and _COLUMNAR_THREAD.fullmatch(name)):
+                continue
+            if _READER_THREAD.fullmatch(name) and m.processes and set(m.processes) <= _programs_allowed(path):
                 continue
             if any(re.fullmatch(pat.replace("*", ".*"), name) for pat in threads_ok):
                 continue
@@ -589,7 +604,7 @@ _PROGRAMS_ALLOWED = {
 
 
 def test_every_started_program_is_a_listed_local_query(observed):
-    bad = {p: sorted(set(m.processes) - set(_PROGRAMS_ALLOWED)) for p, m in observed.seen.items()}
+    bad = {p: sorted(set(m.processes) - _programs_allowed(p)) for p, m in observed.seen.items()}
     bad = {p: v for p, v in bad.items() if v}
     assert not bad, (
         "these GETs started a program that is not listed in _PROGRAMS_ALLOWED (a GET that shells out can reach the network past the kill "

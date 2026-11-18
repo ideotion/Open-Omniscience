@@ -16,6 +16,7 @@ where it does not, the gap is STATED rather than reported as zero.
 
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -106,6 +107,7 @@ def test_the_peak_path_still_reports_a_real_delta_when_the_mark_does_move(monkey
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX only by nature: Windows has no resource module and no ru_maxrss to convert")
 def test_ru_maxrss_is_converted_per_platform():
     """Both arms of the old ternary were the same expression, so the unit branch it
     was written for never happened and macOS read 1024x high.

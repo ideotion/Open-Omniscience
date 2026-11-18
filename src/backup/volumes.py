@@ -170,17 +170,36 @@ def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
         raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file (a link or a device is never read)")
     if st.st_size > MANIFEST_MAX_BYTES:
         raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
+    # O_NOFOLLOW and O_NONBLOCK exist on POSIX only; O_BINARY on Windows only (without it a Windows descriptor opens in
+    # TEXT mode, which turns CRLF into LF and stops at a Ctrl-Z byte).
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     try:
-        fd = os.open(p, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+        fd = os.open(p, flags)
     except OSError as exc:  # swapped for a link after the lstat (ELOOP), or gone: refused
         raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} cannot be opened ({type(exc).__name__})") from None
     try:
         # Checked on the raw descriptor, before any file object exists, so a refusal still closes it (a directory swapped in
         # after the lstat opens on Linux and would make fdopen raise with the descriptor left open).
-        if not _stat.S_ISREG(os.fstat(fd).st_mode):
+        fst = os.fstat(fd)
+        if not _stat.S_ISREG(fst.st_mode):
             raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file")
-        if hasattr(os, "set_blocking"):
-            os.set_blocking(fd, True)  # O_NONBLOCK only guarded the open against a FIFO; a regular file reads blocking
+        # The file OPENED is the file EXAMINED. Where there is no O_NOFOLLOW (Windows), this is what refuses a name swapped for
+        # a link between the lstat and the open: the link's target is another file. A filesystem that reports no inode (0)
+        # cannot be compared and is read as before. lstat and fstat come from different Windows calls, which on FAT/exFAT or
+        # an SMB share may give the same file's identity at different widths, so a mismatch is confirmed by a second look at
+        # the NAME: refused only when it is no longer the regular file first examined.
+        if (st.st_ino and fst.st_ino) and (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
+            try:
+                again = p.lstat()
+            except OSError:
+                again = None
+            if again is None or not _stat.S_ISREG(again.st_mode) or (again.st_dev, again.st_ino) != (st.st_dev, st.st_ino):
+                raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} changed while it was being opened")
+        if fst.st_size > MANIFEST_MAX_BYTES:
+            raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
+        # Read as it is: O_NONBLOCK changes nothing for a regular file, so the descriptor is never switched back to blocking.
+        # ``os.set_blocking`` was called here, and on Windows it works on pipes only: every manifest read there failed
+        # (row 124, the Windows observation leg).
         with os.fdopen(fd, "rb", closefd=False) as fh:
             raw = fh.read(MANIFEST_MAX_BYTES + 1)
     except OSError as exc:

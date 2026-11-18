@@ -172,10 +172,13 @@ def close_serves_for_cleared_key() -> dict[str, Any]:
     process, and keeps answering with the rows it had. The three places that clear the session's passphrase call this right
     after they do: a failed unlock (``src/api/unlock.py``), a failed create and the crypto-erase
     (``src/safety/crypto_erase.py``, before a byte is touched, as the lane engines are disposed there). It never waits and
-    never raises (``wait=False``: an erase is not held up behind a refresh), so a serve that is in use at that moment is
-    left open and named in ``busy``, which the callers log.
+    never raises (``wait=False``: an erase is not held up behind a refresh). A serve in use at that moment (named in ``busy``)
+    is closed as soon as it is free, by a thread that waits for its lock (named in ``deferred``): left open, it kept the
+    derived key in memory until its next rebuild (open-on-main row 85). That close takes the connection that was serving when
+    the key was cleared, or a persisted one swapped in while it waited if the process still holds no passphrase (that one
+    was opened with the cleared key: a refresh reads the passphrase before it opens, and finds none after the clearing).
     """
-    return _close_serves(wait=False)
+    return _defer_busy(_close_serves_snapshot(), "cleared-key", _key_generation_now())
 
 
 def close_serves_after_encryption() -> dict[str, Any]:
@@ -190,28 +193,61 @@ def close_serves_after_encryption() -> dict[str, Any]:
     in-memory one a build swapped in while it waited if that one has an offload folder (made before the encryption: a build
     checks the encryption again under the swap lock, so none made after it is served with one).
     """
+    return _defer_busy(_close_serves_snapshot(), "encryption")
+
+
+def _close_serves_snapshot() -> tuple[dict[str, Any], dict[str, Any]]:
+    """The connection each loaded serve holds now, then :func:`_close_serves` without waiting."""
     serving: dict[str, Any] = {}
     for name in ("rollup_serve", "map_serve"):
         mod = sys.modules.get(f"src.analytics.{name}")
         if mod is not None:
             serving[name] = mod._STATE.get("con")
-    out = _close_serves(wait=False)
+    return serving, _close_serves(wait=False)
+
+
+def _defer_busy(snapshot: tuple[dict[str, Any], dict[str, Any]], reason: str, cleared_gen: int = -1) -> dict[str, Any]:
+    """Start a :func:`_close_when_free` thread for every serve the close found busy; never raises."""
+    serving, out = snapshot
     for name in out.get("busy", []):
         # ``None`` too: a build busy swapping in the FIRST connection holds the lock, and the close once free takes that
-        # connection if it came with an offload folder (it was made before the encryption).
+        # connection when ``reason``'s rule says it belongs to the state that just ended.
         target = serving.get(name)
         try:
             threading.Thread(
-                target=_close_when_free, args=(name, target), name=f"close-{name}-after-encryption", daemon=True
+                target=_close_when_free, args=(name, target, reason, cleared_gen), name=f"close-{name}-{reason}", daemon=True
             ).start()
             out.setdefault("deferred", []).append(name)
-        except Exception as exc:  # noqa: BLE001 - never raises: the encryption itself has succeeded
+        except Exception as exc:  # noqa: BLE001 - never raises: the caller's own step has already happened
             out.setdefault("errors", {})[name] = type(exc).__name__
     return out
 
 
-def _close_when_free(name: str, target: Any) -> None:
-    """Wait for ``name``'s serve lock, then close ``target`` with its offload folder if it is still the one serving."""
+def _key_generation_now() -> int:
+    """The key generation (``connect.key_generation``) at the clearing; a very large one when unreadable, so a persisted store
+    swapped in meanwhile counts as opened before it and is closed (closing costs latency, never an answer)."""
+    try:
+        from src.database.connect import key_generation
+
+        return key_generation()
+    except Exception:  # noqa: BLE001
+        return 1 << 62
+
+
+_WHY = {
+    "encryption": ("encrypt in place", "the {name} serve that was in use is now closed with its offload folder"),
+    "cleared-key": ("cleared key", "the {name} serve that was in use is now closed and no longer holds the cleared key"),
+}
+
+
+def _close_when_free(name: str, target: Any, reason: str = "encryption", cleared_gen: int = -1) -> None:
+    """Wait for ``name``'s serve lock, then close ``target`` with its offload folder if it is still the one serving.
+
+    A connection swapped in while this waited is closed too when it belongs to the state that just ended: after an
+    encryption, an in-memory one with an offload folder (made before it); after a cleared key, a persisted one opened with a
+    key generation no later than ``cleared_gen`` (the generation at the clearing: one opened after a new unlock or create is
+    later, and kept)."""
+    label, done = _WHY.get(reason, _WHY["encryption"])
     try:
         mod = sys.modules.get(f"src.analytics.{name}")
         if mod is None:
@@ -221,8 +257,13 @@ def _close_when_free(name: str, target: Any) -> None:
             con = mod._STATE.get("con")
             if con is None:
                 return
-            if con is not target and not (mod._STATE.get("spill") and not mod._STATE.get("persisted")):
-                return  # replaced by a connection with no plaintext-era folder: the replacer retired the old one's
+            if con is not target:
+                if reason == "cleared-key":
+                    stale = bool(mod._STATE.get("persisted")) and mod._STATE.get("key_gen", -1) <= cleared_gen
+                else:
+                    stale = bool(mod._STATE.get("spill")) and not mod._STATE.get("persisted")
+                if not stale:
+                    return  # replaced by a connection of the new state: the replacer retired the old one
             with suppress(Exception):
                 con.close()
             mod._STATE["con"] = None
@@ -230,9 +271,9 @@ def _close_when_free(name: str, target: Any) -> None:
             spill, mod._STATE["spill"] = mod._STATE.get("spill"), None
         if spill:  # after the close: DuckDB holds its files open until then
             _remove_spill(spill)
-        _LOG.info("encrypt in place: the %s serve that was in use is now closed with its offload folder", name)
+        _LOG.info("%s: %s", label, done.format(name=name))
     except Exception as exc:  # noqa: BLE001 - a background cleanup must never crash the app
-        _LOG.warning("encrypt in place: could not close the %s serve once free (%s)", name, type(exc).__name__)
+        _LOG.warning("%s: could not close the %s serve once free (%s)", label, name, type(exc).__name__)
 
 
 def _collect_garbage(swapping: bool | None) -> dict[str, Any]:

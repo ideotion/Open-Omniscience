@@ -1085,7 +1085,9 @@ def test_a_long_hold_is_opened_by_the_watchdog_updated_on_each_sample_and_closed
         assert e["open"] is True and e["holder"] == "field-writer", "held, and not yet released: the record says so"
         assert e["frames"] is not None and isinstance(e["frames"], list), "the frames the watchdog saw"
         first_seconds = e["seconds"]
-        time.sleep(0.05)
+        # more than the 0.1 s the record rounds to: two samples 0.05 s apart could round to the same figure (0.2 > 0.2 on a slow
+        # macOS runner, row 109), and 0.15 s later the rounded figure is always higher
+        time.sleep(0.15)
         writer.watchdog_tick(gate, warned)
         (e,) = _events("gate_hold")
         assert e["seconds"] > first_seconds and _member()["kinds"]["gate_hold"]["total"] == 1, "updated, not a second entry"
@@ -1120,12 +1122,13 @@ def test_the_per_holder_table_counts_holds_and_seconds_and_is_bounded():
     from src.database import writer
 
     gate = writer.WriterGate()
-    for name in ("alpha", "beta", "alpha"):
+    # alpha holds 0.15 s twice and beta not at all: a 10 ms sleep each overslept on a loaded macOS runner past two others (row 109)
+    for name, held in (("alpha", 0.15), ("beta", 0.0), ("alpha", 0.15)):
         with _Holder(gate, name):
-            time.sleep(0.01)
+            time.sleep(held)
     by = {r["holder"]: r for r in gate.stats()["by_holder"]}
     assert by["alpha"]["holds"] == 2 and by["beta"]["holds"] == 1
-    assert by["alpha"]["held_s"] >= 0.02 and by["alpha"]["longest_s"] <= by["alpha"]["held_s"]
+    assert by["alpha"]["held_s"] >= 0.3 and by["alpha"]["longest_s"] <= by["alpha"]["held_s"]
     assert gate.stats()["by_holder"][0]["holder"] == "alpha", "most seconds held first"
     for i in range(writer._HOLDER_NAMES_MAX + 6):
         with _Holder(gate, f"pool-worker-{i}"):

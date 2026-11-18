@@ -971,9 +971,10 @@ def test_a_file_both_sides_changed_that_the_merge_unions_is_named(
 
 
 def test_tree_env_leads_pythonpath_with_the_tree_and_keeps_the_rest() -> None:
-    assert g.tree_env(Path("/t"), {"PYTHONPATH": "/a:/b", "K": "v"}) == {"PYTHONPATH": "/t" + os.pathsep + "/a:/b", "K": "v"}
-    assert g.tree_env(Path("/t"), {"K": "v"})["PYTHONPATH"] == "/t"  # no trailing separator: an empty entry means the working directory
-    assert g.tree_env(Path("/t"), {"PYTHONPATH": ""})["PYTHONPATH"] == "/t"
+    t = str(Path("/t"))  # "\\t" on Windows: the tree is named as the OS spells it
+    assert g.tree_env(Path("/t"), {"PYTHONPATH": "/a:/b", "K": "v"}) == {"PYTHONPATH": t + os.pathsep + "/a:/b", "K": "v"}
+    assert g.tree_env(Path("/t"), {"K": "v"})["PYTHONPATH"] == t  # no trailing separator: an empty entry means the working directory
+    assert g.tree_env(Path("/t"), {"PYTHONPATH": ""})["PYTHONPATH"] == t
 
 
 def test_a_child_process_of_a_picked_test_imports_the_tree_the_steps_run_in(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -138,7 +138,8 @@ def test_the_list_is_set_aside_only_while_it_describes_another_set(tmp_path):
     src = function_source(read_static("app-analysis.js"), "_exploreSync")
     script = tmp_path / "explore_sync.js"
     script.write_text(_SYNC_HARNESS.replace("__SYNC__", src), encoding="utf-8")
-    r = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=30)
+    # node prints UTF-8; read it as such (Windows' default code page cannot decode the curly quotes, and stdout came back None)
+    r = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert r.returncode == 0, r.stdout + r.stderr
     rows = {tag: (out_hidden, note_hidden, text) for tag, out_hidden, note_hidden, text in json.loads(r.stdout)}
     assert rows["no analysis"][:2] == (False, True)

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import os
 import threading
 import time
 from pathlib import Path
@@ -426,7 +427,9 @@ def test_the_step_reads_the_file_the_creator_opens_and_declines_off_sqlite(tmp_p
     assert out["outcome"] == "skipped" and out["why"] == "not sqlite", out
     monkeypatch.setattr(session_mod, "DB_FILE", ":memory:")
     assert sc.checkpoint_before_dispose()["why"] == "no file"
-    odd = tmp_path / "a%20b" / "lib?x.db"  # SQLAlchemy would un-escape the % and cut at the ?: the creator opens the string as written
+    # SQLAlchemy would un-escape the % and cut at the ? (or the #): the creator opens the string as written. Windows forbids ? in a
+    # file name, so a Windows store can never carry one; there the # stands in for it.
+    odd = tmp_path / "a%20b" / ("lib#x.db" if os.name == "nt" else "lib?x.db")
     odd.parent.mkdir()
     odd.write_bytes(b"x" * 4096)
     monkeypatch.setattr(session_mod, "DB_FILE", str(odd))

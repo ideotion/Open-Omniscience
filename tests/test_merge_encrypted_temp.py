@@ -651,7 +651,7 @@ def test_the_refusal_sentence_is_read_back_by_the_page() -> None:
         "process.stdout.write(JSON.stringify([" + json.dumps(str(err.value)) + ", 'unrelated']"
         ".map(ooServerText)));",
     ])
-    proc = subprocess.run(["node", "-e", prog], capture_output=True, text=True, check=False)
+    proc = subprocess.run(["node", "-e", prog], capture_output=True, text=True, encoding="utf-8", check=False)
     assert proc.returncode == 0, proc.stderr
     out, other = json.loads(proc.stdout)
     assert other == "unrelated", "a sentence the page does not know comes back unchanged"

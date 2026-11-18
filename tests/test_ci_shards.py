@@ -837,7 +837,23 @@ def test_the_wiring_checker_names_each_broken_property(label):
     assert any(says in p for p in problems), (label, problems)
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="the aggregator step is a bash script")
+def _posix_bash() -> str | None:
+    """The bash a GitHub ``run:`` step uses, or None. On Windows ``bash`` on PATH is usually System32's WSL launcher, which with no
+    distribution installed prints a UTF-16 notice and exits 1 (row 125): Git for Windows' bash is the one a runner's ``shell: bash``
+    step runs, so it is used when present and the tests skip otherwise."""
+    if os.name != "nt":
+        return shutil.which("bash")
+    git = shutil.which("git")
+    for cand in ([Path(git).resolve().parents[1] / "bin" / "bash.exe"] if git else []) + [Path(r"C:\Program Files\Git\bin\bash.exe")]:
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
+_BASH = _posix_bash()
+
+
+@pytest.mark.skipif(_BASH is None, reason="the aggregator step is a bash script (on Windows: Git for Windows' bash, never the WSL launcher)")
 @pytest.mark.parametrize("aggregator", sorted(a for a, _ in _AGGREGATORS.values()))
 @pytest.mark.parametrize(
     ("result", "passes"),
@@ -850,21 +866,21 @@ def test_an_aggregator_is_green_only_when_every_leg_succeeded(aggregator, result
     steps = _workflow()["jobs"][aggregator]["steps"]
     assert len(steps) == 1
     others = {_ENV_OF[job]: "success" for job in _ALSO_REQUIRED.get(aggregator, [])}
-    done = subprocess.run(["bash", "-e", "-c", steps[0]["run"]], env={**os.environ, **others, "LEGS": result}, capture_output=True, text=True, timeout=60)
+    done = subprocess.run([str(_BASH), "-e", "-c", steps[0]["run"]], env={**os.environ, **others, "LEGS": result}, capture_output=True, text=True, timeout=60)
     assert (done.returncode == 0) is passes, (aggregator, result, done.returncode, done.stdout, done.stderr)
     # the same values for each other job the aggregator requires (R668: the static checks), with every leg green
     for var in others:
-        done = subprocess.run(["bash", "-e", "-c", steps[0]["run"]], env={**os.environ, **others, var: result, "LEGS": "success"}, capture_output=True, text=True, timeout=60)
+        done = subprocess.run([str(_BASH), "-e", "-c", steps[0]["run"]], env={**os.environ, **others, var: result, "LEGS": "success"}, capture_output=True, text=True, timeout=60)
         assert (done.returncode == 0) is passes, (aggregator, var, result, done.returncode, done.stdout, done.stderr)
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="the aggregator step is a bash script")
+@pytest.mark.skipif(_BASH is None, reason="the aggregator step is a bash script (on Windows: Git for Windows' bash, never the WSL launcher)")
 def test_a_red_static_job_is_green_only_on_the_docs_only_fast_path():
     """R668: on a docs-only pull request the legs and the static job are skipped and docs-checks decides; anywhere else a skipped or red static job is red."""
     run = _workflow()["jobs"]["test-all"]["steps"][0]["run"]
     def ok(**env: str) -> bool:
         base = {"LEGS": "success", "STATIC": "success", "DOCS_ONLY": "false", "DOCS_CHECKS": "skipped"}
-        return subprocess.run(["bash", "-e", "-c", run], env={**os.environ, **base, **env}, capture_output=True, timeout=60).returncode == 0
+        return subprocess.run([str(_BASH), "-e", "-c", run], env={**os.environ, **base, **env}, capture_output=True, timeout=60).returncode == 0
     assert ok()
     assert not ok(STATIC="failure") and not ok(STATIC="skipped") and not ok(STATIC="cancelled")
     assert ok(LEGS="skipped", STATIC="skipped", DOCS_ONLY="true", DOCS_CHECKS="success")

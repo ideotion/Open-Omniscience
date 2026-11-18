@@ -31,6 +31,8 @@ OUTLET_MAPPED = {
         "its only caller (src/integrity/actors.py) hands it documents labelled by ``OutletMap.label``, so a label is an outlet",
     ("src/analytics/recycled_claim.py", "find_recycled_claims"):
         "the ``source`` it counts is ``OutletMap.label``, one label per outlet (the recycled-claim gate reads outlets)",
+    ("src/briefing/producers.py", "_recent_spread"):
+        "R732's rising floor: the mentions' source ids are mapped to outlets (``OutletMap.key``) before the >=2 outlets gate reads them",
     ("src/analytics/story_propagation.py", "find_story_propagation"):
         "the active-source list is mapped to each outlet's oldest source before the language ubiquity ratio reads it",
 }

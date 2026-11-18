@@ -26,6 +26,7 @@ import io
 import json
 import logging
 import logging.handlers
+import os
 import re
 import subprocess
 import sys
@@ -723,6 +724,9 @@ def _child(code: str, tmp_path, *, env: dict | None = None) -> str:
             "HOME": str(tmp_path),
             "OO_DB_PASSPHRASE": PASS,
             "PYTHONDONTWRITEBYTECODE": "1",
+            # Windows: without SYSTEMROOT, Winsock cannot load its providers and ``import asyncio`` (through uvicorn) fails with
+            # WinError 10106 before the code under test runs (row 109). Absent elsewhere, so nothing is added there.
+            **{k: os.environ[k] for k in ("SYSTEMROOT",) if k in os.environ},
             **(env or {}),
         },
         capture_output=True,

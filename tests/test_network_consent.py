@@ -238,6 +238,112 @@ def test_no_new_socket_capable_importers():
     )
 
 
+# --------------------------------------------------------------------------- #
+# The same ratchet over scripts/ (row 129, from the 2026-11-17 egress audit).
+# --------------------------------------------------------------------------- #
+# A script runs in its OWN process: the app's kill switch and its socket guard
+# are installed on app boot only, so a script that imports a socket-capable
+# library reaches the network with neither, and reads no robots.txt unless it
+# goes through the EthicalFetcher itself. The scripts that need the network
+# for a user or operator (stat_news_check.py, thesaurus_build.py,
+# build_place_gazetteer.py, bloc_roster_check.py, and build_city_gazetteer.py
+# since row 132) import the guarded path from src/ and so are not listed here. Everything below was read before it was listed; docs/SECURITY.md
+# names the egressing ones ("Maintainer build scripts").
+_SCRIPTS = _SRC.parent / "scripts"
+
+_ALLOWED_SCRIPT_SOCKET_IMPORTERS: dict[str, str] = {
+    # -- real egress, maintainer-run; the output is a committed repository file --
+    "scripts/build_world_news_catalog.py":
+        "maintainer build: requests to query.wikidata.org (SPARQL) for news-outlet "
+        "candidates into configs/world_news_sources.yml (not committed; the app seeds "
+        "it beside the catalogue when present). No kill switch, no robots (an API)",
+    "scripts/enrich_sources_wikidata.py":
+        "maintainer build: urllib to www.wikidata.org (Action API) to fill source_type "
+        "in configs/sources.yml. No kill switch, no robots (an API)",
+    "scripts/generate_wikidata_elections.py":
+        "maintainer build: ONE urllib SPARQL request to query.wikidata.org for the "
+        "election snapshot, a committed repo file. No kill switch",
+    "scripts/generate_wikidata_rings.py":
+        "maintainer build: urllib to www.wikidata.org (Action API) for keyword-ring "
+        "labels, a committed repo file. No kill switch",
+    "scripts/build_country_polygons.py":
+        "maintainer build: urllib download of Natural Earth GeoJSON from "
+        "raw.githubusercontent.com, a committed data file. No kill switch",
+    "scripts/build_disputed_areas.py":
+        "maintainer build: urllib download of Natural Earth GeoJSON from "
+        "raw.githubusercontent.com, a committed data file. No kill switch",
+    "scripts/build_world_outline.py":
+        "maintainer build: urllib download of Natural Earth GeoJSON from "
+        "raw.githubusercontent.com, a committed data file. No kill switch",
+    "scripts/build_ip_geo.py":
+        "maintainer build: urllib download of the DB-IP country lite table from "
+        "download.db-ip.com (mirror raw.githubusercontent.com), a bundled data file",
+    "scripts/verify_worldbank_indicators.py":
+        "maintainer check: urllib to api.worldbank.org to verify the curated "
+        "indicator codes; writes nothing the app reads. No kill switch",
+    "scripts/check_upstream_updates.py":
+        "the weekly freshness CI job: urllib to api.github.com per registry "
+        "upstream_check; runs on a CI runner, never on a user's machine",
+    "scripts/analysis/phase2_verifier.py":
+        "maintainer analysis: requests HEAD/GET of the URLs in an extracted references file, to check they "
+        "resolve (loopback skipped). No kill switch, no robots; never run by the app",
+    "scripts/analysis/run_stage_a.py":
+        "maintainer catalogue kit run on the maintainer's own machine: an "
+        "informational urllib GET of four fixed hosts (PROBE_HOSTS) and a child pip "
+        "install from PyPI when its requirements stamp changes; the feed "
+        "judging itself goes through verify_candidate_feeds' EthicalFetcher",
+    # -- loopback only, or no connection at all --
+    "scripts/apply_update.py":
+        "self-update helper: a TCP connect to 127.0.0.1/::1 on the app's port to "
+        "see if it answers, no request sent. Its git fetch is a child process, gated "
+        "before the helper starts (App updates row in docs/SECURITY.md)",
+    "scripts/fault_harness.py":
+        "crash-pipeline test harness: binds a free 127.0.0.1 port and polls the "
+        "throwaway app it started there over loopback; nothing leaves the machine",
+    "scripts/ui_clickthrough_run.py":
+        "UI walk harness: urllib to the seeded app instances on 127.0.0.1:8000-8003 "
+        "only; Playwright drives the same loopback pages",
+    "scripts/analytics45_generate.py":
+        "imports socket only to INSTALL a tripwire that refuses every non-loopback "
+        "connection, lookup and datagram for the whole run; the guard, not a way out",
+}
+
+
+def test_no_new_socket_capable_importers_in_scripts():
+    """Row 129: scripts/ was outside both ratchets. A script has no app kill
+    switch and no socket guard, so a new one that reaches the network must be
+    a decision, written down here and in docs/SECURITY.md, not an accident."""
+    offenders = set()
+    for py in _SCRIPTS.rglob("*.py"):
+        if _imports_any(py.read_text(encoding="utf-8", errors="replace"), _SOCKET_CAPABLE_MODULES):
+            offenders.add(py.relative_to(_SRC.parent).as_posix())
+
+    new = offenders - set(_ALLOWED_SCRIPT_SOCKET_IMPORTERS)
+    assert not new, (
+        f"new script(s) import a socket-capable library: {sorted(new)} -- a script "
+        "has no app kill switch, socket guard or robots read. Use the guarded path "
+        "(src.safety.fetcher.guarded_session or the EthicalFetcher via make_fetcher, "
+        "behind an --online flag, as scripts/stat_news_check.py does), or add an "
+        "entry to _ALLOWED_SCRIPT_SOCKET_IMPORTERS stating WHY, having read it, and "
+        "name it in docs/SECURITY.md"
+    )
+    gone = set(_ALLOWED_SCRIPT_SOCKET_IMPORTERS) - offenders
+    assert not gone, f"script allowlist is stale (no longer importers): {sorted(gone)}"
+
+
+def test_every_script_socket_allowance_states_a_reason_and_is_documented():
+    security = (_SRC.parent / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    start = security.index("maintainer build scripts reach the network directly (row 129)")
+    end = security.find("\n\n", start)
+    paragraph = security[start:end if end != -1 else None]
+    for path, reason in _ALLOWED_SCRIPT_SOCKET_IMPORTERS.items():
+        assert len(reason.strip()) > 30, f"{path}: justification too thin: {reason!r}"
+        assert f"`{path}`" in paragraph, (
+            f"{path} is allowed to reach the network but the scripts paragraph of "
+            "docs/SECURITY.md does not name it"
+        )
+
+
 @pytest.mark.parametrize(
     "source",
     [

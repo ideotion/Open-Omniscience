@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-17,ci/tooling,"ruff pin 0.17.4 -> 0.17.5, style ceiling unchanged at 411",shipped,PR #2090,pyproject.toml;.github/workflows/ci.yml;docs/maintenance/RUFF_STYLE_LANE.md;configs/external_artifacts.yml,"Replaces Dependabot #2054. Measured on main 31236abd: F,B lane clean, style lane 411 on both releases, whole-repo concise findings identical line for line (3,386 each), so the pin moved and the ceiling stayed."

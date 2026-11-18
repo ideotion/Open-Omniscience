@@ -1650,7 +1650,7 @@ def _after_the_swap() -> dict[str, Any]:
 def _write_json_atomic(path: Path, doc: dict[str, Any]) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
-    with open(tmp, "rb") as handle:
+    with open(tmp, "r+b") as handle:
         os.fsync(handle.fileno())
     os.replace(tmp, path)
     _fsync_dir(path.parent)

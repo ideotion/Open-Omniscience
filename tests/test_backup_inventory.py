@@ -144,7 +144,9 @@ def test_a_member_that_cannot_be_exported_yet_says_SO_and_says_WHY(db, monkeypat
 
 def test_a_lane_this_build_cannot_carry_yet_is_named_with_its_size(db, monkeypatch, tmp_path):
     """R729: only the stores this build can merge back ride; another present one is listed
-    in ``waiting`` with its real size and the row says why it is not carried."""
+    in ``waiting`` with its real size and the row says why it is not carried. Since R739 the
+    maps store rides too, so a store this build cannot merge is simulated by narrowing the list."""
+    from src.backup import lane_merge
     from src.versioned import store as lane_store
 
     monkeypatch.setattr(inv, "_blob_totals", lambda: {})
@@ -153,16 +155,23 @@ def test_a_lane_this_build_cannot_carry_yet_is_named_with_its_size(db, monkeypat
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     try:
-        lane_store.create_lane("law")
-        lanes = inv.backup_inventory(db)["lanes"]
-        assert lanes["exportable"] is False and lanes["not_exportable_reason"] == inv.LANES_WAITING
-        assert set(lanes["waiting"]) == {"law"} and lanes["waiting"]["law"]["bytes"] > 0
-        assert lanes["count"] == 0
-        lane_store.create_lane("wiki")
+        lane_store.create_lane("osm")
         lanes = inv.backup_inventory(db)["lanes"]
         assert lanes["exportable"] is True and lanes["note"] == inv.LANES_NOTE
-        assert set(lanes["breakdown"]) == {"wiki"} and set(lanes["waiting"]) == {"law"}
-        assert lanes["bytes"] == lane_store.lane_file_bytes("wiki")
+        assert set(lanes["breakdown"]) == {"osm"} and lanes["waiting"] == {}, "R739: the maps store rides"
+        with monkeypatch.context() as m:
+            m.setattr(lane_merge, "MERGEABLE_KINDS", ("wiki", "law"))
+            lanes = inv.backup_inventory(db)["lanes"]
+            assert lanes["exportable"] is False and lanes["not_exportable_reason"] == inv.LANES_WAITING
+            assert set(lanes["waiting"]) == {"osm"} and lanes["waiting"]["osm"]["bytes"] > 0
+            assert lanes["count"] == 0
+        lane_store.create_lane("wiki")
+        lane_store.create_lane("law")
+        lanes = inv.backup_inventory(db)["lanes"]
+        assert lanes["exportable"] is True and lanes["note"] == inv.LANES_NOTE
+        assert set(lanes["breakdown"]) == {"wiki", "law", "osm"} and lanes["waiting"] == {}
+        assert lanes["bytes"] == sum(lane_store.lane_file_bytes(k) for k in ("wiki", "law", "osm"))
+        assert lane_merge.MERGEABLE_KINDS == ("wiki", "law", "osm")
     finally:
         lane_store.dispose_all()
 

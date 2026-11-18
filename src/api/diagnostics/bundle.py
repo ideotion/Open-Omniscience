@@ -1902,7 +1902,7 @@ _DIAG_SIBLING_FILES: tuple[str, ...] = ("integrity.py",)
 _DIAG_REPORT_POSTS: frozenset[str] = frozenset(
     {
         "/performance", "/benchmark", "/rollup-benchmark", "/llm-bench", "/llm-throughput", "/ai-activity-selftest",
-        "/llm-throughput-selftest", "/source-coverage-benchmark", "/ir-eval-selftest", "/perception-eval-selftest",
+        "/llm-throughput-selftest", "/source-coverage-benchmark", "/windows-locks", "/ir-eval-selftest", "/perception-eval-selftest",
         "/keyword-triage-selftest", "/recursive-loop", "/search-timing-selftest", "/debug-bundle", "/all",
         "/bulletin-language-selftest", "/power-profile-selftest", "/keyword-selftest", "/qualification-assist-selftest",
         "/source-audit-selftest", "/source-tags-selftest",

@@ -47,7 +47,7 @@ def dd(monkeypatch, tmp_path):
 
 
 def _log(dd, text: str, name: str = "crash_trace.log") -> None:
-    (dd / "diagnostics" / name).write_text(text, encoding="utf-8")
+    (dd / "diagnostics" / name).write_text(text, encoding="utf-8", newline="")  # the bytes as given: text mode would turn "\n" into CR LF on Windows
 
 
 def _header(pid: int, at: str, boot: str = "-") -> str:
