@@ -122,6 +122,8 @@ class _Kernel:
 @pytest.fixture
 def kernel(monkeypatch) -> _Kernel:
     k = _Kernel()
+    # a POSIX kernel is faked, so the guard must take its POSIX branches: on Windows ``_held`` reads the error mode first (row 144)
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(G, "_resource", lambda: k)
     monkeypatch.setattr(G, "_prctl", k.prctl)
     monkeypatch.setattr(G, "_read_pattern", lambda: "core")
@@ -268,7 +270,8 @@ def test_a_system_that_refuses_both_says_none_and_raises_only_when_strict(kernel
 
 
 def test_a_system_with_no_core_limit_to_set_is_unsupported(monkeypatch):
-    monkeypatch.setattr(G, "_resource", lambda: None)  # Windows: no ``resource`` module
+    monkeypatch.setattr(sys, "platform", "linux")  # a POSIX system without the module; Windows has a mechanism of its own (row 144)
+    monkeypatch.setattr(G, "_resource", lambda: None)  # no ``resource`` module
     monkeypatch.setattr(G, "_prctl", lambda *a, **k: None)
     monkeypatch.setattr(G, "_read_pattern", lambda: None)
     got = _ENGAGE()
@@ -665,7 +668,7 @@ def test_a_guard_reading_that_cannot_be_taken_says_so_and_never_breaks_a_boot(le
 
 def test_a_boot_record_carries_the_guard_this_process_really_holds(ledger):
     rec = ledger.record_boot(None)
-    assert rec["core_guard"]["mechanism"] in {"rlimit", "dumpable", "none", "unsupported"}
+    assert rec["core_guard"]["mechanism"] in {"rlimit", "dumpable", "none", "unsupported", "error-mode"}  # error-mode: Windows
     assert set(rec["core_guard"]) == {"mechanism", "soft", "hard", "dumpable", "inherited_by_children", "handler"}
 
 

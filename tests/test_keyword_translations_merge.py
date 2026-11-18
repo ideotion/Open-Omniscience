@@ -226,7 +226,7 @@ def test_nothing_in_the_keyword_index_reads_this_table():
                 )
             )
             if named:
-                hits.add(str(path.relative_to(root)))
+                hits.add(path.relative_to(root).as_posix())
                 break
     allowed = {
         "src/database/models.py",          # the definition

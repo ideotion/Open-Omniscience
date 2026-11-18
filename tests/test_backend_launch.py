@@ -21,8 +21,11 @@ that the plumbing carries a boolean, not that the detection actually works.
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -32,12 +35,18 @@ import src.llm.ollama_lifecycle as life
 
 @pytest.fixture()
 def fake_ollama(tmp_path, monkeypatch):
-    """A real, executable 'ollama' on a real PATH — so shutil.which genuinely finds it."""
-    b = tmp_path / "ollama"
+    """A real, executable 'ollama' on a real PATH — so shutil.which genuinely finds it.
+
+    On Windows ``shutil.which`` finds a program by a PATHEXT extension, so the file is ``ollama.exe`` there, and the path is the
+    one ``shutil.which`` answers, the same call the code under test makes (row 144). Nothing here runs it: every test that
+    starts it replaces ``Popen``."""
+    b = tmp_path / ("ollama.exe" if sys.platform == "win32" else "ollama")
     b.write_text("#!/bin/sh\nsleep 300\n", encoding="utf-8")
     b.chmod(b.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
-    return b
+    found = shutil.which("ollama")
+    assert found is not None and os.path.normcase(found) == os.path.normcase(str(b)), found
+    return Path(found)
 
 
 # --------------------------------------------------------------------------- #

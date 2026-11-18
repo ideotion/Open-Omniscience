@@ -79,6 +79,7 @@ def findings() -> list[dict]:
         [sys.executable, "-m", "ruff", "check", *TARGETS, "--output-format=json"],
         capture_output=True,
         text=True,
+        encoding="utf-8",  # ruff writes UTF-8; the locale's codec (cp1252 on Windows) cannot read every byte of it (row 144)
     )
     # ruff exits 1 when it has findings, which is the normal case here; only a
     # crash (2), no output or unparseable output is an error worth refusing on.

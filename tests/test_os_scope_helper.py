@@ -116,7 +116,7 @@ def unknown_os_names(source: str) -> list[tuple[int, str, str]]:
         ("scope_os(mp, mod, replcae=f)", [(1, "scope_os", "replcae")]),
         ("scope_os_path(mp, mod, getsize=f)", []),
         ("scope_os_path(mp, mod, getsise=f)", [(1, "scope_os_path", "getsise")]),
-        ('hide_os(mp, mod, "statvfs", "replace")', []),
+        ('hide_os(mp, mod, "getpid", "replace")', []),  # names every os has: statvfs is not on Windows (row 144)
         ('hide_os(mp, mod, "statvf")', [(1, "hide_os", "statvf")]),
         ('hide_os(mp, mod, NAME)', []),
         ("scope_os(mp, mod, **{NAME: 1})", []),

@@ -9,6 +9,7 @@ The ``__main__`` block now registers the running module under its real name.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,8 @@ def test_the_module_run_as_main_is_the_one_later_imports_find(tmp_path):
         # OO_DATA_DIR is the isolated directory: without it the app falls back to <repo>/data and writes a
         # PLAINTEXT database there, which makes a later first launch from the checkout skip encryption
         env={"PATH": "", "OO_DATA_DIR": str(tmp_path), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1",
-             "OO_AUTOSEED": "0", "PYTHONPATH": str(ROOT)},
+             "OO_AUTOSEED": "0", "PYTHONPATH": str(ROOT),
+             # Windows: without SYSTEMROOT Winsock cannot load its providers and ``import asyncio`` fails (WinError 10106, row 144)
+             **{k: os.environ[k] for k in ("SYSTEMROOT",) if k in os.environ}},
     )
     assert "ONE-MODULE-OK" in out.stdout, out.stdout[-800:] + out.stderr[-1500:]

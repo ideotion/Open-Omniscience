@@ -10,6 +10,7 @@ import io
 import json
 import zipfile
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -115,8 +116,9 @@ def _zip(path, inst, rows):
 
 
 def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location("psa", cs.__file__.replace("src/catalog/candidate_sources.py",
-                                                                             "scripts/propose_source_additions.py"))
+    # from the module's own path, not a string replace on it: "src/catalog/..." does not occur in a Windows path (row 144)
+    spec = importlib.util.spec_from_file_location(
+        "psa", Path(cs.__file__).resolve().parents[2] / "scripts" / "propose_source_additions.py")
     psa = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(psa)
     monkeypatch.setattr(psa, "_shipped_domains", lambda: frozenset({"old.example"}))
