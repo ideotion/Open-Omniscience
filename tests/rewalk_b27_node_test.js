@@ -292,6 +292,13 @@ async function u11() {
 }
 
 // ----------------------------------------------------------------- T-7 --- //
+// The health-decided states moved into ai-pill.js (row 164, 2026-11-18), shared with the task
+// manager: load the SHIPPED file, so the painter runs with the real function behind it.
+const AI_PILL_STATE = (() => {
+  const w = {};
+  new Function("window", fs.readFileSync(path.join(__dirname, "..", "src", "static", "ai-pill.js"), "utf8"))(w);
+  return w.ooAiPillState;
+})();
 async function t7() {
   const LEAD = "No AI backend is reachable right now — neither Ollama nor vLLM answers.";
   const TAIL = "AI is offline — click to start it, or open AI settings to install one";
@@ -300,7 +307,8 @@ async function t7() {
     const O = { t: (s) => (map[s] != null ? map[s] : s) };
     const f = new Function("$", "window", "OOI18N", "aiPillClick", "_aiStarting", "_aiHealth", "_aiBusy",
       "_aiBusyLabel", "_jobLabel", extract(APP, "_paintAiPill") + "return _paintAiPill;")(
-      (id) => (id === "llm" ? el : null), { OOI18N: O }, O, () => {}, false, h, () => false, null, null);
+      (id) => (id === "llm" ? el : null), { OOI18N: O, ooAiPillState: AI_PILL_STATE }, O, () => {}, false, h,
+      () => false, null, null);
     f();
     return el;
   };

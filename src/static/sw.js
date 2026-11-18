@@ -46,6 +46,7 @@ const SHELL = [
   "/static/app-dossier.js",
   "/static/app-evidence.js",
   "/static/app-tour.js",
+  "/static/ai-pill.js",
   "/static/app-ai-tools.js",
   "/static/app-boot.js",
   "/static/app.css",
