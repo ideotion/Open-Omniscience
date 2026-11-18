@@ -31,6 +31,7 @@ import pytest
 
 from src.monitoring import forensics, session_hwm
 from tests import previous_identity
+from tests._child_env import windows_system_env
 
 
 @pytest.fixture()
@@ -385,7 +386,7 @@ def _default_start(data_dir, *, serve: bool = True) -> dict:
     env = {
         "PYTHONPATH": str(pathlib.Path(__file__).resolve().parents[1]), "PATH": "/usr/bin:/bin", "HOME": str(data_dir),
         "OO_DATA_DIR": str(data_dir), "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1", "OO_SESSION_LIVENESS": "0",
-        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1", **windows_system_env(),
     }
     proc = subprocess.run([sys.executable, "-c", _DEFAULT_START.replace("{serve}", str(serve))], cwd=pathlib.Path(__file__).resolve().parents[1], env=env,
                           capture_output=True, text=True, timeout=180)

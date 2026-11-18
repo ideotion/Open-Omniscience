@@ -562,7 +562,7 @@
  {
   "path": "/api/diagnostics/windows-locks",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "windows_locks_report",
   "endpoint": "windows_locks_report"
