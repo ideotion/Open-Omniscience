@@ -241,6 +241,15 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # Row 154: only the SQLite result code is read, to stop the page-size walk on a lock; nothing of the error is kept
         ('held_by_another', 'code = getattr(exc, "sqlite_errorcode", None)'): 1,
     },
+    # Row 156: a staged backup member's open or ATTACH reads only whether the SQLite code was busy or locked, to refuse it as in use
+    # with fixed words instead of "no key opens it"; nothing of the error is kept, served or logged
+    'src/backup/stream_backup.py': {
+        ('_export_plaintext_with_keys', 'if held_by_another(exc):'): 1,
+        ('_export_plaintext_with_keys', 'if not held_by_another(exc):'): 1,
+    },
+    'src/backup/lane_merge.py': {
+        ('_attach', 'if held_by_another(exc):'): 1,
+    },
     'src/database/damage.py': {
         ('driver_error', 'cur = exc'): 1,
         ('failure_label', 'code = exc.errno if isinstance(exc, OSError) else None'): 1,

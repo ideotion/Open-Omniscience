@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "عملية جلب أخرى لبيانات المناخ قيد التشغيل بالفعل؛ أعد المحاولة عند انتهائها.",
   "Another job is writing to the database": "مهمة أخرى تكتب في قاعدة البيانات",
   "Another job is writing to the database:": "مهمة أخرى تكتب في قاعدة البيانات:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "يستخدم برنامج آخر عنصر النسخة الاحتياطية المُجهَّز {name} الآن، لذا تعذّر فتحه. أعد المحاولة بعد قليل.",
   "Another way to get": "طريقة أخرى للحصول على",
   "Answered by the search index: fast on any corpus.": "يجيب عنه فهرس البحث: سريع على أي مجموعة.",
   "Answers read in full, across every edition. A refused request is not counted here.": "ردود قُرئت كاملة، عبر كل النسخ. ولا يُحسب هنا الطلب المرفوض.",

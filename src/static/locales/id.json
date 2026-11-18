@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "Pengambilan data iklim lain sedang berjalan; coba lagi setelah selesai.",
   "Another job is writing to the database": "Tugas lain sedang menulis ke basis data",
   "Another job is writing to the database:": "Tugas lain sedang menulis ke basis data:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "Program lain sedang menggunakan anggota cadangan yang disiapkan {name} saat ini, sehingga tidak dapat dibuka. Coba lagi sebentar lagi.",
   "Another way to get": "Cara lain mendapatkan",
   "Answered by the search index: fast on any corpus.": "Dijawab oleh indeks pencarian: cepat pada korpus apa pun.",
   "Answers read in full, across every edition. A refused request is not counted here.": "Jawaban yang dibaca utuh, di semua edisi. Permintaan yang ditolak tidak dihitung di sini.",

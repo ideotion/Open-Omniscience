@@ -99,6 +99,7 @@ from src.backup.volumes import (
     VolumeStopped,
     _sha256_file,
     load_manifest,
+    member_in_use,
     verify_volume_set,
 )
 from src.paths import data_dir
@@ -2539,15 +2540,24 @@ def _fold_plain_wal(db_path: Path) -> None:
 def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
     """Decrypt a staged SQLCipher member into a plaintext copy, trying each
     candidate key in order. Fails loudly (naming the fix) when none opens it."""
-    from src.database.connect import WrongPassphraseError, connect
+    from src.database.connect import StoreHeldError, WrongPassphraseError, connect, held_by_another
 
     last: str | None = None
+    held = False
     for key in dict.fromkeys(keys):
         try:
             conn = connect(src, key=key, check_same_thread=False)
+        except StoreHeldError:
+            # Row 156: another program holds the staged file. A lock is not about the key, so no other key opens it now
+            # either, and "none of the passphrases open it" would be untrue.
+            held = True
+            break
         except WrongPassphraseError:
             continue
         except Exception as exc:  # noqa: BLE001 - file trouble is named by its class; a driver's words are not carried
+            if held_by_another(exc):
+                held = True
+                break
             last = None if is_driver_error(exc) else type(exc).__name__
             continue
         try:
@@ -2560,8 +2570,16 @@ def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
                 cur.close()
             conn.execute("DETACH DATABASE snap")
             return
+        except Exception as exc:
+            if not held_by_another(exc):
+                raise
+            # Taken after the key was checked: the same answer, in use, try again.
+            held = True
+            break
         finally:
             conn.close()
+    if held:
+        raise VolumeError(member_in_use(src.name)) from None
     raise VolumeError(
         "the corpus member is SQLCipher-encrypted and none of the available "
         "passphrases open it — the backup carries the source store's own "
