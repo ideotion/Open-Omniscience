@@ -298,7 +298,7 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
     'src/database/encrypt_tool.py': {
-        ('encrypt_database', 'if not library or not _file_is_locked(refused):'): 1,
+        ('_export_and_swap', 'if not library or not _file_is_locked(refused):'): 1,
     },
     'src/database/repair.py': {
         ('_swap', 'if not _file_is_locked(refused):'): 1,

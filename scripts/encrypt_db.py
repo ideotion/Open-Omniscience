@@ -29,7 +29,7 @@ def main() -> int:
 
     from src.api.unlock import main_db_path
     from src.database.connect import is_encrypted_file
-    from src.database.encrypt_tool import EncryptToolError, encrypt_all
+    from src.database.encrypt_tool import EncryptPartial, EncryptToolError, encrypt_all
 
     p = main_db_path()
     if p is None:
@@ -59,6 +59,12 @@ def main() -> int:
         return 1
     try:
         reports = encrypt_all(pw)
+    except EncryptPartial as exc:
+        # R742: the library IS encrypted with this passphrase; the stores named here are not yet. Starting the app and
+        # unlocking finishes them, or Settings -> Safety -> Encrypt with the same passphrase.
+        print(f"partly done: {exc}")
+        print("still unencrypted: " + ", ".join(exc.pending))
+        return 1
     except EncryptToolError as exc:
         print(f"refused: {exc}")
         return 1

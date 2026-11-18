@@ -67,6 +67,11 @@ def route(monkeypatch):
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-plaintext")
     monkeypatch.setattr("src.database.session.dispose_engine", lambda: seen("dispose"))
     monkeypatch.setattr(connect_mod, "set_passphrase", lambda p: seen("set_passphrase"))
+    # The stores' own headers decide "encrypted" (R742); the recorders here encrypt nothing, so the read says every store is done.
+    from src.database import at_rest_state
+
+    monkeypatch.setattr(at_rest_state, "status", lambda main=None: {"corpus_encrypted": True, "complete": True, "pending": [],
+                                                                       "stores": [], "plaintext_snapshots": []})
     return events
 
 
@@ -77,7 +82,7 @@ def _body():
 def test_the_machine_is_owned_for_every_step_of_the_route_and_not_before_or_after(monkeypatch, route):
     """Before the pool is disposed, while the file is swapped, while the keyed pool is installed and disposed again: owned. Before and
     after the route: not. RED WITHOUT the window: every step reads False."""
-    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: route.append(("encrypt_all", runner.owns_the_machine())) or {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key, **_kw: route.append(("encrypt_all", runner.owns_the_machine())) or {})
     assert runner.owns_the_machine() is False
     unlock_mod.encrypt_db(_body())
     assert route == [("dispose", True), ("encrypt_all", True), ("set_passphrase", True), ("dispose", True)]
@@ -91,7 +96,7 @@ def test_a_drain_that_is_due_while_the_file_is_swapped_does_not_run(monkeypatch,
     g = _pinned_guard(drains)
     ticks: list = []
 
-    def encrypt(key):
+    def encrypt(key, **_kw):
         ticks.append(g.drain_if_due())
         return {}
 
@@ -105,7 +110,7 @@ def test_the_window_closes_however_the_route_ends(monkeypatch, route):
     """A refused key, an engine failure and an exit that is not an Exception all leave the machine free. RED WITHOUT the ``finally`` of the
     window: the first later restore or drain finds the machine owned for ever."""
 
-    def refused(key):
+    def refused(key, **_kw):
         raise encrypt_tool.EncryptToolError("not encrypted")
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", refused)
@@ -114,7 +119,7 @@ def test_the_window_closes_however_the_route_ends(monkeypatch, route):
     assert err.value.status_code == 400
     assert runner.owns_the_machine() is False
 
-    def broken(key):
+    def broken(key, **_kw):
         raise RuntimeError("the engine failed")
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", broken)
@@ -122,7 +127,7 @@ def test_the_window_closes_however_the_route_ends(monkeypatch, route):
         unlock_mod.encrypt_db(_body())
     assert runner.owns_the_machine() is False
 
-    def interrupted(key):
+    def interrupted(key, **_kw):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", interrupted)
@@ -136,7 +141,7 @@ def test_work_already_in_flight_finishes_before_the_file_is_touched(monkeypatch,
     the wait: it starts under the lease."""
     monkeypatch.setattr(unlock_mod, "ENCRYPT_QUIESCE_S", 10.0)
     leases_seen: list = []
-    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: leases_seen.append(corpus_lease.active_leases()) or {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key, **_kw: leases_seen.append(corpus_lease.active_leases()) or {})
     inside = threading.Event()
     release = threading.Event()
 
@@ -161,7 +166,7 @@ def test_work_that_does_not_end_is_a_named_refusal_and_nothing_is_touched(monkey
     RED WITHOUT the refusal: the file is swapped under the lease or the route waits for ever."""
     monkeypatch.setattr(unlock_mod, "ENCRYPT_QUIESCE_S", 0.3)
     called: list = []
-    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: called.append(1) or {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key, **_kw: called.append(1) or {})
     # the lease is held until this block ends, so a route that answers inside it was ended by ENCRYPT_QUIESCE_S; one that waited for the lease
     # never answers, and the guard says so
     with corpus_lease.corpus_lease("storage-guard-drain"), pytest.raises(HTTPException) as err:
@@ -235,7 +240,7 @@ def test_a_collection_pass_still_winding_down_does_not_hold_the_response_or_the_
     monkeypatch.setattr(runner.time, "sleep", slept.append)
     monkeypatch.setattr(runner, "_watch_for_resume", lambda s, **k: watched.append(s))
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
-    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key, **_kw: {})
     unlock_mod.encrypt_db(_body())
     assert slept == [], f"the request thread slept {sum(slept)} s waiting for a pass to wind down"
     assert sched.starts == 1 and watched == [sched], "one attempt, then the pending-resume watcher owns it"
@@ -252,7 +257,7 @@ def test_a_backup_window_that_ends_during_the_swap_does_not_free_the_machine_und
     export.__enter__()
     seen: list = []
 
-    def encrypt(key):
+    def encrypt(key, **_kw):
         export.__exit__(None, None, None)
         seen.append((runner.owns_the_machine(), g.drain_if_due()))
         return {}
@@ -281,7 +286,7 @@ def test_encrypting_in_place_retires_a_serve_built_while_plaintext_with_its_offl
     monkeypatch.setitem(map_serve._STATE, "con", _Con())
     monkeypatch.setitem(map_serve._STATE, "spill", str(folder))
     monkeypatch.setitem(map_serve._STATE, "built_at", 1.0)
-    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key, **_kw: {})
     unlock_mod.encrypt_db(_body())
     assert closed == [1] and map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None
     assert not folder.exists(), "the plaintext offload folder outlived the encryption"
@@ -292,5 +297,5 @@ def test_a_cleanup_that_fails_does_not_turn_a_finished_encryption_into_an_error(
         raise RuntimeError("the close failed")
 
     monkeypatch.setattr("src.scheduler.release.close_serves_after_encryption", broken)
-    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: {})
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key, **_kw: {})
     assert unlock_mod.encrypt_db(_body())["encrypted"] is True
