@@ -211,9 +211,8 @@ def doctor() -> dict:
     # Read from the registry, with each lane's state taken from its own file HEADER by
     # the same ``_store`` every other row uses; an absent lane reports "absent", which
     # is the honest state for a lane the operator has never opened.
-    from src.versioned.lanes import all_lanes
-
     from src.database import at_rest_state
+    from src.versioned.lanes import all_lanes
 
     # R742: the per-lane lines read the SAME files the at-rest status (and ``encrypt_all``) reads, so the panel can never show
     # "every store is encrypted" above a lane line that says otherwise. Without a SQLite corpus there is no list: the registry's
@@ -290,9 +289,6 @@ def _alone_with_the_library() -> Iterator[None]:
 #: R742: the retry finishes the stores left plaintext only under the passphrase the library is already open with.
 FINISH_NEEDS_THE_SAME_PASSPHRASE = "type the passphrase the library is already encrypted with to finish the other stores"
 
-#: R742: the library is encrypted (and open with its key); at least one other store is not yet. Fixed words, translated in the page.
-from src.database.encrypt_tool import PARTIAL as PARTIAL_DETAIL  # noqa: E402 - beside the route that answers with it
-
 
 @router.post("/encrypt-db")
 def encrypt_db(body: EncryptBody) -> dict:
@@ -300,6 +296,9 @@ def encrypt_db(body: EncryptBody) -> dict:
     explicit consent, never silent). Covers corpus + custody log (D6)."""
     from src.database import at_rest_state
     from src.database.connect import get_passphrase, set_passphrase
+
+    # R742's fixed 409 words come in here, never at module level: importing the app must not import the store.
+    from src.database.encrypt_tool import PARTIAL as PARTIAL_DETAIL
     from src.database.encrypt_tool import EncryptPartial, EncryptToolError, encrypt_all
     from src.database.session import dispose_engine
 
