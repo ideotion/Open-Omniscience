@@ -130,15 +130,20 @@ def emit_candidates() -> dict:
 
 
 def _chromium_path() -> str:
-    override = os.environ.get("OO_TEST_CHROMIUM_PATH")
-    if override:
-        return override
-    base = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
-    for d in sorted(base.glob("chromium-*"), reverse=True):
-        exe = d / "chrome-linux" / "chrome"
-        if exe.exists():
-            return str(exe)
-    raise SystemExit("no pinned Chromium build found under PLAYWRIGHT_BROWSERS_PATH")
+    # Row 157 (F1): the shared finder (the old chrome-linux glob missed today's chrome-linux64 builds).
+    from src.monitoring.pinned_chromium import (
+        ChromiumLayoutUnknown,
+        browsers_dir,
+        find_pinned_chromium,
+    )
+
+    try:
+        exe = find_pinned_chromium()
+    except ChromiumLayoutUnknown as exc:
+        raise SystemExit(str(exc)) from None
+    if exe is None:
+        raise SystemExit(f"no pinned Chromium build found under {browsers_dir()}")
+    return exe
 
 
 def _resolving_globals(page, candidates: list[str]) -> list[str]:

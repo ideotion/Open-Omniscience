@@ -26,28 +26,25 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 
 import pytest
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
 
+from src.monitoring.pinned_chromium import find_pinned_chromium  # noqa: E402
 from src.monitoring.ui_walk import Surface  # noqa: E402
 from src.monitoring.ui_walk_playwright import PlaywrightUiWalkDriver  # noqa: E402
 
-_CHROMIUM_PATH = os.environ.get("OO_TEST_CHROMIUM_PATH")
-if not _CHROMIUM_PATH:
-    # Fall back to the pinned build this environment ships (see the module docstring: the
-    # extra pins the client library only, never a browser).
-    _browsers_dir = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
-    for _candidate in sorted(_browsers_dir.glob("chromium-*/chrome-linux/chrome")):
-        _CHROMIUM_PATH = str(_candidate)
-        break
+# Row 157 (F1): the shared finder. It returns None only when NO Chromium build is installed (the one case a skip is
+# honest about); a build it cannot read, or an OO_TEST_CHROMIUM_PATH that does not exist, raises at import and the
+# file ERRORS by name. The old glob looked for chrome-linux/chrome only, missed today's chrome-linux64 builds and
+# skipped all 31 tests on a machine that had a browser.
+_CHROMIUM_PATH = find_pinned_chromium()
 
 pytestmark = pytest.mark.skipif(
-    not _CHROMIUM_PATH or not Path(_CHROMIUM_PATH).exists(),
-    reason="no pinned Chromium build reachable -- set OO_TEST_CHROMIUM_PATH or install one under "
+    _CHROMIUM_PATH is None,
+    reason="no Chromium build installed -- set OO_TEST_CHROMIUM_PATH or install one under "
     "PLAYWRIGHT_BROWSERS_PATH (never `playwright install`, which fetches one over the network)",
 )
 

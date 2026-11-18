@@ -411,7 +411,12 @@ class PlaywrightUiWalkDriver:
         restricts the audit to one subtree."""
         already = self.page.evaluate("() => typeof window.axe !== 'undefined'")
         if not already:
-            self.page.add_script_tag(content=axe_source)
+            # Row 157 (F6): evaluated through the DevTools protocol, never as an inline <script> tag. The app's
+            # Content-Security-Policy (script-src 'self') refuses add_script_tag's inline script, which blocked
+            # every axe row of the 2026-11-18 rehearsal. A protocol evaluation is the test tool reading the page,
+            # not page content, so the CSP stays exactly as the app sends it: no bypass_csp on any context, and
+            # the walked page keeps refusing inline scripts as it does for a user.
+            self.page.evaluate(axe_source)
         return self.page.evaluate(
             """
             async (scope) => {

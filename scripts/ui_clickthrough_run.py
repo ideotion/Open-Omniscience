@@ -71,6 +71,10 @@ LOCALES_TO_CHECK = ["en", "fr", "ar", "zh"]  # the brief's own stated minimum (2
 # lesson) — the T7 uppercase-reliance audit runs across exactly these.
 UPPERCASE_NOOP_LOCALES = ["ar", "zh", "ja", "hi", "bn"]
 BREAKPOINTS = [(375, 900), (768, 1000), (1024, 900), (1440, 950)]
+#: Row 157 (F8): how long the walk gives the first-run guide to open once the page has loaded. It
+#: opens after the app's first counts request, which a seeded encrypted store answers within a few
+#: seconds of the unlock; a populated corpus never opens it, and spends this once per state.
+GUIDE_OPEN_WAIT_MS = 8000
 
 AXE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "vendor" / "axe-core" / "axe.min.js"
 LOCALES_DIR = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
@@ -404,8 +408,23 @@ def _dismiss_guide_wizard(page, report: Report, state_label: str) -> None:
     the one-time guide done, making it the single reliable dismiss target regardless of which
     step is currently showing.
     """
+    # Row 157 (F8): the guide opens only after the app's scripts have run AND its first counts
+    # request has answered. The old fixed 400 ms read "open on boot: False" on the encrypted
+    # state B (checked straight after the unlock, while the page was still loading), and the
+    # guide then opened over Home, so the empty-state check read the page behind the modal.
+    # Wait for the page to load, then give the guide a bounded window to open: a populated
+    # corpus never opens it, which costs this window once per state and is recorded as False.
+    # A page not yet navigated (the plaintext run reaches the app only at its first goto) keeps
+    # the old behaviour: there is nothing to wait for there.
+    if page.url.startswith("http"):
+        with contextlib.suppress(Exception):
+            _wait_app_scripts(page, timeout_ms=30000)
+        with contextlib.suppress(Exception):
+            page.wait_for_function(
+                "() => { const d = document.getElementById('guide-wizard'); return !!(d && d.open); }",
+                timeout=GUIDE_OPEN_WAIT_MS,
+            )
     try:
-        page.wait_for_timeout(400)  # let a boot-time openGuide() call actually fire first
         dlg_open = bool(page.evaluate(
             "() => { const d = document.getElementById('guide-wizard'); "
             "return !!(d && d.open); }"
@@ -508,13 +527,14 @@ def investigate_state_b(playwright, report: Report, shots: Path) -> None:
 
 
 def _chromium_path() -> str:
-    override = os.environ.get("OO_TEST_CHROMIUM_PATH")
-    if override:
-        return override
-    base = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
-    for cand in sorted(base.glob("chromium-*/chrome-linux/chrome")):
-        return str(cand)
-    raise RuntimeError("no pinned Chromium build found")
+    # Row 157 (F1): one finder for every caller; a build in an unknown layout fails by name.
+    from src.monitoring.pinned_chromium import browsers_dir, find_pinned_chromium
+
+    exe = find_pinned_chromium()
+    if exe is None:
+        raise RuntimeError(f"no pinned Chromium build under {browsers_dir()} (set PLAYWRIGHT_BROWSERS_PATH or "
+                           "OO_TEST_CHROMIUM_PATH; never `playwright install`)")
+    return exe
 
 
 # ------------------------------------------------------------------------------------------ #
@@ -846,10 +866,20 @@ def _unlock_if_locked(page, report: Report, state_label: str, url: str) -> None:
             timeout=60000,
         )
         reached = True
+    if reached and not _safe_visible(page, "#view-open"):
+        # Row 157 (F9): #tab-home is near the TOP of index.html and the app's ~30 scripts are at
+        # the END of <body>, so the element exists while the scripts are still loading. Walking on
+        # from there clicked Home before app-library.js had run ("startLive is not defined", 0.31 s
+        # after load) and called openAnalysisFor before app-analysis.js existed (the analysis
+        # window read "not visible"). Wait for the document to finish loading, as a person's first
+        # click after the page settles would.
+        with contextlib.suppress(Exception):
+            _wait_app_scripts(page)
     if reached and _safe_visible(page, "#view-open"):
         with contextlib.suppress(Exception):
             page.click("#view-open button")
             page.wait_for_timeout(1000)
+            _wait_app_scripts(page)
     report.add_coverage(
         surface=f"{state_label}_unlock", axis="encrypted-run",
         result="verified" if reached else "blocked",
@@ -870,6 +900,19 @@ def _unlock_if_locked(page, report: Report, state_label: str, url: str) -> None:
             "state or the unlock path is broken; the at_rest rows say which store this was.",
             new=True,
         )
+
+
+def _wait_app_scripts(page, timeout_ms: int = 60000) -> None:
+    """Row 157 (F9): wait until the app's page has LOADED, not merely until its first element exists.
+
+    ``readyState == "complete"`` comes after every classic ``<script>`` at the end of ``<body>`` has
+    run; ``showTab`` and ``startLive`` (app-shell.js, app-library.js) are then both defined.
+    """
+    page.wait_for_function(
+        "() => document.readyState === 'complete' && typeof showTab === 'function' "
+        "&& typeof startLive === 'function'",
+        timeout=timeout_ms,
+    )
 
 
 def _get_json(url: str, *, attempts: int = 6):
@@ -1103,11 +1146,24 @@ def drill_worldmap_lens_controls(driver: PlaywrightUiWalkDriver, report: Report)
                 note=f"5x ArrowLeft on the slider; map innerHTML {before}->{_map_len()} "
                 f"errors={errs}",
             )
-        page.click("[data-oomap-signals]:visible")
-        page.wait_for_timeout(300)
     except Exception as exc:  # noqa: BLE001
         report.add_coverage(surface="worldmap_controls", axis="signals-layer",
                             result="partial", note=str(exc)[:120])
+    # Row 157 (F5): switching the layer back OFF is its own step with its own row. It used to share the
+    # signals-layer try, so the 2026-11-18 rehearsal's off-click timeout overwrote that axis as
+    # "partial" although the layer and its slider had both just been verified. The button is waited
+    # for (the map re-renders after the slider moves), and a failure names the off-click.
+    try:
+        page.wait_for_selector("[data-oomap-signals]", state="visible", timeout=10000)
+        page.click("[data-oomap-signals]:visible")
+        page.wait_for_timeout(300)
+        pressed = page.get_attribute("[data-oomap-signals]", "aria-pressed")
+        report.add_coverage(surface="worldmap_controls", axis="signals-layer-off",
+                            result="verified" if pressed == "false" else "partial",
+                            note=f"aria-pressed after the off-click: {pressed}")
+    except Exception as exc:  # noqa: BLE001
+        report.add_coverage(surface="worldmap_controls", axis="signals-layer-off",
+                            result="partial", note=f"switching the layer off: {str(exc)[:120]}")
 
 
 def drill_task_manager_panels(driver: PlaywrightUiWalkDriver, report: Report) -> None:
@@ -1432,7 +1488,7 @@ def drill_agenda_provenance(driver: PlaywrightUiWalkDriver, report: Report) -> N
             surface="agenda_deduced", axis="list-view-pills",
             result="verified" if ded["n"] > 0 else "partial",
             note=f"deduced-pill n={ded['n']} titled={ded['titled']} sample={ded['sample']!r} "
-            "(seeded specimen: 3 articles / 2 sources naming 2026-10-12)",
+            "(seeded specimen: 3 articles / 2 sources naming the date 45 days after the seed day)",
         )
     except Exception as exc:  # noqa: BLE001
         report.add_coverage(surface="agenda_deduced", axis="list-view-pills",
@@ -2209,14 +2265,21 @@ def investigate_state_c(playwright, report: Report, shots: Path) -> None:
         )
         _walk_surfaces(driver, ins_surfaces, report, axis_label="ins-subtabs")
 
-        # -- Settings subtabs (all 10) ------------------------------------------------------ #
-        _log("drilling all 10 Settings subtabs")
+        # -- Settings subtabs (all 9) ------------------------------------------------------- #
+        # Row 157 (F3): Safety stopped being a subtab when rulings 26/42 folded it into Advanced as
+        # the `<details data-adv="safety">` section (index.html, "SAFETY, folded into Advanced"), so
+        # it is walked THERE, through the driver's advanced_section step, never as a tenth subtab
+        # the strip no longer has (the 2026-11-18 rehearsal waited 30 s for it and timed out).
+        _log("drilling all 9 Settings subtabs, plus Advanced > Safety")
         set_subtabs = ["graphics", "general", "cards", "models", "wikipedia", "offlinemap",
-                       "agenda", "data", "safety", "advanced"]
+                       "agenda", "data", "advanced"]
         set_surfaces = tuple(
             Surface(f"settings_{t}", f"Settings > {t}", nav_tab="settings", subtab=t,
                     dom_id=f"set-{t}")
             for t in set_subtabs
+        ) + (
+            Surface("settings_safety", "Settings > Advanced > Safety", nav_tab="settings",
+                    subtab="advanced", advanced_section="safety", dom_id="set-advanced"),
         )
         _walk_surfaces(driver, set_surfaces, report, axis_label="set-subtabs")
 
