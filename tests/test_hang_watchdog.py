@@ -128,3 +128,44 @@ def test_a_failure_is_written_down_as_it_happens(tmp_path):
     assert len(lines) == 3 and lines[0] == f"FAILED (call) {_PROBE}", lines
     assert lines[1].strip().startswith("at ") and "test_hang_watchdog.py:" in lines[1], lines
     assert "the probe was asked to fail | on two lines" in lines[2], "the message is kept, on one line"
+
+
+def _run_probe_in_workers(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Row 163: the portability legs run ``-n 4``; the controller takes the variables out of the environment, so they reach a worker only
+    through ``workerinput``. Run the probe under ``-n 2`` and read what the WORKER wrote."""
+    env = {
+        **os.environ, "OO_TEST_HANG_LIMIT_S": "3", "OO_TEST_HANG_REPORT": str(tmp_path / "hang.txt"),
+        "OO_TEST_SLOW_S": "0.000001", "OO_TEST_SLOW_REPORT": str(tmp_path / "slow.txt"),
+        "OO_TEST_FAIL_REPORT": str(tmp_path / "fail.txt"), "OO_HANG_PROBE": mode,
+    }
+    for key in ("PYTEST_XDIST_WORKER", "PYTEST_ADDOPTS"):
+        env.pop(key, None)
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-n", "2", "--dist", "loadfile", _PROBE],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
+    )
+    return proc, tmp_path
+
+
+def _worker_files(folder: Path, name: str) -> dict[str, str]:
+    return {p.name: p.read_text(encoding="utf-8") for p in sorted(folder.glob(name + ".gw*"))}
+
+
+def test_under_xdist_the_worker_writes_the_slow_and_fail_reports_and_the_controller_writes_none(tmp_path):
+    proc, folder = _run_probe_in_workers(tmp_path, "fail")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    for name in ("hang.txt", "slow.txt", "fail.txt"):
+        assert not (folder / name).exists(), f"the controller runs no test, so it must not write {name} (the CI step would read it as the run's)"
+    slow = [line for text in _worker_files(folder, "slow.txt").values() for line in text.splitlines()]
+    assert len(slow) == 1 and slow[0].endswith(" s  " + _PROBE), _worker_files(folder, "slow.txt")
+    fails = "".join(_worker_files(folder, "fail.txt").values())
+    assert fails.startswith(f"FAILED (call) {_PROBE}\n"), fails
+    hangs = _worker_files(folder, "hang.txt")
+    assert hangs and all(text == "" for text in hangs.values()), "every worker was armed, and its file is empty after a test that returned"
+
+
+def test_under_xdist_a_hang_ends_the_worker_and_its_file_names_the_test(tmp_path):
+    proc, folder = _run_probe_in_workers(tmp_path, "1")
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    hung = [text for text in _worker_files(folder, "hang.txt").values() if "Timeout (" in text]
+    assert len(hung) == 1 and hung[0].startswith(f"Running (limit 3 s): {_PROBE}"), _worker_files(folder, "hang.txt")
