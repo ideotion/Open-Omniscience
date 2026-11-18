@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "另一个气候数据获取正在进行；请在其完成后重试。",
   "Another job is writing to the database": "另一个任务正在写入数据库",
   "Another job is writing to the database:": "另一个任务正在写入数据库：",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "另一个程序正在使用已暂存的备份成员 {name}，因此无法打开它。请稍后再试。",
   "Another way to get": "获取该模型的另一种方式",
   "Answered by the search index: fast on any corpus.": "由搜索索引作答：在任何语料库上都很快。",
   "Answers read in full, across every edition. A refused request is not counted here.": "完整读取的应答，涵盖所有语言版本。被拒绝的请求不计入此处。",

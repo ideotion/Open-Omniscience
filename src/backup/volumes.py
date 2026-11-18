@@ -50,6 +50,14 @@ class VolumeError(RuntimeError):
     """Raised when a volume set is malformed, corrupt, or fails its checksum."""
 
 
+def member_in_use(name: str) -> str:
+    """Row 156: the refusal for a staged member another program holds right now: in use, try again; never "no key opens it"."""
+    return (
+        f"another program is using the staged backup member {name} right now, so it could not be opened; "
+        "try again in a moment"
+    )
+
+
 class _HashingReader:
     """Wrap an open reader so every byte consumed also updates a running hash."""
 

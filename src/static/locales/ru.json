@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "Другая загрузка климатических данных уже выполняется; повторите, когда она завершится.",
   "Another job is writing to the database": "Другая задача пишет в базу данных",
   "Another job is writing to the database:": "Другая задача пишет в базу данных:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "Другая программа сейчас использует подготовленный элемент резервной копии {name}, поэтому его не удалось открыть. Повторите попытку через минуту.",
   "Another way to get": "Другой способ получить",
   "Answered by the search index: fast on any corpus.": "Отвечает поисковый индекс: быстро на любом корпусе.",
   "Answers read in full, across every edition. A refused request is not counted here.": "Ответы, прочитанные полностью, по всем изданиям. Отклонённый запрос здесь не считается.",

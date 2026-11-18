@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "Another climate fetch is already running; try again when it finishes.",
   "Another job is writing to the database": "Another job is writing to the database",
   "Another job is writing to the database:": "Another job is writing to the database:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.",
   "Another way to get": "Another way to get",
   "Answered by the search index: fast on any corpus.": "Answered by the search index: fast on any corpus.",
   "Answers read in full, across every edition. A refused request is not counted here.": "Answers read in full, across every edition. A refused request is not counted here.",

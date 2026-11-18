@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "別の気候データ取得がすでに実行中です。完了後にもう一度お試しください。",
   "Another job is writing to the database": "別のタスクがデータベースに書き込み中です",
   "Another job is writing to the database:": "別のタスクがデータベースに書き込み中です:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "別のプログラムが準備済みのバックアップメンバー {name} を現在使用しているため、開けませんでした。しばらくしてからもう一度お試しください。",
   "Another way to get": "入手する別の方法",
   "Answered by the search index: fast on any corpus.": "検索インデックスが応答：どのコーパスでも高速です。",
   "Answers read in full, across every edition. A refused request is not counted here.": "最後まで読み取った応答（すべての版の合計）。拒否されたリクエストはここに数えません。",

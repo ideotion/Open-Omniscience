@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,backup,"a held staged backup member says in use, not no key opens it (row 156)",shipped,PR #2120 row 156,src/backup/stream_backup.py;src/backup/lane_merge.py;src/backup/volumes.py;src/static/app-core.js,"Restore decrypt and lane-merge ATTACH stop at the first busy or locked answer (StoreHeldError or SQLite 5/6) and refuse with fixed words: in use, try again (keyed x12); a held lane is owed but does not use up one of its three tries. Tests: tests/test_member_in_use_r156.py."

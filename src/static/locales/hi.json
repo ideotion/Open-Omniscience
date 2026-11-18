@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "जलवायु डेटा की एक और प्राप्ति पहले से चल रही है; समाप्त होने पर पुनः प्रयास करें।",
   "Another job is writing to the database": "एक और कार्य डेटाबेस में लिख रहा है",
   "Another job is writing to the database:": "एक और कार्य डेटाबेस में लिख रहा है:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "कोई दूसरा प्रोग्राम अभी तैयार किए गए बैकअप सदस्य {name} का उपयोग कर रहा है, इसलिए इसे खोला नहीं जा सका। थोड़ी देर में फिर से प्रयास करें।",
   "Another way to get": "इसे पाने का दूसरा तरीका",
   "Answered by the search index: fast on any corpus.": "खोज अनुक्रमणिका से उत्तर: किसी भी कॉर्पस पर तेज़।",
   "Answers read in full, across every edition. A refused request is not counted here.": "पूरी तरह पढ़े गए उत्तर, सभी संस्करणों में। अस्वीकृत अनुरोध यहाँ नहीं गिना जाता।",

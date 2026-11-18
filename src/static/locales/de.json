@@ -512,6 +512,7 @@
   "Another climate fetch is already running; try again when it finishes.": "Ein anderer Klima-Abruf läuft bereits; versuchen Sie es nach dessen Ende erneut.",
   "Another job is writing to the database": "Eine andere Aufgabe schreibt in die Datenbank",
   "Another job is writing to the database:": "Eine andere Aufgabe schreibt in die Datenbank:",
+  "Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.": "Ein anderes Programm verwendet gerade das bereitgestellte Sicherungsmitglied {name}, daher konnte es nicht geöffnet werden. Versuchen Sie es gleich noch einmal.",
   "Another way to get": "Ein anderer Weg zu",
   "Answered by the search index: fast on any corpus.": "Vom Suchindex beantwortet: schnell bei jedem Korpus.",
   "Answers read in full, across every edition. A refused request is not counted here.": "Vollständig gelesene Antworten, über alle Ausgaben. Eine abgelehnte Anfrage wird hier nicht gezählt.",

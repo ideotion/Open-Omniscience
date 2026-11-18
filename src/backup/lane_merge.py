@@ -87,6 +87,11 @@ class LaneMergeError(RuntimeError):
     """A lane member could not be merged. The live lane is left as it was."""
 
 
+class LaneMemberInUse(LaneMergeError):
+    """Row 156: another program held the staged lane member at ATTACH. Not a key question and not the
+    backup's fault: the lane stays owed and the try is not counted against ``MAX_LANE_ATTEMPTS``."""
+
+
 def member_name(kind: str) -> str:
     """The volume-set member name of one lane's snapshot."""
     return f"{LANE_PREFIX}/{kind}.db"
@@ -188,7 +193,8 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     """ATTACH ``path`` as ``inc``, trying each key; refuse by name when none opens it."""
-    from src.database.connect import is_encrypted_file
+    from src.backup.volumes import member_in_use
+    from src.database.connect import held_by_another, is_encrypted_file
 
     encrypted = is_encrypted_file(path)
     if encrypted is None:
@@ -206,9 +212,12 @@ def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
             conn.execute("ATTACH DATABASE ? AS inc KEY ?", (str(path), key))  # the key is bound, never SQL text
             conn.execute("SELECT count(*) FROM inc.sqlite_master").fetchone()
             return
-        except Exception:  # noqa: BLE001 - a wrong key reads as "not a database"; try the next
+        except Exception as exc:  # noqa: BLE001 - a wrong key reads as "not a database": try the next; a held member stops here
             with contextlib.suppress(Exception):  # nothing was attached
                 conn.execute("DETACH DATABASE inc")
+            if held_by_another(exc):
+                # Row 156: another program holds the staged lane member: not a key question, and no other key opens it now.
+                raise LaneMemberInUse(member_in_use(path.name)) from None
     raise LaneMergeError(
         "the lane member is encrypted and none of the available passphrases open it; "
         "pass the source store's own passphrase to merge it"
@@ -1693,6 +1702,9 @@ def merge_staged_lanes(
             # busy store) and are owed to the next import of this backup.
             res["state"] = "partial" if res.pop("owed", False) else "merged"
             report["lanes"].append(res)
+        except LaneMemberInUse as exc:
+            # Row 156: owed like a failure, but marked, so record_lane_outcome does not count the try.
+            report["lanes"].append({"kind": kind, "state": "failed", "in_use": True, "reason": record_text(exc, *keys, limit=_REASON_LIMIT)})
         except (LaneMergeError, DatabaseLockedError, PlaintextLaneRefused) as exc:
             # This module's own sentences, and the lane store's named refusals (locked; a
             # plaintext lane beside an encrypted corpus): scrubbed all the same.
@@ -1792,7 +1804,8 @@ def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
     """Remember (or forget) that this artifact's lanes are still owed. Never raises.
 
     A deferred lane (held behind the import queue) was never attempted, so it does not use
-    up an attempt; a failed one keeps the count ``mark_lanes_owed`` set.
+    up an attempt; a failed one keeps the count ``mark_lanes_owed`` set, unless every failure
+    was a member another program held (row 156), which gives that count back.
     """
     if not digest:
         return
@@ -1800,6 +1813,9 @@ def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
     owed = sorted({str(x.get("kind")) for x in lanes if x.get("state") in ("failed", "deferred", "partial")})
     if living.get("error"):
         owed = owed or ["all"]
+    # Row 156: when the only failures are members another program held, the try is not counted.
+    failed = [x for x in lanes if x.get("state") == "failed"]
+    uncounted = bool(failed) and all(x.get("in_use") is True for x in failed) and not living.get("error")
 
     def update(cur: dict[str, Any]) -> bool:
         if not owed:
@@ -1810,6 +1826,8 @@ def record_lane_outcome(digest: str | None, living: dict[str, Any]) -> None:
         got = cur.get(digest)
         prev: dict[str, Any] = got if isinstance(got, dict) else {}
         attempts = prev.get("attempts") or 0  # a deferred lane was never attempted: no count added
+        if uncounted and isinstance(attempts, int) and attempts > 0:
+            attempts -= 1  # row 156: mark_lanes_owed counted a try that a held member stopped
         cur[digest] = {"kinds": owed, "attempts": attempts, "at": datetime.now(UTC).isoformat(timespec="seconds")}
         return True
 
