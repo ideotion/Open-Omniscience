@@ -261,6 +261,8 @@ def _retry_while_locked(
     *,
     deadline: float,
     on_retry: Callable[[], object] | None = None,
+    after_grace: Callable[[OSError], object] | None = None,
+    grace_s: float = 0.0,
 ) -> None:
     """Run ``op``, waiting out a Windows file lock until ``deadline``.
 
@@ -277,8 +279,15 @@ def _retry_while_locked(
     Re-raises the ORIGINAL exception when the budget runs out, deliberately: it
     carries the OS's own reason and the path it refused, which is more than any
     message composed here would say.
+
+    ``after_grace``, if given, is called ONCE with the refusal when the file has
+    stayed locked for ``grace_s`` seconds; it may raise to end the wait early (the
+    swap's own-holder check, :func:`_refuse_if_this_process_holds`). Returning
+    keeps waiting until ``deadline`` as before.
     """
     attempt = 0
+    first_refusal: float | None = None
+    asked = False
     while True:
         try:
             op()
@@ -286,6 +295,12 @@ def _retry_while_locked(
         except OSError as exc:
             if not _file_is_locked(exc) or time.monotonic() >= deadline:
                 raise
+            now = time.monotonic()
+            if first_refusal is None:
+                first_refusal = now
+            if after_grace is not None and not asked and now - first_refusal >= grace_s:
+                asked = True
+                after_grace(exc)
             attempt += 1
             if on_retry is not None and attempt % 8 == 0:
                 # A pool that was disposed can be re-opened by anything in this
@@ -297,6 +312,59 @@ def _retry_while_locked(
                 except Exception as exc:  # noqa: BLE001 - a courtesy, never load-bearing
                     log_failure(_LOG, "re-dispose during a locked-file retry failed", exc, level=logging.DEBUG)
             time.sleep(0.25)
+
+
+#: How long the swap lets a sharing violation stand before it asks whether THIS process is the holder (R741, row 145). A request that
+#: is only reading gives its connection back within this; one queued on the write gate the swap holds never does.
+_OWN_HOLDER_GRACE_S = float(os.environ.get("OO_SWAP_OWN_HOLDER_GRACE_S", "5") or 5)
+
+#: The bound on that question. ``psutil``'s ``open_files`` walks the process's handles, which on Windows can be slow and can miss one,
+#: so only a POSITIVE answer inside this bound counts; a slow, failed or empty answer is "cannot tell" and the 300 s wait goes on.
+_OWN_HOLDER_PROBE_S = 2.0
+
+
+def _this_process_holds(path: Path, *, timeout_s: float = _OWN_HOLDER_PROBE_S) -> bool:
+    """True only when ``psutil`` says, within ``timeout_s``, that this process has ``path`` open. Never raises; every other answer
+    (no psutil, an error, a timeout, a list without the file) is False, which keeps the caller on its ordinary wait."""
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001 - absent or broken: cannot tell
+        return False
+    wanted = os.path.normcase(os.path.abspath(str(path)))
+    answer: list[bool] = []
+
+    def probe() -> None:
+        try:
+            answer.append(any(os.path.normcase(os.path.abspath(f.path)) == wanted for f in psutil.Process().open_files()))
+        except Exception:  # noqa: BLE001 - a probe that fails is "cannot tell"
+            answer.append(False)
+
+    worker = threading.Thread(target=probe, name="swap-own-holder-probe", daemon=True)
+    try:
+        worker.start()
+    except Exception:  # noqa: BLE001 - a thread that cannot start is "cannot tell", never a raise through the swap
+        return False
+    worker.join(timeout_s)
+    return bool(answer) and answer[0]
+
+
+#: The refusal a swap gives when this process itself holds the file: waiting could not help, since the swap holds what the holder waits on.
+OWN_HOLDER_BUSY = (
+    "a connection of this app was still using the library file, so it could not be switched; Windows cannot replace a file that is open"
+)
+
+
+def _refuse_if_this_process_holds(exc: OSError) -> None:
+    """The swap's ``after_grace``: raise :class:`~src.database.library_generation.LibraryBusy` when the refused file is held by this
+    process, and return (the wait goes on) for any other holder or when that cannot be told. The file asked about is the one refused:
+    for ``os.replace(working, target)`` that is the DESTINATION, which the OS puts in ``filename2`` (``filename`` is the source); an
+    unlink has only ``filename``."""
+    name = getattr(exc, "filename2", None) or getattr(exc, "filename", None)
+    if not name or not _this_process_holds(Path(name)):
+        return
+    from src.database.library_generation import LibraryBusy
+
+    raise LibraryBusy(OWN_HOLDER_BUSY)
 
 
 def _lock_holder_note(exc: BaseException) -> str:
@@ -362,6 +430,8 @@ def _clear_stale_side_files(target: Path, *, wait_s: float | None = None) -> Non
             lambda p=stale: p.unlink(missing_ok=True),  # type: ignore[misc]
             deadline=deadline,
             on_retry=dispose_engine,
+            after_grace=_refuse_if_this_process_holds,
+            grace_s=_OWN_HOLDER_GRACE_S,
         )
 
 
@@ -379,7 +449,9 @@ def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | N
     sees it. A raise from ``check`` leaves the file the library, and the window gives the earlier connections their validity back; a
     replace that fails AFTER the live log names were removed does not (a pooled connection holds that log by an inode no name points at, so a
     save through it would land where no later connection reads): the earlier connections stay refused and the work is done again.
-    ``library_generation.LibraryBusy`` is raised when a connection was still being opened after the wait."""
+    ``library_generation.LibraryBusy`` is raised when a connection was still being opened after the wait, and (Windows) when a file step
+    is refused because THIS process still holds the file after :data:`_OWN_HOLDER_GRACE_S` (R741, row 145): the holder is then a
+    connection waiting on what the caller holds, so the 300 s wait could only end in the same refusal. Any other holder keeps that wait."""
     from src.database import library_generation
     from src.database.session import dispose_engine
 
@@ -392,10 +464,12 @@ def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | N
         swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
         library_generation.disk_changing()  # from here a failed replace does not give the earlier connections their validity back
         _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
-        _replace_live_corpus(working, target, wait_s=max(0.0, swap_deadline - time.monotonic()))  # atomic on the same filesystem
+        _replace_live_corpus(
+            working, target, wait_s=max(0.0, swap_deadline - time.monotonic()), own_holder_check=True
+        )  # atomic on the same filesystem
 
 
-def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = None) -> None:
+def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = None, own_holder_check: bool = False) -> None:
     """Put the merged corpus in place, waiting out a lock on the DESTINATION.
 
     This is the operation the first cut of the lock fix left bare, and it is the
@@ -420,6 +494,9 @@ def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = 
             lambda: os.replace(working, target),
             deadline=time.monotonic() + budget,
             on_retry=dispose_engine,
+            # inside the swap only: there the holder may be this process, waiting on what the swap holds (R741, row 145)
+            after_grace=_refuse_if_this_process_holds if own_holder_check else None,
+            grace_s=_OWN_HOLDER_GRACE_S,
         )
     finally:
         # S3.6: the live store file has just been REPLACED, so any cached header
@@ -6835,7 +6912,7 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
             swap_in_corpus(working, target)
         except LibraryBusy:
             raise RestoreRefused(
-                "a connection to your corpus was still being opened when the file was to be switched, so nothing was "
+                "a connection to your corpus was still being opened or used when the file was to be switched, so nothing was "
                 "switched — nothing was written to your corpus. Import again."
             ) from None
         finally:

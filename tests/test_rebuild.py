@@ -502,6 +502,10 @@ def test_the_job_is_a_cancellable_writer():
 # --------------------------------------------------------------------------- #
 #  the review's findings, one test each
 # --------------------------------------------------------------------------- #
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows cannot replace a file a handle holds: the test keeps a raw connection open across the switch on its own thread, which refuses it as writer-busy there (R741, row 145)",
+)
 def test_a_library_in_wal_mode_with_saves_in_its_log_is_rebuilt_with_them(tmp_path, monkeypatch, key_held, engine):
     from src.database.connect import connect
 
@@ -601,6 +605,10 @@ def test_a_volume_export_or_restore_refuses_while_a_rebuild_runs(tmp_path, monke
 # --------------------------------------------------------------------------- #
 #  the second read's findings (2026-11-16)
 # --------------------------------------------------------------------------- #
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows cannot replace a file a handle holds: the test itself puts a file under the name the probe holds open, which cannot happen there",
+)
 def test_a_library_replaced_under_its_name_during_the_copy_is_not_switched_over(tmp_path, monkeypatch, key_held, engine):
     """Encrypt (or a restore) can put a NEW file under the library's name while the copy runs: the probe watches the old file
     and never moves, so the switch compares the file's identity with the one taken when the probe opened."""

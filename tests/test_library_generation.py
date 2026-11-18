@@ -715,11 +715,15 @@ def test_the_session_engine_and_the_snapshot_engine_are_stamped_through_the_guar
         snap.dispose()
 
 
-def test_a_handle_that_never_lets_go_makes_the_swap_refuse_within_its_budget_and_the_library_stays_whole(world, monkeypatch):
+@pytest.mark.parametrize("own_holder", [False, True], ids=["another-program-holds-it", "this-process-holds-it"])
+def test_a_handle_that_never_lets_go_makes_the_swap_refuse_within_its_budget_and_the_library_stays_whole(world, monkeypatch, own_holder):
     """The Windows outcome of a connection held across the swap, on every platform (row 98): Windows will not replace or unlink a
-    file a handle holds, so the swap waits out its budget and refuses with the lock error. Nothing moved: the library is the file it
-    was, a fresh connection reads and writes it, and the held connection, from before a window that started changing the disk, stays
-    refused. The budget is a stepped clock's, so the test takes no wall time; the real one is 300 s."""
+    file a handle holds, so the swap refuses. Held by another program, it waits out its budget and refuses with the lock error; held by
+    THIS process (R741, row 145), it refuses as busy once the short grace has passed, since that holder may be waiting on the window
+    the swap holds. Nothing moved either way: the library is the file it was, a fresh connection reads and writes it, and the held
+    connection, from before a window that started changing the disk, stays refused. The budget is a stepped clock's, so the test takes
+    no wall time; the real one is 300 s. Who holds the file is decided here, not probed: the probe has its own tests
+    (tests/test_swap_refused_while_held.py)."""
     from src.backup import merge
     from tests.test_restore_swap_locked_files import _win_error
     from tests.wallclock_helpers import SteppedClock
@@ -741,13 +745,16 @@ def test_a_handle_that_never_lets_go_makes_the_swap_refuse_within_its_budget_and
 
     scope_os(monkeypatch, merge, replace=held)
     monkeypatch.setattr(Path, "unlink", held_unlink)
+    monkeypatch.setattr(merge, "_this_process_holds", lambda path, **_: own_holder)
     clock = SteppedClock()
     monkeypatch.setattr(merge, "time", clock)
     with engine.connect() as conn:
         conn.execute(text("SELECT count(*) FROM notes")).scalar()
-        with pytest.raises(PermissionError):
+        with pytest.raises(gen.LibraryBusy if own_holder else PermissionError):
             merge.swap_in_corpus(working, live)
         assert clock.slept and sum(clock.slept) <= merge._SWAP_HANDLE_WAIT_S + 0.5, "the swap must wait, and no longer than its budget"
+        if own_holder:
+            assert sum(clock.slept) <= merge._OWN_HOLDER_GRACE_S + 0.5, "a holder in this process ends the wait after the grace"
         assert working.exists(), "the restored file was not moved anywhere"
         with pytest.raises(gen.StaleLibraryError):
             conn.execute(text("INSERT INTO notes (body) VALUES ('after a refused swap')"))
