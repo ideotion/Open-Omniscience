@@ -6579,6 +6579,7 @@
   "annotated only": "apenas anotado",
   "anomaly not checked": "anomalia não verificada",
   "anon": "anôn.",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "outro programa está a usar este armazém neste momento, por isso não foi possível verificar a frase-passe; feche esse programa e tente de novo",
   "anticipation": "antecipação",
   "any": "qualquer",
   "app folder, not in use": "pasta do aplicativo, não utilizada",

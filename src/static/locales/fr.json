@@ -6579,6 +6579,7 @@
   "annotated only": "annoté uniquement",
   "anomaly not checked": "anomalie non vérifiée",
   "anon": "anon.",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "un autre programme utilise ce magasin en ce moment, la phrase secrète n'a donc pas pu être vérifiée ; fermez ce programme et réessayez",
   "anticipation": "anticipation",
   "any": "n'importe lequel",
   "app folder, not in use": "dossier de l'application, non utilisé",

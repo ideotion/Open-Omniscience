@@ -6579,6 +6579,7 @@
   "annotated only": "仅标注",
   "anomaly not checked": "异常未检验",
   "anon": "匿名",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "另一个程序正在使用此存储，因此无法检查口令短语；请关闭该程序后重试",
   "anticipation": "期待",
   "any": "任意",
   "app folder, not in use": "应用文件夹，未使用",

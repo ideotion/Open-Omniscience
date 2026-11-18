@@ -6579,6 +6579,7 @@
   "annotated only": "بتعليق فقط",
   "anomaly not checked": "الشذوذ غير متحقَّق منه",
   "anon": "مجهول",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "برنامج آخر يستخدم هذا المخزن الآن، لذا تعذّر التحقق من عبارة المرور؛ أغلق ذلك البرنامج وأعد المحاولة",
   "anticipation": "الترقّب",
   "any": "أي",
   "app folder, not in use": "مجلد التطبيق، غير مستخدم",

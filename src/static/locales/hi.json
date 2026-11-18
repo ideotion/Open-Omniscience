@@ -6579,6 +6579,7 @@
   "annotated only": "केवल एनोटेटेड",
   "anomaly not checked": "विसंगति जाँची नहीं गई",
   "anon": "अनाम",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "कोई दूसरा प्रोग्राम अभी इस स्टोर का उपयोग कर रहा है, इसलिए पासफ़्रेज़ जाँचा नहीं जा सका; उस प्रोग्राम को बंद करें और फिर कोशिश करें",
   "anticipation": "प्रत्याशा",
   "any": "कोई भी",
   "app folder, not in use": "ऐप फ़ोल्डर, उपयोग में नहीं",

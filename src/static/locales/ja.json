@@ -6579,6 +6579,7 @@
   "annotated only": "注釈済みのみ",
   "anomaly not checked": "異常は未確認",
   "anon": "匿名",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "別のプログラムが現在このストアを使用しているため、パスフレーズを確認できませんでした。そのプログラムを閉じてからもう一度お試しください",
   "anticipation": "期待",
   "any": "いずれか",
   "app folder, not in use": "アプリのフォルダー（未使用）",

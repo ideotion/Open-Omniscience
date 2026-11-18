@@ -6579,6 +6579,7 @@
   "annotated only": "только аннотированные",
   "anomaly not checked": "аномалия не проверена",
   "anon": "аноним",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "другая программа сейчас использует это хранилище, поэтому парольную фразу не удалось проверить; закройте эту программу и повторите попытку",
   "anticipation": "ожидание",
   "any": "любой",
   "app folder, not in use": "папка приложения, не используется",

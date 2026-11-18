@@ -936,11 +936,27 @@ def _file_opens_with(p: Path, passphrase: str) -> None:
     try:
         conn = connect(p, key=passphrase, check_same_thread=False, read_only=True)
     except WrongPassphraseError as exc:
+        if _refused_because_held(exc):
+            raise HTTPException(status_code=409, detail=STORE_IN_USE) from None
         raise HTTPException(
             status_code=403,
             detail=http_detail(exc, "", passphrase, withheld="the passphrase does not open this file (or the file is damaged)"),
         ) from None
     conn.close()
+
+
+#: Row 154: an open refused because another program holds the store is not a wrong passphrase. On a store whose passphrase cannot
+#: be recovered, "the passphrase does not open this file" read here would send a person to doubt the one key they have.
+STORE_IN_USE = (
+    "another program is using this store right now, so the passphrase could not be checked; close that program and try again"
+)
+
+
+def _refused_because_held(exc: BaseException) -> bool:
+    """True when the open that raised ``exc`` (a ``WrongPassphraseError``) met a lock, by the SQLite code chained into it."""
+    from src.database.connect import held_by_another
+
+    return held_by_another(exc.__cause__)
 
 
 def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
@@ -974,6 +990,9 @@ def _unlock_locked(body: PassphraseBody, p: Path) -> dict:
             _pages = page_reading.from_connection(conn, p, refused_before=_REFUSED_ATTEMPTS)
             _close_after_checkpoint(conn, passphrase=body.passphrase)
         except WrongPassphraseError as exc:
+            if _refused_because_held(exc):
+                # Not a refused key: nothing was checked, so nothing is counted, and the answer says what holds it.
+                raise HTTPException(status_code=409, detail=STORE_IN_USE) from None
             _REFUSED_ATTEMPTS += 1
             # A wrong key under the floor of what can be taken out of a text (src/monitoring/secret_scrub.py,
             # MIN_SECRET_CHARS) withholds the message whole, so the withheld text is the message's fixed words, not

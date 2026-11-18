@@ -6579,6 +6579,7 @@
   "annotated only": "annotated only",
   "anomaly not checked": "anomaly not checked",
   "anon": "anon",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "another program is using this store right now, so the passphrase could not be checked; close that program and try again",
   "anticipation": "anticipation",
   "any": "any",
   "app folder, not in use": "app folder, not in use",

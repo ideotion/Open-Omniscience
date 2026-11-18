@@ -6579,6 +6579,7 @@
   "annotated only": "শুধু টীকাযুক্ত",
   "anomaly not checked": "অস্বাভাবিকতা যাচাই হয়নি",
   "anon": "বেনামী",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "অন্য একটি প্রোগ্রাম এখন এই স্টোরটি ব্যবহার করছে, তাই পাসফ্রেজ যাচাই করা যায়নি; সেই প্রোগ্রামটি বন্ধ করে আবার চেষ্টা করুন",
   "anticipation": "প্রত্যাশা",
   "any": "যেকোনো",
   "app folder, not in use": "অ্যাপ ফোল্ডার, ব্যবহৃত হচ্ছে না",

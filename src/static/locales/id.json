@@ -6579,6 +6579,7 @@
   "annotated only": "hanya beranotasi",
   "anomaly not checked": "anomali belum diperiksa",
   "anon": "anon",
+  "another program is using this store right now, so the passphrase could not be checked; close that program and try again": "program lain sedang menggunakan penyimpanan ini, jadi frasa sandi tidak dapat diperiksa; tutup program itu dan coba lagi",
   "anticipation": "antisipasi",
   "any": "apa saja",
   "app folder, not in use": "folder aplikasi, tidak dipakai",
