@@ -432,16 +432,52 @@ class PlaywrightUiWalkDriver:
             scope,
         )
 
-    def char_x_positions(self, selector: str, substring: str) -> list[float] | None:
-        """The rendered x position (left edge) of EACH CHARACTER of ``substring`` inside
-        the first text node under ``selector`` that contains it — the RTL bidi-isolate
-        instrument (the recorded lesson: in Arabic an interpolated ISO timestamp renders
-        with the year at the wrong end, a MISREAD date; the check is per-character
-        rendered positions, never eyeballing). Returns None when the substring is not
-        found in any text node under the selector."""
+    # A node drawn through a MIRRORING transform (the briefing flip card's back face is
+    # rotateY(180deg) until flipped, and hidden by backface-visibility) reports its
+    # characters with DECREASING x even when they render in perfect logical order — the
+    # 2026-11-18 encrypted rehearsal filed exactly that as a P1 "reordered date" on Home.
+    # Such a node is not what a reader sees, so the instrument refuses to measure it.
+    _MIRRORED_JS = """
+      const mirrored = (el) => {
+        for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+          const t = getComputedStyle(e).transform;
+          if (t && t !== 'none' && new DOMMatrixReadOnly(t).a < 0) return true;
+        }
+        return false;
+      };
+    """
+
+    def find_iso_date_specimen(self) -> dict | None:
+        """The first VISIBLE, un-mirrored text node carrying an ISO date or timestamp, tagged
+        with a probe attribute and returned as ``{sel, run}`` for :meth:`char_positions`. A
+        selector derived from tag/class would resolve to the document's FIRST such element,
+        not the specimen's (the recorded non-unique-needle trap), hence the tag."""
         return self.page.evaluate(
-            """
-            ([sel, sub]) => {
+            "() => {" + self._MIRRORED_JS + """
+              document.querySelectorAll('[data-oo-rtl-probe]')
+                .forEach(e => e.removeAttribute('data-oo-rtl-probe'));
+              const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+              let node;
+              while ((node = walker.nextNode())) {
+                const m = node.textContent.match(/\\d{4}-\\d{2}-\\d{2}[T ]?[\\d:]*/);
+                if (!m || m[0].length < 10) continue;
+                const el = node.parentElement;
+                if (!el || !(el.offsetWidth || el.offsetHeight) || mirrored(el)) continue;
+                el.setAttribute('data-oo-rtl-probe', '1');
+                return {sel: '[data-oo-rtl-probe="1"]', run: m[0].trim()};
+              }
+              return null;
+            }"""
+        )
+
+    def char_positions(self, selector: str, substring: str) -> list[tuple[float, int]] | None:
+        """``(x, line top)`` of each character of ``substring`` in the first text node under
+        ``selector`` that holds it. The top separates a LINE WRAP (a narrow cell breaking a
+        date after a hyphen, x jumps back on the next line) from a REORDER (x going the wrong
+        way on one line); only the second is a misread value. None when the substring is
+        absent or the node is drawn mirrored (see ``_MIRRORED_JS``)."""
+        return self.page.evaluate(
+            "([sel, sub]) => {" + self._MIRRORED_JS + """
               const root = document.querySelector(sel);
               if (!root) return null;
               const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -451,21 +487,40 @@ class PlaywrightUiWalkDriver:
                 if (idx < 0) continue;
                 const el = node.parentElement;
                 if (!el || !(el.offsetWidth || el.offsetHeight)) continue;
-                const xs = [];
+                if (mirrored(el)) return null;
+                const out = [];
                 for (let i = 0; i < sub.length; i++) {
                   const range = document.createRange();
                   range.setStart(node, idx + i);
                   range.setEnd(node, idx + i + 1);
                   const rects = range.getClientRects();
                   if (!rects.length) return null;
-                  xs.push(rects[0].left);
+                  out.push([rects[0].left, Math.round(rects[0].top)]);
                 }
-                return xs;
+                return out;
               }
               return null;
-            }
-            """,
+            }""",
             [selector, substring],
+        )
+
+    def char_x_positions(self, selector: str, substring: str) -> list[float] | None:
+        """The rendered x position (left edge) of EACH CHARACTER of ``substring`` inside
+        the first text node under ``selector`` that contains it — the RTL bidi-isolate
+        instrument (the recorded lesson: in Arabic an interpolated ISO timestamp renders
+        with the year at the wrong end, a MISREAD date; the check is per-character
+        rendered positions, never eyeballing). Returns None when the substring is not
+        found in any text node under the selector, or the node is drawn mirrored."""
+        pos = self.char_positions(selector, substring)
+        return None if pos is None else [x for x, _top in pos]
+
+    @staticmethod
+    def reordered_on_a_line(positions: list[tuple[float, int]]) -> bool:
+        """True when two neighbouring characters on the SAME line go right-to-left: the
+        misread-value signature. A wrap (the top changes) is not a reorder."""
+        return any(
+            t1 == t0 and not x1 > x0
+            for (x0, t0), (x1, t1) in zip(positions, positions[1:], strict=False)
         )
 
     def undefined_classes(self, *, max_report: int = 200) -> list[dict]:

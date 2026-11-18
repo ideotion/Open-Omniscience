@@ -678,6 +678,47 @@ def test_char_x_positions_discriminates_a_missing_bidi_isolate_in_rtl():
         )
 
 
+def test_a_mirrored_flip_card_back_is_never_measured_as_a_reordered_date():
+    # The 2026-11-18 encrypted rehearsal filed a P1 "reordered date" on Home: the date sat on
+    # a briefing flip card's unflipped BACK face (rotateY(180deg)), whose isolated, perfectly
+    # ordered characters report DECREASING x through the mirror. Pinned with the real CSS
+    # shape: the instrument must skip the mirrored node and measure the readable one.
+    stamp = "2026-11-10"
+    html = (
+        "<!doctype html><html><body dir='rtl'>"
+        "<div style='transform-style:preserve-3d'>"
+        f"<div id='back' style='transform:rotateY(180deg)'>شوهد في \u2068{stamp}\u2069</div>"
+        "</div>"
+        f"<div id='front'>شوهد في \u2068{stamp}\u2069</div>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        # The trap itself, so this test fails if the fixture stops reproducing it.
+        raw = d.page.evaluate(
+            """() => { const n = document.getElementById('back').firstChild;
+              const i = n.textContent.indexOf('2026'); const r = document.createRange(); const xs = [];
+              for (let k = 0; k < 10; k++) { r.setStart(n, i + k); r.setEnd(n, i + k + 1);
+                xs.push(r.getClientRects()[0].left); } return xs; }"""
+        )
+        assert all(b < a for a, b in zip(raw, raw[1:], strict=False)), raw
+        assert d.char_positions("#back", stamp) is None
+        hit = d.find_iso_date_specimen()
+        assert hit is not None and hit["run"] == stamp
+        assert d.page.get_attribute("#front", "data-oo-rtl-probe") == "1"
+        pos = d.char_positions(hit["sel"], hit["run"])
+        assert pos is not None and not d.reordered_on_a_line(pos), pos
+
+
+def test_a_wrapped_date_is_not_a_reordered_one():
+    # Two lines: x jumps back at the wrap, which is layout. One line going right-to-left is
+    # the misread-value signature.
+    wrapped = [(10.0, 0), (18.0, 0), (26.0, 0), (5.0, 20), (13.0, 20)]
+    reordered = [(26.0, 0), (18.0, 0), (10.0, 0)]
+    assert not PlaywrightUiWalkDriver.reordered_on_a_line(wrapped)
+    assert PlaywrightUiWalkDriver.reordered_on_a_line(reordered)
+
+
 def test_undefined_classes_reports_the_ghost_and_not_the_styled_ones():
     html = (
         "<!doctype html><html><head><style>"

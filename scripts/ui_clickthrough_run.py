@@ -1790,36 +1790,22 @@ def honesty_checks(driver: PlaywrightUiWalkDriver, report: Report, shots: Path) 
         ):
             driver.goto(surface)
             page.wait_for_timeout(800)
-            # The found element is TAGGED with a probe attribute and addressed by it: a
-            # selector DERIVED from tag/class ("td") resolves to the DOCUMENT's first
-            # such element, not the specimen's — char_x_positions then reads the wrong
-            # node and the whole check silently finds nothing (hit live: two visible
-            # 2026-08-19 TDs present, "no specimen found" reported). The recorded
-            # non-unique-needle trap, as a CSS selector.
-            hit = page.evaluate(
-                """() => {
-                  document.querySelectorAll('[data-oo-rtl-probe]')
-                    .forEach(e => e.removeAttribute('data-oo-rtl-probe'));
-                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-                  let node;
-                  while ((node = walker.nextNode())) {
-                    const m = node.textContent.match(/\\d{4}-\\d{2}-\\d{2}[T ]?[\\d:]*/);
-                    if (!m || m[0].length < 10) continue;
-                    const el = node.parentElement;
-                    if (!el || !(el.offsetWidth || el.offsetHeight)) continue;
-                    el.setAttribute('data-oo-rtl-probe', '1');
-                    return {sel: '[data-oo-rtl-probe="1"]', run: m[0].trim()};
-                  }
-                  return null;
-                }"""
-            )
+            # The specimen is found and TAGGED by the driver (a tag/class selector would
+            # resolve to the document's first such element: the recorded non-unique-needle
+            # trap), skipping any node drawn MIRRORED: the flip card's unflipped back face
+            # reports decreasing x for a perfectly ordered date, which the 2026-11-18
+            # encrypted rehearsal filed as a P1 on Home.
+            hit = driver.find_iso_date_specimen()
             if not hit:
                 continue
-            xs = driver.char_x_positions(hit["sel"], hit["run"])
-            if not xs:
+            pos = driver.char_positions(hit["sel"], hit["run"])
+            if not pos:
                 continue
+            xs = [x for x, _top in pos]
             found_any = True
-            monotonic = all(b > a for a, b in zip(xs, xs[1:], strict=False))
+            # Line-aware: a narrow cell may wrap a date after its hyphen (x jumps back on the
+            # next line), which is layout, not a misread value.
+            monotonic = not driver.reordered_on_a_line(pos)
             report.add_coverage(
                 surface="honesty_rtl_bidi", axis=f"{surface.id}",
                 result="verified" if monotonic else "partial",
