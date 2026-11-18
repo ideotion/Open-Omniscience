@@ -217,6 +217,9 @@
     /* Above 600 px the Country/layers group shares the bottom edge: it wraps before the bar's
        corner, so neither covers the other in any language. */
     @media (min-width: 601px) { .oomap-wrap .oomap-gran { max-width:calc(100% - 210px); } }
+    /* At phone width the opened panel stacks its groups below the map; the bottom stack is one of
+       them, and its own column keeps the slider above the layer buttons. */
+    @media (max-width: 600px) { .oomap-wrap.oomap-ctl-open .oomap-bottom { pointer-events:auto; } }
     .oomap-scale-bar { display:inline-block; height:6px; border:1.5px solid var(--fg); border-top:none; }
     /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
     #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background:var(--line); }
