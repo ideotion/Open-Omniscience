@@ -85,8 +85,9 @@ def test_a_test_that_returns_leaves_the_report_empty(tmp_path):
     assert report.read_text(encoding="utf-8") == "", "the report holds text after every test returned, so the CI step would name a hang that never happened"
 
 
-def test_the_portability_legs_arm_the_watchdog_and_print_its_report():
-    job = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]["portability"]
+@pytest.mark.parametrize("job_name", ["portability", "portability-windows"])
+def test_the_portability_legs_arm_the_watchdog_and_print_its_report(job_name):
+    job = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"][job_name]
     steps = {s.get("name"): s for s in job["steps"]}
     test_step = steps["Test (pytest)"]
     limit = float(test_step["env"]["OO_TEST_HANG_LIMIT_S"])
