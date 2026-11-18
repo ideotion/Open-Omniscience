@@ -179,9 +179,12 @@ _oo_rec_reap_dir() {
         me="$(cat "$mk/pid" 2>/dev/null || true)"
         p="$(cat "$d/pid" 2>/dev/null || true)"
         case "$p" in ''|*[!0-9]*) p="" ;; esac
-        if [ -n "$me" ] && [ -n "$p" ] && [ "$p" = "$owner" ] && ! oo_pid_alive "$p" && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ] \
+        # an owner with no pid (row 172): still none under the mark, and a second later
+        if [ "$owner" = "-" ] && [ -z "$p" ] && [ -n "$me" ] && _oo_rec_still_nopid "$d"; then p="-"; fi
+        if [ -n "$me" ] && [ -n "$p" ] && [ "$p" = "$owner" ] && { [ "$owner" = "-" ] || ! oo_pid_alive "$p"; } && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ] \
             && mv "$d" "$d.dead.$tok" 2>/dev/null; then
             rm -rf "$d.dead.$tok" 2>/dev/null || true
+            [ "$owner" != "-" ] || _oo_rec_nopid_cleared "$d"
         elif [ -n "$me" ] && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ]; then
             # given up (the lock names someone else now): only the pid is taken out, never the mark itself. Between the check above and any removal the
             # name "$d/reap" can come to be another taker's live mark in a newer lock, and removing THAT mark lets two takers in (Opus read, 17 Nov). A mark
@@ -202,7 +205,7 @@ _oo_rec_reap_dir() {
         # the record is "lock#inode first-look last-look": the same mark (a new one made between two looks has its own inode), and a gap of more than 2 s
         # between looks (the waiter was elsewhere, so it did not see) starts it again
         tok="$mk#$(ls -di "$mk" 2>/dev/null | awk '{print $1}')"
-        p="${_OO_REAP_NOPID% *}"
+        p="${_OO_REAP_NOPID:-}"; p="${p% *}"
         me="${p##* }"
         case "$me" in ''|*[!0-9]*) me="" ;; esac
         if [ -z "$me" ] || [ "${p% *}" != "$tok" ] || [ $(( ${SECONDS:-0} - ${_OO_REAP_NOPID##* } )) -gt 2 ]; then
@@ -218,6 +221,47 @@ _oo_rec_reap_dir() {
     _OO_REAP_NOPID=""
     tok="${RANDOM:-0}${RANDOM:-0}.$$"
     if mv "$mk" "$d/reapd.gone.$tok" 2>/dev/null; then rm -rf "$d/reapd.gone.$tok" 2>/dev/null || true; fi
+}
+
+# _oo_rec_nopid_seen DIR: whether the lock DIR, which has NO pid file, has been seen so by THIS waiter at every look for a minute of its own clock (bash's
+# SECONDS), the same rule as a directory mark left with no pid (_oo_rec_reap_dir), AND its own mtime is more than a minute old too (R744: a lock being made
+# right now is never taken, whatever the waiter's clock says). Row 172: a lock directory with no pid file was waited for and never taken over (it reads as a
+# launcher between its mkdir and its pid create, a few instructions), so one left so (a launcher killed at that instant, the release's rm -rf fallback
+# meeting a taker's temp mark, a pid file removed by hand) deferred every later row to a child that waited for ever, one more per row. A lock WITH a pid
+# file, even an empty one, is never taken over this way (R744). The record is "lock#inode first-look last-look": another directory under the same name
+# starts the minute again, and so does a gap of more than 2 s between looks (the waiter was elsewhere, so it did not see). The mtime is a second condition,
+# never the only one: a server clock ahead of this one (SMB) delays the takeover by its skew, and one behind it cannot bring it forward.
+_oo_rec_nopid_seen() {
+    local tok r first
+    tok="$1#$(ls -di "$1" 2>/dev/null | awk '{print $1}' || true)"
+    r="${_OO_LOCK_NOPID:-}"; r="${r% *}"
+    first="${r##* }"
+    case "$first" in ''|*[!0-9]*) first="" ;; esac
+    if [ -z "$first" ] || [ "${r% *}" != "$tok" ] || [ $(( ${SECONDS:-0} - ${_OO_LOCK_NOPID##* } )) -gt 2 ]; then
+        _OO_LOCK_NOPID="$tok ${SECONDS:-0} ${SECONDS:-0}"; return 1
+    fi
+    _OO_LOCK_NOPID="$tok $first ${SECONDS:-0}"
+    [ $(( ${SECONDS:-0} - first )) -ge 60 ] || return 1
+    [ -n "$(find "$1" -prune -mmin +1 2>/dev/null || true)" ]
+}
+
+# _oo_rec_still_nopid DIR: called by a taker holding its mark in DIR, a minute after DIR was first seen with no pid file: DIR still has none now AND a
+# second later, the re-check made just before the lock is renamed away (R744). The pause is what tells a lock left so from a live launcher between its mkdir and its pid create (a few instructions): the name can be freed
+# and made again by such a launcher between this taker's last look and its mark (an inode freed by a removal can be reused at once), and that launcher's
+# pid is in its lock long before the second is over. Only a launcher frozen for that second at that instant (stopped, not merely slow) is not told apart.
+_oo_rec_still_nopid() {
+    [ ! -e "$1/pid" ] && [ ! -L "$1/pid" ] || return 1
+    sleep 1 2>/dev/null || :
+    [ ! -e "$1/pid" ] && [ ! -L "$1/pid" ]
+}
+
+# _oo_rec_nopid_cleared LOCK: the one visible line for a lock taken over this way (R744), on stderr and in LOCK.cleared beside it (one line, replaced each
+# time, so it never grows): the waiter that clears is the deferred child, whose stderr goes nowhere once its window is closed.
+_oo_rec_nopid_cleared() {
+    local line
+    line="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true) launcher: took over the record lock $1, which had no owner pid for a minute (pid ${BASHPID:-$$})"
+    printf '%s\n' "$line" >&2 2>/dev/null || true
+    { printf '%s\n' "$line" > "$1.cleared"; } 2>/dev/null || true
 }
 
 # oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run), 98 when no
@@ -264,6 +308,12 @@ oo_rec_locked() {
         fi
         owner="$(cat "$d/pid" 2>/dev/null || true)"
         case "$owner" in ''|*[!0-9]*) owner="" ;; esac
+        # a lock this waiter has seen with no owner pid for a minute is taken over like a dead owner's ("-" names that owner): row 172, _oo_rec_nopid_seen
+        if [ -z "$owner" ] && [ -d "$d" ] && [ ! -e "$d/pid" ] && [ ! -L "$d/pid" ]; then
+            if _oo_rec_nopid_seen "$d"; then owner="-"; fi
+        else
+            _OO_LOCK_NOPID=""
+        fi
         # The owner is gone: the lock is taken over, and NEVER by moving it while somebody else may hold it (row 100, 16 Nov: the old takeover moved the
         # lock out to read who held it and put a live one back, and in the instant it was out a third launcher made the lock, so two held it at once and
         # a trim's rename dropped the row appended meanwhile: 1 of 8 exit rows lost on Linux CI, mkdir path). Now a taker first makes a REAP mark INSIDE
@@ -275,7 +325,7 @@ oo_rec_locked() {
         # ("reap.clr", linked the same way and carrying the clearer's pid), and only while "reap" is still that same file with that same dead pid: two
         # clearers that both read the same dead taker can never remove a live taker's new mark between them, which would let two takers in at once
         # (the reads of 16 Nov).
-        if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
+        if [ -n "$owner" ] && { [ "$owner" = "-" ] || ! oo_pid_alive "$owner"; }; then
             m="$(mktemp "$d/reap.XXXXXX" 2>/dev/null)" || m=""
             if [ -n "$m" ] && [ -d "$d/reap" ]; then
                 _oo_rec_reap_dir "$d" "$owner"  # a directory mark is there: only the directory mark's own way judges it (a link made now would land inside it)
@@ -285,10 +335,13 @@ oo_rec_locked() {
                 if [ -s "$m" ] && ln "$m" "$d/reap" 2>/dev/null; then
                     moved="$(cat "$d/pid" 2>/dev/null || true)"
                     case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                    # an owner with no pid is judged again under the mark too: still none, and still none a second later (_oo_rec_still_nopid)
+                    if [ "$owner" = "-" ] && [ -z "$moved" ] && [ "$d/reap" -ef "$m" ] && _oo_rec_still_nopid "$d"; then moved="-"; fi
                     # the pid is judged dead again under the mark: a recycled pid that is now a live holder's is never taken for the dead owner
-                    if [ -n "$moved" ] && [ "$moved" = "$owner" ] && ! oo_pid_alive "$moved" && [ "$d/reap" -ef "$m" ] \
+                    if [ -n "$moved" ] && [ "$moved" = "$owner" ] && { [ "$owner" = "-" ] || ! oo_pid_alive "$moved"; } && [ "$d/reap" -ef "$m" ] \
                         && mv "$d" "$d.dead.${m##*.}" 2>/dev/null; then
                         rm -rf "$d.dead.${m##*.}" 2>/dev/null || true
+                        [ "$owner" != "-" ] || _oo_rec_nopid_cleared "$d"
                     else
                         # not taken over (or the move failed): only this taker's own mark goes, never a mark it did not make
                         [ ! "$d/reap" -ef "$m" ] || rm -f "$d/reap" 2>/dev/null || true
@@ -355,7 +408,8 @@ _oo_rec_trim() {
     return 0
 }
 # The row of a launcher that could not get the lock in time (R174): a detached child waits for the lock with no bound and then does the locked
-# append and the trim. Nothing is written to a file by this function, and the child leaves no file behind. It ignores the signals a closing window
+# append and the trim. Nothing is written to a file by this function, and the child leaves no file behind but the one-line LOCK.cleared note
+# of a lock it took over because it had no owner pid (_oo_rec_nopid_cleared). It ignores the signals a closing window
 # sends. (The mkdir lock records the child's own pid, from BASHPID where bash has it and from a one-line sh otherwise.)
 _oo_rec_defer() {
     (
@@ -388,7 +442,7 @@ oo_rec_append_stdin() {
 }
 # The text of the helpers, for the filter: awk starts the appending shell itself, and a function exported through the environment does not reach it under
 # every awk and sh (measured: the one-true-awk lost every row, silently, with a close status of 0), so the shell is handed the definitions to eval.
-oo_rec_lib() { declare -f oo_pid_alive _oo_rec_claim _oo_rec_take _oo_rec_reap_dir oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
+oo_rec_lib() { declare -f oo_pid_alive _oo_rec_claim _oo_rec_take _oo_rec_reap_dir _oo_rec_nopid_seen _oo_rec_still_nopid _oo_rec_nopid_cleared oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
 # --- end of the evidence file helpers ------------------------------------------------------------------------------------------------------
 
 # How the server ended when this launcher did not stop it (2026-09-26, the daily-crash
