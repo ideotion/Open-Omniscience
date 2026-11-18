@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -89,12 +90,19 @@ def test_a_serve_in_use_is_left_open_and_named_and_the_others_are_still_closed(s
     cons, _ = serves
     with rollup_serve._LOCK:  # a serve mid-query, or a persisted refresh mid-merge
         rec = _without_waiting(R.close_serves_for_cleared_key)
+        # Read while the lock is still held: the close once free (``deferred``) waits for exactly this lock, so after the
+        # release it may take the serve before a later read could see it. Reading after the release raced it (CI, #2118).
+        assert cons["rollup_serve"].closed == 0, "a connection in use is not closed under the statement"
+        assert rollup_serve._STATE["con"] is cons["rollup_serve"], "and it is not marked not-built: it is still the one being used"
     assert rec["busy"] == ["rollup_serve"] and rec["closed"] == ["map_serve"] and rec["ok"] is True
-    assert cons["rollup_serve"].closed == 0, "a connection in use is not closed under the statement"
+    assert rec.get("deferred") == ["rollup_serve"], "a close once free is waiting for it"
     assert cons["map_serve"].closed == 1
-    assert _state(rollup_serve)[0] is cons["rollup_serve"], "and it is not marked not-built: it is still the one being used"
-    rec = R.close_serves_for_cleared_key()  # once nothing holds the lock, the next call closes it
-    assert rec["closed"] == ["rollup_serve"] and cons["rollup_serve"].closed == 1
+    # Once nothing holds the lock, the serve is closed: by the close once free, or else by the next call. Exactly once.
+    deadline = time.monotonic() + 10
+    while cons["rollup_serve"].closed == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    R.close_serves_for_cleared_key()
+    assert cons["rollup_serve"].closed == 1 and _state(rollup_serve) == (None, 0.0)
 
 
 def test_the_release_ladders_close_still_waits_for_a_serve_in_use(serves):
