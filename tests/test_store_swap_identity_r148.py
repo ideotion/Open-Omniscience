@@ -327,9 +327,11 @@ def test_an_unreadable_store_says_why_and_is_never_absent(data, monkeypatch):
     sqlite3.connect(str(data / "custody_log.db")).execute("CREATE TABLE x(a)").connection.commit()
     monkeypatch.setattr(at_rest_state, "open", refusing, raising=False)
     st = at_rest_state.status()
-    assert _row(st, f"lane:{all_lanes()[0].kind}")["reason"] == "in_use"
+    # Row 153: a file another program holds is in use right now, not unreadable and not pending.
+    assert _row(st, f"lane:{all_lanes()[0].kind}")["state"] == "busy"
+    assert st["busy"] == [f"lane:{all_lanes()[0].kind}"]
     assert _row(st, "custody") == {**_row(st, "custody"), "state": "unreadable", "reason": "permission"}
-    assert set(at_rest_state.UNREADABLE_REASONS) == {"in_use", "permission", "short_header", "io"}
+    assert set(at_rest_state.UNREADABLE_REASONS) == {"permission", "short_header", "io"}
 
 
 def test_the_probe_stands_aside_while_a_store_is_swapped(data):
@@ -358,8 +360,9 @@ def test_the_probe_stands_aside_while_a_store_is_swapped(data):
     assert "probes_held()" in __import__("inspect").getsource(encrypt_tool._export_and_swap)
 
 
-def test_a_busy_store_reads_as_unreadable_never_as_another_passphrase_and_is_not_cached(data):
-    """A store another connection holds is not "another passphrase": SQLCipher answers both the same way unless the cause is read."""
+def test_a_busy_store_reads_as_busy_never_as_another_passphrase_or_pending_and_is_not_cached(data):
+    """A store another connection holds is not "another passphrase": SQLCipher answers both the same way unless the cause is read.
+    Row 153: it reads "busy" (in use, try again), never a read error, never pending, and never complete."""
     _all_encrypted(data, _KEY)
     set_passphrase(_KEY)
     db = data / "custody_log.db"
@@ -367,8 +370,12 @@ def test_a_busy_store_reads_as_unreadable_never_as_another_passphrase_and_is_not
     try:
         holder.execute("BEGIN EXCLUSIVE")
         holder.execute("CREATE TABLE held(a)")
-        row = _row(at_rest_state.status(), "custody")
-        assert row["state"] == "unreadable" and row["reason"] == "io", row
+        st = at_rest_state.status()
+        row = _row(st, "custody")
+        assert row["state"] == "busy" and row["key_checked"] is False and "reason" not in row, row
+        assert st["busy"] == ["custody"] and "custody" in st["unchecked"]
+        assert "custody" not in st["pending"], "a store in use is not 'still unencrypted'"
+        assert st["complete"] is False
     finally:
         holder.rollback()
         holder.close()
@@ -420,14 +427,97 @@ def test_every_new_sentence_is_keyed_in_every_locale_and_the_page_uses_the_state
         "Encrypted (SQLCipher 4), not yet checked against this passphrase",
         "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)",
         "Cannot be read: {why}",
-        "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.",
+        "These stores do not open with this passphrase (another passphrase, or a damaged file) and are left as they are: {names}.",
+        "In use right now, try again in a moment",
+        "Not checked yet against this passphrase: {names} (in use, or being encrypted). Open this panel again in a moment.",
         *at_rest_state.UNREADABLE_REASONS.values(),
     ]
+    py_keys = [unlock_mod.NOTHING_LEFT_BUT_BUSY, unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY, unlock_mod.NOTHING_LEFT]
     js = (root / "app-backup.js").read_text(encoding="utf-8")
     for k in keys[1:]:
         assert k in js, k
     assert 's.state === "not_this_key"' in js and "ar.not_this_key" in js
     for loc in sorted((root / "locales").glob("*.json")):
         d = json.loads(loc.read_text(encoding="utf-8"))
-        for k in keys:
+        for k in keys + py_keys:
             assert d.get(k), f"{loc.name} lacks {k[:40]!r}"
+        assert "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are." not in d
+    assert 's.state === "busy"' in js and "ar.key_held" in js and "ar.busy" in js
+
+
+# --- row 153: the #2113 follow-ups ------------------------------------------------------------------------------------
+
+
+def test_the_retry_409_names_a_busy_store_and_a_store_under_another_passphrase(data, monkeypatch):
+    """With nothing pending, the retry's 409 says why, true at the state it names: never "every store is already encrypted" over a
+    store that is in use or does not open with this passphrase."""
+    words = unlock_mod._nothing_left_words
+    assert words({"busy": ["custody"], "not_this_key": ["lane:wiki"]}) == unlock_mod.NOTHING_LEFT_BUT_BUSY
+    assert words({"busy": [], "not_this_key": ["lane:wiki"]}) == unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY
+    assert words({"busy": [], "not_this_key": []}) == unlock_mod.NOTHING_LEFT == "every store is already encrypted"
+
+    _all_encrypted(data, _KEY, lane_key=_OTHER)
+    set_passphrase(_KEY)
+    st = at_rest_state.status()
+    assert not st["pending"] and words(st) == unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "unlocked-encrypted")
+    with pytest.raises(HTTPException) as refused:
+        unlock_mod.encrypt_db(unlock_mod.EncryptBody(passphrase=_KEY, confirm=_KEY, consent=True))
+    assert refused.value.status_code == 409 and refused.value.detail == unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY
+
+
+def test_the_status_always_tries_the_held_key_and_says_whether_one_is_held(data):
+    """The cache is keyed by the held key's generation, so the status takes no other key (the #2113 cache-reuse nit)."""
+    import inspect
+
+    assert "key" not in inspect.signature(at_rest_state.status).parameters
+    _all_encrypted(data, _KEY)
+    assert at_rest_state.status()["key_held"] is False
+    set_passphrase(_KEY)
+    st = at_rest_state.status()
+    assert st["key_held"] is True and st["complete"] is True
+    out = unlock_mod.doctor()["at_rest"]
+    assert out["key_held"] is True and out["busy"] == []
+
+
+@_POSIX_SWAP
+def test_a_custody_read_racing_a_swap_is_refused_as_replaced_never_a_bare_sqlite_error(data, monkeypatch):
+    """The custody reads run outside the append lock (a large read under it would hold every custody write), so a read can race the
+    swap: it is refused as replaced, checked again after the read, and a SQLite error met on a replaced file says "replaced"."""
+    db = data / "custody_log.db"
+    log = CustodyLog(db_path=str(db), signer=_signer(data), anchoring_mode="local")
+    log.record("article:1", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+    assert [e.item_id for e in log.all_entries()] == ["article:1"], "control"
+    real = log.conn
+
+    class _SwapDuringRead:
+        def execute(self, *a):
+            cur = real.execute(*a)
+            rows = cur.fetchall()
+            encrypt_tool.encrypt_store("custody", db, _KEY, main=data / "open_omniscience.db")
+
+            class _Done:
+                def fetchall(self):
+                    return rows
+
+            return _Done()
+
+    log.conn = _SwapDuringRead()
+    with pytest.raises(file_identity.StoreReplacedError):
+        log.all_entries()
+    assert log.replaced()
+
+    class _Failing:
+        def execute(self, *a):
+            raise sqlite3.DatabaseError("file is not a database")
+
+    log.conn = _Failing()
+    with pytest.raises(file_identity.StoreReplacedError):
+        log.entries_for("article:1")
+    monkeypatch.setattr(log, "replaced", lambda: False)
+    with pytest.raises(sqlite3.DatabaseError):
+        log.entries_for("article:1")  # a log whose file is its own: the real error, unchanged
+    log.conn = real
+    log.close()

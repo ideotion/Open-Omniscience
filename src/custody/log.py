@@ -598,17 +598,28 @@ class CustodyLog:
             timestamp=json.loads(row[9]),
         )
 
-    def all_entries(self) -> list[CustodyEntry]:
+    def _read(self, sql: str, params: tuple = ()) -> list:
+        """Rows read through this log's connection, outside ``_APPEND_LOCK`` (a large read under it would hold every custody write).
+        A read that races a swap of the file is refused as replaced (row 153), never as a bare SQLite error: checked before, and
+        again after, so rows that may come from the replaced file are never handed on."""
         self._refuse_if_replaced()
-        rows = self.conn.execute("SELECT * FROM custody_entries ORDER BY seq ASC").fetchall()
+        try:
+            rows = self.conn.execute(sql, params).fetchall()
+        except Exception:
+            if self.replaced():
+                from src.database.file_identity import StoreReplacedError
+
+                raise StoreReplacedError() from None
+            raise
+        self._refuse_if_replaced()
+        return rows
+
+    def all_entries(self) -> list[CustodyEntry]:
+        rows = self._read("SELECT * FROM custody_entries ORDER BY seq ASC")
         return [self._row_to_entry(r) for r in rows]
 
     def entries_for(self, item_id: str) -> list[CustodyEntry]:
-        self._refuse_if_replaced()
-        rows = self.conn.execute(
-            "SELECT * FROM custody_entries WHERE item_id = ? ORDER BY seq ASC",
-            (item_id,),
-        ).fetchall()
+        rows = self._read("SELECT * FROM custody_entries WHERE item_id = ? ORDER BY seq ASC", (item_id,))
         return [self._row_to_entry(r) for r in rows]
 
     def export(self, item_id: str | None = None) -> dict:

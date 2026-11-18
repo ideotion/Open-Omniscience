@@ -3900,17 +3900,24 @@
         ? OOI18N.tf
         : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       // Row 149: a store under another passphrase reads as that, and an unreadable one says why; neither reads as "not created yet".
-      const why = { in_use: "another program has the file open", permission: "permission refused",
+      const why = { permission: "permission refused",
                     short_header: "the file is too short to be a database", io: "a read error" };
       const word = (s) => !s ? t("not created yet")
         : s.state === "encrypted" ? (s.key_checked === false ? t("Encrypted (SQLCipher 4), not yet checked against this passphrase") : t("Encrypted (SQLCipher 4)"))
         : s.state === "plaintext" ? t("NOT encrypted")
         : s.state === "not_this_key" ? t("Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)")
         : s.state === "unreadable" ? tfw("Cannot be read: {why}", { why: t(why[s.reason] || why.io) })
+        : s.state === "busy" ? t("In use right now, try again in a moment")
         : t("not created yet");
+      // A store named as its own line names it (row 153), never by its raw id.
+      const storeLabel = (id) => id === "corpus" ? t("Corpus") : id === "custody" ? t("Custody log")
+        : String(id).startsWith("lane:") ? tfw("Source store ({kind})", { kind: String(id).slice(5) }) : String(id);
+      const names = (ids) => ids.map(storeLabel).join(", ");
       const ar = d.at_rest || { complete: false, pending: [], not_this_key: [], plaintext_snapshots: [] };
       const pending = Array.isArray(ar.pending) ? ar.pending : [];
       const foreign = Array.isArray(ar.not_this_key) ? ar.not_this_key : [];
+      // A busy store whose header could not be read is in "busy" but not in "unchecked": both are "not checked yet".
+      const unchecked = [...new Set([].concat(Array.isArray(ar.unchecked) ? ar.unchecked : [], Array.isArray(ar.busy) ? ar.busy : []))];
       const snaps = Array.isArray(ar.plaintext_snapshots) ? ar.plaintext_snapshots : [];
       // R742: the whole set first, and never "every store is encrypted" while one is not; a plaintext pre-encrypt copy still on
       // the disk is said beside it, so "encrypted" is never read as "no plaintext anywhere".
@@ -3919,9 +3926,12 @@
         overall = `<div class="caveat"><b>${esc(tfw("Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.", { n: fmtNum(pending.length, 0) }))}</b></div>`;
       } else if (ar.complete) {
         overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
+      } else if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
+        // Row 153: while a store is in use or being encrypted the summary says so, rather than saying nothing.
+        overall = `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, or being encrypted). Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
       }
       if (foreign.length) {
-        overall += `<div class="caveat">${esc(tfw("{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.", { n: fmtNum(foreign.length, 0) }))}</div>`;
+        overall += `<div class="caveat">${esc(tfw("These stores do not open with this passphrase (another passphrase, or a damaged file) and are left as they are: {names}.", { names: names(foreign) }))}</div>`;
       }
       if (snaps.length) {
         overall += `<div class="caveat">${esc(tfw("Plaintext pre-encrypt copies still on the disk: {names}. Delete them once you have unlocked and are satisfied.", { names: snaps.join(", ") }))}</div>`;

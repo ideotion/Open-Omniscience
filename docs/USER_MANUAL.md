@@ -1897,8 +1897,10 @@ Official **figures** are not here at all — they are data, so they live under
     The panel never says every store is encrypted while one is not, and it names
     any plaintext pre-encrypt copy still on the disk. It also opens each other
     store with the passphrase the app holds: a store encrypted under another
-    passphrase (or damaged) is shown as such and left as it is, and a store that
-    cannot be read says why (another program has it open, permission refused, too
+    passphrase (or damaged) is shown as such, named, and left as it is; a store
+    another program has open right now is shown as in use (try again in a
+    moment), never as unencrypted; a store not checked yet is named in a line of
+    its own; and a store that cannot be read says why (permission refused, too
     short to be a database, a read error). A save that was already under way on a
     store when it was encrypted is refused rather than written to the replaced
     file; do it again.
