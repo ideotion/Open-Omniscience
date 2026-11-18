@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,tests,Library-window test: the same on every OS (row 151),shipped,PR #2112 row 151,tests/test_encrypt_library_window.py,"The replace-after-log-removal test injected errno 13 and met a real Windows held-file refusal first (an open connection holds the -wal). It now injects EIO and stands in for the log removal on Windows only; a new case injects winerror 32 at the log on every OS and expects the fixed held words, the plaintext original and the earlier connection still refused."

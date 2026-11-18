@@ -211,13 +211,49 @@ def doctor() -> dict:
     # Read from the registry, with each lane's state taken from its own file HEADER by
     # the same ``_store`` every other row uses; an absent lane reports "absent", which
     # is the honest state for a lane the operator has never opened.
+    from src.database import at_rest_state
     from src.versioned.lanes import all_lanes
 
-    lanes = {spec.kind: _store(data_dir() / spec.filename) for spec in all_lanes()}
+    # R742: the per-lane lines read the SAME files the at-rest status (and ``encrypt_all``) reads, so the panel can never show
+    # "every store is encrypted" above a lane line that says otherwise. Without a SQLite corpus there is no list: the registry's
+    # names under the data folder, as before.
+    rows = dict(at_rest_state.stores())
+    at_rest = at_rest_state.status()
+    # Row 149: the custody and lane lines ARE the status's rows (a store under another passphrase reads as that, an unreadable one
+    # says why), so no line can say less than the status above it, and no store is opened a second time here.
+    by_store = {r["store"]: r for r in at_rest["stores"]}
+
+    def _line(name: str, fallback: Path) -> dict:
+        row = by_store.get(name)
+        if row is None:
+            return _store(rows.get(name, fallback))
+        return {k: v for k, v in row.items() if k in ("state", "reason", "key_checked", "cipher")}
+
+    def _corpus_line() -> dict:
+        main = main_db_path()
+        if main is None or "corpus" not in by_store:
+            return _store(main)
+        line = _line("corpus", main)
+        if line["state"] == "encrypted":  # the cipher, read as before; an unreadable library says why instead of "absent"
+            line.update({k: v for k, v in _store(main).items() if k == "cipher"})
+        return line
+
+    lanes = {spec.kind: _line(f"lane:{spec.kind}", data_dir() / spec.filename) for spec in all_lanes()}
     return {
         "driver": have_driver(),
-        "corpus": _store(main_db_path()),
-        "custody_log": _store(data_dir() / "custody_log.db"),
+        # R742: the whole set at once. ``complete`` is never true while any store is plaintext, and the plaintext pre-encrypt
+        # snapshots still on the disk are named, so "encrypted" is never read as "no plaintext anywhere".
+        "at_rest": {
+            "complete": at_rest["complete"],
+            "pending": at_rest["pending"],
+            "not_this_key": at_rest["not_this_key"],
+            "unchecked": at_rest["unchecked"],
+            "busy": at_rest["busy"],
+            "key_held": at_rest["key_held"],
+            "plaintext_snapshots": at_rest["plaintext_snapshots"],
+        },
+        "corpus": _corpus_line(),
+        "custody_log": _line("custody", data_dir() / "custody_log.db"),
         "lanes": lanes,
         "signing_keys": {
             "files": key_files,
@@ -271,15 +307,56 @@ def _alone_with_the_library() -> Iterator[None]:
         yield
 
 
+#: R742: the retry finishes the stores left plaintext only under the passphrase the library is already open with.
+FINISH_NEEDS_THE_SAME_PASSPHRASE = "type the passphrase the library is already encrypted with to finish the other stores"
+#: Row 153: the retry's answers when nothing is pending, each true at the state it names (fixed words, keyed in every locale; the
+#: Settings panel names the stores, which these words cannot carry and still be translated).
+NOTHING_LEFT = "every store is already encrypted"
+NOTHING_LEFT_BUT_UNCHECKED = (
+    "A store could not be checked right now (in use, being encrypted, or a read error), so it may still be unencrypted. Try again "
+    "in a moment; Settings names it."
+)
+NOTHING_LEFT_BUT_NOT_THIS_KEY = (
+    "Every store this passphrase opens is already encrypted. Some stores do not open with it (another passphrase, or a damaged "
+    "file) and are left as they are; Settings names them."
+)
+
+
+def _nothing_left_words(st: dict) -> str:
+    """The 409 of a retry with nothing pending: a store not checked to its end first (busy, a read error after its header, a swap in
+    progress: a moment later may differ, and a store whose header could not be read may be plaintext), then a store under another
+    passphrase, else every store is encrypted. Never "every store is already encrypted" while one of the first two holds."""
+    if st.get("busy") or (st.get("key_held") and st.get("unchecked")):
+        return NOTHING_LEFT_BUT_UNCHECKED
+    if st.get("not_this_key"):
+        return NOTHING_LEFT_BUT_NOT_THIS_KEY
+    return NOTHING_LEFT
+
+
 @router.post("/encrypt-db")
 def encrypt_db(body: EncryptBody) -> dict:
     """One-way encryption of an EXISTING plaintext store (snapshot first,
     explicit consent, never silent). Covers corpus + custody log (D6)."""
-    from src.database.connect import set_passphrase
-    from src.database.encrypt_tool import EncryptToolError, encrypt_all
+    from src.database import at_rest_state
+    from src.database.connect import get_passphrase, set_passphrase
+
+    # R742's fixed 409 words come in here, never at module level: importing the app must not import the store.
+    from src.database.encrypt_tool import PARTIAL as PARTIAL_DETAIL
+    from src.database.encrypt_tool import EncryptPartial, EncryptToolError, encrypt_all
     from src.database.session import dispose_engine
 
-    if app_lock_state() != "unlocked-plaintext":
+    state = app_lock_state()
+    if state == "unlocked-encrypted":
+        # R742: a run whose library was encrypted and whose other stores were not is FINISHED here, never refused with "only a
+        # plaintext store": the retry resumes. Only with the passphrase the library is open with, so no store is ever encrypted
+        # under a second key; the comparison cannot raise and answers for every text.
+        st = at_rest_state.status()
+        if not st["pending"]:
+            raise HTTPException(status_code=409, detail=_nothing_left_words(st))
+        held = get_passphrase()
+        if held is None or not same_passphrase(body.passphrase, held):
+            raise HTTPException(status_code=403, detail=FINISH_NEEDS_THE_SAME_PASSPHRASE)
+    elif state != "unlocked-plaintext":
         raise HTTPException(
             status_code=409, detail="only an unlocked plaintext store can be encrypted"
         )
@@ -302,14 +379,23 @@ def encrypt_db(body: EncryptBody) -> dict:
     with scrub_and_reraise(_LOG, "encrypt in place failed", body.passphrase), _alone_with_the_library():
         dispose_engine()
         try:
-            reports = encrypt_all(body.passphrase)
+            # R742: the key is held from the moment the library is ciphertext, so a later store's failure leaves the app open on
+            # the library it can read, never keyless against an encrypted file.
+            reports = encrypt_all(body.passphrase, on_library_encrypted=lambda: set_passphrase(body.passphrase))
+        except EncryptPartial:
+            dispose_engine()  # next connection opens through the keyed factory
+            _close_plaintext_serves()
+            _LOG.warning("store encryption partly done: the library is encrypted, other stores are still pending")
+            raise HTTPException(status_code=409, detail=PARTIAL_DETAIL) from None
         except EncryptToolError as exc:
             raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)
         dispose_engine()  # next connection opens through the keyed factory
         _close_plaintext_serves()  # a serve built while plaintext may hold a plaintext offload folder: retire it with its folder
+    at_rest = at_rest_state.status()
     _LOG.info("store encrypted in place")
-    return {"encrypted": True, "reports": reports, "state": app_lock_state()}
+    # "encrypted" says every store is: never true while one is plaintext (R742).
+    return {"encrypted": at_rest["complete"], "reports": reports, "state": app_lock_state(), "at_rest": at_rest}
 
 
 @router.get("/data-location")

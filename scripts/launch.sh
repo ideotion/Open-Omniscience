@@ -132,10 +132,98 @@ oo_pid_alive() {
     if [ -d /proc/self ]; then [ -d "/proc/$1" ]; else kill -0 "$1" 2>/dev/null; fi
 }
 
+# _oo_rec_claim FILE: create FILE holding this shell's pid, and only if it does not exist yet (the shell's noclobber opens it O_EXCL, in the kernel). The
+# lock and the directory mark are claimed THIS way, never by `mkdir` alone: an `mkdir` is not exclusive everywhere. uutils coreutils 0.10 (the mkdir of
+# Ubuntu 26.04, CI 17 Nov) checks that the name is free, then creates it, and reports SUCCESS when another process created it in between, so two
+# launchers each "made" the lock and both held it (both pids named by the eight-taker test). The directory is only the container; whoever creates its
+# pid file holds it, and one that made the directory but lost the pid file waits like everybody else. The owner is THIS process, not the launcher it was
+# forked from: bash 4+ has BASHPID; bash 3.2 (macOS) has not, and there $$ is the launcher's pid in every subshell, so the deferred child would be recorded
+# as its parent and a second launcher would take the lock over the moment the parent exited. A simple command with a redirect is forked by this very shell
+# (not by a command substitution, which has a subshell of its own), so the sh it starts sees the pid of this shell as its PPID. noclobber is set for the
+# one redirect and put back as it was.
+_oo_rec_claim() {
+    local c=0 r=0
+    case $- in *C*) c=1 ;; esac
+    set -C
+    # r=1: the file was there already (or could not be made), not ours. A pid that could not be WRITTEN into a file this shell did create (a full disk)
+    # still leaves the claim this shell's, as an unwritten pid always has: the lock is held and released as usual rather than left for nobody to take.
+    if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" || :; } 2>/dev/null > "$1" || r=1
+    else { sh -c 'echo $PPID' || :; } 2>/dev/null > "$1" || r=1
+    fi
+    [ "$c" = 1 ] || set +C
+    return "$r"
+}
+
+# _oo_rec_take DIR: make the lock directory and claim it. A directory this call made but could not claim with no pid file in it at all (the create failed
+# for another reason: no inode or quota left) is removed again, so it never stays a lock nobody can take over (Opus read, 17 Nov). rmdir removes only an
+# EMPTY directory: a pid file anyone has made since keeps it, and a creator whose fresh directory goes this way finds no name to claim and waits.
+_oo_rec_take() {
+    mkdir "$1" 2>/dev/null || return 1
+    ! _oo_rec_claim "$1/pid" || return 0
+    [ -e "$1/pid" ] || rmdir "$1" 2>/dev/null || true
+    return 1
+}
+
+# The takeover mark where the filesystem has no hard links (exFAT, some FUSE and SMB mounts: `ln` always fails there, and without this a dead owner's lock would
+# never be taken over again, every row deferred for ever). The mark has the SAME name, "reap", as the linked one, so the two can never be held at once (mkdir
+# refuses a name a file holds, and a link made into a directory is not that directory). It is made by mkdir and held by whoever creates its pid file
+# (_oo_rec_claim, O_EXCL), never by renaming a prepared directory into place (what `mv` does with a directory name that already exists differs between
+# implementations) and never by mkdir alone (not exclusive under uutils 0.10, see _oo_rec_claim). The pid is written in the same step as the claim; a mark whose taker is dead is renamed away and removed, and so is one
+# left with no pid (its taker died between the two steps) once a waiter has seen it so for a minute, so nobody waits behind it for ever. Weaker than the linked mark in one
+# way: two clearers of one dead taker's mark can still remove a live taker's new one between them, which needs a taker to die first. That is the cost of a
+# filesystem without links, never paid where links work.
+_oo_rec_reap_dir() {
+    local d="$1" owner="$2" mk="$1/reap" me p tok
+    tok="${RANDOM:-0}${RANDOM:-0}.$$"
+    if mkdir "$mk" 2>/dev/null && _oo_rec_claim "$mk/pid"; then
+        me="$(cat "$mk/pid" 2>/dev/null || true)"
+        p="$(cat "$d/pid" 2>/dev/null || true)"
+        case "$p" in ''|*[!0-9]*) p="" ;; esac
+        if [ -n "$me" ] && [ -n "$p" ] && [ "$p" = "$owner" ] && ! oo_pid_alive "$p" && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ] \
+            && mv "$d" "$d.dead.$tok" 2>/dev/null; then
+            rm -rf "$d.dead.$tok" 2>/dev/null || true
+        elif [ -n "$me" ] && [ "$(cat "$mk/pid" 2>/dev/null || true)" = "$me" ]; then
+            # given up (the lock names someone else now): only the pid is taken out, never the mark itself. Between the check above and any removal the
+            # name "$d/reap" can come to be another taker's live mark in a newer lock, and removing THAT mark lets two takers in (Opus read, 17 Nov). A mark
+            # left with no pid keeps every other taker out; the live lock's release carries it away, and if that holder dies instead it is cleared below
+            # after a minute: a wait, never a second holder
+            rm -f "$mk/pid" 2>/dev/null || true
+        fi
+        return 0
+    fi
+    if [ ! -d "$mk" ]; then _OO_REAP_NOPID=""; return 0; fi
+    p="$(cat "$mk/pid" 2>/dev/null || true)"
+    case "$p" in ''|*[!0-9]*) p="" ;; esac
+    # A mark with no pid is cleared only once THIS waiter has seen it without a pid at every look for a minute of its own clock (bash's SECONDS): never
+    # by the mark's mtime, which the filesystems this path serves (SMB with a skewed server clock, FUSE exFAT reading local time as UTC) can make look old
+    # at birth. Any look that finds a pid, or no mark, starts the minute again, and the record names this lock, so a live taker's mark (pid-less for the
+    # instant between its mkdir and its pid write) is never cleared, whatever inode a later mark reuses.
+    if [ -z "$p" ]; then
+        # the record is "lock#inode first-look last-look": the same mark (a new one made between two looks has its own inode), and a gap of more than 2 s
+        # between looks (the waiter was elsewhere, so it did not see) starts it again
+        tok="$mk#$(ls -di "$mk" 2>/dev/null | awk '{print $1}')"
+        p="${_OO_REAP_NOPID% *}"
+        me="${p##* }"
+        case "$me" in ''|*[!0-9]*) me="" ;; esac
+        if [ -z "$me" ] || [ "${p% *}" != "$tok" ] || [ $(( ${SECONDS:-0} - ${_OO_REAP_NOPID##* } )) -gt 2 ]; then
+            _OO_REAP_NOPID="$tok ${SECONDS:-0} ${SECONDS:-0}"; return 0
+        fi
+        _OO_REAP_NOPID="$tok $me ${SECONDS:-0}"
+        [ $(( ${SECONDS:-0} - me )) -ge 60 ] || return 0
+        p=""
+    else
+        _OO_REAP_NOPID=""
+    fi
+    if [ -n "$p" ] && oo_pid_alive "$p"; then return 0; fi
+    _OO_REAP_NOPID=""
+    tok="${RANDOM:-0}${RANDOM:-0}.$$"
+    if mv "$mk" "$d/reapd.gone.$tok" 2>/dev/null; then rm -rf "$d/reapd.gone.$tok" 2>/dev/null || true; fi
+}
+
 # oo_rec_locked FILE CMD [ARGS...]: run CMD holding the lock of FILE. Returns 99 when the lock was not obtained in time (CMD did not run), 98 when no
 # lock can be made at all (CMD did not run), else CMD's own status. With OO_REC_LOCK_FOREVER=1 the wait has no bound (the deferred child).
 oo_rec_locked() {
-    local f="$1" rc=0 d tries owner moved wait_s
+    local f="$1" rc=0 d tries owner moved wait_s tok m _l
     shift
     if command -v flock >/dev/null 2>&1; then
         { : >> "$f.lock"; } 2>/dev/null || return 98
@@ -162,34 +250,76 @@ oo_rec_locked() {
     d="$f.lock.d"
     tries=$(( OO_REC_LOCK_WAIT_MS / 10 + 1 ))
     while :; do
-        if mkdir "$d" 2>/dev/null; then
-            # The owner is THIS process, not the launcher it was forked from. bash 4+ has BASHPID; bash 3.2 (macOS) has not, and there $$ is the launcher's pid in every
-            # subshell, so the deferred child would be recorded as its parent and a second launcher would take the lock over the moment the parent exited. A simple
-            # command with a redirect is forked by this very shell (not by a command substitution, which has a subshell of its own), so the sh it starts sees the
-            # pid of this shell as its PPID.
-            if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID" > "$d/pid" 2>/dev/null || true
-            else sh -c 'echo $PPID' > "$d/pid" 2>/dev/null || true
-            fi
+        # held by whoever creates the pid file, never by the mkdir alone (_oo_rec_take): a lock whose pid file is somebody else's is waited for
+        if _oo_rec_take "$d"; then
+            # A lock renamed away (released, or a dead owner's taken over) is nobody's, but a waiter whose path walk reached it just before the rename can still
+            # create its temp mark in it after the remover listed it, so the remover's rm -rf leaves it behind (seen once in 30 stress runs, 16 Nov). The holder
+            # removes such leftovers: only names a remover makes after the rename, so never a lock anybody holds.
+            for _l in "$d".dead.* "$d".rel.*; do [ ! -d "$_l" ] || rm -rf "$_l" 2>/dev/null || true; done
             "$@" || rc=$?
-            rm -rf "$d" 2>/dev/null || true
+            # released by renaming it away first: a taker's mark made inside it at this moment leaves with it, never keeping the name taken
+            tok="$$.${RANDOM:-0}.${RANDOM:-0}"
+            if mv "$d" "$d.rel.$tok" 2>/dev/null; then rm -rf "$d.rel.$tok" 2>/dev/null || true; else rm -rf "$d" 2>/dev/null || true; fi
             return "$rc"
         fi
         owner="$(cat "$d/pid" 2>/dev/null || true)"
         case "$owner" in ''|*[!0-9]*) owner="" ;; esac
-        # the owner is gone: the lock is taken over. mv is atomic, so of two launchers taking it over only one moves it.
+        # The owner is gone: the lock is taken over, and NEVER by moving it while somebody else may hold it (row 100, 16 Nov: the old takeover moved the
+        # lock out to read who held it and put a live one back, and in the instant it was out a third launcher made the lock, so two held it at once and
+        # a trim's rename dropped the row appended meanwhile: 1 of 8 exit rows lost on Linux CI, mkdir path). Now a taker first makes a REAP mark INSIDE
+        # the lock, then reads the owner again under that mark: the same dead pid means the lock is still the dead owner's, and nothing else can change it
+        # (its owner is dead and every other taker is held off by the mark), so it is renamed away and removed. Any other answer means the lock was
+        # released and made again: the taker removes only its own mark and waits like everybody else. A live holder's lock is never moved.
+        # The mark is a FILE born with its taker's pid in it (written to a unique temp name, then hard-linked to "reap": link is atomic and refuses an
+        # existing name), so there is never a mark without a pid that nobody could judge. A mark whose taker died is cleared by ONE clearer at a time
+        # ("reap.clr", linked the same way and carrying the clearer's pid), and only while "reap" is still that same file with that same dead pid: two
+        # clearers that both read the same dead taker can never remove a live taker's new mark between them, which would let two takers in at once
+        # (the reads of 16 Nov).
         if [ -n "$owner" ] && ! oo_pid_alive "$owner"; then
-            # Between reading the owner and the mv the dead owner's lock may have been released and made again by a LIVE launcher: the mv would then carry off a lock
-            # that is held. So what was moved is read again, and a lock whose owner is not the one judged dead is put back, an empty pid file included (a launcher that
-            # has made the directory and not yet written its pid). A dead but different pid put back is harmless: the next pass takes it over. The put-back is made only
-            # while no lock stands (mv into an existing directory would nest the moved one inside it), and a lock made again in the instant between the test and the
-            # mv is the width of two commands, not of the read-to-mv gap.
-            if mv "$d" "$d.dead.$$" 2>/dev/null; then
-                moved="$(cat "$d.dead.$$/pid" 2>/dev/null || true)"
-                if [ "$moved" != "$owner" ] && [ ! -e "$d" ] && mv "$d.dead.$$" "$d" 2>/dev/null; then
-                    rm -rf "$d/${d##*/}.dead.$$" 2>/dev/null || true
+            m="$(mktemp "$d/reap.XXXXXX" 2>/dev/null)" || m=""
+            if [ -n "$m" ] && [ -d "$d/reap" ]; then
+                _oo_rec_reap_dir "$d" "$owner"  # a directory mark is there: only the directory mark's own way judges it (a link made now would land inside it)
+                rm -f "$m" 2>/dev/null || true
+            elif [ -n "$m" ]; then
+                { if [ -n "${BASHPID:-}" ]; then printf '%s\n' "$BASHPID"; else sh -c 'echo $PPID'; fi; } 2>/dev/null > "$m" || true
+                if [ -s "$m" ] && ln "$m" "$d/reap" 2>/dev/null; then
+                    moved="$(cat "$d/pid" 2>/dev/null || true)"
+                    case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                    # the pid is judged dead again under the mark: a recycled pid that is now a live holder's is never taken for the dead owner
+                    if [ -n "$moved" ] && [ "$moved" = "$owner" ] && ! oo_pid_alive "$moved" && [ "$d/reap" -ef "$m" ] \
+                        && mv "$d" "$d.dead.${m##*.}" 2>/dev/null; then
+                        rm -rf "$d.dead.${m##*.}" 2>/dev/null || true
+                    else
+                        # not taken over (or the move failed): only this taker's own mark goes, never a mark it did not make
+                        [ ! "$d/reap" -ef "$m" ] || rm -f "$d/reap" 2>/dev/null || true
+                    fi
+                elif [ -d "$d/reap" ] || { [ ! -e "$d/reap" ] && [ -s "$m" ] && ! ln "$m" "$m.l" 2>/dev/null; }; then
+                    _oo_rec_reap_dir "$d" "$owner"  # a directory mark, or no hard links here and no mark: the directory mark's own way
                 else
-                    rm -rf "$d.dead.$$" 2>/dev/null || true
+                    rm -f "$m.l" 2>/dev/null || true
+                    # a mark already there: if its taker died holding it, clear it so the next pass takes the lock over
+                    moved="$(head -n 1 "$d/reap" 2>/dev/null || true)"
+                    case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                    if [ -n "$moved" ] && ! oo_pid_alive "$moved"; then
+                        if [ -s "$m" ] && ln "$m" "$d/reap.clr" 2>/dev/null; then
+                            # this clearer's own link to the mark, then the mark judged again through it: the same file, the same pid, still dead (a pid
+                            # recycled to a live taker since the first read is never taken for the dead one)
+                            if ln "$d/reap" "$m.got" 2>/dev/null; then
+                                if [ "$(head -n 1 "$m.got" 2>/dev/null || true)" = "$moved" ] && ! oo_pid_alive "$moved" && [ "$d/reap" -ef "$m.got" ]; then
+                                    rm -f "$d/reap" 2>/dev/null || true
+                                fi
+                                rm -f "$m.got" 2>/dev/null || true
+                            fi
+                            [ ! "$d/reap.clr" -ef "$m" ] || rm -f "$d/reap.clr" 2>/dev/null || true
+                        else
+                            # "reap.clr" carries its clearer's pid like a mark carries its taker's: it goes only once that clearer is dead, never by age
+                            moved="$(head -n 1 "$d/reap.clr" 2>/dev/null || true)"
+                            case "$moved" in ''|*[!0-9]*) moved="" ;; esac
+                            if [ -n "$moved" ] && ! oo_pid_alive "$moved"; then rm -f "$d/reap.clr" 2>/dev/null || true; fi
+                        fi
+                    fi
                 fi
+                rm -f "$m" "$m.l" 2>/dev/null || true
             fi
         fi
         if [ "${OO_REC_LOCK_FOREVER:-}" != 1 ]; then
@@ -258,7 +388,7 @@ oo_rec_append_stdin() {
 }
 # The text of the helpers, for the filter: awk starts the appending shell itself, and a function exported through the environment does not reach it under
 # every awk and sh (measured: the one-true-awk lost every row, silently, with a close status of 0), so the shell is handed the definitions to eval.
-oo_rec_lib() { declare -f oo_pid_alive oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
+oo_rec_lib() { declare -f oo_pid_alive _oo_rec_claim _oo_rec_take _oo_rec_reap_dir oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
 # --- end of the evidence file helpers ------------------------------------------------------------------------------------------------------
 
 # How the server ended when this launcher did not stop it (2026-09-26, the daily-crash

@@ -256,7 +256,12 @@ class CustodyLog:
 
             if is_encrypted_file(_dd() / "open_omniscience.db") is False:
                 create_enc = False
-        self.conn = _db_connect(self.db_path, create_encrypted=create_enc)
+        from src.database.file_identity import open_pinned
+
+        # Row 148: the identity of the file this connection opened. Encrypting the log replaces its file holding the append lock,
+        # and every read of the tail and every write checks the identity under that same lock, so a log opened before the swap
+        # is refused (``StoreReplacedError``, nothing written) instead of signing into the replaced file.
+        self.conn, self._file = open_pinned(self.db_path, lambda: _db_connect(self.db_path, create_encrypted=create_enc))
         # Under concurrent ingest (the field's 50-way parallel case) many CustodyLog
         # instances open the SAME file at once. Two hardening steps make that reliable:
         # (1) an explicit busy_timeout so a writer WAITS for the lock instead of raising
@@ -274,6 +279,7 @@ class CustodyLog:
         except Exception:  # noqa: BLE001 - the DBAPI timeout still applies
             pass
         with _APPEND_LOCK:
+            self._refuse_if_replaced()  # a swap between the open and the lock: refused at open, nothing created in the old file
             self._init_db()
 
     @property
@@ -308,8 +314,23 @@ class CustodyLog:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_custody_item ON custody_entries(item_id)")
         self.conn.commit()
 
+    def replaced(self) -> bool:
+        """True when the file this log opened is no longer the one its path names (the log was encrypted since): open another."""
+        from src.database.file_identity import same
+
+        return not same(self.db_path, self._file)
+
+    def _refuse_if_replaced(self) -> None:
+        """Raise ``StoreReplacedError`` when :meth:`replaced` (row 148). Called with ``_APPEND_LOCK`` held where it guards a write,
+        the lock the encryption holds around its swap of this file."""
+        if self.replaced():
+            from src.database.file_identity import StoreReplacedError
+
+            raise StoreReplacedError()
+
     # -- write ------------------------------------------------------------- #
     def _last(self) -> CustodyEntry | None:
+        self._refuse_if_replaced()
         row = self.conn.execute(
             "SELECT * FROM custody_entries ORDER BY seq DESC LIMIT 1"
         ).fetchone()
@@ -479,6 +500,9 @@ class CustodyLog:
         entry_hash = _entry_digest(core)
         sig = self.signer.sign(canonical_bytes(core))
 
+        # Checked again just before the write (row 148). The append lock is held throughout and the swap takes it too, so this is
+        # belt and braces; it keeps the check beside the one statement that writes.
+        self._refuse_if_replaced()
         self.conn.execute(
             """
             INSERT INTO custody_entries
@@ -574,15 +598,28 @@ class CustodyLog:
             timestamp=json.loads(row[9]),
         )
 
+    def _read(self, sql: str, params: tuple = ()) -> list:
+        """Rows read through this log's connection, outside ``_APPEND_LOCK`` (a large read under it would hold every custody write).
+        A read that races a swap of the file is refused as replaced (row 153), never as a bare SQLite error: checked before, and
+        again after, so rows that may come from the replaced file are never handed on."""
+        self._refuse_if_replaced()
+        try:
+            rows = self.conn.execute(sql, params).fetchall()
+        except Exception:
+            if self.replaced():
+                from src.database.file_identity import StoreReplacedError
+
+                raise StoreReplacedError() from None
+            raise
+        self._refuse_if_replaced()
+        return rows
+
     def all_entries(self) -> list[CustodyEntry]:
-        rows = self.conn.execute("SELECT * FROM custody_entries ORDER BY seq ASC").fetchall()
+        rows = self._read("SELECT * FROM custody_entries ORDER BY seq ASC")
         return [self._row_to_entry(r) for r in rows]
 
     def entries_for(self, item_id: str) -> list[CustodyEntry]:
-        rows = self.conn.execute(
-            "SELECT * FROM custody_entries WHERE item_id = ? ORDER BY seq ASC",
-            (item_id,),
-        ).fetchall()
+        rows = self._read("SELECT * FROM custody_entries WHERE item_id = ? ORDER BY seq ASC", (item_id,))
         return [self._row_to_entry(r) for r in rows]
 
     def export(self, item_id: str | None = None) -> dict:

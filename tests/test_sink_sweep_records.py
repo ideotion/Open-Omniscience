@@ -166,6 +166,9 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,
         ("classify_restore_error", 'f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "'): 1,
         ("_retry_while_locked", "if not _file_is_locked(exc) or time.monotonic() >= deadline:"): 1,
+        # R741 (row 145): the grace hook only reads ``filename2``/``filename`` to ask whether THIS process holds that file; no text is read or kept.
+        ("_retry_while_locked", "after_grace(exc)"): 1,
+        ("_refuse_if_this_process_holds", 'name = getattr(exc, "filename2", None) or getattr(exc, "filename", None)'): 2,
         # BackupError is ``validate_sqlite_file``'s own error; its text is fixed words plus ``record_text`` (class only for a driver).
         ("prepare_staged_corpus", "raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text"): 1,
         # A comparison with the one known engine message that means "no rows yet"; nothing is written.
@@ -260,6 +263,30 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/database/fts_norm.py': {
         ('_normalize_sql', 'named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "word-segmentation"'): 3,
     },
+    # Rows 148/149/153: the at-rest status reads only an OSError's class and Windows ``winerror`` code, and a SQLite error code (its own
+    # or a WrongPassphraseError's chained one), to pick busy, one of three fixed reason words or "not this passphrase"; no exception
+    # text is stored, served or logged
+    'src/database/at_rest_state.py': {
+        ('_is_busy', 'code = getattr(exc, "sqlite_errorcode", None)'): 1,
+        ('_is_busy', 'return getattr(exc, "winerror", None) in _BUSY_WINERROR or (isinstance(code, int) and code & 0xFF in _BUSY_SQLITE)'): 1,
+        ('_read_header', 'return ("busy", None) if _is_busy(exc) else ("unreadable", _reason(exc))'): 2,
+        ('_refused_the_key', 'return getattr(exc.__cause__, "sqlite_errorcode", None) in (None, 26)'): 1,
+        ('_refusal_of', 'if _is_busy(exc.__cause__):'): 1,
+        ('_refusal_of', 'return {"state": "not_this_key"} if _refused_the_key(exc) else {"state": "unreadable", "reason": "io"}'): 1,
+        ('_probe', 'out = _refusal_of(exc)'): 1,
+        ('_probe', 'out = {"state": "busy"} if _is_busy(exc) else {"state": "unreadable", "reason": _reason(exc)}'): 2,
+        (
+            '_probe',
+            'out = {"state": "busy"} if _is_busy(exc) else {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}',
+        ): 2,
+    },
+    # Row 148: a pooled connection's ``info`` holds the identity (device, inode) of the file it opened, as library_generation's stamp
+    'src/database/file_identity.py': {
+        ('attach._stamp', 'connection_record.info[_KEY] = [taken if taken is not None else identity(path), swaps()]'): 1,
+        ('attach._drop_replaced', 'stamp = connection_record.info.get(_KEY)'): 1,
+        ('attach._refuse_replaced_statement', 'stamp = conn.connection.info.get(_KEY)'): 1,
+        ('attach._refuse_replaced_commit', 'stamp = conn.connection.info.get(_KEY)'): 1,
+    },
     'src/database/library_generation.py': {
         ('attach._stamp', 'connection_record.info[_KEY] = _GENERATION if taken is None else taken'): 1,
         ('_refuse', 'if valid(conn.connection.info.get(_KEY)):'): 1,
@@ -293,7 +320,12 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_run', 'report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))'): 1,
         ('_switch', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
     },
+    # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
+    'src/database/encrypt_tool.py': {
+        ('_export_and_swap', 'if not library or not _file_is_locked(refused):'): 1,
+    },
     'src/database/repair.py': {
+        ('_swap', 'if not _file_is_locked(refused):'): 1,
         ('run', 'code = refusal.code'): 2,
         ('run', 'report.update(outcome="declined", reason=code, reason_text=text, **refusal.facts)'): 1,
         ('run', 'failure = f"{exc.where}: {exc.reason}" if isinstance(exc, salvage.SalvageFailed) else damage.failure_text(exc)'): 3,

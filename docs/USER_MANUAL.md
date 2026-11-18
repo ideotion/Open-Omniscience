@@ -1876,16 +1876,34 @@ Official **figures** are not here at all — they are data, so they live under
     one *in place* (explicit consent, full verification before the swap, and a
     deliberate plaintext snapshot kept as your escape hatch — delete it once
     you've unlocked successfully). Encrypting does not securely erase the
-    disk: the earlier plaintext file and the app's temporary files (including
-    the analytics offload folders) are deleted, not overwritten, so their
-    contents may stay recoverable from the disk until it is reused, and so may
-    the snapshot's after you delete it. Full-disk encryption that was on when
+    disk: the earlier plaintext file is overwritten once and then deleted where
+    the file system allows it (one that cannot make a second link, such as FAT,
+    leaves it deleted only), but
+    SSDs and copy-on-write file systems may keep its old blocks, and the app's
+    temporary files (including the analytics offload folders) are deleted, not
+    overwritten, so their contents may stay recoverable from the disk until it
+    is reused, and so may the snapshot's after you delete it. Full-disk encryption that was on when
     they were written protects them; overwriting free space (offered after a
     panic wipe) may help, but not reliably on SSDs or copy-on-write file
     systems. Encrypt
     from this panel rather than `scripts/encrypt_db.py` while the app runs. The **doctor** (`GET /api/system/doctor`,
     and the same panel) attests the *real* state of every store by reading the
     file headers — corpus, custody log, signing keys — never by assumption.
+    "Encrypt" covers several stores under one passphrase, the library first. If
+    a later store cannot be encrypted (a file another program holds, a full
+    disk), the library stays encrypted and open with that passphrase, the panel
+    says which stores are still unencrypted, and they are finished at the next
+    unlock or when you press the encrypt button again with the same passphrase.
+    The panel never says every store is encrypted while one is not, and it names
+    any plaintext pre-encrypt copy still on the disk. It also opens each other
+    store with the passphrase the app holds: a store encrypted under another
+    passphrase (or damaged) is shown as such, named, and left as it is; a store
+    another program has open right now is shown as in use (try again in a
+    moment), never as unencrypted; a store not checked yet is named in a line of
+    its own; and a store that cannot be read says why (permission refused, too
+    short to be a database, a read error). A save that was already under way on a
+    store when it was encrypted is refused rather than written to the replaced
+    file; do it again.
     **The honest limit:** at-rest encryption protects a *seized or copied
     file*. It cannot protect a compromised running session (the key lives in
     memory while the app runs), and it is independent of full-disk encryption

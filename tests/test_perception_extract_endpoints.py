@@ -22,6 +22,13 @@ def _fake_client(list_installed):
 
 
 def _reset(job):
+    # A worker an earlier test left running is stopped and joined first (row 147): blanking ``_thread`` under a live worker let a
+    # second one start beside it, and the first wrote its own state over the second's when it ended.
+    t = job._thread
+    if t is not None and t.is_alive():
+        job.cancel()
+        t.join(30)
+        assert not t.is_alive(), f"a {job.kind} worker from an earlier test did not stop within 30 s"
     with job._lock:
         job._state = "idle"
         job._result = None
@@ -168,7 +175,11 @@ def test_perception_extract_job_status_reports_a_genuine_error_after_a_permanent
     so this test runs in milliseconds, not minutes."""
     from contextlib import contextmanager
 
-    from src.ai_layer import perception_extract_job as pe_job_mod
+    import importlib
+
+    # The module the worker imports (sys.modules), never a package attribute that could name an older copy: the constants
+    # below must be the ones the running job reads (row 147).
+    pe_job_mod = importlib.import_module("src.ai_layer.perception_extract_job")
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -222,13 +233,53 @@ def test_perception_extract_job_status_reports_a_genuine_error_after_a_permanent
     d._PERCEPTION_EXTRACT_JOB.start(
         model="stub:test", batch_size=5, client=RaisingClient(), gate_report=gate_report,
     )
-    d._PERCEPTION_EXTRACT_JOB._thread.join(5)
+    worker = d._PERCEPTION_EXTRACT_JOB._thread
+    assert worker is not None
+    # Two short backoffs end this run in well under a second here; the bound is for a slow runner (row 147: 5 s was not enough on
+    # the Windows leg), and a worker still alive after it is named with what it was doing rather than read as a wrong state.
+    worker.join(60)
 
     st = d.perception_extract_status()
     body = json.loads(bytes(st.body))
+    assert not worker.is_alive(), f"the worker was still running after 60 s: {body!r}"
     assert body["state"] == "error", (
         "the outer BackgroundJob state must genuinely read 'error' once the retry "
         "budget is exhausted -- never a benign-looking 'done'"
     )
     assert "2 consecutive" in (body.get("error") or "")
     assert "simulated outage" in (body.get("error") or "")
+
+
+def test_a_second_perception_extract_run_never_starts_beside_a_running_one(monkeypatch):
+    """Row 147: one job of a kind at a time. While a worker runs, ``start`` refuses and the endpoint reports the running job
+    with ``started: false``; nothing is started beside it."""
+    import threading
+
+    release = threading.Event()
+    entered = threading.Event()
+
+    def held(ctx, **kwargs):
+        entered.set()
+        release.wait(30)
+        return {}
+
+    job = d._PERCEPTION_EXTRACT_JOB
+    monkeypatch.setattr(job, "_worker", held)
+    monkeypatch.setattr(
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["granite4:micro"])),
+    )
+    try:
+        job.start(model="granite4:micro")
+        assert entered.wait(10), "the held worker never started"
+        first = job._thread
+        with pytest.raises(RuntimeError, match="already running"):
+            job.start(model="granite4:micro")
+        payload = json.loads(bytes(d.perception_extract_run(d.PerceptionExtractRunBody(model="granite4:micro")).body))
+        assert payload["started"] is False and payload["state"] == "running"
+        assert job._thread is first, "no second worker was made"
+    finally:
+        release.set()
+        if job._thread is not None:
+            job._thread.join(30)
