@@ -192,6 +192,23 @@ def test_a_record_that_would_pass_the_bound_is_cut_as_it_is_written_and_says_so(
     assert got["cut"]["left_out"] == ["release_at_engage", "release_again", "guard"] and "guard" not in got
 
 
+def test_the_record_is_written_with_lf_line_ends_so_its_measured_size_is_its_size_on_disk(stop, monkeypatch):
+    """Row 144: a text-mode write on Windows turns every newline into CR LF, so a record cut to fit the bound could land over it
+    and be refused by the reader. The writer asks for LF whatever the platform, and the bytes on disk are the bytes it measured."""
+    _c, _d, data = stop
+    seen: dict = {}
+    real = memstop.atomic_replace
+
+    def spy(path, text, **kw):
+        seen.update(kw)
+        return real(path, text, **kw)
+
+    monkeypatch.setattr(memstop, "atomic_replace", spy)
+    written = memstop._write({"kind": "memory-stop", "session_id": "sess-1", "steps": {"a": 1, "b": 2}})
+    raw = (data / "memory_stop.json").read_bytes()
+    assert seen.get("newline") == "\n" and b"\r" not in raw and written == len(raw)
+
+
 def test_the_guards_sentence_is_cut_to_what_it_protects(stop):
     _c, _d, data = stop
     guard = _Guard()

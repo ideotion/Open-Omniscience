@@ -139,7 +139,7 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
         return []
     pattern = _kept_pattern(target)
     out: list[dict[str, Any]] = []
-    found: list[tuple[tuple[int, int], dict[str, Any]]] = []
+    found: list[tuple[tuple[object, ...], dict[str, Any]]] = []
     try:
         entries = list(os.scandir(target.parent))
     except OSError:
@@ -151,17 +151,19 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
         try:
             if not entry.is_file(follow_symlinks=False):
                 continue
-            st = entry.stat(follow_symlinks=False)
+            # os.stat, not entry.stat: on Windows the scandir entry leaves st_ino and st_dev at 0, which made every kept copy
+            # one "file" below and listed only one of them
+            st = os.stat(entry.path, follow_symlinks=False)
             size = st.st_size
             made = datetime.strptime(m.group(1), STAMP_FORMAT).replace(tzinfo=UTC).isoformat(timespec="seconds")
         except (OSError, ValueError):
             continue  # a stamp that is not a real date is a name this module never gave
         if _same_file(Path(entry.path), target):
             continue  # a second name of the LIVE library (a rebuild cut between the link and the swap): not a kept copy
-        found.append(((st.st_dev, st.st_ino), {"name": entry.name, "bytes": int(size), "made_at": made}))
+        found.append((_file_key(entry.path, st), {"name": entry.name, "bytes": int(size), "made_at": made}))
     # two names of ONE file (a crash between the link and the swap, then a later rebuild) are listed once, under the older
     # name, so the room they take is counted once and "freed" is true of the removal
-    seen: set[tuple[int, int]] = set()
+    seen: set[tuple[object, ...]] = set()
     for file_id, row in sorted(found, key=lambda f: str(f[1]["made_at"])):
         if file_id not in seen:
             seen.add(file_id)
@@ -511,6 +513,14 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
         _record(report)
 
 
+def _file_key(path: str | Path, st: os.stat_result) -> tuple[object, ...]:
+    """The file's identity: its device and inode, or, where the filesystem reports no inode (0), its own normalised path, so
+    two names are one file only when the system says so and an unknown id never merges two files."""
+    if st.st_ino:
+        return (st.st_dev, st.st_ino)
+    return ("path", os.path.normcase(os.path.abspath(path)))
+
+
 def _same_file(a: Path, b: Path | None) -> bool:
     if b is None:
         return False
@@ -518,7 +528,7 @@ def _same_file(a: Path, b: Path | None) -> bool:
         sa, sb = os.lstat(a), os.lstat(b)
     except OSError:
         return False
-    return (sa.st_ino, sa.st_dev) == (sb.st_ino, sb.st_dev)
+    return _file_key(a, sa) == _file_key(b, sb)
 
 
 def _quiet(stopping: Any) -> None:

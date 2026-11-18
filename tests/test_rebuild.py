@@ -411,6 +411,34 @@ def test_kept_copies_are_listed_a_link_never_and_only_a_listed_name_is_removed(t
     assert elsewhere.read_bytes() == b"keep me" and live.exists() and old.exists()
 
 
+def _no_inode(real):
+    """``os.stat``/``os.lstat`` as a filesystem that reports no file id answers (st_ino and st_dev 0, as a scandir entry does on Windows)."""
+
+    def fake(path, *a, **k):
+        r = real(path, *a, **k)
+        return os.stat_result((r.st_mode, 0, 0, r.st_nlink, r.st_uid, r.st_gid, r.st_size, int(r.st_atime), int(r.st_mtime), int(r.st_ctime)))
+
+    return fake
+
+
+def test_kept_copies_are_all_listed_where_the_filesystem_reports_no_file_id(tmp_path, monkeypatch, no_key):
+    """Row 144: on Windows a scandir entry's stat has st_ino 0, so keying the copies on it made every kept copy one file and only
+    one was listed (and only that one could be removed). With no id, a copy is its own path: all are listed, none is taken for the
+    live library."""
+    from tests.os_scope import scope_os
+
+    live = tmp_path / "live.db"
+    live.write_bytes(b"x")
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (live, live.name) if key == FILE_CORPUS else (None, None))
+    names = [f"live.pre-rebuild-202611{d:02d}T080000Z.db" for d in (1, 7, 14)]
+    for i, n in enumerate(names):
+        (tmp_path / n).write_bytes(b"k" * (i + 1))
+    scope_os(monkeypatch, rebuild, stat=_no_inode(os.stat), lstat=_no_inode(os.lstat))
+    assert [k["name"] for k in rebuild.kept_copies()] == list(reversed(names))
+    assert rebuild.remove_kept_copy(names[0]) == {"removed": names[0], "bytes": 1}
+    assert [k["name"] for k in rebuild.kept_copies()] == [names[2], names[1]] and live.exists()
+
+
 # --------------------------------------------------------------------------- #
 #  the panic wipe and the data-folder scope know the names
 # --------------------------------------------------------------------------- #
