@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,tests/windows,Windows shard 2 test and tooling assumptions (row 144),shipped,PR #2108; PR #2105,tests/test_core_guard.py;scripts/planned.py;scripts/lessons.py;scripts/planned_index.py,"54 Windows-only test failures: POSIX fake kernel without sys.platform, ollama without .exe, cp1252 stdout in dev scripts, backslash paths, SYSTEMROOT, SIGHUP, platform-specific errors. No product change."
