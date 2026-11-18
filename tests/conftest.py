@@ -1003,6 +1003,53 @@ def pytest_runtest_logreport(report):
 _HANG_DEADLINE: list[float] = []  # the running test's deadline on the monotonic clock, while one runs
 
 
+# THE CHECKOUT'S configs/ IS THE SAME AT THE END OF A RUN AS AT ITS START (row 167). The seeder picks its catalogues by
+# ``Path.exists()`` on files under configs/, and under ``-n`` every worker reads them while the others run: a test that
+# wrote, renamed or removed one there, even for a moment, would change what a test in another process seeds, on some runs
+# only. None does today (measured on shard 2 under ``-n 4``); this keeps it so. Every process (the controller and each
+# worker) takes the sha256 of every file under configs/ when its session starts and again when it ends, and a difference
+# fails the run, naming the files. ``OO_TEST_CONFIGS_GUARD_DIR`` points it at another folder (its own test only).
+def _configs_fingerprint() -> dict[str, str]:
+    import hashlib
+    from pathlib import Path
+
+    root = Path(os.environ.get("OO_TEST_CONFIGS_GUARD_DIR") or Path(__file__).resolve().parents[1] / "configs")
+    found: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if "__pycache__" in path.parts or not path.is_file():
+            continue
+        try:
+            found[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:  # a file that vanished between the listing and the read is a change, and is reported as one
+            found[path.relative_to(root).as_posix()] = f"unreadable: {type(exc).__name__}"
+    return found
+
+
+_CONFIGS_AT_START: list[dict[str, str]] = []
+
+
+def pytest_sessionstart(session):
+    _CONFIGS_AT_START[:] = [_configs_fingerprint()]
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session, exitstatus):
+    if not _CONFIGS_AT_START:
+        return
+    start, end = _CONFIGS_AT_START[0], _configs_fingerprint()
+    if start == end:
+        return
+    changed = sorted(name for name in start.keys() | end.keys() if start.get(name) != end.get(name))
+    what = ", ".join(f"{n} ({'added' if n not in start else 'removed' if n not in end else 'changed'})" for n in changed)
+    message = f"a test changed the checkout's configs/ during this run (row 167): {what}"
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message, red=True)
+    else:
+        sys.stderr.write(message + "\n")
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     if _HANG_REPORT is None and _SLOW_REPORT is None:
