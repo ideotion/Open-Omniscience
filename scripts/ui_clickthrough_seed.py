@@ -52,6 +52,7 @@ import os
 import random
 import sys
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -790,7 +791,18 @@ def main() -> None:
         "--mini", action="store_true",
         help="seed the SMALL import-fixture source corpus instead of the full state C",
     )
+    ap.add_argument(
+        "--write-import-artifact", metavar="DIR", default="",
+        help="with --mini: also write the state D import fixture (the app's own encrypted volume "
+        "backup of that corpus) into DIR; the passphrase is read from OO_UIWALK_IMPORT_PASS, the "
+        "same variable the runner reads, and never from the command line",
+    )
     args = ap.parse_args()
+    if args.write_import_artifact and not args.mini:
+        ap.error("--write-import-artifact builds the state D fixture, which is the --mini corpus")
+    import_pass = os.environ.get("OO_UIWALK_IMPORT_PASS", "")
+    if args.write_import_artifact and not import_pass:
+        ap.error("--write-import-artifact needs OO_UIWALK_IMPORT_PASS set (never a flag: argv is visible)")
 
     init_db()
     session = SessionLocal()
@@ -802,6 +814,16 @@ def main() -> None:
     print(f"ui_clickthrough_seed: {'MINI import-source' if args.mini else 'STATE C'} seeded.")
     for k, v in tally.items():
         print(f"  {k}: {v}")
+    if args.write_import_artifact:
+        # Walk rerun 2026-11-18: the state D drill was "blocked" on every ritual run because building
+        # its fixture was a by-hand step (audit 14 called write_volume_backup from a REPL). One flag
+        # now does it with the app's own engine, so the release ritual can include the import drill.
+        from src.backup.artifact import write_volume_backup
+
+        dest = Path(args.write_import_artifact)
+        dest.mkdir(parents=True, exist_ok=True)
+        result = write_volume_backup(dest, import_pass)
+        print(f"  import_artifact: {dest} ({result.get('volumes')} volumes)")
 
 
 if __name__ == "__main__":
