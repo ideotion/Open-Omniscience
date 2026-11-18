@@ -56,6 +56,10 @@ from datetime import UTC, date, datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+#: Row 157 (F7): how far after the seed day the deduced-event specimen's hearing falls (inside the agenda's
+#: 120-day deduced window, so the list view always has it to show).
+FUTURE_EVENT_DAYS_AHEAD = 45
+
 # -- multi-lingual specimen prose -------------------------------------------------------- #
 # Real, grammatical short paragraphs (never lorem-ipsum or repeated single words -- the
 # extraction pipeline needs genuine sentence structure and real function words for the
@@ -669,11 +673,19 @@ def seed_populated_corpus(session, *, rng_seed: int = 20260813) -> dict:
     # pass, so the specimen is seeded THROUGH the real extractor (index_article stores the
     # mentioned date with snippet provenance; nothing is hand-inserted into
     # article_mentioned_dates). Three articles, two sources, one explicit future date.
+    # Row 157 (F7): the date is RELATIVE to the seed day. It was fixed in the text, and once that
+    # day passed the 2026-11-18 rehearsal found no deduced event to walk. English month names are
+    # spelled here rather than through strftime("%B"), which follows the machine's locale.
+    _months = ("January", "February", "March", "April", "May", "June", "July", "August",
+               "September", "October", "November", "December")
+    _event = datetime.now(UTC).date() + timedelta(days=FUTURE_EVENT_DAYS_AHEAD)
+    _event_words = f"{_event.day} {_months[_event.month - 1]} {_event.year}"
+    _published = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) - timedelta(days=10)
     fut_bodies = [
         (
             sources["en"][0],
             "The regional planning board confirmed that the public hearing on the harbour "
-            "dredging permits will be held on 12 October 2026 at the civic centre. "
+            "dredging permits will be held on " f"{_event_words}" " at the civic centre. "
             "Residents of the low-lying districts are encouraged to register in advance, "
             "officials said, as seating for the session is limited and demand is expected "
             "to be high given the months of debate over the port expansion. The hearing "
@@ -684,7 +696,7 @@ def seed_populated_corpus(session, *, rng_seed: int = 20260813) -> dict:
         (
             sources["en"][1],
             "Campaign groups on both sides of the port expansion argument said they would "
-            "attend the hearing scheduled for 12 October 2026, with the fishing "
+            "attend the hearing scheduled for " f"{_event_words}" ", with the fishing "
             "cooperative planning to present its own survey of wetland impacts. The "
             "cooperative's chair said the survey covered three seasons of observations "
             "along the affected shoreline and would be released publicly a week before "
@@ -694,8 +706,8 @@ def seed_populated_corpus(session, *, rng_seed: int = 20260813) -> dict:
         ),
         (
             sources["en"][0],
-            "A procedural note published by the clerk's office confirmed the 12 October "
-            "2026 date for the dredging hearing and set out how members of the public can "
+            "A procedural note published by the clerk's office confirmed the " f"{_event_words}"
+            " date for the dredging hearing and set out how members of the public can "
             "submit evidence. Submissions close one week before the session, the note "
             "said, and any material received after the deadline will be carried over to a "
             "follow-up session if one is required. The clerk also confirmed that the "
@@ -709,9 +721,9 @@ def seed_populated_corpus(session, *, rng_seed: int = 20260813) -> dict:
             url=f"https://{src.domain}/hearing-note-{k}",
             canonical_url=f"https://{src.domain}/hearing-note-{k}",
             source_id=src.id, title=f"Dredging hearing note {k + 1}", content=body,
-            published_at=datetime(2026, 7, 20 + k, tzinfo=UTC), language="en",
+            published_at=_published + timedelta(days=k), language="en",
             hash=_hash_for(body, f"future-event-{k}"), word_count=len(body.split()),
-            created_at=datetime(2026, 7, 20 + k, tzinfo=UTC),
+            created_at=_published + timedelta(days=k),
         )
         session.add(a)
         session.commit()
