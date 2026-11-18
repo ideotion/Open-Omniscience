@@ -1,4 +1,4 @@
-## 2026-11-18 — rtl probe mirrored flip card: a transform mirrors getClientRects, so a measured "reorder" can be the instrument reading a mirror (row 161)
+## 2026-11-18 — rtl probe mirrored flip card: a transform mirrors getClientRects, so a measured "reorder" can be the instrument reading a mirror (row 161, PR #2121)
 
 **What was found.** The 2026-11-18 encrypted rehearsal filed a P1 "reordered date" on Home under Arabic: the ten characters of `2026-11-10` came back with x DECREASING ([489 … 431]). The date was isolated (U+2068 … U+2069) and read correctly. It sat on a briefing flip card's unflipped BACK face, which is `transform: rotateY(180deg)` and hidden by `backface-visibility`; `getClientRects` reports positions after the transform, so a mirrored element's characters always measure right to left. Reproduced by appending an isolated date to a real back face: [847, 838, … 778]. A static sweep of ten tabs under Arabic (back faces unflipped by CSS) found no un-isolated ISO date beside Arabic text: the shared helpers (`ooIsoDate`, `ooIsoDateTime`, `ooLtrIsolate`) and the raw-date ratchet (`tests/test_raw_date_ratchet.py`) already hold.
 
