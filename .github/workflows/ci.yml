@@ -912,6 +912,17 @@ jobs:
         run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
 
       # The file list is written inside the workspace (shard.args), not under $RUNNER_TEMP: on Windows that is a drive-lettered backslash path.
+      # MEASUREMENT ONLY, NEVER SHIPS (row 163, R743): does Defender's real-time scan make the Windows legs 3.7 times slower? This dispatch
+      # excludes the workspace, the runner temp, the user temp and the Python toolcache from it; the leg times answer Defender or disk.
+      - name: Exclude the test folders from Defender (measurement only)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP, $env:RUNNER_TOOL_CACHE
+          Add-MpPreference -ExclusionProcess python.exe
+          (Get-MpPreference).ExclusionPath
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled
+
       - name: Plan this shard (which test files it runs)
         run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out shard.args
 
