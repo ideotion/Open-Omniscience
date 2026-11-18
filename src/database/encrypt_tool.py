@@ -336,6 +336,26 @@ def _table_counts_safe(p: Path, key: str) -> dict:
         conn.close()
 
 
+def _still_plaintext(rows: list[tuple[str, Path]]) -> list[str]:
+    """The stores whose header reads as plaintext. Its own function for the same reason as :func:`_encrypt_the_rest`."""
+    return [name for name, path in rows if is_encrypted_file(path) is False]
+
+
+def _encrypt_the_rest(rows: list[tuple[str, Path]], key: str, main: Path, reports: dict) -> list[str]:
+    """Each store after the library is its own step; one that fails stays plaintext and is named, and the others go on.
+
+    A function of its own so the loop has no ``with`` around it in its own scope (tests/test_database_loop_heads_are_classified.py): an
+    interrupt landing on its back-edge leaves this frame normally, and ``encrypt_all``'s ``write_lock`` is released by its own ``with``."""
+    pending: list[str] = []
+    for name, path in rows:
+        try:
+            reports[name] = encrypt_store(name, path, key, main=main)
+        except Exception as exc:  # noqa: BLE001 - a later store's failure must not hide that the library is encrypted
+            log_failure(_LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING)
+            pending.append(name)
+    return pending
+
+
 def encrypt_all(key: str, *, on_library_encrypted: Callable[[], object] | None = None) -> dict:
     """Encrypt EVERY at-rest store under THE one passphrase (design D6).
     The caller disposes the engine before and re-opens after.
@@ -380,7 +400,6 @@ def encrypt_all(key: str, *, on_library_encrypted: Callable[[], object] | None =
     # one list, shared with the status and the finish, so the three can never disagree about a file.
     rows = at_rest_state.stores(main)
     reports: dict = {}
-    pending: list[str] = []
     with write_lock():
         # The corpus FIRST, alone: a failure here leaves every store as it was (nothing is encrypted yet), so it is raised as before.
         name, path = rows[0]
@@ -402,17 +421,11 @@ def encrypt_all(key: str, *, on_library_encrypted: Callable[[], object] | None =
             # The library IS ciphertext and the key is held, but it did not read back: the other stores are left for the next
             # unlock (or the encrypt button), and the caller takes the partial path (the keyed pool, the plaintext serves retired).
             log_failure(_LOG, "the library is encrypted but did not read back with the key", exc, key, level=logging.WARNING)
-            raise EncryptPartial([n for n, p in rows[1:] if is_encrypted_file(p) is False]) from None
+            raise EncryptPartial(_still_plaintext(rows[1:])) from None
         if not handed:
             _hand()
         dispose_lane_engines()
-        # Each other store is its own step; one that fails stays plaintext and is named, and the others go on.
-        for name, path in rows[1:]:
-            try:
-                reports[name] = encrypt_store(name, path, key, main=main)
-            except Exception as exc:  # noqa: BLE001 - a later store's failure must not hide that the library is encrypted
-                log_failure(_LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING)
-                pending.append(name)
+        pending = _encrypt_the_rest(rows[1:], key, main, reports)
     if pending:
         raise EncryptPartial(pending)
     return reports

@@ -89,24 +89,22 @@ def read_record(main: Path | None = None) -> dict[str, Any]:
 
 
 def record_encrypted(name: str, main: Path | None = None) -> None:
-    """Add ``name`` to the record, atomically (temporary file, fsync, replace). Called only after the store was encrypted AND read
+    """Add ``name`` to the record, atomically and under the record's lock (``file_lock``, then ``atomic_replace``). Called only after the store was encrypted AND read
     back with the key. A failure to write is logged by class and never undoes the encryption: the status reads the files."""
     rows = stores(main)
     if not rows:
         return
+    from src.safety.file_lock import atomic_replace, file_lock
+
     path = _record_path(rows[0][1])
-    doc = read_record(rows[0][1])
-    doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
-    tmp = path.with_name(path.name + ".tmp")
     try:
-        tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
-        with open(tmp, "r+b") as handle:
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        # Read, add and replace under the record's own lock (R176), so a second server's write cannot fall between the read and the swap.
+        with file_lock(path):
+            doc = read_record(rows[0][1])
+            doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
+            atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
-        with contextlib.suppress(OSError):
-            tmp.unlink(missing_ok=True)
 
 
 def _names_beside(rows: list[tuple[str, Path]]) -> list[tuple[Path, str]]:
