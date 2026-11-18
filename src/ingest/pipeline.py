@@ -477,7 +477,8 @@ class _CustodyBatch:
         under = self._under(prefs)
         if self._log is not None and (under != self._opened_under or self._log.replaced()):
             # Other settings, another key, or (row 148) the log's file was replaced since it was opened (it was encrypted): the
-            # old connection would be refused, so the entry is written through a fresh one instead of becoming owed.
+            # old connection would be refused, so a fresh one is opened. A swap that falls after this check is refused at the
+            # write instead, and that entry is owed, as any refused entry is.
             self.drop()
         if self._log is None:
             from src.custody.log import CustodyLog

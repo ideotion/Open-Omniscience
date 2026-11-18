@@ -247,6 +247,7 @@ def doctor() -> dict:
             "complete": at_rest["complete"],
             "pending": at_rest["pending"],
             "not_this_key": at_rest["not_this_key"],
+            "unchecked": at_rest["unchecked"],
             "plaintext_snapshots": at_rest["plaintext_snapshots"],
         },
         "corpus": _corpus_line(),

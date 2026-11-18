@@ -279,6 +279,7 @@ class CustodyLog:
         except Exception:  # noqa: BLE001 - the DBAPI timeout still applies
             pass
         with _APPEND_LOCK:
+            self._refuse_if_replaced()  # a swap between the open and the lock: refused at open, nothing created in the old file
             self._init_db()
 
     @property
@@ -499,7 +500,8 @@ class CustodyLog:
         entry_hash = _entry_digest(core)
         sig = self.signer.sign(canonical_bytes(core))
 
-        # Checked again just before the write: a calendar submission above can take seconds (row 148).
+        # Checked again just before the write (row 148). The append lock is held throughout and the swap takes it too, so this is
+        # belt and braces; it keeps the check beside the one statement that writes.
         self._refuse_if_replaced()
         self.conn.execute(
             """

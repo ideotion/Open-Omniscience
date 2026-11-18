@@ -263,6 +263,23 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/database/fts_norm.py': {
         ('_normalize_sql', 'named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "word-segmentation"'): 3,
     },
+    # Rows 148/149: the at-rest status reads only an OSError's class and Windows ``winerror`` code, and a WrongPassphraseError's chained
+    # SQLite error code, to pick one of four fixed reason words or "not this passphrase"; no exception text is stored, served or logged
+    'src/database/at_rest_state.py': {
+        ('_reason', 'if getattr(exc, "winerror", None) in (32, 33):  # a sharing or lock violation: another program holds the file'): 1,
+        ('_read_header', 'return "unreadable", _reason(exc)'): 1,
+        ('_refused_the_key', 'return getattr(exc.__cause__, "sqlite_errorcode", None) in (None, 26)'): 1,
+        ('_probe', 'out = {"state": "not_this_key"} if _refused_the_key(exc) else {"state": "unreadable", "reason": "io"}'): 1,
+        ('_probe', 'out = {"state": "unreadable", "reason": _reason(exc)}'): 1,
+        ('_probe', 'out = {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}'): 1,
+    },
+    # Row 148: a pooled connection's ``info`` holds the identity (device, inode) of the file it opened, as library_generation's stamp
+    'src/database/file_identity.py': {
+        ('attach._stamp', 'connection_record.info[_KEY] = [taken if taken is not None else identity(path), swaps()]'): 1,
+        ('attach._drop_replaced', 'stamp = connection_record.info.get(_KEY)'): 1,
+        ('attach._refuse_replaced_statement', 'stamp = conn.connection.info.get(_KEY)'): 1,
+        ('attach._refuse_replaced_commit', 'stamp = conn.connection.info.get(_KEY)'): 1,
+    },
     'src/database/library_generation.py': {
         ('attach._stamp', 'connection_record.info[_KEY] = _GENERATION if taken is None else taken'): 1,
         ('_refuse', 'if valid(conn.connection.info.get(_KEY)):'): 1,

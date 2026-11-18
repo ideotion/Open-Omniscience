@@ -143,8 +143,12 @@ def _export_and_swap(p: Path, key: str, ts: str, library: bool, removed: list[st
             )
 
         retired = _retired_name(p, ts)
+        from src.database.at_rest_state import probes_held
+
         try:
-            with _library_window(enc_tmp) if library else nullcontext():
+            # Row 149: no status probe holds a connection on the store while it is swapped (on Windows it would refuse the replace);
+            # held around the swap only, never the export, so a status read waits a moment at most.
+            with probes_held(), _library_window(enc_tmp) if library else nullcontext():
                 for suffix in ("-wal", "-shm"):
                     stale = p.with_name(p.name + suffix)
                     # the guard-clause form, not ``if stale.exists(): stale.unlink()``: a loop whose body ends in a bare ``if`` has its back-edge
@@ -300,8 +304,7 @@ def encrypt_store(
         guard: AbstractContextManager[object] = _APPEND_LOCK
     else:
         guard = nullcontext()
-    # Row 149: no status probe holds a connection on a store while it is swapped (on Windows it would refuse the replace).
-    with guard, at_rest_state.probes_held():
+    with guard:
         report = encrypt_database(
             path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure
         )

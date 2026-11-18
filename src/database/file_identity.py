@@ -19,8 +19,15 @@ is refused with fixed words, before anything is written.
 * :func:`attach` guards a SQLAlchemy engine (the lanes): a pooled connection on a replaced file is dropped at checkout (the pool
   opens a new one, with the key), a commit on one is refused (the transaction rolls back), and a statement on one is refused
   once any swap has been noted (:func:`note_replaced`), which costs an integer comparison per statement and a ``stat`` only after
-  a swap. What it does not cover, stated: a statement that autocommits on its own (DDL outside a transaction) in the instant
-  between a swap and its :func:`note_replaced`; the window and the wait remain the guard there.
+  a swap.
+
+What it does not cover, stated (the exclusive window and the wait for work in flight remain the guard there, as before):
+
+* a statement that autocommits on its own (DDL outside a transaction) in the instant between a swap and its :func:`note_replaced`;
+* a raw DBAPI connection taken from a lane engine (``engine.raw_connection()``; no lane code does), and the backup merge's own raw
+  connections to a lane or to the custody log (``backup/lane_merge.py``, ``backup/merge.py``'s ``merge_custody``);
+* a file system that reports no inode (``st_ino == 0``, some network and FUSE mounts): the identity cannot tell two files apart
+  there, so :func:`same` answers True and the guard does nothing, rather than refuse every healthy save.
 """
 
 from __future__ import annotations
@@ -37,8 +44,8 @@ Identity = tuple[int, int]
 
 #: Fixed words (keyed in every locale): what happened, that nothing was saved, and what to do.
 REPLACED_WORDS = (
-    "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; "
-    "do it again"
+    "this store's file was replaced (for example, encrypted) or removed while this connection was open, so nothing was saved "
+    "through it; do it again"
 )
 
 #: The key the identity is kept under in a pooled connection's ``info``.
@@ -67,8 +74,14 @@ def identity(path: Path | str) -> Identity | None:
 
 
 def same(path: Path | str, ident: Identity | None) -> bool:
-    """True when ``path`` still names the file ``ident`` was taken from. An identity never taken (None) is never the same."""
-    return ident is not None and identity(path) == ident
+    """True when ``path`` still names the file ``ident`` was taken from. An identity never taken (None) is never the same, and a
+    path that names no file now (removed, or a stat that failed) is not the same either. On a file system with no inode numbers
+    (``st_ino == 0``) the answer is True: the guard cannot tell, and says so in the module's limits."""
+    if ident is None:
+        return False
+    if ident[1] == 0:
+        return True
+    return identity(path) == ident
 
 
 def note_replaced() -> None:
@@ -118,15 +131,17 @@ def pinned_creator[T](path: Path | str, opener: Callable[[], T]) -> Callable[[],
 
     def _create() -> T:
         conn, ident = open_pinned(path, opener)
+        # SQLAlchemy's pool runs the ``connect`` event right after the creator returns, on the same thread, so the thread-local
+        # carries exactly this connection's identity to ``_stamp``.
         _local.ident = ident
         return conn
 
     return _create
 
 
-def _refuse(conn: Any) -> None:
-    with contextlib.suppress(Exception):  # the refusal below is what matters
-        conn.invalidate()  # never back into the pool: its file is not the store any more
+def _refuse(_conn: Any) -> None:
+    # Not invalidated here: closing a connection from inside its own statement hook makes SQLAlchemy log a failed cursor close at
+    # ERROR. The transaction rolls back, and the connection, once back in the pool, is dropped at its next checkout.
     raise StoreReplacedError()
 
 

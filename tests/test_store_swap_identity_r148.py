@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import threading
 from pathlib import Path
 
@@ -31,6 +32,9 @@ from src.versioned.lanes import all_lanes
 from src.versioned.models import VersionedEntity
 
 _KEY = "a-long-enough-passphrase-for-r148-9Wd"
+#: Windows refuses to replace a file SQLite holds open, so there the swap itself is refused (the store stays plaintext and pending,
+#: R742) and no connection can straddle it: the cases that keep one open across the swap describe POSIX file systems.
+_POSIX_SWAP = pytest.mark.skipif(sys.platform == "win32", reason="Windows refuses the replace of a file held open; nothing straddles it")
 _OTHER = "another-long-enough-passphrase-3Hq"
 
 
@@ -76,6 +80,7 @@ def _encrypted_with(path: Path, key: str) -> list[str]:
 # --- row 148: the custody log -------------------------------------------------------------------------------------------
 
 
+@_POSIX_SWAP
 def test_a_custody_log_opened_before_the_swap_is_refused_and_writes_nothing(data, monkeypatch):
     db = data / "custody_log.db"
     log = CustodyLog(db_path=str(db), signer=_signer(data), anchoring_mode="local")
@@ -123,6 +128,7 @@ def test_the_check_and_the_swap_are_ordered_by_the_append_lock():
     assert "_refuse_if_replaced()" in inspect.getsource(log_mod.CustodyLog._last)
 
 
+@_POSIX_SWAP
 def test_the_ingest_batch_opens_a_fresh_log_when_its_file_was_replaced(data, monkeypatch):
     from src.custody.settings import load_settings
     from src.ingest.pipeline import _CustodyBatch
@@ -154,6 +160,7 @@ def _lane_ids() -> list[str]:
         return sorted(e.external_id for e in s.query(VersionedEntity).all())
 
 
+@_POSIX_SWAP
 def test_a_lane_save_that_began_before_the_swap_is_refused_at_commit_and_lands_nowhere(data):
     path = store.create_lane("wiki")
     with store.lane_session("wiki") as s:
@@ -172,6 +179,7 @@ def test_a_lane_save_that_began_before_the_swap_is_refused_at_commit_and_lands_n
     assert _lane_ids() == ["oo:Before"], "the straddling save reached the encrypted lane, or the earlier one was lost"
 
 
+@_POSIX_SWAP
 def test_a_statement_after_the_swap_on_an_earlier_connection_is_refused(data):
     path = store.create_lane("wiki")
     from sqlalchemy import text
@@ -186,6 +194,7 @@ def test_a_statement_after_the_swap_on_an_earlier_connection_is_refused(data):
     session.close()
 
 
+@_POSIX_SWAP
 def test_a_pooled_connection_from_before_the_swap_is_dropped_at_checkout_and_the_lane_reads_with_the_key(data):
     path = store.create_lane("wiki")
     with store.lane_session("wiki") as s:
@@ -209,6 +218,7 @@ def _replace_with_copy(path: Path) -> None:
     tmp.replace(path)
 
 
+@_POSIX_SWAP
 def test_an_open_across_a_swap_is_opened_again_once_then_refused(tmp_path):
     p = tmp_path / "s.db"
     sqlite3.connect(str(p)).close()
@@ -339,11 +349,56 @@ def test_the_probe_stands_aside_while_a_store_is_swapped(data):
         assert entered.wait(10)
         st = at_rest_state.status()
         assert _row(st, "custody") == {**_row(st, "custody"), "state": "encrypted", "key_checked": False}
-        assert st["complete"] is True, "not checked is not a failure: the header says encrypted"
+        assert "custody" in st["unchecked"]
+        assert st["complete"] is False, "with a key held, a store it was not tried on is never counted as complete"
     finally:
         release.set()
         t.join(10)
-    assert "probes_held()" in __import__("inspect").getsource(encrypt_tool.encrypt_store)
+    assert at_rest_state.status()["complete"] is True, "positive control: the same files, checked"
+    assert "probes_held()" in __import__("inspect").getsource(encrypt_tool._export_and_swap)
+
+
+def test_a_busy_store_reads_as_unreadable_never_as_another_passphrase_and_is_not_cached(data):
+    """A store another connection holds is not "another passphrase": SQLCipher answers both the same way unless the cause is read."""
+    _all_encrypted(data, _KEY)
+    set_passphrase(_KEY)
+    db = data / "custody_log.db"
+    holder = connect(db, key=_KEY, check_same_thread=False)
+    try:
+        holder.execute("BEGIN EXCLUSIVE")
+        holder.execute("CREATE TABLE held(a)")
+        row = _row(at_rest_state.status(), "custody")
+        assert row["state"] == "unreadable" and row["reason"] == "io", row
+    finally:
+        holder.rollback()
+        holder.close()
+    assert _row(at_rest_state.status(), "custody")["state"] == "encrypted", "the busy answer was cached"
+
+
+def test_a_probe_never_creates_a_store_that_went_missing(data):
+    _all_encrypted(data, _KEY)
+    lane = next(data / spec.filename for spec in all_lanes() if spec.kind == "wiki")
+    lane.unlink()
+    out = at_rest_state._probe(lane, _KEY)
+    assert out["state"] == "unreadable" and not lane.exists()
+
+
+def test_a_file_system_without_inodes_disables_the_guard_rather_than_refusing_every_save(tmp_path):
+    p = tmp_path / "s.db"
+    sqlite3.connect(str(p)).close()
+    assert file_identity.same(p, (file_identity.identity(p) or (0, 0))[:1] + (0,))
+    assert not file_identity.same(p, None)
+    assert not file_identity.same(tmp_path / "gone.db", (1, 2)), "a path that names no file is not the same file"
+
+
+def test_a_refused_save_answers_409_with_the_fixed_words():
+    import asyncio
+
+    from src.api import main
+
+    resp = asyncio.run(main.store_replaced_handler(None, file_identity.StoreReplacedError()))
+    assert resp.status_code == 409
+    assert json.loads(resp.body) == {"detail": file_identity.REPLACED_WORDS}
 
 
 def test_the_probe_cache_holds_no_secret(data):
