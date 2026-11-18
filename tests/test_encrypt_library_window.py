@@ -16,7 +16,10 @@ original untouched, and a replace that fails after the log names were removed do
 
 from __future__ import annotations
 
+import errno
 import os
+import sqlite3
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -173,11 +176,66 @@ def test_a_replace_that_fails_after_the_log_names_went_does_not_revive_the_earli
     eng = _engine(p)
     conn = eng.connect()
     conn.execute(text("SELECT count(*) FROM notes")).scalar()
-    scope_os(monkeypatch, encrypt_tool, replace=lambda a, b: (_ for _ in ()).throw(OSError(13, "denied")))
-    with pytest.raises(OSError):
+    if sys.platform == "win32":
+        # Windows will not remove a log that ``conn`` still holds: the real removal is refused as a held file before the replace is
+        # reached (row 151). The state this test measures is "the log names went, then the replace failed", so here the removal is
+        # stood in for; on POSIX it is the real one. The held-file refusal itself is the next test, on every OS.
+        real_unlink = encrypt_tool.os.unlink
+
+        def unlink(path, *a, **kw):
+            if str(path).endswith(("-wal", "-shm")):
+                return None
+            return real_unlink(path, *a, **kw)
+
+        scope_os(monkeypatch, encrypt_tool, unlink=unlink)
+        # (The R742 second name made before the replace may stay in tmp_path here: Windows can refuse to drop it while SQLite holds the
+        # file, and ``_drop_name`` only logs that. Harmless to this test.)
+    # A refusal that is NOT a held file (EIO, no ``winerror``), so the generic path raises the OS error on every OS.
+    scope_os(monkeypatch, encrypt_tool, replace=lambda a, b: (_ for _ in ()).throw(OSError(errno.EIO, "input/output error")))
+    with pytest.raises(OSError) as raised:
         encrypt_tool.encrypt_database(p, _KEY, library=True)
+    assert not isinstance(raised.value, encrypt_tool.EncryptToolError), "a refusal that is not a held file is not called one"
     with pytest.raises(Exception) as caught:  # noqa: B017 - SQLAlchemy may wrap the refusal; the class name is checked below
         conn.execute(text("INSERT INTO notes VALUES ('after-the-failed-swap')"))
     assert "StaleLibraryError" in {c.__name__ for c in type(caught.value).__mro__} | {type(caught.value.__cause__).__name__}
     conn.close()
     eng.dispose()
+
+
+class _HeldOpen(PermissionError):
+    """The refusal Windows gives for a file another handle holds, with the attribute the product keys on (``winerror`` 32)."""
+
+    winerror = 32
+
+
+def test_a_log_held_by_an_earlier_connection_is_the_held_refusal_on_every_os(tmp_path, monkeypatch):
+    """Row 151: what Windows does to the test above, made the same on every OS. An earlier connection holds the log, so its removal is
+    refused as a held file: the operator gets the fixed words (nothing was replaced, the original is untouched), the file is still
+    plaintext with its rows, and the earlier connection is still refused, since the window announced the change before the removal."""
+    p = tmp_path / "corpus.db"
+    eng = _engine(p)
+    conn = eng.connect()
+    conn.execute(text("SELECT count(*) FROM notes")).scalar()
+    real_unlink = encrypt_tool.os.unlink
+
+    def unlink(path, *a, **kw):
+        if str(path).endswith("-wal"):
+            raise _HeldOpen(13, "held", str(path))
+        return real_unlink(path, *a, **kw)
+
+    scope_os(monkeypatch, encrypt_tool, unlink=unlink)
+    with pytest.raises(encrypt_tool.EncryptToolError) as refused:
+        encrypt_tool.encrypt_database(p, _KEY, library=True)
+    assert str(refused.value) == encrypt_tool.HELD_UNTOUCHED
+    with pytest.raises(Exception) as caught:  # noqa: B017 - SQLAlchemy may wrap the refusal; the class name is checked below
+        conn.execute(text("INSERT INTO notes VALUES ('after-the-refusal')"))
+    assert "StaleLibraryError" in {c.__name__ for c in type(caught.value).__mro__} | {type(caught.value.__cause__).__name__}
+    conn.close()
+    eng.dispose()
+    assert not is_encrypted_file(p)
+    plain = sqlite3.connect(p)
+    try:
+        assert [r[0] for r in plain.execute("SELECT x FROM notes ORDER BY rowid")] == ["before"], "the original keeps its rows"
+    finally:
+        plain.close()
+    assert not list(tmp_path.glob("*.enc-*")), "the encrypted copy is not left behind"
