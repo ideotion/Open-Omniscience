@@ -601,7 +601,7 @@ def test_localhost_is_answered_from_its_literals_in_airplane_mode(guard):
     def resolver(host, *a, **k):
         seen.append((host, a[1] if len(a) > 1 else k.get("family", 0)))
         if host == "::1":
-            raise socket.gaierror(socket.EAI_ADDRFAMILY, "no IPv6 here")
+            raise socket.gaierror(socket.EAI_NONAME, "no IPv6 here")  # EAI_ADDRFAMILY does not exist on Windows (row 150)
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (host, a[0] if a else 0))]
 
     ap._orig_getaddrinfo = resolver  # type: ignore[assignment]

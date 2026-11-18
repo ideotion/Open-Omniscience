@@ -127,7 +127,9 @@ def _install_socket_tripwire() -> None:
     for name in ("connect", "connect_ex"):
         setattr(socket.socket, name, guarded(getattr(socket.socket, name), "a connection to", addr_host))
     socket.socket.sendto = guarded(socket.socket.sendto, "a datagram to", sendto_host)  # type: ignore[method-assign]
-    socket.socket.sendmsg = guarded(socket.socket.sendmsg, "a message to", sendmsg_host)  # type: ignore[method-assign]
+    # Windows has no ``sendmsg`` (row 150): there is nothing to guard where the method does not exist, and patching it there raised.
+    if hasattr(socket.socket, "sendmsg"):
+        socket.socket.sendmsg = guarded(socket.socket.sendmsg, "a message to", sendmsg_host)  # type: ignore[method-assign]
 
     def name_guard(real, what, take_host):
         def wrapper(*a, **kw):

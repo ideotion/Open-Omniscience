@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 import threading
 from pathlib import Path
@@ -56,8 +57,12 @@ _DISPLAY_NAMES = {
 
 _lock = threading.Lock()
 #: A file's identity for the memos: size, mtime, inode and ctime. ctime cannot be set from user space, so a file
-#: rewritten to the same size with its old mtime put back still misses the memo.
+#: rewritten to the same size with its old mtime put back still misses the memo, where ctime is a change time (see below).
 _Stamp = tuple[int, int, int, int]
+#: Whether ``st_ctime_ns`` is a change time the user cannot set. On Windows it is the CREATION time, which a same-size rewrite
+#: with its old mtime put back leaves as it was (row 150, measured on the Windows CI leg), so there the hash is never taken
+#: from the memo: it is read again on every status, and the out-of-date "ok" that the memo would give cannot be said.
+_CHANGE_TIME_IS_TRUSTED = os.name != "nt"
 _hash_memo: dict[str, tuple[_Stamp, str]] = {}  # path -> (stamp, sha256)
 _head_memo: dict[str, tuple[_Stamp, dict[str, Any] | None]] = {}  # path -> (stamp, head or None)
 #: The largest thesaurus or summary read (a guard against a file that is not one: EuroVoc in five languages is tens of MB).
@@ -117,7 +122,7 @@ def _hash_cached(path: Path) -> str:
     key = str(path)
     with _lock:
         hit = _hash_memo.get(key)
-        if hit and hit[0] == stamp:
+        if hit and hit[0] == stamp and _CHANGE_TIME_IS_TRUSTED:
             return hit[1]
     digest = sha256_file(path)
     with _lock:
