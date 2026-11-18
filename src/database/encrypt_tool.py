@@ -277,6 +277,11 @@ def dispose_lane_engines() -> None:
 #: A store already encrypted that the key does not open: it is not the operator's passphrase's store, and nothing here may treat it
 #: as done (R742: a store is recorded only once it reads back with the key).
 NOT_THIS_KEY = "a store is already encrypted, but not with this passphrase, so it was left as it is"
+#: Row 154: the same check met a store another program holds: its key was never checked, so it is not called "not this passphrase".
+ALREADY_ENCRYPTED_IN_USE = (
+    "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; "
+    "it was left as it is, try again in a moment"
+)
 
 
 def encrypt_store(
@@ -311,9 +316,13 @@ def encrypt_store(
     if report.get("skipped") == "file does not exist":
         return report
     if report.get("skipped") == "already encrypted":
+        from src.database.connect import StoreHeldError
+
         try:
             _table_counts_safe(Path(path), key)
-        except Exception:  # noqa: BLE001 - any failure to read it with this key means it is not this key's store
+        except StoreHeldError:
+            raise EncryptToolError(ALREADY_ENCRYPTED_IN_USE) from None
+        except Exception:  # noqa: BLE001 - any other failure to read it with this key means it is not this key's store
             raise EncryptToolError(NOT_THIS_KEY) from None
     at_rest_state.record_encrypted(name, main)
     return report
