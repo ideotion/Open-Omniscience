@@ -233,8 +233,9 @@ _oo_rec_reap_dir() {
 # never the only one: a server clock ahead of this one (SMB) delays the takeover by its skew. Once seen old for this lock#inode it stays so (_OO_LOCK_OLD):
 # the waiter's own temp mark made inside the lock changes that mtime, and a test made again after it would push the takeover a minute further at every
 # attempt, for ever where a pid-less directory mark has to be cleared first (no hard links; the reads of 18 Nov). Both records are dropped by a takeover,
-# so a directory made later under the same name, even on a reused inode, starts its own minute. What is left is a launcher frozen (stopped, not slow) for a
-# minute between its mkdir and its pid create, on a filesystem whose inode numbers repeat at once: the second look under the mark is its last guard.
+# so a directory made later under the same name, even on a reused inode, starts its own minute; so do a new call and a lock this waiter takes. What is
+# left: another waiter takes the old lock over and a launcher makes a new one on the same inode, both between two of this waiter's looks, and that
+# launcher is then stopped (not slow) for a second between its mkdir and its pid create: the second look under the mark is its last guard.
 _oo_rec_nopid_seen() {
     local tok r first
     tok="$1#$(ls -di "$1" 2>/dev/null | awk '{print $1}' || true)"
@@ -299,10 +300,12 @@ oo_rec_locked() {
         return "$rc"
     fi
     d="$f.lock.d"
+    _OO_LOCK_NOPID=""; _OO_LOCK_OLD=""  # a minute is seen within one call, never carried over from an earlier one (row 172)
     tries=$(( OO_REC_LOCK_WAIT_MS / 10 + 1 ))
     while :; do
         # held by whoever creates the pid file, never by the mkdir alone (_oo_rec_take): a lock whose pid file is somebody else's is waited for
         if _oo_rec_take "$d"; then
+            _OO_LOCK_NOPID=""; _OO_LOCK_OLD=""
             # A lock renamed away (released, or a dead owner's taken over) is nobody's, but a waiter whose path walk reached it just before the rename can still
             # create its temp mark in it after the remover listed it, so the remover's rm -rf leaves it behind (seen once in 30 stress runs, 16 Nov). The holder
             # removes such leftovers: only names a remover makes after the rename, so never a lock anybody holds.
