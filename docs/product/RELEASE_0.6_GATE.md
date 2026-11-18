@@ -13,8 +13,9 @@ indexed in [`docs/ledger/RULINGS_INDEX.md`](../ledger/RULINGS_INDEX.md); Q112 = 
 (`V1_PATHWAY_2026-07-14.md` §3 with the four amendments of 2026-09-07: climate survives keyless without FIRMS
 and OpenAQ; elections ships its CALENDAR as the 1.0 bar, rosters and poll Tier-2 post-1.0). The breadth rows
 (B–D) are ruled by the sheet's release statements (Q106, Q107, Q108). Anything marked *proposed placement* is
-the planning session's sequencing, not a ruling. No ⛔ question lands here; **Q823 (ODbL)** still governs
-whether any OSM-derived row may leave the machine. **No target date** (Q110 = c).
+the planning session's sequencing, not a ruling. No ⛔ question lands here; ~~**Q823 (ODbL)** still governs
+whether any OSM-derived row may leave the machine~~ (**Q823 = a**, 2026-09-29: OSM-derived rows may leave the machine
+with OSM's credit and the ODbL share-alike line, Q1008; see the `0.5` gate). **No target date** (Q110 = c).
 
 **How a row closes:** as the `0.3`/`0.4` gates say — a named artifact; `not-measurable-here` when the sandbox
 cannot measure the bar; the verification bar is Chromium + the maintainer's click-through (Q1128 = a).
@@ -132,8 +133,9 @@ instruments in 0.6 as jurisdiction `INT` — the UN Treaty Collection in six UI 
 EuroVoc-ID property and the keyword rings, assigned by rules, ≈ where the LLM proposes (Q913 — P5437 is FROM
 MEMORY in the sheet and must be confirmed); the SKOS family adopted for topic tagging — EuroVoc + the UNESCO
 Thesaurus + AGROVOC + IPTC Media Topics (Q1146, registry-tracked); the adapters follow the order Q925 ⛔
-settles — **still PENDING** if unruled, in which case this row builds breadth through whichever adapters exist
-and records the ones it could not start. **Closes when** a coverage report lists every floor country with its
+settles — ~~**still PENDING** if unruled, in which case this row builds breadth through whichever adapters exist
+and records the ones it could not start~~ (**Q925 = a**, 2026-09-29, item 35 of the 37-question list:
+legislation.gov.uk → gesetze-im-internet → e-Gov → EUR-Lex → LEGI). **Closes when** a coverage report lists every floor country with its
 state (tracked / verified-not-yet-tracked / unverified / no eligible source) and the twelve-language tally,
 the `INT` lane ingests one treaty in six languages aligned by identity (Q908), and the topic assignment is
 measured on a labelled sample with the ≈ share stated. **Operator:** the live verification of each seed row
@@ -173,6 +175,14 @@ report renders for all twelve editions from the lane's own counters (the numbers
 member), and a located address from a wiki infobox appears on the map with its provenance in the hover.
 Brief `S06-03`.
 
+**Progress 2026-11-18 (recorded from the code on main; the row stays OPEN on two operator runs).** Both halves are built:
+the per-edition report is `src/wiki/coverage.py` (S06-03 S1 + S3), read by the Living sources view and carried in the
+diagnostics bundle as a member (trimmed per R413), every figure read from rows the lane already wrote, a lane that never
+ran reporting `measured: false` with its reason; the located addresses are `src/wiki/located.py` (S2, R678, PR #1948),
+drawn on the map layer with their provenance in the hover (`app-map.js`). Under R678 (d), addresses in ARTICLE bodies stay
+a recorded gap with its reason, so they are not owed by this row. **Still owed (operator):** the report for all twelve
+editions from a real lane run, read back from a bundle; and one located infobox address hovered on the map.
+
 ### Row E — Help's body ×12, the first tranche · ruled (Q1122 = b); *proposed staging* · CLOSED (R721)
 
 **What it must demonstrate.** The 167,022-character Help body translated ×12 (~2 M characters), AI-drafted
@@ -207,6 +217,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-14 | **R721: native review of Help dropped; row E CLOSED.** The Help reader now opens every document, English included, with "This help text was written by AI and may contain mistakes." (×12), which replaced the old "Machine-drafted translation … Found a better wording? Improve it on the project page." wording rather than sitting beside it; the drafts' opening comments say "written by AI" instead of "not yet reviewed by a native speaker", and `docs/product/NATIVE_REVIEW_QUEUE.md` no longer lists Help documents. Guarded by `tests/help_banner_node_test.js` + `tests/test_help_banner.py`. | maintainer (R721, relayed by Plan) · recorded by the session |
 | 2026-11-14 | **R702 built: Settings → Advanced → Safety → Database maintenance can rebuild the main library at the current storage settings** (16 KiB cipher pages, `auto_vacuum` INCREMENTAL), beside Compact. `sqlcipher_export` into a file declared at the new settings, a copy check (settings read back, `quick_check`, identical schema, equal row count per table), then the restore's swap window; the old file is kept under `<stem>.pre-rebuild-<stamp><suffix>` until the operator removes it from the panel (Q-a: no auto-removal; the free-space preflight counts it). Refused before a byte is copied without a backup answer, with nothing to change, without room, or while any other job, import, restore, folder or volume backup runs. Main library only (Q-b: the lane stores are a later PR). Not a board row: placed by Plan as a 0.6 item; the board and the exit are unchanged. Measured numbers in the PR. | session (Lane D) |
 | 2026-11-17 | **Row A, register ruling G4 built (row 121): the operator curates suggested predictions in a stored IPCC SPM.** Settings → Advanced → IPCC reports → "Suggested predictions" on a stored report lists, in the report's order, every sentence carrying an IPCC calibrated likelihood or confidence term AND a future-looking word (projected, will, a year after the approval, a scenario name), with the words that matched on the row (`src/ingest/ipcc_predictions.py`, deterministic, `METHOD_VERSION` 1). The operator keeps a sentence as a prediction or sets it aside; only that decision is stored (`ipcc_predictions`, keyed by the SPM key and the sentence hash, the sentence copied from the stored report by the server, never from the caller), and a restore carries it with local winning. The short caveat is visible and the method one click away; both routes are local. The suggestion rule was checked on wording in the SPMs' shape, NOT on a downloaded SPM (the build sandbox has no route to www.ipcc.ch), so its count per report is unmeasured. The row's status is unchanged. | session (Lane F) |
+| 2026-11-18 | **Gate text brought up to the rulings it predates; no row changed status.** The header and §4 said Q823 still governs OSM rows leaving the machine: Q823 = a since 2026-09-29. Row C said Q925 was still pending: Q925 = a the same day. Row A's G6 (raw poll data) was left as a tension in the 2026-09-15 log row: RC12 = c (2026-09-29) places poll data in 0.8, so it is not a 0.6 item. Row D gained its progress note. R418's window is closed: the registry classification (c9b1e6372, 2026-11-04) and WAL's carry (f34c8b34d, 2026-11-07, R415) are both on main after `v0.5.0`, so no tag can fall between them. | recorded from OPEN_QUEUE.md (the 37-question list, items 29 and 35) and git history · Lane U |
 
 ---
 
@@ -215,5 +226,6 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 - **More OSM countries and self-rendered streets** — 0.7 (Q106; Q821 *proposed placement*).
 - **Laws: the rest of the world and subnational** — 0.7–0.8 (Q107; Q903 CONFLICT recorded).
 - **Case law, bills and drafts** — post-beta (Q929, Q902 note; `POST_1.0_BACKLOG.md` at 0.9, Q118).
-- **Anything that lets OSM-derived rows leave the machine** — waits on Q823 ⛔.
+- **Anything that lets OSM-derived rows leave the machine** — ~~waits on Q823 ⛔~~ Q823 = a (2026-09-29): allowed with
+  OSM's credit and the ODbL line (Q1008), built by the rows that own each export; not a 0.6 row.
 - **The version flip to `0.6.0`.** It follows the `v0.5.0` tag, mechanically.
