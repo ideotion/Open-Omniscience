@@ -230,7 +230,11 @@ _oo_rec_reap_dir() {
 # meeting a taker's temp mark, a pid file removed by hand) deferred every later row to a child that waited for ever, one more per row. A lock WITH a pid
 # file, even an empty one, is never taken over this way (R744). The record is "lock#inode first-look last-look": another directory under the same name
 # starts the minute again, and so does a gap of more than 2 s between looks (the waiter was elsewhere, so it did not see). The mtime is a second condition,
-# never the only one: a server clock ahead of this one (SMB) delays the takeover by its skew, and one behind it cannot bring it forward.
+# never the only one: a server clock ahead of this one (SMB) delays the takeover by its skew. Once seen old for this lock#inode it stays so (_OO_LOCK_OLD):
+# the waiter's own temp mark made inside the lock changes that mtime, and a test made again after it would push the takeover a minute further at every
+# attempt, for ever where a pid-less directory mark has to be cleared first (no hard links; the reads of 18 Nov). Both records are dropped by a takeover,
+# so a directory made later under the same name, even on a reused inode, starts its own minute. What is left is a launcher frozen (stopped, not slow) for a
+# minute between its mkdir and its pid create, on a filesystem whose inode numbers repeat at once: the second look under the mark is its last guard.
 _oo_rec_nopid_seen() {
     local tok r first
     tok="$1#$(ls -di "$1" 2>/dev/null | awk '{print $1}' || true)"
@@ -238,11 +242,13 @@ _oo_rec_nopid_seen() {
     first="${r##* }"
     case "$first" in ''|*[!0-9]*) first="" ;; esac
     if [ -z "$first" ] || [ "${r% *}" != "$tok" ] || [ $(( ${SECONDS:-0} - ${_OO_LOCK_NOPID##* } )) -gt 2 ]; then
-        _OO_LOCK_NOPID="$tok ${SECONDS:-0} ${SECONDS:-0}"; return 1
+        _OO_LOCK_NOPID="$tok ${SECONDS:-0} ${SECONDS:-0}"; _OO_LOCK_OLD=""; return 1
     fi
     _OO_LOCK_NOPID="$tok $first ${SECONDS:-0}"
     [ $(( ${SECONDS:-0} - first )) -ge 60 ] || return 1
-    [ -n "$(find "$1" -prune -mmin +1 2>/dev/null || true)" ]
+    [ "${_OO_LOCK_OLD:-}" != "$tok" ] || return 0
+    [ -n "$(find "$1" -prune -mmin +1 2>/dev/null || true)" ] || return 1
+    _OO_LOCK_OLD="$tok"
 }
 
 # _oo_rec_still_nopid DIR: called by a taker holding its mark in DIR, a minute after DIR was first seen with no pid file: DIR still has none now AND a
@@ -259,6 +265,7 @@ _oo_rec_still_nopid() {
 # time, so it never grows): the waiter that clears is the deferred child, whose stderr goes nowhere once its window is closed.
 _oo_rec_nopid_cleared() {
     local line
+    _OO_LOCK_NOPID=""; _OO_LOCK_OLD=""
     line="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true) launcher: took over the record lock $1, which had no owner pid for a minute (pid ${BASHPID:-$$})"
     printf '%s\n' "$line" >&2 2>/dev/null || true
     { printf '%s\n' "$line" > "$1.cleared"; } 2>/dev/null || true
@@ -312,7 +319,7 @@ oo_rec_locked() {
         if [ -z "$owner" ] && [ -d "$d" ] && [ ! -e "$d/pid" ] && [ ! -L "$d/pid" ]; then
             if _oo_rec_nopid_seen "$d"; then owner="-"; fi
         else
-            _OO_LOCK_NOPID=""
+            _OO_LOCK_NOPID=""; _OO_LOCK_OLD=""
         fi
         # The owner is gone: the lock is taken over, and NEVER by moving it while somebody else may hold it (row 100, 16 Nov: the old takeover moved the
         # lock out to read who held it and put a live one back, and in the instant it was out a third launcher made the lock, so two held it at once and
