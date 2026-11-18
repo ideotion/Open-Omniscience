@@ -7971,9 +7971,11 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
 
     # The front face (no interactive descendants of its own) carries the sole
     # flip-trigger role/tabindex/handlers, resolving the ancestor .card via closest().
+    # No aria-label on the front (row 160, axe label-content-name-mismatch): its name is its own
+    # visible text, so a title-only label no longer hides the rest of what a sighted reader sees.
     assert (
-        'class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"'
-    ) in card_html, "the FRONT face must carry the flip-trigger role/tabindex"
+        'class="card-face card-front" tabindex="0" role="button"\n'
+    ) in card_html, "the FRONT face must carry the flip-trigger role/tabindex, and no aria-label"
     assert (
         "data-on-click=\"leadFlipFrom(this, event)\" "
         "data-on-keydown=\"leadFlipKeyFrom(this, event)\""
