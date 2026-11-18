@@ -149,7 +149,7 @@
     </div>
     <div class="status-cluster" id="tm-status">
       <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
-      <span id="llm" class="pill" title="AI status">AI</span>
+      <span id="llm" class="pill" title="AI status" data-i18n-dyn>AI</span>
       <span class="muted" id="tm-conn" data-i18n>Live</span>
     </div>
     <button class="icon-btn" id="net-toggle" type="button" data-i18n-dyn
@@ -204,6 +204,7 @@
   </main>
   <footer id="tm-foot" data-i18n>This window updates on its own. Collection runs continuously while online; airplane mode stops it.</footer>
 
+<script src="/static/ai-pill.js"></script>
 <script src="/static/taskmanager.js"></script>
 </body>
 </html>

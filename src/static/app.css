@@ -1426,6 +1426,11 @@
     .card.bk-overtold, .card.bk-debunk { border-left:3px solid var(--warn); }
     .card.bk-undertold { border-left:3px solid #6ea8fe; }
     .card.bk-trust, .card.bk-watch { border-left:3px solid var(--ok); }
+    /* The last two buckets (row 165): every bucket now has a left-border accent. Context is
+       background, so it takes the neutral muted tone; investigate sits between "rising" and
+       "overtold", so it mixes those two theme colours. Both follow the active theme. */
+    .card.bk-context { border-left:3px solid var(--muted); }
+    .card.bk-investigate { border-left:3px solid color-mix(in srgb, var(--accent) 50%, var(--warn)); }
     .card .chip { align-self:flex-start; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
       color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:1px 8px; }
     .card h4 { margin:0; font-size:15px; line-height:1.3; }

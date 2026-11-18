@@ -46,23 +46,27 @@ def _paint_body(js: str) -> str:
     return function_body(js, "_paintAiPill")
 
 
-def test_every_non_serving_branch_marks_the_pill_off(js):
-    """Unchanged in INTENT, re-expressed for the 2026-08-12 structure.
+def _shared_state_body() -> str:
+    """The health-decided states moved into ``ooAiPillState`` in ai-pill.js (row 164,
+    2026-11-18), so the task manager's pill paints exactly the same states. The app's
+    painter keeps only what it alone knows: a start in flight and work in progress."""
+    return function_body(read_static("ai-pill.js"), "ooAiPillState")
 
-    It used to count three ``"pill warn ai-off"`` literals, one per non-serving branch.
-    The painter now reaches the same three cases (hardware-impractical, backend down, and
-    the probe itself failing) through two assignments, because the last two share the
-    class and differ only in the title they explain it with. Counting literals would
-    therefore fail against correct code -- so this asserts the PROPERTY the count was
-    standing in for: once the serving branch has returned, nothing may paint the pill
-    anything other than off.
+
+def test_every_non_serving_branch_marks_the_pill_off(js):
+    """Unchanged in INTENT, re-expressed for the 2026-08-12 structure and again for the
+    2026-11-18 one (row 164), where the branch table moved into the shared function.
+
+    The property: once the serving branch has returned, nothing may paint the pill
+    anything other than off -- including the failed probe, where a neutral pill would
+    claim health the probe never established.
     """
-    body = _paint_body(js)
+    body = _shared_state_body()
     after_serving = body.split("if (h && h.available)", 1)[1]
-    # Drop the serving branch itself (it returns), then look at every remaining paint.
-    tail = after_serving.split("return;", 1)[1]
-    classes = re.findall(r'el\.className\s*=\s*"([^"]+)"', tail)
-    assert classes, "the painter must still paint something after the serving branch"
+    # Drop the serving branch itself (it returns), then look at every remaining state.
+    tail = after_serving.split("}", 1)[1]
+    classes = re.findall(r'cls:\s*"([^"]+)"', tail)
+    assert len(classes) >= 3, "hardware-impractical, probe failed and backend down must each paint"
     assert all("ai-off" in c for c in classes), (
         "each non-serving branch must mark the pill off -- including the catch, where a "
         f"neutral pill would claim health the probe never established. Got: {classes}"
@@ -70,15 +74,19 @@ def test_every_non_serving_branch_marks_the_pill_off(js):
     # And the probe-failed case must be reachable rather than merged into "backend down",
     # which would attribute a reason nothing observed.
     assert "if (!h)" in tail, "the failed-probe case must keep its own honest branch"
+    # The app's painter takes its class from that function and paints nothing else off it.
+    paint = _paint_body(js)
+    assert "window.ooAiPillState(h, t)" in paint and "el.className = s.cls" in paint
 
 
 def test_the_serving_state_stays_green_and_uncrossed(js):
-    body = _paint_body(js)
-    green = body.split("if (h && h.available)", 1)[1].split("return;", 1)[0]
+    green = _shared_state_body().split("if (h && h.available)", 1)[1].split("}", 1)[0]
     assert '"pill ok"' in green
     assert "ai-off" not in green, "a serving backend must never be crossed out"
     # A serving backend that is BUSY is still serving: green, plus the working mark.
-    assert '"pill ok ai-busy"' in green, "the working state must stay green, never off"
+    busy = _paint_body(js).split("if (h && h.available && _aiBusy())", 1)[1].split("return;", 1)[0]
+    assert '"pill ok ai-busy"' in busy, "the working state must stay green, never off"
+    assert "ai-off" not in busy
 
 
 def test_off_is_red_and_carries_a_diagonal_bar(css):
@@ -239,8 +247,15 @@ def test_the_label_never_changes_so_the_footprint_never_moves() -> None:
         "the label must be set once, unconditionally -- a per-state label is a per-state "
         "width"
     )
-    for state in ('"pill ai-starting"', '"pill ok ai-busy"', '"pill ok"', '"pill warn ai-off"'):
+    for state in ('"pill ai-starting"', '"pill ok ai-busy"'):
         assert state in body, f"the painter must be able to reach {state}"
+    # The health-decided states come from the shared function (row 164), which never
+    # writes a label of its own: the painter's one constant label stands for all of them.
+    assert "window.ooAiPillState(h, t)" in body
+    shared = read_static("ai-pill.js")
+    for state in ('"pill ok"', '"pill warn ai-off"'):
+        assert state in shared, f"the shared state function must be able to reach {state}"
+    assert "textContent" not in function_body(shared, "ooAiPillState")
 
 
 def test_the_starting_state_outranks_a_stale_health_reading() -> None:
