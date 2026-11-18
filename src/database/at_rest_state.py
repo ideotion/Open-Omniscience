@@ -29,7 +29,8 @@ import json
 import logging
 import os
 import re
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -172,44 +173,178 @@ def _room_for(path: Path) -> bool:
         return True
 
 
-def _present(path: Path) -> bool:
-    """A non-empty file is there (or cannot be ruled out): only a clean "no such file" or a zero size reads as absent."""
+#: Why a store that is there could not be read (row 149). Fixed words, keyed in every locale; never the OS's own text, which can
+#: name a path.
+UNREADABLE_REASONS = {
+    "in_use": "another program has the file open",
+    "permission": "permission refused",
+    "short_header": "the file is too short to be a database",
+    "io": "a read error",
+}
+#: How long a status waits for a store swap in progress before it reports the stores' passphrase as not checked yet.
+PROBE_WAIT_S = 0.5
+#: The busy timeout of a probe's open, per page-size candidate: a store another connection holds reads as unreadable at once, never
+#: as a wrong passphrase, and a probe never holds the swap of a store for long.
+PROBE_BUSY_S = 0.25
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+#: One status probe at a time, and never during a store's swap (``encrypt_store`` holds it around the swap): on Windows a probe's
+#: connection open across ``os.replace`` would refuse the swap.
+_PROBE_LOCK = threading.Lock()
+#: (path, device, inode, size, mtime, key generation) -> the probe's answer. No key and nothing derived from one: the generation is a
+#: counter. Size and mtime are in the key because a file rewritten in place (a copy over it) keeps its inode.
+_probed: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+
+@contextlib.contextmanager
+def probes_held() -> Iterator[None]:
+    """Held by ``encrypt_store`` around a store's swap: no status probe has a connection open on a store while it is replaced."""
+    with _PROBE_LOCK:
+        yield
+
+
+def _reason(exc: BaseException) -> str:
+    if getattr(exc, "winerror", None) in (32, 33):  # a sharing or lock violation: another program holds the file
+        return "in_use"
+    if isinstance(exc, PermissionError):
+        return "permission"
+    return "io"
+
+
+def _read_header(path: Path) -> tuple[str, str | None]:
+    """``(state, reason)`` from the file's first 16 bytes: ``absent`` (no file, or an empty one), ``plaintext``, ``encrypted`` (a
+    header that is not SQLite's), or ``unreadable`` with the reason, so a file that is there is never counted as absent."""
     try:
-        return os.stat(path).st_size > 0
+        with open(path, "rb") as fh:
+            head = fh.read(16)
     except FileNotFoundError:
-        return False
+        return "absent", None
+    except OSError as exc:
+        return "unreadable", _reason(exc)
+    if not head:
+        return "absent", None
+    if len(head) < 16:
+        return "unreadable", "short_header"
+    return ("plaintext" if head == _SQLITE_MAGIC else "encrypted"), None
+
+
+def _cache_key(path: Path) -> tuple[Any, ...] | None:
+    """The probe cache's key for ``path``, or None (not cached) when the file cannot be told apart from another: no stat, or a file
+    system with no inode numbers."""
+    from src.database.connect import key_generation
+
+    try:
+        st = os.stat(path)
     except OSError:
-        return True
+        return None
+    if not st.st_ino:
+        return None
+    return (str(path), st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, key_generation())
 
 
-def status(main: Path | None = None) -> dict[str, Any]:
-    """The at-rest state of every store, by header read. ``pending`` names the stores still plaintext beside an encrypted corpus;
-    ``complete`` is true only when the corpus is encrypted and no store is plaintext; ``plaintext_snapshots`` names the
+def _refused_the_key(exc: BaseException) -> bool:
+    """A ``WrongPassphraseError`` whose cause is the key check (SQLite error 26, "not a database") or unknown, as against a file that
+    was busy, could not be opened, or failed past page 1: only the first is "not this passphrase"."""
+    return getattr(exc.__cause__, "sqlite_errorcode", None) in (None, 26)
+
+
+def _probe(path: Path, key: str) -> dict[str, Any]:
+    """Open an encrypted store READ-ONLY with ``key`` (lock held): ``encrypted`` with ``key_checked`` and the cipher when it opens,
+    ``not_this_key`` when SQLCipher refuses the key (another passphrase, or a damaged file: the two read the same), or
+    ``unreadable`` with a reason. Read-only: the probe never creates a file that went missing, and never folds or removes a leftover
+    log. Cached per file state and key generation; an unreadable answer is not cached (it can pass)."""
+    from src.database.connect import WrongPassphraseError, connect
+
+    cache_key = _cache_key(path)
+    hit = _probed.get(cache_key) if cache_key is not None else None
+    if hit is not None:
+        return dict(hit)
+    out: dict[str, Any]
+    try:
+        conn = connect(path, key=key, check_same_thread=False, timeout=PROBE_BUSY_S, read_only=True)
+    except WrongPassphraseError as exc:
+        out = {"state": "not_this_key"} if _refused_the_key(exc) else {"state": "unreadable", "reason": "io"}
+    except OSError as exc:
+        out = {"state": "unreadable", "reason": _reason(exc)}
+    except Exception:  # noqa: BLE001 - the status never raises; what failed is said by class
+        out = {"state": "unreadable", "reason": "io"}
+    else:
+        try:
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            ver = conn.execute("PRAGMA cipher_version").fetchone()
+            out = {"state": "encrypted", "key_checked": True, "cipher": ver[0] if ver else None}
+        except Exception as exc:  # noqa: BLE001 - as above
+            out = {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}
+        finally:
+            with contextlib.suppress(Exception):
+                conn.close()
+    if out["state"] != "unreadable" and cache_key is not None:
+        if len(_probed) > 64:
+            _probed.clear()
+        _probed[cache_key] = dict(out)
+    return out
+
+
+def _store_row(name: str, path: Path, key: str | None, probe_ok: bool) -> dict[str, Any]:
+    state, reason = _read_header(path)
+    row: dict[str, Any] = {"store": name, "state": state}
+    if reason is not None:
+        row["reason"] = reason
+    if state != "encrypted" or name == "corpus":
+        # The corpus is the file the app is open with (an unlocked encrypted app opened it with the key it holds): it is not
+        # opened a second time here, where a probe could straddle a swap of the library.
+        return row
+    if key is None or not probe_ok:
+        row["key_checked"] = False
+        return row
+    row.update(_probe(path, key))
+    return row
+
+
+def status(main: Path | None = None, *, key: str | None = None) -> dict[str, Any]:
+    """The at-rest state of every store, by header read and, when a key is held, by opening each encrypted store with it (row
+    149). A store's ``state`` is ``absent``, ``plaintext``, ``encrypted`` (``key_checked`` says whether the held passphrase was
+    seen to open it), ``not_this_key`` (encrypted, but the held passphrase does not open it: another passphrase, or damaged) or
+    ``unreadable`` with a ``reason`` (:data:`UNREADABLE_REASONS`). ``pending`` names the stores still plaintext or unreadable beside
+    an encrypted corpus; ``not_this_key`` names those the passphrase does not open, which nothing here encrypts or touches;
+    ``unchecked`` names the encrypted stores the passphrase was not tried on (no key held, or a swap in progress);
+    ``complete`` is true only when the corpus is encrypted, nothing is pending or ``not_this_key``, and, when a key is held, nothing
+    is ``unchecked``; ``plaintext_snapshots`` names the
     pre-encrypt copies still on the disk (plaintext until the operator deletes them), so "complete" is never read as "no plaintext
-    anywhere"."""
-    from src.database.connect import is_encrypted_file
-
+    anywhere". ``key`` defaults to the passphrase the app holds."""
     rows = stores(main)
+    if key is None:
+        from src.database.connect import get_passphrase
+
+        key = get_passphrase()
     record = read_record(rows[0][1]) if rows else {"stores": {}}
-    out_rows = []
-    for name, path in rows:
-        header = is_encrypted_file(path)
-        if header is None:
-            # None is "missing or empty" AND "could not be read" (a Windows sharing refusal, a permission): a file that is there and
-            # unreadable is never counted as absent, so "complete" can never be said over it.
-            state = "unreadable" if _present(path) else "absent"
-        else:
-            state = "encrypted" if header else "plaintext"
-        out_rows.append({"store": name, "state": state, "recorded_at": (record["stores"].get(name) or {}).get("encrypted_at")})
+    probe_ok = key is not None and _PROBE_LOCK.acquire(timeout=PROBE_WAIT_S)
+    try:
+        out_rows = _rows_of(rows, key, probe_ok)
+    finally:
+        if probe_ok:
+            _PROBE_LOCK.release()
+    for r in out_rows:
+        r["recorded_at"] = (record["stores"].get(r["store"]) or {}).get("encrypted_at")
     corpus_encrypted = bool(out_rows) and out_rows[0]["state"] == "encrypted"
     pending = [r["store"] for r in out_rows if r["state"] in ("plaintext", "unreadable")] if corpus_encrypted else []
+    not_this_key = [r["store"] for r in out_rows if r["state"] == "not_this_key"]
+    unchecked = [r["store"] for r in out_rows if r.get("key_checked") is False]
     return {
         "corpus_encrypted": corpus_encrypted,
-        "complete": corpus_encrypted and not pending,
+        # With a key held, never said over a store it was not tried on (a swap in progress): "encrypted" by its header is not
+        # "encrypted with yours". With no key held (locked) there is nothing to try, and the headers alone answer, as the rows say.
+        "complete": corpus_encrypted and not pending and not not_this_key and not (key is not None and unchecked),
         "pending": pending,
+        "not_this_key": not_this_key,
+        "unchecked": unchecked,
         "stores": out_rows,
         "plaintext_snapshots": _plaintext_snapshots(rows),
     }
+
+
+def _rows_of(rows: list[tuple[str, Path]], key: str | None, probe_ok: bool) -> list[dict[str, Any]]:
+    """One row per store (a function of its own: the loop is not inside ``status``'s ``try``, R163)."""
+    return [_store_row(name, path, key, probe_ok) for name, path in rows]
 
 
 def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[..., dict] | None = None) -> dict[str, Any]:

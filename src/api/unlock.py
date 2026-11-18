@@ -218,10 +218,27 @@ def doctor() -> dict:
     # "every store is encrypted" above a lane line that says otherwise. Without a SQLite corpus there is no list: the registry's
     # names under the data folder, as before.
     rows = dict(at_rest_state.stores())
-    lanes = {
-        spec.kind: _store(rows.get(f"lane:{spec.kind}", data_dir() / spec.filename)) for spec in all_lanes()
-    }
     at_rest = at_rest_state.status()
+    # Row 149: the custody and lane lines ARE the status's rows (a store under another passphrase reads as that, an unreadable one
+    # says why), so no line can say less than the status above it, and no store is opened a second time here.
+    by_store = {r["store"]: r for r in at_rest["stores"]}
+
+    def _line(name: str, fallback: Path) -> dict:
+        row = by_store.get(name)
+        if row is None:
+            return _store(rows.get(name, fallback))
+        return {k: v for k, v in row.items() if k in ("state", "reason", "key_checked", "cipher")}
+
+    def _corpus_line() -> dict:
+        main = main_db_path()
+        if main is None or "corpus" not in by_store:
+            return _store(main)
+        line = _line("corpus", main)
+        if line["state"] == "encrypted":  # the cipher, read as before; an unreadable library says why instead of "absent"
+            line.update({k: v for k, v in _store(main).items() if k == "cipher"})
+        return line
+
+    lanes = {spec.kind: _line(f"lane:{spec.kind}", data_dir() / spec.filename) for spec in all_lanes()}
     return {
         "driver": have_driver(),
         # R742: the whole set at once. ``complete`` is never true while any store is plaintext, and the plaintext pre-encrypt
@@ -229,10 +246,12 @@ def doctor() -> dict:
         "at_rest": {
             "complete": at_rest["complete"],
             "pending": at_rest["pending"],
+            "not_this_key": at_rest["not_this_key"],
+            "unchecked": at_rest["unchecked"],
             "plaintext_snapshots": at_rest["plaintext_snapshots"],
         },
-        "corpus": _store(main_db_path()),
-        "custody_log": _store(data_dir() / "custody_log.db"),
+        "corpus": _corpus_line(),
+        "custody_log": _line("custody", data_dir() / "custody_log.db"),
         "lanes": lanes,
         "signing_keys": {
             "files": key_files,

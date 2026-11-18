@@ -71,6 +71,7 @@ from src.catalog.provenance import (
     provenance_of,
 )
 from src.config.kv_store import KvWriteRefused
+from src.database.file_identity import REPLACED_WORDS, StoreReplacedError
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -1469,6 +1470,13 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "Too many requests. Please try again later."},
         headers=headers,
     )
+
+
+@app.exception_handler(StoreReplacedError)
+async def store_replaced_handler(request: Request, refused: StoreReplacedError):
+    """Row 148: a save through a custody or lane connection whose file was replaced (encrypted) since it was opened, refused with
+    nothing written. A 409 with the fixed words (keyed in every locale), never a 500: the operator does it again."""
+    return JSONResponse(status_code=409, content={"detail": REPLACED_WORDS})
 
 
 @app.exception_handler(KvWriteRefused)
