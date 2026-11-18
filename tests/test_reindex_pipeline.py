@@ -7,6 +7,7 @@ that holds the write gate); a stop leaves no helper running; ``OO_REINDEX_PIPELI
 
 from __future__ import annotations
 
+import concurrent.futures
 import threading
 from datetime import UTC, datetime
 
@@ -63,6 +64,21 @@ def recorded(monkeypatch):
     events: list[tuple] = []
     applied = threading.Condition()
     n_applied = [0]
+    # How many articles were applied when each window was SUBMITTED ahead, keyed by its ids. The overlap is measured from there, not from when its
+    # thread first runs: on a loaded runner the helper thread can start after the writer has applied the whole current window and gone to wait on
+    # this very result, and a count taken then never moves (macOS, -n 4, run 44409819465: [True, False] after a 5 s wait).
+    submitted_at: dict[tuple, int] = {}
+
+    class _RecordingPool(concurrent.futures.ThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._oo_ahead = str(kwargs.get("thread_name_prefix", "")).startswith("oo-reindex-ahead")
+
+        def submit(self, fn, /, *args, **kwargs):
+            if self._oo_ahead and args:
+                with applied:
+                    submitted_at[tuple(t[0] for t in args[0])] = n_applied[0]
+            return super().submit(fn, *args, **kwargs)
 
     def _pre(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
         events.append(("pre", tuple(t[0] for t in tasks), threading.current_thread().name))
@@ -70,7 +86,7 @@ def recorded(monkeypatch):
             # Proof of overlap, without a race: a window started ahead waits (bounded) until an article is applied while it is
             # still in flight. Without the overlap the writer would be waiting on THIS result and nothing would be applied.
             with applied:
-                start = n_applied[0]
+                start = submitted_at[tuple(t[0] for t in tasks)]
                 ok = applied.wait_for(lambda: n_applied[0] > start, timeout=5)
             events.append(("overlapped", ok))
         if stats is not None:
@@ -86,6 +102,7 @@ def recorded(monkeypatch):
             applied.notify_all()
         return real_index(session, art, **kw)
 
+    monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", _RecordingPool)
     monkeypatch.setattr(S, "_PRECOMPUTE_WINDOW", 3)
     monkeypatch.setattr(RP, "precompute_batch", _pre)
     monkeypatch.setattr(RP, "uses_pool", lambda n, *, extractor, workers=None: True)
