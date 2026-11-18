@@ -1412,7 +1412,7 @@
           </label>` : "";
       const granHtml = (opts.onGranularity || _disp.shown || hasAdmin1) ? `
         <div class="oomap-gran" role="group" aria-label="${esc(t("Granularity"))}"
-             style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;z-index:5">
+             style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;pointer-events:auto">
           ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Country"))}</button>
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Continent"))}</button>` : ""}
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Places"))}</button>` : ""}
@@ -1424,6 +1424,11 @@
           ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
+      // The layer buttons and the time slider share ONE bottom stack (.oomap-bottom, row 162): the
+      // slider used to sit at a fixed 36 px above the edge, so once the buttons wrapped to a second
+      // row (more layers, a longer language) it lay over them, and the Signals button that turns it
+      // off could not be clicked. Stacked, the slider always sits just above however many rows the
+      // buttons take; the empty part of the stack lets clicks and drags through to the map.
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
       // A Linear/Log toggle (batch F item 1) chooses the position->year mapping; the
@@ -1443,7 +1448,7 @@
           }).join("")}
         </div>` : "";
       const sliderHtml = opts.signalsOn ? `
-        <div class="oomap-time" style="position:absolute;bottom:36px;left:8px;right:8px;z-index:5;display:flex;flex-direction:column;gap:1px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px">
+        <div class="oomap-time" style="align-self:stretch;display:flex;flex-direction:column;gap:1px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px;pointer-events:auto">
           <div style="display:flex;align-items:center;gap:8px">
             <input type="range" data-oomap-focus min="0" max="1000" value="${opts.focusSlider != null ? opts.focusSlider : 1000}" step="1" style="flex:1" aria-label="${esc(t("Moment in focus"))}">
             <strong data-oomap-focuslabel style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
@@ -1496,7 +1501,7 @@
           <button class="tiny secondary" data-oomap="reset" title="${esc(t("Reset view"))}">⟲</button>
           <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
         </div>
-        ${pickerHtml}${granHtml}${sliderHtml}
+        ${pickerHtml}${(granHtml || sliderHtml) ? `<div class="oomap-bottom" style="position:absolute;bottom:8px;left:8px;right:8px;z-index:5;display:flex;flex-direction:column-reverse;align-items:flex-start;gap:4px;pointer-events:none">${granHtml}${sliderHtml}</div>` : ""}
         </div>
         <ul class="sr-only">${srTop}</ul>
       </div>
