@@ -267,7 +267,8 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # or a WrongPassphraseError's chained one), to pick busy, one of three fixed reason words or "not this passphrase"; no exception
     # text is stored, served or logged
     'src/database/at_rest_state.py': {
-        ('_is_busy', 'return getattr(exc, "winerror", None) in _BUSY_WINERROR or getattr(exc, "sqlite_errorcode", None) in _BUSY_SQLITE'): 2,
+        ('_is_busy', 'code = getattr(exc, "sqlite_errorcode", None)'): 1,
+        ('_is_busy', 'return getattr(exc, "winerror", None) in _BUSY_WINERROR or (isinstance(code, int) and code & 0xFF in _BUSY_SQLITE)'): 1,
         ('_read_header', 'return ("busy", None) if _is_busy(exc) else ("unreadable", _reason(exc))'): 2,
         ('_refused_the_key', 'return getattr(exc.__cause__, "sqlite_errorcode", None) in (None, 26)'): 1,
         ('_refusal_of', 'if _is_busy(exc.__cause__):'): 1,

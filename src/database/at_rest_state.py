@@ -201,14 +201,16 @@ def probes_held() -> Iterator[None]:
         yield
 
 
-#: SQLite's "busy" and "locked" codes, and Windows' sharing and lock violations: the store is in use right now (row 153).
+#: SQLite's "busy" and "locked" codes (primary: an extended code such as SQLITE_BUSY_SNAPSHOT is masked to them), and Windows'
+#: sharing and lock violations: the store is in use right now (row 153).
 _BUSY_SQLITE = (5, 6)
 _BUSY_WINERROR = (32, 33)
 
 
 def _is_busy(exc: BaseException | None) -> bool:
     """True for an error that says the store is in use right now (a lock another connection or program holds), never a fault."""
-    return getattr(exc, "winerror", None) in _BUSY_WINERROR or getattr(exc, "sqlite_errorcode", None) in _BUSY_SQLITE
+    code = getattr(exc, "sqlite_errorcode", None)
+    return getattr(exc, "winerror", None) in _BUSY_WINERROR or (isinstance(code, int) and code & 0xFF in _BUSY_SQLITE)
 
 
 def _reason(exc: BaseException) -> str:
@@ -392,6 +394,10 @@ def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[...,
     st = status(main)
     if st["corpus_encrypted"]:
         remove_leftover_replaced(main, key=key)
+    if st["corpus_encrypted"] and st["busy"]:
+        # A store in use right now is not pending, and may still be plaintext when its header could not be read: said, never skipped
+        # silently. It is looked at again at the next unlock or encrypt.
+        _LOG.warning("a store was in use and could not be checked (%s); it is looked at again next time", ", ".join(st["busy"]))
     if not st["corpus_encrypted"] or not st["pending"]:
         return {"finished": [], "still_pending": []}
     run = encrypt or encrypt_tool.encrypt_store

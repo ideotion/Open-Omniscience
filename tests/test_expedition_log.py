@@ -175,7 +175,8 @@ def test_a_machine_below_the_floor_is_answered_by_the_floor_first(dd, series, mo
         lambda: {"total_mb": 16000, "total_from": "given", "available_mb": 300, "available_from": "given"},
     )
     s = expedition.qualification_safety(None)
-    assert s["basis"].startswith("memory floor"), s
+    # 300 MB is below the floor and above the bounded sample's need: the sampled cohort, never the whole-corpus estimate
+    assert s["basis"] == "memory floor (sampled cohort)", s
 
 
 def test_the_decision_always_travels_with_its_basis(dd, series, monkeypatch):

@@ -312,9 +312,9 @@ FINISH_NEEDS_THE_SAME_PASSPHRASE = "type the passphrase the library is already e
 #: Row 153: the retry's answers when nothing is pending, each true at the state it names (fixed words, keyed in every locale; the
 #: Settings panel names the stores, which these words cannot carry and still be translated).
 NOTHING_LEFT = "every store is already encrypted"
-NOTHING_LEFT_BUT_BUSY = (
-    "No store is waiting to be encrypted, but a store is in use right now, so it could not be checked. Try again in a moment; "
-    "Settings names it."
+NOTHING_LEFT_BUT_UNCHECKED = (
+    "A store could not be checked right now (in use, being encrypted, or a read error), so it may still be unencrypted. Try again "
+    "in a moment; Settings names it."
 )
 NOTHING_LEFT_BUT_NOT_THIS_KEY = (
     "Every store this passphrase opens is already encrypted. Some stores do not open with it (another passphrase, or a damaged "
@@ -323,10 +323,11 @@ NOTHING_LEFT_BUT_NOT_THIS_KEY = (
 
 
 def _nothing_left_words(st: dict) -> str:
-    """The 409 of a retry with nothing pending: a busy store first (a moment later may differ), then a store under another
+    """The 409 of a retry with nothing pending: a store not checked to its end first (busy, a read error after its header, a swap in
+    progress: a moment later may differ, and a store whose header could not be read may be plaintext), then a store under another
     passphrase, else every store is encrypted. Never "every store is already encrypted" while one of the first two holds."""
-    if st.get("busy"):
-        return NOTHING_LEFT_BUT_BUSY
+    if st.get("busy") or (st.get("key_held") and st.get("unchecked")):
+        return NOTHING_LEFT_BUT_UNCHECKED
     if st.get("not_this_key"):
         return NOTHING_LEFT_BUT_NOT_THIS_KEY
     return NOTHING_LEFT

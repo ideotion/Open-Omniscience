@@ -429,10 +429,10 @@ def test_every_new_sentence_is_keyed_in_every_locale_and_the_page_uses_the_state
         "Cannot be read: {why}",
         "These stores do not open with this passphrase (another passphrase, or a damaged file) and are left as they are: {names}.",
         "In use right now, try again in a moment",
-        "Not checked yet against this passphrase: {names} (in use, or being encrypted). Open this panel again in a moment.",
+        "Not checked yet against this passphrase: {names} (in use, being encrypted, or a read error). Until then, do not count them as encrypted. Open this panel again in a moment.",
         *at_rest_state.UNREADABLE_REASONS.values(),
     ]
-    py_keys = [unlock_mod.NOTHING_LEFT_BUT_BUSY, unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY, unlock_mod.NOTHING_LEFT]
+    py_keys = [unlock_mod.NOTHING_LEFT_BUT_UNCHECKED, unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY, unlock_mod.NOTHING_LEFT]
     js = (root / "app-backup.js").read_text(encoding="utf-8")
     for k in keys[1:]:
         assert k in js, k
@@ -452,9 +452,17 @@ def test_the_retry_409_names_a_busy_store_and_a_store_under_another_passphrase(d
     """With nothing pending, the retry's 409 says why, true at the state it names: never "every store is already encrypted" over a
     store that is in use or does not open with this passphrase."""
     words = unlock_mod._nothing_left_words
-    assert words({"busy": ["custody"], "not_this_key": ["lane:wiki"]}) == unlock_mod.NOTHING_LEFT_BUT_BUSY
+    assert words({"busy": ["custody"], "not_this_key": ["lane:wiki"]}) == unlock_mod.NOTHING_LEFT_BUT_UNCHECKED
     assert words({"busy": [], "not_this_key": ["lane:wiki"]}) == unlock_mod.NOTHING_LEFT_BUT_NOT_THIS_KEY
     assert words({"busy": [], "not_this_key": []}) == unlock_mod.NOTHING_LEFT == "every store is already encrypted"
+    # an encrypted store whose check did not run to its end (a read error after its header) is not "every store is encrypted"
+    unchecked = {"busy": [], "not_this_key": [], "key_held": True, "unchecked": ["custody"]}
+    assert words(unchecked) == unlock_mod.NOTHING_LEFT_BUT_UNCHECKED
+    assert words({**unchecked, "key_held": False}) == unlock_mod.NOTHING_LEFT, "locked: the headers alone answer"
+    # an extended busy code (SQLITE_BUSY_SNAPSHOT, 517) is busy too, never a read error
+    err = sqlite3.OperationalError("database is locked")
+    err.sqlite_errorcode = 517
+    assert at_rest_state._is_busy(err)
 
     _all_encrypted(data, _KEY, lane_key=_OTHER)
     set_passphrase(_KEY)

@@ -3926,9 +3926,10 @@
         overall = `<div class="caveat"><b>${esc(tfw("Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.", { n: fmtNum(pending.length, 0) }))}</b></div>`;
       } else if (ar.complete) {
         overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
-      } else if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
-        // Row 153: while a store is in use or being encrypted the summary says so, rather than saying nothing.
-        overall = `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, or being encrypted). Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
+      }
+      if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
+        // Row 153: while a store is in use, being encrypted or unreadable the summary says so (beside a pending line too).
+        overall += `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, being encrypted, or a read error). Until then, do not count them as encrypted. Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
       }
       if (foreign.length) {
         overall += `<div class="caveat">${esc(tfw("These stores do not open with this passphrase (another passphrase, or a damaged file) and are left as they are: {names}.", { names: names(foreign) }))}</div>`;
