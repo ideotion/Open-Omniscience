@@ -350,7 +350,17 @@
     let _ooMapOsmAdmin = null;                       // {admin0, admin1}, each a doc or false
     async function _ooMapOsmAdminLoad() {
       if (_ooMapOsmAdmin !== null) return _ooMapOsmAdmin;
+      // Ask which files exist before asking for any (row 158): an install without the build is
+      // working as designed, and each absent file used to be a 404 the browser logged as an error.
+      // If the answer cannot be read, the files are asked for directly, as before.
+      let installed = null;
+      try {
+        const r = await fetch("/api/geo/border-files");
+        const d = r.ok ? await r.json() : null;
+        if (d && Array.isArray(d.installed)) installed = new Set(d.installed);
+      } catch { installed = null; }
       const get = async (name) => {
+        if (installed && !installed.has(name)) return false;   // not installed: an answer, never a 404
         try { const r = await fetch("/static/" + name); return r.ok ? await r.json() : false; }
         catch { return false; }                      // absent -> Natural Earth, never an error
       };
