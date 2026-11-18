@@ -15,6 +15,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from tests.js_source_helper import function_body
+
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
 
@@ -52,8 +54,7 @@ def test_both_painters_call_the_shared_function_and_keep_no_copy():
         assert "AI is offline — click to start it" not in src
         assert "neither Ollama nor vLLM answers" not in src
     # The task manager's pill code no longer paints the bare colour-only class.
-    pill_code = tm[tm.index("function paintLlm("):tm.index('addEventListener("oo:langchange", paintLlm)')]
-    assert "async function loadLlm(" in pill_code
+    pill_code = function_body(tm, "paintLlm") + function_body(tm, "loadLlm")
     assert '"pill warn"' not in pill_code and '"pill ok"' not in pill_code
 
 
