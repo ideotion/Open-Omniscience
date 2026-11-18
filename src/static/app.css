@@ -217,6 +217,9 @@
     /* Above 600 px the Country/layers group shares the bottom edge: it wraps before the bar's
        corner, so neither covers the other in any language. */
     @media (min-width: 601px) { .oomap-wrap .oomap-gran { max-width:calc(100% - 210px); } }
+    /* At phone width the opened panel stacks its groups below the map; the bottom stack is one of
+       them, and its own column keeps the slider above the layer buttons. */
+    @media (max-width: 600px) { .oomap-wrap.oomap-ctl-open .oomap-bottom { pointer-events:auto; } }
     .oomap-scale-bar { display:inline-block; height:6px; border:1.5px solid var(--fg); border-top:none; }
     /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
     #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background:var(--line); }
@@ -1426,6 +1429,11 @@
     .card.bk-overtold, .card.bk-debunk { border-left:3px solid var(--warn); }
     .card.bk-undertold { border-left:3px solid #6ea8fe; }
     .card.bk-trust, .card.bk-watch { border-left:3px solid var(--ok); }
+    /* The last two buckets (row 165): every bucket now has a left-border accent. Context is
+       background, so it takes the neutral muted tone; investigate sits between "rising" and
+       "overtold", so it mixes those two theme colours. Both follow the active theme. */
+    .card.bk-context { border-left:3px solid var(--muted); }
+    .card.bk-investigate { border-left:3px solid color-mix(in srgb, var(--accent) 50%, var(--warn)); }
     .card .chip { align-self:flex-start; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
       color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:1px 8px; }
     .card h4 { margin:0; font-size:15px; line-height:1.3; }

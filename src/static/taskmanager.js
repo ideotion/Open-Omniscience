@@ -1038,14 +1038,25 @@
     } catch (e) { _healthState = "offline"; }
     paintHealth();
   }
+  // The pill draws the SAME states as the app's (row 164): the class and hover come from
+  // ai-pill.js, so offline is the red pill WITH the diagonal bar and a hover naming why,
+  // never colour alone. The click opens the app on Settings > AI (#models), where the
+  // local AI is started or installed. The last answer is kept so a language switch
+  // repaints the hover from it, with no request.
+  var _llmHealth;  // undefined = never asked; null = the probe failed
+  function paintLlm() {
+    var el = $("llm"); if (!el || _llmHealth === undefined) return;
+    var s = window.ooAiPillState(_llmHealth, t);
+    el.className = s.cls; el.title = s.title; el.textContent = t("AI");
+  }
   async function loadLlm() {
     var el = $("llm"); if (!el) return;
-    el.style.cursor = "pointer"; el.onclick = function () { location.href = "/"; };
-    try { var h = await api("/api/llm/health");
-      el.className = (h && h.available) ? "pill ok" : "pill warn";
-      el.textContent = "AI";
-    } catch (e) { el.className = "pill"; el.textContent = "AI"; }
+    el.style.cursor = "pointer"; el.onclick = function () { location.href = "/#models"; };
+    try { _llmHealth = (await api("/api/llm/health")) || null; }
+    catch (e) { _llmHealth = null; }
+    paintLlm();
   }
+  document.addEventListener("oo:langchange", paintLlm);
 
   // Mirror the app's egress bar. Read-only: "Close now" lives in the app, so this
   // page states the exposure without duplicating the control. Rendered only on a
