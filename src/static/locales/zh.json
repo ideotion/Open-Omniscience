@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "已加密（SQLCipher 4），尚未用此密码短语核对",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "已加密，但此密码短语无法打开（另一个密码短语，或文件已损坏）",
+  "Cannot be read: {why}": "无法读取：{why}",
+  "another program has the file open": "另一个程序打开了该文件",
+  "permission refused": "权限被拒绝",
+  "the file is too short to be a database": "文件太短，不是数据库",
+  "a read error": "读取错误",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} 个存储无法用此密码短语打开（另一个密码短语，或文件已损坏）。它们保持原样。",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "此连接打开期间，该存储的文件已被替换（已加密），因此没有通过它保存任何内容；请重做"
 }

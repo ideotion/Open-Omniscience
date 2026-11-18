@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft ("
+  "🛒 Draft (": "🛒 Draft (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "Encrypted (SQLCipher 4), not yet checked against this passphrase",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)",
+  "Cannot be read: {why}": "Cannot be read: {why}",
+  "another program has the file open": "another program has the file open",
+  "permission refused": "permission refused",
+  "the file is too short to be a database": "the file is too short to be a database",
+  "a read error": "a read error",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again"
 }

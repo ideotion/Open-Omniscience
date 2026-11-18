@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "暗号化済み（SQLCipher 4）、このパスフレーズではまだ確認されていません",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "暗号化済みですが、このパスフレーズでは開けません（別のパスフレーズ、または破損したファイル）",
+  "Cannot be read: {why}": "読み取れません：{why}",
+  "another program has the file open": "別のプログラムがファイルを開いています",
+  "permission refused": "アクセスが拒否されました",
+  "the file is too short to be a database": "ファイルが短すぎてデータベースではありません",
+  "a read error": "読み取りエラー",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} 個のストアがこのパスフレーズで開けません（別のパスフレーズ、または破損したファイル）。そのままにしてあります。",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "この接続が開いている間にこのストアのファイルが置き換えられた（暗号化された）ため、この接続では何も保存されませんでした。もう一度実行してください"
 }

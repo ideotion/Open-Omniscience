@@ -169,13 +169,19 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     lane from holding fifty SQLCipher page caches open beside the corpus's.
     """
 
-    def _creator():
+    from src.database import file_identity
+
+    def _open():
         from src.database.connect import connect
 
         # No ``key=``, no ``create_encrypted=``: the factory's own precedence is the
         # ruling (Q720/Q1005). Passing either here would be this module deciding a
         # lane's at-rest state, which is the one thing it must not do.
         return connect(str(path), check_same_thread=False, timeout=30)
+
+    # Row 148: each connection carries the identity of the file it opened, so one that outlives an encryption swap of the lane
+    # is dropped at checkout and refused at commit, never left saving into the replaced file (``file_identity``).
+    _creator = file_identity.pinned_creator(path, _open)
 
     eng = create_engine(
         f"sqlite:///{path}",
@@ -204,6 +210,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     from src.database import damage
 
     damage.attach(eng, spec.kind)
+    file_identity.attach(eng, path)
 
     @event.listens_for(eng, "connect")
     def _lane_pragmas(dbapi_connection, _record) -> None:

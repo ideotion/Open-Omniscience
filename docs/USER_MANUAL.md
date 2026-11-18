@@ -1895,7 +1895,13 @@ Official **figures** are not here at all — they are data, so they live under
     says which stores are still unencrypted, and they are finished at the next
     unlock or when you press the encrypt button again with the same passphrase.
     The panel never says every store is encrypted while one is not, and it names
-    any plaintext pre-encrypt copy still on the disk.
+    any plaintext pre-encrypt copy still on the disk. It also opens each other
+    store with the passphrase the app holds: a store encrypted under another
+    passphrase (or damaged) is shown as such and left as it is, and a store that
+    cannot be read says why (another program has it open, permission refused, too
+    short to be a database, a read error). A save that was already under way on a
+    store when it was encrypted is refused rather than written to the replaced
+    file; do it again.
     **The honest limit:** at-rest encryption protects a *seized or copied
     file*. It cannot protect a compromised running session (the key lives in
     memory while the app runs), and it is independent of full-disk encryption

@@ -3896,13 +3896,21 @@
       const box = $("atrest-state"), d = _atRestDoc;
       if (!box || !d) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
-                        : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
       const tfw = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
-      const ar = d.at_rest || { complete: false, pending: [], plaintext_snapshots: [] };
+      // Row 149: a store under another passphrase reads as that, and an unreadable one says why; neither reads as "not created yet".
+      const why = { in_use: "another program has the file open", permission: "permission refused",
+                    short_header: "the file is too short to be a database", io: "a read error" };
+      const word = (s) => !s ? t("not created yet")
+        : s.state === "encrypted" ? (s.key_checked === false ? t("Encrypted (SQLCipher 4), not yet checked against this passphrase") : t("Encrypted (SQLCipher 4)"))
+        : s.state === "plaintext" ? t("NOT encrypted")
+        : s.state === "not_this_key" ? t("Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)")
+        : s.state === "unreadable" ? tfw("Cannot be read: {why}", { why: t(why[s.reason] || why.io) })
+        : t("not created yet");
+      const ar = d.at_rest || { complete: false, pending: [], not_this_key: [], plaintext_snapshots: [] };
       const pending = Array.isArray(ar.pending) ? ar.pending : [];
+      const foreign = Array.isArray(ar.not_this_key) ? ar.not_this_key : [];
       const snaps = Array.isArray(ar.plaintext_snapshots) ? ar.plaintext_snapshots : [];
       // R742: the whole set first, and never "every store is encrypted" while one is not; a plaintext pre-encrypt copy still on
       // the disk is said beside it, so "encrypted" is never read as "no plaintext anywhere".
@@ -3911,6 +3919,9 @@
         overall = `<div class="caveat"><b>${esc(tfw("Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.", { n: fmtNum(pending.length, 0) }))}</b></div>`;
       } else if (ar.complete) {
         overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
+      }
+      if (foreign.length) {
+        overall += `<div class="caveat">${esc(tfw("{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.", { n: fmtNum(foreign.length, 0) }))}</div>`;
       }
       if (snaps.length) {
         overall += `<div class="caveat">${esc(tfw("Plaintext pre-encrypt copies still on the disk: {names}. Delete them once you have unlocked and are satisfied.", { names: snaps.join(", ") }))}</div>`;

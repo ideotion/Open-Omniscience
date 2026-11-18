@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "এনক্রিপ্ট করা (SQLCipher 4), এই পাসফ্রেজ দিয়ে এখনও যাচাই করা হয়নি",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "এনক্রিপ্ট করা, কিন্তু এই পাসফ্রেজ এটি খোলে না (অন্য পাসফ্রেজ, বা ক্ষতিগ্রস্ত ফাইল)",
+  "Cannot be read: {why}": "পড়া যাচ্ছে না: {why}",
+  "another program has the file open": "অন্য একটি প্রোগ্রাম ফাইলটি খুলে রেখেছে",
+  "permission refused": "অনুমতি প্রত্যাখ্যাত",
+  "the file is too short to be a database": "ফাইলটি ডেটাবেস হওয়ার জন্য খুব ছোট",
+  "a read error": "পড়ার ত্রুটি",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n}টি স্টোর এই পাসফ্রেজ দিয়ে খোলে না (অন্য পাসফ্রেজ, বা ক্ষতিগ্রস্ত ফাইল)। সেগুলি যেমন আছে তেমনই রাখা হয়েছে।",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "এই সংযোগ খোলা থাকার সময় এই স্টোরের ফাইলটি বদলানো হয়েছে (এনক্রিপ্ট করা হয়েছে), তাই এর মাধ্যমে কিছুই সংরক্ষিত হয়নি; আবার করুন"
 }

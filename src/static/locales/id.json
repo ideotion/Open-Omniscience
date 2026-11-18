@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "Terenkripsi (SQLCipher 4), belum diperiksa dengan frasa sandi ini",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "Terenkripsi, tetapi frasa sandi ini tidak membukanya (frasa sandi lain, atau berkas rusak)",
+  "Cannot be read: {why}": "Tidak dapat dibaca: {why}",
+  "another program has the file open": "program lain sedang membuka berkas ini",
+  "permission refused": "izin ditolak",
+  "the file is too short to be a database": "berkas terlalu pendek untuk menjadi basis data",
+  "a read error": "kesalahan baca",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} penyimpanan tidak terbuka dengan frasa sandi ini (frasa sandi lain, atau berkas rusak). Penyimpanan itu dibiarkan apa adanya.",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "berkas penyimpanan ini diganti (dienkripsi) saat koneksi ini terbuka, jadi tidak ada yang disimpan melaluinya; ulangi"
 }

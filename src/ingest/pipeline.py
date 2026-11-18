@@ -475,7 +475,9 @@ class _CustodyBatch:
         """The batch's log for an entry written under ``prefs`` (the custody settings read for it): opened now if it is not
         open, or if it was opened under other settings. Raises what opening it raises; the caller owns the failure."""
         under = self._under(prefs)
-        if self._log is not None and under != self._opened_under:
+        if self._log is not None and (under != self._opened_under or self._log.replaced()):
+            # Other settings, another key, or (row 148) the log's file was replaced since it was opened (it was encrypted): the
+            # old connection would be refused, so the entry is written through a fresh one instead of becoming owed.
             self.drop()
         if self._log is None:
             from src.custody.log import CustodyLog

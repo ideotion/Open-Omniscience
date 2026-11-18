@@ -37,7 +37,6 @@ from tests.os_scope import scope_os
 
 _REAL_ENCRYPT = encrypt_tool.encrypt_database
 _REAL_RECORD = at_rest_state.record_encrypted
-_REAL_HEADER = is_encrypted_file
 _KEY = "a-long-enough-passphrase-for-r742-7Kq"
 _OTHER = "another-long-enough-passphrase-0Zx"
 
@@ -514,11 +513,18 @@ def test_the_operators_own_run_keeps_its_snapshot_when_a_store_fails(stores, mon
 def test_a_store_that_is_there_but_cannot_be_read_is_never_counted_absent(stores, monkeypatch):
     encrypt_tool.encrypt_all(_KEY)
     lane = stores.parent / "wiki.db"
-    monkeypatch.setattr("src.database.connect.is_encrypted_file",
-                        lambda p: None if Path(p) == lane else _REAL_HEADER(p))
+    real_open = open
+
+    def refusing(p, *a, **kw):  # the status reads each header itself (row 149): a read error on the lane's
+        if Path(p) == lane:
+            raise OSError(5, "Input/output error")
+        return real_open(p, *a, **kw)
+
+    monkeypatch.setattr(at_rest_state, "open", refusing, raising=False)
     st = at_rest_state.status(stores)
     row = next(r for r in st["stores"] if r["store"] == "lane:wiki")
-    assert row["state"] == "unreadable" and st["complete"] is False and "lane:wiki" in st["pending"]
+    assert row["state"] == "unreadable" and row["reason"] == "io"
+    assert st["complete"] is False and "lane:wiki" in st["pending"]
 
 
 def test_the_finish_takes_the_machine_and_leaves_everything_pending_while_work_is_in_flight(stores, monkeypatch):

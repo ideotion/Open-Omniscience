@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "Зашифровано (SQLCipher 4), ещё не проверено этой парольной фразой",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "Зашифровано, но эта парольная фраза его не открывает (другая парольная фраза или повреждённый файл)",
+  "Cannot be read: {why}": "Не удаётся прочитать: {why}",
+  "another program has the file open": "файл открыт другой программой",
+  "permission refused": "доступ запрещён",
+  "the file is too short to be a database": "файл слишком короткий для базы данных",
+  "a read error": "ошибка чтения",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "Хранилищ, которые не открываются этой парольной фразой (другая парольная фраза или повреждённый файл): {n}. Они оставлены как есть.",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "файл этого хранилища был заменён (зашифрован), пока это соединение было открыто, поэтому через него ничего не сохранено; повторите действие"
 }

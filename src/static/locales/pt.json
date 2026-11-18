@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho ("
+  "🛒 Draft (": "🛒 Rascunho (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "Cifrado (SQLCipher 4), ainda não verificado com esta frase-passe",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "Cifrado, mas esta frase-passe não o abre (outra frase-passe, ou um ficheiro danificado)",
+  "Cannot be read: {why}": "Não é possível ler: {why}",
+  "another program has the file open": "outro programa tem o ficheiro aberto",
+  "permission refused": "permissão recusada",
+  "the file is too short to be a database": "o ficheiro é demasiado curto para ser uma base de dados",
+  "a read error": "um erro de leitura",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} armazém(ns) não abrem com esta frase-passe (outra frase-passe, ou um ficheiro danificado). Ficam como estão.",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "o ficheiro deste armazém foi substituído (foi cifrado) enquanto esta ligação estava aberta, por isso nada foi guardado através dela; faça-o de novo"
 }

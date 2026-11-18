@@ -262,6 +262,9 @@ class _DummyLog:
     def __init__(self) -> None:
         type(self).made += 1
 
+    def replaced(self) -> bool:
+        return False  # its file is never swapped here (row 148's reopen is tested in test_store_swap_identity_r148.py)
+
     def close(self) -> None:
         pass
 

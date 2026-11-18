@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "مشفّر (SQLCipher 4)، لم يُتحقَّق منه بعد بعبارة المرور هذه",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "مشفّر، لكن عبارة المرور هذه لا تفتحه (عبارة مرور أخرى، أو ملف تالف)",
+  "Cannot be read: {why}": "تتعذّر القراءة: {why}",
+  "another program has the file open": "برنامج آخر يفتح الملف",
+  "permission refused": "تم رفض الإذن",
+  "the file is too short to be a database": "الملف أقصر من أن يكون قاعدة بيانات",
+  "a read error": "خطأ في القراءة",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} من المخازن لا تُفتح بعبارة المرور هذه (عبارة مرور أخرى، أو ملف تالف). تُركت كما هي.",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "استُبدل ملف هذا المخزن (شُفِّر) بينما كان هذا الاتصال مفتوحًا، لذا لم يُحفظ شيء من خلاله؛ أعد المحاولة"
 }

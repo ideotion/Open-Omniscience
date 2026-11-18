@@ -28,6 +28,7 @@ from src.database.connect import (
     reencrypt_plain_to,
     snapshot_to_plaintext,
 )
+from src.database.file_identity import note_replaced
 from src.monitoring.secret_scrub import log_failure, passphrase_bytes
 
 _LOG = logging.getLogger("database.encrypt_tool")
@@ -155,6 +156,7 @@ def _export_and_swap(p: Path, key: str, ts: str, library: bool, removed: list[st
                 retired = _link_retired(p, retired)
                 try:
                     os.replace(enc_tmp, p)  # atomic on the same filesystem
+                    note_replaced()  # row 148: a lane connection on the old file is refused at its next statement
                 except OSError:
                     _drop_name(retired)  # only the second NAME goes: the plaintext file is still the library under its own name
                     raise
@@ -285,9 +287,11 @@ def encrypt_store(
 ) -> dict:
     """One store's step: encrypt it (idempotent: an already-encrypted store is skipped), read it back with the key, and only then
     add it to the at-rest record (R742). An absent store is skipped and not recorded. The custody log is swapped holding its own
-    append lock: its appends are serialised there, not on the write gate, so no append runs while the file is replaced. (A log a
-    caller opened BEFORE the swap and keeps open is kept out by the exclusive window and the wait for work in flight that both
-    callers take, not by this lock.)"""
+    append lock: its appends are serialised there, not on the write gate, so no append runs while the file is replaced. A log a
+    caller opened BEFORE the swap and keeps open checks the identity of its file under that same lock before it reads the tail
+    and before it writes, and is refused (row 148, ``file_identity``); a lane connection from before the swap is dropped at
+    checkout and refused at commit. The exclusive window and the wait for work in flight that both callers take make such a
+    connection unlikely in the first place."""
     from src.database import at_rest_state
 
     if name == "custody":
@@ -296,7 +300,8 @@ def encrypt_store(
         guard: AbstractContextManager[object] = _APPEND_LOCK
     else:
         guard = nullcontext()
-    with guard:
+    # Row 149: no status probe holds a connection on a store while it is swapped (on Windows it would refuse the replace).
+    with guard, at_rest_state.probes_held():
         report = encrypt_database(
             path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure
         )

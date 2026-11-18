@@ -1,0 +1,378 @@
+"""A connection opened before an encryption swap, and a status that knows about keys (rows 148 and 149, the R742 follow-ups).
+
+Row 148: encrypting a store replaces its file. A custody log or a lane connection opened on the plaintext file before the swap keeps
+its handle on the REPLACED file, which is then overwritten and removed: a save through it would land nowhere anyone reads. Each such
+connection now carries the identity of the file it opened (``src/database/file_identity.py``) and is refused, loudly and before
+anything is written, once its path names another file.
+
+Row 149: the at-rest status opens each encrypted store with the passphrase the app holds, so a store encrypted under another
+passphrase reads as that (``not_this_key``), never as "encrypted" and never as plain or unreadable; an unreadable store says why.
+
+Every case runs on real SQLite and SQLCipher files, through the product's own swap (``encrypt_tool.encrypt_store``).
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from pathlib import Path
+
+import pytest
+
+import src.api.unlock as unlock_mod
+from src.custody.log import CustodyAction, CustodyLog
+from src.custody.signing import HybridSigner
+from src.database import at_rest_state, encrypt_tool, file_identity
+from src.database.connect import connect, is_encrypted_file, set_passphrase
+from src.database.writer import write_gate
+from src.versioned import store
+from src.versioned.lanes import all_lanes
+from src.versioned.models import VersionedEntity
+
+_KEY = "a-long-enough-passphrase-for-r148-9Wd"
+_OTHER = "another-long-enough-passphrase-3Hq"
+
+
+@pytest.fixture(autouse=True)
+def _clean():
+    write_gate._reset_for_tests()
+    store.dispose_all()
+    at_rest_state._probed.clear()
+    yield
+    store.dispose_all()
+    set_passphrase(None)
+    at_rest_state._probed.clear()
+    write_gate._reset_for_tests()
+
+
+@pytest.fixture()
+def data(tmp_path, monkeypatch):
+    """A data folder of the test's own, plaintext, with the corpus these paths resolve to (``main_db_path`` patched, as
+    tests/test_versioned_at_rest.py explains)."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    main = tmp_path / "open_omniscience.db"
+    c = sqlite3.connect(str(main))
+    c.execute("CREATE TABLE t(a)")
+    c.commit()
+    c.close()
+    monkeypatch.setattr(unlock_mod, "main_db_path", lambda: main)
+    return tmp_path
+
+
+def _signer(tmp_path: Path) -> HybridSigner:
+    return HybridSigner(ed25519_path=tmp_path / "keys" / "k.pem", mldsa_path=tmp_path / "keys" / "k.key", use_pqc=False)
+
+
+def _encrypted_with(path: Path, key: str) -> list[str]:
+    c = connect(path, key=key, check_same_thread=False)
+    try:
+        return [r[0] for r in c.execute("SELECT item_id FROM custody_entries ORDER BY seq")]
+    finally:
+        c.close()
+
+
+# --- row 148: the custody log -------------------------------------------------------------------------------------------
+
+
+def test_a_custody_log_opened_before_the_swap_is_refused_and_writes_nothing(data, monkeypatch):
+    db = data / "custody_log.db"
+    log = CustodyLog(db_path=str(db), signer=_signer(data), anchoring_mode="local")
+    log.record("article:1", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+    assert not log.replaced(), "control: the log's own file"
+
+    encrypt_tool.encrypt_store("custody", db, _KEY, main=data / "open_omniscience.db")
+    assert is_encrypted_file(db) is True
+
+    assert log.replaced()
+    with pytest.raises(file_identity.StoreReplacedError) as refused:
+        log.record("article:2", "b" * 64, CustodyAction.INGEST, actor="pipeline")
+    assert str(refused.value) == file_identity.REPLACED_WORDS
+    with pytest.raises(file_identity.StoreReplacedError):
+        log.all_entries()
+    log.close()
+    # the encrypted log holds what was saved before the swap, and nothing the refused log tried after it
+    assert _encrypted_with(db, _KEY) == ["article:1"]
+
+
+def test_a_custody_log_opened_after_the_swap_writes_to_the_encrypted_file(data, monkeypatch):
+    """Positive control: the check refuses the old file only."""
+    db = data / "custody_log.db"
+    with CustodyLog(db_path=str(db), signer=_signer(data), anchoring_mode="local") as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+    encrypt_tool.encrypt_store("custody", db, _KEY, main=data / "open_omniscience.db")
+    set_passphrase(_KEY)
+    with CustodyLog(db_path=str(db), signer=_signer(data), anchoring_mode="local") as log:
+        assert not log.replaced()
+        log.record("article:2", "b" * 64, CustodyAction.INGEST, actor="pipeline")
+    assert _encrypted_with(db, _KEY) == ["article:1", "article:2"]
+
+
+def test_the_check_and_the_swap_are_ordered_by_the_append_lock():
+    """The custody swap holds the append lock, and the identity is checked under it before the tail is read and before the
+    insert: the two cannot interleave (a lock and an order, not a counter)."""
+    import inspect
+
+    from src.custody import log as log_mod
+
+    store_src = inspect.getsource(encrypt_tool.encrypt_store)
+    assert "_APPEND_LOCK" in store_src and "with guard" in store_src
+    insert_src = inspect.getsource(log_mod.CustodyLog._insert)
+    assert insert_src.index("_refuse_if_replaced()") < insert_src.index("INSERT INTO custody_entries")
+    assert "_refuse_if_replaced()" in inspect.getsource(log_mod.CustodyLog._last)
+
+
+def test_the_ingest_batch_opens_a_fresh_log_when_its_file_was_replaced(data, monkeypatch):
+    from src.custody.settings import load_settings
+    from src.ingest.pipeline import _CustodyBatch
+
+    monkeypatch.setattr("src.custody.log.HybridSigner", lambda **_kw: _signer(data))
+    set_passphrase(_KEY)  # the retry case: the key was already held, so the batch's settings do not change across the swap
+    db = data / "custody_log.db"
+    # the batch's first log opens a plaintext file, which the swap then replaces
+    plain = sqlite3.connect(str(db))
+    plain.execute("CREATE TABLE x(a)")
+    plain.commit()
+    plain.close()
+    prefs = load_settings()
+    with _CustodyBatch() as batch:
+        first = batch.log(prefs)
+        first.record("article:1", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+        encrypt_tool.encrypt_store("custody", db, _KEY, main=data / "open_omniscience.db")
+        second = batch.log(prefs)
+        assert second is not first and batch.opened == 2
+        second.record("article:2", "b" * 64, CustodyAction.INGEST, actor="pipeline")
+    assert _encrypted_with(db, _KEY) == ["article:1", "article:2"]
+
+
+# --- row 148: the lanes --------------------------------------------------------------------------------------------------
+
+
+def _lane_ids() -> list[str]:
+    with store.lane_session("wiki") as s:
+        return sorted(e.external_id for e in s.query(VersionedEntity).all())
+
+
+def test_a_lane_save_that_began_before_the_swap_is_refused_at_commit_and_lands_nowhere(data):
+    path = store.create_lane("wiki")
+    with store.lane_session("wiki") as s:
+        s.add(VersionedEntity(external_id="oo:Before"))
+    s = store.lane_engine("wiki")
+    from sqlalchemy.orm import Session
+
+    session = Session(s)
+    session.add(VersionedEntity(external_id="oo:Straddling"))
+    session.flush()  # written into the old file's log, not committed
+    encrypt_tool.encrypt_store("lane:wiki", path, _KEY, main=data / "open_omniscience.db")
+    with pytest.raises(file_identity.StoreReplacedError):
+        session.commit()
+    session.close()
+    set_passphrase(_KEY)
+    assert _lane_ids() == ["oo:Before"], "the straddling save reached the encrypted lane, or the earlier one was lost"
+
+
+def test_a_statement_after_the_swap_on_an_earlier_connection_is_refused(data):
+    path = store.create_lane("wiki")
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+
+    session = Session(store.lane_engine("wiki"))
+    session.execute(text("SELECT 1"))  # the connection is checked out before the swap
+    encrypt_tool.encrypt_store("lane:wiki", path, _KEY, main=data / "open_omniscience.db")
+    with pytest.raises(file_identity.StoreReplacedError):
+        session.add(VersionedEntity(external_id="oo:After"))
+        session.flush()
+    session.close()
+
+
+def test_a_pooled_connection_from_before_the_swap_is_dropped_at_checkout_and_the_lane_reads_with_the_key(data):
+    path = store.create_lane("wiki")
+    with store.lane_session("wiki") as s:
+        s.add(VersionedEntity(external_id="oo:Kept"))
+    # the engine is NOT disposed: its idle connection still holds the plaintext file
+    encrypt_tool.encrypt_store("lane:wiki", path, _KEY, main=data / "open_omniscience.db")
+    set_passphrase(_KEY)
+    assert _lane_ids() == ["oo:Kept"]
+    with store.lane_session("wiki") as s:
+        s.add(VersionedEntity(external_id="oo:New"))
+    store.dispose_all()
+    assert _lane_ids() == ["oo:Kept", "oo:New"], "the new save went to the encrypted file"
+
+
+# --- row 148: the open itself -------------------------------------------------------------------------------------------
+
+
+def _replace_with_copy(path: Path) -> None:
+    tmp = path.with_name(path.name + ".new")
+    tmp.write_bytes(path.read_bytes())
+    tmp.replace(path)
+
+
+def test_an_open_across_a_swap_is_opened_again_once_then_refused(tmp_path):
+    p = tmp_path / "s.db"
+    sqlite3.connect(str(p)).close()
+    calls = []
+
+    def swaps_once():
+        calls.append(1)
+        conn = sqlite3.connect(str(p))
+        if len(calls) == 1:
+            _replace_with_copy(p)
+        return conn
+
+    conn, ident = file_identity.open_pinned(p, swaps_once)
+    assert len(calls) == 2 and ident == file_identity.identity(p)
+    conn.close()
+
+    def always_swaps():
+        conn = sqlite3.connect(str(p))
+        _replace_with_copy(p)
+        return conn
+
+    with pytest.raises(file_identity.StoreReplacedError):
+        file_identity.open_pinned(p, always_swaps)
+
+
+# --- row 149: the status knows about keys -------------------------------------------------------------------------------
+
+
+def _row(st: dict, name: str) -> dict:
+    return next(r for r in st["stores"] if r["store"] == name)
+
+
+def _encrypt_file(path: Path, key: str) -> None:
+    encrypt_tool.encrypt_database(path, key, library=False)
+
+
+def _all_encrypted(data: Path, key: str, lane_key: str | None = None) -> None:
+    main = data / "open_omniscience.db"
+    _encrypt_file(main, key)
+    sqlite3.connect(str(data / "custody_log.db")).execute("CREATE TABLE x(a)").connection.commit()
+    _encrypt_file(data / "custody_log.db", key)
+    for spec in all_lanes():
+        lp = data / spec.filename
+        sqlite3.connect(str(lp)).execute("CREATE TABLE x(a)").connection.commit()
+        _encrypt_file(lp, lane_key if (lane_key and spec.kind == "wiki") else key)
+
+
+def test_a_lane_under_another_passphrase_reads_as_that_and_is_never_complete(data, monkeypatch):
+    _all_encrypted(data, _KEY, lane_key=_OTHER)
+    set_passphrase(_KEY)
+    st = at_rest_state.status()
+    assert _row(st, "lane:wiki")["state"] == "not_this_key"
+    assert st["not_this_key"] == ["lane:wiki"]
+    assert "lane:wiki" not in st["pending"], "nothing here encrypts a store under a second key"
+    assert st["complete"] is False
+    custody = _row(st, "custody")
+    assert custody["state"] == "encrypted" and custody["key_checked"] is True and custody.get("cipher")
+    # the finish leaves it as it is
+    wiki = next(data / spec.filename for spec in all_lanes() if spec.kind == "wiki")
+    before = wiki.read_bytes()
+    assert at_rest_state.finish_pending(_KEY) == {"finished": [], "still_pending": []}
+    assert wiki.read_bytes() == before
+
+
+def test_every_store_under_the_held_key_is_complete_and_checked(data):
+    """Positive control for the test above: the same files, one key."""
+    _all_encrypted(data, _KEY)
+    set_passphrase(_KEY)
+    st = at_rest_state.status()
+    assert st["complete"] is True and st["not_this_key"] == [] and st["pending"] == []
+    for r in st["stores"][1:]:
+        assert r["state"] == "encrypted" and r["key_checked"] is True, r
+
+
+def test_the_doctor_says_what_the_status_says_for_every_store(data):
+    _all_encrypted(data, _KEY, lane_key=_OTHER)
+    set_passphrase(_KEY)
+    out = unlock_mod.doctor()
+    assert out["lanes"]["wiki"]["state"] == "not_this_key"
+    assert out["at_rest"]["not_this_key"] == ["lane:wiki"] and out["at_rest"]["complete"] is False
+    assert out["custody_log"]["state"] == "encrypted" and out["custody_log"]["key_checked"] is True
+    st = at_rest_state.status()
+    for spec in all_lanes():
+        assert out["lanes"][spec.kind]["state"] == _row(st, f"lane:{spec.kind}")["state"]
+
+
+def test_an_unreadable_store_says_why_and_is_never_absent(data, monkeypatch):
+    lp = data / all_lanes()[0].filename
+    lp.write_bytes(b"short")
+    st = at_rest_state.status()
+    row = _row(st, f"lane:{all_lanes()[0].kind}")
+    assert row == {**row, "state": "unreadable", "reason": "short_header"}
+
+    class _Held(PermissionError):
+        winerror = 32
+
+    real_open = open
+
+    def refusing(path, *a, **kw):
+        if Path(path) == lp:
+            raise _Held(13, "held")
+        if Path(path).name == "custody_log.db":
+            raise PermissionError(13, "denied")
+        return real_open(path, *a, **kw)
+
+    sqlite3.connect(str(data / "custody_log.db")).execute("CREATE TABLE x(a)").connection.commit()
+    monkeypatch.setattr(at_rest_state, "open", refusing, raising=False)
+    st = at_rest_state.status()
+    assert _row(st, f"lane:{all_lanes()[0].kind}")["reason"] == "in_use"
+    assert _row(st, "custody") == {**_row(st, "custody"), "state": "unreadable", "reason": "permission"}
+    assert set(at_rest_state.UNREADABLE_REASONS) == {"in_use", "permission", "short_header", "io"}
+
+
+def test_the_probe_stands_aside_while_a_store_is_swapped(data):
+    """A status read during a swap never opens the store (on Windows that would refuse the replace): it says not checked yet."""
+    _all_encrypted(data, _KEY)
+    set_passphrase(_KEY)
+    entered, release = threading.Event(), threading.Event()
+
+    def hold():
+        with at_rest_state.probes_held():
+            entered.set()
+            release.wait(10)
+
+    t = threading.Thread(target=hold)
+    t.start()
+    try:
+        assert entered.wait(10)
+        st = at_rest_state.status()
+        assert _row(st, "custody") == {**_row(st, "custody"), "state": "encrypted", "key_checked": False}
+        assert st["complete"] is True, "not checked is not a failure: the header says encrypted"
+    finally:
+        release.set()
+        t.join(10)
+    assert "probes_held()" in __import__("inspect").getsource(encrypt_tool.encrypt_store)
+
+
+def test_the_probe_cache_holds_no_secret(data):
+    _all_encrypted(data, _KEY)
+    set_passphrase(_KEY)
+    at_rest_state.status()
+    assert at_rest_state._probed
+    flat = json.dumps([[list(map(str, k)), v] for k, v in at_rest_state._probed.items()])
+    assert _KEY not in flat
+
+
+# --- the words reach the page in every language -----------------------------------------------------------------------
+
+
+def test_every_new_sentence_is_keyed_in_every_locale_and_the_page_uses_the_states():
+    root = Path(__file__).resolve().parents[1] / "src" / "static"
+    keys = [
+        file_identity.REPLACED_WORDS,
+        "Encrypted (SQLCipher 4), not yet checked against this passphrase",
+        "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)",
+        "Cannot be read: {why}",
+        "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.",
+        *at_rest_state.UNREADABLE_REASONS.values(),
+    ]
+    js = (root / "app-backup.js").read_text(encoding="utf-8")
+    for k in keys[1:]:
+        assert k in js, k
+    assert 's.state === "not_this_key"' in js and "ar.not_this_key" in js
+    for loc in sorted((root / "locales").glob("*.json")):
+        d = json.loads(loc.read_text(encoding="utf-8"))
+        for k in keys:
+            assert d.get(k), f"{loc.name} lacks {k[:40]!r}"

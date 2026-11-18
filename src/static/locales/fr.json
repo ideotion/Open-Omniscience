@@ -8178,5 +8178,14 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "Encrypted (SQLCipher 4), not yet checked against this passphrase": "Chiffré (SQLCipher 4), pas encore vérifié avec cette phrase secrète",
+  "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)": "Chiffré, mais cette phrase secrète ne l'ouvre pas (une autre phrase secrète, ou un fichier endommagé)",
+  "Cannot be read: {why}": "Illisible : {why}",
+  "another program has the file open": "un autre programme a ouvert le fichier",
+  "permission refused": "permission refusée",
+  "the file is too short to be a database": "le fichier est trop court pour être une base de données",
+  "a read error": "une erreur de lecture",
+  "{n} store(s) do not open with this passphrase (another passphrase, or a damaged file). They are left as they are.": "{n} magasin(s) ne s'ouvrent pas avec cette phrase secrète (une autre phrase secrète, ou un fichier endommagé). Ils sont laissés tels quels.",
+  "this store's file was replaced (it was encrypted) while this connection was open, so nothing was saved through it; do it again": "le fichier de ce magasin a été remplacé (il a été chiffré) pendant que cette connexion était ouverte, donc rien n'a été enregistré par elle ; recommencez"
 }
