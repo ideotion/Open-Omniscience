@@ -256,10 +256,46 @@ def _rows(session):
     return sorted(tuple(repr(getattr(r, k)) for k in cols) for r in session.query(Source))
 
 
+_CATALOGUE_CONSTANTS = (
+    "DEFAULT_SOURCES_PATH", "MARKETS_SOURCES_PATH", "SPECTRUM_SOURCES_PATH", "WORLD_SOURCES_PATH", "LEGAL_SOURCES_PATH",
+    "ACADEMIC_SOURCES_PATH", "OFFICIAL_SOURCES_PATH",
+)
+
+
+def _pass_facts(session=None) -> dict:
+    """What a start-up pass read from, and (after it) what it wrote, by provenance: printed only when the two passes differ.
+
+    Row 167: on one macOS run under ``-n 4`` the two passes disagreed by whole catalogues (the academic journals and the
+    spectrum outlets were in one pass only), and nothing under configs/ changed during a full local run of that shard. So a
+    mismatch prints each pass's inputs (the catalogue constants, whether each file exists, its size and hash), the memo's
+    state and the live threads, which names the cause the next time instead of costing another hunt."""
+    import hashlib
+
+    facts: dict = {"catalogues": {}, "memo": None if ss._PARSED is None else len(ss._PARSED)}
+    for name in _CATALOGUE_CONSTANTS:
+        path = Path(getattr(ss, name))
+        try:
+            data = path.read_bytes()
+            facts["catalogues"][name] = (str(path), len(data), hashlib.sha256(data).hexdigest()[:12])
+        except OSError as exc:
+            facts["catalogues"][name] = (str(path), type(exc).__name__)
+    facts["threads"] = sorted(t.name for t in threading.enumerate() if t is not threading.current_thread())
+    if session is not None:
+        by_via: dict[str, int] = {}
+        for (tags,) in session.query(Source.tags):
+            for tag in (tags or "").split(","):
+                if tag.startswith("via:"):
+                    by_via[tag] = by_via.get(tag, 0) + 1
+        facts["rows_by_via"] = dict(sorted(by_via.items()))
+    return facts
+
+
 def test_a_first_install_parses_each_text_once_leaves_the_held_tree_untouched_and_writes_the_same_rows(monkeypatch):
     seen = _spy(monkeypatch)
     memo_session = _fresh_session()
+    before_memo_pass = _pass_facts()
     _start_up_pass(memo_session)
+    after_memo_pass = _pass_facts(memo_session)
     texts = list(seen)
     assert len(texts) == len(set(texts)), f"{len(texts) - len(set(texts))} text(s) parsed more than once in one start-up pass"
     assert len(texts) >= 5, "the shipped catalogues were not read at all"
@@ -276,8 +312,22 @@ def test_a_first_install_parses_each_text_once_leaves_the_held_tree_untouched_an
     # The unchanged tree: no memo at all, every reader parses for itself.
     monkeypatch.setattr(ss, "_PARSED", None)
     plain_session = _fresh_session()
+    before_plain_pass = _pass_facts()
     _start_up_pass(plain_session)
-    assert rows_with_memo == _rows(plain_session), "the rows differ from what parsing every time writes"
+    rows_plain = _rows(plain_session)
+    if rows_with_memo != rows_plain:
+        facts = {
+            "memo pass, before": before_memo_pass, "memo pass, after": after_memo_pass,
+            "plain pass, before": before_plain_pass, "plain pass, after": _pass_facts(plain_session),
+        }
+        memo_via, plain_via = facts["memo pass, after"]["rows_by_via"], facts["plain pass, after"]["rows_by_via"]
+        differ = {k: (memo_via.get(k), plain_via.get(k)) for k in sorted(memo_via.keys() | plain_via.keys())
+                  if memo_via.get(k) != plain_via.get(k)}
+        detail = "\n".join(f"  {k}: {v}" for k, v in facts.items())
+        # The first line is what the CI fail report keeps (600 characters): the provenances whose counts differ.
+        pytest.fail(f"the rows differ from what parsing every time writes ({len(rows_with_memo)} rows with the memo, "
+                    f"{len(rows_plain)} without; rows by provenance, memo vs plain: {differ})\n"
+                    f"what each pass read and wrote:\n{detail}", pytrace=False)
     assert len(rows_with_memo) > 1000
 
 

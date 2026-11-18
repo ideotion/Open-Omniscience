@@ -441,3 +441,25 @@ def test_row_l_strings_ship_in_all_twelve_locales():
             assert d.get(k), (loc.name, k)
             for ph in ("{date}", "{n}"):
                 assert (ph in d[k]) == (ph in k), (loc.name, k)
+
+
+def test_absent_border_files_are_an_answer_not_a_404(tmp_path, monkeypatch):
+    """Row 158: an install without the operator-built border files is working as designed, yet the
+    map learned that from four 404s per open, each logged by the browser as an error. The route
+    names which files exist, from a fixed list, and the map asks only for those."""
+    from src.api import geo
+
+    monkeypatch.setattr(geo, "_STATIC_DIR", tmp_path)
+    assert geo.border_files() == {"installed": []}
+    (tmp_path / "osm_borders").mkdir()
+    (tmp_path / "osm_borders" / "admin0.world.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "osm_admin1.json").mkdir()  # a directory under a file's name is not the file
+    assert geo.border_files() == {"installed": ["osm_borders/admin0.world.json"]}
+    assert set(geo.BORDER_FILES) == {
+        "osm_borders/admin0.world.json", "osm_admin0.json", "osm_borders/admin1.world.json", "osm_admin1.json"}
+
+    load = function_body(_MAP_JS, "_ooMapOsmAdminLoad")
+    assert load.index('fetch("/api/geo/border-files")') < load.index('fetch("/static/" + name)'), \
+        "the map asks which files exist before asking for any"
+    assert "if (installed && !installed.has(name)) return false;" in load, "an absent file is never requested"
+    assert "installed = null" in load, "an unreadable answer falls back to asking for the files, as before"

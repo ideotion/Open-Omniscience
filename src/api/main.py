@@ -3463,12 +3463,14 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
   .mgrp {{ margin:8px 0; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }}
   .mgrp h3 {{ margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); }}
   .mgrp.deduced {{ border-style:dashed; }}
+  /* --warn is a light amber in the dark palette and a dark amber in the light one: the light reader drew
+     this heading #f0a23a on white, below 4.5:1 (axe colour-contrast, row 160). */
   .mgrp.deduced h3 {{ color:var(--warn); }}
   .mnote {{ margin-top:6px; font-size:11px; color:var(--mut); }}
   :root {{ color-scheme: light dark; --ink:#0b0d10; --paper:#0e1116; --fg:#e7e9ee; --mut:#8b93a1;
     --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
   @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;
-    --line:#e4e0d8; --card:#fff; --accent:#2b6cd4; }} }}
+    --line:#e4e0d8; --card:#fff; --accent:#2b6cd4; --warn:#8a4d0a; }} }}
   /* Bundled OFL reading serif (src/static/fonts) — local file, zero network. */
   @font-face {{ font-family:"Source Serif 4"; src:url("/static/fonts/SourceSerif4-Variable.woff2")
     format("woff2"); font-weight:200 900; font-display:swap; }}

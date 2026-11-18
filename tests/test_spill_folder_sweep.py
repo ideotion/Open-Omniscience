@@ -55,6 +55,10 @@ def _aged(folder, seconds_before: float) -> None:
     os.utime(folder, (then, then))
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the sweep reads a folder's birth time, which Windows keeps and os.utime cannot move, so a folder cannot be aged here (row 144)",
+)
 def test_a_folder_older_than_the_live_process_holding_its_pid_is_removed(root, live_pid):
     orphan = root / f"{live_pid}-abcd1234"
     orphan.mkdir()

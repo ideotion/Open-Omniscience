@@ -2016,6 +2016,12 @@
       if (/^(?:could not \w+ this backup: )?wrong passphrase or the file has been altered\.?$/i.test(s.trim())) {
         return t("Could not open this backup: the passphrase is wrong, or its files have been altered.");
       }
+      // Row 156: backup/volumes.py member_in_use, a staged member another program holds (restore
+      // decrypt, lane merge). Whole-message only; the name is the member's file name.
+      const _inuse = /^another program is using the staged backup member (.+) right now, so it could not be opened; try again in a moment$/.exec(s.trim());
+      if (_inuse) {
+        return tf("Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.", { name: iso(_inuse[1]) });
+      }
       // newsletter_export.py: a stopped newsletter-free backup. Two fixed sentences, whole-message
       // only, the second carrying a reason that is the server's own fixed text or an exception class.
       if (s.trim() === "The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.") {

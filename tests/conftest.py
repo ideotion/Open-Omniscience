@@ -931,20 +931,59 @@ def no_cgroup_limit(monkeypatch):
 # after the tests prints which. ``OO_TEST_SLOW_S`` lists every test that took longer than that, as it ends, in ``OO_TEST_SLOW_REPORT``:
 # written line by line, so a leg cancelled at its cap still says where its time went (a ``--durations`` table prints only at the end).
 # Unset, nothing is armed and nothing is written. The variables are taken OUT of the environment once read: a test that runs pytest in a
-# child process from the same folder would otherwise open the same two files and empty the parent's record (so a run with ``-n``
-# arms nothing in its workers: the portability legs run in one process).
-_WORKER_SUFFIX = ("." + os.environ["PYTEST_XDIST_WORKER"]) if os.environ.get("PYTEST_XDIST_WORKER") else ""
-_HANG_LIMIT_S = float(os.environ.pop("OO_TEST_HANG_LIMIT_S", "") or 0)
-_HANG_REPORT_PATH = (os.environ.pop("OO_TEST_HANG_REPORT", "") or "test-hang-report.txt") + _WORKER_SUFFIX
-_SLOW_S = float(os.environ.pop("OO_TEST_SLOW_S", "") or 0)
-_SLOW_REPORT_PATH = (os.environ.pop("OO_TEST_SLOW_REPORT", "") or "test-slow-report.txt") + _WORKER_SUFFIX
+# child process from the same folder would otherwise open the same files and empty the parent's record.
+# UNDER ``-n`` THE WORKERS ARE ARMED, NOT THE CONTROLLER (row 163). The portability legs ran in one process and Windows needed 86 minutes
+# for a shard Linux covers in 28, so they now run ``-n 4 --dist loadfile`` like the Linux jobs. Taking the variables out of the
+# environment meant a worker never saw them, so they now travel the way xdist hands a worker its settings: ``pytest_configure_node`` puts
+# them in each worker's ``workerinput``, and ``pytest_configure`` arms the worker from there. Each worker writes its own files, the name
+# plus ``.gw0``, ``.gw1`` ... (a worker xdist starts in place of a crashed one gets a new name, so a hang's traceback is never
+# overwritten), and the controller, which runs no test, writes none. A run without xdist, or with ``-n 0``, arms its one process.
 # A FAILURE IS WRITTEN DOWN AS IT HAPPENS (row 109). ``-rsfE`` prints its failure list only once the run ends, and a Windows leg the
 # 90-minute cap stops never gets there: run 43960518216 showed some 170 F marks across shards 2 and 3 and not one reason. With
 # ``OO_TEST_FAIL_REPORT`` set, every failed phase is appended, as it ends, to that file: the test, the phase, the crash location and the
 # first lines of its message (never the locals, never a whole traceback: a report is read by people, and a message can be long).
-_FAIL_REPORT_PATH = os.environ.pop("OO_TEST_FAIL_REPORT", "")
-_FAIL_REPORT = open(_FAIL_REPORT_PATH + _WORKER_SUFFIX, "w", encoding="utf-8") if _FAIL_REPORT_PATH else None  # noqa: SIM115 - one line block per failure
+_REPORT_VARIABLES = ("OO_TEST_HANG_LIMIT_S", "OO_TEST_HANG_REPORT", "OO_TEST_SLOW_S", "OO_TEST_SLOW_REPORT", "OO_TEST_FAIL_REPORT")
+_REPORT_SETTINGS = {name: os.environ.pop(name, "") for name in _REPORT_VARIABLES}
+_REPORT_WORKERINPUT_KEY = "oo_test_reports"
+_HANG_LIMIT_S = 0.0
+_SLOW_S = 0.0
+_HANG_REPORT = None
+_SLOW_REPORT = None
+_FAIL_REPORT = None
 _FAIL_MESSAGE_CHARS = 600
+
+
+def _arm_reports(settings: dict, suffix: str) -> None:
+    """Open this process's report files and set its limits from ``settings`` (the variables' values, empty when unset)."""
+    global _HANG_LIMIT_S, _SLOW_S, _HANG_REPORT, _SLOW_REPORT, _FAIL_REPORT, _faulthandler
+    _HANG_LIMIT_S = float(settings.get("OO_TEST_HANG_LIMIT_S") or 0)
+    _SLOW_S = float(settings.get("OO_TEST_SLOW_S") or 0)
+    if _HANG_LIMIT_S > 0:
+        import faulthandler as _faulthandler
+
+        path = (settings.get("OO_TEST_HANG_REPORT") or "test-hang-report.txt") + suffix
+        _HANG_REPORT = open(path, "w", encoding="utf-8")  # noqa: SIM115 - held open for the run: faulthandler writes to it
+    if _SLOW_S > 0:
+        path = (settings.get("OO_TEST_SLOW_REPORT") or "test-slow-report.txt") + suffix
+        _SLOW_REPORT = open(path, "w", encoding="utf-8")  # noqa: SIM115 - held open for the run, one line per slow test
+    if settings.get("OO_TEST_FAIL_REPORT"):
+        _FAIL_REPORT = open(settings["OO_TEST_FAIL_REPORT"] + suffix, "w", encoding="utf-8")  # noqa: SIM115 - one line block per failure
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node):
+    """Controller side, once per xdist worker it starts: hand the worker the report settings the environment no longer holds."""
+    node.workerinput[_REPORT_WORKERINPUT_KEY] = dict(_REPORT_SETTINGS)
+
+
+def pytest_configure(config):
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is not None:
+        _arm_reports(workerinput.get(_REPORT_WORKERINPUT_KEY) or {}, "." + str(workerinput.get("workerid", "gw")))
+    elif getattr(config.option, "numprocesses", None) and getattr(config.option, "dist", "no") != "no":
+        return  # the controller of an xdist run runs no test; its workers write the reports
+    else:
+        _arm_reports(_REPORT_SETTINGS, "")
 
 
 def pytest_runtest_logreport(report):
@@ -962,14 +1001,53 @@ def pytest_runtest_logreport(report):
 
 
 _HANG_DEADLINE: list[float] = []  # the running test's deadline on the monotonic clock, while one runs
-_HANG_REPORT = None
-_SLOW_REPORT = None
-if _HANG_LIMIT_S > 0:
-    import faulthandler as _faulthandler
 
-    _HANG_REPORT = open(_HANG_REPORT_PATH, "w", encoding="utf-8")  # noqa: SIM115 - held open for the run: faulthandler writes to it
-if _SLOW_S > 0:
-    _SLOW_REPORT = open(_SLOW_REPORT_PATH, "w", encoding="utf-8")  # noqa: SIM115 - held open for the run, one line per slow test
+
+# THE CHECKOUT'S configs/ IS THE SAME AT THE END OF A RUN AS AT ITS START (row 167). The seeder picks its catalogues by
+# ``Path.exists()`` on files under configs/, and under ``-n`` every worker reads them while the others run: a test that
+# wrote, renamed or removed one there, even for a moment, would change what a test in another process seeds, on some runs
+# only. None does today (measured on shard 2 under ``-n 4``); this keeps it so. Every process (the controller and each
+# worker) takes the sha256 of every file under configs/ when its session starts and again when it ends, and a difference
+# fails the run, naming the files. ``OO_TEST_CONFIGS_GUARD_DIR`` points it at another folder (its own test only).
+def _configs_fingerprint() -> dict[str, str]:
+    import hashlib
+    from pathlib import Path
+
+    root = Path(os.environ.get("OO_TEST_CONFIGS_GUARD_DIR") or Path(__file__).resolve().parents[1] / "configs")
+    found: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if "__pycache__" in path.parts or not path.is_file():
+            continue
+        try:
+            found[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:  # a file that vanished between the listing and the read is a change, and is reported as one
+            found[path.relative_to(root).as_posix()] = f"unreadable: {type(exc).__name__}"
+    return found
+
+
+_CONFIGS_AT_START: list[dict[str, str]] = []
+
+
+def pytest_sessionstart(session):
+    _CONFIGS_AT_START[:] = [_configs_fingerprint()]
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session, exitstatus):
+    if not _CONFIGS_AT_START:
+        return
+    start, end = _CONFIGS_AT_START[0], _configs_fingerprint()
+    if start == end:
+        return
+    changed = sorted(name for name in start.keys() | end.keys() if start.get(name) != end.get(name))
+    what = ", ".join(f"{n} ({'added' if n not in start else 'removed' if n not in end else 'changed'})" for n in changed)
+    message = f"a test changed the checkout's configs/ during this run (row 167): {what}"
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message, red=True)
+    else:
+        sys.stderr.write(message + "\n")
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 @pytest.hookimpl(wrapper=True)

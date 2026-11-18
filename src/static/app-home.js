@@ -2047,10 +2047,12 @@
       // relying on the whole (interactive-descendant-hosting) back face being
       // itself a button. The outer container is now role="group" -- a plain
       // semantic wrapper, not an interactive element that could conflict with what
-      // it contains.
+      // it contains. The front carries NO aria-label: its name is its own visible text (type, title, summary,
+      // signal, hint), so a speech user who says what they see reaches it (axe label-content-name-mismatch,
+      // row 160); a title-only label dropped everything else the sighted reader is shown.
       return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" role="group" aria-label="${esc(_title)}">
         <div class="card-inner">
-          <div class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"
+          <div class="card-face card-front" tabindex="0" role="button"
                data-on-click="leadFlipFrom(this, event)" data-on-keydown="leadFlipKeyFrom(this, event)">
             ${chip}
             <h4${cardTitleTip(c)}>${esc(_title)}</h4>

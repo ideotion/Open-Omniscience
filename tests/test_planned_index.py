@@ -22,6 +22,7 @@ are both silent:
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -149,6 +150,17 @@ def _run(*args):
         [sys.executable, str(ROOT / "scripts" / "planned.py"), *args],
         cwd=ROOT, capture_output=True, text=True, timeout=180,
     )
+
+
+def test_a_console_that_cannot_encode_the_markers_still_gets_the_whole_answer():
+    """Row 144: on a cp1252 Windows console the first arrow raised UnicodeEncodeError and the lookup ended with a traceback. An
+    ASCII stdout reproduces it on any platform."""
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "planned.py"), "src/config/memory_budget.py"],
+        cwd=ROOT, capture_output=True, timeout=180, env={**os.environ, "PYTHONIOENCODING": "ascii"},
+    )
+    assert out.returncode == 0 and b"Traceback" not in out.stderr, out.stderr[-400:]
+    assert b"RULINGS_INDEX.md" in out.stdout
 
 
 def test_a_lookup_prints_the_ruling_and_where_to_read_it():

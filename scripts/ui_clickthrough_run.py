@@ -44,7 +44,7 @@ STATE_C_URL = "http://127.0.0.1:8000"
 # the post-import screen's CONTENT path needs a real import to render, and importing into
 # state C mid-walk would mutate the corpus every other check depends on. The artifact is
 # built beforehand by the app's OWN volume-backup engine over the --mini seed corpus
-# (scripts/ui_clickthrough_seed.py --mini + src.backup.artifact.write_volume_backup); its
+# (OO_UIWALK_IMPORT_PASS=... scripts/ui_clickthrough_seed.py --mini --write-import-artifact DIR); its
 # folder + passphrase arrive via env so the runner never hardcodes a machine path.
 STATE_D_URL = "http://127.0.0.1:8003"
 IMPORT_ARTIFACT_DIR = os.environ.get("OO_UIWALK_IMPORT_ARTIFACT", "")
@@ -71,6 +71,10 @@ LOCALES_TO_CHECK = ["en", "fr", "ar", "zh"]  # the brief's own stated minimum (2
 # lesson) — the T7 uppercase-reliance audit runs across exactly these.
 UPPERCASE_NOOP_LOCALES = ["ar", "zh", "ja", "hi", "bn"]
 BREAKPOINTS = [(375, 900), (768, 1000), (1024, 900), (1440, 950)]
+#: Row 157 (F8): how long the walk gives the first-run guide to open once the page has loaded. It
+#: opens after the app's first counts request, which a seeded encrypted store answers within a few
+#: seconds of the unlock; a populated corpus never opens it, and spends this once per state.
+GUIDE_OPEN_WAIT_MS = 8000
 
 AXE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "vendor" / "axe-core" / "axe.min.js"
 LOCALES_DIR = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
@@ -404,8 +408,23 @@ def _dismiss_guide_wizard(page, report: Report, state_label: str) -> None:
     the one-time guide done, making it the single reliable dismiss target regardless of which
     step is currently showing.
     """
+    # Row 157 (F8): the guide opens only after the app's scripts have run AND its first counts
+    # request has answered. The old fixed 400 ms read "open on boot: False" on the encrypted
+    # state B (checked straight after the unlock, while the page was still loading), and the
+    # guide then opened over Home, so the empty-state check read the page behind the modal.
+    # Wait for the page to load, then give the guide a bounded window to open: a populated
+    # corpus never opens it, which costs this window once per state and is recorded as False.
+    # A page not yet navigated (the plaintext run reaches the app only at its first goto) keeps
+    # the old behaviour: there is nothing to wait for there.
+    if page.url.startswith("http"):
+        with contextlib.suppress(Exception):
+            _wait_app_scripts(page, timeout_ms=30000)
+        with contextlib.suppress(Exception):
+            page.wait_for_function(
+                "() => { const d = document.getElementById('guide-wizard'); return !!(d && d.open); }",
+                timeout=GUIDE_OPEN_WAIT_MS,
+            )
     try:
-        page.wait_for_timeout(400)  # let a boot-time openGuide() call actually fire first
         dlg_open = bool(page.evaluate(
             "() => { const d = document.getElementById('guide-wizard'); "
             "return !!(d && d.open); }"
@@ -508,13 +527,14 @@ def investigate_state_b(playwright, report: Report, shots: Path) -> None:
 
 
 def _chromium_path() -> str:
-    override = os.environ.get("OO_TEST_CHROMIUM_PATH")
-    if override:
-        return override
-    base = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
-    for cand in sorted(base.glob("chromium-*/chrome-linux/chrome")):
-        return str(cand)
-    raise RuntimeError("no pinned Chromium build found")
+    # Row 157 (F1): one finder for every caller; a build in an unknown layout fails by name.
+    from src.monitoring.pinned_chromium import browsers_dir, find_pinned_chromium
+
+    exe = find_pinned_chromium()
+    if exe is None:
+        raise RuntimeError(f"no pinned Chromium build under {browsers_dir()} (set PLAYWRIGHT_BROWSERS_PATH or "
+                           "OO_TEST_CHROMIUM_PATH; never `playwright install`)")
+    return exe
 
 
 # ------------------------------------------------------------------------------------------ #
@@ -846,10 +866,20 @@ def _unlock_if_locked(page, report: Report, state_label: str, url: str) -> None:
             timeout=60000,
         )
         reached = True
+    if reached and not _safe_visible(page, "#view-open"):
+        # Row 157 (F9): #tab-home is near the TOP of index.html and the app's ~30 scripts are at
+        # the END of <body>, so the element exists while the scripts are still loading. Walking on
+        # from there clicked Home before app-library.js had run ("startLive is not defined", 0.31 s
+        # after load) and called openAnalysisFor before app-analysis.js existed (the analysis
+        # window read "not visible"). Wait for the document to finish loading, as a person's first
+        # click after the page settles would.
+        with contextlib.suppress(Exception):
+            _wait_app_scripts(page)
     if reached and _safe_visible(page, "#view-open"):
         with contextlib.suppress(Exception):
             page.click("#view-open button")
             page.wait_for_timeout(1000)
+            _wait_app_scripts(page)
     report.add_coverage(
         surface=f"{state_label}_unlock", axis="encrypted-run",
         result="verified" if reached else "blocked",
@@ -870,6 +900,19 @@ def _unlock_if_locked(page, report: Report, state_label: str, url: str) -> None:
             "state or the unlock path is broken; the at_rest rows say which store this was.",
             new=True,
         )
+
+
+def _wait_app_scripts(page, timeout_ms: int = 60000) -> None:
+    """Row 157 (F9): wait until the app's page has LOADED, not merely until its first element exists.
+
+    ``readyState == "complete"`` comes after every classic ``<script>`` at the end of ``<body>`` has
+    run; ``showTab`` and ``startLive`` (app-shell.js, app-library.js) are then both defined.
+    """
+    page.wait_for_function(
+        "() => document.readyState === 'complete' && typeof showTab === 'function' "
+        "&& typeof startLive === 'function'",
+        timeout=timeout_ms,
+    )
 
 
 def _get_json(url: str, *, attempts: int = 6):
@@ -1103,11 +1146,24 @@ def drill_worldmap_lens_controls(driver: PlaywrightUiWalkDriver, report: Report)
                 note=f"5x ArrowLeft on the slider; map innerHTML {before}->{_map_len()} "
                 f"errors={errs}",
             )
-        page.click("[data-oomap-signals]:visible")
-        page.wait_for_timeout(300)
     except Exception as exc:  # noqa: BLE001
         report.add_coverage(surface="worldmap_controls", axis="signals-layer",
                             result="partial", note=str(exc)[:120])
+    # Row 157 (F5): switching the layer back OFF is its own step with its own row. It used to share the
+    # signals-layer try, so the 2026-11-18 rehearsal's off-click timeout overwrote that axis as
+    # "partial" although the layer and its slider had both just been verified. The button is waited
+    # for (the map re-renders after the slider moves), and a failure names the off-click.
+    try:
+        page.wait_for_selector("[data-oomap-signals]", state="visible", timeout=10000)
+        page.click("[data-oomap-signals]:visible")
+        page.wait_for_timeout(300)
+        pressed = page.get_attribute("[data-oomap-signals]", "aria-pressed")
+        report.add_coverage(surface="worldmap_controls", axis="signals-layer-off",
+                            result="verified" if pressed == "false" else "partial",
+                            note=f"aria-pressed after the off-click: {pressed}")
+    except Exception as exc:  # noqa: BLE001
+        report.add_coverage(surface="worldmap_controls", axis="signals-layer-off",
+                            result="partial", note=f"switching the layer off: {str(exc)[:120]}")
 
 
 def drill_task_manager_panels(driver: PlaywrightUiWalkDriver, report: Report) -> None:
@@ -1164,6 +1220,12 @@ def drill_settings_ai_pill(driver: PlaywrightUiWalkDriver, report: Report) -> No
     lesson: only the SERVING backend's panel, with its honest prerequisite line)."""
     _log("T5b: drilling the AI pill + Settings AI panels")
     page = driver.page
+    # Walk-rerun 2026-11-18: this drill runs right after drill_task_manager_panels, which leaves the
+    # page on /tasks. That page has its OWN #llm, painted "pill warn" when offline with none of the
+    # SPA's ai-* classes, so the read below came back "unpainted" against the wrong document. Return
+    # to the app (Settings > AI, where the SPA itself re-reads the AI health) before reading the pill.
+    driver.goto(Surface("settings_ai_pill", "Settings > AI", nav_tab="settings",
+                        subtab="models", dom_id="set-models"))
     # Wait (bounded) for the pill's state class to be PAINTED before classifying: the
     # SPA sets ai-off/ai-starting only once its AI status poll answers, so a bare
     # "pill warn" read too early is UNPAINTED, not "serving" — the second full-matrix
@@ -1432,7 +1494,7 @@ def drill_agenda_provenance(driver: PlaywrightUiWalkDriver, report: Report) -> N
             surface="agenda_deduced", axis="list-view-pills",
             result="verified" if ded["n"] > 0 else "partial",
             note=f"deduced-pill n={ded['n']} titled={ded['titled']} sample={ded['sample']!r} "
-            "(seeded specimen: 3 articles / 2 sources naming 2026-10-12)",
+            "(seeded specimen: 3 articles / 2 sources naming the date 45 days after the seed day)",
         )
     except Exception as exc:  # noqa: BLE001
         report.add_coverage(surface="agenda_deduced", axis="list-view-pills",
@@ -1734,36 +1796,22 @@ def honesty_checks(driver: PlaywrightUiWalkDriver, report: Report, shots: Path) 
         ):
             driver.goto(surface)
             page.wait_for_timeout(800)
-            # The found element is TAGGED with a probe attribute and addressed by it: a
-            # selector DERIVED from tag/class ("td") resolves to the DOCUMENT's first
-            # such element, not the specimen's — char_x_positions then reads the wrong
-            # node and the whole check silently finds nothing (hit live: two visible
-            # 2026-08-19 TDs present, "no specimen found" reported). The recorded
-            # non-unique-needle trap, as a CSS selector.
-            hit = page.evaluate(
-                """() => {
-                  document.querySelectorAll('[data-oo-rtl-probe]')
-                    .forEach(e => e.removeAttribute('data-oo-rtl-probe'));
-                  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-                  let node;
-                  while ((node = walker.nextNode())) {
-                    const m = node.textContent.match(/\\d{4}-\\d{2}-\\d{2}[T ]?[\\d:]*/);
-                    if (!m || m[0].length < 10) continue;
-                    const el = node.parentElement;
-                    if (!el || !(el.offsetWidth || el.offsetHeight)) continue;
-                    el.setAttribute('data-oo-rtl-probe', '1');
-                    return {sel: '[data-oo-rtl-probe="1"]', run: m[0].trim()};
-                  }
-                  return null;
-                }"""
-            )
+            # The specimen is found and TAGGED by the driver (a tag/class selector would
+            # resolve to the document's first such element: the recorded non-unique-needle
+            # trap), skipping any node drawn MIRRORED: the flip card's unflipped back face
+            # reports decreasing x for a perfectly ordered date, which the 2026-11-18
+            # encrypted rehearsal filed as a P1 on Home.
+            hit = driver.find_iso_date_specimen()
             if not hit:
                 continue
-            xs = driver.char_x_positions(hit["sel"], hit["run"])
-            if not xs:
+            pos = driver.char_positions(hit["sel"], hit["run"])
+            if not pos:
                 continue
+            xs = [x for x, _top in pos]
             found_any = True
-            monotonic = all(b > a for a, b in zip(xs, xs[1:], strict=False))
+            # Line-aware: a narrow cell may wrap a date after its hyphen (x jumps back on the
+            # next line), which is layout, not a misread value.
+            monotonic = not driver.reordered_on_a_line(pos)
             report.add_coverage(
                 surface="honesty_rtl_bidi", axis=f"{surface.id}",
                 result="verified" if monotonic else "partial",
@@ -1882,8 +1930,9 @@ def investigate_state_d_import(playwright, report: Report, shots: Path) -> None:
         report.add_coverage(
             surface="post_import_content", axis="default", result="blocked",
             note="OO_UIWALK_IMPORT_ARTIFACT / OO_UIWALK_IMPORT_PASS not set — the import "
-            "drill needs the pre-built volume-backup artifact (scripts/ui_clickthrough_seed.py "
-            "--mini + write_volume_backup); recorded, never silently skipped",
+            "drill needs the pre-built volume-backup artifact (OO_UIWALK_IMPORT_PASS=... "
+            "scripts/ui_clickthrough_seed.py --mini --write-import-artifact DIR, then a fresh "
+            "instance on 8003); recorded, never silently skipped",
         )
         return
     if not _wait_for_server(STATE_D_URL, timeout_s=30):
@@ -1939,12 +1988,26 @@ def investigate_state_d_import(playwright, report: Report, shots: Path) -> None:
             return
         # -- content-level assertions: the 2026-07-20 post-import-redesign rulings, live -- #
         text = summary_text
+        # Where two rulings MOVED a marker after this drill was written (walk rerun 2026-11-18):
+        # R68 (2026-09-29) put the "database records, all types" row-sum in the hover of the Articles
+        # caption, so it is read from the summary's title attributes, not its visible text; and the
+        # import lifecycle's stage rows now carry the re-index work ("Re-index the imported articles
+        # -- complete"), so indexing is read from the whole dialog, not the summary box alone.
+        summary_titles = page.evaluate(
+            "() => [...document.querySelectorAll('#ux-imp-summary [title]')]"
+            ".map(e => e.getAttribute('title')).join(' | ')"
+        )
+        dialog_text = page.evaluate(
+            "() => (document.getElementById('ux-import') || {innerText: ''}).innerText || ''"
+        )
         checks = [
             ("articles-first-headline", "grew by" in text and "articles" in text.lower()),
-            ("labeled-all-types-rowsum", "database records, all types" in text),
+            ("labeled-all-types-rowsum", "database records, all types" in summary_titles),
             ("before-after-delta", "BEFORE" in text and "AFTER" in text),
             ("qualification-carried", "Qualified sources" in text or "Judged by" in text),
-            ("work-induced-indexing", "index" in text.lower()),
+            ("work-induced-indexing", "is indexed" in dialog_text.lower()
+             or "awaiting indexing" in dialog_text.lower()
+             or "re-index picks up" in dialog_text.lower()),
             ("additive-statement", "replaced or deleted" in text),
         ]
         for axis, ok in checks:
@@ -2209,14 +2272,21 @@ def investigate_state_c(playwright, report: Report, shots: Path) -> None:
         )
         _walk_surfaces(driver, ins_surfaces, report, axis_label="ins-subtabs")
 
-        # -- Settings subtabs (all 10) ------------------------------------------------------ #
-        _log("drilling all 10 Settings subtabs")
+        # -- Settings subtabs (all 9) ------------------------------------------------------- #
+        # Row 157 (F3): Safety stopped being a subtab when rulings 26/42 folded it into Advanced as
+        # the `<details data-adv="safety">` section (index.html, "SAFETY, folded into Advanced"), so
+        # it is walked THERE, through the driver's advanced_section step, never as a tenth subtab
+        # the strip no longer has (the 2026-11-18 rehearsal waited 30 s for it and timed out).
+        _log("drilling all 9 Settings subtabs, plus Advanced > Safety")
         set_subtabs = ["graphics", "general", "cards", "models", "wikipedia", "offlinemap",
-                       "agenda", "data", "safety", "advanced"]
+                       "agenda", "data", "advanced"]
         set_surfaces = tuple(
             Surface(f"settings_{t}", f"Settings > {t}", nav_tab="settings", subtab=t,
                     dom_id=f"set-{t}")
             for t in set_subtabs
+        ) + (
+            Surface("settings_safety", "Settings > Advanced > Safety", nav_tab="settings",
+                    subtab="advanced", advanced_section="safety", dom_id="set-advanced"),
         )
         _walk_surfaces(driver, set_surfaces, report, axis_label="set-subtabs")
 

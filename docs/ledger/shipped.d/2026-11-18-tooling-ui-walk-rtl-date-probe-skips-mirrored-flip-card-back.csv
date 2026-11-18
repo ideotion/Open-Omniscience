@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,tooling/ui-walk,RTL date probe skips mirrored flip-card backs and ignores wraps (row 161),shipped,PR #2121,src/monitoring/ui_walk_playwright.py;scripts/ui_clickthrough_run.py;tests/test_ui_walk_playwright.py,The Home P1 reordered date was the walk reading the unflipped back face of a briefing card through rotateY(180deg); the probe now skips mirrored nodes and compares characters on one line only. App dates were already isolated by ooIsoDate and the raw-date ratchet; a ten-tab Arabic sweep found none bare.

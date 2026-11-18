@@ -80,9 +80,13 @@
   .cap-txt { position: absolute; inset: 0; text-align: center; font-size: 10px; line-height: 14px; }
   .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
           background: var(--line, #232733); }
-  .pill.ok { background: var(--ok, #1f7a3f); color: #fff; }
-  .pill.warn { background: var(--warn, #8a6d1a); color: #fff; }
-  .pill.err { background: var(--err, #a33); color: #fff; }
+  /* White text on a filled --ok/--warn/--err measured 2.24:1 on the AI pill (axe colour-contrast, row 160).
+     The app's own .pill states (app.css) instead paint the text in the text-safe --ok-text/--warn-fg/--err-text
+     on --panel2, which test_repo_invariants checks against every theme: this page now uses that pairing. */
+  .pill.ok, .pill.warn, .pill.err { background: var(--panel2, #1a1f2a); border: 1px solid var(--border, #2a3040); }
+  .pill.ok { color: var(--ok-text, #4caf7d); }
+  .pill.warn { color: var(--warn-fg, #d9a441); }
+  .pill.err { color: var(--err-text, #d96c6c); }
   .pill.muted { opacity: .6; }
   .job { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap;
          border-bottom: 1px solid var(--line, #1c2029); }
@@ -154,8 +158,8 @@
       <svg id="net-plane" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
            stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></button>
     <button class="icon-btn" id="lang-switch" type="button" title="Change language"
-            aria-label="Change language" aria-haspopup="menu" style="min-width:64px;gap:5px">
-      <span id="lang-flag" aria-hidden="true">🌐</span><span id="lang-code" style="font-size:12px;letter-spacing:.4px"></span>
+            aria-haspopup="menu" style="min-width:64px;gap:5px">
+      <span id="lang-flag" aria-hidden="true">🌐</span><span id="lang-code" style="font-size:12px;letter-spacing:.4px"></span><span class="sr-only" data-i18n>Change language</span>
     </button>
     <a class="icon-btn" id="tm-help" href="/#help" title="Help &amp; documentation" aria-label="Help and documentation">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></a>

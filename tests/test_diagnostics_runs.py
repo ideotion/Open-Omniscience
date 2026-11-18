@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 import anyio
 import pytest
@@ -608,8 +609,10 @@ def test_the_rewrite_is_synced_aside_before_it_replaces_the_file_and_the_folder_
     scope_os(monkeypatch, file_lock, fsync=sync_and_record, replace=lambda a, b: order.append("replace") or real_replace(a, b))
     scope_os(monkeypatch, r, fsync=sync_and_record)  # the appended line is synced by the module itself
     r.begin_run("go.zip", profile="full")
-    # the file synced, the move, the folder synced, then the one appended line synced
-    assert order == ["fsync", "replace", "fsync", "fsync"], order
+    # the file synced, the move, the folder synced, then the one appended line synced; Windows cannot open a folder to sync it,
+    # and file_lock skips that step there (row 144)
+    folder = ["fsync"] if sys.platform != "win32" else []
+    assert order == ["fsync", "replace", *folder, "fsync"], order
 
 
 # --------------------------------------------------------------------------- #

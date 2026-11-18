@@ -116,7 +116,7 @@ def _by_name() -> dict[str, tuple[str, ...]]:
             here = Path(dirpath)
             dirnames[:] = [d for d in dirnames if d not in skip and here / d != worktrees]
             for name in filenames:
-                acc.setdefault(name, []).append(str((here / name).relative_to(ROOT)))
+                acc.setdefault(name, []).append((here / name).relative_to(ROOT).as_posix())
         _NAMES = {k: tuple(v) for k, v in acc.items()}
     return _NAMES
 
@@ -215,7 +215,7 @@ def from_briefs() -> list[Entry]:
             continue
         sid = m.group(1)
         title = first.lstrip("# ").strip()
-        where = f"{f.relative_to(ROOT)}"
+        where = f.relative_to(ROOT).as_posix()
         header = _header_block(text)
 
         scope, forbidden = header, ""
@@ -256,7 +256,7 @@ def from_gates() -> list[Entry]:
     """A gate row is the release's own promise about a surface."""
     out: list[Entry] = []
     for f in sorted(GATES.glob("RELEASE_0.*_GATE.md")):
-        rel = str(f.relative_to(ROOT))
+        rel = f.relative_to(ROOT).as_posix()
         for n, ln in enumerate(f.read_text(encoding="utf-8").split("\n"), 1):
             if not ln.startswith("| ") or ln.startswith("|---"):
                 continue
@@ -276,7 +276,7 @@ def from_gates() -> list[Entry]:
 def from_rulings() -> list[Entry]:
     """The 'where enforced' column, for the rulings that name a path in it."""
     out: list[Entry] = []
-    rel = str(RULINGS.relative_to(ROOT))
+    rel = RULINGS.relative_to(ROOT).as_posix()
     for n, ln in enumerate(RULINGS.read_text(encoding="utf-8").split("\n"), 1):
         if not ln.startswith("| ") or ln.startswith("|---") or ln.startswith("| id "):
             continue
@@ -301,7 +301,7 @@ def from_queue() -> list[Entry]:
     omission. Only the entry's own TITLE line is read for the marker, so a passing mention
     of the word PENDING three paragraphs down does not mark a closed entry as open."""
     out: list[Entry] = []
-    rel = str(QUEUE.relative_to(ROOT))
+    rel = QUEUE.relative_to(ROOT).as_posix()
     lines = QUEUE.read_text(encoding="utf-8").split("\n")
     starts = [i for i, ln in enumerate(lines) if ln.startswith("- **")]
     for k, i in enumerate(starts):

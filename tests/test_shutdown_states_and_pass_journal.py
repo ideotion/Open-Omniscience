@@ -34,6 +34,9 @@ import pytest
 from src.monitoring import forensics
 from src.scheduler import pass_journal
 
+# SIGHUP (a closed terminal) does not exist on Windows, so there is nothing there to route (row 144)
+_HAS_SIGHUP = pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="there is no SIGHUP on Windows")
+
 
 @pytest.fixture()
 def dd(monkeypatch, tmp_path):
@@ -94,6 +97,7 @@ def test_the_signal_that_initiated_the_stop_is_recorded_and_rendered(dd):
     assert "stop initiated by: SIGHUP" in forensics.render_text()
 
 
+@_HAS_SIGHUP
 def test_install_signal_handlers_registers_sighup_on_the_real_module(dd):
     """Drives the REAL function, not a stub that 'mirrors main()'. A stub would pass
     whether or not main.py changed — that is the vacuity trap this slice's own brief
@@ -166,6 +170,7 @@ def test_uvicorn_gets_a_graceful_shutdown_deadline():
     raise AssertionError("no uvicorn.run call found")
 
 
+@_HAS_SIGHUP
 def test_a_real_sighup_reaches_the_graceful_path():
     """End-to-end on a REAL signal in a REAL child process: install the handlers, send
     SIGHUP, and assert the process ends through the SIGTERM path the handler re-raises

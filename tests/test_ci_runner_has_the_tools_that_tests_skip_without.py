@@ -59,6 +59,10 @@ _EXEMPT = {
         "with AppArmor, so that test skips there by design and its probe runs ``unshare ... true`` before relying on it"
     ),
     "flock": "tests/test_launcher_records_race.py asserts flock is ABSENT from a filtered PATH to test the launcher's no-flock path; it is not a skip gate",
+    "ollama": (
+        "tests/test_backend_launch.py puts a fake ollama on a temporary PATH and asks which() for it only to confirm the code under test finds that "
+        "file (ollama.exe on Windows, row 144); no test needs the real tool and none skips without it"
+    ),
 }
 
 

@@ -26,28 +26,25 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 
 import pytest
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
 
+from src.monitoring.pinned_chromium import find_pinned_chromium  # noqa: E402
 from src.monitoring.ui_walk import Surface  # noqa: E402
 from src.monitoring.ui_walk_playwright import PlaywrightUiWalkDriver  # noqa: E402
 
-_CHROMIUM_PATH = os.environ.get("OO_TEST_CHROMIUM_PATH")
-if not _CHROMIUM_PATH:
-    # Fall back to the pinned build this environment ships (see the module docstring: the
-    # extra pins the client library only, never a browser).
-    _browsers_dir = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers"))
-    for _candidate in sorted(_browsers_dir.glob("chromium-*/chrome-linux/chrome")):
-        _CHROMIUM_PATH = str(_candidate)
-        break
+# Row 157 (F1): the shared finder. It returns None only when NO Chromium build is installed (the one case a skip is
+# honest about); a build it cannot read, or an OO_TEST_CHROMIUM_PATH that does not exist, raises at import and the
+# file ERRORS by name. The old glob looked for chrome-linux/chrome only, missed today's chrome-linux64 builds and
+# skipped all 31 tests on a machine that had a browser.
+_CHROMIUM_PATH = find_pinned_chromium()
 
 pytestmark = pytest.mark.skipif(
-    not _CHROMIUM_PATH or not Path(_CHROMIUM_PATH).exists(),
-    reason="no pinned Chromium build reachable -- set OO_TEST_CHROMIUM_PATH or install one under "
+    _CHROMIUM_PATH is None,
+    reason="no Chromium build installed -- set OO_TEST_CHROMIUM_PATH or install one under "
     "PLAYWRIGHT_BROWSERS_PATH (never `playwright install`, which fetches one over the network)",
 )
 
@@ -679,6 +676,47 @@ def test_char_x_positions_discriminates_a_missing_bidi_isolate_in_rtl():
             "cannot discriminate the defect it exists for",
             bare,
         )
+
+
+def test_a_mirrored_flip_card_back_is_never_measured_as_a_reordered_date():
+    # The 2026-11-18 encrypted rehearsal filed a P1 "reordered date" on Home: the date sat on
+    # a briefing flip card's unflipped BACK face (rotateY(180deg)), whose isolated, perfectly
+    # ordered characters report DECREASING x through the mirror. Pinned with the real CSS
+    # shape: the instrument must skip the mirrored node and measure the readable one.
+    stamp = "2026-11-10"
+    html = (
+        "<!doctype html><html><body dir='rtl'>"
+        "<div style='transform-style:preserve-3d'>"
+        f"<div id='back' style='transform:rotateY(180deg)'>شوهد في \u2068{stamp}\u2069</div>"
+        "</div>"
+        f"<div id='front'>شوهد في \u2068{stamp}\u2069</div>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        # The trap itself, so this test fails if the fixture stops reproducing it.
+        raw = d.page.evaluate(
+            """() => { const n = document.getElementById('back').firstChild;
+              const i = n.textContent.indexOf('2026'); const r = document.createRange(); const xs = [];
+              for (let k = 0; k < 10; k++) { r.setStart(n, i + k); r.setEnd(n, i + k + 1);
+                xs.push(r.getClientRects()[0].left); } return xs; }"""
+        )
+        assert all(b < a for a, b in zip(raw, raw[1:], strict=False)), raw
+        assert d.char_positions("#back", stamp) is None
+        hit = d.find_iso_date_specimen()
+        assert hit is not None and hit["run"] == stamp
+        assert d.page.get_attribute("#front", "data-oo-rtl-probe") == "1"
+        pos = d.char_positions(hit["sel"], hit["run"])
+        assert pos is not None and not d.reordered_on_a_line(pos), pos
+
+
+def test_a_wrapped_date_is_not_a_reordered_one():
+    # Two lines: x jumps back at the wrap, which is layout. One line going right-to-left is
+    # the misread-value signature.
+    wrapped = [(10.0, 0), (18.0, 0), (26.0, 0), (5.0, 20), (13.0, 20)]
+    reordered = [(26.0, 0), (18.0, 0), (10.0, 0)]
+    assert not PlaywrightUiWalkDriver.reordered_on_a_line(wrapped)
+    assert PlaywrightUiWalkDriver.reordered_on_a_line(reordered)
 
 
 def test_undefined_classes_reports_the_ghost_and_not_the_styled_ones():

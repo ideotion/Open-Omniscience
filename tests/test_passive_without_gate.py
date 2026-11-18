@@ -270,7 +270,7 @@ def test_only_the_guards_drain_passes_the_flag():
                 if isinstance(call, ast.Call) and any(
                     k.arg == "passive_without_gate" and not (isinstance(k.value, ast.Constant) and k.value.value is False) for k in call.keywords
                 ):
-                    found.append((str(path.relative_to(ROOT)), func.name))
+                    found.append((path.relative_to(ROOT).as_posix(), func.name))
     assert set(found) == {("src/scheduler/storage_guard.py", "_default_drain")}, found
 
 
