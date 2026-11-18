@@ -263,15 +263,22 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/database/fts_norm.py': {
         ('_normalize_sql', 'named = exc.args[0] if exc.args and exc.args[0] in ("jieba", "sudachipy") else "word-segmentation"'): 3,
     },
-    # Rows 148/149: the at-rest status reads only an OSError's class and Windows ``winerror`` code, and a WrongPassphraseError's chained
-    # SQLite error code, to pick one of four fixed reason words or "not this passphrase"; no exception text is stored, served or logged
+    # Rows 148/149/153: the at-rest status reads only an OSError's class and Windows ``winerror`` code, and a SQLite error code (its own
+    # or a WrongPassphraseError's chained one), to pick busy, one of three fixed reason words or "not this passphrase"; no exception
+    # text is stored, served or logged
     'src/database/at_rest_state.py': {
-        ('_reason', 'if getattr(exc, "winerror", None) in (32, 33):  # a sharing or lock violation: another program holds the file'): 1,
-        ('_read_header', 'return "unreadable", _reason(exc)'): 1,
+        ('_is_busy', 'code = getattr(exc, "sqlite_errorcode", None)'): 1,
+        ('_is_busy', 'return getattr(exc, "winerror", None) in _BUSY_WINERROR or (isinstance(code, int) and code & 0xFF in _BUSY_SQLITE)'): 1,
+        ('_read_header', 'return ("busy", None) if _is_busy(exc) else ("unreadable", _reason(exc))'): 2,
         ('_refused_the_key', 'return getattr(exc.__cause__, "sqlite_errorcode", None) in (None, 26)'): 1,
-        ('_probe', 'out = {"state": "not_this_key"} if _refused_the_key(exc) else {"state": "unreadable", "reason": "io"}'): 1,
-        ('_probe', 'out = {"state": "unreadable", "reason": _reason(exc)}'): 1,
-        ('_probe', 'out = {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}'): 1,
+        ('_refusal_of', 'if _is_busy(exc.__cause__):'): 1,
+        ('_refusal_of', 'return {"state": "not_this_key"} if _refused_the_key(exc) else {"state": "unreadable", "reason": "io"}'): 1,
+        ('_probe', 'out = _refusal_of(exc)'): 1,
+        ('_probe', 'out = {"state": "busy"} if _is_busy(exc) else {"state": "unreadable", "reason": _reason(exc)}'): 2,
+        (
+            '_probe',
+            'out = {"state": "busy"} if _is_busy(exc) else {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}',
+        ): 2,
     },
     # Row 148: a pooled connection's ``info`` holds the identity (device, inode) of the file it opened, as library_generation's stamp
     'src/database/file_identity.py': {

@@ -34,6 +34,19 @@ def dd(monkeypatch, tmp_path):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _a_machine_above_the_floor(monkeypatch):
+    """Row 152: ``qualification_safety`` asks the pass's own memory floor (``cohort_plan``) BEFORE the estimate these tests
+    exercise, and the floor reads the live machine. Under a loaded full suite the machine's free memory fell below the floor, the
+    floor answered first ("memory floor (sampled cohort)") and five tests failed that pass alone. The machine is pinned here, well
+    above the floor, so the estimate below it is what is tested; the floor's own answer is pinned by the test that follows."""
+    monkeypatch.setattr(
+        "src.config.machine_floor._mem_reading",
+        lambda: {"total_mb": 65536, "total_from": "given", "available_mb": 60000, "available_from": "given"},
+    )
+    monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
+
+
 @pytest.fixture()
 def series(monkeypatch):
     """Stub the snapshot read-back so these tests never need a corpus — which is also
@@ -151,6 +164,19 @@ def test_unmeasurable_corpus_size_does_NOT_decline(dd, series, monkeypatch):
     s = expedition.qualification_safety(None)  # no 'articles' series recorded
     assert s["safe"] is True
     assert s["basis"] == "unmeasured"
+
+
+def test_a_machine_below_the_floor_is_answered_by_the_floor_first(dd, series, monkeypatch):
+    """The other side of the pin above: the same call on a small machine is the floor's answer, never the estimate's."""
+    series["articles"] = [{"t": "2026-08-01T00:00:00+00:00", "n": 1_000_000}]
+    monkeypatch.setattr(expedition, "_memory", lambda: {"available_mb": 8000})
+    monkeypatch.setattr(
+        "src.config.machine_floor._mem_reading",
+        lambda: {"total_mb": 16000, "total_from": "given", "available_mb": 300, "available_from": "given"},
+    )
+    s = expedition.qualification_safety(None)
+    # 300 MB is below the floor and above the bounded sample's need: the sampled cohort, never the whole-corpus estimate
+    assert s["basis"] == "memory floor (sampled cohort)", s
 
 
 def test_the_decision_always_travels_with_its_basis(dd, series, monkeypatch):

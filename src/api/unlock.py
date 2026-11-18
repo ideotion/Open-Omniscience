@@ -248,6 +248,8 @@ def doctor() -> dict:
             "pending": at_rest["pending"],
             "not_this_key": at_rest["not_this_key"],
             "unchecked": at_rest["unchecked"],
+            "busy": at_rest["busy"],
+            "key_held": at_rest["key_held"],
             "plaintext_snapshots": at_rest["plaintext_snapshots"],
         },
         "corpus": _corpus_line(),
@@ -307,6 +309,28 @@ def _alone_with_the_library() -> Iterator[None]:
 
 #: R742: the retry finishes the stores left plaintext only under the passphrase the library is already open with.
 FINISH_NEEDS_THE_SAME_PASSPHRASE = "type the passphrase the library is already encrypted with to finish the other stores"
+#: Row 153: the retry's answers when nothing is pending, each true at the state it names (fixed words, keyed in every locale; the
+#: Settings panel names the stores, which these words cannot carry and still be translated).
+NOTHING_LEFT = "every store is already encrypted"
+NOTHING_LEFT_BUT_UNCHECKED = (
+    "A store could not be checked right now (in use, being encrypted, or a read error), so it may still be unencrypted. Try again "
+    "in a moment; Settings names it."
+)
+NOTHING_LEFT_BUT_NOT_THIS_KEY = (
+    "Every store this passphrase opens is already encrypted. Some stores do not open with it (another passphrase, or a damaged "
+    "file) and are left as they are; Settings names them."
+)
+
+
+def _nothing_left_words(st: dict) -> str:
+    """The 409 of a retry with nothing pending: a store not checked to its end first (busy, a read error after its header, a swap in
+    progress: a moment later may differ, and a store whose header could not be read may be plaintext), then a store under another
+    passphrase, else every store is encrypted. Never "every store is already encrypted" while one of the first two holds."""
+    if st.get("busy") or (st.get("key_held") and st.get("unchecked")):
+        return NOTHING_LEFT_BUT_UNCHECKED
+    if st.get("not_this_key"):
+        return NOTHING_LEFT_BUT_NOT_THIS_KEY
+    return NOTHING_LEFT
 
 
 @router.post("/encrypt-db")
@@ -326,8 +350,9 @@ def encrypt_db(body: EncryptBody) -> dict:
         # R742: a run whose library was encrypted and whose other stores were not is FINISHED here, never refused with "only a
         # plaintext store": the retry resumes. Only with the passphrase the library is open with, so no store is ever encrypted
         # under a second key; the comparison cannot raise and answers for every text.
-        if not at_rest_state.status()["pending"]:
-            raise HTTPException(status_code=409, detail="every store is already encrypted")
+        st = at_rest_state.status()
+        if not st["pending"]:
+            raise HTTPException(status_code=409, detail=_nothing_left_words(st))
         held = get_passphrase()
         if held is None or not same_passphrase(body.passphrase, held):
             raise HTTPException(status_code=403, detail=FINISH_NEEDS_THE_SAME_PASSPHRASE)
