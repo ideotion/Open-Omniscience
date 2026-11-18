@@ -251,6 +251,17 @@ def _row(st: dict, name: str) -> dict:
     return next(r for r in st["stores"] if r["store"] == name)
 
 
+def _plain_table(path: Path) -> None:
+    """A plaintext store with one table, its connection CLOSED before anything swaps it: on Windows a connection still open
+    (one left to garbage collection) refuses the replace (WinError 5), which is the product's held path, not these cases."""
+    c = sqlite3.connect(str(path))
+    try:
+        c.execute("CREATE TABLE x(a)")
+        c.commit()
+    finally:
+        c.close()
+
+
 def _encrypt_file(path: Path, key: str) -> None:
     encrypt_tool.encrypt_database(path, key, library=False)
 
@@ -258,11 +269,11 @@ def _encrypt_file(path: Path, key: str) -> None:
 def _all_encrypted(data: Path, key: str, lane_key: str | None = None) -> None:
     main = data / "open_omniscience.db"
     _encrypt_file(main, key)
-    sqlite3.connect(str(data / "custody_log.db")).execute("CREATE TABLE x(a)").connection.commit()
+    _plain_table(data / "custody_log.db")
     _encrypt_file(data / "custody_log.db", key)
     for spec in all_lanes():
         lp = data / spec.filename
-        sqlite3.connect(str(lp)).execute("CREATE TABLE x(a)").connection.commit()
+        _plain_table(lp)
         _encrypt_file(lp, lane_key if (lane_key and spec.kind == "wiki") else key)
 
 
@@ -324,7 +335,7 @@ def test_an_unreadable_store_says_why_and_is_never_absent(data, monkeypatch):
             raise PermissionError(13, "denied")
         return real_open(path, *a, **kw)
 
-    sqlite3.connect(str(data / "custody_log.db")).execute("CREATE TABLE x(a)").connection.commit()
+    _plain_table(data / "custody_log.db")
     monkeypatch.setattr(at_rest_state, "open", refusing, raising=False)
     st = at_rest_state.status()
     # Row 153: a file another program holds is in use right now, not unreadable and not pending.
