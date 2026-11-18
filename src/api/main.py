@@ -275,6 +275,20 @@ def _run_startup_upkeep() -> None:
     from src.api.startup_status import mark_phase
 
     _arm_database_check()
+    # R742: stores left plaintext beside an encrypted library (an encryption whose later steps failed, before or after this fix)
+    # are finished here, under the key just proven, in the background like the rest of the upkeep. A store that fails stays pending,
+    # is logged by class, and the app stays usable; Settings and the doctor say which.
+    try:
+        from src.database.connect import get_passphrase
+
+        _key = get_passphrase()
+        if _key:
+            from src.database import at_rest_state
+
+            mark_phase("finishing the encryption of the other stores")
+            at_rest_state.finish_pending(_key)
+    except Exception as exc:  # noqa: BLE001 - upkeep must never block startup
+        log_failure(logger, "finishing the at-rest encryption of the other stores failed", exc, level=logging.WARNING)
     mark_phase("refreshing search statistics")
     # Query-planner statistics (performance batch 2026-06-12): bounded ANALYZE
     # on first boot at a schema, PRAGMA optimize after — best-effort, never

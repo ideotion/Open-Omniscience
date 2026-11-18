@@ -180,13 +180,13 @@ def test_the_encrypt_in_place_route_converts_what_the_encrypt_raises_and_scrubs_
     monkeypatch.setattr(connect_mod, "set_passphrase", lambda p: None)
     body = unlock_mod.EncryptBody(passphrase=TYPED, confirm=TYPED, consent=True)
 
-    def engine(passphrase):
+    def engine(passphrase, **_kw):
         raise RuntimeError(_engine_error(passphrase))
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", engine)
     _converted(lambda: unlock_mod.encrypt_db(body), caplog, TYPED, logger="api.unlock")
 
-    def refusal(passphrase):
+    def refusal(passphrase, **_kw):
         raise encrypt_tool.EncryptToolError(f"cannot encrypt with {passphrase}")
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", refusal)

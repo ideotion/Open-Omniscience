@@ -3898,12 +3898,32 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
                         : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
+      const tfw = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const ar = d.at_rest || { complete: false, pending: [], plaintext_snapshots: [] };
+      const pending = Array.isArray(ar.pending) ? ar.pending : [];
+      const snaps = Array.isArray(ar.plaintext_snapshots) ? ar.plaintext_snapshots : [];
+      // R742: the whole set first, and never "every store is encrypted" while one is not; a plaintext pre-encrypt copy still on
+      // the disk is said beside it, so "encrypted" is never read as "no plaintext anywhere".
+      let overall = "";
+      if (d.corpus.state === "encrypted" && pending.length) {
+        overall = `<div class="caveat"><b>${esc(tfw("Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.", { n: fmtNum(pending.length, 0) }))}</b></div>`;
+      } else if (ar.complete) {
+        overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
+      }
+      if (snaps.length) {
+        overall += `<div class="caveat">${esc(tfw("Plaintext pre-encrypt copies still on the disk: {names}. Delete them once you have unlocked and are satisfied.", { names: snaps.join(", ") }))}</div>`;
+      }
+      const lanes = d.lanes && typeof d.lanes === "object" ? Object.keys(d.lanes).sort() : [];
       // Each line on the locale's label frame (R2), not an English colon.
-      box.innerHTML =
+      box.innerHTML = overall +
         `<div>${ooLabelHtml(esc(t("Corpus")), `<b>${esc(word(d.corpus))}</b>`)}` +
         (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
-        `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>`;
-      $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
+        `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>` +
+        lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: k })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
+      // The panel stays for a plaintext library, and (R742) for an encrypted one whose other stores are not finished.
+      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)) ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3922,9 +3942,13 @@
         const r = await api("/api/system/encrypt-db", { method: "POST", body: JSON.stringify({
           passphrase: field("atrest-pw1").value, confirm: field("atrest-pw2").value, consent: true })});
         msg.textContent = "";
-        toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
+        // "Encrypted" only when every store is (R742); the panel below says which are not.
+        if (r && r.encrypted) toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
         loadAtRestState();
-      } catch (e) { msg.textContent = t(e.message); }  // a keyed refusal (the library still in use, R741) is translated
+      } catch (e) {
+        msg.textContent = t(e.message);  // a keyed refusal (the library still in use R741, a partial run R742) is translated
+        loadAtRestState();  // a partial run changed the state: the library is encrypted and open with its key
+      }
       finally { btn.disabled = false; }
     }
 
