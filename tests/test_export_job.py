@@ -1087,7 +1087,10 @@ def test_an_export_start_is_refused_while_a_large_data_import_holds_the_marker(m
     def blocking_restore(*_a, **_k):
         inside.set()
         leave.wait(30)
-        return {"restored": 0, "skipped": 0}
+        # The real restore_folder_backup always returns "stopped" (its one return). This stub
+        # left it out, so the restore thread died on KeyError 'stopped' after the export was
+        # refused, and the warning rode every run's summary (row 168).
+        return {"restored": 0, "skipped": 0, "stopped": False}
 
     monkeypatch.setattr(fb, "restore_folder_backup", blocking_restore)
     t = threading.Thread(target=fold._run_restore, args=(_restorable(tmp_path), [], ["models"]), daemon=True)
@@ -1100,6 +1103,8 @@ def test_an_export_start_is_refused_while_a_large_data_import_holds_the_marker(m
     finally:
         leave.set()
         t.join(10)
+    # The worker ran to its end rather than dying in its thread (row 168).
+    assert not t.is_alive() and fold._state == "done"
 
 
 # =========================================================================== #
