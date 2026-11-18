@@ -14,6 +14,7 @@ the Wikipedia dumps) is a follow-up slice.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -41,6 +42,28 @@ def osm_regions() -> dict:
             f"{OSM_SIZES_AS_OF}); the exact size is read from the mirror on download."
         ),
     }
+
+
+# --- Which optional border files this install holds (row 158) -------------- #
+# The OSM-derived border files are OPERATOR-BUILT (scripts/build_admin_boundaries.py), so most
+# installs hold none of them. The map used to find out by asking for each one, and every absent
+# file was a 404 the browser logged as an error: four per map open, for an install working as
+# designed. The map now asks here first and requests only the files that exist. A fixed list of
+# names, never a path from the caller; only whether each one is a file is read.
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+BORDER_FILES = (
+    "osm_borders/admin0.world.json",
+    "osm_admin0.json",
+    "osm_borders/admin1.world.json",
+    "osm_admin1.json",
+)
+
+
+@router.get("/border-files")
+def border_files() -> dict:
+    """The optional border files present in this install: "not installed" is an answer here, so
+    the map never has to learn it from a 404. Local, read-only, no network."""
+    return {"installed": [name for name in BORDER_FILES if (_STATIC_DIR / name).is_file()]}
 
 
 # --- The offline-map download manager (Group M) ---------------------------- #
