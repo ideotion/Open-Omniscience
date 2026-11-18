@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import errno
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -187,6 +188,8 @@ def test_a_replace_that_fails_after_the_log_names_went_does_not_revive_the_earli
             return real_unlink(path, *a, **kw)
 
         scope_os(monkeypatch, encrypt_tool, unlink=unlink)
+        # (The R742 second name made before the replace may stay in tmp_path here: Windows can refuse to drop it while SQLite holds the
+        # file, and ``_drop_name`` only logs that. Harmless to this test.)
     # A refusal that is NOT a held file (EIO, no ``winerror``), so the generic path raises the OS error on every OS.
     scope_os(monkeypatch, encrypt_tool, replace=lambda a, b: (_ for _ in ()).throw(OSError(errno.EIO, "input/output error")))
     with pytest.raises(OSError) as raised:
@@ -230,4 +233,9 @@ def test_a_log_held_by_an_earlier_connection_is_the_held_refusal_on_every_os(tmp
     conn.close()
     eng.dispose()
     assert not is_encrypted_file(p)
+    plain = sqlite3.connect(p)
+    try:
+        assert [r[0] for r in plain.execute("SELECT x FROM notes ORDER BY rowid")] == ["before"], "the original keeps its rows"
+    finally:
+        plain.close()
     assert not list(tmp_path.glob("*.enc-*")), "the encrypted copy is not left behind"
