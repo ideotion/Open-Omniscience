@@ -64,10 +64,10 @@ const d = {
       {agency: "worldbank", series_id: "SP.POP.TOTL", ref_area: "FRA", periods: 64, first: "1960", last: "2023", fetched: "2026-11-02T00:00:00Z"}]},
     {key: "climate", joined: true, country, count: 0, series: [], licences: {}},
     {key: "agenda", joined: true, country, count: 1, events: [
-      {title: "France — Projet de loi de finances (annual budget bill)", calendar: "economic", confirmed: false, next_occurrence: null}]},
+      {title: "France — Projet de loi de finances (annual budget bill)", calendar: "economic", confirmed: false, next_occurrence: null, until_year: 2031}]},
     {key: "elections", joined: true, country, count: 1, events: [
       {title: "France — Presidential election 2027", calendar: "elections", confirmed: false, until_year: 2027,
-       date_confidence: "window", date_caveat: WINDOW}]},
+       month: 4, date_confidence: "window", date_caveat: WINDOW}]},
   ],
   not_joined: [{key: "markets", joined: false, reason: "Market series are keyed by ticker symbol, not by a Wikidata item."}],
   availability: {joined: 6, with_rows: 4, rails_with_rows: ["places", "stats", "agenda", "elections"], rails_without_rows: ["news", "climate"]},
@@ -89,6 +89,10 @@ assert.ok(v.includes("No climate series stored for this country on this machine.
 // The election's caveat is visible text, in the caveat class, not only a hover.
 assert.ok(v.includes(WINDOW), v);
 assert.ok(/class="card-caveat small">[^<]*legal window/.test(html), html);
+// An election's year and month are its date; another event's until_year (the year it stops)
+// is never shown as its date.
+assert.ok(v.includes("Presidential election 2027 2027-04"), v);
+assert.ok(!v.includes("2031"), v);
 // A confirmed:false event without its own caveat still reads as not confirmed.
 assert.ok(v.includes("annual budget bill) not confirmed"), v);
 // The country part of the method is shown when the item is a country.
@@ -102,5 +106,7 @@ assert.ok(vc.includes("Statistics Joined only for a country"), vc);
 assert.ok(vc.includes("Elections Joined only for a country"), vc);
 assert.ok(!vc.includes("server words"), "a known code shows the keyed words");
 assert.ok(!vc.includes("This item is a country"), vc);
+const vu = visible(R.dossierHtml({...city, not_joined: [{key: "stats", joined: false, code: "country-unconfirmed", reason: "server words"}]}, t, tf));
+assert.ok(vu.includes("none of its names names the country its code says"), vu);
 
 console.log("all checks passed");

@@ -67,6 +67,9 @@ COUNTRY_RAILS = ("stats", "climate", "agenda", "elections")
 COUNTRY_ABSENCE = {
     "not-a-country": (
         "Joined only for a country: no Place on this machine of kind country carries this item."),
+    "country-unconfirmed": (
+        "A Place of kind country carries this item, but none of its names names the country its "
+        "code says, so no country is picked."),
     "several-countries": (
         "The Places of kind country carrying this item name more than one country, so none is "
         "picked."),
@@ -132,6 +135,15 @@ def _item_block(session, qid: str, lang: str) -> dict:
         "description_lang": desc_lang,
         "as_of": p.get("as_of"),
     }
+
+
+def _item_labels(session, qid: str) -> list[str]:
+    """The item's cached Wikidata labels, every language (empty when not fetched yet)."""
+    from src.entities.items import cached_item, item_payload
+
+    p = item_payload(cached_item(session, qid))
+    labels = (p or {}).get("labels") or {}
+    return [v for v in labels.values() if isinstance(v, str) and v]
 
 
 def item_terms(qid: str) -> dict[str, set[str]]:
@@ -295,32 +307,65 @@ def _map_objects(qid: str) -> dict:
     }
 
 
-def item_country(places) -> tuple[dict | None, str | None]:
+def _name_codes(place, extra_names=()) -> set[str]:
+    """The countries the Place's OWN names name (its OSM name, its ``name:xx`` tags, any extra)."""
+    import json
+
+    from src.catalog.countries import normalize_country
+
+    names = [place.name, *extra_names]
+    try:
+        tagged = json.loads(place.names_json) if place.names_json else {}
+    except ValueError:
+        tagged = {}
+    if isinstance(tagged, dict):
+        names += [v for v in tagged.values() if isinstance(v, str)]
+    out = set()
+    for n in names:
+        code = normalize_country(n, accept_alpha3=False) if n else None
+        if code:
+            out.add(code)
+    return out
+
+
+def item_country(places, labels=()) -> tuple[dict | None, str | None]:
     """``({"iso2", "iso3"}, None)`` when the item is ONE country, else ``(None, absence code)``.
 
-    The item is a country when a Place of OSM kind ``country`` carries it. Several such Places
-    naming different countries pick none (``several-countries``): a guess here would hang one
-    country's figures on another."""
+    The item is a country when a Place of OSM kind ``country`` carries it AND one of that
+    Place's own names (or the item's Wikidata ``labels``) names the same country as the Place's
+    code. The code alone is not enough: the gazetteer writes the code of the REGION it was built
+    from, so a neighbour's country point inside a downloaded region (Monaco in a France build)
+    carries the region's code; its names say Monaco, and the two disagreeing join nothing
+    (``country-unconfirmed``). Several Places naming different countries pick none
+    (``several-countries``): a guess here would hang one country's figures on another."""
     from src.catalog.countries import to_iso2, to_iso3
 
+    kinds = [p for p in places if (p.kind or "").strip().lower() == "country"]
+    if not kinds:
+        return None, "not-a-country"
     codes = set()
-    for p in places:
-        if (p.kind or "").strip().lower() != "country":
-            continue
+    for p in kinds:
         iso2 = to_iso2(p.country) or to_iso2(p.country_alpha3)
-        if iso2:
+        if iso2 and iso2 in _name_codes(p, labels):
             codes.add(iso2)
     if not codes:
-        return None, "not-a-country"
+        return None, "country-unconfirmed"
     if len(codes) > 1:
         return None, "several-countries"
     iso2 = codes.pop()
     return {"iso2": iso2, "iso3": to_iso3(iso2)}, None
 
 
+#: Eurostat publishes two countries under codes that are not their ISO alpha-2.
+_EUROSTAT_CODES = {"gr": "EL", "gb": "UK"}
+
+
 def _area_forms(country: dict) -> list[str]:
     """The ``ref_area`` spellings a statistics row can carry for this country (as published)."""
-    return sorted({c.upper() for c in (country.get("iso3"), country.get("iso2")) if c})
+    forms = {c.upper() for c in (country.get("iso3"), country.get("iso2")) if c}
+    if country.get("iso2") in _EUROSTAT_CODES:
+        forms.add(_EUROSTAT_CODES[country["iso2"]])
+    return sorted(forms)
 
 
 def _series_rail(session, country: dict, *, climate: bool) -> dict:
@@ -331,14 +376,20 @@ def _series_rail(session, country: dict, *, climate: bool) -> dict:
     rows by producer: the Climate tab's datasets on one rail, every other producer on the other.
     """
     from src.database.models import StatFigure as F
+    from src.stats import owid_climate
     from src.stats.climate import DATASETS
 
-    climate_agencies = sorted({d.agency for d in DATASETS.values()})
-    agency_clause = F.agency.in_(climate_agencies) if climate else F.agency.not_in(climate_agencies)
-    where = (F.ref_area.in_(_area_forms(country)), agency_clause)
+    # The Climate tab's rows: its datasets' agencies, and for OWID only the climate dataset's
+    # series (``co2.…``, ``energy.…``): the stats fetch stores any other OWID chart under the
+    # same agency, and a life-expectancy chart is not a climate series.
+
+    agencies = sorted({d.agency for d in DATASETS.values()} - {owid_climate.AGENCY})
+    owid_climate_series = or_(*[F.series_id.like(f"{k}.%") for k in sorted(owid_climate.CATALOG)])
+    is_climate = or_(F.agency.in_(agencies), and_(F.agency == owid_climate.AGENCY, owid_climate_series))
+    where = (F.ref_area.in_(_area_forms(country)), is_climate if climate else ~is_climate)
     total = int(session.execute(
         select(func.count()).select_from(
-            select(F.agency, F.series_id).where(*where).distinct().subquery())
+            select(F.agency, F.series_id, F.ref_area).where(*where).distinct().subquery())
     ).scalar() or 0)
     rows = session.execute(
         select(F.agency, F.series_id, F.ref_area, func.count(func.distinct(F.time_period)),
@@ -380,9 +431,9 @@ def _agenda_rail(country: dict, *, elections: bool) -> dict:
     }
 
 
-def _country_rails(session, places) -> tuple[list[dict], list[dict], dict | None]:
+def _country_rails(session, places, labels=()) -> tuple[list[dict], list[dict], dict | None]:
     """The country rails (joined) or their absence (not joined), and the country they used."""
-    country, absence = item_country(places)
+    country, absence = item_country(places, labels)
     if country is None:
         absence = absence or "not-a-country"
         reason = COUNTRY_ABSENCE[absence]
@@ -465,7 +516,7 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
                      "articles": mention_count(session, p)} for p in places[:_LIST_LIMIT]]},
         {"key": "map", "joined": True, "lane": map_lane},
     ]
-    country_rails, country_absent, country = _country_rails(session, places)
+    country_rails, country_absent, country = _country_rails(session, places, _item_labels(session, qid))
     rails += country_rails
     not_joined = country_absent + [{"key": k, "joined": False, "reason": r} for k, r in NOT_JOINED]
     with_rows = [r["key"] for r in rails if rail_has_rows(r)]

@@ -67,10 +67,10 @@ def country(db):
     _fig(db, "worldbank", "SP.POP.TOTL", "FRA", "2020", 67.4e6, vintage="2026-11-02T00:00:00Z")
     _fig(db, "worldbank", "SP.POP.TOTL", "FRA", "2021", None)  # a published gap is still a period
     _fig(db, "eurostat", "une_rt_m", "FR", "2025-09", 7.6)
-    _fig(db, "owid", "co2", "FRA", "2022", 299.1)
+    _fig(db, "owid", "co2.co2", "FRA", "2022", 299.1)
     # Another country's rows, and an aggregate's, never join.
     _fig(db, "worldbank", "SP.POP.TOTL", "DEU", "2020", 83.2e6)
-    _fig(db, "owid", "co2", "WLD", "2022", 37000.0)
+    _fig(db, "owid", "co2.co2", "WLD", "2022", 37000.0)
     db.commit()
 
 
@@ -92,7 +92,7 @@ def test_a_country_item_joins_the_four_country_rails_with_its_own_rows_only(db, 
     ]
     assert stats["series"][1]["fetched"] == "2026-11-02T00:00:00Z"
     climate = _rail(d, "climate")
-    assert [(s["agency"], s["series_id"]) for s in climate["series"]] == [("owid", "co2")]
+    assert [(s["agency"], s["series_id"]) for s in climate["series"]] == [("owid", "co2.co2")]
     assert "CC BY 4.0" in climate["licences"]["owid"]
 
 
@@ -133,8 +133,8 @@ def test_a_city_item_joins_no_country_rail_and_says_why(db, lanes):
 
 
 def test_two_country_places_naming_different_countries_pick_none(db, lanes):
-    db.add(Place(id="relation/1", qid=LAND, kind="country", name="A", country="fr", country_alpha3="FRA"))
-    db.add(Place(id="relation/2", qid=LAND, kind="country", name="B", country="de", country_alpha3="DEU"))
+    db.add(Place(id="relation/1", qid=LAND, kind="country", name="France", country="fr", country_alpha3="FRA"))
+    db.add(Place(id="relation/2", qid=LAND, kind="country", name="Germany", country="de", country_alpha3="DEU"))
     db.commit()
     d = DO.qid_dossier(db, LAND, "en")
     assert {r["code"] for r in d["not_joined"] if r["key"] in DO.COUNTRY_RAILS} == {"several-countries"}
@@ -145,6 +145,54 @@ def test_a_country_code_the_registry_does_not_know_joins_nothing(db, lanes):
     db.commit()
     d = DO.qid_dossier(db, LAND, "en")
     assert d["country"] is None
+    assert {r["code"] for r in d["not_joined"] if r["key"] in DO.COUNTRY_RAILS} == {"country-unconfirmed"}
+
+
+def test_a_neighbours_country_point_inside_a_region_build_never_takes_the_regions_rows(db, lanes):
+    # The gazetteer writes the code of the REGION it was built from: Monaco's country point in
+    # a France build carries "fr". Its names say Monaco, so France's rows must not join.
+    db.add(Place(id="node/1790048269", qid=LAND, kind="country", name="Monaco",
+                 names_json='{"fr": "Monaco", "en": "Monaco"}', country="fr", country_alpha3="FRA"))
+    _fig(db, "worldbank", "SP.POP.TOTL", "FRA", "2020", 1.0)
+    db.commit()
+    d = DO.qid_dossier(db, LAND, "en")
+    assert d["country"] is None
+    assert {r["code"] for r in d["not_joined"] if r["key"] in DO.COUNTRY_RAILS} == {"country-unconfirmed"}
+
+
+def test_a_local_name_the_registry_does_not_know_is_confirmed_by_a_tagged_name(db, lanes):
+    db.add(Place(id="relation/51477", qid=LAND, kind="country", name="Deutschland",
+                 names_json='{"en": "Germany"}', country="de", country_alpha3="DEU"))
+    db.commit()
+    assert DO.qid_dossier(db, LAND, "en")["country"] == {"iso2": "de", "iso3": "DEU"}
+
+
+def test_eurostats_own_codes_for_greece_and_the_uk_are_found(db, lanes):
+    db.add(Place(id="relation/192307", qid=LAND, kind="country", name="Ελλάς",
+                 names_json='{"en": "Greece"}', country="gr", country_alpha3="GRC"))
+    _fig(db, "eurostat", "une_rt_m", "EL", "2025-09", 9.0)
+    db.commit()
+    stats = _rail(DO.qid_dossier(db, LAND, "en"), "stats")
+    assert [(s["agency"], s["ref_area"]) for s in stats["series"]] == [("eurostat", "EL")]
+
+
+def test_an_owid_chart_that_is_not_the_climate_dataset_stays_on_the_statistics_rail(db, lanes):
+    db.add(Place(id="relation/2202162", qid=LAND, kind="country", name="France", country="fr", country_alpha3="FRA"))
+    _fig(db, "owid", "life-expectancy", "FRA", "2020", 82.0)
+    _fig(db, "owid", "co2.co2_per_capita", "FRA", "2022", 4.6)
+    db.commit()
+    d = DO.qid_dossier(db, LAND, "en")
+    assert [s["series_id"] for s in _rail(d, "stats")["series"]] == ["life-expectancy"]
+    assert [s["series_id"] for s in _rail(d, "climate")["series"]] == ["co2.co2_per_capita"]
+
+
+def test_the_count_matches_the_list_when_one_series_is_stored_under_two_spellings(db, lanes):
+    db.add(Place(id="relation/2202162", qid=LAND, kind="country", name="France", country="fr", country_alpha3="FRA"))
+    _fig(db, "worldbank", "X", "FRA", "2020", 1.0)
+    _fig(db, "worldbank", "X", "FR", "2020", 1.0)
+    db.commit()
+    stats = _rail(DO.qid_dossier(db, LAND, "en"), "stats")
+    assert stats["count"] == len(stats["series"]) == 2
 
 
 def test_the_availability_counter_names_the_rails_with_and_without_rows(db, country, lanes):

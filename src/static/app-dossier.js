@@ -62,6 +62,7 @@
       // A country rail's absence is keyed by its code: the same rail is absent for two reasons.
       const C = {
         "not-a-country": () => t("Joined only for a country: no Place on this machine of kind country carries this item."),
+        "country-unconfirmed": () => t("A Place of kind country carries this item, but none of its names names the country its code says, so no country is picked."),
         "several-countries": () => t("The Places of kind country carrying this item name more than one country, so none is picked."),
       };
       if (r.code && C[r.code]) return C[r.code]();
@@ -178,9 +179,12 @@
             : t("The agenda lists no election for this country."))}</span>`;
         } else {
           what = `<ul class="dossier-list">` + es.map((e) => {
+            // An election's year (and month, where the catalogue states one) is its date; for any
+            // other event until_year is the year it STOPS, never shown as its date.
+            const pad = (m) => (m ? "-" + String(m).padStart(2, "0") : "");
             const when = e.next_occurrence
-              || (e.projection && e.projection.year ? String(e.projection.year) : "")
-              || (e.until_year ? String(e.until_year) : "");
+              || (e.projection && e.projection.year ? String(e.projection.year) + pad(e.projection.month) : "")
+              || (e.calendar === "elections" && e.until_year ? String(e.until_year) + pad(e.month) : "");
             // The date's caveat is VISIBLE beside it (the informed-consent rule), never a hover only.
             return `<li><span dir="auto">${esc(e.title || "")}</span>`
               + (when ? ` <span class="muted small" dir="ltr">${esc(when)}</span>` : "")

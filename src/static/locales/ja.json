@@ -82,6 +82,7 @@
   "; sentences naming something absent from the sources were removed": "。出典にない事物に言及した文は削除されました",
   "A GHCN station id is 11 characters: two letters, then nine letters or digits (for example USW00094728).": "GHCN の観測所 ID は 11 文字です：英字 2 文字の後に英数字 9 文字（例：USW00094728）。",
   "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "正確なクエリ、アプリのバージョン、記事ごとの出所を記録する Markdown 文書 — 判断とピアレビューのためのものです。選択のみを記録し、何も結論しません。",
+  "A Place of kind country carries this item, but none of its names names the country its code says, so no country is picked.": "種類「国」の場所がこの項目を持っていますが、その名前のどれもコードが示す国を指していないため、国は選ばれません。",
   "A background job is writing to your corpus ({jobs}). Nothing was imported and nothing in your corpus changed: what it writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again.": "バックグラウンドのジョブがコーパスに書き込んでいます（{jobs}）。何もインポートされておらず、コーパスは変更されていません。インポート中に書き込まれた内容は、コーパスが置き換えられる時点で失われます。ジョブの完了を待つか、停止できる場合は停止してから、もう一度インポートしてください。",
   "A backup export is already running.": "バックアップのエクスポートはすでに実行中です。",
   "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "バックアップのエクスポートが実行中です（{job}）。何もインポートされておらず、コーパスは何も変わっていません。インポートすると、エクスポートが読み込んでいるコーパスが入れ替わってしまいます。エクスポートの完了を待つか一時停止してから、もう一度インポートしてください。",
