@@ -45,6 +45,7 @@ of stability (``scripts/kpi_diff.py`` classifies that pair ``same-measurement``,
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from datetime import UTC, datetime
@@ -836,11 +837,95 @@ def _elections_block() -> dict:
     return block
 
 
+# --------------------------------------------------------------------------- K13, the law lane (row 184, R751(a))
+# The law coverage report is computed on demand over every tracked document, so it is never run on the GET: the route that
+# makes it (the /law-coverage diagnostic, which the all-diagnostics bundle also calls) writes down its counts here.
+_LAW_FILE, _LAW_SCHEMA = "lane-law-coverage.json", "oo-lane-law-coverage-1"
+
+
+def record_law_coverage(report: dict) -> dict | None:
+    """Write down what a law coverage report counted (K13's law block). Called by the route that makes it, never by the
+    KPI GET. Counts only: no jurisdiction, country or document is named, and nothing is divided."""
+    if not isinstance(report, dict) or "documents" not in report:
+        return None
+    raw_rows = report.get("jurisdictions")
+    rows = [j for j in raw_rows if isinstance(j, dict)] if isinstance(raw_rows, list) else []
+    def _hours(v) -> float | None:  # a finite, real number of hours; a check stamped in the future (clock skew) is age 0
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            return None
+        return max(float(v), 0.0)
+
+    olds = [h for j in rows if (h := _hours(j.get("oldest_check_age_hours"))) is not None]
+    news = [h for j in rows if (h := _hours(j.get("newest_check_age_hours"))) is not None]
+    raw_floor = report.get("floor")
+    floor: dict = raw_floor if isinstance(raw_floor, dict) else {}
+    by_state = floor.get("by_state") if isinstance(floor.get("by_state"), dict) else None
+    floor_state = floor.get("state") if isinstance(floor.get("state"), str) else None
+    counts: dict | None = None
+    if by_state is not None:
+        counts = {str(k): len(v) for k, v in by_state.items() if isinstance(v, list)}
+        if floor_state == "unchecked":
+            # The catalogue could not be read, so the states that need it were never looked up: unknown, never 0.
+            # Only what the database says (tracked) and the unchecked bucket itself are counts.
+            counts = {k: (v if k in ("tracked", "unchecked") else None) for k, v in counts.items()}
+    raw_catalog = report.get("catalog")
+    catalog: dict = raw_catalog if isinstance(raw_catalog, dict) else {}
+    return _write_record(_LAW_FILE, _LAW_SCHEMA, {
+        "documents": _int_or_none(report.get("documents")),
+        "baselined": _int_or_none(report.get("baselined")),
+        "jurisdictions": len(rows),
+        "never_checked": sum(j["never_checked"] for j in rows if _int_or_none(j.get("never_checked")) is not None),
+        # Hours since a document was last checked, across jurisdictions: the most-neglected and the most-recent, each apart.
+        "oldest_check_age_hours": max(olds) if olds else None,
+        "newest_check_age_hours": min(news) if news else None,
+        "catalog_readable": catalog.get("readable") if isinstance(catalog.get("readable"), bool) else None,
+        "floor_state": floor_state,
+        "floor_by_state": counts,
+    })
+
+
+def read_law_coverage() -> dict | None:
+    return _read_record(_LAW_FILE, _LAW_SCHEMA)
+
+
+def _law_block() -> dict:
+    rec = read_law_coverage()
+    if rec is None:
+        return {"vertical": "law", "kind": "lane", "state": "not-measured", "first_slice": False,
+                "reason": "no law coverage report has run on this machine (run the law coverage diagnostic, or take an "
+                          "all-diagnostics bundle)"}
+    docs = rec.get("documents")
+    floor = rec.get("floor_by_state")
+    floor_n = sum(v for v in floor.values() if isinstance(v, int)) if isinstance(floor, dict) else None
+    tracked = floor.get("tracked") if isinstance(floor, dict) else None
+    unchecked = rec.get("floor_state") == "unchecked"
+    block = {
+        "vertical": "law", "kind": "lane", "state": "recorded",
+        "first_slice": isinstance(docs, int) and docs > 0, "as_of": rec.get("measured_at"),
+        "documents": docs, "baselined": rec.get("baselined"), "jurisdictions": rec.get("jurisdictions"),
+        "never_checked": rec.get("never_checked"),
+        "oldest_check_age_hours": rec.get("oldest_check_age_hours"),
+        "newest_check_age_hours": rec.get("newest_check_age_hours"),
+        "catalog_readable": rec.get("catalog_readable"), "floor_state": rec.get("floor_state"),
+        "floor_by_state": floor,
+        "method": (f"the last law coverage report's own counts: {docs} tracked documents in {rec.get('jurisdictions')} "
+                   f"jurisdictions; of the {floor_n if floor_n is not None else 'unknown number of'} countries on the "
+                   f"language floor, {tracked if tracked is not None else 'an unknown number'} are tracked, "
+                   + ("and the other states are unknown: the law catalogue could not be read, so they were never looked "
+                      "up. " if unchecked else "each other state counted apart. ")
+                   + "A tracked-document count is an entry point, never a coverage claim, and nothing "
+                   "is divided. The check ages are the report's own, from when it ran."),
+    }
+    if not block["first_slice"]:
+        block["reason"] = "the last law coverage report counted no tracked document"
+    return block
+
+
 def _k13_verticals(spec: dict) -> dict:
-    """K13: one block per vertical, read from what each recorded. The value is a COUNT (verticals whose first slice is in),
-    with n = the verticals listed; never a share, never a blend of their figures."""
+    """K13: one block per vertical and per lane (R751(a)), read from what each recorded. The value is a COUNT (blocks whose
+    first slice is in), with n = the blocks listed; never a share, never a blend of their figures."""
     blocks = []
-    for name, build in (("climate", _climate_block), ("elections", _elections_block)):
+    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block)):
         try:
             blocks.append(build())
         except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others
@@ -857,8 +942,8 @@ def _k13_verticals(spec: dict) -> dict:
     dated = [(max(age, 0.0), b.get("as_of")) for b in recorded if (age := _age_days(b.get("as_of"))) is not None]
     as_of = min(dated, key=lambda pair: pair[0])[1] if dated else None
     entry = _entry(spec, value=len(ingested), n=len(blocks), as_of=as_of, verdict=_NO_BAR, method=(
-        f"{len(ingested)} of the {len(blocks)} verticals listed have a first slice in "
-        f"({', '.join(ingested) if ingested else 'none'}); each vertical's block below carries its own figures, date and "
+        f"{len(ingested)} of the {len(blocks)} verticals and lanes listed have a first slice in "
+        f"({', '.join(ingested) if ingested else 'none'}); each block below carries its own figures, date and "
         "method, read from what it recorded where it measured. A count, not a score: the blocks are never blended. A "
         "persisted measurement, never fetched or re-run here. The bar is open (Q1017 = a, S08-02 S2), so no verdict is given."
     ))

@@ -64,7 +64,8 @@ def test_nothing_recorded_is_not_measured_with_no_value_and_no_date(isolated):
     m = _k13()
     assert m["verdict"] == "not-measurable-here"
     assert m["value"] is None and m["as_of"] is None
-    assert {b["vertical"]: b["state"] for b in m["verticals"]} == {"climate": "not-measured", "elections": "not-measured"}
+    assert {b["vertical"]: b["state"] for b in m["verticals"]} == {"climate": "not-measured", "elections": "not-measured",
+                                                                 "law": "not-measured"}
     assert all(b["reason"] for b in m["verticals"])
     assert K.run_kpi_selftest()["passed"]
 
@@ -75,7 +76,7 @@ def test_a_recorded_fetch_is_counted_with_its_own_date_and_an_open_bar(isolated)
     m = _k13()
     assert m["verdict"] == "measured-no-bar"
     assert "pending-ruling" in m["target"]
-    assert (m["value"], m["n"]) == (1, 2)
+    assert (m["value"], m["n"]) == (1, 3)
     assert m["as_of"] == rec["measured_at"]
     row = _block(m, "climate")["datasets"][0]
     assert (row["dataset"], row["figures"], row["outcome"]) == ("oni", 120, "fetched, stored new or revised figures")
@@ -98,7 +99,7 @@ def test_a_source_that_gave_no_figures_is_recorded_but_is_no_first_slice(isolate
     assert block["state"] == "recorded" and block["first_slice"] is False
     assert block["datasets"][0]["outcome"] == "source gave no figures"
     # Measured: the count is 0 of 2, a value, not "not measured".
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 2)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 3)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -148,7 +149,7 @@ def test_an_election_snapshot_with_rows_is_the_elections_first_slice(isolated, m
     block = _block(m, "elections")
     assert block["state"] == "recorded" and block["first_slice"] is True
     assert block["snapshot_rows"] == 42 and block["floor_countries"] > 0
-    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 2, "2026-11-01")
+    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 3, "2026-11-01")
 
 
 def test_an_empty_snapshot_is_recorded_but_is_no_first_slice(isolated, monkeypatch):
@@ -198,7 +199,7 @@ def test_both_verticals_are_counted_apart_never_blended(isolated, monkeypatch):
     _snapshot(monkeypatch, _SNAP)
     K.record_climate_fetch(_fetch())
     m = _k13()
-    assert (m["value"], m["n"]) == (2, 2)
+    assert (m["value"], m["n"]) == (2, 3)
     assert "climate, elections" in m["method"]
 
 
@@ -220,6 +221,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     import socket
 
     K.record_climate_fetch(_fetch())
+    K.record_law_coverage(_law_report())
     _snapshot(monkeypatch, _SNAP)
 
     def refuse(*a, **k):
@@ -229,8 +231,8 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     monkeypatch.setattr(socket, "create_connection", refuse)
     monkeypatch.setattr(socket.socket, "connect", refuse)
     m = _k13()
-    assert (m["verdict"], m["value"]) == ("measured-no-bar", 2)
-    assert all(b["state"] == "recorded" for b in m["verticals"])  # neither block fell into its error path
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 3, 3)
+    assert all(b["state"] == "recorded" for b in m["verticals"])  # every block read its record, none hit its error path
 
 
 def test_the_fetch_job_records_after_its_session_closed(isolated, monkeypatch):
@@ -313,3 +315,107 @@ def test_a_failing_record_never_fails_a_fetch_already_kept(isolated, monkeypatch
             pass
 
     assert api._fetch_worker(Ctx(), dataset="oni", param=None)["figures"] == 120
+
+
+# --------------------------------------------------------------------------- row 184: the law lane (R751(a))
+def _law_report(docs: int = 12, *, floor: dict | None = None, readable: bool = True) -> dict:
+    return {
+        "documents": docs, "baselined": docs - 2,
+        "catalog": {"readable": readable, "error": None if readable else "unreadable"},
+        "jurisdictions": [
+            {"jurisdiction": "fr", "tracked": 8, "never_checked": 1, "oldest_check_age_hours": 70.0,
+             "newest_check_age_hours": 2.5},
+            {"jurisdiction": "uk", "tracked": 4, "never_checked": 0, "oldest_check_age_hours": 300.0,
+             "newest_check_age_hours": 9.0},
+        ],
+        "floor": {"by_state": floor if floor is not None else {"tracked": ["fr", "gb"], "verified-not-yet-tracked": ["de"],
+                                                                 "unverified": ["es", "it"], "no-eligible-source": []}},
+    }
+
+
+def test_the_law_lane_is_a_block_under_k13_never_a_new_metric(isolated):
+    assert K.record_law_coverage(_law_report()) is not None
+    snap = K.kpi_snapshot()
+    assert len(snap["metrics"]) == 14  # R751(a): a block, no new K id
+    m = next(x for x in snap["metrics"] if x["id"] == "K13")
+    block = _block(m, "law")
+    assert (block["kind"], block["state"], block["first_slice"]) == ("lane", "recorded", True)
+    assert (block["documents"], block["jurisdictions"], block["never_checked"]) == (12, 2, 1)
+    assert (block["oldest_check_age_hours"], block["newest_check_age_hours"]) == (300.0, 2.5)
+    assert block["floor_by_state"] == {"tracked": 2, "verified-not-yet-tracked": 1, "unverified": 2, "no-eligible-source": 0}
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 3)
+    assert K.run_kpi_selftest()["passed"]
+
+
+def test_the_law_record_names_no_country_or_jurisdiction(isolated):
+    K.record_law_coverage(_law_report())
+    text = (isolated / "lane-law-coverage.json").read_text(encoding="utf-8")
+    for name in ('"fr"', '"uk"', '"gb"', '"de"'):
+        assert name not in text
+
+
+def test_a_report_with_no_tracked_document_is_recorded_with_no_first_slice(isolated):
+    K.record_law_coverage(_law_report(0))
+    m = _k13()
+    block = _block(m, "law")
+    assert block["state"] == "recorded" and block["first_slice"] is False
+    assert "no tracked document" in block["reason"]
+    assert (m["verdict"], m["value"]) == ("measured-no-bar", 0)
+
+
+def test_an_unreadable_catalogue_keeps_the_floor_unknown_not_zero(isolated):
+    """The real report's floor when the catalogue cannot be read: the states that need the catalogue are never looked up,
+    so they read as unknown, never as a counted 0."""
+    from src.law.coverage import floor_report
+
+    floor = floor_report([], None, reason="catalogue unreadable")
+    assert floor.get("state") == "unchecked" and isinstance(floor.get("by_state"), dict)  # the shape the record must handle
+    report = {**_law_report(), "floor": floor, "catalog": {"readable": False, "error": "x"}}
+    K.record_law_coverage(report)
+    block = _block(_k13(), "law")
+    counts = block["floor_by_state"]
+    assert counts["unchecked"] > 0 and counts["tracked"] == 0
+    for state in ("verified-not-yet-tracked", "unverified", "no-eligible-source"):
+        assert counts[state] is None, state
+    assert block["catalog_readable"] is False and block["floor_state"] == "unchecked"
+    assert "never looked up" in block["method"]
+
+
+def test_odd_check_ages_never_reach_the_record(isolated):
+    report = _law_report()
+    report["jurisdictions"] = [
+        {"never_checked": 0, "oldest_check_age_hours": float("nan"), "newest_check_age_hours": -5.0},
+        {"never_checked": 0, "oldest_check_age_hours": True, "newest_check_age_hours": float("inf")},
+        {"never_checked": 0, "oldest_check_age_hours": 40.0, "newest_check_age_hours": 3.0},
+    ]
+    K.record_law_coverage(report)
+    text = (isolated / "lane-law-coverage.json").read_text(encoding="utf-8")
+    assert "NaN" not in text and "Infinity" not in text
+    block = _block(_k13(), "law")
+    assert (block["oldest_check_age_hours"], block["newest_check_age_hours"]) == (40.0, 0.0)
+
+
+@pytest.mark.parametrize("bad", [None, {}, {"jurisdictions": []}])
+def test_a_report_without_its_document_count_writes_nothing(isolated, bad):
+    assert K.record_law_coverage(bad) is None
+    assert not (isolated / "lane-law-coverage.json").exists()
+
+
+def test_the_law_report_route_writes_the_record_and_the_kpi_get_does_not(isolated):
+    """The record is written where the report is made; reading K13 never runs the report."""
+    from src.api.diagnostics import system
+    from src.law import coverage
+
+    calls: list[int] = []
+
+    def fake_report(db, **kw):
+        calls.append(1)
+        return _law_report()
+
+    import unittest.mock as mock
+
+    with mock.patch.object(coverage, "law_coverage_report", fake_report):
+        system.law_coverage(download=False, db=object())
+        assert calls == [1]
+        assert _block(_k13(), "law")["state"] == "recorded"
+        assert calls == [1]  # the GET did not run the report again
