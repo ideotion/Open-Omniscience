@@ -52,3 +52,6 @@ lanes:
   osm:
     budget_gb: null
     reason: not_ruled
+  medical:
+    budget_gb: null
+    reason: not_ruled

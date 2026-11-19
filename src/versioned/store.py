@@ -360,6 +360,11 @@ def _lane_specific_models(kind: str) -> tuple[type[DeclarativeBase], ...]:
         from src.osm.lane_models import OSM_LANE_MODELS
 
         return OSM_LANE_MODELS
+    if kind == "medical":
+        # PubMed's kept records, their class changes, the ids the user named, the files read (S07-01; R745).
+        from src.medical.lane_models import MEDICAL_LANE_MODELS
+
+        return MEDICAL_LANE_MODELS
     return ()
 
 

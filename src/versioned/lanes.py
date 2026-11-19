@@ -59,7 +59,7 @@ TransportToken = Literal["setting", "clearnet"]
 CHUNK_SIZE: Final[int] = 400
 
 #: Every kind this package knows. Ordered as the lanes were ruled, wiki first.
-KINDS: Final[tuple[str, ...]] = ("wiki", "law", "osm")
+KINDS: Final[tuple[str, ...]] = ("wiki", "law", "osm", "medical")
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +108,18 @@ _SPECS: Final[dict[str, LaneSpec]] = {
         filename="osm.db",
         label="Maps / OpenStreetMap",
         net_lane_id="osm",
+        transport="setting",
+        implemented=False,
+    ),
+    # The medical vertical (0.7 gate row A, S07-01; R745, R746): PubMed's records, kept only
+    # where the corpus cites them or the user names them, in their own file and never
+    # blended into news (the 2026-07-14 ruling). Not implemented until its consent-gated
+    # fetch lands: the store exists, nothing schedules it.
+    "medical": LaneSpec(
+        kind="medical",
+        filename="medical.db",
+        label="Medical papers (PubMed)",
+        net_lane_id="medical",
         transport="setting",
         implemented=False,
     ),
