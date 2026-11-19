@@ -63,6 +63,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.catalog.countries import country_display_code
+from src.database.address_mask import masked_address
 from src.law.catalog import _previous_urls, law_jurisdiction
 from src.law.model import (
     _REFUSED_DOC_TYPES,
@@ -240,7 +241,7 @@ def declared_for(catalog: Mapping | None, *, jurisdiction: str | None, url: str 
         _LOG.warning(
             "law catalogue: %d rows name %r as a previous address; none of their declarations is applied to it",
             len(former),
-            url,
+            masked_address(url),
         )
     return None
 
