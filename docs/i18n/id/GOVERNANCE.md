@@ -19,7 +19,7 @@ etika proyek, bukan sesuatu yang dipikirkan belakangan.
   dipertahankan. Jejak rantai pengawasan (chain of custody) yang dirantai dengan hash dan
   ditandatangani bersifat **opsional** (nonaktif secara bawaan — ia menambah sedikit biaya
   penandatanganan per artikel): aktifkan di **Pengaturan → Rantai pengawasan → "Catat otomatis
-  saat penyerapan"** (atau `OO_CUSTODY_ON_INGEST=1`) ketika integritas pembuktian penting bagi
+  saat menelan"** (atau `OO_CUSTODY_ON_INGEST=1`) ketika integritas pembuktian penting bagi
   suatu kasus. Sampai saat itu, provenans tetap menyertai setiap artikel (sumber, waktu
   pengambilan, hash konten) dan paket bukti bertanda tangan dapat dibuat sesuai permintaan.
 

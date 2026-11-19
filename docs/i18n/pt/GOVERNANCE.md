@@ -18,7 +18,7 @@ projeto, não é um pensamento de última hora.
   offline, com proveniência à prova de adulteração para que as conclusões possam ser defendidas.
   O registro de cadeia de custódia encadeado por hash e assinado é **opcional** (desativado por
   padrão — acrescenta um pequeno custo de assinatura por artigo): ative-o em **Configurações →
-  Cadeia de custódia → "Registrar automaticamente na ingestão"** (ou `OO_CUSTODY_ON_INGEST=1`)
+  Cadeia de custódia → "Registro automático na ingestão"** (ou `OO_CUSTODY_ON_INGEST=1`)
   quando a integridade probatória importar para um caso. Até lá, a proveniência continua a
   acompanhar cada artigo (fonte, hora da captura, hash do conteúdo) e pacotes de evidências
   assinados podem ser produzidos sob demanda.

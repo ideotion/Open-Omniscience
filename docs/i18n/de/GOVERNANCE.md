@@ -18,7 +18,7 @@ nachträglicher Gedanke.
   manipulationserkennbarer Herkunftsangabe, damit Ergebnisse verteidigt werden können. Die
   hash-verkettete, signierte Beweiskette (Chain of Custody) ist **optional** (standardmäßig
   ausgeschaltet — sie fügt pro Artikel einen kleinen Signaturaufwand hinzu): Aktivieren Sie sie
-  unter **Einstellungen → Beweiskette → „Beim Einlesen automatisch protokollieren“**
+  unter **Einstellungen → Verwahrungskette → „Automatisch beim Erfassen protokollieren“**
   (oder `OO_CUSTODY_ON_INGEST=1`), wenn die Beweisintegrität für einen Fall wichtig ist. Bis dahin
   begleitet die Herkunftsangabe trotzdem jeden Artikel (Quelle, Erfassungszeit, Inhalts-Hash), und
   signierte Beweispakete können bei Bedarf erstellt werden.

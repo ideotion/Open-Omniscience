@@ -18,7 +18,7 @@ proyecto, no es una idea de último momento.
   procedencia que deja en evidencia cualquier manipulación, para que los hallazgos puedan
   defenderse. El registro de cadena de custodia, encadenado por hash y firmado, es **opcional**
   (desactivado por defecto — añade un pequeño coste de firma por artículo): actívelo en
-  **Ajustes → Cadena de custodia → «Registrar automáticamente al ingerir»**
+  **Ajustes → Cadena de custodia → «Registro automático al ingerir»**
   (o `OO_CUSTODY_ON_INGEST=1`) cuando la integridad probatoria importe para un caso. Mientras
   tanto, la procedencia acompaña igualmente a cada artículo (fuente, hora de captura, hash del
   contenido) y pueden generarse paquetes de pruebas firmados bajo demanda.

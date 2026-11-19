@@ -17,7 +17,7 @@ d'une réflexion après coup.
   provenance qui rend toute altération visible, afin que les conclusions puissent être défendues. La
   piste de chaîne de traçabilité, chaînée par hachage et signée, est **facultative** (désactivée par
   défaut — elle ajoute un petit coût de signature par article) : activez-la dans
-  **Paramètres → Chaîne de traçabilité → « Journaliser automatiquement à l'ingestion »**
+  **Paramètres → Chaîne de possession → « Journalisation automatique à l'ingestion »**
   (ou `OO_CUSTODY_ON_INGEST=1`) lorsque l'intégrité probatoire compte pour une affaire. En attendant,
   la provenance accompagne quand même chaque article (source, heure de capture, empreinte du
   contenu) et des lots de preuves signés peuvent être produits à la demande.
