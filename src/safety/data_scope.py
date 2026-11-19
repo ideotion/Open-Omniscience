@@ -109,7 +109,7 @@ def _lane_names() -> tuple[str, ...]:
 
         return tuple(spec.filename for spec in all_lanes())
     except Exception:  # noqa: BLE001 - the registry is read by name; a failed import must not make the scope unknowable
-        return ("wiki.db", "law.db", "osm.db")
+        return ("wiki.db", "law.db", "osm.db", "medical.db")
 
 
 def owned_spec(lanes: tuple[str, ...] | None = None, *, shared: bool = False) -> dict:

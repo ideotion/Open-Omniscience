@@ -68,7 +68,7 @@ def db():
 def test_the_shipped_table_loads_and_names_every_lane_in_display_order():
     t = load_table()
     assert t.version == 1
-    assert [r.kind for r in t.lanes] == ["press", "wiki", "law", "osm"]
+    assert [r.kind for r in t.lanes] == ["press", "wiki", "law", "osm", "medical"]
     # The reference machine the answer sheet states (§11, VERIFIED): 2 cores / 3.5 GB.
     assert (t.reference_cores, t.reference_ram_gb) == (2, 3.5)
     assert t.reference_ram_bytes == int(3.5 * GIB)

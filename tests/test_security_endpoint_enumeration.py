@@ -195,6 +195,13 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
     "git-scm.com":
         "same shape: an install.ps1 remediation message pointing at the Git download "
         "page for a human, never fetched by the script",
+    "doi.org":
+        "a DOI RESOLVER PREFIX a user may paste before a DOI: src/medical/store.py normalise_id strips "
+        "it so the bare DOI can be compared with the corpus, and never fetches it; src/medical/store.py "
+        "imports nothing that can open a socket",
+    "dx.doi.org":
+        "the older spelling of the same DOI resolver prefix, stripped by normalise_id in "
+        "src/medical/store.py and never fetched",
     "www.w3.org":
         "an XML NAMESPACE identifier (MathML's, in the PubMed parser src/medical/pubmed_xml.py; also "
         "SKOS and SVG elsewhere): a name the parser compares element tags against, never a URL "

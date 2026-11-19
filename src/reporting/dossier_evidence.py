@@ -147,7 +147,10 @@ def dossier_selection(session, qid: str, lang: str = "en") -> DossierSelection |
         "articles_in_bundle": len(ids),
         "articles_bounded": bool(d.get("article_ids_bounded")),
         "attribution": attribution_dicts(_signals(session, ids, rails)),
+        "country": d.get("country"),
+        "availability": d.get("availability"),
         "method": d.get("method"),
+        "method_country": d.get("method_country"),
         "caveat": d.get("caveat"),
         "export_note": EXPORT_NOTE,
     }

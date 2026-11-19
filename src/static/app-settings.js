@@ -1982,6 +1982,7 @@
       if (kind === "wiki") return t("Wikipedia / Wikimedia");
       if (kind === "law") return t("Law");
       if (kind === "osm") return t("Maps / OpenStreetMap");
+      if (kind === "medical") return t("Medical papers (PubMed)");
       return String(kind);
     }
     function _storageLaneHover(kind) {
