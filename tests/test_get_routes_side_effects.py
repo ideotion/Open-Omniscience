@@ -173,6 +173,9 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/diagnostics/law-coverage": (
         frozenset({"lane-law-coverage.json"}), frozenset(), "writes K13's law-lane count record (row 184, R751(a))",
     ),
+    "/api/osm/change-files": (
+        frozenset({"lane-osm.json"}), frozenset(), "writes K13's OSM-lane count record (row 184, R751(a)); counts, no country code",
+    ),
 }
 # Routes allowed to attempt a LOOPBACK connect (the local model servers: Ollama 11434, vLLM 8001). Nothing else may open a socket,
 # and no route may reach a non-loopback address with the kill switch engaged.

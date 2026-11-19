@@ -65,7 +65,7 @@ def test_nothing_recorded_is_not_measured_with_no_value_and_no_date(isolated):
     assert m["verdict"] == "not-measurable-here"
     assert m["value"] is None and m["as_of"] is None
     assert {b["vertical"]: b["state"] for b in m["verticals"]} == {"climate": "not-measured", "elections": "not-measured",
-                                                                 "law": "not-measured"}
+                                                                 "law": "not-measured", "osm": "not-measured"}
     assert all(b["reason"] for b in m["verticals"])
     assert K.run_kpi_selftest()["passed"]
 
@@ -76,7 +76,7 @@ def test_a_recorded_fetch_is_counted_with_its_own_date_and_an_open_bar(isolated)
     m = _k13()
     assert m["verdict"] == "measured-no-bar"
     assert "pending-ruling" in m["target"]
-    assert (m["value"], m["n"]) == (1, 3)
+    assert (m["value"], m["n"]) == (1, 4)
     assert m["as_of"] == rec["measured_at"]
     row = _block(m, "climate")["datasets"][0]
     assert (row["dataset"], row["figures"], row["outcome"]) == ("oni", 120, "fetched, stored new or revised figures")
@@ -99,7 +99,7 @@ def test_a_source_that_gave_no_figures_is_recorded_but_is_no_first_slice(isolate
     assert block["state"] == "recorded" and block["first_slice"] is False
     assert block["datasets"][0]["outcome"] == "source gave no figures"
     # Measured: the count is 0 of 2, a value, not "not measured".
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 3)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 4)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -149,7 +149,7 @@ def test_an_election_snapshot_with_rows_is_the_elections_first_slice(isolated, m
     block = _block(m, "elections")
     assert block["state"] == "recorded" and block["first_slice"] is True
     assert block["snapshot_rows"] == 42 and block["floor_countries"] > 0
-    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 3, "2026-11-01")
+    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 4, "2026-11-01")
 
 
 def test_an_empty_snapshot_is_recorded_but_is_no_first_slice(isolated, monkeypatch):
@@ -199,7 +199,7 @@ def test_both_verticals_are_counted_apart_never_blended(isolated, monkeypatch):
     _snapshot(monkeypatch, _SNAP)
     K.record_climate_fetch(_fetch())
     m = _k13()
-    assert (m["value"], m["n"]) == (2, 3)
+    assert (m["value"], m["n"]) == (2, 4)
     assert "climate, elections" in m["method"]
 
 
@@ -222,6 +222,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
 
     K.record_climate_fetch(_fetch())
     K.record_law_coverage(_law_report())
+    K.record_osm_lane([_osm_row()])
     _snapshot(monkeypatch, _SNAP)
 
     def refuse(*a, **k):
@@ -231,7 +232,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     monkeypatch.setattr(socket, "create_connection", refuse)
     monkeypatch.setattr(socket.socket, "connect", refuse)
     m = _k13()
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 3, 3)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 4, 4)
     assert all(b["state"] == "recorded" for b in m["verticals"])  # every block read its record, none hit its error path
 
 
@@ -318,6 +319,11 @@ def test_a_failing_record_never_fails_a_fetch_already_kept(isolated, monkeypatch
 
 
 # --------------------------------------------------------------------------- row 184: the law lane (R751(a))
+def _osm_row(alpha3: str = "FRA", *, status: str = "complete", diffs=3, gaps=1,
+             applied: str | None = "2026-11-18T06:00:00+00:00") -> dict:
+    return {"alpha3": alpha3, "status": status, "diffs_recorded": diffs, "gaps_total": gaps, "last_applied_at": applied}
+
+
 def _law_report(docs: int = 12, *, floor: dict | None = None, readable: bool = True) -> dict:
     return {
         "documents": docs, "baselined": docs - 2,
@@ -343,7 +349,7 @@ def test_the_law_lane_is_a_block_under_k13_never_a_new_metric(isolated):
     assert (block["documents"], block["jurisdictions"], block["never_checked"]) == (12, 2, 1)
     assert (block["oldest_check_age_hours"], block["newest_check_age_hours"]) == (300.0, 2.5)
     assert block["floor_by_state"] == {"tracked": 2, "verified-not-yet-tracked": 1, "unverified": 2, "no-eligible-source": 0}
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 3)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 4)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -419,3 +425,94 @@ def test_the_law_report_route_writes_the_record_and_the_kpi_get_does_not(isolate
         assert calls == [1]
         assert _block(_k13(), "law")["state"] == "recorded"
         assert calls == [1]  # the GET did not run the report again
+
+
+# --------------------------------------------------------------------------- row 184: the OSM lane (R751(a))
+from tests import _osm_lane_helpers  # noqa: E402 - the OSM lane's own fixtures, for the end-to-end tests below
+from tests.test_osm_apply import _extract  # noqa: E402
+
+osm_lane_dir = _osm_lane_helpers.osm_lane_dir
+
+
+def test_the_osm_lane_is_a_block_under_k13_counted_never_named(isolated):
+    rows = [_osm_row("FRA"), _osm_row("DEU", diffs=0, gaps=0, applied=None),
+            _osm_row("ITA", status="ingesting", diffs=None, gaps=None, applied=None)]
+    assert K.record_osm_lane(rows) is not None
+    text = (isolated / "lane-osm.json").read_text(encoding="utf-8")
+    for code in ("FRA", "DEU", "ITA"):
+        assert code not in text
+    snap = K.kpi_snapshot()
+    assert len(snap["metrics"]) == 14  # a block, no new K id
+    block = _block(next(x for x in snap["metrics"] if x["id"] == "K13"), "osm")
+    assert (block["kind"], block["state"], block["first_slice"]) == ("lane", "recorded", True)
+    assert block["countries"] == 3 and block["countries_by_status"] == {"complete": 2, "ingesting": 1}
+    assert (block["countries_with_change_files"], block["change_files_recorded"], block["gaps_total"]) == (1, 3, 1)
+    # A lane that predates the run or gap table: unknown, said apart, never folded into the sums as 0.
+    assert (block["countries_change_files_unknown"], block["countries_gaps_unknown"]) == (1, 1)
+    assert "unknown, never 0" in block["method"]
+    assert block["newest_change_file_applied_at"] == "2026-11-18T06:00:00+00:00"
+    assert K.run_kpi_selftest()["passed"]
+
+
+def test_an_osm_lane_with_no_complete_country_has_no_first_slice(isolated):
+    K.record_osm_lane([_osm_row(status="ingesting", diffs=0, gaps=0, applied=None)])
+    block = _block(_k13(), "osm")
+    assert block["state"] == "recorded" and block["first_slice"] is False
+    assert "cut to completion" in block["reason"]
+
+
+def test_an_absent_osm_lane_is_a_measurement_not_a_gap(isolated):
+    K.record_osm_lane(None)
+    m = _k13()
+    block = _block(m, "osm")
+    assert (block["state"], block["lane"], block["first_slice"]) == ("recorded", "absent", False)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 4)
+
+
+def test_the_newest_applied_time_is_compared_by_age_and_odd_ones_are_ignored(isolated):
+    rows = [_osm_row("AAA", applied="2026-11-10T00:00:00+00:00"), _osm_row("BBB", applied="2026-11-12T00:00:00"),
+            _osm_row("CCC", applied="not a date"), _osm_row("DDD", applied=None), "not a row"]
+    K.record_osm_lane(rows)
+    assert _block(_k13(), "osm")["newest_change_file_applied_at"] == "2026-11-12T00:00:00"
+
+
+@pytest.mark.parametrize("bad", ["rows", 3, {"a": 1}])
+def test_osm_rows_that_are_not_a_list_write_nothing(isolated, bad):
+    assert K.record_osm_lane(bad) is None
+    assert not (isolated / "lane-osm.json").exists()
+
+
+def test_the_bundle_member_records_the_lane_and_the_kpi_get_reads_it_without_opening_the_lane(osm_lane_dir, monkeypatch):
+    """End to end: the OSM diagnostics member (what the bundle calls) writes the record; the KPI GET reads it and never
+    opens the lane store."""
+    from src.osm import diagnostics as D
+    from src.osm import ingest
+    from src.versioned import store
+
+    _snapshot(monkeypatch, _NONE)
+    got = D.diagnostics_member(20_000)
+    assert got["lane"] == "absent"
+    assert _block(_k13(), "osm")["lane"] == "absent"
+
+    assert ingest.ingest_country(_extract(osm_lane_dir), "ZZ", reader="python").status == "complete"
+    D.diagnostics_member(20_000)
+    assert "ZZZ" not in (osm_lane_dir / "diagnostics" / "lane-osm.json").read_text(encoding="utf-8")
+
+    def refuse(*a, **k):
+        raise AssertionError("the KPI GET opened the OSM lane")
+
+    monkeypatch.setattr(store, "lane_session", refuse)
+    monkeypatch.setattr(store, "lane_exists", refuse)
+    block = _block(_k13(), "osm")
+    assert (block["first_slice"], block["countries"], block["countries_by_status"]) == (True, 1, {"complete": 1})
+
+
+def test_a_failing_record_never_breaks_the_member(osm_lane_dir, monkeypatch):
+    from src.osm import diagnostics as D
+
+    def boom(rows):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(K, "record_osm_lane", boom)
+    got = D.diagnostics_member(20_000)
+    assert got["lane"] == "absent" and "error" not in got
