@@ -1113,7 +1113,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const url = "https://www.wikidata.org/wiki/" + encodeURIComponent(qid);
       return ` <a href="#" class="kw-qid" data-i18n-dyn title="${esc(t("Open a local preview of this source first"))}"`
-        + ` data-on-click='ooStop(event);openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+        + ` data-on-click='ooStop(event);openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`
+        // Row 178: the keyword's own entry to the item's dossier (app-dossier.js), local reads only.
+        + (typeof dossierButtonHtml === "function" ? dossierButtonHtml(qid) : "");
     }
 
     // A keyword's KIND as chrome (re-walk M-6): the Resolved line's pill printed the stored

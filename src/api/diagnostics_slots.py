@@ -132,9 +132,11 @@ SLOTS: tuple[Slot, ...] = (
     Slot("keyword-pipeline.json", "src.analytics.keyword_pipeline:diagnostics_member", "keyword", 60_000, "keywords"),
     # The OSM lane's daily change files per cut country (built, v0.6.0 B1): position, cursor, gaps and the measured cost; cut to fit with each cut named.
     Slot("osm-change-files.json", "src.osm.diagnostics:diagnostics_member", "OSM", 20_000, "osm"),
+    # The dossier's rail-availability counter (S08-01 S3, row 178): which joined rails had rows per opening, never the item's id.
+    Slot("dossier-rails.json", "src.entities.dossier_diagnostics:diagnostics_member", "dossier", 2_400, "interface"),
 )
 
-#: The most the slot members can add together, in raw JSON. A cap on the budgets (their sum is 615,720 at
+#: The most the slot members can add together, in raw JSON. A cap on the budgets (their sum is 618,120 at
 #: this head), not a size of any zip: at the first measure's 4.6 to 1 it is about 130 KB zipped of a part
 #: of 4,000,000 bytes, which is what it protects (room for the members that are not slots).
 TOTAL_BUDGET_BYTES = 620_000
@@ -174,7 +176,7 @@ TOTAL_BUDGET_BYTES = 620_000
 #: real one is never cut;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 615,720 with all eight rows and the free room 1,502,415 bytes (2,415 over the 1,500,000 floor), so a row can grow by that much before
+#: 618,120 with all nine rows and the free room 1,500,015 bytes (15 over the 1,500,000 floor; the dossier counter took 2,400 of the 2,415), so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
 OTHER_NEW_MEMBERS_BYTES = 1_184_329
