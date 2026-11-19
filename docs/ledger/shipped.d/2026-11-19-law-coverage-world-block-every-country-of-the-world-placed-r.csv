@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-19,law/coverage,"world block: every country of the world placed (row 185, R752)",SHIPPED,PR #2153,src/law/coverage.py; tests/test_law_coverage_world.py,"law coverage report gains a world block: every ISO 3166-1 code off the language floor plus xk with its state, ordered by population; uninhabited codes counted apart from the research list (R752)"
