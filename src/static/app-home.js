@@ -2032,9 +2032,12 @@
         : (_aq
           ? `<button class="lead-open" data-on-click="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
           : "");
-      // Row 178: the Lead's key as a name, resolved to its Wikidata item only when pressed.
-      const dossierBtn = (_aq && typeof _dossierTermOf === "function" && _dossierTermOf(_aq))
-        ? `<button class="secondary tiny" data-on-click="openDossierForTerm(${esc(JSON.stringify(_aq))})" title="${esc(t("Open the dossier of the Wikidata item this Lead names, when exactly one is known"))}">${esc(t("Dossier"))}</button>`
+      // Row 178: the name a Lead's title QUOTES, resolved to its Wikidata item only when pressed. Only
+      // the quoted name: a card's internal key ("stale-feeds") or its whole title names no item, and a
+      // button that can only answer "no item" would read as a lookup failure (row 178 review).
+      const _dq = ((c.title || "").match(/[“"]([^”"]{2,})[”"]/) || [])[1] || "";
+      const dossierBtn = (_dq.trim() && typeof _dossierTermOf === "function" && _dossierTermOf(_dq.trim()))
+        ? `<button class="secondary tiny" data-on-click="openDossierForTerm(${esc(JSON.stringify(_dq.trim()))})" title="${esc(t("Open the dossier of the Wikidata item this Lead names, when exactly one is known"))}">${esc(t("Dossier"))}</button>`
         : "";
       const chip = `<span class="chip">${esc(cardTypeLabel(c.type))}</span>`;
       const _title = cardTitle(c);

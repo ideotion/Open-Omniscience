@@ -94,5 +94,16 @@ function check(cond, msg) { assert.ok(cond, msg); n++; }
   H.setAnswers({Broken: new Error("boom")});
   await H.openDossierForTerm("Broken");
   check(H.EL["dossier-body"].innerHTML.includes("Could not open the dossier:"), "a failure is named");
+  // a keyword drawn INSIDE a chip button gets the QID link only: a nested <button> would close the chip at parse time
+  const CORPUS = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app-corpus.js"), "utf-8");
+  const kq = CORPUS.slice(CORPUS.indexOf("function kwQidHtml("));
+  const kqSrc = kq.slice(0, kq.indexOf("\n    }\n") + 6);
+  const K = new Function("esc", "dossierButtonHtml", "window", kqSrc + "; return kwQidHtml;")(
+    (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"),
+    H.dossierButtonHtml, {});
+  check(K({translation_qid: "Q90"}).includes("<button"), "a keyword row offers its dossier");
+  check(!K({translation_qid: "Q90"}, {noDossier: true}).includes("<button"), "inside a button: no nested button");
+  check(K({translation_qid: "Q90"}, {noDossier: true}).includes(">Q90</a>"), "inside a button: the QID link stays");
+  check(K({}) === "", "no QID, nothing");
   console.log(n + " checks, all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });

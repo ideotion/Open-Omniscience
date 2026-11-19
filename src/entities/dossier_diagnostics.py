@@ -36,7 +36,8 @@ DEFAULT_MAX_BYTES = 2_400
 KEEP_RECENT = 20
 
 METHOD = (
-    "One record per dossier opened in this process since the start time shown: the joined rails, the joined rails "
+    "One record per dossier read in this process since the start time shown (a language switch re-reads the open "
+    "dossier, and counts again): the joined rails, the joined rails "
     "that had rows on this machine and those that had none, and the rails not joined with their code. The tally adds "
     "every opening, per rail. Rows means the rail's own store answered with at least one item; nothing is weighed. "
     "The item's id and label are withheld."
