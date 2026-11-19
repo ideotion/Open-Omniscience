@@ -173,6 +173,16 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/diagnostics/law-coverage": (
         frozenset({"lane-law-coverage.json"}), frozenset(), "writes K13's law-lane count record (row 184, R751(a))",
     ),
+    # The wiki per-edition coverage report writes K13's wiki-lane count record wherever it runs over an existing lane (row 184).
+    "/api/living/overview": (
+        frozenset({"lane-wiki.json"}), frozenset(), "writes K13's wiki-lane count record (row 184, R751(a)); counts, no edition code",
+    ),
+    "/api/wiki/lane/counters": (
+        frozenset({"lane-wiki.json"}), frozenset(), "writes K13's wiki-lane count record (row 184, R751(a)); counts, no edition code",
+    ),
+    "/api/diagnostics/soak-window": (
+        frozenset({"lane-wiki.json"}), frozenset(), "writes K13's wiki-lane count record (row 184, R751(a)); counts, no edition code",
+    ),
     "/api/osm/change-files": (
         frozenset({"lane-osm.json"}), frozenset(), "writes K13's OSM-lane count record (row 184, R751(a)); counts, no country code",
     ),
