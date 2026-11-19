@@ -337,5 +337,7 @@ def summary(session: Session) -> dict:
             or 0
         ),
         "wanted_named": int(session.execute(select(func.count()).select_from(MedicalWanted)).scalar() or 0),
-        "last_file": ({"name": last[0], "finished_at": last[1].isoformat()} if last else None),
+        "last_file": (
+            {"name": last[0], "finished_at": last[1].isoformat() if last[1] else None} if last else None
+        ),
     }
