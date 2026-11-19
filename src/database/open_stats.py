@@ -59,6 +59,7 @@ KNOWN_FILES = (
     "wiki.db",
     "law.db",
     "osm.db",
+    "medical.db",
     "anchors.db",
     "working.db",
     "corpus.db",

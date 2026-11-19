@@ -434,7 +434,10 @@
           const can = offerable && (d.count || 0) > 0;
           const state = can ? "checked" : "disabled";
           const needs = d.needs_corpus ? ` data-needs-corpus="1" data-can="${can ? "1" : ""}"` : "";
-          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}"${needs} ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>`;
+          // R746: a store the backup does not carry yet is said in plain, VISIBLE words under
+          // its row (never only in a hover), with why that costs little.
+          const waitingNote = d.waiting_note ? `<div class="muted" data-waiting-note="1" style="font-size:12px;margin:0 0 4px 28px">${esc(t(d.waiting_note))}</div>` : "";
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}"${needs} ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>${waitingNote}`;
         };
         // ONE ordered list from the server drives the rows AND the categories each one
         // exports (`data-cats`), so a lane that lands later becomes a row with a real
@@ -3910,8 +3913,12 @@
         : s.state === "busy" ? t("In use right now, try again in a moment")
         : t("not created yet");
       // A store named as its own line names it (row 153), never by its raw id.
+      // A lane is named in the user's words, the same name Settings → Storage and the consent popup use (x12), never by its
+      // internal kind; an unknown kind (a newer build's lane) still shows, by its kind.
+      const laneWord = (k) => ({ wiki: t("Wikipedia / Wikimedia"), law: t("Law"), osm: t("Maps / OpenStreetMap"),
+                                 medical: t("Medical papers (PubMed)") })[k] || k;
       const storeLabel = (id) => id === "corpus" ? t("Corpus") : id === "custody" ? t("Custody log")
-        : String(id).startsWith("lane:") ? tfw("Source store ({kind})", { kind: String(id).slice(5) }) : String(id);
+        : String(id).startsWith("lane:") ? tfw("Source store ({kind})", { kind: laneWord(String(id).slice(5)) }) : String(id);
       const names = (ids) => ids.map(storeLabel).join(", ");
       const ar = d.at_rest || { complete: false, pending: [], not_this_key: [], plaintext_snapshots: [] };
       const pending = Array.isArray(ar.pending) ? ar.pending : [];
@@ -3943,7 +3950,7 @@
         `<div>${ooLabelHtml(esc(t("Corpus")), `<b>${esc(word(d.corpus))}</b>`)}` +
         (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
         `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>` +
-        lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: k })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
+        lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: laneWord(k) })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
       // The panel stays for a plaintext library, and (R742) for an encrypted one whose other stores are not finished.
       $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)) ? "" : "none";
     }
