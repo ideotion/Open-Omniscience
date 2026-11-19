@@ -16,6 +16,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from tests.js_source_helper import function_body
+
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 _LOCALES = _STATIC / "locales"
@@ -53,13 +55,9 @@ def test_the_panel_sits_in_the_system_tab_and_loads_when_it_opens() -> None:
     system = html[html.index('id="tm-system"'):]
     system = system[: system.index("</div>\n      </div>")]
     assert 'id="vitals-kpi"' in system, "the measures panel left the System tab"
-    core = _read("app-core.js")
-    fn = core[core.index("function tmSelectTab("):]
-    fn = fn[: fn.index("\n    }\n")]
+    fn = function_body(_read("app-core.js"), "tmSelectTab")
     assert re.search(r'key === "system"\) renderKpiPanel\("vitals-kpi"\)', fn), "the System tab no longer loads the measures"
-    lib = _read("app-library.js")
-    body = lib[lib.index("async function renderKpiPanel("):]
-    assert 'api("/api/diagnostics/kpi")' in body[: body.index("\n    }\n")]
+    assert 'api("/api/diagnostics/kpi")' in function_body(_read("app-library.js"), "renderKpiPanel")
 
 
 def test_the_kpi_route_has_a_caller_and_left_the_no_ui_list() -> None:
