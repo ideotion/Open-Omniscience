@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 _PROBE = "tests/test_configs_unchanged_r167.py::test_the_probe_writes_into_the_guarded_folder_only_when_asked"
 
@@ -23,6 +25,10 @@ def test_the_probe_writes_into_the_guarded_folder_only_when_asked():
         (folder / "catalogue.yml").write_text("sources: []\n", encoding="utf-8")
     elif action == "add":
         (folder / "new.yml").write_text("sources: []\n", encoding="utf-8")
+    elif action == "rename":  # what tests/test_config.py did (row 180): away and back, every file unchanged
+        away = folder.with_suffix(".backup")
+        folder.rename(away)
+        away.rename(folder)
 
 
 def _run(tmp_path: Path, action: str, *extra: str) -> subprocess.CompletedProcess[str]:
@@ -56,3 +62,11 @@ def test_under_xdist_a_file_added_by_a_worker_fails_the_run(tmp_path):
     out = proc.stdout + proc.stderr
     assert proc.returncode == 1, out
     assert "new.yml (added)" in out, out
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the folder's change time is POSIX's; on Windows st_ctime is the creation time")
+def test_a_run_that_renames_the_folder_away_and_back_fails(tmp_path):
+    proc = _run(tmp_path, "rename", "-p", "no:xdist")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 1, out
+    assert "the folder itself was renamed away and back" in out, out
