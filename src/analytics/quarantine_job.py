@@ -339,6 +339,23 @@ def default_quarantine_candidates_batch(
     )
 
 
+def _close_quietly(session) -> None:
+    """Close the worker's session; a failure to close is logged, never the run's outcome (row 177).
+
+    The close runs after the run's final state is written. Raised from there, it used to turn a run
+    that had finished its work into ``error`` (resumable, and shown to the user as failed) and write
+    back the state file that a finished run had just cleared."""
+    try:
+        session.close()
+    except Exception as exc:  # noqa: BLE001 - the work is done and recorded; only the close failed
+        import logging
+
+        from src.monitoring.secret_scrub import log_failure
+
+        log_failure(logging.getLogger(__name__), "the quarantine job's database session did not close", exc,
+                    level=logging.WARNING)
+
+
 class QuarantineJobManager:
     """A pausable, resumable retroactive-quarantine job -- the SAME chassis shape as
     ``ReindexJobManager`` (state machine, worker thread, persisted cursor, batching, progress/ETA,
@@ -568,7 +585,7 @@ class QuarantineJobManager:
                     if self._state in ("done", "cancelled"):
                         self._clear_state()
             finally:
-                session.close()
+                _close_quietly(session)
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             from src.monitoring.engine_text import engine_text, is_pool_timeout
 
