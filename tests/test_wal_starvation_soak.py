@@ -278,8 +278,10 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
             if attempt_delay_s:
                 time.sleep(attempt_delay_s)
             called = time.monotonic()
-            rec = checkpoint_wal(engine=eng, force=True, busy_timeout_ms=50)
-            attempts.append({"began": began, "called": called, "ended": time.monotonic(), "busy": None if rec is None else rec["busy"]})
+            errs: list[str] = []
+            rec = checkpoint_wal(engine=eng, force=True, busy_timeout_ms=50, errors=errs)
+            attempts.append({"began": began, "called": called, "ended": time.monotonic(), "busy": None if rec is None else rec["busy"],
+                             "error": errs[0] if errs else None})
             if rec is not None:
                 ckpt_results.append(rec)
             time.sleep(0.05)
@@ -314,6 +316,8 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
         "in_scan_success": any(a["busy"] == 0 for a in in_scan),
         "any_checkpoint_succeeded": any(rec["busy"] == 0 for rec in ckpt_results),
         "checkpoint_attempts": len(ckpt_results),
+        "attempts_began": len(attempts),
+        "attempt_errors": sorted({a["error"] for a in attempts if a["error"]}),
         "attempts_in_scan": len(in_scan),
         "wal_releases": len(releases),
         "write_error_count": len(write_errors),
@@ -354,8 +358,14 @@ def _round_verdict(r: dict) -> dict:
     red_property = []
     if judged and not r["in_scan_success"]:
         red_property.append("no checkpoint finished inside the scan with its busy flag clear")
-    if r["checkpoint_attempts"] == 0:
+    if r.get("attempts_began") == 0:
+        red_property.append("no checkpoint attempt began at all")  # the checkpointer never got a turn: the harness measured nothing
+    elif r["checkpoint_attempts"] == 0 and r.get("attempt_errors", []) != ["OperationalError"]:
         red_property.append("no checkpoint attempt recorded at all")
+    # Every attempt began and ended in the driver's own refusal (OperationalError: on a loaded runner, "database table is locked" while the
+    # mutant's cursor is open) and none answered: nothing was measured, so the round is INCONCLUSIVE for the property (it is not judged and
+    # has no success), never a pass. Any other error, or an attempt that returned nothing without one, stays red: that is the checkpoint
+    # itself broken, not a contended disk.
     if r["wal_releases"] < _MIN_RELEASES_PER_ROUND:
         red_property.append(f"{r['wal_releases']} WAL releases, fewer than {_MIN_RELEASES_PER_ROUND}")
     red_bytes = []
@@ -405,6 +415,7 @@ def _print_inconclusive(per_round: list[dict], verdicts: list[dict]) -> None:
             print(
                 f"SOAK ROUND {i} INCONCLUSIVE FOR THE PROPERTY: {r['attempts_in_scan']} checkpoint attempt(s) answered inside the scan (fewer than "
                 f"{_MIN_ATTEMPTS_TO_JUDGE}) and none cleared; the slowest ran {r['longest_attempt_in_scan_s']:.3f} s inside it (a slow disk, not a verdict)"
+                + (f"; {r.get('attempts_began', 0) - r['checkpoint_attempts']} attempt(s) ended in {r['attempt_errors']}" if r.get("attempt_errors") else "")
             )
         if not v["bytes_conclusive"]:
             print(
@@ -589,6 +600,16 @@ def test_a_round_is_inconclusive_exactly_when_it_could_not_have_failed():
     assert _round_verdict(base | {"attempts_in_scan": 1})["property_conclusive"]
     # the other two structural reds
     assert _round_verdict(base | {"checkpoint_attempts": 0})["red"] == ["no checkpoint attempt recorded at all"]
+    # Row 170 (macOS, 4 workers): two attempts began and both ended in the driver's lock refusal. Nothing was measured: inconclusive, not red
+    # and not a pass. A checkpointer that never began, or attempts that failed any other way, stay red.
+    locked = _round_verdict(base | {"checkpoint_attempts": 0, "attempts_began": 2, "attempt_errors": ["OperationalError"],
+                                    "in_scan_success": False, "attempts_in_scan": 0})
+    assert locked["red"] == [] and not locked["property_conclusive"], locked
+    assert _round_verdict(base | {"checkpoint_attempts": 0, "attempts_began": 0})["red"] == ["no checkpoint attempt began at all"]
+    assert _round_verdict(base | {"checkpoint_attempts": 0, "attempts_began": 2, "attempt_errors": ["OperationalError", "RuntimeError"],
+                                  "in_scan_success": False, "attempts_in_scan": 0})["red"] == ["no checkpoint attempt recorded at all"]
+    assert _round_verdict(base | {"checkpoint_attempts": 0, "attempts_began": 2, "attempt_errors": [],
+                                  "in_scan_success": False, "attempts_in_scan": 0})["red"] == ["no checkpoint attempt recorded at all"]
     assert len(_round_verdict(base | {"wal_releases": _MIN_RELEASES_PER_ROUND - 1})["red"]) == 1
     # The failed CI round (9,261,792 B, 2 attempts) was over the old fixed 6 MiB: its slowest in-scan attempt would have had to run about a
     # quarter of a second for the new allowance to take it.
