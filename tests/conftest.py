@@ -578,6 +578,25 @@ def _remembered_sweep_joined(request):
 
 
 @pytest.fixture(autouse=True)
+def _empty_curated_domains_not_cached():
+    """An EMPTY read of the curated catalogue domains never outlives the test it happened in. The set is cached once per
+    process (``src.catalog.provenance_scope._curated_catalogue_domains``, ``lru_cache``); a worker that read configs/
+    while it was missing (row 180: tests/test_config.py renamed it away and back) kept ``frozenset()`` for every later
+    test, and three ``test_curated_catalog_stamp`` tests failed on #2140. A non-empty set is the shipped answer and
+    stays cached (re-parsing the catalogues per test would cost seconds); an empty one is dropped, so the next reader
+    looks again. Looked up in ``sys.modules`` so a test that never imported it pays nothing."""
+    yield
+    import sys
+
+    mod = sys.modules.get("src.catalog.provenance_scope")
+    fn = getattr(mod, "_curated_catalogue_domains", None)
+    if fn is None or not hasattr(fn, "cache_info") or fn.cache_info().currsize == 0:
+        return
+    if not fn():  # a hit: the cached value, no parse
+        fn.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _vitals_history_isolated():
     """The vitals history (``src.monitoring.vitals_history``, R119) is a process-global recorder
     the session ledger's liveness thread starts at boot: it keeps its rows in memory, writes a
