@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-19,launcher,"empty pid file in the record lock (R749, row 182)",shipped,PR #2144,scripts/launch.sh; tests/test_launcher_records_race.py,"The record lock claim links a written temp file into place so its pid file never exists empty where links work; an empty pid file (no links, older build, full disk) is taken over after a minute of looks with both mtimes old and a re-check, per R744. Residual stated: a live full-disk holder stalled over 61 s."
