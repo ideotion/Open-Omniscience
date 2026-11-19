@@ -7286,7 +7286,7 @@
   "one term per line (or comma-separated)": "1行に1語（またはカンマ区切り）",
   "online": "オンライン",
   "online probes (law hosts, scoring endpoint, weights digests)": "オンラインプローブ（法令ホスト、スコアリングエンドポイント、重みダイジェスト）",
-  "only a passed projection": "過去の予測のみ",
+  "only a passed projection": "既に過ぎた予測日のみ",
   "only an unlocked plaintext store can be encrypted": "暗号化できるのは、ロックが解除された平文ストアのみです",
   "open": "開く",
   "open detail + correlation": "詳細＋相関を開く",

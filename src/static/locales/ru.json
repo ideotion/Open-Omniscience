@@ -7286,7 +7286,7 @@
   "one term per line (or comma-separated)": "по одному термину на строку (или через запятую)",
   "online": "в сети",
   "online probes (law hosts, scoring endpoint, weights digests)": "сетевые зонды (правовые хосты, конечная точка оценки, дайджесты весов)",
-  "only a passed projection": "только прошедший прогноз",
+  "only a passed projection": "только уже прошедшая прогнозная дата",
   "only an unlocked plaintext store can be encrypted": "Зашифровать можно только разблокированное незашифрованное хранилище",
   "open": "открыть",
   "open detail + correlation": "открыть детали + корреляцию",

@@ -96,8 +96,6 @@
         + rows;
     }
 
-    // Fetch (lazily, cached) + paint the footprint into a host. Paints the cache instantly on
-    // re-open, then re-measures only when forced. Called on Library-tab open + System-tab open.
     // R751(c): the K1–K14 measures in the task manager's System tab, read from /api/diagnostics/kpi (one cheap GET:
     // the snapshot reads only the in-process instruments and what each instrument recorded, never a scan or a fetch).
     // Each measure stands alone, as the snapshot says: no total, no count of the ones that meet their target, no score.
@@ -138,7 +136,7 @@
         const verdict = _KPI_VERDICT[m.verdict] ? t(_KPI_VERDICT[m.verdict]) : String(m.verdict ?? t("unknown"));
         const bits = [label(esc(t("value")), `<b>${esc(shown(m.value))}</b>`)];
         if (m.n != null) bits.push(esc(tf("n = {n}", {n: shown(m.n)})));
-        if (m.as_of) bits.push(label(esc(t("as of")), esc(String(m.as_of).slice(0, 10))));
+        if (m.as_of) bits.push(label(esc(t("as of")), esc(h.date(m.as_of))));
         bits.push(label(esc(t("target")), esc(String(m.target ?? t("unknown")))));
         let body = `<div class="kpi-row" style="margin:6px 0"${m.method ? ` title="${esc(m.method)}"` : ""}>`
           + `<div><b>${esc(m.id || "")}</b> ${esc(m.name || "")} <span class="muted">· ${esc(verdict)}</span></div>`
@@ -156,7 +154,7 @@
       const slice = b.first_slice ? t("first slice in") : t("no first slice yet");
       const figs = (_KPI_FIGURES[b.vertical] || []).filter(([k]) => k in b)
         .map(([k, l]) => label(esc(t(l)), esc(shown(b[k]))));
-      const top = [state, slice].map(esc).concat(b.as_of ? [label(esc(t("as of")), esc(String(b.as_of).slice(0, 10)))] : []);
+      const top = [state, slice].map(esc).concat(b.as_of ? [label(esc(t("as of")), esc(h.date(b.as_of)))] : []);
       return `<div class="kpi-block" style="margin:3px 0 3px 14px;font-size:11.5px"${b.method ? ` title="${esc(b.method)}"` : ""}>`
         + `<div>${esc(name)} <span class="muted">· ${top.join(" · ")}</span></div>`
         + (figs.length ? `<div class="muted">${figs.join(" · ")}</div>` : "")
@@ -173,12 +171,15 @@
       try {
         const snap = await api("/api/diagnostics/kpi");
         host.innerHTML = kpiPanelHtml(snap, {t, tf, esc, label: ooLabelHtml,
-          fmt: (typeof fmtNum === "function") ? fmtNum : String});
+          fmt: (typeof fmtNum === "function") ? fmtNum : String,
+          date: v => ooIsoDate(v)});
       } catch (e) {
         host.innerHTML = `<div class="note err">${esc(t("Could not load:"))} ${esc(e.message || e)}</div>`;
       }
     }
 
+    // Fetch (lazily, cached) + paint the footprint into a host. Paints the cache instantly on
+    // re-open, then re-measures only when forced. Called on Library-tab open + System-tab open.
     async function renderStorageFootprint(hostId, force) {
       const host = document.getElementById(hostId);
       if (!host) return;

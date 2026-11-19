@@ -46,7 +46,7 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&am
 const H = {
   t: s => s,
   tf: (s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m),
-  esc, fmt: v => String(v), label: (l, v) => l + ": " + v,
+  esc, fmt: v => String(v), date: v => String(v).slice(0, 10), label: (l, v) => l + ": " + v,
 };
 const text = html => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
 
