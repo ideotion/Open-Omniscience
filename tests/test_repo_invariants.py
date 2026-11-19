@@ -9057,7 +9057,7 @@ def test_agenda_verification_is_progressive_never_at_boot():
     #    boot" and "never offline" follow from the call graph rather than from a
     #    convention someone has to remember.
     callers = sorted(
-        str(f.relative_to(_SRC))
+        f.relative_to(_SRC).as_posix()  # forward slashes on Windows too (row 155)
         for f in _live_py_files()
         if "verify_due_feeds(" in f.read_text(encoding="utf-8")
         and f.name != "feeds.py"

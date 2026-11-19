@@ -876,6 +876,12 @@ def test_a_merge_killed_by_the_timeout_clears_its_stale_lock_and_puts_the_tree_b
             return subprocess.CompletedProcess([], 124, "", "timeout")
         return h._git(root, *args, **k)
 
+    if os.name == "nt":
+        # Windows: a killed Git for Windows wrapper can leave the real git running and holding the lock, so apply_update leaves the lock
+        # alone, the reset cannot run, and it says rollback_incomplete without moving HEAD (its own comment; row 155).
+        assert h.apply(_plan(inst, sha), git=git)[0] == "rollback_incomplete"
+        assert (inst / ".git" / "index.lock").exists() and _g(inst, "rev-parse", "HEAD") == old
+        return
     assert h.apply(_plan(inst, sha), git=git)[0] == "not_a_fast_forward"
     assert not (inst / ".git" / "index.lock").exists() and _g(inst, "status", "--porcelain") == "" and _g(inst, "rev-parse", "HEAD") == old
 

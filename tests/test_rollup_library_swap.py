@@ -112,9 +112,13 @@ def _the_exception_a_real_swap_raises(tmp_path: Path) -> BaseException:
             _store(new)
             with gen.swap_window(new):
                 gen.disk_changing()
-                for suffix in ("-wal", "-shm"):
-                    Path(str(live) + suffix).unlink(missing_ok=True)
-                os.replace(new, live)
+                # Windows refuses to delete or replace a file a connection holds (WinError 32), and the app's own swap waits for the
+                # handles there (swap_in_corpus, after disk_changing): the file is swapped only where the system allows it. The guard's
+                # refusal pinned below is raised at the next statement either way, since the generation moved at disk_changing (row 155).
+                if os.name != "nt":
+                    for suffix in ("-wal", "-shm"):
+                        Path(str(live) + suffix).unlink(missing_ok=True)
+                    os.replace(new, live)
             try:
                 # its next read, after the swap
                 conn.execute(text("select count(*) from notes")).scalar()
