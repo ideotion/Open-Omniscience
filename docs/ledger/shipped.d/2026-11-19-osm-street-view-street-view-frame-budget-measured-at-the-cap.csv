@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-19,osm/street-view,street view frame budget measured at the caps (row 187 item 5),SHIPPED,PR #2154,scripts/osm_street_frame_budget.py; src/osm/frame_budget.py; src/osm/diagnostics.py,"a Chromium script draws a synthetic grid at the Q822 caps (8000 roads, 60000 vertices) with the app's own street function and reports ms per frame; the OSM diagnostics member's street_view slot reads it back, not measured until recorded; sandbox 93/114 ms draw p50/p95 at dpr 1"
