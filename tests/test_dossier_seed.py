@@ -150,8 +150,15 @@ def test_a_QID_page_renders_from_fixture_rows_with_its_rails_and_passport(db, se
     assert _rail(d, "law")["articles"] == 1
     assert _rail(d, "places")["places"] == [
         {"id": ZED_PLACE, "name": "Zedport", "kind": "city", "country": "zz", "articles": 1}]
-    assert [r["key"] for r in d["not_joined"]] == ["markets", "agenda", "law_versions"]
+    # Zedport is a city, so the rails keyed by country are named as not joined, with why.
+    assert [r["key"] for r in d["not_joined"]] == [*DO.COUNTRY_RAILS, "markets", "law_versions"]
     assert all(r["reason"] for r in d["not_joined"])
+    assert {r.get("code") for r in d["not_joined"][:4]} == {"not-a-country"}
+    assert d["country"] is None
+    # S3's availability counter: which joined rails had rows here. The map lane never ran.
+    assert d["availability"] == {"joined": 5, "with_rows": 4,
+                                 "rails_with_rows": ["news", "wikipedia", "law", "places"],
+                                 "rails_without_rows": ["map"]}
     # The passport (A-1): n articles · sources · countries · languages · date span, gaps counted.
     p = d["passport"]
     assert (p["articles"], p["sources"]) == (3, 3)
