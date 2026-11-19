@@ -409,3 +409,46 @@ def test_every_fallback_name_list_and_every_lane_loop_includes_medical_db():
         assert '"medical.db"' in (root / rel).read_text(encoding="utf-8"), rel
     release = (root / "src/monitoring/release_run.py").read_text(encoding="utf-8")
     assert 'for kind in ("wiki", "law", "osm"):' not in release
+
+
+def test_an_older_file_never_undoes_a_newer_withdrawal(medical):
+    _apply(_many((1, 1, "Journal Article")), _want("1"), "pubmed25n0001.xml.gz")
+    _apply(_many(deletions=((1, 1),)), _want("1"), "pubmed25n1300.xml.gz")
+    # A re-read of the baseline file (say, for an identifier named later) states it again.
+    out = _apply(_many((1, 1, "Journal Article")), _want("1"), "pubmed25n0001.xml.gz")
+    assert (out["updated"], out["older_skipped"]) == (0, 1)
+    paper = _papers()[1]
+    assert paper.withdrawn_at is not None and paper.withdrawn_in_file == "pubmed25n1300.xml.gz"
+
+
+def test_a_restatement_then_a_deletion_in_one_file_ends_withdrawn(medical):
+    _apply(_many((2, 1, "Journal Article")), _want("2"), "pubmed25n0002.xml.gz")
+    _apply(_many(deletions=((2, 1),)), _want("2"), "pubmed25n1301.xml.gz")
+    out = _apply(_many((2, 1, "Journal Article"), deletions=((2, 1),)), _want("2"), "pubmed25n1302.xml.gz")
+    assert (out["updated"], out["withdrawn"]) == (1, 1)
+    assert _papers()[2].withdrawn_in_file == "pubmed25n1302.xml.gz"
+
+
+def test_a_deletion_repeated_in_one_file_is_counted_once(medical):
+    _apply(_many((2, 1, "Journal Article")), _want("2"), "pubmed25n0002.xml.gz")
+    out = _apply(_many(deletions=((2, 1), (2, 1))), _want("2"), "pubmed25n1304.xml.gz")
+    assert out["withdrawn"] == 1
+    with store.lane_session("medical") as s:
+        f = s.execute(select(MedicalFile).where(MedicalFile.name == "pubmed25n1304.xml.gz")).scalar_one()
+        assert (f.withdrawn, f.older_skipped) == (1, 0)
+
+
+def test_the_file_row_records_what_newer_files_had_overtaken(medical):
+    _apply(_many((5, 1, "Retracted Publication")), _want("5"), "pubmed25n1301.xml.gz")
+    _apply(_many((5, 1, "Journal Article")), _want("5"), "pubmed25n0005.xml.gz")
+    with store.lane_session("medical") as s:
+        f = s.execute(select(MedicalFile).where(MedicalFile.name == "pubmed25n0005.xml.gz")).scalar_one()
+        assert f.older_skipped == 1
+
+
+@pytest.mark.parametrize(
+    "written",
+    ["10.1000/ABC", "doi:10.1000/abc", "doi: 10.1000/abc", "https://doi.org/10.1000/abc", "doi.org/10.1000/abc", "dx.doi.org/10.1000/abc"],
+)
+def test_every_common_way_of_writing_a_doi_names_the_same_paper(written):
+    assert M.normalise_id("doi", written) == "10.1000/abc"

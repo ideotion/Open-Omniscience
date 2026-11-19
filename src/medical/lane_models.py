@@ -156,6 +156,8 @@ class MedicalFile(LaneBase):
     kept: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     withdrawn: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Statements and deletions this file made that a NEWER file had already overtaken, so were not applied.
+    older_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (Index("ix_medical_file_name", "name"),)
 

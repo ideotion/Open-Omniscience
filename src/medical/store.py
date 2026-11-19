@@ -87,9 +87,17 @@ def normalise_id(kind: str, value: str) -> str:
             raise ValueError("a PMCID is PMC followed by digits")
         return v
     low = v.lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"):
+    for prefix in (
+        "https://doi.org/",
+        "http://doi.org/",
+        "https://dx.doi.org/",
+        "http://dx.doi.org/",
+        "doi.org/",
+        "dx.doi.org/",
+        "doi:",
+    ):
         if low.startswith(prefix):
-            low = low[len(prefix) :]
+            low = low[len(prefix) :].lstrip()  # "doi: 10.x/y" is how many references print it
             break
     if not (low.startswith("10.") and "/" in low) or len(low) > 300 or any(c.isspace() for c in low):
         raise ValueError("a DOI starts with 10. and has a / in it")
@@ -179,6 +187,12 @@ def _fields(rec: PubmedRecord) -> dict:
     }
 
 
+def _last_word(row: MedicalPaper) -> tuple[int, int]:
+    """The newest file that said anything about this record: the one that stated it, or the one
+    that withdrew it. An older file may neither overwrite the first nor undo the second."""
+    return max(file_sequence(row.source_file), file_sequence(row.withdrawn_in_file or ""))
+
+
 def apply_file(
     session: Session,
     name: str,
@@ -203,20 +217,25 @@ def apply_file(
     for item in items:
         if isinstance(item, PubmedDeletion):
             # The withdrawn VERSION only: a deletion of version 2 leaves version 1 as it was.
-            rows = session.execute(
+            # Every test is made on the loaded row in Python, never in SQL: the lane's sessions
+            # do not autoflush, so a withdrawal or restatement earlier in this same file is
+            # visible on the object and not yet in the database.
+            gone = session.execute(
                 select(MedicalPaper).where(
                     MedicalPaper.pmid == item.pmid,
                     MedicalPaper.version == item.version,
-                    MedicalPaper.withdrawn_at.is_(None),
                 )
-            ).scalars()
-            for gone in rows:
-                if file_sequence(gone.source_file) > seq:
-                    older_skipped += 1  # a newer file stated it after this withdrawal
-                    continue
-                gone.withdrawn_at = _now()
-                gone.withdrawn_in_file = name
-                withdrawn += 1
+            ).scalar_one_or_none()
+            if gone is None:
+                continue
+            if _last_word(gone) > seq:
+                older_skipped += 1  # a newer file stated or withdrew it after this one
+                continue
+            if gone.withdrawn_at is not None:
+                continue  # already withdrawn, by this file or an older one: counted once
+            gone.withdrawn_at = _now()
+            gone.withdrawn_in_file = name
+            withdrawn += 1
             continue
         if not wanted.matches(item):
             continue  # R745: the rest of the file is the transport, never the store.
@@ -232,8 +251,8 @@ def apply_file(
             session.flush()
             kept += 1
             continue
-        if file_sequence(row.source_file) > seq:
-            older_skipped += 1  # an older file never overwrites what a newer one stated
+        if _last_word(row) > seq:
+            older_skipped += 1  # an older file never overwrites or restores what a newer one said
             continue
         if row.provenance_class != item.provenance_class:
             session.add(
@@ -267,6 +286,7 @@ def apply_file(
             kept=kept,
             updated=updated,
             withdrawn=withdrawn,
+            older_skipped=older_skipped,
         )
     )
     session.flush()
