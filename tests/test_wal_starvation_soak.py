@@ -179,7 +179,7 @@ def _wal_engine(db_path: Path, *, seed_rows: int, monkeypatch):
     return eng
 
 
-def _make_scan_producer(first_chunk_at: list[float]):
+def _make_scan_producer(first_chunk_at: list[float], scan_done_at: list[float] | None = None):
     """The slow scanning producer. ``first_chunk_at`` receives the monotonic time the first chunk was delivered: from then on the scan's
     snapshot is pinned (or, once the guard has released it, the next window opens), so a checkpoint attempt that began EARLIER proves
     nothing about the property."""
@@ -193,6 +193,8 @@ def _make_scan_producer(first_chunk_at: list[float]):
             if not chunk:
                 break
             time.sleep(0.1)
+        if scan_done_at is not None:
+            scan_done_at.append(time.monotonic())
         return []
 
     return _slow_scan_producer
@@ -211,7 +213,9 @@ def _in_scan_attempts(attempts: list[dict], *, first_chunk: float, scan_ended: f
     return evidence, max(extents, default=0.0)
 
 
-def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s: float = 0.0) -> dict:
+def _run_one_round(
+    tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s: float = 0.0, after_scan_delay_s: float = 0.0
+) -> dict:
     """One full round: a slow scanning producer races a background writer and
     a background checkpointer on its OWN fresh database, mirroring
     test_wal_reader_starvation.py's proven single-pass shape exactly. Returns
@@ -238,11 +242,16 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
 
     def _counting_release(session):
         releases.append(time.monotonic())
+        if after_scan_delay_s and first_chunk_at and scan_done_at:
+            # Row 181's timing, forced: the producer has returned (its cursor gone with it) but the pass has not, as on a loaded
+            # runner, so checkpoints run in the gap between the snapshot's release and the moment run_all returns.
+            time.sleep(after_scan_delay_s)
         return _real_release(session)
 
     monkeypatch.setattr(registry, "_release_transaction", _counting_release)
     first_chunk_at: list[float] = []
-    registry.register("slow_scan", _make_scan_producer(first_chunk_at))
+    scan_done_at: list[float] = []
+    registry.register("slow_scan", _make_scan_producer(first_chunk_at, scan_done_at))
 
     db_path = tmp_path / f"wal_soak_round_{round_i}.db"
     eng = _wal_engine(db_path, seed_rows=_SEED_ROWS, monkeypatch=monkeypatch)
@@ -306,7 +315,12 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s
         eng.dispose()
 
     first_chunk = first_chunk_at[0] if first_chunk_at else scan_ended
-    in_scan, longest_in_scan = _in_scan_attempts(attempts, first_chunk=first_chunk, scan_ended=scan_ended)
+    # Evidence ends where the scan's snapshot can end: when the producer returned, not when run_all did (row 181). Past that moment the
+    # producer's cursor is gone with its frame, so a checkpoint that finishes there clears its busy flag even in a build that never
+    # releases inside the scan, and counting it once judged that mutant green on a loaded runner. The bytes keep the whole window.
+    pin_ended = min(scan_done_at[0], scan_ended) if scan_done_at else scan_ended
+    in_scan, _ = _in_scan_attempts(attempts, first_chunk=first_chunk, scan_ended=pin_ended)
+    _, longest_in_scan = _in_scan_attempts(attempts, first_chunk=first_chunk, scan_ended=scan_ended)
     return {
         "wal_bytes_during_window": wal_bytes_during_window,
         "writer_bytes_per_s": rows_at_end * _WRITER_ROW_BYTES / scan_seconds if scan_seconds else 0.0,
@@ -483,6 +497,18 @@ def test_a_scan_that_never_releases_its_snapshot_is_red_when_the_attempts_can_ju
     if not v["property_conclusive"]:
         pytest.skip(f"a disk this slow answered {r['attempts_in_scan']} attempt(s) inside the scan, too few to call it (the round is inconclusive, never green)")
     assert "no checkpoint finished inside the scan with its busy flag clear" in v["red"], (r, v)
+
+
+def test_a_checkpoint_after_the_producer_returned_is_not_evidence_for_the_scan(tmp_path, monkeypatch):
+    """Row 181 (macOS, four workers): the never-closes mutant was judged GREEN once, because a checkpoint finished with busy=0 between the
+    producer's return (its cursor, and the snapshot with it, gone) and run_all's own return, which is where the scan's window used to end.
+    That gap is forced here, long enough for several attempts: an attempt in it says nothing about a scan that held its snapshot, so the
+    round must not count it, and the mutant stays red or inconclusive, never green."""
+    monkeypatch.setattr(registry._WalGuardResult, "fetchmany", _unclosed_fetchmany(False))
+    r = _run_one_round(tmp_path, 0, monkeypatch, after_scan_delay_s=0.5)
+    v = _round_verdict(r)
+    assert not r["in_scan_success"], ("a checkpoint after the producer returned was counted as inside the scan", r)
+    assert v["red"] or not v["property_conclusive"], (r, v)
 
 
 def test_in_the_slow_regime_the_original_design_bug_is_inconclusive_not_a_pass(tmp_path, monkeypatch):
