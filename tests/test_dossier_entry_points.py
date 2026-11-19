@@ -118,8 +118,8 @@ def test_the_three_entry_points_are_wired_in_the_shipped_sources():
     assert "dossierSearchHint(" in analysis and "seq === _searchSeq" in analysis, "an Explore search names its item"
     assert "openDossierForTerm(" in home and "${dossierBtn}" in home, "a Lead card offers its dossier"
     assert "kwQidHtml(row, {noDossier: !!(opts && opts.inButton)})" in corpus, "never a button nested in a chip button"
-    assert "const dossierBtn = (_dq.trim() &&" in home and "openDossierForTerm(${esc(JSON.stringify(_dq.trim()))})" in home, \
-        "only the name a Lead's title quotes"
+    assert "const _dq = cardEntityName(c);" in home and "openDossierForTerm(${esc(JSON.stringify(_dq))})" in home, \
+        "only the name a Lead's title data carries"
     on = read_static("oo-on.js")
     assert on.count('"openDossier"') == 2 and on.count('"openDossierForTerm"') == 2
 

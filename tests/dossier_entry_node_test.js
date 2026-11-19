@@ -105,5 +105,15 @@ function check(cond, msg) { assert.ok(cond, msg); n++; }
   check(!K({translation_qid: "Q90"}, {noDossier: true}).includes("<button"), "inside a button: no nested button");
   check(K({translation_qid: "Q90"}, {noDossier: true}).includes(">Q90</a>"), "inside a button: the QID link stays");
   check(K({}) === "", "no QID, nothing");
+  // a Lead: the name comes from the title's DATA, never a quoted headline, phrase or watch label
+  const HOME = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app-home.js"), "utf-8");
+  const ce = HOME.slice(HOME.indexOf("function cardEntityName("));
+  const E = new Function(ce.slice(0, ce.indexOf("\n    }\n") + 6) + "; return cardEntityName;")();
+  check(E({title_vars: {term: "Paris"}}) === "Paris", "a rising term");
+  check(E({i18n: {title: [{t: "“{keyword}”: outlets frame it differently", v: {keyword: "NATO"}}]}}) === "NATO", "a framed keyword");
+  check(E({title_vars: {title: "Minister resigns after budget vote"}}) === "", "a headline is not a name");
+  check(E({i18n: {title: [{t: "Identical wording in {n} sources: “{phrase}”", v: {n: 3, phrase: "we will"}}]}}) === "", "a phrase is not a name");
+  check(E({type: "watch_match", i18n: {title: [{t: "Watch “{name}” matched", v: {name: "my watch"}}]}}) === "", "a watch label is not a name");
+  check(E({title: "“Paris” is rising"}) === "", "the English title is never regexed");
   console.log(n + " checks, all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });
