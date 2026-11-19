@@ -73,7 +73,7 @@ def test_the_dossier_is_signed_as_the_evidence_bundle_and_verifies(client, seede
     d = m["dossier"]
     assert d["qid"] == ZED
     assert d["rails_carried"] == ["news", "wikipedia", "law", "places", "map"]
-    assert d["rails_not_carried"] == ["markets", "agenda", "law_versions"]
+    assert d["rails_not_carried"] == ["stats", "climate", "agenda", "elections", "markets", "law_versions"]
     assert (d["articles_total"], d["articles_in_bundle"], d["articles_bounded"]) == (3, 3, False)
     places = next(x for x in d["rails"] if x["key"] == "places")["places"]
     assert [p["id"] for p in places] == [ZED_PLACE]

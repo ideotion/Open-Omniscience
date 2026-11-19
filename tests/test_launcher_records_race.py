@@ -1310,6 +1310,163 @@ def test_without_hard_links_a_mark_left_with_no_pid_is_cleared_after_a_minute_of
     assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.*")), "the mark was cleared, the lock taken over, nothing left behind"
 
 
+_MINUTE_LOOKS = 'sleep() { SECONDS=$((SECONDS + 1)); command sleep "$@"; }; '  # every look a second apart: a minute of the waiter's clock in ~60 looks
+# the lock's CMD: an O_EXCL file held for a moment, any failed create is a second holder (the detector of the eight-taker test, never the tool under suspicion)
+_HOLD = ('hold() {{ ( set -C; : > "{t}/held" ) 2>/dev/null || echo twice >> "{t}/overlap"; command sleep 0.2; command rm -f "{t}/held"; '
+         'printf "%s\\n" "$1" >> "{f}"; }}; ')
+
+
+def _old(path: Path) -> None:
+    os.utime(path, (time.time() - 3600, time.time() - 3600))
+
+
+@posix_only
+@pytest.mark.parametrize("links", [True, False], ids=["links", "no-links"])
+def test_a_lock_whose_maker_was_killed_before_its_pid_file_is_taken_over_after_a_minute_and_said_so(tmp_path, links):
+    """Row 172 (R744): a launcher killed between its mkdir and its pid create left a lock directory with no pid file, which nobody took over (it reads as a
+    launcher about to write its pid), so every later row waited for ever behind it. Now a waiter takes it over once it has seen it so at every look for a minute
+    of its own clock AND the directory's mtime is more than a minute old, and says so in one line. Not before the minute, not while the mtime is young, and
+    never a lock with a pid file, even an empty one."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    lock = tmp_path / "x.jsonl.lock.d"
+    nolinks = "" if links else "ln() { return 1; }; "
+    # the maker is killed (SIGKILL, no code of its own runs) right after its mkdir, before its pid file
+    subprocess.run(["bash", "-c", f'. "{h}"; _oo_rec_claim() {{ kill -9 $$; }}; oo_rec_append "{f}" \'{{"pid":4}}\' 0 0'], env=env, timeout=30)
+    assert lock.is_dir() and list(lock.iterdir()) == [], "the premise: a lock directory with nothing in it"
+    _old(lock)
+
+    def run(pre: str, wait_ms: int) -> str:
+        r = subprocess.run(["bash", "-c", f'. "{h}"; {nolinks}{pre}OO_REC_LOCK_WAIT_MS={wait_ms}; oo_rec_locked "{f}" '
+                                          f'_oo_rec_append_trim "{f}" \'{{"pid":5}}\' 0 0; echo "rc=$?"'],
+                           env=env, capture_output=True, text=True, timeout=90)
+        return r.stdout + r.stderr
+
+    out = run("", 300)
+    assert "rc=99" in out and lock.is_dir(), ("a lock seen with no pid for less than a minute of the waiter's clock is waited for, however old", out)
+    os.utime(lock)  # young again
+    out = run(_MINUTE_LOOKS, 800)  # 81 looks: past the minute, and no more forks than that proves
+    assert "rc=99" in out and lock.is_dir(), ("a minute of the waiter's clock is not enough while the directory's mtime is young", out)
+    (lock / "pid").write_text("", encoding="utf-8")
+    _old(lock)
+    out = run(_MINUTE_LOOKS, 800)
+    assert "rc=99" in out and lock.is_dir(), ("a lock with a pid file, even an empty one, is never taken over this way", out)
+    (lock / "pid").unlink()
+    _old(lock)
+    out = run(_MINUTE_LOOKS, 2000)
+    assert "rc=0" in out, out
+    assert {"pid": 5} in _rows(f)[0], "the row is written"
+    assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.dead.*")), "the lock was renamed away and removed, nothing left behind"
+    note = (tmp_path / "x.jsonl.lock.d.cleared").read_text(encoding="utf-8")
+    assert note.count("\n") == 1 and "had no owner pid for a minute" in note and str(lock) in note, note
+    assert "had no owner pid for a minute" in out, "and the line is on stderr too"
+
+
+@posix_only
+def test_without_hard_links_a_lock_with_no_pid_holding_a_mark_with_no_pid_is_taken_over_too(tmp_path):
+    """The reads of 18 Nov: a lock with no pid file holding a directory mark with no pid (its maker AND a taker killed between mkdir and claim). The mark is
+    cleared after a minute of looks, then the lock is taken over. Red before the mtime test latched: each attempt's temp mark inside the lock made the lock
+    young again, the waiter stopped looking at the mark for a minute, and the mark's minute started again, for ever."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    (lock / "reap").mkdir()
+    _old(lock / "reap")
+    _old(lock)
+    r = subprocess.run(["bash", "-c", f'. "{h}"; ln() {{ return 1; }}; {_MINUTE_LOOKS}OO_REC_LOCK_WAIT_MS=4000; oo_rec_locked "{f}" '
+                                      f'_oo_rec_append_trim "{f}" \'{{"pid":5}}\' 0 0; echo "rc=$?"'], env=env, capture_output=True, text=True, timeout=120)
+    assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+    assert {"pid": 5} in _rows(f)[0] and not lock.exists() and "had no owner pid for a minute" in r.stderr, (r.stdout, r.stderr)
+
+
+@posix_only
+@pytest.mark.parametrize("links", [True, False], ids=["links", "no-links"])
+def test_two_waiters_at_a_lock_left_with_no_pid_never_both_hold_it(tmp_path, links):
+    """R744: two waiters that both reach the minute at once. The takeover is under the reap mark (one taker at a time) and by one rename, so one clears it,
+    and the other waits for the lock its rival then holds: both rows land and the detector never sees two holders."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    _old(lock)
+    nolinks = "" if links else "ln() { return 1; }; "
+    hold = _HOLD.format(t=tmp_path, f=f)
+    procs = [subprocess.Popen(["bash", "-c", f'. "{h}"; {nolinks}{_MINUTE_LOOKS}{hold}OO_REC_LOCK_WAIT_MS=3000; oo_rec_locked "{f}" hold \'{{"pid":{n}}}\'; '
+                                             f'echo "rc=$?"'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for n in (5, 6)]
+    outs = [p.communicate(timeout=90) for p in procs]
+    assert all("rc=0" in o for o, _ in outs), outs
+    assert not (tmp_path / "overlap").exists(), "never two holders at once"
+    rows = _rows(f)[0]
+    assert {"pid": 5} in rows and {"pid": 6} in rows, rows
+    assert sum(e.count("had no owner pid for a minute") for _, e in outs) == 1, ("one of them cleared it", outs)
+    assert not lock.exists() and not list(tmp_path.glob("x.jsonl.lock.d.dead.*"))
+
+
+@posix_only
+@pytest.mark.parametrize("links", [True, False], ids=["links", "no-links"])
+def test_a_slow_live_maker_that_writes_its_pid_under_the_takers_mark_keeps_its_lock(tmp_path, links):
+    """R744: the worst case for the takeover, forced. A live launcher has made the lock and is slow to write its pid; a waiter has seen it with no pid for a
+    minute and its mtime is old (both forced). The maker writes its pid only once the waiter, holding its mark, is in its re-check pause: the second look,
+    just before the rename, finds it, so the waiter takes nothing over and waits; the maker's row lands under its own lock, never two holders."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    lock = tmp_path / "x.jsonl.lock.d"
+    nolinks = "" if links else "ln() { return 1; }; "
+    hold = _HOLD.format(t=tmp_path, f=f)
+    # the maker writes its pid only once the waiter is in its re-check pause (the waiter's 1 s sleep says so, then waits for the pid, both bounded): forced, so
+    # a loaded runner cannot reorder it, and without the pause the maker is never told and the waiter renames its lock away
+    slow = (f'eval "$(declare -f _oo_rec_claim | sed "1s/_oo_rec_claim/_oo_real_claim/")"; '
+            f'_oo_rec_claim() {{ i=0; while [ ! -e "{tmp_path}/go" ] && [ $i -lt 2000 ]; do command sleep 0.01; i=$((i + 1)); done; _oo_real_claim "$@"; }}; ')
+    pause = (f'sleep() {{ SECONDS=$((SECONDS + 1)); if [ "$1" = 1 ]; then : > "{tmp_path}/go"; i=0; '
+             f'while [ ! -e "{lock}/pid" ] && [ $i -lt 2000 ]; do command sleep 0.01; i=$((i + 1)); done; fi; command sleep "$@"; }}; ')
+    maker = subprocess.Popen(["bash", "-c", f'. "{h}"; {nolinks}{hold}{slow}OO_REC_LOCK_WAIT_MS=60000; oo_rec_locked "{f}" hold \'{{"pid":4}}\'; echo "rc=$?"'],
+                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert _wait_for(lock.is_dir, 30), "the maker made its lock"
+        _old(lock)
+        w = subprocess.run(["bash", "-c", f'. "{h}"; {nolinks}{pause}{hold}OO_REC_LOCK_WAIT_MS=3000; oo_rec_locked "{f}" hold \'{{"pid":5}}\'; '
+                                          f'echo "rc=$?"'], env=env, capture_output=True, text=True, timeout=90)
+        mo, me = maker.communicate(timeout=60)
+    finally:
+        if maker.poll() is None:
+            maker.kill()
+    assert "rc=0" in mo, (mo, me)
+    assert "had no owner pid for a minute" not in w.stderr, ("a live maker's lock is never taken over", w.stdout, w.stderr)
+    assert not (tmp_path / "overlap").exists(), "never two holders at once"
+    assert not (tmp_path / "x.jsonl.lock.d.cleared").exists()
+    assert {"pid": 4} in _rows(f)[0], "the maker's row lands"
+    assert "rc=0" in w.stdout and {"pid": 5} in _rows(f)[0], ("and the waiter's, once the maker has released it", w.stdout, w.stderr)
+
+
+@posix_only
+@pytest.mark.parametrize("where", ["lock", "mark"])
+def test_a_waiter_under_the_launchers_set_u_survives_a_lock_or_mark_with_no_pid(tmp_path, where):
+    """The launcher runs with ``set -euo pipefail``, and the deferred child and the filter inherit it. The first look at a lock (or a directory mark) with no
+    pid read the waiter's record variable before anything had set it: under ``set -u`` that is an "unbound variable" and the shell EXITS, so the waiter
+    died with its row (row 172's first build: 1 to 2 of 8 exit and stop rows lost in the eight-launcher tests, under load, where a waiter meets a lock in
+    the instant between its maker's mkdir and its pid). The directory mark's record had the same read since row 100, met only on a drive without links."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    f = tmp_path / "x.jsonl"
+    _seed(f, 3)
+    lock = tmp_path / "x.jsonl.lock.d"
+    lock.mkdir()
+    pre = ""
+    if where == "mark":
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
+        (lock / "reap").mkdir()
+        pre = "ln() { return 1; }; "
+    r = subprocess.run(["bash", "-c", f'set -euo pipefail; . "{h}"; {pre}OO_REC_LOCK_WAIT_MS=100; rc=0; oo_rec_locked "{f}" true || rc=$?; echo "rc=$rc"'],
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert "rc=99" in r.stdout and "unbound" not in r.stderr, (r.stdout, r.stderr)
+
+
 def test_the_filter_is_handed_every_helper_the_lock_calls():
     """The stderr filter's shell gets the helpers as text (oo_rec_lib) and has nothing else: a helper the lock calls but the text leaves out is "command not
     found" there, silently. The no-hard-links mark was such a helper (read of 17 Nov), so on such a drive the filter could never take a dead owner's lock over
