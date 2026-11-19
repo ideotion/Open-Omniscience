@@ -169,7 +169,7 @@ def test_a_structured_abstract_keeps_its_sections_and_flattens_inline_markup(par
     rec = recs[90000001]
     assert [(s.label, s.text) for s in rec.abstract] == [
         ("BACKGROUND", "Invented background text spread over lines."),
-        ("RESULTS", "An effect of 1.2 (CI 0.9 to 1.5) in an invented group of 103."),
+        ("RESULTS", "An effect of 1.2 (CI 0.9 to 1.5) in an invented group of 10^3."),
     ]
     assert rec.abstract_copyright == "Copyright 2024 The Invented Authors."
     assert rec.title == "A fictional cohort study of example outcomes."
@@ -283,7 +283,15 @@ def test_records_are_freed_from_the_root_as_they_are_read():
                 roots.append(el)
             yield ev, el
 
-    DET.iterparse = spy
+    records: list = []
+
+    def spy2(stream, events):
+        for ev, el in spy(stream, events):
+            if ev == "end" and el.tag == "PubmedArticle":
+                records.append(el)
+            yield ev, el
+
+    DET.iterparse = spy2
     try:
         items = list(parse_pubmed(io.BytesIO(_wrap(_article("1") + '<DeleteCitation><PMID Version="1">9</PMID></DeleteCitation>' + _article("2")))))
     finally:
@@ -291,9 +299,124 @@ def test_records_are_freed_from_the_root_as_they_are_read():
     assert len(items) == 3
     # Every record, deletion included, was removed from the root once read.
     assert len(roots[0]) == 0
+    # And each record's own subtree was cleared, not only detached.
+    assert [len(r) for r in records] == [0, 0]
 
 
 def test_the_module_never_touches_a_socket_or_a_database():
     src = Path(__file__).resolve().parents[1].joinpath("src", "medical", "pubmed_xml.py").read_text()
     for forbidden in ("import requests", "import httpx", "import socket", "urllib", "sqlalchemy", "session_scope"):
         assert forbidden not in src
+
+
+# --- the review read's findings (2026-11-19), each pinned ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("markup", "expected"),
+    [
+        ("1.5 x 10<sup>9</sup>/L and 10<sup>-6</sup>", "1.5 x 10^9/L and 10^(-6)"),
+        ("CO<sub>2</sub> and H<sub>2</sub>O", "CO_2 and H_2O"),
+        (
+            '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msup><mml:mn>10</mml:mn>'
+            "<mml:mn>12</mml:mn></mml:msup></mml:math> cells",
+            "10^(12) cells",
+        ),
+        ("<i>in vitro</i> and <b>bold</b>", "in vitro and bold"),
+    ],
+)
+def test_a_superscript_is_never_fused_into_a_different_number(markup, expected):
+    (rec,), _ = _parse(_wrap(_article(inner=f"<Abstract><AbstractText>{markup}</AbstractText></Abstract>")))
+    assert rec.abstract[0].text == expected
+
+
+@pytest.mark.parametrize(
+    ("pubdate", "expected", "text"),
+    [
+        ("<Year>2023</Year><Month>Feb</Month><Day>29</Day>", "2023-02", None),  # not a leap year
+        ("<Year>2024</Year><Month>Feb</Month><Day>29</Day>", "2024-02-29", None),
+        ("<Year>2024</Year><Month>March</Month>", "2024-03", None),
+        ("<Year>2024</Year><Month>Janxyz</Month>", "2024", "Janxyz"),  # unreadable month kept as text
+        ("<Year>2024</Year><Month>\u00b9</Month>", "2024", "\u00b9"),
+        ("<Year>2024</Year><Month>Mar</Month><Day>\u00b2</Day>", "2024-03", None),
+        ("<Year>\uff12\uff10\uff12\uff13</Year>", None, None),  # full-width digits are not a year
+    ],
+)
+def test_dates_take_ascii_digits_real_month_names_and_the_real_calendar(pubdate, expected, text):
+    inner = f"<Journal><JournalIssue><PubDate>{pubdate}</PubDate></JournalIssue></Journal>"
+    items, tally = _parse(_wrap(_article(inner=inner)))
+    (rec,) = items
+    assert (rec.pub_date, rec.pub_date_text) == (expected, text)
+    assert tally.skipped == {}
+
+
+def test_retracted_and_republished_makes_the_original_retracted():
+    cc = '<CommentsCorrectionsList><CommentsCorrections RefType="RetractedandRepublishedIn"><PMID Version="1">8</PMID></CommentsCorrections></CommentsCorrectionsList>'
+    xml = _wrap(
+        '<PubmedArticle><MedlineCitation><PMID Version="1">5</PMID><Article><ArticleTitle>t</ArticleTitle></Article>'
+        f"{cc}</MedlineCitation></PubmedArticle>"
+    )
+    (rec,), _ = _parse(xml)
+    assert rec.provenance_class == "retracted"
+
+
+@pytest.mark.parametrize(
+    ("ptype", "kind"),
+    [("Published Erratum", "erratum"), ("Expression of Concern", "expression_of_concern"), ("Journal Article", None)],
+)
+def test_every_notice_kind_is_named(ptype, kind):
+    types = f"<PublicationTypeList><PublicationType>{ptype}</PublicationType></PublicationTypeList>"
+    (rec,), _ = _parse(_wrap(_article(inner=types)))
+    assert rec.notice_kind == kind
+    assert rec.provenance_class == "journal"
+
+
+def test_a_citation_link_with_a_pmid_is_not_a_status():
+    cc = '<CommentsCorrectionsList><CommentsCorrections RefType="Cites"><PMID Version="1">8</PMID></CommentsCorrections></CommentsCorrectionsList>'
+    xml = _wrap(
+        '<PubmedArticle><MedlineCitation><PMID Version="1">5</PMID><Article><ArticleTitle>t</ArticleTitle></Article>'
+        f"{cc}</MedlineCitation></PubmedArticle>"
+    )
+    (rec,), _ = _parse(xml)
+    assert rec.status_links == ()
+
+
+def test_the_first_of_two_own_dois_is_kept():
+    data = '<ArticleIdList><ArticleId IdType="doi">10.1/first</ArticleId><ArticleId IdType="doi">10.1/second</ArticleId></ArticleIdList>'
+    (rec,), _ = _parse(_wrap(_article(data=data)))
+    assert rec.doi == "10.1/first"
+
+
+def test_a_truncated_file_yields_what_it_read_then_fails_loudly():
+    from xml.etree.ElementTree import ParseError
+
+    doc = _wrap(_article("1") + _article("2"))[:-40]  # cut inside the last record
+    got: list = []
+    with pytest.raises(ParseError):
+        for item in parse_pubmed(io.BytesIO(doc)):
+            got.append(item.pmid)
+    assert got == [1]
+
+
+def test_a_cut_title_or_abstract_is_flagged_and_an_intact_one_is_not():
+    big = "x" * (MAX_TEXT + 1)
+    (rec,), _ = _parse(_wrap(_article(inner=f"<Abstract><AbstractText>{big}</AbstractText></Abstract>")))
+    assert rec.text_truncated is True
+    (rec,), _ = _parse(_wrap(_article(inner="<Abstract><AbstractText>short</AbstractText></Abstract>")))
+    assert rec.text_truncated is False
+
+
+def test_one_record_that_cannot_be_read_is_skipped_and_the_rest_are_still_read(monkeypatch):
+    import src.medical.pubmed_xml as mod
+
+    real = mod._record
+
+    def flaky(el, tally):
+        if el.findtext("MedlineCitation/PMID") == "2":
+            raise ValueError("a malformed record")
+        return real(el, tally)
+
+    monkeypatch.setattr(mod, "_record", flaky)
+    items, tally = _parse(_wrap(_article("1") + _article("2") + _article("3")))
+    assert [i.pmid for i in items] == [1, 3]
+    assert tally.skipped == {"unreadable record": 1}

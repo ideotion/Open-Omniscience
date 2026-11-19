@@ -34,6 +34,7 @@ NLM puts at the top of every file names an external DTD; expat never fetches it.
 
 from __future__ import annotations
 
+import calendar
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -72,8 +73,12 @@ _NOTICE_TYPES = {
     "Expression of Concern": "expression_of_concern",
 }
 
-_MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
-_DAYS_IN = (31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+_MONTH_NAMES = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december")
+#: A month is its three-letter abbreviation or its full English name, and nothing else ("Janxyz" is not January).
+_MONTHS = {**{m[:3]: i for i, m in enumerate(_MONTH_NAMES, 1)}, **{m: i for i, m in enumerate(_MONTH_NAMES, 1)}}
+#: ASCII digits only: str.isdigit() is also true for "²" and "２", which int() then refuses or misreads.
+_ASCII_INT = re.compile(r"[0-9]+")
+_MATHML = "{http://www.w3.org/1998/Math/MathML}"
 _PMCID = re.compile(r"PMC[1-9][0-9]{0,9}")
 _DIGITS = re.compile(r"[1-9][0-9]{0,9}")
 _WS = re.compile(r"\s+")
@@ -122,6 +127,8 @@ class PubmedRecord:
     provenance_class: str
     notice_kind: str | None
     status_links: tuple[StatusLink, ...]
+    #: True when the title or an abstract section was cut at ``MAX_TEXT``: the text is NOT complete.
+    text_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,13 +152,39 @@ class ParseTally:
         self.skipped[reason] = self.skipped.get(reason, 0) + 1
 
 
-def _text(el: Any) -> str | None:
-    """All text under ``el`` (inline markup like ``<i>`` and ``<sup>`` flattened), whitespace folded."""
+def _script(mark: str, inner: str) -> str:
+    """``10<sup>9</sup>`` must not read as ``109``: a raised or lowered part keeps a visible mark."""
+    inner = inner.strip()
+    if not inner:
+        return ""
+    return f"{mark}{inner}" if len(inner) == 1 else f"{mark}({inner})"
+
+
+def _render(el: Any) -> str:
+    """The text under ``el``. Styling markup (``<i>``, ``<b>``) is dropped; superscripts and subscripts,
+    in NLM's own tags and in MathML, are written ``^x`` / ``_x`` so a number is never fused with its exponent."""
+    tag = el.tag if isinstance(el.tag, str) else ""
+    if tag in ("sup", "sub"):
+        own = (el.text or "") + "".join(_render(c) + (c.tail or "") for c in el)
+        return _script("^" if tag == "sup" else "_", own)
+    if tag in (_MATHML + "msup", _MATHML + "msub") and len(el) >= 2:
+        base, script = _render(el[0]), _render(el[1])
+        return base + _script("^" if tag.endswith("msup") else "_", script)
+    if tag == _MATHML + "msubsup" and len(el) >= 3:
+        return _render(el[0]) + _script("_", _render(el[1])) + _script("^", _render(el[2]))
+    return (el.text or "") + "".join(_render(c) + (c.tail or "") for c in el)
+
+
+def _text(el: Any, cut: list[bool] | None = None) -> str | None:
+    """All text under ``el``, whitespace folded, bounded at ``MAX_TEXT``. When ``cut`` is given, a
+    truncation is reported into it, so a cut abstract never reads as a complete one."""
     if el is None:
         return None
-    out = _WS.sub(" ", "".join(el.itertext())).strip()
+    out = _WS.sub(" ", _render(el)).strip()
     if len(out) > MAX_TEXT:
         out = out[:MAX_TEXT]
+        if cut is not None:
+            cut.append(True)
     return out or None
 
 
@@ -172,10 +205,10 @@ def _month(raw: str | None) -> int | None:
     if not raw:
         return None
     raw = raw.strip()
-    if raw.isdigit():
+    if _ASCII_INT.fullmatch(raw):
         n = int(raw)
         return n if 1 <= n <= 12 else None
-    return _MONTHS.get(raw[:3].lower())
+    return _MONTHS.get(raw.lower())
 
 
 def _date(pub: Any) -> tuple[str | None, str | None]:
@@ -184,16 +217,19 @@ def _date(pub: Any) -> tuple[str | None, str | None]:
         return None, None
     medline = _text(pub.find("MedlineDate"))
     year_raw = (pub.findtext("Year") or "").strip()
-    if not (len(year_raw) == 4 and year_raw.isdigit()):
+    if not (len(year_raw) == 4 and _ASCII_INT.fullmatch(year_raw)):
         return None, medline
     out = year_raw
-    month = _month(pub.findtext("Month"))
+    month_raw = _text(pub.find("Month"))
+    month = _month(month_raw)
     if month is None:
-        # A Season ("Spring") is text, not a month: the year stands alone, and the season is kept verbatim.
-        return out, _text(pub.find("Season")) or medline
+        # A Season ("Spring") or an unreadable month is text, not a month: the year stands alone, and
+        # the text is kept verbatim rather than dropped.
+        return out, _text(pub.find("Season")) or month_raw or medline
     out += f"-{month:02d}"
     day_raw = (pub.findtext("Day") or "").strip()
-    if day_raw.isdigit() and 1 <= int(day_raw) <= _DAYS_IN[month - 1]:
+    # calendar.monthrange knows the year: 29 February 2023 is not a date.
+    if _ASCII_INT.fullmatch(day_raw) and 1 <= int(day_raw) <= calendar.monthrange(int(year_raw), month)[1]:
         out += f"-{int(day_raw):02d}"
     return out, medline
 
@@ -231,11 +267,12 @@ def _record(el: Any, tally: ParseTally) -> PubmedRecord | None:
         tally.skip("no Article element")
         return None
 
+    cut: list[bool] = []
     sections: list[AbstractSection] = []
     abstract_el = art.find("Abstract")
     if abstract_el is not None:
         for part in abstract_el.findall("AbstractText"):
-            text = _text(part)
+            text = _text(part, cut)
             if text:
                 label = (part.get("Label") or "").strip() or None
                 sections.append(AbstractSection(label=label, text=text))
@@ -277,8 +314,8 @@ def _record(el: Any, tally: ParseTally) -> PubmedRecord | None:
         pmid=ident[0],
         version=ident[1],
         citation_status=(cit.get("Status") or None),
-        title=_text(art.find("ArticleTitle")),
-        vernacular_title=_text(art.find("VernacularTitle")),
+        title=_text(art.find("ArticleTitle"), cut),
+        vernacular_title=_text(art.find("VernacularTitle"), cut),
         abstract=tuple(sections) if sections else None,
         abstract_copyright=_text(abstract_el.find("CopyrightInformation")) if abstract_el is not None else None,
         journal=_text(art.find("Journal/Title")),
@@ -293,6 +330,7 @@ def _record(el: Any, tally: ParseTally) -> PubmedRecord | None:
         provenance_class=klass,
         notice_kind=notice,
         status_links=tuple(links),
+        text_truncated=bool(cut),
     )
 
 
@@ -320,7 +358,13 @@ def parse_pubmed(stream: IO[bytes], tally: ParseTally | None = None) -> Iterator
         if depth != 1:
             continue  # only the root's direct children are records; everything deeper is read through them
         if el.tag == "PubmedArticle":
-            rec = _record(el, t)
+            try:
+                rec = _record(el, t)
+            except (ValueError, TypeError, IndexError, AttributeError):
+                # One malformed record is skipped and counted; it never ends the parse and loses the
+                # records after it. (A malformed DOCUMENT still raises: that is a broken file, not a record.)
+                t.skip("unreadable record")
+                rec = None
             if rec is not None:
                 t.articles += 1
                 yield rec
