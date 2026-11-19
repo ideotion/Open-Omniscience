@@ -550,3 +550,21 @@ def test_the_pre_check_wants_dokumente_as_the_FIRST_element():
     assert looks_like_gii(GG.read_text(encoding="utf-8"))
     assert not looks_like_gii("<html><body><pre>&lt;dokumente&gt; <dokumente></pre></body></html>")
     assert not looks_like_gii("<p>see <dokumente> below</p>")
+
+
+def test_a_head_of_many_empty_comments_is_answered_in_linear_time():
+    """A regular expression with repeated optional comment groups took ~2x longer per extra
+    empty comment (22 comments: 4.8 s); a 600-character head holds about 85. The pre-check
+    runs on every tracked law body, so it must not be a way to hang the tracking pass."""
+    import time
+
+    hostile = "<!---->" * 85 + "<x"
+    t0 = time.monotonic()
+    assert not looks_like_gii(hostile)
+    assert looks_like_gii("<!---->" * 80 + "<dokumente>")  # 571 chars, inside the 600 read
+    assert time.monotonic() - t0 < 1.0
+    assert looks_like_gii(
+        '<?xml version="1.0"?><!-- c --><!DOCTYPE dokumente SYSTEM "x.dtd"><dokumente doknr="1">'
+    )
+    assert not looks_like_gii("<dokumenteX>")
+    assert not looks_like_gii("<!-- never closed <dokumente>")

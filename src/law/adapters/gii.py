@@ -227,10 +227,6 @@ _KNOWN = {
 }
 
 _WS_RE = re.compile(r"\s+")
-_GII_HEAD_RE = re.compile(
-    r"(?:<\?xml[^>]*\?>\s*)?(?:<!--.*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?(?:<!--.*?-->\s*)*<dokumente[\s>/]",
-    re.IGNORECASE | re.DOTALL,
-)
 _KENNZAHL_RE = re.compile(r"^\d+$")
 
 
@@ -359,7 +355,34 @@ def looks_like_gii(body) -> bool:
     head = head.lstrip("\ufeff").lstrip()
     # The FIRST element must be <dokumente>, after at most a declaration, a doctype and
     # comments: a page that merely mentions the tag further in is not the portal's XML.
-    return _GII_HEAD_RE.match(head) is not None
+    return _first_element_is_dokumente(head)
+
+
+def _first_element_is_dokumente(head: str) -> bool:
+    """Skip a declaration, comments and a doctype, then ask whether ``<dokumente`` opens.
+
+    A loop of ``find`` calls rather than a regular expression: each step consumes text and
+    moves forward, so the cost is linear in the head however it is crafted. (A pattern with
+    repeated optional comment groups backtracks exponentially on a run of empty comments.)
+    """
+    pos = 0
+    while True:
+        while pos < len(head) and head[pos].isspace():
+            pos += 1
+        if head.startswith("<?", pos):
+            closer = "?>"
+        elif head.startswith("<!--", pos):
+            closer = "-->"
+        elif head[pos : pos + 9].upper() == "<!DOCTYPE":
+            closer = ">"
+        else:
+            break
+        end = head.find(closer, pos + 2)
+        if end < 0:
+            return False
+        pos = end + len(closer)
+    tag = head[pos : pos + 11].lower()
+    return tag.startswith("<dokumente") and (len(tag) == 10 or tag[10] in " \t\r\n>/")
 
 
 def parse_gii(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedLaw:
