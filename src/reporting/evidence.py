@@ -320,12 +320,17 @@ def _leaf(item: dict) -> str:
     return hashlib.sha256(canonical_bytes(item)).hexdigest()
 
 
-def build_manifest(articles, *, case_name: str | None = None) -> dict:
-    """Build the unsigned manifest (items + Merkle root + metadata)."""
+def build_manifest(articles, *, case_name: str | None = None, dossier: dict | None = None) -> dict:
+    """Build the unsigned manifest (items + Merkle root + metadata).
+
+    ``dossier`` (S08-01 S2) is written as ``manifest.dossier``. It is not a Merkle leaf: the
+    signature is over the whole canonical manifest, so it is covered by the signature, and
+    :func:`verify_bundle` checks it with no change. A bundle without it is byte-for-byte the
+    bundle this function always wrote."""
     items = [_article_item(a) for a in articles]
     leaves = [_leaf(it) for it in items]
     merkle_root = compute_merkle_root(leaves) if leaves else None
-    return {
+    manifest: dict = {
         "bundle_version": BUNDLE_VERSION,
         "case_name": case_name,
         "generated_at": datetime.now(UTC).isoformat(),
@@ -333,6 +338,9 @@ def build_manifest(articles, *, case_name: str | None = None) -> dict:
         "merkle_root": merkle_root,
         "items": items,
     }
+    if dossier is not None:
+        manifest["dossier"] = dossier
+    return manifest
 
 
 def sign_manifest(manifest: dict, key: Ed25519PrivateKey) -> dict:
@@ -346,8 +354,10 @@ def sign_manifest(manifest: dict, key: Ed25519PrivateKey) -> dict:
     }
 
 
-def build_signed_bundle(articles, key: Ed25519PrivateKey, *, case_name: str | None = None) -> dict:
-    return sign_manifest(build_manifest(articles, case_name=case_name), key)
+def build_signed_bundle(
+    articles, key: Ed25519PrivateKey, *, case_name: str | None = None, dossier: dict | None = None
+) -> dict:
+    return sign_manifest(build_manifest(articles, case_name=case_name, dossier=dossier), key)
 
 
 # --------------------------------------------------------------------------- #
