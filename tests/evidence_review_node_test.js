@@ -141,6 +141,8 @@ assert.ok(dv.includes("The dossier in the file") && dv.includes("Rails carried: 
 assert.ok(dv.includes("Not joined, so not in the file: agenda"), dv);
 assert.ok(dv.includes("The dossier counts 7000 articles; the file carries 5000 of them"), dv);
 assert.ok(dv.includes("Licences") && dv.includes("Map data © OpenStreetMap contributors, ODbL."), dv);
+assert.ok(dv.includes("The dossier part is plaintext too.") && dv.includes("the map objects with their coordinates")
+  && dv.includes("Which pages you follow is not in the file."), dv);
 assert.ok(dr.includes('title="applies because: table:places"'), "the signal rides the hover");
 assert.ok(dv.indexOf("The dossier in the file") < dv.indexOf("Plaintext"), "the dossier part comes before the caveats");
 const dnone = visible(R.evidenceReviewHtml(Object.assign({}, DPLAN, { dossier: Object.assign({}, DPLAN.dossier,

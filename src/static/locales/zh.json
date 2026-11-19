@@ -5434,6 +5434,7 @@
   "The documents you track whose text this instance saw change inside the window, with how many new versions were captured; a document's first capture is not a change.": "您跟踪的、本安装在时间窗口内发现其文本发生变化的文件，并附采集到的新版本数量；文件的首次采集不算变化。",
   "The dossier counts {total} articles; the file carries {n} of them, the most the page holds.": "档案共计 {total} 篇文章；文件包含其中 {n} 篇，即页面可容纳的上限。",
   "The dossier in the file": "文件中的档案",
+  "The dossier part is plaintext too. Anyone who has the file can read the item's name, the names and keywords that matched it, its places, the map objects with their coordinates, and the Wikipedia pages this machine holds for it. Which pages you follow is not in the file.": "档案部分同样是明文。任何拿到文件的人都能读到条目名称、与之匹配的名称和关键词、相关地点、带坐标的地图对象，以及本机保存的相关维基百科页面。您关注了哪些页面不在文件中。",
   "The download goes over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on. Once it is here it runs fully offline, like any other model. To make it the one the app uses, set it as the active model above.": "下载走明网——不经过本应用的 Tor 代理——因此在飞行模式开启时会被拒绝。到达本机后，它像其他模型一样完全离线运行。若要让应用使用它，请在上方将其设为活动模型。",
   "The download starts only once its exact size is shown.": "只有显示确切大小后，下载才会开始。",
   "The downloads go over the clear internet — not through this app's Tor proxy. They happen once; the model then runs fully offline.": "下载通过明网进行——不经由本应用的 Tor 代理。仅进行一次；之后模型将完全离线运行。",

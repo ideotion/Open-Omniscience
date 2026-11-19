@@ -8,7 +8,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -37,14 +37,16 @@ class EvidenceRequest(BaseModel):
     case_name: str | None = None
     # S08-01 S2: the dossier of one Wikidata item. Its joined articles are the items and the
     # dossier itself rides in the manifest (src.reporting.dossier_evidence).
-    dossier_qid: str | None = None
-    lang: str | None = None
+    dossier_qid: str | None = Field(default=None, max_length=24)
+    lang: str | None = Field(default=None, pattern=r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})?$")
 
 
 def _dossier(req, db):
     """The dossier selection for ``req.dossier_qid``, or None when the request names no dossier."""
     if not req.dossier_qid:
         return None
+    if req.article_ids or req.query:
+        raise HTTPException(status_code=400, detail="Provide a dossier_qid, or article_ids or a query, not both.")
     from src.reporting.dossier_evidence import dossier_selection
 
     sel = dossier_selection(db, req.dossier_qid.strip().upper(), req.lang or "en")

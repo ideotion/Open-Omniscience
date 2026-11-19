@@ -60,6 +60,9 @@
       if (d.articles_bounded || d.articles_in_bundle < d.articles_total) {
         html += `<p class="card-caveat">${esc(tf("The dossier counts {total} articles; the file carries {n} of them, the most the page holds.", {total: _evNum(d.articles_total), n: _evNum(d.articles_in_bundle)}))}</p>`;
       }
+      // The plaintext caveat names what the dossier part reveals (the security read): not only
+      // article addresses, but the spellings that matched, places, map coordinates and lane pages.
+      html += `<p class="card-caveat">${esc(t("The dossier part is plaintext too. Anyone who has the file can read the item's name, the names and keywords that matched it, its places, the map objects with their coordinates, and the Wikipedia pages this machine holds for it. Which pages you follow is not in the file."))}</p>`;
       const lic = d.attribution || [];
       html += `<div class="vsect">${esc(t("Licences"))}</div>`;
       // Each line is the server's English sentence looked up as a key (the backup panel's rule):

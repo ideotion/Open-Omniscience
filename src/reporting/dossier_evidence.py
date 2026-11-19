@@ -23,6 +23,17 @@ The licence lines are the ones that APPLY (Q1008 = a), each with the signal that
 sources of the bundled articles, the Wikipedia lane's pages, the Places (OSM ids, so ODbL under
 Q823 = a), and the OpenStreetMap lane's objects.
 
+TWO THINGS THE BLOCK DOES NOT CARRY AS THE PAGE HAS THEM (the 2026-11-19 reads):
+
+* **No JSON number with a fraction.** The signature is over Python's canonical JSON, which writes a
+  whole-degree coordinate as ``52.0``; a browser that saves the file (``JSON.stringify``) writes ``52``,
+  and the verifier, reading ``52`` back as an integer, then signs-checks different bytes, so an honest
+  file read as tampered. Every float in the block is therefore written as its decimal TEXT
+  (``"52.0"``), which no JSON tool rewrites. Article items never held a float.
+* **Not which pages this install follows.** The Wikipedia rail marks each lane page ``followed`` or
+  walked; in a plaintext file handed to someone else that flag is a list of what the investigator
+  watches, so it is left out: the file names the pages, not the watch list.
+
 No network call, no write: it reads, and the endpoint signs.
 """
 
@@ -45,6 +56,34 @@ class DossierSelection:
 
     article_ids: list[int]
     block: dict
+
+
+#: The fields of a Wikipedia lane page the file carries (``followed`` is left out, see above).
+WIKI_PAGE_FIELDS = ("edition", "title", "external_id")
+
+
+def _stable(obj):
+    """``obj`` with every float written as its decimal text, so the signed bytes survive any JSON tool."""
+    if isinstance(obj, bool) or obj is None:
+        return obj
+    if isinstance(obj, float):
+        return repr(obj)
+    if isinstance(obj, dict):
+        return {k: _stable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_stable(v) for v in obj]
+    return obj
+
+
+def _without_watch_list(rails: list[dict]) -> list[dict]:
+    out = []
+    for r in rails:
+        lane = r.get("lane") if r.get("key") == "wikipedia" else None
+        if isinstance(lane, dict) and isinstance(lane.get("pages"), list):
+            pages = [{k: p.get(k) for k in WIKI_PAGE_FIELDS} for p in lane["pages"] if isinstance(p, dict)]
+            r = {**r, "lane": {**lane, "pages": pages}}
+        out.append(r)
+    return out
 
 
 def _signals(session, article_ids: list[int], rails: list[dict]) -> set[str]:
@@ -93,7 +132,7 @@ def dossier_selection(session, qid: str, lang: str = "en") -> DossierSelection |
         ids = [int(i) for i in session.execute(
             select(Article.id).where(Article.id.in_(ids), not_a_stand_in_article()).order_by(Article.id)
         ).scalars()]
-    rails = list(d.get("rails") or [])
+    rails = _without_watch_list(list(d.get("rails") or []))
     block = {
         "qid": d["qid"],
         "lang": d.get("lang"),
@@ -112,7 +151,7 @@ def dossier_selection(session, qid: str, lang: str = "en") -> DossierSelection |
         "caveat": d.get("caveat"),
         "export_note": EXPORT_NOTE,
     }
-    return DossierSelection(article_ids=ids, block=block)
+    return DossierSelection(article_ids=ids, block=_stable(block))
 
 
 def plan_summary(sel: DossierSelection) -> dict:

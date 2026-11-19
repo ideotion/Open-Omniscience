@@ -186,3 +186,74 @@ def test_the_dossier_page_offers_the_export_through_the_one_review():
     assert "/api/reports/evidence" not in js, "the dossier page never posts the export itself"
     ev_js = read_static("app-evidence.js")
     assert "evidenceDossierHtml(plan, t, tf)" in ev_js
+
+
+# ---- the 2026-11-19 correctness and security reads ------------------------------------------ #
+
+def _osm_object(lat, lon):
+    from src.osm.lane_models import osm_objects_table as T
+    from src.osm.tags import column_name
+    from src.versioned.store import create_lane, lane_session
+
+    create_lane("osm")
+    with lane_session("osm") as lane:
+        lane.execute(T.insert().values(osm_type="n", osm_id=9000000001, country_alpha3="ZZZ", kind="place",
+                                       lat=lat, lon=lon, **{column_name("wikidata"): ZED, column_name("name"): "Zedport"}))
+
+
+def test_a_whole_degree_coordinate_survives_the_browsers_save_and_still_verifies(client, seeded, lanes):  # noqa: F811
+    import shutil
+    import subprocess
+
+    _osm_object(52.0, 0.0)
+    bundle = client.post("/api/reports/evidence", json={"dossier_qid": ZED}).json()
+    obj = next(r for r in bundle["manifest"]["dossier"]["rails"] if r["key"] == "map")["lane"]["objects"][0]
+    assert (obj["lat"], obj["lon"]) == ("52.0", "0.0"), "coordinates are decimal text, never a JSON number"
+    assert ev.verify_bundle(bundle)[0] is True
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    # What app-evidence.js does when it saves: JSON.stringify(bundle, null, 2) of the parsed answer.
+    saved = subprocess.run([node, "-e", "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>"
+                            "process.stdout.write(JSON.stringify(JSON.parse(s),null,2)))"],
+                           input=json.dumps(bundle), capture_output=True, text=True, check=True).stdout
+    ok, reason = ev.verify_bundle(json.loads(saved))
+    assert ok is True, reason
+
+
+def test_no_float_is_left_anywhere_in_the_block(db, seeded, lanes):  # noqa: F811
+    _osm_object(48.85661, 2.3522)
+
+    def floats(o):
+        if isinstance(o, float):
+            yield o
+        elif isinstance(o, dict):
+            for v in o.values():
+                yield from floats(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from floats(v)
+
+    assert list(floats(DE.dossier_selection(db, ZED, "en").block)) == []
+
+
+def test_the_file_names_wikipedia_pages_but_not_which_ones_this_install_follows(db, seeded, lanes, monkeypatch):  # noqa: F811
+    from src.entities import places
+
+    monkeypatch.setattr(places, "wiki_pages_for_qid", lambda qid, limit=24: {"available": True, "pages": [
+        {"edition": "frwiki", "title": "Zedport", "external_id": "frwiki:p1", "followed": True},
+        {"edition": "enwiki", "title": "Zedport", "external_id": "enwiki:p2", "followed": False}]})
+    sel = DE.dossier_selection(db, ZED, "en")
+    pages = next(r for r in sel.block["rails"] if r["key"] == "wikipedia")["lane"]["pages"]
+    assert [p["title"] for p in pages] == ["Zedport", "Zedport"]
+    assert all(set(p) == set(DE.WIKI_PAGE_FIELDS) for p in pages)
+    assert "followed" not in json.dumps(sel.block)
+
+
+def test_the_language_and_the_selection_are_refused_when_they_are_not_one_thing(client, seeded, lanes):  # noqa: F811
+    assert client.post("/api/reports/evidence", json={"dossier_qid": ZED, "lang": "x" * 500}).status_code == 422
+    assert client.post("/api/reports/evidence", json={"dossier_qid": ZED, "lang": "../en"}).status_code == 422
+    assert client.post("/api/reports/evidence", json={"dossier_qid": ZED, "lang": "pt-BR"}).status_code == 200
+    both = client.post("/api/reports/evidence", json={"dossier_qid": ZED, "article_ids": [seeded["a1"]]})
+    assert both.status_code == 400
+    assert client.post("/api/reports/evidence/plan", json={"dossier_qid": ZED, "query": "zedport"}).status_code == 400

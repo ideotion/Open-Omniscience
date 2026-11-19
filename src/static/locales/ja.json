@@ -5434,6 +5434,7 @@
   "The documents you track whose text this instance saw change inside the window, with how many new versions were captured; a document's first capture is not a change.": "追跡中の文書のうち、期間内にこのインストールが本文の変更を確認したもの。取得した新しい版の数も示します。文書の最初の取得は変更ではありません。",
   "The dossier counts {total} articles; the file carries {n} of them, the most the page holds.": "ドシエは {total} 件の記事を数えます。ファイルにはそのうち {n} 件が含まれます（ページが保持できる上限）。",
   "The dossier in the file": "ファイル内のドシエ",
+  "The dossier part is plaintext too. Anyone who has the file can read the item's name, the names and keywords that matched it, its places, the map objects with their coordinates, and the Wikipedia pages this machine holds for it. Which pages you follow is not in the file.": "ドシエ部分も平文です。ファイルを持つ人は誰でも、項目名、一致した名前とキーワード、その場所、座標付きの地図オブジェクト、このマシンが保持する関連ウィキペディアのページを読めます。あなたがフォローしているページはファイルに含まれません。",
   "The download goes over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on. Once it is here it runs fully offline, like any other model. To make it the one the app uses, set it as the active model above.": "ダウンロードは平文のインターネットを通ります — このアプリの Tor プロキシは経由しません — そのため機内モードが有効な間は拒否されます。手元に来れば、他のモデルと同じく完全にオフラインで動きます。アプリが使うモデルにするには、上で使用中のモデルに設定してください。",
   "The download starts only once its exact size is shown.": "ダウンロードは正確なサイズが表示されてから始まります。",
   "The downloads go over the clear internet — not through this app's Tor proxy. They happen once; the model then runs fully offline.": "ダウンロードは、このアプリの Tor プロキシではなく、通常のインターネット経由で行われます。一度だけ実行され、その後モデルは完全にオフラインで動作します。",
