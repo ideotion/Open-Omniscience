@@ -217,7 +217,7 @@ def _date(pub: Any) -> tuple[str | None, str | None]:
         return None, None
     medline = _text(pub.find("MedlineDate"))
     year_raw = (pub.findtext("Year") or "").strip()
-    if not (len(year_raw) == 4 and _ASCII_INT.fullmatch(year_raw)):
+    if not (len(year_raw) == 4 and _ASCII_INT.fullmatch(year_raw) and int(year_raw) >= 1):  # ISO years start at 0001
         return None, medline
     out = year_raw
     month_raw = _text(pub.find("Month"))
@@ -360,7 +360,7 @@ def parse_pubmed(stream: IO[bytes], tally: ParseTally | None = None) -> Iterator
         if el.tag == "PubmedArticle":
             try:
                 rec = _record(el, t)
-            except (ValueError, TypeError, IndexError, AttributeError):
+            except (ValueError, TypeError, IndexError, AttributeError, RecursionError):
                 # One malformed record is skipped and counted; it never ends the parse and loses the
                 # records after it. (A malformed DOCUMENT still raises: that is a broken file, not a record.)
                 t.skip("unreadable record")

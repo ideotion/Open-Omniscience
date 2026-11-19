@@ -340,6 +340,7 @@ def test_a_superscript_is_never_fused_into_a_different_number(markup, expected):
         ("<Year>2024</Year><Month>\u00b9</Month>", "2024", "\u00b9"),
         ("<Year>2024</Year><Month>Mar</Month><Day>\u00b2</Day>", "2024-03", None),
         ("<Year>\uff12\uff10\uff12\uff13</Year>", None, None),  # full-width digits are not a year
+        ("<Year>0000</Year><Month>Feb</Month><Day>1</Day>", None, None),  # ISO years start at 0001
     ],
 )
 def test_dates_take_ascii_digits_real_month_names_and_the_real_calendar(pubdate, expected, text):
@@ -418,5 +419,13 @@ def test_one_record_that_cannot_be_read_is_skipped_and_the_rest_are_still_read(m
 
     monkeypatch.setattr(mod, "_record", flaky)
     items, tally = _parse(_wrap(_article("1") + _article("2") + _article("3")))
+    assert [i.pmid for i in items] == [1, 3]
+    assert tally.skipped == {"unreadable record": 1}
+
+
+def test_a_hostile_deeply_nested_record_is_skipped_and_the_rest_are_still_read():
+    deep = "<i>" * 3000 + "x" + "</i>" * 3000
+    bad = _article("2", inner=f"<Abstract><AbstractText>{deep}</AbstractText></Abstract>")
+    items, tally = _parse(_wrap(_article("1") + bad + _article("3")))
     assert [i.pmid for i in items] == [1, 3]
     assert tally.skipped == {"unreadable record": 1}
