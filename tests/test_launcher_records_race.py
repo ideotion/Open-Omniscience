@@ -1646,7 +1646,9 @@ def test_an_empty_pid_file_replaced_by_another_starts_the_minute_again(tmp_path,
     _old(lock)
     nolinks = "" if links else "ln() { return 1; }; "
     # the new file is made beside the old one and renamed over it, so its inode cannot be the old one's
-    swap = (f'sleep() {{ SECONDS=$((SECONDS + 1)); if [ "$SECONDS" -eq 30 ]; then : > "{lock}/pid.new"; command touch -t {_OLD_STAMP} "{lock}/pid.new"; '
+    # the waiter's clock is a look counter here: SECONDS also counts real time since its last assignment, so "SECONDS + 1" can skip a value (the Opus read
+    # of 19 Nov saw 29 30 31 33) and a swap keyed on one value can be skipped; a counter assigned at every look keeps one look one second
+    swap = (f'sleep() {{ _k=$((${{_k:-0}} + 1)); SECONDS=$_k; if [ "$_k" -eq 30 ]; then : > "{lock}/pid.new"; command touch -t {_OLD_STAMP} "{lock}/pid.new"; '
             f'command mv -f "{lock}/pid.new" "{lock}/pid"; command touch -t {_OLD_STAMP} "{lock}"; fi; command sleep "$@"; }}; ')
 
     def run(wait_ms: int) -> str:
@@ -1743,3 +1745,26 @@ def test_a_waiter_under_the_launchers_set_u_takes_over_a_lock_with_an_empty_pid_
                        env=env, capture_output=True, text=True, timeout=90)
     assert "rc=0" in r.stdout and "unbound" not in r.stderr, (r.stdout, r.stderr)
     assert {"pid": 5} in _rows(f)[0] and not lock.exists()
+
+
+@posix_only
+@pytest.mark.parametrize("kind", ["directory", "link-to-directory"])
+def test_a_pid_name_that_is_a_directory_is_never_claimed_by_the_link(tmp_path, kind):
+    """The security read of R749 (19 Nov): ``ln TEMP NAME`` where NAME is a directory, or a link to one, puts the link INSIDE it and succeeds (GNU and BSD
+    alike), so every claimer of such a lock "won" it at once. The claim is now won only when NAME is that very temp file; anything else is a lost claim,
+    and the link it made inside is removed. Red on this PR's first head; main's noclobber create refused the name too."""
+    h, env = _helpers(tmp_path, no_flock=True)
+    lock = tmp_path / "x.lock.d"
+    lock.mkdir()
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    if kind == "directory":
+        (lock / "pid").mkdir()
+        inner = lock / "pid"
+    else:
+        (lock / "pid").symlink_to(inner)
+    r = subprocess.run(["bash", "-c", f'. "{h}"; _oo_rec_claim "{lock}/pid"; echo "rc=$?"; _oo_rec_claim "{lock}/pid"; echo "rc=$?"'],
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert r.stdout.count("rc=1") == 2, (r.stdout, r.stderr)
+    assert list(inner.iterdir()) == [], "the link made inside is removed"
+    assert sorted(p.name for p in lock.iterdir()) == ["pid"], "no temp file left"

@@ -144,20 +144,36 @@ oo_pid_alive() {
 # R749 (row 182) part A: where the filesystem has hard links the pid is first written to a temp file beside FILE and then LINKED to FILE (link(2) refuses an
 # existing name, in GNU, uutils and BSD alike), so FILE never exists without its pid in it: no claimer killed between the create and the write (bash 3.2's
 # window is a fork of sh, milliseconds) can leave it empty. The temp file goes whatever happens. A failed link with FILE present lost the claim; with FILE
-# absent the drive has no hard links, and the noclobber create below is the claim, as is a temp file that could not be written (a full disk).
+# absent the drive has no hard links (or the lock was released meanwhile, and then the create below fails on the gone directory), and the noclobber
+# create below is the claim, as is a temp file that could not be written (a full disk).
 _oo_rec_claim() {
-    local c=0 r=0 t
-    t="$1.t$$.${RANDOM:-0}${RANDOM:-0}"
-    if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" > "$t"; } 2>/dev/null || :
-    else { sh -c 'echo $PPID' > "$t"; } 2>/dev/null || :
-    fi
-    if [ -s "$t" ]; then
-        if ln "$t" "$1" 2>/dev/null; then rm -f "$t" 2>/dev/null || :; return 0; fi
-        if [ -e "$1" ] || [ -L "$1" ]; then rm -f "$t" 2>/dev/null || :; return 1; fi
-    fi
-    rm -f "$t" 2>/dev/null || :
+    local c=0 r=0 t w=0 k=""
     case $- in *C*) c=1 ;; esac
     set -C
+    # the temp file is made O_EXCL too, then written by append: a name another claimer picked as well (bash 3.2's $$ is the launcher's in every subshell)
+    # is never truncated under it, and only a temp file this call made is ever removed
+    t="$1.t$$.${RANDOM:-0}${RANDOM:-0}"
+    if { :; } 2>/dev/null > "$t"; then
+        w=1
+        if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" >> "$t"; } 2>/dev/null || :
+        else { sh -c 'echo $PPID' >> "$t"; } 2>/dev/null || :
+        fi
+    fi
+    if [ "$w" = 1 ] && [ -s "$t" ]; then
+        if ln "$t" "$1" 2>/dev/null; then
+            # ln onto a name that is a directory, or a link to one, puts the link INSIDE it and succeeds (GNU and BSD; BSD has no -T): that is no
+            # claim, and the link it made goes (security read, 19 Nov). Only FILE being this very temp file is.
+            if [ "$1" -ef "$t" ]; then k=won; else k=lost; [ ! "$1/${t##*/}" -ef "$t" ] || rm -f "$1/${t##*/}" 2>/dev/null || :; fi
+        elif [ -e "$1" ] || [ -L "$1" ]; then
+            k=lost
+        fi
+    fi
+    [ "$w" != 1 ] || rm -f "$t" 2>/dev/null || :
+    if [ -n "$k" ]; then
+        [ "$c" = 1 ] || set +C
+        if [ "$k" = won ]; then return 0; fi
+        return 1
+    fi
     # r=1: the file was there already (or could not be made), not ours. A pid that could not be WRITTEN into a file this shell did create (a full disk)
     # still leaves the claim this shell's, as an unwritten pid always has: the lock is held and released as usual rather than left for nobody to take.
     if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" || :; } 2>/dev/null > "$1" || r=1
