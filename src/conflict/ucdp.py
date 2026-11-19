@@ -58,6 +58,10 @@ DEATH_FIELDS = (("a", "deaths_a"), ("b", "deaths_b"), ("civilians", "deaths_civi
 #: Longest text kept from one field. UCDP's longest fields (source headlines) are far shorter.
 MAX_TEXT = 10_000
 
+#: Largest whole number read as a count or an id. Anything larger is not a UCDP value: it is counted
+#: as unreadable, never kept (and never handed to ``int()``/``float()``, which refuse huge inputs).
+MAX_COUNT = 10**12
+
 METHOD = (
     "Events from the Uppsala Conflict Data Program's georeferenced event dataset: each is an "
     "incident of organised violence that UCDP coded from news and other reports, under its "
@@ -71,7 +75,9 @@ CAVEAT = (
 )
 
 _ASCII_INT = re.compile(r"[0-9]+")
-_ISO_DAY = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})(?:$|[ T])")
+#: A day, optionally followed by a time of day and nothing else ("1989-01-01 00:00:00.000" in the
+#: download files, "2022-01-02T00:00:00" from the API). "2023-01-01 garbage" is not a date.
+_ISO_DAY = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})(?:[ T][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,9})?)?Z?)?")
 
 
 class UcdpFormatError(ValueError):
@@ -140,7 +146,11 @@ class ConflictEvent:
 
 @dataclass
 class ParseTally:
-    """What one parse read, and what it could not read. Counts, never values."""
+    """What one parse read, and what it could not read. Counts, never values.
+
+    Row counts (``rows``, ``events``, ``skipped_*``, ``ragged_rows``) count ROWS; the others count
+    FIELDS, so one row can add to both: an id reading ``"abc"`` is one ``bad_numbers`` field and one
+    ``skipped_no_id`` row. A skipped row's other fields are not read, so they are not counted."""
 
     rows: int = 0
     events: int = 0
@@ -153,6 +163,8 @@ class ParseTally:
     unknown_violence_type: int = 0
     bad_dates: int = 0
     bad_numbers: int = 0
+    bad_values: int = 0
+    ragged_rows: int = 0
     seen_ids: set[int] = field(default_factory=set, repr=False)
 
     def as_dict(self) -> dict[str, int]:
@@ -168,10 +180,16 @@ class PageInfo:
     next_page_url: str | None
 
 
-def _text(row: Mapping[str, Any], key: str) -> str | None:
+def _text(row: Mapping[str, Any], key: str, tally: ParseTally) -> str | None:
+    """A field as text, or ``None`` for a gap. A list or an object where a value belongs is counted."""
     raw = row.get(key)
     if raw is None:
         return None
+    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+        tally.bad_values += 1
+        return None
+    if isinstance(raw, float) and raw.is_integer() and abs(raw) <= MAX_COUNT:
+        raw = int(raw)
     out = str(raw).strip()
     if not out or out.upper() == "NULL":
         return None
@@ -185,16 +203,16 @@ def _int(row: Mapping[str, Any], key: str, tally: ParseTally) -> int | None:
         tally.bad_numbers += 1
         return None
     if isinstance(raw, int):
-        if raw >= 0:
+        if 0 <= raw <= MAX_COUNT:
             return raw
         tally.bad_numbers += 1
         return None
     if isinstance(raw, float):
-        if math.isfinite(raw) and raw >= 0 and raw.is_integer():
+        if 0 <= raw <= MAX_COUNT and raw.is_integer():
             return int(raw)
         tally.bad_numbers += 1
         return None
-    s = _text(row, key)
+    s = _text(row, key, tally)
     if s is None:
         return None
     if s.endswith(".0"):
@@ -208,12 +226,18 @@ def _int(row: Mapping[str, Any], key: str, tally: ParseTally) -> int | None:
 def _float(raw: Any) -> float | None:
     if raw is None or isinstance(raw, bool):
         return None
+    if isinstance(raw, int) and abs(raw) > MAX_COUNT:
+        return math.nan
     if isinstance(raw, (int, float)):
         v = float(raw)
+    elif not isinstance(raw, str):
+        return math.nan
     else:
-        s = str(raw).strip()
+        s = raw.strip()
         if not s or s.upper() == "NULL":
             return None
+        if len(s) > 64:
+            return math.nan
         try:
             v = float(s)
         except ValueError:
@@ -238,11 +262,11 @@ def _coords(row: Mapping[str, Any], tally: ParseTally) -> tuple[float | None, fl
 def _day(raw: str | None) -> str | None:
     if raw is None:
         return None
-    m = _ISO_DAY.match(raw)
+    m = _ISO_DAY.fullmatch(raw)
     if not m:
         return None
     y, mo, d = (int(g) for g in m.groups())
-    if not 1 <= mo <= 12 or not 1 <= d <= calendar.monthrange(y, mo)[1] or y < 1:
+    if y < 1 or not 1 <= mo <= 12 or not 1 <= d <= calendar.monthrange(y, mo)[1]:
         return None
     return f"{y:04d}-{mo:02d}-{d:02d}"
 
@@ -258,12 +282,12 @@ def _event(row: Mapping[str, Any], dataset: str, version: str, tally: ParseTally
         return None
     tally.seen_ids.add(eid)
 
-    code = _text(row, "type_of_violence")
-    kind = VIOLENCE_KINDS.get(int(code)) if code is not None and _ASCII_INT.fullmatch(code) else None
+    code = _text(row, "type_of_violence", tally)
+    kind = VIOLENCE_KINDS.get(int(code)) if code is not None and len(code) <= 3 and _ASCII_INT.fullmatch(code) else None
     if kind is None:
         tally.unknown_violence_type += 1
 
-    start_raw, end_raw = _text(row, "date_start"), _text(row, "date_end")
+    start_raw, end_raw = _text(row, "date_start", tally), _text(row, "date_end", tally)
     start, end = _day(start_raw), _day(end_raw)
     if (start_raw is not None and start is None) or (end_raw is not None and end is None):
         tally.bad_dates += 1
@@ -281,22 +305,22 @@ def _event(row: Mapping[str, Any], dataset: str, version: str, tally: ParseTally
         dataset=dataset,
         version=version,
         status=DATASETS[dataset],
-        relid=_text(row, "relid"),
-        code_status=_text(row, "code_status"),
+        relid=_text(row, "relid", tally),
+        code_status=_text(row, "code_status", tally),
         violence_code=code,
         violence_kind=kind,
         conflict_id=_int(row, "conflict_new_id", tally),
-        conflict_name=_text(row, "conflict_name"),
+        conflict_name=_text(row, "conflict_name", tally),
         dyad_id=_int(row, "dyad_new_id", tally),
-        dyad_name=_text(row, "dyad_name"),
-        side_a=_text(row, "side_a"),
-        side_b=_text(row, "side_b"),
-        country=_text(row, "country"),
+        dyad_name=_text(row, "dyad_name", tally),
+        side_a=_text(row, "side_a", tally),
+        side_b=_text(row, "side_b", tally),
+        country=_text(row, "country", tally),
         country_gw=_int(row, "country_id", tally),
-        region=_text(row, "region"),
-        adm_1=_text(row, "adm_1"),
-        adm_2=_text(row, "adm_2"),
-        where_description=_text(row, "where_description"),
+        region=_text(row, "region", tally),
+        adm_1=_text(row, "adm_1", tally),
+        adm_2=_text(row, "adm_2", tally),
+        where_description=_text(row, "where_description", tally),
         where_prec=_int(row, "where_prec", tally),
         event_clarity=_int(row, "event_clarity", tally),
         date_start=start,
@@ -309,8 +333,8 @@ def _event(row: Mapping[str, Any], dataset: str, version: str, tally: ParseTally
         fatalities=fat,
         deaths_by_side={side: _int(row, key, tally) for side, key in DEATH_FIELDS},
         number_of_sources=_int(row, "number_of_sources", tally),
-        source_original=_text(row, "source_original"),
-        source_date=_text(row, "source_date"),
+        source_original=_text(row, "source_original", tally),
+        source_date=_text(row, "source_date", tally),
     )
 
 
@@ -344,11 +368,38 @@ def parse_ged_csv(
 ) -> Iterator[ConflictEvent]:
     """The events in a GED or Candidate download file (UTF-8 CSV with a header row)."""
     dataset, version = _check(dataset, version)
+    tally = tally if tally is not None else ParseTally()
     reader = csv.DictReader(io.TextIOWrapper(stream, encoding="utf-8-sig", newline=""))
-    fields = reader.fieldnames or []
+    try:
+        fields = reader.fieldnames or []
+    except (UnicodeDecodeError, csv.Error):
+        raise UcdpFormatError("not a UCDP GED or Candidate file: the header is not readable UTF-8 CSV") from None
     if "id" not in fields:
         raise UcdpFormatError("not a UCDP GED or Candidate file: the header has no 'id' column")
-    yield from parse_ged_rows(reader, dataset=dataset, version=version, tally=tally)
+    if len(set(fields)) != len(fields):
+        raise UcdpFormatError("not a UCDP GED or Candidate file: the header repeats a column name")
+    yield from parse_ged_rows(_whole_rows(reader, tally), dataset=dataset, version=version, tally=tally)
+
+
+def _whole_rows(reader: csv.DictReader, tally: ParseTally) -> Iterator[Mapping[str, Any]]:
+    """The rows whose cells line up with the header. A row with more or fewer cells has shifted
+    columns (an unquoted comma in a headline moves every later value), so none of its values can be
+    read as the field it lands in: it is skipped and counted, never read."""
+    try:
+        for row in reader:
+            if None in row or any(v is None for v in row.values()):
+                tally.rows += 1
+                tally.ragged_rows += 1
+                continue
+            yield row
+    except (UnicodeDecodeError, csv.Error):
+        raise UcdpFormatError(
+            "the file stopped being readable UTF-8 CSV; the events yielded before this error were read"
+        ) from None
+
+
+def _page_count(raw: Any) -> int | None:
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and 0 <= raw <= MAX_COUNT else None
 
 
 def parse_ged_page(
@@ -356,12 +407,15 @@ def parse_ged_page(
 ) -> tuple[list[ConflictEvent], PageInfo]:
     """The events in one API page, and the page's own paging facts (never followed here)."""
     dataset, version = _check(dataset, version)
-    page = json.loads(data) if isinstance(data, (bytes, str)) else data
+    try:
+        page = json.loads(data) if isinstance(data, (bytes, str)) else data
+    except (ValueError, RecursionError):
+        raise UcdpFormatError("not a UCDP API page: not readable JSON") from None
     if not isinstance(page, Mapping) or not isinstance(page.get("Result"), list):
         raise UcdpFormatError("not a UCDP API page: no 'Result' list")
     info = PageInfo(
-        total_count=page.get("TotalCount") if isinstance(page.get("TotalCount"), int) else None,
-        total_pages=page.get("TotalPages") if isinstance(page.get("TotalPages"), int) else None,
+        total_count=_page_count(page.get("TotalCount")),
+        total_pages=_page_count(page.get("TotalPages")),
         next_page_url=page.get("NextPageUrl") if isinstance(page.get("NextPageUrl"), str) and page.get("NextPageUrl") else None,
     )
     return list(parse_ged_rows(page["Result"], dataset=dataset, version=version, tally=tally)), info

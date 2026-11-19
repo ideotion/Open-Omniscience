@@ -161,3 +161,91 @@ def test_the_module_opens_no_socket_and_reads_no_path():
     assert not imported & {"socket", "requests", "httpx", "urllib", "http", "pathlib", "os", "sqlalchemy", "src"}, imported
     calls = {n.func.id for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
     assert "open" not in calls
+
+
+# ---- the 2026-11-19 review read's findings, each pinned ------------------------------------- #
+
+def _rows(rows, dataset="ged"):
+    tally = ucdp.ParseTally()
+    return list(ucdp.parse_ged_rows(rows, dataset=dataset, version="23.1", tally=tally)), tally
+
+
+def test_huge_or_odd_coordinates_are_counted_not_a_crash():
+    events, tally = _rows([
+        {"id": 1, "latitude": 10**400, "longitude": 1},
+        {"id": 2, "latitude": "nan", "longitude": "1"},
+        {"id": 3, "latitude": 1.0},
+        {"id": 4, "latitude": 10.0, "longitude": 181.0},
+        {"id": 5, "latitude": [1], "longitude": {"x": 1}},
+        {"id": 6, "latitude": "9" * 5000, "longitude": "1"},
+    ])
+    assert [(e.latitude, e.longitude) for e in events] == [(None, None)] * 6
+    assert tally.bad_coordinates == 6 and tally.no_coordinates == 0
+
+
+def test_a_huge_violence_code_is_an_unknown_type_not_a_crash():
+    events, tally = _rows([{"id": 1, "type_of_violence": "9" * 5000}, {"id": 2, "type_of_violence": 1.0}])
+    assert events[0].violence_kind is None and tally.unknown_violence_type == 1
+    assert (events[1].violence_code, events[1].violence_kind) == ("1", "state_based"), "JSON 1.0 is code 1"
+
+
+def test_numbers_beyond_any_ucdp_value_are_unreadable_not_kept():
+    events, tally = _rows([{"id": 10**30}, {"id": 1e300}, {"id": "9" * 13}, {"id": 0}, {"id": 7, "best": 10**30}])
+    assert [e.event_id for e in events] == [7]
+    assert events[0].fatalities.best is None
+    assert tally.skipped_no_id == 4 and tally.bad_numbers == 4
+
+
+def test_a_list_or_object_where_a_value_belongs_is_a_gap_and_counted():
+    events, tally = _rows([{"id": 1, "side_a": {"a": 1}, "type_of_violence": [1], "country": True}])
+    (e,) = events
+    assert (e.side_a, e.violence_code, e.country) == (None, None, None)
+    assert tally.bad_values == 3
+
+
+@pytest.mark.parametrize(
+    "raw, day",
+    [("1989-01-01 00:00:00.000", "1989-01-01"), ("2022-01-02T00:00:00", "2022-01-02"), ("2022-01-02T00:00:00Z", "2022-01-02"),
+     ("2022-01-02", "2022-01-02"), ("2023-01-01 garbage", None), ("2023-01-01x", None), ("0000-01-01", None),
+     ("2023-13-01", None), ("2024-02-29", "2024-02-29"), ("2023-02-29", None)],
+)
+def test_dates_are_a_real_day_with_at_most_a_time_of_day(raw, day):
+    events, tally = _rows([{"id": 1, "date_start": raw}])
+    assert events[0].date_start == day and events[0].date_start_raw == raw
+    assert tally.bad_dates == (0 if day else 1)
+
+
+def test_rows_whose_cells_do_not_line_up_are_skipped_never_read():
+    data = b"id,low,best,high\n1,2\n2,1,2,3,99\n3,1,2,3\n"
+    events, tally = _parse(data)
+    assert sorted(events) == [3]
+    assert tally.ragged_rows == 2 and tally.rows == 3
+
+
+def test_a_repeated_header_column_is_refused():
+    with pytest.raises(ucdp.UcdpFormatError):
+        list(ucdp.parse_ged_csv(io.BytesIO(b"id,id\n1,2\n"), dataset="ged", version="23.1"))
+
+
+def test_unreadable_input_is_the_format_error_never_a_raw_library_error():
+    # The decoder reads ahead in chunks, so how many rows came out before the bad byte depends on the
+    # chunk size; what is pinned is that the failure is the parser's own, named error.
+    with pytest.raises(ucdp.UcdpFormatError):
+        list(ucdp.parse_ged_csv(io.BytesIO(b"id,best\n1,5\n2,\xff\n"), dataset="ged", version="23.1"))
+    with pytest.raises(ucdp.UcdpFormatError):
+        list(ucdp.parse_ged_csv(io.BytesIO(b"\xff\xfe,id\n"), dataset="ged", version="23.1"))
+    with pytest.raises(ucdp.UcdpFormatError):
+        ucdp.parse_ged_page(b"{not json", dataset="ged", version="23.1")
+    with pytest.raises(ucdp.UcdpFormatError):
+        ucdp.parse_ged_page("[" * 100_000 + "]" * 100_000, dataset="ged", version="23.1")
+
+
+def test_a_bom_at_the_top_of_the_file_is_not_part_of_the_id_column():
+    events, _ = _parse(b"\xef\xbb\xbfid,best\n5,1\n")
+    assert sorted(events) == [5]
+
+
+def test_page_counts_that_are_not_counts_are_not_kept():
+    _, info = ucdp.parse_ged_page({"TotalCount": True, "TotalPages": -5, "NextPageUrl": 3, "Result": []},
+                                  dataset="ged", version="23.1")
+    assert info == ucdp.PageInfo(total_count=None, total_pages=None, next_page_url=None)
