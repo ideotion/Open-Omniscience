@@ -216,7 +216,7 @@ def test_a_failed_pass_leaves_nothing_half_applied_and_says_failed(medical):
         _apply(truncated, wanted)
     assert _papers() == {}, "a failed pass kept records"
     with store.lane_session("medical") as s:
-        M.record_failed_file(s, "pubmed25n1300.xml.gz", ValueError("x"))
+        M.record_failed_file(s, "pubmed25n1300.xml.gz", "ValueError")
     with store.lane_session("medical") as s:
         (f,) = s.execute(select(MedicalFile)).scalars().all()
         assert (f.status, f.error, f.kept) == ("failed", "ValueError", 0)

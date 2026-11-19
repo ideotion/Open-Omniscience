@@ -201,6 +201,14 @@
       "fetcher": true
     },
     {
+      "id": "medical",
+      "label": "Medical papers (PubMed)",
+      "hosts": ["ftp.ncbi.nlm.nih.gov"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],
