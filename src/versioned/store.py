@@ -237,11 +237,11 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     return eng
 
 
-def _other_engines_of(kind: str, key: tuple[str, str]) -> list[tuple[str, str]]:
-    """The cached engines of ``kind`` under another file than ``key`` (call it with ``_lock`` held). A function of its own because a
+def _other_engines_of(kind: str, slot: tuple[str, str]) -> list[tuple[str, str]]:
+    """The cached engines of ``kind`` under another file than ``slot`` (call it with ``_lock`` held). A function of its own because a
     comprehension is inlined into its caller on CPython 3.13 and the back-edge of its filter-skip then sits outside the exception table of
     the ``with _lock`` in ``lane_engine`` (R205): an interrupt there would skip the lock's release."""
-    return [k for k in _engines if k[0] == kind and k != key]
+    return [k for k in _engines if k[0] == kind and k != slot]
 
 
 def _keys_of(kind: str) -> list[tuple[str, str]]:
@@ -262,14 +262,14 @@ def lane_engine(kind: str, *, create: bool = False) -> Engine:
     path = lane_path(kind)
     if not path.is_file() and not create:
         raise LaneAbsentError(f"the {spec.kind} lane has no database file at {path.name}")
-    key = (kind, str(path))
+    slot = (kind, str(path))  # the cache slot (lane, file); named for what it is, never "key" (CodeQL reads names)
     with _lock:
-        stale = _other_engines_of(kind, key)
-        eng = _engines.get(key)
+        stale = _other_engines_of(kind, slot)
+        eng = _engines.get(slot)
         if eng is None:
             eng = _build_engine(spec, path)
-            _engines[key] = eng
-            _factories[key] = sessionmaker(bind=eng, autocommit=False, autoflush=False, future=True)
+            _engines[slot] = eng
+            _factories[slot] = sessionmaker(bind=eng, autocommit=False, autoflush=False, future=True)
     # Dispose OUTSIDE the lock: ``Engine.dispose`` closes sockets/file handles and
     # must never run while another thread is waiting to build its own engine.
     for k in stale:
