@@ -221,6 +221,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     import socket
 
     K.record_climate_fetch(_fetch())
+    K.record_law_coverage(_law_report())
     _snapshot(monkeypatch, _SNAP)
 
     def refuse(*a, **k):
@@ -230,8 +231,8 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     monkeypatch.setattr(socket, "create_connection", refuse)
     monkeypatch.setattr(socket.socket, "connect", refuse)
     m = _k13()
-    assert (m["verdict"], m["value"]) == ("measured-no-bar", 2)
-    assert all("could not be read" not in b.get("reason", "") for b in m["verticals"])  # no block hit its error path
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 3, 3)
+    assert all(b["state"] == "recorded" for b in m["verticals"])  # every block read its record, none hit its error path
 
 
 def test_the_fetch_job_records_after_its_session_closed(isolated, monkeypatch):
@@ -363,12 +364,35 @@ def test_a_report_with_no_tracked_document_is_recorded_with_no_first_slice(isola
 
 
 def test_an_unreadable_catalogue_keeps_the_floor_unknown_not_zero(isolated):
-    report = _law_report()
-    report["floor"] = {"state": "unchecked"}
-    K.record_law_coverage({**report, "catalog": {"readable": False, "error": "x"}})
+    """The real report's floor when the catalogue cannot be read: the states that need the catalogue are never looked up,
+    so they read as unknown, never as a counted 0."""
+    from src.law.coverage import floor_report
+
+    floor = floor_report([], None, reason="catalogue unreadable")
+    assert floor.get("state") == "unchecked" and isinstance(floor.get("by_state"), dict)  # the shape the record must handle
+    report = {**_law_report(), "floor": floor, "catalog": {"readable": False, "error": "x"}}
+    K.record_law_coverage(report)
     block = _block(_k13(), "law")
-    assert block["floor_by_state"] is None and block["catalog_readable"] is False
-    assert "unknown number" in block["method"]
+    counts = block["floor_by_state"]
+    assert counts["unchecked"] > 0 and counts["tracked"] == 0
+    for state in ("verified-not-yet-tracked", "unverified", "no-eligible-source"):
+        assert counts[state] is None, state
+    assert block["catalog_readable"] is False and block["floor_state"] == "unchecked"
+    assert "never looked up" in block["method"]
+
+
+def test_odd_check_ages_never_reach_the_record(isolated):
+    report = _law_report()
+    report["jurisdictions"] = [
+        {"never_checked": 0, "oldest_check_age_hours": float("nan"), "newest_check_age_hours": -5.0},
+        {"never_checked": 0, "oldest_check_age_hours": True, "newest_check_age_hours": float("inf")},
+        {"never_checked": 0, "oldest_check_age_hours": 40.0, "newest_check_age_hours": 3.0},
+    ]
+    K.record_law_coverage(report)
+    text = (isolated / "lane-law-coverage.json").read_text(encoding="utf-8")
+    assert "NaN" not in text and "Infinity" not in text
+    block = _block(_k13(), "law")
+    assert (block["oldest_check_age_hours"], block["newest_check_age_hours"]) == (40.0, 0.0)
 
 
 @pytest.mark.parametrize("bad", [None, {}, {"jurisdictions": []}])

@@ -45,6 +45,7 @@ of stability (``scripts/kpi_diff.py`` classifies that pair ``same-measurement``,
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from datetime import UTC, datetime
@@ -849,11 +850,24 @@ def record_law_coverage(report: dict) -> dict | None:
         return None
     raw_rows = report.get("jurisdictions")
     rows = [j for j in raw_rows if isinstance(j, dict)] if isinstance(raw_rows, list) else []
-    olds = [j["oldest_check_age_hours"] for j in rows if isinstance(j.get("oldest_check_age_hours"), (int, float))]
-    news = [j["newest_check_age_hours"] for j in rows if isinstance(j.get("newest_check_age_hours"), (int, float))]
+    def _hours(v) -> float | None:  # a finite, real number of hours; a check stamped in the future (clock skew) is age 0
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            return None
+        return max(float(v), 0.0)
+
+    olds = [h for j in rows if (h := _hours(j.get("oldest_check_age_hours"))) is not None]
+    news = [h for j in rows if (h := _hours(j.get("newest_check_age_hours"))) is not None]
     raw_floor = report.get("floor")
     floor: dict = raw_floor if isinstance(raw_floor, dict) else {}
     by_state = floor.get("by_state") if isinstance(floor.get("by_state"), dict) else None
+    floor_state = floor.get("state") if isinstance(floor.get("state"), str) else None
+    counts: dict | None = None
+    if by_state is not None:
+        counts = {str(k): len(v) for k, v in by_state.items() if isinstance(v, list)}
+        if floor_state == "unchecked":
+            # The catalogue could not be read, so the states that need it were never looked up: unknown, never 0.
+            # Only what the database says (tracked) and the unchecked bucket itself are counts.
+            counts = {k: (v if k in ("tracked", "unchecked") else None) for k, v in counts.items()}
     raw_catalog = report.get("catalog")
     catalog: dict = raw_catalog if isinstance(raw_catalog, dict) else {}
     return _write_record(_LAW_FILE, _LAW_SCHEMA, {
@@ -865,8 +879,8 @@ def record_law_coverage(report: dict) -> dict | None:
         "oldest_check_age_hours": max(olds) if olds else None,
         "newest_check_age_hours": min(news) if news else None,
         "catalog_readable": catalog.get("readable") if isinstance(catalog.get("readable"), bool) else None,
-        "floor_by_state": ({str(k): len(v) for k, v in by_state.items() if isinstance(v, list)}
-                           if by_state is not None else None),
+        "floor_state": floor_state,
+        "floor_by_state": counts,
     })
 
 
@@ -884,6 +898,7 @@ def _law_block() -> dict:
     floor = rec.get("floor_by_state")
     floor_n = sum(v for v in floor.values() if isinstance(v, int)) if isinstance(floor, dict) else None
     tracked = floor.get("tracked") if isinstance(floor, dict) else None
+    unchecked = rec.get("floor_state") == "unchecked"
     block = {
         "vertical": "law", "kind": "lane", "state": "recorded",
         "first_slice": isinstance(docs, int) and docs > 0, "as_of": rec.get("measured_at"),
@@ -891,11 +906,14 @@ def _law_block() -> dict:
         "never_checked": rec.get("never_checked"),
         "oldest_check_age_hours": rec.get("oldest_check_age_hours"),
         "newest_check_age_hours": rec.get("newest_check_age_hours"),
-        "catalog_readable": rec.get("catalog_readable"), "floor_by_state": floor,
+        "catalog_readable": rec.get("catalog_readable"), "floor_state": rec.get("floor_state"),
+        "floor_by_state": floor,
         "method": (f"the last law coverage report's own counts: {docs} tracked documents in {rec.get('jurisdictions')} "
                    f"jurisdictions; of the {floor_n if floor_n is not None else 'unknown number of'} countries on the "
-                   f"language floor, {tracked if tracked is not None else 'an unknown number'} are tracked, each other "
-                   "state counted apart. A tracked-document count is an entry point, never a coverage claim, and nothing "
+                   f"language floor, {tracked if tracked is not None else 'an unknown number'} are tracked, "
+                   + ("and the other states are unknown: the law catalogue could not be read, so they were never looked "
+                      "up. " if unchecked else "each other state counted apart. ")
+                   + "A tracked-document count is an entry point, never a coverage claim, and nothing "
                    "is divided. The check ages are the report's own, from when it ran."),
     }
     if not block["first_slice"]:
