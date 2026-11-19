@@ -598,3 +598,48 @@ def test_a_backup_cannot_plant_an_address_the_catalogue_names_no_move_from(tmp_p
         assert s.query(LawFormatChange).count() == 0
         (b,) = s.query(LawDocument).filter_by(url=bgb).all()
         assert [r.content_hash for r in s.query(LawRevision).filter_by(document_id=b.id)] == ["bgb1"]
+
+
+# --------------------------------------------------------------------------- #
+# The migration: a store from before the table gains it, its law rows intact  #
+# --------------------------------------------------------------------------- #
+
+
+def test_the_migration_adds_the_table_and_leaves_existing_law_rows_untouched(tmp_path):
+    import os
+    import sqlite3
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "OO_DATA_DIR": str(tmp_path)}
+
+    def alembic(*args):
+        res = subprocess.run([sys.executable, "-m", "alembic", *args], cwd=repo, env=env,
+                             capture_output=True, text=True)
+        assert res.returncode == 0, res.stdout + res.stderr
+
+    alembic("upgrade", "c2a6e8f1d4b7")  # the head before law_format_changes
+    db = tmp_path / "open_omniscience.db"
+    con = sqlite3.connect(db)
+    assert "law_format_changes" not in {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    con.execute("INSERT INTO law_documents (id, jurisdiction, title, url, watched, baseline_hash, last_hash, last_status)"
+                " VALUES (7, 'de', 'GG', ?, 1, 'b-hash', 'l-hash', 'unchanged')", (HTML_URL,))
+    con.execute("INSERT INTO law_revisions (id, document_id, observed_at, content_hash, size, delta_bytes)"
+                " VALUES (11, 7, '2026-11-01 12:00:00', 'r1', 10, 0)")
+    con.commit()
+    before = (con.execute("SELECT * FROM law_documents").fetchall(), con.execute("SELECT * FROM law_revisions").fetchall())
+    con.close()
+
+    alembic("upgrade", "head")
+
+    con = sqlite3.connect(db)
+    after = (con.execute("SELECT * FROM law_documents").fetchall(), con.execute("SELECT * FROM law_revisions").fetchall())
+    cols = {r[1] for r in con.execute("PRAGMA table_info(law_format_changes)")}
+    indexes = {r[1] for r in con.execute("PRAGMA index_list(law_format_changes)")}
+    con.close()
+    assert after == before, "the migration touched an existing law row"
+    assert {"document_id", "from_url", "to_url", "from_hash", "to_hash", "from_baseline_text"} <= cols
+    assert "ix_lawfmt_doc_from_to" in indexes
+    alembic("downgrade", "c2a6e8f1d4b7")
+    alembic("upgrade", "head")
