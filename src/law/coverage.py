@@ -282,10 +282,10 @@ _FLOOR_CAVEAT = (
 )
 
 
-def _floor_unchecked(reason: str | None, docs: list) -> dict:
+def _floor_unchecked(reason: str | None, docs: list, population: dict | None = None) -> dict:
     """The floor block when the catalogue could not be read: the database half (what is tracked) is still true, the rest
     is null with the reason, and no country is read as "no source" for a lookup that never happened."""
-    return floor_report(docs, None, reason=reason)
+    return floor_report(docs, None, reason=reason, population=population)
 
 
 def floor_order(population: dict | None) -> tuple[dict, Callable[[str], tuple[int, float, str]]]:
@@ -452,20 +452,27 @@ def floor_report(
 #: uninhabited codes (aq, bv, hm): ISO lists them, and leaving them out would be a scoping decision this block has no ruling
 #: for. Each is shown with its state like any other; a no-eligible-source there is the catalogue's state, not a to-do.
 _WORLD_EXTRA_CODES: tuple[str, ...] = ("xk",)
+#: ISO codes with no permanent population (Antarctica, Bouvet Island, Heard and McDonald Islands, South Georgia, the French
+#: Southern Territories, the British Indian Ocean Territory, the US Minor Outlying Islands). They keep their state like any
+#: other code, and are ALSO named here, so a reader can set them apart from the research list: a no-eligible-source for one
+#: of these is not research to do. Which dependencies to group under a parent state is a scoping call this block does not make.
+WORLD_NO_PERMANENT_POPULATION: tuple[str, ...] = ("aq", "bv", "gs", "hm", "io", "tf", "um")
 
 _WORLD_METHOD = (
     "Every ISO 3166-1 alpha-2 country (src.catalog.countries.ISO_3166_1_ALPHA2) plus xk (Kosovo), minus the countries on "
-    "the language floor, which the floor block reports: so each country is in exactly one of the two blocks. The same four "
+    "the language floor, which the floor block reports: so each country's state is in exactly one of the two blocks' by_state. The same four "
     "states as the floor, read the same way (one reading of the tracked documents and of the catalogue for both blocks): "
     "tracked, verified-not-yet-tracked, unverified, no-eligible-source. Territories, dependencies and uninhabited codes "
-    "are included, because ISO lists them. Within a state, countries go by population reached (R679) when the operator's "
+    "are included, because ISO lists them; the codes with no permanent population are also named in "
+    "no_permanent_population. Hong Kong and Macau are in this block and are also named beside zh in the floor block, with "
+    "the same state. Within a state, countries go by population reached (R679) when the operator's "
     "table is present, by code otherwise (see order). A country code a tracked document states that is not in this list "
-    "is named in tracked_codes_not_listed, never dropped."
+    "is named in tracked_codes_not_listed (a many-country code such as eu, or a retired or mistyped code), never dropped."
 )
 _WORLD_CAVEAT = (
     "A state is where the catalogue and this install stand, not a statement about a legal system: no-eligible-source means "
-    "the catalogue lists no law-authority source, not that none exists, and for an uninhabited code it means nothing at "
-    "all. A candidate source enters the catalogue only after a live check (reachability, robots, licence, format), which "
+    "the catalogue lists no law-authority source, not that none exists, and for a code in no_permanent_population it "
+    "is not research to do. A candidate source enters the catalogue only after a live check (reachability, robots, licence, format), which "
     "is the operator's. No fraction or score is computed."
 )
 
@@ -504,8 +511,10 @@ def world_report(
         "states": {st: len(v) for st, v in by_state.items()},
         "by_state": by_state,
         "order": order,
-        # A code a tracked document states that neither block lists (a typo, a retired code): named, never dropped.
+        # A code a tracked document states that neither block lists (a many-country code such as eu, a retired or mistyped
+        # code): named, never dropped.
         "tracked_codes_not_listed": sorted(tracked - universe),
+        "no_permanent_population": [cc for cc in WORLD_NO_PERMANENT_POPULATION if cc in set(countries)],
         "method": _WORLD_METHOD,
         "caveat": _WORLD_CAVEAT,
     }
@@ -658,7 +667,7 @@ def law_coverage_report(
         # Each state's reason ONCE, for the states this report uses: a jurisdiction's `coverage.state` is the key into it.
         # Stated per jurisdiction it was the same paragraph again for every row (710 bytes for the commonest state).
         "coverage_reasons": {st: _COVERAGE_REASONS[st] for st in sorted(states_used)},
-        "floor": _floor_unchecked(catalog_error, docs) if catalog_error else floor_report(docs, catalog, population=population),
+        "floor": _floor_unchecked(catalog_error, docs, population) if catalog_error else floor_report(docs, catalog, population=population),
         # S07-03 S1 (row 185): every country off the floor, with the floor's four states. The floor's own numbers are unchanged.
         "world": world_report(docs, None if catalog_error else catalog, reason=catalog_error, population=population),
         "extraction": unchecked_extraction if catalog_error else _pdf_reach(session, catalog),

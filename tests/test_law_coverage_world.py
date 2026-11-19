@@ -178,3 +178,50 @@ def test_the_real_world_states_agree_with_an_independent_reading_of_the_catalogu
             mine = [x for x in law_rows if str(x.get("country") or "").strip().lower() == cc]
             assert (st == FLOOR_VERIFIED_UNTRACKED) == any(source_is_verified(x) for x in mine), cc
     assert load_floor()["countries"], "the shipped floor is readable, so this compares the off-floor countries"
+
+
+def test_the_codes_with_no_permanent_population_keep_their_state_and_are_named_apart():
+    from src.law.coverage import WORLD_NO_PERMANENT_POPULATION
+
+    block = world_report([], {"sources": []}, _floor("fr"), population=_NO_POP)
+    assert block["no_permanent_population"] == list(WORLD_NO_PERMANENT_POPULATION)
+    placed = _states(block)
+    assert all(placed[cc] == FLOOR_NO_SOURCE for cc in WORLD_NO_PERMANENT_POPULATION), "still placed, never dropped"
+    assert set(WORLD_NO_PERMANENT_POPULATION) <= set(ISO_3166_1_ALPHA2)
+    assert "no_permanent_population" in block["method"] and "not research to do" in block["caveat"]
+
+
+def test_hong_kong_and_macau_are_in_the_world_and_beside_zh_with_the_same_state():
+    rep = law_coverage_report(_session(), enumerations={})
+    world = _states(rep["world"])
+    for cc, st in rep["floor"]["zh_beyond_floor"].items():
+        assert world[cc] == st, cc
+
+
+def test_the_byte_ceiling_holds_with_a_population_table_that_lacks_every_country():
+    """The worst case for size: a usable table that names none of the world's countries, so order.missing lists them all."""
+    pop = {"status": "ok", "reason": None, "weights": {"fr": 1.0}, "source": "UN WPP (test)", "as_of": "2024-07-11"}
+    block = world_report([], load_legal_catalog(), load_floor(), population=pop)
+    assert len(block["order"]["missing"]) == block["countries"]
+    size = len(json.dumps(block, separators=(",", ":"), ensure_ascii=False).encode())
+    assert size <= 4_000, f"the world block is {size:,} bytes at its widest; measure the diagnostics room again"
+
+
+def test_an_unreadable_catalogue_reads_the_population_table_once(monkeypatch):
+    from src.law import catalog as law_catalog
+    from src.stats import population as pop_mod
+
+    calls: list[int] = []
+    real = pop_mod.load_population_table
+
+    def counted(*a, **k):
+        calls.append(1)
+        return real(*a, **k)
+
+    def boom(*_a, **_k):
+        raise law_catalog.LawCatalogUnreadable("unreadable (test)")
+
+    monkeypatch.setattr(pop_mod, "load_population_table", counted)
+    monkeypatch.setattr(law_catalog, "load_legal_catalog", boom)
+    law_coverage_report(_session())
+    assert calls == [1], "the floor and the world order by the one table read"
