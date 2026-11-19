@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 
 from src.medical.lane_models import (
     WANTED_KINDS,
+    MedicalCited,
     MedicalClassChange,
     MedicalFile,
     MedicalPaper,
@@ -162,6 +163,62 @@ def user_wanted(session: Session) -> Wanted:
     for kind, value in session.execute(select(MedicalWanted.id_kind, MedicalWanted.value)):
         out._set(kind).add(value)
     return out
+
+
+def replace_cited(session: Session, cited: Wanted) -> int:
+    """Store the corpus-cited ids the last scan found, replacing the previous snapshot whole."""
+    from sqlalchemy import delete
+
+    session.execute(delete(MedicalCited))
+    now = _now()
+    n = 0
+    for kind in WANTED_KINDS:
+        for value in sorted(cited._set(kind)):
+            session.add(MedicalCited(id_kind=kind, value=value, seen_at=now))
+            n += 1
+    session.flush()
+    return n
+
+
+def cited_wanted(session: Session) -> Wanted:
+    out = Wanted()
+    for kind, value in session.execute(select(MedicalCited.id_kind, MedicalCited.value)):
+        out._set(kind).add(value)
+    return out
+
+
+def coverage(session: Session) -> dict:
+    """How many of the ids the corpus cites (and the user named) have a kept record, and how many do not.
+
+    R750: a cited paper with no kept record is NOT FOUND YET, never "does not exist": the update
+    files carry only the papers NLM revised recently, so most cited papers are absent from them.
+    The count of the ones not found is part of the answer, so the UI can say it beside the rest.
+    """
+    papers = session.execute(select(MedicalPaper.pmid, MedicalPaper.doi, MedicalPaper.pmcid)).all()
+    have = {
+        "pmid": {str(p) for p, _d, _c in papers},
+        "doi": {d.lower() for _p, d, _c in papers if d},
+        "pmcid": {c for _p, _d, c in papers if c},
+    }
+
+    def _count(w: Wanted) -> tuple[int, int]:
+        total = found = 0
+        for kind in WANTED_KINDS:
+            ids = w._set(kind)
+            total += len(ids)
+            found += len(ids & have[kind])
+        return total, found
+
+    cited_total, cited_found = _count(cited_wanted(session))
+    named_total, named_found = _count(user_wanted(session))
+    return {
+        "cited": cited_total,
+        "cited_found": cited_found,
+        "cited_not_found": cited_total - cited_found,
+        "named": named_total,
+        "named_found": named_found,
+        "named_not_found": named_total - named_found,
+    }
 
 
 def _now() -> datetime:
