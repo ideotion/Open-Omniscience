@@ -467,7 +467,7 @@ def papers_cited_by(session: Session, cited: dict[int, Wanted]) -> dict:
         )
         notices = sorted({_ABOUT_THIS[lk[0]] for lk in json.loads(r.status_links_json or "[]")
                           if isinstance(lk, list) and lk and lk[0] in _ABOUT_THIS})
-        at = retracted_at.get(pmid)
+        seen_retracted = retracted_at.get(pmid)
         papers.append({
             "pmid": pmid,
             "version": r.version,
@@ -480,7 +480,7 @@ def papers_cited_by(session: Session, cited: dict[int, Wanted]) -> dict:
             "provenance_class": r.provenance_class,
             "notice_kind": r.notice_kind,
             "notices": notices,
-            "retracted_seen_at": at.isoformat() if at else None,
+            "retracted_seen_at": seen_retracted.isoformat() if seen_retracted else None,
             "withdrawn": r.withdrawn_at is not None,
             "has_abstract": r.abstract_json is not None,
             "source_file": r.source_file,
