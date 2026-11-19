@@ -40,7 +40,34 @@
         + `<li><code>manifest.items</code> <span class="muted">${esc(tf("one entry per article, with {fields}", {fields}))}</span></li>`
         + `<li><code>signature</code>, <code>public_key</code> <span class="muted">${esc(t("the signature over the manifest and the public key that made it"))}</span></li>`
         + `<li><code>algorithm</code> <span class="muted">${esc(t("the name of the signature scheme, ed25519"))}</span></li>`
+        + (plan.dossier ? `<li><code>manifest.dossier</code> <span class="muted">${esc(t("the dossier of the item as the page shows it: how articles join it, every rail with its rows, the rails it does not join, the corpus passport and the licence lines that apply"))}</span></li>` : "")
         + `</ul>`;
+    }
+
+    // The dossier part of the file (S08-01 S2): which rails it carries, which it does not, how
+    // much of a large dossier the file holds, and the licence lines that apply. Rail names come
+    // from the dossier page's own list when it is loaded; in node the code is shown.
+    function evidenceDossierHtml(plan, t, tf) {
+      const d = plan.dossier;
+      if (!d) return "";
+      const name = (k) => (typeof _dossierRailName === "function") ? _dossierRailName(k, t) : String(k);
+      const list = (keys) => (keys || []).map(name).join(", ");
+      let html = `<h4>${esc(t("The dossier in the file"))}</h4>`
+        + `<p>${esc(tf("Rails carried: {list}", {list: list(d.rails_carried)}))}</p>`;
+      if ((d.rails_not_carried || []).length) {
+        html += `<p class="muted">${esc(tf("Not joined, so not in the file: {list}", {list: list(d.rails_not_carried)}))}</p>`;
+      }
+      if (d.articles_bounded || d.articles_in_bundle < d.articles_total) {
+        html += `<p class="card-caveat">${esc(tf("The dossier counts {total} articles; the file carries {n} of them, the most the page holds.", {total: _evNum(d.articles_total), n: _evNum(d.articles_in_bundle)}))}</p>`;
+      }
+      const lic = d.attribution || [];
+      html += `<div class="vsect">${esc(t("Licences"))}</div>`;
+      // Each line is the server's English sentence looked up as a key (the backup panel's rule):
+      // a licence line is a caveat about what the reader may do with the data, so it is visible.
+      html += lic.length
+        ? lic.map((l) => `<div dir="auto" title="${esc(tf("applies because: {signal}", {signal: l.because}))}">${esc(t(l.text))}</div>`).join("")
+        : `<p class="muted">${esc(t("No licence line applies to what this file holds."))}</p>`;
+      return html;
     }
 
     // scope is the selection the file will be written for: the case name it carries is the
@@ -52,6 +79,7 @@
       return `<p class="claim-method">${esc(method)}</p>`
         + `<p><b>${esc(tf("Articles: {n}", {n: _evNum(plan.articles)}))}</b> · ${esc(tf("Sources: {n}", {n: _evNum(plan.sources)}))}</p>`
         + `<h4>${esc(t("What the file holds"))}</h4>` + evidenceMembersHtml(plan, t, tf)
+        + evidenceDossierHtml(plan, t, tf)
         + `<p class="card-caveat">${esc(t("Plaintext: the file is not encrypted. It lists each article's address, title and date, and anyone who has the file can read them. The articles' text is not in it, only its SHA-256."))}</p>`
         + `<p class="card-caveat">${esc(caseName
           ? tf("The case name written in the file, readable by anyone who has it: {name}", {name: "\u2068" + caseName + "\u2069"})

@@ -40,7 +40,7 @@ function extract(name) {
   return SRC.slice(at, j);
 }
 
-const FNS = ["_evNum", "evidenceMembersHtml", "evidenceReviewHtml", "evidenceDoneHtml"];
+const FNS = ["_evNum", "evidenceMembersHtml", "evidenceDossierHtml", "evidenceReviewHtml", "evidenceDoneHtml"];
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
   FNS.map(extract).join("\n") + "\n" +
@@ -126,5 +126,31 @@ assert.ok(!hostile.includes("<img") && !hostile.includes("<b>k"), hostile);
 // nothing vouches for the articles
 const all = review + " " + fresh + " " + done;
 assert.ok(!/\b(score[sd]?|rating|rank(ed|ing)?|grade[sd]?|credib\w*|trustworth\w*|reliab\w*|verified)\b/i.test(all), all);
+
+// S08-01 S2: a dossier's file says which rails it carries, which it does not, how much of a large
+// dossier it holds, and the licence lines that apply, visible (not in a hover); a plain bundle says
+// none of it.
+const DPLAN = Object.assign({}, PLAN, { articles: 2, dossier: {
+  qid: "Q9", label: "Zedport", rails_carried: ["news", "places", "map"], rails_not_carried: ["agenda"],
+  articles_total: 7000, articles_in_bundle: 5000, articles_bounded: true,
+  attribution: [{ key: "openstreetmap", text: "Map data © OpenStreetMap contributors, ODbL.", because: "table:places" }] } });
+const dr = R.evidenceReviewHtml(DPLAN, t, tf, { dossier_qid: "Q9", case_name: "Zedport · Q9" });
+const dv = visible(dr);
+assert.ok(dv.includes("manifest.dossier the dossier of the item as the page shows it"), dv);
+assert.ok(dv.includes("The dossier in the file") && dv.includes("Rails carried: news, places, map"), dv);
+assert.ok(dv.includes("Not joined, so not in the file: agenda"), dv);
+assert.ok(dv.includes("The dossier counts 7000 articles; the file carries 5000 of them"), dv);
+assert.ok(dv.includes("Licences") && dv.includes("Map data © OpenStreetMap contributors, ODbL."), dv);
+assert.ok(dr.includes('title="applies because: table:places"'), "the signal rides the hover");
+assert.ok(dv.indexOf("The dossier in the file") < dv.indexOf("Plaintext"), "the dossier part comes before the caveats");
+const dnone = visible(R.evidenceReviewHtml(Object.assign({}, DPLAN, { dossier: Object.assign({}, DPLAN.dossier,
+  { attribution: [], articles_bounded: false, articles_in_bundle: 7000, rails_not_carried: [] }) }), t, tf));
+assert.ok(dnone.includes("No licence line applies to what this file holds.") && !dnone.includes("the file carries"), dnone);
+assert.ok(!dnone.includes("Not joined, so not in the file"), dnone);
+assert.ok(!review.includes("manifest.dossier") && !review.includes("The dossier in the file"), "a plain bundle names no dossier");
+const dhostile = R.evidenceDossierHtml({ dossier: Object.assign({}, DPLAN.dossier, { rails_carried: ["<img src=x>"],
+  attribution: [{ text: "<b>x</b>", because: '"><img>' }] }) }, t, tf);
+assert.ok(!dhostile.includes("<img") && !dhostile.includes("<b>x"), dhostile);
+assert.ok(!/\b(score[sd]?|rating|rank(ed|ing)?|grade[sd]?|credib\w*|trustworth\w*|reliab\w*|verified)\b/i.test(dv), dv);
 
 console.log("evidence review node test: all checks passed");

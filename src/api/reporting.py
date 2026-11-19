@@ -35,6 +35,22 @@ class EvidenceRequest(BaseModel):
     article_ids: list[int] | None = None
     query: str | None = None
     case_name: str | None = None
+    # S08-01 S2: the dossier of one Wikidata item. Its joined articles are the items and the
+    # dossier itself rides in the manifest (src.reporting.dossier_evidence).
+    dossier_qid: str | None = None
+    lang: str | None = None
+
+
+def _dossier(req, db):
+    """The dossier selection for ``req.dossier_qid``, or None when the request names no dossier."""
+    if not req.dossier_qid:
+        return None
+    from src.reporting.dossier_evidence import dossier_selection
+
+    sel = dossier_selection(db, req.dossier_qid.strip().upper(), req.lang or "en")
+    if sel is None:
+        raise HTTPException(status_code=400, detail="dossier_qid is not a Wikidata item id (Q followed by digits).")
+    return sel
 
 
 @router.post("/evidence")
@@ -45,7 +61,15 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     returned bundle is independently verifiable (offline) with scripts/verify_evidence.py.
     """
     # A repair's stand-in article is a place-holder for a lost row, never evidence: it is left out of every selection, by id or by query.
-    if req.article_ids:
+    dossier = _dossier(req, db)
+    if dossier is not None:
+        # A dossier with no joined article is still a dossier (its Places, lane pages and map
+        # objects are the record), so it is exported with zero items rather than refused.
+        articles = (
+            db.query(Article).filter(Article.id.in_(dossier.article_ids)).order_by(Article.id).all()
+            if dossier.article_ids else []
+        )
+    elif req.article_ids:
         articles = (
             db.query(Article)
             .filter(Article.id.in_(req.article_ids), not_a_stand_in_article())
@@ -64,7 +88,7 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or query.")
 
-    if not articles:
+    if not articles and dossier is None:
         raise HTTPException(status_code=404, detail="No matching articles to export.")
 
     try:
@@ -75,7 +99,9 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
         raise HTTPException(
             status_code=409, detail=http_detail(exc, "The evidence signing key cannot be used: ")
         ) from exc
-    return build_signed_bundle(articles, key, case_name=req.case_name)
+    return build_signed_bundle(
+        articles, key, case_name=req.case_name, dossier=dossier.block if dossier is not None else None
+    )
 
 
 @router.post("/evidence/plan")
@@ -87,16 +113,23 @@ def plan_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict:
     will sign. READ-ONLY: it never creates the signing key (that happens at export), makes no
     network call and writes nothing, so looking costs nothing.
     """
-    ids = _selected_ids(req, db)
+    dossier = _dossier(req, db)
+    ids = dossier.article_ids if dossier is not None else _selected_ids(req, db)
     n_articles, n_sources = (
         db.query(func.count(Article.id), func.count(func.distinct(Article.source_id)))
         .filter(Article.id.in_(ids), not_a_stand_in_article())
         .one()
     )
-    if not n_articles:
+    if not n_articles and dossier is None:
         raise HTTPException(status_code=404, detail="No matching articles to export.")
     state, pub = signing_key_state()
+    extra = {}
+    if dossier is not None:
+        from src.reporting.dossier_evidence import plan_summary
+
+        extra["dossier"] = plan_summary(dossier)
     return {
+        **extra,
         "bundle_version": BUNDLE_VERSION,
         "articles": int(n_articles),
         "sources": int(n_sources),
