@@ -670,6 +670,8 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/api/osm_lane.py': {
         ('osm_view', 'return view(w, s, e, n)'): 1,
+        # the same east bound, handed to the street layer (row 175)
+        ('osm_view', 'return streets(w, s, e, n)'): 1,
     },
     'src/api/startup_status.py': {
         ('set_startup', '_state["error"] = error'): 1,

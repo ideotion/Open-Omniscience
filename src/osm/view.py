@@ -385,8 +385,8 @@ def _iso(d: datetime | None) -> str | None:
     return (d if d.tzinfo else d.replace(tzinfo=UTC)).isoformat()
 
 
-def streets(w: float, s: float, e: float, n: float) -> dict[str, Any]:
-    """The roads to draw in the box ``w, s, e, n``, under the published caps. Reads ``osm.db`` only.
+def streets(west: float, south: float, east: float, north: float) -> dict[str, Any]:
+    """The roads to draw in the box ``west, south, east, north``, under the published caps. Reads ``osm.db`` only.
 
     ``status`` is ``streets`` (``roads`` drawn, ``dropped`` names the classes left out),
     ``no-roads`` (the lane is ready and no road of it lies in the box), ``too-many`` (the most
@@ -402,18 +402,18 @@ def streets(w: float, s: float, e: float, n: float) -> dict[str, Any]:
     from src.osm.tags import column_name
     from src.versioned import store
 
-    w, s, e, n = parse_bbox(w, s, e, n)
-    if e - w > STREET_VIEW_MAX_DEG + 1e-9:
+    x0, y0, x1, y1 = parse_bbox(west, south, east, north)
+    if x1 - x0 > STREET_VIEW_MAX_DEG + 1e-9:
         raise ViewError(f"the street layer serves views up to {STREET_VIEW_MAX_DEG} degrees wide")
     t0 = time.monotonic()
     out: dict[str, Any] = {
-        "bbox": [w, s, e, n], "layer": "streets",
+        "bbox": [x0, y0, x1, y1], "layer": "streets",
         "caps": {**caps(), "streets_method": STREETS_METHOD, "street_view_max_deg": STREET_VIEW_MAX_DEG},
         "classes": [c for c, _ in STREET_CLASSES],
     }
     if not store.lane_exists("osm"):
         return {**out, "status": "no-lane", "total": 0, "seconds": 0.0}
-    p = {"w": w, "s": s, "e": e, "n": n}
+    p = {"w": x0, "s": y0, "e": x1, "n": y1}
     hit = "r.max_lon >= :w AND r.min_lon <= :e AND r.max_lat >= :s AND r.min_lat <= :n AND o.kind = 'road'"
     with store.lane_session("osm") as ses:
         if not ses.query(OsmViewIndex).count():
@@ -455,7 +455,7 @@ def streets(w: float, s: float, e: float, n: float) -> dict[str, Any]:
             running += c
             keep = i + 1
         name = osm_objects_table.c[column_name("name")].name
-        tol = (e - w) / SIMPLIFY_PX
+        tol = (x1 - x0) / SIMPLIFY_PX
         roads: list[dict[str, Any]] = []
         vertices = 0
         subpixel = 0
@@ -510,6 +510,6 @@ def streets(w: float, s: float, e: float, n: float) -> dict[str, Any]:
     if out["status"] == "too-many":
         # Even the most important class present is over a cap: draw what the object layer draws
         # (clusters, or shapes as points), and keep the street answer's counts beside it.
-        out["fallback"] = view(w, s, e, n)
+        out["fallback"] = view(x0, y0, x1, y1)
     out["seconds"] = round(time.monotonic() - t0, 3)
     return out

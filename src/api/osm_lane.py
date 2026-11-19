@@ -245,7 +245,9 @@ def osm_view(
     from src.osm.view import ViewError, streets, view
 
     try:
-        return streets(w, s, e, n) if layer == "streets" else view(w, s, e, n)
+        if layer == "streets":
+            return streets(w, s, e, n)
+        return view(w, s, e, n)
     except ViewError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from None
 
