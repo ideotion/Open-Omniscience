@@ -310,6 +310,59 @@ def floor_order(population: dict | None) -> tuple[dict, Callable[[str], tuple[in
     return block, (lambda cc: (0, -float(weights[cc]), cc) if cc in weights else (1, 0.0, cc))
 
 
+def _tracked_countries(docs: list) -> tuple[set[str], dict[str, int], dict[str, int], dict[str, int]]:
+    """(countries a tracked law document states, unplaced documents by jurisdiction, non-law documents by category, law
+    documents by language). The one reading of the tracked side, shared by the floor and the world blocks."""
+    tracked: set[str] = set()
+    unplaced: dict[str, int] = {}
+    non_law: dict[str, int] = {}
+    docs_by_language: dict[str, int] = {}
+    for d in docs:
+        category = (getattr(d, "category", None) or "").strip().lower()
+        if category in _NON_LAW_DOCUMENT_CATEGORIES:
+            non_law[category] = non_law.get(category, 0) + 1
+            continue
+        cc = (getattr(d, "country", None) or "").strip().lower()
+        if cc:
+            tracked.add(cc)
+        else:
+            unplaced[d.jurisdiction] = unplaced.get(d.jurisdiction, 0) + 1
+        lang = (getattr(d, "language", None) or "").strip().lower()
+        if lang:
+            docs_by_language[lang] = docs_by_language.get(lang, 0) + 1
+    return tracked, unplaced, non_law, docs_by_language
+
+
+def _reachable_countries(catalog: dict | None) -> tuple[dict[str, bool], dict[str, dict[str, bool]]]:
+    """(country -> is any of its law-authority sources verified, many-country code -> {domain: verified}). A many-country code
+    credits no country. Empty when the catalogue could not be read (``None``)."""
+    from src.law.catalog import source_is_law_authority, source_is_verified
+
+    reachable: dict[str, bool] = {}
+    many: dict[str, dict[str, bool]] = {code: {} for code in _MANY_COUNTRY_CODES}
+    if catalog is not None:
+        for s in catalog.get("sources") or []:
+            if not source_is_law_authority(s):
+                continue
+            cc = str(s.get("country") or "").strip().lower()
+            verified = source_is_verified(s)
+            if cc in many:
+                many[cc][str(s.get("domain") or "")] = verified
+            elif cc:
+                reachable[cc] = reachable.get(cc, False) or verified
+    return reachable, many
+
+
+def _state_of(cc: str, tracked: set[str], reachable: dict[str, bool], catalog_read: bool) -> str:
+    if cc in tracked:
+        return FLOOR_TRACKED
+    if not catalog_read:
+        return FLOOR_UNCHECKED
+    if cc not in reachable:
+        return FLOOR_NO_SOURCE
+    return FLOOR_VERIFIED_UNTRACKED if reachable[cc] else FLOOR_UNVERIFIED
+
+
 def floor_report(
     docs: list, catalog: dict | None, floor: dict | None = None, *, reason: str | None = None, population: dict | None = None
 ) -> dict:
@@ -320,8 +373,6 @@ def floor_report(
     as :func:`src.stats.population.load_population_table` returns it (default: that loader), which orders the countries
     within each state (:func:`floor_order`). Counts and lists only; no fraction, no score.
     """
-    from src.law.catalog import source_is_law_authority, source_is_verified
-
     if floor is None:
         from src.civic.coverage_floor import load_floor
 
@@ -348,46 +399,11 @@ def floor_report(
             ),
         }
 
-    tracked: set[str] = set()
-    unplaced: dict[str, int] = {}
-    non_law: dict[str, int] = {}
-    docs_by_language: dict[str, int] = {}
-    for d in docs:
-        category = (getattr(d, "category", None) or "").strip().lower()
-        if category in _NON_LAW_DOCUMENT_CATEGORIES:
-            non_law[category] = non_law.get(category, 0) + 1
-            continue
-        cc = (getattr(d, "country", None) or "").strip().lower()
-        if cc:
-            tracked.add(cc)
-        else:
-            unplaced[d.jurisdiction] = unplaced.get(d.jurisdiction, 0) + 1
-        lang = (getattr(d, "language", None) or "").strip().lower()
-        if lang:
-            docs_by_language[lang] = docs_by_language.get(lang, 0) + 1
-
-    # country -> is any of its law-authority sources verified.  A many-country code credits no country.
-    reachable: dict[str, bool] = {}
-    many: dict[str, dict[str, bool]] = {code: {} for code in _MANY_COUNTRY_CODES}
-    if catalog is not None:
-        for s in catalog.get("sources") or []:
-            if not source_is_law_authority(s):
-                continue
-            cc = str(s.get("country") or "").strip().lower()
-            verified = source_is_verified(s)
-            if cc in many:
-                many[cc][str(s.get("domain") or "")] = verified
-            elif cc:
-                reachable[cc] = reachable.get(cc, False) or verified
+    tracked, unplaced, non_law, docs_by_language = _tracked_countries(docs)
+    reachable, many = _reachable_countries(catalog)
 
     def state_of(cc: str) -> str:
-        if cc in tracked:
-            return FLOOR_TRACKED
-        if catalog is None:
-            return FLOOR_UNCHECKED
-        if cc not in reachable:
-            return FLOOR_NO_SOURCE
-        return FLOOR_VERIFIED_UNTRACKED if reachable[cc] else FLOOR_UNVERIFIED
+        return _state_of(cc, tracked, reachable, catalog is not None)
 
     states = [*FLOOR_STATES, *([FLOOR_UNCHECKED] if catalog is None else [])]
     by_state: dict[str, list[str]] = {st: [] for st in states}
@@ -431,6 +447,74 @@ def floor_report(
     return out
 
 
+#: The world block's countries: every officially assigned ISO 3166-1 code, plus Kosovo's de-facto ``xk`` (the code the
+#: catalogues and the floor already use for it). Unlike the floor, it does NOT exclude dependencies, territories or the
+#: uninhabited codes (aq, bv, hm): ISO lists them, and leaving them out would be a scoping decision this block has no ruling
+#: for. Each is shown with its state like any other; a no-eligible-source there is the catalogue's state, not a to-do.
+_WORLD_EXTRA_CODES: tuple[str, ...] = ("xk",)
+
+_WORLD_METHOD = (
+    "Every ISO 3166-1 alpha-2 country (src.catalog.countries.ISO_3166_1_ALPHA2) plus xk (Kosovo), minus the countries on "
+    "the language floor, which the floor block reports: so each country is in exactly one of the two blocks. The same four "
+    "states as the floor, read the same way (one reading of the tracked documents and of the catalogue for both blocks): "
+    "tracked, verified-not-yet-tracked, unverified, no-eligible-source. Territories, dependencies and uninhabited codes "
+    "are included, because ISO lists them. Within a state, countries go by population reached (R679) when the operator's "
+    "table is present, by code otherwise (see order). A country code a tracked document states that is not in this list "
+    "is named in tracked_codes_not_listed, never dropped."
+)
+_WORLD_CAVEAT = (
+    "A state is where the catalogue and this install stand, not a statement about a legal system: no-eligible-source means "
+    "the catalogue lists no law-authority source, not that none exists, and for an uninhabited code it means nothing at "
+    "all. A candidate source enters the catalogue only after a live check (reachability, robots, licence, format), which "
+    "is the operator's. No fraction or score is computed."
+)
+
+
+def world_report(
+    docs: list, catalog: dict | None, floor: dict | None = None, *, reason: str | None = None, population: dict | None = None
+) -> dict:
+    """Pure: where every country OFF the language floor stands (S07-03 S1, the report half), with the floor's four states.
+
+    The floor block is unchanged and keeps its own countries; this block takes every other ISO 3166-1 country, so the two
+    together cover the world once. Arguments as :func:`floor_report`. Counts and lists only; no fraction, no score.
+    """
+    from src.catalog.countries import ISO_3166_1_ALPHA2
+
+    if floor is None:
+        from src.civic.coverage_floor import load_floor
+
+        floor = load_floor()
+    on_floor = {str(c).strip().lower() for c in (floor.get("countries") or [])}
+    universe = set(ISO_3166_1_ALPHA2) | set(_WORLD_EXTRA_CODES)
+    countries = sorted(universe - on_floor)
+    tracked, _unplaced, _non_law, _by_language = _tracked_countries(docs)
+    reachable, _many = _reachable_countries(catalog)
+    states = [*FLOOR_STATES, *([FLOOR_UNCHECKED] if catalog is None else [])]
+    by_state: dict[str, list[str]] = {st: [] for st in states}
+    order, order_key = floor_order(population)
+    for cc in sorted(countries, key=order_key):
+        by_state[_state_of(cc, tracked, reachable, catalog is not None)].append(cc)
+    if order["by"] == "population":
+        order["missing"] = sorted(cc for cc in countries if order_key(cc)[0])
+    out: dict = {
+        "state": "checked" if catalog is not None else "unchecked",
+        "reason": None if catalog is not None else reason,
+        "countries": len(countries),
+        "floor_countries_excluded": len(on_floor & universe),
+        "states": {st: len(v) for st, v in by_state.items()},
+        "by_state": by_state,
+        "order": order,
+        # A code a tracked document states that neither block lists (a typo, a retired code): named, never dropped.
+        "tracked_codes_not_listed": sorted(tracked - universe),
+        "method": _WORLD_METHOD,
+        "caveat": _WORLD_CAVEAT,
+    }
+    if not on_floor:
+        out["floor_note"] = ("the floor file is absent, unreadable or lists no country, so no country is set aside for the "
+                             "floor block and this block lists every country")
+    return out
+
+
 def law_coverage_report(
     session: Session, *, enumerations: dict[str, list[dict]] | None = None
 ) -> dict:
@@ -444,6 +528,9 @@ def law_coverage_report(
     from src.database.country_form import order_key
 
     docs = sorted(session.query(LawDocument).all(), key=lambda d: order_key(d.jurisdiction, d.id))  # see order_key
+    from src.stats.population import load_population_table
+
+    population = load_population_table()  # read once for the floor and the world blocks, so both order by the same table
     by_jur: dict[str, list[LawDocument]] = {}
     for d in docs:
         by_jur.setdefault(d.jurisdiction, []).append(d)
@@ -571,7 +658,9 @@ def law_coverage_report(
         # Each state's reason ONCE, for the states this report uses: a jurisdiction's `coverage.state` is the key into it.
         # Stated per jurisdiction it was the same paragraph again for every row (710 bytes for the commonest state).
         "coverage_reasons": {st: _COVERAGE_REASONS[st] for st in sorted(states_used)},
-        "floor": _floor_unchecked(catalog_error, docs) if catalog_error else floor_report(docs, catalog),
+        "floor": _floor_unchecked(catalog_error, docs) if catalog_error else floor_report(docs, catalog, population=population),
+        # S07-03 S1 (row 185): every country off the floor, with the floor's four states. The floor's own numbers are unchanged.
+        "world": world_report(docs, None if catalog_error else catalog, reason=catalog_error, population=population),
         "extraction": unchecked_extraction if catalog_error else _pdf_reach(session, catalog),
         "enumeration": unchecked_enumeration if catalog_error else {
             "countries_with_an_official_count": len(enum_by_country),
