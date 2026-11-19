@@ -33,6 +33,8 @@ def _fetch_worker(ctx, *, files: int) -> dict:
         ctx.set_progress(done=done, total=total, detail=detail)
 
     result = run_fetch(files, progress=_progress, stopping=lambda: ctx.stopping)
+    if result.get("listed") is not None:  # a run stopped before any request is no fetch, and is not recorded
+        _record_for_k13(result)
     return result
 
 
