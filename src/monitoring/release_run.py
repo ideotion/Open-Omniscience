@@ -1463,8 +1463,7 @@ def _gii_read(result: Any, url: str) -> dict[str, Any]:
     try:
         parsed = parse_gii(raw)
     except AdapterRefusal as exc:
-        return {"url": url, "adapter_read_it": False, "refusal": exc.reason,
-                "detail": record_text(exc, typed=False, limit=300)}
+        return {"url": url, "adapter_read_it": False, "refusal": record_text(exc, typed=False, limit=300)}
     except Exception as exc:  # noqa: BLE001 - a probe records the failure, it never raises it
         return {"url": url, "adapter_read_it": False, "error": record_text(exc, limit=300, typed=True)}
     return {

@@ -388,7 +388,7 @@ def test_a_refused_bare_xml_is_NOT_stored_as_a_web_page():
     xml = _doc(_META, _para("§ 1", "Kurz.", extra=odd))
     text, reason, parsed = _document_text(_Result(xml, xml.encode("utf-8"), "application/xml"))
     assert text is None and parsed is None
-    assert reason == "gesetze-im-internet XML refused: too little of the document was recovered"
+    assert reason.startswith("gesetze-im-internet XML refused: too little of the document was recovered")
 
 
 def test_the_bare_xml_is_read_too_and_html_is_untouched():

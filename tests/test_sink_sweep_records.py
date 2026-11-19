@@ -731,6 +731,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/config/app_settings.py": 3,
     "src/custody/anchor.py": 2,
     "src/law/adapters/clml.py": 3,
+    "src/law/adapters/gii.py": 4,  # row 186: unreadable zip, unreadable member, unsafe xml, malformed xml -> AdapterRefusal (detail via record_text or the class name)
     "src/llm/ollama.py": 11,  # +1 R671: _require_local_model wraps an unreadable /api/tags exactly as list_installed does (record_text)
     "src/llm/vllm_client.py": 7,  # +2 R688: server_kind chains the connection error when the server does not answer its /api/tags or /v1/models read
     # src/llm/vllm_lifecycle.py: 0 -- its one site (pip's unpack directory) now raises a fixed phrase "from None" and logs the detail
