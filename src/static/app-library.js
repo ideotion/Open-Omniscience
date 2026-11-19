@@ -98,6 +98,87 @@
 
     // Fetch (lazily, cached) + paint the footprint into a host. Paints the cache instantly on
     // re-open, then re-measures only when forced. Called on Library-tab open + System-tab open.
+    // R751(c): the K1–K14 measures in the task manager's System tab, read from /api/diagnostics/kpi (one cheap GET:
+    // the snapshot reads only the in-process instruments and what each instrument recorded, never a scan or a fetch).
+    // Each measure stands alone, as the snapshot says: no total, no count of the ones that meet their target, no score.
+    // A measure with no value reads "unknown", never 0; its method rides the hover bubble (#17), and the caveat line
+    // stays on screen. K13 lists its five blocks (climate, elections, law, maps, Wikipedia) with their own counts,
+    // date and method; a count a block could not read is "unknown", a count it never carries is not drawn.
+    const _KPI_VERDICT = {
+      "green": "meets its target",
+      "red": "misses its target",
+      "not-measurable-here": "not measurable here",
+      "measured-no-bar": "measured, no target set yet",
+    };
+    const _KPI_VERTICAL = {climate: "Climate", elections: "Elections", law: "Law", osm: "OpenStreetMap", wiki: "Wikipedia"};
+    const _KPI_FIGURES = {
+      climate: [["datasets_fetched", "datasets fetched"], ["datasets_listed", "datasets listed"]],
+      elections: [["floor_countries", "countries on the floor"], ["covered", "countries covered"],
+        ["only_passed_projection", "only a passed projection"], ["present_but_dateless", "present but dateless"],
+        ["missing", "missing"], ["snapshot_rows", "snapshot rows"]],
+      law: [["documents", "tracked documents"], ["baselined", "baselined"], ["jurisdictions", "jurisdictions"],
+        ["never_checked", "documents never checked"]],
+      osm: [["countries", "countries listed"], ["countries_with_change_files", "countries with change files"],
+        ["change_files_recorded", "change files recorded"], ["gaps_total", "gaps"]],
+      wiki: [["editions_listed", "editions listed"], ["editions_with_a_run", "editions that have run"],
+        ["editions_with_pages_seen", "editions with pages seen"], ["editions_with_text", "editions holding a text"],
+        ["pages_seen", "pages seen"], ["gaps_total", "gaps"]],
+    };
+    function kpiPanelHtml(snap, h) {
+      const t = h.t;
+      const {tf, esc, fmt, label} = h;
+      const num = v => (typeof v === "number" && isFinite(v)) ? fmt(v) : null;
+      const shown = v => num(v) ?? t("unknown");
+      const metrics = (snap && Array.isArray(snap.metrics)) ? snap.metrics : null;
+      if (!metrics) return `<div class="muted">${esc(t("No measures could be read."))}</div>`;
+      const head = `<div class="card-caveat"${snap.caveat ? ` title="${esc(snap.caveat)}"` : ""}>`
+        + esc(t("Each measure stands alone: there is no overall score. “Not measurable here” means its instrument has not run on this machine, not that it failed."))
+        + `</div>`;
+      const rows = metrics.map(m => {
+        const verdict = _KPI_VERDICT[m.verdict] ? t(_KPI_VERDICT[m.verdict]) : String(m.verdict ?? t("unknown"));
+        const bits = [label(esc(t("value")), `<b>${esc(shown(m.value))}</b>`)];
+        if (m.n != null) bits.push(esc(tf("n = {n}", {n: shown(m.n)})));
+        if (m.as_of) bits.push(label(esc(t("as of")), esc(String(m.as_of).slice(0, 10))));
+        bits.push(label(esc(t("target")), esc(String(m.target ?? t("unknown")))));
+        let body = `<div class="kpi-row" style="margin:6px 0"${m.method ? ` title="${esc(m.method)}"` : ""}>`
+          + `<div><b>${esc(m.id || "")}</b> ${esc(m.name || "")} <span class="muted">· ${esc(verdict)}</span></div>`
+          + `<div class="muted" style="font-size:11.5px">${bits.join(" · ")}</div>`;
+        if (Array.isArray(m.verticals)) body += m.verticals.map(b => _kpiBlockHtml(b, h, shown)).join("");
+        return body + `</div>`;
+      }).join("");
+      return head + rows;
+    }
+    function _kpiBlockHtml(b, h, shown) {
+      const t = h.t;
+      const {esc, label} = h;
+      const name = _KPI_VERTICAL[b.vertical] ? t(_KPI_VERTICAL[b.vertical]) : String(b.vertical || "");
+      const state = b.state === "recorded" ? t("recorded") : t("not measured");
+      const slice = b.first_slice ? t("first slice in") : t("no first slice yet");
+      const figs = (_KPI_FIGURES[b.vertical] || []).filter(([k]) => k in b)
+        .map(([k, l]) => label(esc(t(l)), esc(shown(b[k]))));
+      const top = [state, slice].map(esc).concat(b.as_of ? [label(esc(t("as of")), esc(String(b.as_of).slice(0, 10)))] : []);
+      return `<div class="kpi-block" style="margin:3px 0 3px 14px;font-size:11.5px"${b.method ? ` title="${esc(b.method)}"` : ""}>`
+        + `<div>${esc(name)} <span class="muted">· ${top.join(" · ")}</span></div>`
+        + (figs.length ? `<div class="muted">${figs.join(" · ")}</div>` : "")
+        + (b.reason ? `<div class="muted">${esc(b.reason)}</div>` : "")
+        + `</div>`;
+    }
+    async function renderKpiPanel(hostId) {
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const snap = await api("/api/diagnostics/kpi");
+        host.innerHTML = kpiPanelHtml(snap, {t, tf, esc, label: ooLabelHtml,
+          fmt: (typeof fmtNum === "function") ? fmtNum : String});
+      } catch (e) {
+        host.innerHTML = `<div class="note err">${esc(t("Could not load:"))} ${esc(e.message || e)}</div>`;
+      }
+    }
+
     async function renderStorageFootprint(hostId, force) {
       const host = document.getElementById(hostId);
       if (!host) return;

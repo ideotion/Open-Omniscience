@@ -70,7 +70,6 @@ GET	/api/diagnostics/keyword-engine	internal		diagnostics	maintainer diagnostics
 POST	/api/diagnostics/keyword-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 POST	/api/diagnostics/keyword-triage-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
 GET	/api/diagnostics/keywords/parts/{set_id}/{name}	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
-GET	/api/diagnostics/kpi	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/law-ingest	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/leads-quality	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 POST	/api/diagnostics/llm-throughput-selftest	internal		diagnostics	self-test proving a mechanism on a fixture; maintainer tool
