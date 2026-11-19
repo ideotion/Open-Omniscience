@@ -8,6 +8,7 @@ tested with an injected fake connection.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -376,6 +377,7 @@ def test_batched_commit_falls_back_per_message_on_collision():
     assert s.query(Article).count() == 1
 
 
+@pytest.mark.usefixtures("driver_class_caches_cleared")
 def test_is_integrity_error_recognizes_a_sqlcipher3_style_unwrapped_exception(monkeypatch):
     """Audit finding 2026-07-17: on the ENCRYPTED store a unique-constraint collision
     can surface as a RAW ``sqlcipher3``/``sqlite3`` ``IntegrityError`` that SQLAlchemy
@@ -408,6 +410,7 @@ def test_is_integrity_error_recognizes_a_sqlcipher3_style_unwrapped_exception(mo
     assert _is_integrity_error(RuntimeError("disk full")) is False
 
 
+@pytest.mark.usefixtures("driver_class_caches_cleared")
 def test_commit_one_classifies_a_sqlcipher3_style_collision_as_a_duplicate_not_a_crash(monkeypatch):
     """End-to-end via the real _flush() -> _commit_one redo path: force _flush()'s
     primary session.commit() to fail once (entering its per-message redo loop), then

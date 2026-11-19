@@ -838,6 +838,61 @@ def _defined_in_a_test(fn: object) -> bool:
     return module == "conftest" or module.split(".")[0] == "tests"
 
 
+#: The cached functions that resolve a DATABASE DRIVER'S exception classes (``sqlcipher3`` beside SQLAlchemy and stdlib ``sqlite3``), as
+#: "module:function". Row 188: a test that put a fake ``sqlcipher3`` in ``sys.modules`` (to stand in for the encrypted driver's own
+#: IntegrityError) made ``src.database.write.is_locked_error`` resolve its classes while the fake was in, and the ``lru_cache`` kept that answer
+#: for the rest of the worker, so a REAL sqlcipher3 "database is locked" read as not locked in a later test, far from the cause, depending on
+#: which file the worker ran first. tests/test_driver_class_caches.py pins that every such cached function in ``src`` is listed here.
+DRIVER_CLASS_CACHES = (
+    "src.database.write:_db_operational_error_types",
+    "src.database.write:_db_integrity_error_types",
+    "src.backup.merge:_db_integrity_error_types",
+)
+
+
+def _driver_class_leaks() -> list[str]:
+    """What a test left of a fake database driver, each put right as it is found: a ``sqlcipher3`` entry in ``sys.modules`` that is not a
+    module, and a cached driver-class answer that differs from the one computed now (resolved while a fake was in, or while the real one was
+    hidden). Only a cache a test has filled is compared, and only modules already imported, so the check imports nothing."""
+    import types as _types
+
+    leaks: list[str] = []
+    for name in ("sqlcipher3", "sqlcipher3.dbapi2"):
+        mod = sys.modules.get(name)
+        if mod is not None and not isinstance(mod, _types.ModuleType):
+            sys.modules.pop(name, None)
+            leaks.append(f"sys.modules[{name!r}] is a {type(mod).__name__}, not the driver")
+    for spec in DRIVER_CLASS_CACHES:
+        mod_name, fn_name = spec.split(":")
+        fn = getattr(sys.modules.get(mod_name), fn_name, None)
+        if fn is None or not fn.cache_info().currsize:
+            continue
+        cached = fn()
+        fresh = fn.__wrapped__()
+        if cached != fresh:
+            fn.cache_clear()
+            leaks.append(f"{spec} cached {[c.__module__ + '.' + c.__qualname__ for c in cached]}, not {[c.__module__ + '.' + c.__qualname__ for c in fresh]}")
+    return leaks
+
+
+def clear_driver_class_caches() -> None:
+    """Clear every cache in ``DRIVER_CLASS_CACHES`` (importing its module): what a test that fakes ``sqlcipher3`` does before and after."""
+    import importlib
+
+    for spec in DRIVER_CLASS_CACHES:
+        mod_name, fn_name = spec.split(":")
+        getattr(importlib.import_module(mod_name), fn_name).cache_clear()
+
+
+@pytest.fixture
+def driver_class_caches_cleared():
+    """For a test that puts a fake ``sqlcipher3`` in ``sys.modules``: the driver-class caches are empty when it starts and when it ends, so
+    nothing it resolves under the fake outlives it (row 188)."""
+    clear_driver_class_caches()
+    yield
+    clear_driver_class_caches()
+
+
 _NETWORK_CALLS_BEFORE: dict[str, dict[str, object]] = {}
 
 
@@ -877,6 +932,14 @@ def pytest_runtest_teardown(item, nextitem):
 
                 airplane._install_patches()  # patch them again, so one such test is one failure
                 leaked += ["guard removed but flagged installed: " + ", ".join(removed)]
+            drivers = _driver_class_leaks()
+            if drivers and not teardown_raised:
+                pytest.fail(
+                    "this test left a fake database driver behind (" + "; ".join(drivers) + "); it was cleared, but a test that puts a fake "
+                    "sqlcipher3 in sys.modules must clear the driver-class caches (tests/conftest.py DRIVER_CLASS_CACHES) before and after, "
+                    "or a later test in the worker reads a real driver error with the fake's classes (row 188)",
+                    pytrace=False,
+                )
             if leaked and not teardown_raised:  # a teardown that already raised is the failure being reported; the put-back above still ran
                 pytest.fail(
                     "this test left the process-wide network calls wrong (" + "; ".join(leaked) + "); they were put back, but a test that swaps "
