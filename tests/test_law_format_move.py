@@ -43,7 +43,7 @@ from src.law.adapters.gii import parse_gii  # noqa: E402
 from src.law.catalog import format_move_targets  # noqa: E402
 
 GG = Path(__file__).parent / "fixtures" / "law" / "gii" / "gg_excerpt.xml"
-HTML_URL = "https://www.gesetze-im-internet.de/gg/"
+HTML_URL = "https://www.gesetze-im-internet.de/gg/BJNR000010949.html"  # the catalogue's own previous_urls
 XML_URL = "https://www.gesetze-im-internet.de/gg/xml.zip"
 TITLE = "Grundgesetz für die Bundesrepublik Deutschland"
 
@@ -274,6 +274,53 @@ def test_an_address_another_document_already_holds_is_not_taken(db):
     _assert_stayed(db, doc, html_text, "another tracked document already holds")
 
 
+def test_an_xml_address_that_REDIRECTS_to_another_host_is_not_read(db):
+    doc = _tracked_from_html(db)
+    html_text = doc.baseline_text
+
+    class Redirected(Portal):
+        def fetch(self, url, **kw):
+            res = super().fetch(url, **kw)
+            if url == XML_URL:
+                res.final_url = "https://mirror.example/gg/xml.zip"
+            return res
+
+    track.track_document(db, Redirected(), doc, move_to=XML_URL)
+    _assert_stayed(db, doc, html_text, "redirected to another host")
+
+
+def test_a_kill_switch_refusal_of_the_xml_read_is_named_as_such(db):
+    from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+
+    doc = _tracked_from_html(db)
+    html_text = doc.baseline_text
+    track.track_document(db, Portal(xml_error=FetchError(KILL_SWITCH_REFUSAL)), doc, move_to=XML_URL)
+    _assert_stayed(db, doc, html_text, "refused by the kill switch")
+
+
+def test_an_act_the_page_merely_CITES_is_not_taken_for_the_act_itself(db):
+    """German acts cite one another by full title; the XML's title must open the page."""
+    cited = "Bürgerliches Gesetzbuch"
+    doc = LawDocument(jurisdiction="de", title="GG", url=HTML_URL, watched=True)
+    db.add(doc)
+    db.commit()
+    page = _html(f"<p>Nach dem {cited} gilt Folgendes.</p>")
+    track.track_document(db, Portal(html=page), doc)
+    html_text = doc.baseline_text
+    other = GG.read_bytes().replace(TITLE.encode("utf-8"), cited.encode("utf-8"))
+    track.track_document(db, Portal(html=page, archive=_zip(other)), doc, move_to=XML_URL)
+    _assert_stayed(db, doc, html_text, "names an act the stored HTML text does not")
+
+
+def test_a_move_to_plain_http_on_the_same_host_is_a_downgrade_not_the_same_host(db):
+    doc = _tracked_from_html(db)
+    html_text = doc.baseline_text
+    portal = Portal()
+    track.track_document(db, portal, doc, move_to=XML_URL.replace("https://", "http://"))
+    assert portal.asked == [HTML_URL]
+    _assert_stayed(db, doc, html_text, "another host")
+
+
 def test_a_move_that_was_undone_is_not_made_again_on_its_own(db):
     doc = _tracked_from_html(db)
     html_text = doc.baseline_text
@@ -483,3 +530,71 @@ def test_the_move_shows_in_the_history_and_is_never_counted_as_an_amendment(tmp_
         assert "The previous reading is kept with this entry." in page
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_a_sibling_and_a_moved_document_never_land_on_ONE_row(tmp_path):
+    """Security read 2026-11-19: a staged sibling (``de``/``deu`` spellings of one address) maps by its exact
+    spelling; a moved staged document claiming the same row by its old address must lose to it, or two documents'
+    revisions meet on one row and the restore aborts on the unique (document, hash) index."""
+    from src.backup.merge import merge_corpus
+
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    import sqlite3
+
+    _corpus(staged)
+    # Raw SQL: the model's country column would store both spellings in ONE form, and the point is a
+    # backup that holds them side by side (an older build's ``deu`` beside the catalogue's ``de``).
+    con = sqlite3.connect(staged)
+    for doc_id, juris, url, rev in ((1, "de", HTML_URL, "r1"), (2, "deu", HTML_URL, "r9"), (3, "de", XML_URL, "r1")):
+        con.execute("INSERT INTO law_documents (id, jurisdiction, title, url, watched) VALUES (?, ?, 'GG', ?, 1)",
+                    (doc_id, juris, url))
+        con.execute("INSERT INTO law_revisions (document_id, observed_at, content_hash, full_text) VALUES (?, ?, ?, ?)",
+                    (doc_id, _T0.isoformat(" "), rev, rev))
+    con.execute("INSERT INTO law_format_changes (document_id, changed_at, from_url, to_url, from_format, to_format,"
+                " from_hash, to_hash) VALUES (3, ?, ?, ?, 'html', 'gii', 'a', 'b')", (_T0.isoformat(" "), HTML_URL, XML_URL))
+    con.commit()
+    con.close()
+    with _corpus(working)() as s:
+        s.add(LawDocument(jurisdiction="de", title="GG", url=HTML_URL, watched=True))
+        s.commit()
+    merge_corpus(staged, working, _BATCH_META)  # must not raise
+    with _corpus(working)() as s:
+        assert s.query(LawDocument).filter_by(url=HTML_URL).count() >= 1
+
+
+def test_a_backup_cannot_plant_an_address_the_catalogue_names_no_move_from(tmp_path):
+    """Security read 2026-11-19: a history row claiming the GG 'moved from' the BGB's address would, once
+    applied, file a later legitimate restore of the BGB under the GG for good. Only catalogue moves are trusted."""
+    from src.backup.merge import merge_corpus
+
+    bgb = "https://www.gesetze-im-internet.de/bgb/"
+    working = tmp_path / "live.db"
+    with _corpus(working)() as s:
+        d = LawDocument(jurisdiction="de", title="GG", url=HTML_URL, watched=True)
+        s.add(d)
+        s.flush()
+        s.add(LawRevision(document_id=d.id, observed_at=_T0, content_hash="gg1", full_text="gg1"))
+        s.commit()
+    hostile = tmp_path / "hostile.db"
+    with _corpus(hostile)() as s:
+        d = LawDocument(jurisdiction="de", title="GG", url=HTML_URL, watched=True)
+        s.add(d)
+        s.flush()
+        s.add(LawFormatChange(document_id=d.id, changed_at=_T0, from_url=bgb, to_url=HTML_URL,
+                              from_format="html", to_format="gii", from_hash="a", to_hash="b"))
+        s.commit()
+    results, _batch = merge_corpus(hostile, working, _BATCH_META)
+    assert results["law_format_changes"]["conflict"] == 1 if isinstance(results["law_format_changes"], dict) \
+        else results["law_format_changes"].conflict == 1
+    legit = tmp_path / "legit.db"
+    with _corpus(legit)() as s:
+        d = LawDocument(jurisdiction="de", title="BGB", url=bgb, watched=True)
+        s.add(d)
+        s.flush()
+        s.add(LawRevision(document_id=d.id, observed_at=_T0, content_hash="bgb1", full_text="bgb1"))
+        s.commit()
+    merge_corpus(legit, working, _BATCH_META)
+    with _corpus(working)() as s:
+        assert s.query(LawFormatChange).count() == 0
+        (b,) = s.query(LawDocument).filter_by(url=bgb).all()
+        assert [r.content_hash for r in s.query(LawRevision).filter_by(document_id=b.id)] == ["bgb1"]

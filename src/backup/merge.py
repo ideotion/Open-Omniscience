@@ -5667,9 +5667,18 @@ def _key_law_documents(con, side: str, schema: str) -> None:
     if con.execute(
         f"SELECT 1 FROM {schema}.sqlite_master WHERE type = 'table' AND name = 'law_format_changes'"  # noqa: S608  # nosec B608 # as above
     ).fetchone():
-        con.execute(
-            f"INSERT INTO temp.{alias} (id, key, url) SELECT f.document_id, k.key, f.from_url"  # noqa: S608  # nosec B608 # as above
+        # An address a document moved FROM is an alias only when the catalogue names that very
+        # move. A backup is data from elsewhere: a history row it carries is otherwise a claim
+        # that some other address is this act, and a false one would file a later, legitimate
+        # restore of that other act under this one, for good.
+        moves = _catalogue_law_moves()
+        rows = con.execute(
+            f"SELECT f.document_id, k.key, k.jurisdiction, f.from_url, f.to_url"  # noqa: S608  # nosec B608 # as above
             f" FROM {schema}.law_format_changes f JOIN temp.{table} k ON k.id = f.document_id"
+        ).fetchall()
+        con.executemany(
+            f"INSERT INTO temp.{alias} (id, key, url) VALUES (?, ?, ?)",  # noqa: S608  # nosec B608 # as above
+            [(i, key, frm) for i, key, juris, frm, to in rows if _is_catalogue_move(moves, juris, frm, to)],
         )
     con.execute(f"CREATE INDEX temp.{alias}_key_url ON {alias} (key, url)")  # noqa: S608  # nosec B608 # as above
     if side == "inc":
@@ -5689,10 +5698,32 @@ def _key_law_documents(con, side: str, schema: str) -> None:
 #: R753: a staged document is ALSO held when one of its addresses (its url, or an address it moved from) meets one of a working-copy
 #: document's addresses, and no other staged document claims that working-copy document the same way. Two claimants map nowhere by
 #: this route (each falls back to the exact match above, or is inserted), because two documents' children must never meet on one row.
-_LAW_MOVED_UNIQUE = (
-    "EXISTS (SELECT 1 FROM temp.law_alias_pair p WHERE p.inc_id = i.id"
-    " AND NOT EXISTS (SELECT 1 FROM temp.law_alias_pair q WHERE q.main_id = p.main_id AND q.inc_id <> p.inc_id))"
+#: The competitors are EVERY staged document that reaches that working-copy row by any route: another address claimant, and any staged
+#: document that matches it by key and url (a sibling included, which ``law_alias_pair`` leaves out).
+_LAW_MOVED_UNIQUE_P = (
+    "NOT EXISTS (SELECT 1 FROM temp.law_alias_pair q WHERE q.main_id = p.main_id AND q.inc_id <> p.inc_id)"
+    " AND NOT EXISTS (SELECT 1 FROM temp.law_key_inc k2 JOIN temp.law_key_main km2 ON km2.key = k2.key AND km2.url = k2.url"
+    "  WHERE km2.id = p.main_id AND k2.id <> p.inc_id)"
 )
+_LAW_MOVED_UNIQUE = "EXISTS (SELECT 1 FROM temp.law_alias_pair p WHERE p.inc_id = i.id AND " + _LAW_MOVED_UNIQUE_P + ")"
+
+
+def _catalogue_law_moves() -> set[tuple[str, str, str]]:
+    """``(jurisdiction, from_url, to_url)`` for every move the law catalogue names (R753). Empty -- no move is trusted -- when it
+    cannot be read: the merge then maps and copies exactly as it did before moves existed."""
+    try:
+        from src.law.catalog import format_move_targets, load_legal_catalog
+
+        return {(j, frm, to) for (j, frm), to in format_move_targets(load_legal_catalog()).items()}
+    except Exception as exc:  # noqa: BLE001 - a catalogue problem must never break a restore
+        log_failure(_LOG, "merge: law catalogue unreadable; no format move is trusted", exc, level=logging.WARNING)
+        return set()
+
+
+def _is_catalogue_move(moves: set[tuple[str, str, str]], jurisdiction, from_url, to_url) -> bool:
+    from src.law.catalog import law_jurisdiction
+
+    return (law_jurisdiction(jurisdiction), from_url, to_url) in moves
 _LAW_HELD = (
     "((ki.sib = 0 AND (EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url) OR " + _LAW_MOVED_UNIQUE + "))"
     " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)))"
@@ -5774,7 +5805,7 @@ def _merge_law(con, batch_id, results) -> None:
         "   WHERE km.key = ki.key AND km.url = i.url AND km.jurisdiction = i.jurisdiction),"
         "  (SELECT MIN(km.id) FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url),"
         "  CASE WHEN ki.sib = 0 THEN (SELECT MIN(p.main_id) FROM temp.law_alias_pair p WHERE p.inc_id = i.id"
-        "   AND NOT EXISTS (SELECT 1 FROM temp.law_alias_pair q WHERE q.main_id = p.main_id AND q.inc_id <> p.inc_id)) END) AS home"
+        "   AND " + _LAW_MOVED_UNIQUE_P + ") END) AS home"
         " FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id) WHERE home IS NOT NULL",
     )
     rev = DomainResult()
@@ -5907,15 +5938,32 @@ def _merge_law_format_changes(con, batch_id) -> DomainResult:
         " JOIN main.law_documents m ON m.id = ml.new"
     )
     fc.duplicate = _count(con, "SELECT COUNT(*)" + base + " WHERE EXISTS (" + same + ")")  # nosec B608 # module literals only
+    # A move the catalogue does not name is never applied either (see ``_key_law_documents``): it is
+    # reported beside the moves this copy has not made, with its own reason.
+    moves = _catalogue_law_moves()
+    unnamed = [
+        row_id for row_id, juris, frm, to in con.execute(
+            "SELECT i.id, m.jurisdiction, i.from_url, i.to_url" + base + " WHERE NOT EXISTS (" + same + ")"  # nosec B608 # module literals only
+        ).fetchall()
+        if not _is_catalogue_move(moves, juris, frm, to)
+    ]
+    con.execute("DROP TABLE IF EXISTS temp.law_fmt_unnamed")
+    con.execute("CREATE TEMP TABLE law_fmt_unnamed (id INTEGER PRIMARY KEY)")
+    con.executemany("INSERT INTO temp.law_fmt_unnamed (id) VALUES (?)", [(i,) for i in unnamed])
     conflicts = con.execute(
-        "SELECT m.jurisdiction, i.from_url, i.to_url, m.url" + base  # nosec B608 # module literals only
-        + " WHERE m.url <> i.to_url AND NOT EXISTS (" + same + ") ORDER BY m.id, i.id"
+        "SELECT m.jurisdiction, i.from_url, i.to_url, m.url,"  # nosec B608 # module literals only
+        " EXISTS (SELECT 1 FROM temp.law_fmt_unnamed u WHERE u.id = i.id)" + base
+        + " WHERE (m.url <> i.to_url OR EXISTS (SELECT 1 FROM temp.law_fmt_unnamed u WHERE u.id = i.id))"
+        " AND NOT EXISTS (" + same + ") ORDER BY m.id, i.id"
     ).fetchall()
     fc.conflict = len(conflicts)
-    for juris, from_url, to_url, here in conflicts[:_SAMPLE_LIMIT]:
+    for juris, from_url, to_url, here, is_unnamed in conflicts[:_SAMPLE_LIMIT]:
         fc.conflicts.append({
             "jurisdiction": juris, "from_url": from_url, "to_url": to_url, "address_here": here,
-            "outcome": "not applied: this copy has not made the move; it is made by its own next poll",
+            "outcome": (
+                "not applied: the law catalogue names no such move" if is_unnamed
+                else "not applied: this copy has not made the move; it is made by its own next poll"
+            ),
         })
     fc.new = _insert_tracked(
         con, batch_id, "law_format_changes",
@@ -5924,7 +5972,8 @@ def _merge_law_format_changes(con, batch_id) -> DomainResult:
         " SELECT ml.new, i.changed_at, i.from_url, i.to_url, i.from_format, i.to_format, i.from_hash, i.to_hash,"
         " i.from_baseline_hash, i.from_baseline_text, i.from_latest_text,"
         " (SELECT mr.new FROM temp.map_law_rev mr WHERE mr.old = i.from_latest_text_revid), i.reason"
-        + base + " WHERE m.url = i.to_url AND NOT EXISTS (" + same + ")",
+        + base + " WHERE m.url = i.to_url AND NOT EXISTS (" + same + ")"
+        " AND NOT EXISTS (SELECT 1 FROM temp.law_fmt_unnamed u WHERE u.id = i.id)",
     )
     if fc.conflict:
         fc.note = "a move this copy has not made is reported, never applied (R753)"

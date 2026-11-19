@@ -679,6 +679,20 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None, move_t
 # half is a different document, a fragment, or a parse gone wrong.
 _MOVE_MIN_LENGTH_RATIO = 0.5
 _MOVE_STAYS = "unchanged; stays on its HTML address: "
+# The act's title must appear in the opening of the stored HTML text (its heading), see below.
+_MOVE_TITLE_WINDOW = 2000
+
+
+def _same_origin(a: str, b: str) -> bool:
+    """Same scheme, host and port: R753 covers one more request to the SAME host, and an
+    ``http://`` address on it would be a transport downgrade, not the same host."""
+    try:
+        sa, sb = urlsplit(a), urlsplit(b)
+        return bool(sa.hostname) and (sa.scheme.lower(), (sa.hostname or "").lower(), sa.port) == (
+            sb.scheme.lower(), (sb.hostname or "").lower(), sb.port
+        )
+    except ValueError:
+        return False
 
 
 def _normalised(text: str) -> str:
@@ -702,6 +716,7 @@ def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text:
     """
     from src.database.models import LawFormatChange
     from src.ingest import CrawlDelayDeferred, FetchError
+    from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL_HEAD
     from src.law.catalog import law_jurisdiction
 
     def stay(why: str) -> None:
@@ -709,11 +724,7 @@ def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text:
         session.commit()
 
     old_url = doc.url
-    try:
-        same_host = (urlsplit(old_url).hostname or "").lower() == (urlsplit(move_to).hostname or "").lower()
-    except ValueError:
-        same_host = False
-    if not same_host:
+    if not _same_origin(old_url, move_to):
         stay("the catalogue's new address is on another host, which R753 does not cover")
         return None
     juris = law_jurisdiction(doc.jurisdiction)
@@ -731,12 +742,22 @@ def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text:
         stay(f"the XML read was deferred: {record_text(exc, limit=120)}")
         return None
     except FetchError as exc:
-        stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
+        if record_text(exc).startswith(KILL_SWITCH_REFUSAL_HEAD):
+            stay("the XML read was refused by the kill switch (airplane mode); nothing was requested")
+        else:
+            stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
         return None
     except Exception as exc:  # noqa: BLE001 - the socket guard raises OSError; a move must never break tracking
         stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
         return None
 
+    # Condition 5: the text must come FROM the same host, not only be asked of it. The fetcher
+    # follows a redirect to another host (under that host's own robots), so the answer's own
+    # address is checked before a byte of it is read as the act.
+    final_url = getattr(result, "final_url", None) or move_to
+    if not _same_origin(old_url, final_url):
+        stay("the XML address redirected to another host, which R753 does not cover")
+        return None
     xml_text, xml_reason, parsed = _document_text(result, retrieved_on=now.date().isoformat())
     if parsed is None or xml_reason not in ("gii", "clml"):
         what = "it answered with a web page" if xml_reason == "ok" else (xml_reason or "no reason given")[:100]
@@ -748,8 +769,11 @@ def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text:
     if len(xml_text) < _MOVE_MIN_LENGTH_RATIO * len(html_text):
         stay(f"the XML reading is far shorter than the HTML ({len(xml_text)} vs {len(html_text)} characters)")
         return None
+    # The act's own title must open the stored HTML text (the page's heading), not merely occur
+    # in it: German acts cite one another by full title, so a substring of the whole text
+    # would accept a mis-mapped act whose name the right one happens to quote.
     title = (getattr(parsed, "title", None) or "").strip()
-    if not title or _normalised(title) not in _normalised(html_text):
+    if not title or _normalised(title) not in _normalised(html_text)[:_MOVE_TITLE_WINDOW]:
         stay("the XML names an act the stored HTML text does not")
         return None
 
@@ -786,8 +810,11 @@ def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text:
     except Exception as exc:  # noqa: BLE001 - is_integrity_error is the precise discriminator
         if not is_integrity_error(exc):
             raise
-        # Another session took the address between the check and the commit: nothing moved.
+        # Another session took the address (or made this same move) between the check and
+        # the commit: nothing moved HERE.
         session.rollback()
+        if doc.url == move_to:
+            return {"document_id": doc.id, "status": "unchanged"}  # the other pass moved it; its status stands
         doc.last_checked_at = now
         stay("another tracked document already holds the new address")
         return None
