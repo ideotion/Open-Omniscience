@@ -38,16 +38,40 @@ WHAT IS DELIBERATELY LEFT OUT OF THE TEXT, AND SAID SO:
   record an editor's note as an amendment. They are counted in
   :attr:`~src.law.adapters.ParsedLaw.skipped_parts`, never silently dropped.
 * the ``Inhaltsübersicht`` norm — the act's own table of contents, a second copy of
-  every heading. Keeping it would make one renamed section read as two changes. Counted
-  the same way.
+  every heading. The headings themselves are NOT lost: every structural unit is emitted
+  as a heading-only provision, in place, so renaming a Part or a Chapter changes the
+  tracked text once, where it happened, rather than twice (or, without the units, not at
+  all). Counted the same way.
+* images (``<IMG>``, mostly signs and forms in annexes) — there is no text to keep, so
+  they are counted in ``skipped_parts`` rather than vanishing from a figure that would
+  then read as complete.
 
-Neither is in the recovery DENOMINATOR either, so leaving them out is not a loss the
-floor would forgive; everything else under a norm's ``textdaten`` is, which is what
-keeps :data:`~src.law.adapters.TEXT_RECOVERY_FLOOR` a real check — a norm of a shape this
-adapter does not classify costs recovered text, and enough of them refuse the document.
+Official notes INSIDE the text (``<Footnotes>`` under ``Content``, e.g. the BGB's
+"Amtlicher Hinweis") are part of the enacted text and are kept.
 
-THE DATES. ``enacted_on`` is ``ausfertigung-datum`` — the date the Federal President
-signed the act, which is the date German law treats as its making. ``valid_on`` stays
+THE RECOVERY FIGURE. The denominator is every text node under the root except the
+metadata, the editorial footnotes and the table of contents; the numerator is what was
+placed into provisions. Both count characters that are not whitespace (``body_chars``
+therefore does too), so the figure measures words left behind rather than how text nodes
+were joined. Text in a place this adapter does not read (a sibling of
+``<text>`` under ``textdaten``, a ``<norm>`` nested in a norm, a root child that is not
+a norm) is therefore in the first and not the second, which is what keeps
+:data:`~src.law.adapters.TEXT_RECOVERY_FLOOR` a real check: enough of it refuses the
+document. On the fourteen large acts measured (BGB, ZPO, StGB, SGB V, EStG …) it reads
+100 %, and that is the figure saying nothing was left behind, not a default.
+
+PATHS. The XML is flat: a unit is opened by its own norm and never closed, so a path is
+inferred from the ``gliederungskennzahl`` prefix. An annex (``Anlage``, ``Anhang``) after
+the last chapter belongs to the act, not to that chapter, so an annex closes every open
+unit; without that, every annex would be addressed as part of the final chapter, and the
+address is what ``law.db`` stores. Nesting deeper than :data:`MAX_DEPTH` is refused: no
+federal act comes near it (the BGB reaches 6), and an unbounded depth is a way for a tiny
+file to cost gigabytes.
+
+THE DATES. ``enacted_on`` is ``ausfertigung-datum`` exactly as the portal states it. For
+most acts that is the day the act was signed; for the old codes it is the date of the
+version the consolidation descends from (BGB 1896, StGB 1871, ZPO and StPO the 1950
+re-promulgation), and this adapter does not second-guess it. ``valid_on`` stays
 ``None``: the file states WHAT last amended the text (``standkommentar``, prose such as
 "Zuletzt geändert durch Art. 1 G v. 22.3.2025"), not a point in time the consolidation
 represents, and the ``builddate`` attribute is when the portal BUILT the file. Reading
@@ -57,8 +81,10 @@ stated as a field, so it is ``None`` rather than sliced out of a date.
 
 SAFETY: untrusted, network-fetched bytes. The archive is opened in memory and never
 written to disk (so a member name cannot traverse anywhere); exactly one XML member is
-accepted; its size is bounded TWICE, once by the header and once by an actual bounded
-read, because a zip header can lie about how much a member inflates to. The XML goes
+accepted; its size is bounded by the header, and the read itself is bounded, because a
+header can lie: a member that inflates past its declared size fails the archive's own CRC
+check and is refused. The text walk is iterative, so a deeply nested document cannot
+exhaust the interpreter's stack. The XML goes
 through ``defusedxml`` like every other adapter's.
 """
 
@@ -67,6 +93,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from typing import Any
 
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as _safe_fromstring
@@ -88,6 +115,14 @@ MAX_XML_BYTES = 32 * 1024 * 1024
 #: An act's archive holds its XML plus the images its annexes print. More members than
 #: this is not an act's archive.
 MAX_MEMBERS = 2000
+
+#: The deepest structural nesting this adapter accepts. The BGB, the deepest act measured,
+#: reaches 6 levels; each provision's path is shared rather than copied, and this bound is
+#: what keeps a crafted document from making that path the size of the file.
+MAX_DEPTH = 32
+
+#: Provision numbers that open an ANNEX: it belongs to the act, not to the last chapter.
+_ANNEX_RE = re.compile(r"^(anlage|anhang)\b", re.IGNORECASE)
 
 _ROOTS = {"dokumente"}
 
@@ -113,6 +148,9 @@ _BLOCK = {
     "ident",
     "footnote",
     "footnotes",
+    # A sentence number is printed as a superscript ("(1) ¹Natürliche Personen …"): without
+    # a separator it fuses with the first word ("1Natürliche"), a token no reader typed.
+    "sup",
 }
 
 #: Every element this adapter knows inside a norm. Anything else is COUNTED in
@@ -202,26 +240,43 @@ def _norm(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
+def _ink(text: str) -> int:
+    """Characters that are not whitespace: what the recovery figure counts.
+
+    Whitespace is where text nodes are JOINED, and the same words joined per provision or
+    across the whole document differ only there; counting it would make the figure measure
+    the join rather than whether any words were left behind.
+    """
+    return len(text) - sum(1 for ch in text if ch.isspace())
+
+
 def _block_text(el) -> str:
-    """Every text node under ``el`` in document order, with block elements kept apart."""
+    """Every text node under ``el`` in document order, with block elements kept apart.
+
+    Iterative, with an explicit stack: a recursive walk raises ``RecursionError`` on a
+    document nested about a thousand levels deep, which the defused parser itself accepts.
+    """
     if el is None:
         return ""
     parts: list[str] = []
-
-    def walk(node) -> None:
+    # (node, leaving): entering emits the opening separator and the node's text; leaving
+    # emits the closing separator and the node's tail (the text after it, inside its parent).
+    stack: list[tuple[Any, bool]] = [(el, False)]
+    while stack:
+        node, leaving = stack.pop()
         block = _local(node.tag) in _BLOCK
+        if leaving:
+            if block:
+                parts.append(" ")
+            if node is not el and node.tail:
+                parts.append(node.tail)
+            continue
         if block:
             parts.append(" ")
         if node.text:
             parts.append(node.text)
-        for child in node:
-            walk(child)
-            if child.tail:
-                parts.append(child.tail)
-        if block:
-            parts.append(" ")
-
-    walk(el)
+        stack.append((node, True))
+        stack.extend((child, False) for child in reversed(list(node)))
     return _norm("".join(parts))
 
 
@@ -277,10 +332,9 @@ def unpack_zip(data: bytes) -> bytes:
                 "archive member unreadable", detail=record_text(exc, limit=200)
             ) from exc
         if len(blob) > MAX_XML_BYTES:
-            raise AdapterRefusal(
-                "XML member too large",
-                detail=f"inflated past {MAX_XML_BYTES} bytes (its header said {member.file_size})",
-            )
+            # Unreachable with today's zipfile, which stops at the declared size and then
+            # fails the CRC (refused above); kept so a library change cannot remove the bound.
+            raise AdapterRefusal("XML member too large", detail=f"read past {MAX_XML_BYTES} bytes")
         return blob
 
 
@@ -336,45 +390,52 @@ def parse_gii(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedLa
     provisions: list[Provision] = []
     unknown: dict[str, int] = {}
     skipped: dict[str, int] = {}
-    # (kennzahl, label) per open structural level, outermost first.
+    # (kennzahl, label) per open structural level, outermost first, and the path they make:
+    # built once per change and SHARED by every provision under it, never copied per provision.
     open_units: list[tuple[str, str]] = []
-    body_chars = 0
+    path: tuple[str, ...] = ()
     captured_chars = 0
+
+    def skip(kind: str, n: int = 1) -> None:
+        if n:
+            skipped[kind] = skipped.get(kind, 0) + n
 
     for el in root.iter():
         name = _local(el.tag)
         if name and name not in _KNOWN and name not in _ROOTS:
             unknown[name] = unknown.get(name, 0) + 1
 
+    # THE DENOMINATOR: every text node under the root, minus the metadata, the editorial
+    # footnotes and the table of contents -- the three things left out on purpose.
+    excluded_chars = 0
+    for norm in norms:
+        meta = next((c for c in norm if _local(c.tag) == "metadaten"), None)
+        if _norm(_field(meta, "enbez") or "").lower() in _TOC_ENBEZ:
+            excluded_chars += _ink(_block_text(norm))
+            continue
+        for child in norm.iter():
+            if _local(child.tag) in ("metadaten", "fussnoten"):
+                excluded_chars += _ink(_block_text(child))
+    body_chars = max(0, _ink(_block_text(root)) - excluded_chars)
+
     for index, norm in enumerate(norms):
         meta = next((c for c in norm if _local(c.tag) == "metadaten"), None)
         textdaten = next((c for c in norm if _local(c.tag) == "textdaten"), None)
-
-        # The denominator: everything under textdaten except the editorial footnotes.
-        body_parts: list[str] = []
         text_el = None
-        footnotes = 0
         if textdaten is not None:
-            for child in textdaten:
-                child_name = _local(child.tag)
-                if child_name == "fussnoten":
-                    if _block_text(child):
-                        footnotes += 1
-                    continue
-                if child_name == "text" and text_el is None:
-                    text_el = child
-                body_parts.append(_block_text(child))
-        norm_body = _norm(" ".join(p for p in body_parts if p))
+            text_el = next((c for c in textdaten if _local(c.tag) == "text"), None)
         text = _block_text(text_el)
 
         enbez = _field(meta, "enbez")
         if enbez and _norm(enbez).lower() in _TOC_ENBEZ:
-            skipped["table of contents"] = skipped.get("table of contents", 0) + 1
+            skip("table of contents")
             continue  # neither numerator nor denominator: see the module docstring
-        if footnotes:
-            skipped["editorial footnotes"] = skipped.get("editorial footnotes", 0) + footnotes
-
-        body_chars += len(norm_body)
+        if textdaten is not None:
+            skip(
+                "norms with editorial footnotes",
+                sum(1 for c in textdaten if _local(c.tag) == "fussnoten" and _block_text(c)),
+            )
+        skip("images", sum(1 for e in norm.iter() if _local(e.tag) == "img"))
 
         unit = None
         if meta is not None:
@@ -386,7 +447,7 @@ def parse_gii(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedLa
             enacted_on = _field(meta, "ausfertigung-datum")
             if text:
                 provisions.append(Provision(number=None, heading=None, text=text, element="norm"))
-                captured_chars += len(text)
+                captured_chars += _ink(text)
             continue
 
         if unit is not None:
@@ -402,44 +463,50 @@ def parse_gii(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedLa
                     and len(kennzahl) > len(open_units[-1][0])
                 ):
                     open_units.pop()
-            else:
-                # No usable depth: treat it as a sibling of the innermost open level rather
-                # than inventing a nesting the document did not state.
-                if open_units:
-                    open_units.pop()
+            elif open_units:
+                # No usable depth: a sibling of the innermost open level, never a nesting the
+                # document did not state.
+                open_units.pop()
+            if len(open_units) >= MAX_DEPTH:
+                raise AdapterRefusal(
+                    "structure nested too deeply", detail=f"more than {MAX_DEPTH} levels"
+                )
             parent = tuple(lbl for _kz, lbl in open_units)
             open_units.append((kennzahl, label))
-            if text:
-                provisions.append(
-                    Provision(
-                        number=None,
-                        heading=label or None,
-                        text=text,
-                        path=parent,
-                        element="gliederungseinheit",
-                    )
+            path = (*parent, label)
+            # The unit's heading is part of the act's text: emitted in place, so a renamed
+            # Part or Chapter reads as one change, where it happened.
+            provisions.append(
+                Provision(
+                    number=None,
+                    heading=label or None,
+                    text=text,
+                    path=parent,
+                    element="gliederungseinheit",
                 )
-                captured_chars += len(text)
+            )
+            captured_chars += _ink(text)
             continue
 
         if enbez is None and not text:
             continue  # an empty norm with nothing to address: nothing lost, nothing kept
 
+        if enbez and _ANNEX_RE.match(_norm(enbez)) and open_units:
+            # An annex belongs to the act, not to the last chapter before it.
+            open_units = []
+            path = ()
+
         provisions.append(
             Provision(
-                number=enbez,
-                heading=_field(meta, "titel"),
-                text=text,
-                path=tuple(lbl for _kz, lbl in open_units),
-                element="norm",
+                number=enbez, heading=_field(meta, "titel"), text=text, path=path, element="norm"
             )
         )
-        captured_chars += len(text)
+        captured_chars += _ink(text)
 
     recovered = (captured_chars / body_chars) if body_chars else 0.0
     recovered = min(1.0, recovered)
 
-    if not provisions:
+    if not any(p.text for p in provisions):
         raise AdapterRefusal(
             "no provisions found",
             detail=f"{len(norms)} norms, {body_chars} chars of body text, {len(unknown)} unmodelled element kinds",

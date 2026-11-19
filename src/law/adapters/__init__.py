@@ -133,7 +133,7 @@ class ParsedLaw:
     # Honesty instruments.
     unknown_elements: dict[str, int] = field(default_factory=dict)
     # Parts of the document the adapter deliberately left OUT of the text, by kind
-    # ("editorial footnotes": 13). Counted rather than silently dropped, so a reader can see
+    # ("norms with editorial footnotes": 13). Counted rather than silently dropped, so a reader can see
     # that the text is the enacted words alone and what was set aside to make it so.
     skipped_parts: dict[str, int] = field(default_factory=dict)
     text_recovered_pct: float = 0.0

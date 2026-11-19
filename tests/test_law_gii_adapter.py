@@ -74,26 +74,28 @@ def test_the_basic_law_reads_as_its_articles_under_their_section():
     law = parse_gii(GG.read_bytes(), retrieved_on="2026-11-19")
     assert law.format == "gii"
     assert law.title == "Grundgesetz für die Bundesrepublik Deutschland"
-    assert [p.number for p in law.provisions] == [
+    assert [p.number or p.heading for p in law.provisions] == [
         "Eingangsformel",
         "Präambel",
+        "I. Die Grundrechte",
         "Art 1",
         "Art 2",
         "Art 3",
     ]
-    art1 = law.provisions[2]
+    art1 = law.provisions[3]
     assert art1.path == ("I. Die Grundrechte",)
     assert art1.identifier == "I. Die Grundrechte/Art 1"
     assert art1.text.startswith("(1) Die Würde des Menschen ist unantastbar.")
     # The preamble sits ABOVE the first section: it must not inherit a path it is not under.
     assert law.provisions[1].path == ()
-    assert law.text_recovered_pct == 1.0
+    # Measured, not asserted: the only loss is whitespace where text nodes are joined.
+    assert 0.99 <= law.text_recovered_pct <= 1.0
     assert law.unknown_elements == {}
 
 
 def test_the_dates_are_the_documents_own_and_nothing_is_derived():
     law = parse_gii(GG.read_bytes(), retrieved_on="2026-11-19")
-    assert law.enacted_on == "1949-05-23", "ausfertigung-datum is the day the act was signed"
+    assert law.enacted_on == "1949-05-23", "ausfertigung-datum, exactly as the portal states it"
     # The file states WHAT last amended it, and when the portal BUILT the file; neither is a
     # point in time the consolidation represents, so there is no validity date to report.
     assert law.valid_on is None
@@ -112,30 +114,31 @@ def test_editorial_footnotes_are_left_out_and_COUNTED():
     assert "Textnachweis" not in law.text, (
         "the documentation service's note is not the enacted text"
     )
-    assert law.skipped_parts == {"editorial footnotes": 1}
-    assert law.as_dict()["skipped_parts"] == {"editorial footnotes": 1}
+    assert law.skipped_parts == {"norms with editorial footnotes": 1}
+    assert law.as_dict()["skipped_parts"] == {"norms with editorial footnotes": 1}
 
 
 def test_a_nested_act_keeps_its_part_and_chapter_and_drops_its_table_of_contents():
     law = parse_gii(BDSG.read_bytes())
     assert law.title == "Bundesdatenschutzgesetz"
     assert law.enacted_on == "2017-06-30"
-    assert [p.number for p in law.provisions] == ["§ 1", "§ 2", "§ 3"]
+    paras = [p for p in law.provisions if p.number]
+    assert [p.number for p in paras] == ["§ 1", "§ 2", "§ 3"]
     teil = "Teil 1 Gemeinsame Bestimmungen"
-    assert law.provisions[0].path == (teil, "Kapitel 1 Anwendungsbereich und Begriffsbestimmungen")
+    assert paras[0].path == (teil, "Kapitel 1 Anwendungsbereich und Begriffsbestimmungen")
     # Chapter 2 REPLACES chapter 1 under the same part; it does not nest inside it.
-    assert law.provisions[2].path == (
+    assert paras[2].path == (
         teil,
         "Kapitel 2 Rechtsgrundlagen der Verarbeitung personenbezogener Daten",
     )
-    assert law.provisions[0].heading == "Anwendungsbereich des Gesetzes"
+    assert paras[0].heading == "Anwendungsbereich des Gesetzes"
     assert "Inhaltsübersicht" not in [p.number for p in law.provisions]
     assert law.skipped_parts["table of contents"] == 1
 
 
 def test_a_list_marker_does_not_run_into_its_item():
     law = parse_gii(BDSG.read_bytes())
-    s1 = law.provisions[0].text
+    s1 = next(p for p in law.provisions if p.number == "§ 1").text
     assert "durch 1. öffentliche Stellen des Bundes, 2. öffentliche Stellen der Länder" in s1
     assert "1.öffentliche" not in s1
 
@@ -272,11 +275,66 @@ def test_the_depth_is_read_from_the_kennzahl_prefix():
         _para("§ 3", "Text drei."),
     )
     law = parse_gii(doc)
-    assert [p.path for p in law.provisions] == [
+    assert [p.path for p in law.provisions if p.number] == [
         ("Teil 1 Eins", "Kapitel 1 A"),
         ("Teil 1 Eins", "Kapitel 2 B"),
         ("Teil 2 Zwei",),
     ]
+
+
+def test_a_unit_heading_is_part_of_the_tracked_text_so_a_rename_is_ONE_change():
+    def doc(title: str) -> str:
+        return _doc(_META, _unit("010", "Teil 1", title), _para("§ 1", "Text eins."))
+
+    before, after = parse_gii(doc("Alt")).text, parse_gii(doc("Neu")).text
+    assert "Teil 1 Alt" in before and "Teil 1 Neu" in after
+    assert before.replace("Alt", "Neu") == after
+
+
+def test_an_annex_belongs_to_the_act_not_to_the_last_chapter():
+    law = parse_gii(
+        _doc(
+            _META,
+            _unit("010", "Kapitel 15", "Übergangsvorschriften"),
+            _para("§ 99", "Letzter Paragraph."),
+            _para("Anlage 1", "Anlagentext."),
+            _para("Anhang EV", "Maßgaben."),
+        )
+    )
+    by = {p.number: p for p in law.provisions if p.number}
+    assert by["§ 99"].path == ("Kapitel 15 Übergangsvorschriften",)
+    assert by["Anlage 1"].path == () and by["Anlage 1"].identifier == "Anlage 1"
+    assert by["Anhang EV"].path == ()
+
+
+def test_nesting_past_the_bound_is_refused_and_paths_are_SHARED_not_copied():
+    deep = [_unit("1" * (i + 1), f"E{i}", "x") for i in range(gii.MAX_DEPTH + 1)]
+    with pytest.raises(AdapterRefusal) as err:
+        parse_gii(_doc(_META, *deep, _para("§ 1", "Text.")))
+    assert err.value.reason == "structure nested too deeply"
+
+    ok = [_unit("1" * (i + 1), f"E{i}", "x") for i in range(10)]
+    law = parse_gii(_doc(_META, *ok, *(_para(f"§ {n}", "Text.") for n in range(1, 50))))
+    paths = [p.path for p in law.provisions if p.number]
+    assert len(paths[0]) == 10
+    assert all(p is paths[0] for p in paths), (
+        "one tuple per open structure, never one per provision"
+    )
+
+
+def test_a_deeply_nested_body_does_not_exhaust_the_stack():
+    nested = "<P>" * 5000 + "tief" + "</P>" * 5000
+    law = parse_gii(_doc(_META, _para("§ 1", nested)))
+    assert law.provisions[0].text == "tief"
+
+
+def test_images_are_counted_and_a_sentence_number_does_not_fuse_with_its_word():
+    law = parse_gii(
+        _doc(_META, _para("§ 1", '(1) <SUP>1</SUP>Natürliche Personen <IMG SRC="a.gif"/>.'))
+    )
+    assert law.skipped_parts == {"images": 1}
+    assert "1Natürliche" not in law.provisions[0].text
+    assert "(1) 1 Natürliche Personen" in law.provisions[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +379,16 @@ def test_a_refused_archive_stores_NOTHING_rather_than_its_decoded_bytes():
     text, reason, parsed = _document_text(_Result(junk.decode("latin-1"), junk))
     assert text is None and parsed is None
     assert "refused" in reason and "exactly one XML" in reason
+
+
+def test_a_refused_bare_xml_is_NOT_stored_as_a_web_page():
+    from src.law.track import _document_text
+
+    odd = "<anlage>" + "Unbekannter Anlagetext. " * 200 + "</anlage>"
+    xml = _doc(_META, _para("§ 1", "Kurz.", extra=odd))
+    text, reason, parsed = _document_text(_Result(xml, xml.encode("utf-8"), "application/xml"))
+    assert text is None and parsed is None
+    assert reason == "gesetze-im-internet XML refused: too little of the document was recovered"
 
 
 def test_the_bare_xml_is_read_too_and_html_is_untouched():

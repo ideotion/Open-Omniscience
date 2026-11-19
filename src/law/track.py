@@ -156,6 +156,13 @@ def _document_text(result, *, retrieved_on: str | None = None) -> tuple[str | No
                 # compressed bytes, and storing that as the law would be worse than
                 # storing nothing. Degrade loudly with the adapter's own reason.
                 return None, f"zip archive refused by the gesetze-im-internet adapter: {exc.reason}", None
+            if exc.reason != "not a gesetze-im-internet document":
+                # A body that IS the portal's XML and was refused (too little recovered,
+                # unsafe, nested too deeply) is not a web page either: read as HTML it
+                # would be stored with its footnotes and table of contents as "ok", and the
+                # day the adapter read it again that change of reading would be recorded as
+                # an amendment. Store nothing, and say why.
+                return None, f"gesetze-im-internet XML refused: {exc.reason}", None
         except Exception as exc:  # noqa: BLE001 - an adapter must never break tracking
             log_failure(_LOG, "law: gii adapter raised; falling back", exc, level=logging.WARNING)
             if is_zip:
