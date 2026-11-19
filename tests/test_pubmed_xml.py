@@ -304,7 +304,7 @@ def test_records_are_freed_from_the_root_as_they_are_read():
 
 
 def test_the_module_never_touches_a_socket_or_a_database():
-    src = Path(__file__).resolve().parents[1].joinpath("src", "medical", "pubmed_xml.py").read_text()
+    src = Path(__file__).resolve().parents[1].joinpath("src", "medical", "pubmed_xml.py").read_text(encoding="utf-8")
     for forbidden in ("import requests", "import httpx", "import socket", "urllib", "sqlalchemy", "session_scope"):
         assert forbidden not in src
 
