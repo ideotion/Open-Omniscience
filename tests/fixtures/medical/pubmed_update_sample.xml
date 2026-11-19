@@ -1,0 +1,145 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2025//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">
+<!-- A HAND-WRITTEN fixture in the shape of an NLM update file. Every title, abstract, journal and
+     PMID in it is INVENTED: the 2026-07-14 ruling keeps real abstracts out of the repository
+     (they are stored only in the user's local corpus). Ids are in a range chosen to be fictional. -->
+<PubmedArticleSet>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000001</PMID>
+    <Article PubModel="Print-Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet">
+          <Volume>12</Volume>
+          <PubDate><Year>2024</Year><Month>Mar</Month><Day>05</Day></PubDate>
+        </JournalIssue>
+        <Title>Journal of Invented Results</Title>
+      </Journal>
+      <ArticleTitle>A fictional cohort study of <i>example</i> outcomes.</ArticleTitle>
+      <ELocationID EIdType="doi" ValidYN="Y">10.9999/elocation.only</ELocationID>
+      <Abstract>
+        <AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Invented background
+          text spread   over lines.</AbstractText>
+        <AbstractText Label="RESULTS" NlmCategory="RESULTS">An effect of 1.2 (CI 0.9 to 1.5) in an invented group of 10<sup>3</sup>.</AbstractText>
+        <CopyrightInformation>Copyright 2024 The Invented Authors.</CopyrightInformation>
+      </Abstract>
+      <Language>eng</Language>
+      <PublicationTypeList>
+        <PublicationType UI="D016428">Journal Article</PublicationType>
+      </PublicationTypeList>
+    </Article>
+    <CommentsCorrectionsList>
+      <CommentsCorrections RefType="CommentIn"><RefSource>Invented Letters 2024</RefSource><PMID Version="1">90000099</PMID></CommentsCorrections>
+      <CommentsCorrections RefType="ErratumIn"><RefSource>J Invented Results 2024;12:99</RefSource><PMID Version="1">90000098</PMID></CommentsCorrections>
+    </CommentsCorrectionsList>
+    <MeshHeadingList>
+      <MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D015331" MajorTopicYN="Y">Cohort Studies</DescriptorName><QualifierName UI="Q000379">methods</QualifierName></MeshHeading>
+    </MeshHeadingList>
+    <KeywordList Owner="NOTNLM"><Keyword MajorTopicYN="N">invented outcome</Keyword></KeywordList>
+  </MedlineCitation>
+  <PubmedData>
+    <PublicationStatus>ppublish</PublicationStatus>
+    <ArticleIdList>
+      <ArticleId IdType="pubmed">90000001</ArticleId>
+      <ArticleId IdType="doi">10.9999/jir.2024.001</ArticleId>
+      <ArticleId IdType="pmc">PMC9000001</ArticleId>
+    </ArticleIdList>
+    <ReferenceList>
+      <Reference>
+        <Citation>A cited invented paper.</Citation>
+        <ArticleIdList>
+          <ArticleId IdType="doi">10.9999/cited.paper</ArticleId>
+          <ArticleId IdType="pmc">PMC9999999</ArticleId>
+        </ArticleIdList>
+      </Reference>
+    </ReferenceList>
+  </PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="2">90000002</PMID>
+    <Article PubModel="Print">
+      <Journal>
+        <JournalIssue CitedMedium="Print"><PubDate><Year>2019</Year><Month>11</Month></PubDate></JournalIssue>
+        <Title>Invented Clinical Letters</Title>
+      </Journal>
+      <ArticleTitle>RETRACTED: An invented trial that was retracted in place.</ArticleTitle>
+      <Abstract><AbstractText>An unstructured invented abstract.</AbstractText></Abstract>
+      <Language>eng</Language>
+      <PublicationTypeList>
+        <PublicationType UI="D016428">Journal Article</PublicationType>
+        <PublicationType UI="D016441">Retracted Publication</PublicationType>
+      </PublicationTypeList>
+    </Article>
+    <CommentsCorrectionsList>
+      <CommentsCorrections RefType="RetractionIn"><RefSource>Invented Clinical Letters 2021;3:4</RefSource><PMID Version="1">90000005</PMID></CommentsCorrections>
+    </CommentsCorrectionsList>
+  </MedlineCitation>
+  <PubmedData><ArticleIdList><ArticleId IdType="pubmed">90000002</ArticleId></ArticleIdList></PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="PubMed-not-MEDLINE" Owner="NLM">
+    <PMID Version="1">90000003</PMID>
+    <Article PubModel="Electronic">
+      <Journal>
+        <JournalIssue CitedMedium="Internet"><PubDate><Year>2025</Year><Month>Jan</Month><Day>31</Day></PubDate></JournalIssue>
+        <Title>Invented Preprint Server</Title>
+      </Journal>
+      <ArticleTitle>An invented preprint, not yet reviewed.</ArticleTitle>
+      <Abstract><AbstractText>Invented preprint abstract.</AbstractText></Abstract>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D000076942">Preprint</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData><ArticleIdList><ArticleId IdType="pubmed">90000003</ArticleId><ArticleId IdType="doi">10.9999/preprint.3</ArticleId></ArticleIdList>
+    <ReferenceList><Reference><Citation>A cited invented paper with a PMC id.</Citation><ArticleIdList><ArticleId IdType="pmc">PMC8888888</ArticleId></ArticleIdList></Reference></ReferenceList></PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000004</PMID>
+    <Article PubModel="Print">
+      <Journal>
+        <JournalIssue CitedMedium="Print"><PubDate><MedlineDate>1998 Dec-1999 Jan</MedlineDate></PubDate></JournalIssue>
+        <Title>Invented Archive</Title>
+      </Journal>
+      <ArticleTitle>[An invented old article with no abstract].</ArticleTitle>
+      <VernacularTitle>Un article inventé sans résumé.</VernacularTitle>
+      <Language>fre</Language>
+      <PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+  <PubmedData><ArticleIdList><ArticleId IdType="pubmed">90000004</ArticleId><ArticleId IdType="doi">not-a-doi</ArticleId><ArticleId IdType="pmc">PMCabc</ArticleId></ArticleIdList></PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">90000005</PMID>
+    <Article PubModel="Print">
+      <Journal>
+        <JournalIssue CitedMedium="Print"><PubDate><Year>2021</Year><Season>Spring</Season></PubDate></JournalIssue>
+        <Title>Invented Clinical Letters</Title>
+      </Journal>
+      <ArticleTitle>Retraction notice for an invented trial.</ArticleTitle>
+      <Language>eng</Language>
+      <PublicationTypeList><PublicationType UI="D016440">Retraction of Publication</PublicationType></PublicationTypeList>
+    </Article>
+    <CommentsCorrectionsList>
+      <CommentsCorrections RefType="RetractionOf"><RefSource>Invented Clinical Letters 2019</RefSource><PMID Version="2">90000002</PMID></CommentsCorrections>
+    </CommentsCorrectionsList>
+  </MedlineCitation>
+  <PubmedData><ArticleIdList><ArticleId IdType="pubmed">90000005</ArticleId></ArticleIdList></PubmedData>
+</PubmedArticle>
+<PubmedBookArticle>
+  <BookDocument><PMID Version="1">90000006</PMID><ArticleTitle>An invented book chapter.</ArticleTitle></BookDocument>
+</PubmedBookArticle>
+<PubmedArticle>
+  <MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1"></PMID>
+    <Article><ArticleTitle>A record with an empty PMID.</ArticleTitle></Article>
+  </MedlineCitation>
+</PubmedArticle>
+<DeleteCitation>
+  <PMID Version="1">90000007</PMID>
+  <PMID Version="1">90000008</PMID>
+</DeleteCitation>
+</PubmedArticleSet>
