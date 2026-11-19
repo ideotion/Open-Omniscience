@@ -388,7 +388,9 @@ def _iso(d: datetime | None) -> str | None:
 def streets(west: float, south: float, east: float, north: float) -> dict[str, Any]:
     """The roads to draw in the box ``west, south, east, north``, under the published caps. Reads ``osm.db`` only.
 
-    ``status`` is ``streets`` (``roads`` drawn, ``dropped`` names the classes left out),
+    ``status`` is ``streets`` (``roads`` drawn and ``drawn`` their count; of the kept classes, ``subpixel``
+    roads are smaller than a pixel at this zoom and ``no_shape`` have no stored shape, both counted and
+    not drawn; ``dropped`` names the classes left out),
     ``no-roads`` (the lane is ready and no road of it lies in the box), ``too-many`` (the most
     important class alone is over a cap: the caller draws the object layer's clusters and says so),
     or the object layer's ``no-lane`` / ``not-indexed``. ``vintage`` lists, for each country whose
@@ -403,8 +405,9 @@ def streets(west: float, south: float, east: float, north: float) -> dict[str, A
     from src.versioned import store
 
     x0, y0, x1, y1 = parse_bbox(west, south, east, north)
-    if x1 - x0 > STREET_VIEW_MAX_DEG + 1e-9:
-        raise ViewError(f"the street layer serves views up to {STREET_VIEW_MAX_DEG} degrees wide")
+    if x1 - x0 > STREET_VIEW_MAX_DEG + 1e-9 or y1 - y0 > 2 * STREET_VIEW_MAX_DEG + 1e-9:
+        # The height is bounded too, so a direct call cannot scan a whole meridian strip.
+        raise ViewError(f"the street layer serves views up to {STREET_VIEW_MAX_DEG} degrees wide and twice that tall")
     t0 = time.monotonic()
     out: dict[str, Any] = {
         "bbox": [x0, y0, x1, y1], "layer": "streets",
@@ -458,8 +461,9 @@ def streets(west: float, south: float, east: float, north: float) -> dict[str, A
         tol = (x1 - x0) / SIMPLIFY_PX
         roads: list[dict[str, Any]] = []
         vertices = 0
-        subpixel = 0
-        if keep:
+        subpixel = no_shape = 0
+        # Nothing to read when the kept classes hold no road (the too-many case below).
+        if sum(counts[:keep]):
             rows = ses.execute(
                 text(
                     f"SELECT o.osm_type, o.osm_id, o.primary_value, o.geom, o.{name} "  # nosec B608 # name is a column name read from the table definition, never input
@@ -470,13 +474,14 @@ def streets(west: float, south: float, east: float, north: float) -> dict[str, A
             by_class: list[list[dict[str, Any]]] = [[] for _ in STREET_CLASSES]
             verts = [0] * len(STREET_CLASSES)
             subs = [0] * len(STREET_CLASSES)
+            bare = [0] * len(STREET_CLASSES)
             for otype, oid, value, geom, label in rows:
                 k = street_class(value)
                 if k >= keep:
                     continue
                 shape = decode_coords(geom) if geom else None
                 if not shape or len(shape) < 2:
-                    subs[k] += 1
+                    bare[k] += 1
                     continue
                 lats = [q[0] for q in shape]
                 lons = [q[1] for q in shape]
@@ -501,12 +506,13 @@ def streets(west: float, south: float, east: float, north: float) -> dict[str, A
             for i in range(keep):
                 roads.extend(by_class[i])
                 subpixel += subs[i]
+                no_shape += bare[i]
         if not sum(counts[:keep]):
             out.update(status="too-many", roads=[], dropped=[c for c, k in zip(out["classes"], counts, strict=True) if k])
         else:
             dropped = [out["classes"][i] for i in range(keep, len(STREET_CLASSES)) if counts[i]]
             out.update(status="streets", roads=roads, dropped=dropped, vertices=vertices,
-                       drawn=sum(counts[:keep]), subpixel=subpixel)
+                       drawn=len(roads), subpixel=subpixel, no_shape=no_shape)
     if out["status"] == "too-many":
         # Even the most important class present is over a cap: draw what the object layer draws
         # (clusters, or shapes as points), and keep the street answer's counts beside it.

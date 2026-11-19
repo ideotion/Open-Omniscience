@@ -1843,7 +1843,7 @@
           if (my !== seq) return;                        // a newer view was asked for meanwhile
           readMs = Math.round(performance.now() - t0); data = d; draw();
         } catch (e) {
-          if (my !== seq) return;
+          if (my !== seq || host._ooLaneGen !== gen) return;   // a superseded layer never writes the new one's legend
           const el = host.querySelector("[data-oomap-osmlane]");
           if (el) el.textContent = ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("OpenStreetMap: the view could not be read.");
         }
@@ -1893,6 +1893,9 @@
         else {
           sline = _mapTf("OpenStreetMap streets in view: {n}. Drawn: {d}.", { n: fmtNum(d.total, 0), d: fmtNum(d.drawn, 0) });
           if (d.dropped && d.dropped.length) sline += " " + _mapTf("Left out to stay within the caps: {classes}.", { classes: names(d.dropped) });
+          // Counted and not drawn, so "Drawn" is what is on the canvas and the rest is accounted for.
+          if (d.subpixel) sline += " " + _mapTf("Too small to see at this zoom: {n}.", { n: fmtNum(d.subpixel, 0) });
+          if (d.no_shape) sline += " " + _mapTf("With no stored shape: {n}.", { n: fmtNum(d.no_shape, 0) });
         }
         const day = (iso) => (iso ? ooIsoDate(iso) : t("not stated in the extract"));
         const vint = (d.vintage || []).map((v) => _mapTf("Extract date {a}: {d}.", { a: v.alpha3, d: day(v.extract_date) }) + " "

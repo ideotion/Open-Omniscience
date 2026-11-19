@@ -126,6 +126,31 @@ def test_over_the_count_cap_the_lowest_classes_go_first_and_are_named(osm_lane_d
     assert {r["v"] for r in d["roads"]} == {"primary", "residential", "service"}
 
 
+def test_drawn_counts_only_what_is_drawn_and_the_rest_is_accounted_for(osm_lane_dir):
+    """A road under a pixel, or with no stored shape, is counted in the view and NOT in "Drawn"."""
+    import sqlalchemy as sa
+
+    from src.osm.lane_models import osm_objects_table
+    from src.versioned import store
+
+    ingest.ingest_country(FIXTURE, "ZZ", reader="python")
+    _add_roads([("primary", _line(0), "Main"),
+                ("service", [(0.15, 0.15), (0.15, 0.15000001)], None),   # about a millimetre long
+                ("service", _line(2), None)])
+    with store.lane_session("osm") as s:   # a stored road whose shape is gone: the R*Tree still holds its box
+        s.execute(sa.update(osm_objects_table).where(osm_objects_table.c.osm_id == 900002).values(geom=None))
+    d = V.streets(*BOX)
+    assert d["status"] == "streets" and d["total"] == 4
+    assert d["drawn"] == len(d["roads"]) == 2, "Drawn is what is on the canvas"
+    assert d["subpixel"] == 1 and d["no_shape"] == 1
+    assert d["drawn"] + d["subpixel"] + d["no_shape"] == d["total"]
+
+
+def test_a_view_taller_than_twice_the_street_width_is_refused(osm_lane_dir):
+    with pytest.raises(V.ViewError):
+        V.streets(0, -90, 0.1, 90)
+
+
 def test_over_the_vertex_cap_whole_classes_go_too(osm_lane_dir, monkeypatch):
     ingest.ingest_country(FIXTURE, "ZZ", reader="python")
     _add_roads([("motorway", _line(0), None), ("tertiary", _line(1, 40), None)])
@@ -204,6 +229,7 @@ STRINGS = [
     "Extract date {a}: {d}.",
     "Last applied diff {a}: {d}.",
     "No daily diff applied since the extract.", "not stated in the extract",
+    "Too small to see at this zoom: {n}.", "With no stored shape: {n}.",
     "motorways", "trunk roads", "primary roads", "secondary roads", "tertiary roads",
     "minor streets", "service roads", "paths", "other roads",
 ]
