@@ -1423,6 +1423,11 @@ def _law_live_checks() -> dict[str, Any]:
                           "elapsed_s": round(time.monotonic() - t0, 2)})
         except Exception as exc:  # noqa: BLE001
             entry.update({"measured": False, "error": record_text(exc, limit=300, typed=True)})
+        if host == "gesetze-im-internet.de" and entry.get("measured"):
+            # The catalogue tracks this host's acts as /<act>/xml.zip (Q925 = a's second
+            # adapter), so the body already fetched above IS the structured document: it is
+            # parsed in hand, and no second request is made for it.
+            entry["gii"] = _gii_read(r, str(d.get("url") or ""))
         if host == "legislation.gov.uk" and entry.get("measured") and d.get("official_url"):
             # The per-document CLML the catalogue records as this host's bulk shape,
             # composed from the row's own official_url rather than typed here.
@@ -1445,6 +1450,29 @@ def _law_live_checks() -> dict[str, Any]:
                 entry["clml"] = {"url": clml_url, "error": record_text(exc, limit=300, typed=True)}
         out[host] = entry
     return out
+
+
+def _gii_read(result: Any, url: str) -> dict[str, Any]:
+    """What the gesetze-im-internet adapter made of one fetched act: provisions, or the refusal named.
+
+    The bytes are the ones the law probe already fetched; nothing is requested here."""
+    from src.law.adapters import AdapterRefusal
+    from src.law.adapters.gii import parse_gii
+
+    raw = getattr(result, "raw_content", None) or (getattr(result, "content", None) or "").encode("utf-8")
+    try:
+        parsed = parse_gii(raw)
+    except AdapterRefusal as exc:
+        return {"url": url, "adapter_read_it": False, "refusal": exc.reason,
+                "detail": record_text(exc, typed=False, limit=300)}
+    except Exception as exc:  # noqa: BLE001 - a probe records the failure, it never raises it
+        return {"url": url, "adapter_read_it": False, "error": record_text(exc, limit=300, typed=True)}
+    return {
+        "url": url, "adapter_read_it": True, "provisions": len(parsed.provisions),
+        "text_recovered_pct": round(100 * parsed.text_recovered_pct, 1),
+        "unknown_elements": parsed.unknown_elements, "skipped_parts": parsed.skipped_parts,
+        "enacted_on": parsed.enacted_on,
+    }
 
 
 def _ores_probe() -> dict[str, Any]:

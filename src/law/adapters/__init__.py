@@ -132,6 +132,10 @@ class ParsedLaw:
     year: str | None = None
     # Honesty instruments.
     unknown_elements: dict[str, int] = field(default_factory=dict)
+    # Parts of the document the adapter deliberately left OUT of the text, by kind
+    # ("editorial footnotes": 13). Counted rather than silently dropped, so a reader can see
+    # that the text is the enacted words alone and what was set aside to make it so.
+    skipped_parts: dict[str, int] = field(default_factory=dict)
     text_recovered_pct: float = 0.0
     body_chars: int = 0
     format: str = ""
@@ -166,6 +170,7 @@ class ParsedLaw:
             "body_chars": self.body_chars,
             "text_recovered_pct": round(100 * self.text_recovered_pct, 1),
             "unknown_elements": dict(sorted(self.unknown_elements.items())),
+            "skipped_parts": dict(sorted(self.skipped_parts.items())),
             "method": (
                 "Read from the publisher's own XML by element local name: provisions in "
                 "document order with the container path above each, and each date taken "
@@ -176,6 +181,8 @@ class ParsedLaw:
                 "fallback between enactment, consolidation and capture, so a missing one "
                 "reads as unknown rather than as another date. `unknown_elements` lists "
                 "tags this adapter does not model -- their text is still included, so an "
-                "unfamiliar tag costs recall in the structure, never text."
+                "unfamiliar tag costs recall in the structure, never text. `skipped_parts` "
+                "counts what was deliberately left out of the text (a publisher's editorial "
+                "notes, the act's own table of contents)."
             ),
         }
