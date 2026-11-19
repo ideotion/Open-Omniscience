@@ -5821,6 +5821,7 @@
   "This date has passed, as the source stated it. The next election is not in this calendar unless it is listed separately.": "此日期已过，按来源给出的样子保留。下一次选举不在本日历中，除非另行列出。",
   "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "这取决于本安装跟踪哪些文件、多久检查一次,而不取决于立法机关。两次检查之间的两次修订会作为一个版本出现。每个计数旁显示所跟踪的文件数;不计算任何比率,因为相除会被误读为立法速度。",
   "This document has no draft in this language yet ({language}), so the English original is shown.": "本文档暂无该语言（{language}）的版本，因此显示英文原文。",
+  "This document is kept in English only: it changes almost daily, so a translation would be out of date on arrival.": "本文档仅提供英文版：它几乎每天都在变化，翻译一出来就已过时。",
   "This does not restrict which hosts the installer contacts. The download runs as a separate program (pip, Hugging Face, Ollama's own installer and daemon), so this app cannot see or limit where it connects, and cannot hide your address from it.": "这不会限制安装程序连接哪些主机。下载由独立程序执行（pip、Hugging Face、Ollama 自带的安装程序和守护进程），因此本应用无法查看或限制它连接何处，也无法对其隐藏你的地址。",
   "This downloads over the clearnet — not through Tor.": "此项通过明网下载——不经过 Tor。",
   "This event also appears in: {calendars}": "此事件也出现在：{calendars}",
