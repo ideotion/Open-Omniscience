@@ -47,7 +47,10 @@
         places: () => t("Places"),
         map: () => t("Map (OpenStreetMap)"),
         markets: () => t("Markets"),
+        stats: () => t("Statistics"),
+        climate: () => t("Climate"),
         agenda: () => t("Agenda"),
+        elections: () => t("Elections"),
         law_versions: () => t("Tracked law texts"),
       };
       return L[key] ? L[key]() : String(key || "");
@@ -56,6 +59,12 @@
     // Why a rail is not joined. The server sends a code with English words; the words shown
     // are keyed here, and a code this list does not know shows the server's words.
     function _dossierNotJoinedReason(r, t) {
+      // A country rail's absence is keyed by its code: the same rail is absent for two reasons.
+      const C = {
+        "not-a-country": () => t("Joined only for a country: no Place on this machine of kind country carries this item."),
+        "several-countries": () => t("The Places of kind country carrying this item name more than one country, so none is picked."),
+      };
+      if (r.code && C[r.code]) return C[r.code]();
       const L = {
         markets: () => t("Market series are keyed by ticker symbol, not by a Wikidata item."),
         agenda: () => t("Calendar events carry no Wikidata item."),
@@ -144,6 +153,42 @@
           what = `<ul class="dossier-list">` + lane.objects.map((o) =>
             `<li><span dir="auto">${esc(o.name || o.osm)}</span> <span class="muted small">${esc([o.osm, o.country_alpha3].filter(Boolean).join(" · "))}</span></li>`).join("") + `</ul>`;
         }
+      } else if (r.key === "stats" || r.key === "climate") {
+        // Series, periods and dates: no value, since a value needs its unit and vintage beside it.
+        const ss = r.series || [];
+        if (!ss.length) {
+          what = `<span class="muted">${esc(r.key === "stats"
+            ? t("No statistics series stored for this country on this machine.")
+            : t("No climate series stored for this country on this machine."))}</span>`;
+        } else {
+          what = `<ul class="dossier-list">` + ss.map((x) => {
+            const span = x.first === x.last ? x.first : x.first + " – " + x.last;
+            const lic = (r.licences || {})[x.agency];
+            return `<li><span dir="ltr">${esc(x.series_id)}</span> <span class="muted small">${esc(x.agency)} · ${esc(x.ref_area)}`
+              + ` · ${esc(tf("{n} periods", {n: x.periods || 0}))} · <span dir="ltr">${esc(span || "")}</span></span>`
+              + (lic ? `<div class="muted small">${esc(lic)}</div>` : "") + `</li>`;
+          }).join("") + `</ul>`
+            + (r.count > ss.length ? `<div class="muted small">${esc(tf("{shown} of {n} shown", {shown: ss.length, n: r.count}))}</div>` : "");
+        }
+      } else if (r.key === "agenda" || r.key === "elections") {
+        const es = r.events || [];
+        if (!es.length) {
+          what = `<span class="muted">${esc(r.key === "agenda"
+            ? t("The agenda lists no event for this country.")
+            : t("The agenda lists no election for this country."))}</span>`;
+        } else {
+          what = `<ul class="dossier-list">` + es.map((e) => {
+            const when = e.next_occurrence
+              || (e.projection && e.projection.year ? String(e.projection.year) : "")
+              || (e.until_year ? String(e.until_year) : "");
+            // The date's caveat is VISIBLE beside it (the informed-consent rule), never a hover only.
+            return `<li><span dir="auto">${esc(e.title || "")}</span>`
+              + (when ? ` <span class="muted small" dir="ltr">${esc(when)}</span>` : "")
+              + (e.confirmed === false && !e.date_caveat ? ` <span class="muted small">${esc(t("not confirmed"))}</span>` : "")
+              + (e.date_caveat ? `<div class="card-caveat small">${esc(t(e.date_caveat))}</div>` : "") + `</li>`;
+          }).join("") + `</ul>`
+            + (r.count > es.length ? `<div class="muted small">${esc(tf("{shown} of {n} shown", {shown: es.length, n: r.count}))}</div>` : "");
+        }
       }
       return `<tr><th scope="row">${esc(name)}</th><td>${what}</td></tr>`;
     }
@@ -172,6 +217,12 @@
         + routeRow("keywords", t("A keyword that is a name of this item"))
         + routeRow("places", t("A place they mention"))
         + `</ul>`;
+      // S3: how many joined rails had rows here. A rail without rows is a gap, not a zero.
+      const av = d.availability;
+      if (av) {
+        html += `<div class="muted small dossier-availability" title="${esc(t("A rail without rows has nothing on this machine for this item; that does not mean nothing exists."))}">`
+          + `${esc(tf("{n} of {total} joined rails have rows on this machine", {n: av.with_rows, total: av.joined}))}</div>`;
+      }
       html += `<div class="vsect">${esc(t("Joined on this page"))}</div><table class="data dossier-rails"><tbody>`
         + (d.rails || []).map((r) => _dossierRailRow(r, d, t, tf)).join("") + `</tbody></table>`;
       html += `<div class="vsect">${esc(t("Not joined yet"))}</div><ul class="dossier-list">`
@@ -190,7 +241,8 @@
       // other export (what the file holds, plaintext, the key) before anything is written.
       html += `<div style="margin-top:8px"><button type="button" class="secondary dossier-evidence">`
         + `${esc(t("Export signed evidence"))}</button></div>`;
-      html += `<p class="muted small" style="margin-top:8px">${esc(t(d.method || ""))}</p>`;
+      html += `<p class="muted small" style="margin-top:8px">${esc(t(d.method || ""))}`
+        + (d.method_country ? " " + esc(t(d.method_country)) : "") + `</p>`;
       // The caveat is VISIBLE, never behind a hover (the informed-consent rule).
       html += `<p class="card-caveat">${esc(t(d.caveat || ""))}</p>`;
       return html;

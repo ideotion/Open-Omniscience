@@ -26,6 +26,13 @@ the item; Places lists the Places; the map lists the OpenStreetMap lane's object
 item. Rails the app has but cannot join by QID are NAMED with their reason, never left out: a
 seed that listed only what it joins would read as the whole picture.
 
+**THE COUNTRY RAILS (S08-01 S2, 0.8 row A).** Statistics, climate, the agenda and its elections are
+keyed by COUNTRY, not by item, so they join only an item that IS a country: a Place of OSM kind
+``country`` carries it and every such Place names the same country. A city's item never gets its
+country's rows (they are about another item), and a disagreement picks none. A series is named with
+its periods and dates and no value: a value needs its unit, vintage and comparability fields beside
+it. S3's counter says which joined rails had rows on this machine; a rail without rows is a gap.
+
 **NO VERDICT, NO SCORE.** Counts, lists and the passport. No network call: every read is local.
 """
 
@@ -50,10 +57,24 @@ _LIST_LIMIT = 24
 #: Wikipedia or law: the press, the plain web, newsletters, statistics, cited sources, hazards.
 JOINED_RAILS = ("news", "wikipedia", "law", "places", "map")
 
-#: Rails the app holds that this seed does NOT join, each with why. Codes; the UI keys the words.
+#: The rails keyed by COUNTRY, not by item (S08-01 S2, 0.8 row A). They join an item only when
+#: the item IS a country: a Place of OSM kind ``country`` carries it, and every such Place names
+#: the same country. A city's item does not get its country's figures: those are about another
+#: item, and showing them here would say they were about the city.
+COUNTRY_RAILS = ("stats", "climate", "agenda", "elections")
+
+#: Why a country rail is not joined, by code. The UI keys the words.
+COUNTRY_ABSENCE = {
+    "not-a-country": (
+        "Joined only for a country: no Place on this machine of kind country carries this item."),
+    "several-countries": (
+        "The Places of kind country carrying this item name more than one country, so none is "
+        "picked."),
+}
+
+#: Rails the app holds that this dossier does NOT join, each with why. Codes; the UI keys the words.
 NOT_JOINED = (
     ("markets", "Market series are keyed by ticker symbol, not by a Wikidata item."),
-    ("agenda", "Calendar events carry no Wikidata item."),
     ("law_versions",
      "Tracked law texts are keyed by their legal identifier; they join here only through the "
      "corpus articles they were ingested as."),
@@ -66,6 +87,13 @@ METHOD = (
     "carrying this item. The rails split those articles by their source's channel, then add "
     "what this machine holds under the same item: the Wikipedia lane's pages, the Places and "
     "the OpenStreetMap lane's objects. No network call is made."
+)
+
+#: The method's second part, shown only when the item is a country (its own i18n key).
+COUNTRY_METHOD = (
+    "This item is a country, so the rails keyed by country join too: the statistics and climate "
+    "series stored for it, named with their periods and dates but no value, and the agenda's "
+    "events and elections for it."
 )
 
 CAVEAT = (
@@ -267,6 +295,120 @@ def _map_objects(qid: str) -> dict:
     }
 
 
+def item_country(places) -> tuple[dict | None, str | None]:
+    """``({"iso2", "iso3"}, None)`` when the item is ONE country, else ``(None, absence code)``.
+
+    The item is a country when a Place of OSM kind ``country`` carries it. Several such Places
+    naming different countries pick none (``several-countries``): a guess here would hang one
+    country's figures on another."""
+    from src.catalog.countries import to_iso2, to_iso3
+
+    codes = set()
+    for p in places:
+        if (p.kind or "").strip().lower() != "country":
+            continue
+        iso2 = to_iso2(p.country) or to_iso2(p.country_alpha3)
+        if iso2:
+            codes.add(iso2)
+    if not codes:
+        return None, "not-a-country"
+    if len(codes) > 1:
+        return None, "several-countries"
+    iso2 = codes.pop()
+    return {"iso2": iso2, "iso3": to_iso3(iso2)}, None
+
+
+def _area_forms(country: dict) -> list[str]:
+    """The ``ref_area`` spellings a statistics row can carry for this country (as published)."""
+    return sorted({c.upper() for c in (country.get("iso3"), country.get("iso2")) if c})
+
+
+def _series_rail(session, country: dict, *, climate: bool) -> dict:
+    """The statistics series stored for the country: series, periods and dates, NO value.
+
+    A value needs its unit, its vintage and its comparability fields beside it, which a list
+    row cannot hold honestly; the series opens where those are shown. ``climate`` splits the
+    rows by producer: the Climate tab's datasets on one rail, every other producer on the other.
+    """
+    from src.database.models import StatFigure as F
+    from src.stats.climate import DATASETS
+
+    climate_agencies = sorted({d.agency for d in DATASETS.values()})
+    agency_clause = F.agency.in_(climate_agencies) if climate else F.agency.not_in(climate_agencies)
+    where = (F.ref_area.in_(_area_forms(country)), agency_clause)
+    total = int(session.execute(
+        select(func.count()).select_from(
+            select(F.agency, F.series_id).where(*where).distinct().subquery())
+    ).scalar() or 0)
+    rows = session.execute(
+        select(F.agency, F.series_id, F.ref_area, func.count(func.distinct(F.time_period)),
+               func.min(F.time_period), func.max(F.time_period), func.max(F.extracted_at))
+        .where(*where)
+        .group_by(F.agency, F.series_id, F.ref_area)
+        .order_by(F.agency, F.series_id, F.ref_area)
+        .limit(_LIST_LIMIT)
+    ).all()
+    series = [
+        {"agency": a, "series_id": sid, "ref_area": area, "periods": int(n),
+         "first": first, "last": last, "fetched": fetched}
+        for a, sid, area, n, first, last, fetched in rows
+    ]
+    out: dict = {"count": total, "series": series}
+    if climate:
+        licences = {d.agency: d.licence for d in DATASETS.values()}
+        out["licences"] = {a: licences[a] for a in sorted({r["agency"] for r in series})
+                           if a in licences}
+    return out
+
+
+def _agenda_rail(country: dict, *, elections: bool) -> dict:
+    """The agenda's events for the country (the curated catalogue, read locally).
+
+    ``elections`` keeps that calendar apart: its dates carry the ruled confidence tiers."""
+    from src.civic.elections import ELECTIONS_CALENDAR
+    from src.events.catalog import agenda
+
+    events = [e for e in agenda(country=country["iso2"])
+              if (e.get("calendar") == ELECTIONS_CALENDAR) == elections]
+    # The date's own confidence and caveat travel with it (an election's tier, a window, a
+    # projection's year): a date without them would read as more certain than it is.
+    keep = ("title", "calendar", "next_occurrence", "month", "until_year", "confirmed",
+            "date_confidence", "date_caveat", "passed", "projection")
+    return {
+        "count": len(events),
+        "events": [{k: e.get(k) for k in keep if k in e} for e in events[:_LIST_LIMIT]],
+    }
+
+
+def _country_rails(session, places) -> tuple[list[dict], list[dict], dict | None]:
+    """The country rails (joined) or their absence (not joined), and the country they used."""
+    country, absence = item_country(places)
+    if country is None:
+        absence = absence or "not-a-country"
+        reason = COUNTRY_ABSENCE[absence]
+        return [], [{"key": k, "joined": False, "code": absence, "reason": reason}
+                    for k in COUNTRY_RAILS], None
+    rails = [
+        {"key": "stats", "joined": True, "country": country, **_series_rail(session, country, climate=False)},
+        {"key": "climate", "joined": True, "country": country, **_series_rail(session, country, climate=True)},
+        {"key": "agenda", "joined": True, "country": country, **_agenda_rail(country, elections=False)},
+        {"key": "elections", "joined": True, "country": country, **_agenda_rail(country, elections=True)},
+    ]
+    return rails, [], country
+
+
+def rail_has_rows(rail: dict) -> bool:
+    """Whether a joined rail found anything on this machine (S3's availability counter)."""
+    key = rail.get("key")
+    if key in ("news", "wikipedia", "law"):
+        if rail.get("articles"):
+            return True
+        return key == "wikipedia" and bool((rail.get("lane") or {}).get("pages"))
+    if key == "map":
+        return bool((rail.get("lane") or {}).get("objects"))
+    return bool(rail.get("count"))
+
+
 def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
     """The dossier of ``qid``, or None when ``qid`` is not a QID. Local reads only."""
     from src.analytics.passport import corpus_passport
@@ -323,7 +465,10 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
                      "articles": mention_count(session, p)} for p in places[:_LIST_LIMIT]]},
         {"key": "map", "joined": True, "lane": map_lane},
     ]
-    not_joined = [{"key": k, "joined": False, "reason": r} for k, r in NOT_JOINED]
+    country_rails, country_absent, country = _country_rails(session, places)
+    rails += country_rails
+    not_joined = country_absent + [{"key": k, "joined": False, "reason": r} for k, r in NOT_JOINED]
+    with_rows = [r["key"] for r in rails if rail_has_rows(r)]
 
     return {
         "qid": qid,
@@ -333,8 +478,14 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
         "passport": passport,
         "rails": rails,
         "not_joined": not_joined,
+        "country": country,
+        # S3: which joined rails had rows on this machine. A rail without rows is a gap, not a 0.
+        "availability": {"joined": len(rails), "with_rows": len(with_rows),
+                         "rails_with_rows": with_rows,
+                         "rails_without_rows": [r["key"] for r in rails if r["key"] not in with_rows]},
         "article_ids": ids,
         "article_ids_bounded": passport["articles"] > len(ids),
         "method": METHOD,
+        "method_country": COUNTRY_METHOD if country else None,
         "caveat": CAVEAT,
     }
