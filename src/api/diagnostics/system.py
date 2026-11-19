@@ -242,6 +242,12 @@ def law_coverage(
     from src.law.coverage import law_coverage_report
 
     payload = law_coverage_report(db)
+    try:  # K13's law block (row 184) reads these counts later; a failed side-record never fails the report
+        from src.monitoring.kpi import record_law_coverage
+
+        record_law_coverage(payload)
+    except Exception:  # noqa: BLE001
+        pass
     body = envelope(
         kind="law-coverage",
         query={},

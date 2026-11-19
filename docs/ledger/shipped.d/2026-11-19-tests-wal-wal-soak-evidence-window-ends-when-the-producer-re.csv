@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-19,tests/wal,WAL soak evidence window ends when the producer returns (row 181),SHIPPED,PR #2146; row 181,tests/test_wal_starvation_soak.py,"The never-closes mutant was once judged green on a loaded macOS runner because a checkpoint finished between the producer's return and run_all's; the in-scan evidence window now ends at the producer's return, and a forced 0.5 s gap test was red before the fix."
