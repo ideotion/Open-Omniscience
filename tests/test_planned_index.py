@@ -68,12 +68,49 @@ def test_it_finds_the_ruling_that_governs_the_next_change_to_a_file(entries):
     assert "R26" in ids
 
 
-def test_it_finds_an_UNANSWERED_ruling_standing_over_a_code_path(entries):
-    """Q823 reads unanswered on its row, and the attribution module is where an unaware
-    session would answer it for itself. (Q925 was this test's example until its row was
-    corrected on 2026-11-19: it was answered on 2026-09-29.)"""
-    hits = [e for e in _by_path(entries, "src/backup/attribution.py") if e.id == "Q823"]
+@pytest.fixture
+def pending_tree(tmp_path):
+    """A one-ruling ledger whose only row is UNANSWERED and names ``src/x.py``.
+
+    THE REAL LEDGER HAS NO PENDING ROW LEFT (row 189, 2026-11-19: Q823, Q1009, Q1113, RC02,
+    RC03 and RC12 were all answered on 2026-09-29, and their rows now say so). The
+    behaviour these tests pin -- an unanswered ruling stands over its code path, and
+    ``--strict`` fails on it -- must not depend on the ledger happening to hold an open
+    question, so they run against a synthetic tree instead."""
+    (tmp_path / "docs" / "ledger").mkdir(parents=True)
+    (tmp_path / "docs" / "product").mkdir(parents=True)
+    (tmp_path / "docs" / "plans" / "2026-09-12-beta-pathway").mkdir(parents=True)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "x.py").write_text("", encoding="utf-8")
+    (tmp_path / "docs" / "ledger" / "OPEN_QUEUE.md").write_text("# Open queue\n", encoding="utf-8")
+    (tmp_path / "docs" / "plans" / "2026-09-12-beta-pathway" / "S99-01_synthetic.md").write_text(
+        "# S99-01 — a slice implementing the open question\n\n"
+        "> **Scope:** `src/z.py`.\n> **Implements:** Q9001.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs" / "ledger" / "RULINGS_INDEX.md").write_text(
+        "| id | date | ruling | source | where enforced |\n"
+        "|---|---|---|---|---|\n"
+        "| Q9001 ⛔ | 2026-09-15 | **PENDING** -- a synthetic open question | sheet pending "
+        "| `src/x.py` |\n"
+        "| Q9002 | 2026-09-15 | **(a)** a synthetic answered question | sheet answered "
+        "| `src/y.py` |\n",
+        encoding="utf-8",
+    )
+    real = planned_index.ROOT
+    planned_index._set_root(tmp_path)
+    try:
+        yield tmp_path
+    finally:
+        planned_index._set_root(real)
+
+
+def test_it_finds_an_UNANSWERED_ruling_standing_over_a_code_path(pending_tree):
+    """An unanswered ruling stands over the file it names, and an answered one does not."""
+    built = planned_index.build()
+    hits = [e for e in _by_path(built, "src/x.py") if e.id == "Q9001"]
     assert hits and hits[0].status == "pending-ruling"
+    assert all(e.status != "pending-ruling" for e in _by_path(built, "src/y.py"))
 
 
 def test_an_answered_ruling_no_longer_stands_over_its_code_path(entries):
@@ -128,10 +165,22 @@ def test_a_file_is_never_indexed_against_ITSELF(entries):
 def test_a_SLICE_being_blocked_is_not_the_same_status_as_a_ruling_being_unanswered(entries):
     """REGRESSION, and the one that would have made the strict check unusable. A blocked
     SLICE cannot start; that never means its files are untouchable. Conflating the two put
-    `src/static/index.html` -- which nearly every PR edits -- under a hard failure."""
+    `src/static/index.html` -- which nearly every PR edits -- under a hard failure.
+
+    (The positive half -- a slice implementing an open question IS slice-blocked -- runs
+    on the synthetic tree below, since row 189 left the real ledger with no open row.)"""
     statuses = {e.status for e in entries}
-    assert "slice-blocked" in statuses
     assert "blocked" not in statuses, "the ambiguous 'blocked' status is back"
+
+
+def test_a_slice_implementing_an_open_question_is_SLICE_BLOCKED_and_strict_passes_it(
+    pending_tree, capsys
+):
+    import planned
+
+    hits = [e for e in _by_path(planned_index.build(), "src/z.py") if e.id == "S99-01"]
+    assert hits and hits[0].status == "slice-blocked"
+    assert planned.main(["--strict", "src/z.py"]) == 0, capsys.readouterr().out
 
 
 def test_no_path_carries_an_unbounded_pile_of_entries(entries):
@@ -187,11 +236,22 @@ def test_an_unplanned_path_says_so_AND_says_the_absence_is_weak_evidence():
     assert "ABSENCE IS WEAKER EVIDENCE THAN PRESENCE" in out.stdout
 
 
-def test_strict_FAILS_on_a_code_path_under_an_unanswered_ruling():
-    out = _run("--strict", "src/backup/attribution.py")
-    assert out.returncode == 2, out.stdout
-    assert "Q823" in out.stdout
-    assert "ACK Q823" in out.stdout, "the failure must say how to proceed deliberately"
+def test_strict_FAILS_on_a_code_path_under_an_unanswered_ruling(pending_tree, capsys):
+    import planned
+
+    assert planned.main(["--strict", "src/x.py"]) == 2
+    out = capsys.readouterr().out
+    assert "Q9001" in out
+    assert "ACK Q9001" in out, "the failure must say how to proceed deliberately"
+
+
+def test_the_real_ledger_holds_no_STALE_pending_row():
+    """Row 189 (2026-11-19). Six rows answered on 2026-09-29 kept their old «sheet pending»
+    wording for seven weeks, so this tool demanded an ``ACK`` for decisions the maintainer
+    had already made -- the stale-cell failure that made a PR on the law registry ask for
+    ``ACK Q925``. A row that is genuinely open again is welcome here: add it to this list
+    with the date it was asked, so the next reader sees it was meant."""
+    assert planned_index.pending_ruling_ids() == set()
 
 
 def test_strict_PASSES_on_a_ledger_file_every_session_is_required_to_edit():
@@ -233,13 +293,33 @@ def test_the_pending_rule_agrees_with_twelve_KNOWN_TRUTH_rows():
     predicate has to disagree with the ledger out loud."""
     pending = planned_index.pending_ruling_ids()
 
-    for rid in ("Q823", "Q1009", "Q1113", "RC02", "RC03"):
-        assert rid in pending, f"{rid} is unanswered and must read pending"
     # RC10 read pending until the maintainer answered it in chat on 2026-09-27; its row
     # still records the old blank in words, which must not read as pending again.
     # Q925 likewise: answered 2026-09-29, its row corrected 2026-11-19 (row 186).
-    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28", "RC10", "RC01", "Q925"):
+    # Q823, Q1009, Q1113, RC02, RC03, RC12: the five that pinned the PENDING side of this
+    # rule until row 189 (2026-11-19) -- all answered 2026-09-29, rows re-worded then. The
+    # pending side is now pinned on synthetic cells below, so it cannot vanish with them.
+    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28", "RC10", "RC01", "Q925",
+                "Q823", "Q1009", "Q1113", "RC02", "RC03", "RC12"):
         assert rid not in pending, f"{rid} is answered and must not read pending"
+
+
+@pytest.mark.parametrize(
+    "source, verdict, pending",
+    [
+        ("sheet pending", "**(a)** something", True),
+        ("RC round (blank, 2026-09-15)", "**PENDING** -- no letter came back", True),
+        ("sheet answered", "was default → PENDING again", True),
+        ("sheet answered", "**(a)** Accept", False),
+        ("sheet blank on a ⛔ (2026-09-15) · answered in the 2026-09-29 list",
+         "**(a), ANSWERED 2026-09-29, item 1**", False),
+        ("RC round (blank, 2026-09-15) · answered in the 2026-09-29 list",
+         "**(b), ANSWERED 2026-09-29, item 7**", False),
+    ],
+)
+def test_the_pending_predicate_on_SYNTHETIC_cells(source, verdict, pending):
+    """The pending side of the rule, pinned without depending on an open ledger row."""
+    assert planned_index._row_is_pending(["Q1", "2026-09-15", verdict, source, "x"]) is pending
 
 
 def test_a_queue_entrys_marker_is_found_DEEP_IN_ITS_BODY_not_only_at_the_top(entries):
