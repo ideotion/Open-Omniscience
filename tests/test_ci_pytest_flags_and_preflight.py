@@ -67,7 +67,7 @@ _PYTEST = "python -m pytest -q" + _PARALLEL + _SKIP_LISTING + _JUNIT + _SHARD_AR
 _SUMMARY = 'python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"'
 _VERSIONS = "pip list --format=freeze"
 #: Where a whole-suite pytest line must exist today: (workflow file, job). A line that goes away is a change this guard must be told about.
-_WHOLE_SUITE = (("ci", "test"), ("ci", "core-only"), ("ci", "portability"), ("release", "test"))
+_WHOLE_SUITE = (("ci", "test"), ("ci", "core-only"), ("ci", "portability"), ("ci", "portability-windows"), ("release", "test"))
 _RUFF = "ruff check --select=F,B --extend-ignore=B008 src/ tests/"
 _MYPY = "python -m mypy src/"
 #: (what the gate is called, the text that starts a call to the tool in a script line, the command the job runs).
@@ -403,6 +403,7 @@ def _with_job_run(workflows: dict[str, dict], which: str, job_name: str, run: st
         ("ci", "portability", "python -m pytest -q"),
         ("ci", "portability", "python -m pytest -q -rs"),
         ("ci", "portability", "python -m pytest -q -rfEs"),
+        ("ci", "portability-windows", "python -m pytest -q -rs"),
         ("release", "test", "python -m pytest -q"),
         ("release", "test", "python -m pytest -q -rfE"),
         ("ci", "test", "python -m pytest -q"),
