@@ -17,19 +17,32 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 
 
-def _cached_driver_functions() -> set[str]:
-    found: set[str] = set()
+def _imports_sqlcipher3(fn: ast.FunctionDef) -> bool:
+    """An import of the driver inside the function, never a mention in its docstring or a comment."""
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Import) and any(a.name.split(".")[0] == "sqlcipher3" for a in node.names):
+            return True
+        if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "sqlcipher3":
+            return True
+    return False
+
+
+def _cached_driver_functions() -> dict[str, ast.FunctionDef]:
+    """Every cached function in ``src`` that imports sqlcipher3, by "module:function", wherever it is defined (a method or a nested function
+    is found too, and then fails the listing test: the teardown check reads module attributes only)."""
+    found: dict[str, ast.FunctionDef] = {}
     for path in sorted((REPO / "src").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         mod = ".".join(path.relative_to(REPO).with_suffix("").parts)
+        top = {id(n) for n in tree.body}
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef):
                 continue
             decos = [ast.unparse(d) for d in node.decorator_list]
-            if not any("lru_cache" in d or d in ("cache", "functools.cache") for d in decos):
+            if not any("cache" in d for d in decos):
                 continue
-            if "sqlcipher3" in ast.unparse(node):
-                found.add(f"{mod}:{node.name}")
+            if _imports_sqlcipher3(node):
+                found[f"{mod}:{node.name}" if id(node) in top else f"{mod}:<not module level>{node.name}"] = node
     return found
 
 
@@ -38,7 +51,10 @@ def test_every_cached_driver_class_function_is_checked_after_each_test():
 
     found = _cached_driver_functions()
     assert "src.database.write:_db_operational_error_types" in found, "the scan finds the function row 188 was about"
-    assert found == set(DRIVER_CLASS_CACHES), (sorted(found - set(DRIVER_CLASS_CACHES)), sorted(set(DRIVER_CLASS_CACHES) - found))
+    assert set(found) == set(DRIVER_CLASS_CACHES), (sorted(set(found) - set(DRIVER_CLASS_CACHES)), sorted(set(DRIVER_CLASS_CACHES) - set(found)))
+    # the teardown check calls each one with no arguments (the cached answer, then a fresh one)
+    takes_args = sorted(k for k, fn in found.items() if fn.args.args or fn.args.posonlyargs or fn.args.kwonlyargs or fn.args.vararg)
+    assert not takes_args, takes_args
 
 
 def test_the_check_finds_a_cache_resolved_under_a_fake_driver_and_clears_it(monkeypatch):
