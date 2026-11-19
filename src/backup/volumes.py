@@ -325,8 +325,10 @@ def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str])
         finally:
             os.close(dir_fd)
         return {"removed": removed, "failed": failed}
-    allowed = set(leftover_plaintext(out_dir))  # Windows: no folder handles
-    for name in [n for n in dict.fromkeys(names) if n in allowed]:
+    # Windows: no folder handles. The name joined to the folder is the SCAN's own value,
+    # looked up by the requested one, so no request text ever reaches the path.
+    found = {n: n for n in leftover_plaintext(out_dir)}
+    for name in [found[n] for n in dict.fromkeys(names) if n in found]:
         try:
             # os.unlink, the one call both branches make (Path.unlink reaches os through pathlib, past this module's own os).
             os.unlink(Path(out_dir) / name)
