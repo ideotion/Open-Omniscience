@@ -120,9 +120,9 @@ _SPECS: tuple[dict, ...] = (
     {"id": "K13", "name": "Vertical coverage", "direction": "exact",
      "target": "pending-ruling-V1-6 (per vertical: first slice ingested + freshness; bars by S08-02 S2)",
      "source_endpoint": ("/api/climate/fetch · /api/diagnostics/elections-floor · /api/diagnostics/law-coverage · "
-                         "diagnostics bundle (osm-change-files.json)"),
+                         "diagnostics bundle (osm-change-files.json) · /api/living/overview (wiki coverage)"),
      "nm": "no vertical or lane has a first measurement on this machine yet (no climate fetch recorded, no Wikidata "
-           "election snapshot on disk, no law coverage report or OSM change-file read recorded); nothing is fetched or "
+           "election snapshot on disk, no law, OSM or wiki coverage read recorded); nothing is fetched or "
            "scanned on this GET"},
     {"id": "K14", "name": "Development health (suite · mypy ratchet · open P0s)",
      "direction": "exact", "target": "suite green · mypy ≤ baseline · open data-loss P0s = 0",
@@ -517,14 +517,15 @@ _DATES_FILE, _DATES_SCHEMA = "date-extraction-coverage.json", "oo-date-extractio
 _SOURCES_FILE, _SOURCES_SCHEMA = "source-audit-status.json", "oo-source-audit-status-1"
 
 
-def _write_record(name: str, schema: str, fields: dict) -> dict | None:
+def _write_record(name: str, schema: str, fields: dict, *, fsync: bool = True) -> dict | None:
     """Persist one instrument's measurement beside K6's record. Best-effort: a failed write records nothing (the KPI then says
     no run recorded one) and never breaks the diagnostic that measured it."""
     record = {"schema": schema, "measured_at": _now(), **fields}
     try:
         from src.safety.file_lock import atomic_replace
 
-        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8",
+                       fsync=fsync)
     except Exception:  # noqa: BLE001 - a diagnostic side-record never breaks the diagnostic
         return None
     return record
@@ -1016,11 +1017,122 @@ def _osm_block() -> dict:
     return block
 
 
+# --------------------------------------------------------------------------- K13, the wiki lane (row 184, R751(a))
+# The per-edition coverage report reads the wiki lane on demand (Living sources, the lane counters, the soak and release runs, the
+# diagnostics bundle); it writes its counts here as it makes them. Never an edition code: only how many.
+_WIKI_FILE, _WIKI_SCHEMA = "lane-wiki.json", "oo-lane-wiki-1"
+
+
+def record_wiki_coverage(rows: list | None, measured: bool) -> dict | None:
+    """Write down what a per-edition wiki coverage report counted (K13's wiki block). ``rows`` are the report's per-edition rows
+    (before any compact trim); ``measured`` is the report's own. Counts and the newest event time only; nothing is divided."""
+    if not isinstance(rows, list) or not isinstance(measured, bool):
+        return None
+    rs = [r for r in rows if isinstance(r, dict)]
+
+    def _count(r: dict, key: str) -> int | None:
+        return _int_or_none(r.get(key))
+
+    def _text(r: dict, key: str) -> int | None:
+        ft = r.get("full_text")
+        return _int_or_none(ft.get(key)) if isinstance(ft, dict) else None
+
+    def _sum(vals: list) -> int | None:  # the sum of what is known; when nothing is (or no edition ran), unknown (None), never 0
+        known = [v for v in vals if v is not None]
+        return sum(known) if known else None
+
+    def _sum_all(vals: list) -> int | None:  # an UPPER bound is only one when every part is known: a partial sum may sit below the lower
+        return sum(vals) if vals and all(v is not None for v in vals) else None
+
+    ran = [r for r in rs if r.get("has_run") is True]
+    pages = [_count(r, "pages_seen") for r in ran]
+    hot = [_text(r, "hot_pages_with_text") for r in ran]
+    warm = [_text(r, "warm_pages_with_text") for r in ran]
+    totals = [_count(r, "edition_articles") for r in ran]
+    gaps = [_int_or_none(r["gaps"].get("total")) if isinstance(r.get("gaps"), dict) else None for r in ran]
+    events = [(age, e) for r in ran if isinstance(e := r.get("last_event_recorded_at"), str) and (age := _age_days(e)) is not None]
+    return _write_record(_WIKI_FILE, _WIKI_SCHEMA, {
+        "measured": measured,
+        "editions_listed": len(rs),
+        "editions_with_a_run": len(ran),
+        "editions_with_pages_seen": sum(1 for v in pages if v),
+        "editions_with_text": sum(1 for h, w in zip(hot, warm, strict=True) if h or w),
+        "editions_walk_complete": sum(1 for r in ran if r.get("walk_complete") is True),
+        "pages_seen": _sum(pages),
+        "editions_pages_unknown": sum(1 for v in pages if v is None),
+        "edition_articles": _sum(totals),
+        "editions_without_total": sum(1 for v in totals if v is None),
+        # HOT and WARM may both hold one page (a promotion keeps its WARM row): the report's own two bounds, summed per edition.
+        "pages_with_text_lower_bound": _sum([max(h or 0, w or 0) if (h is not None or w is not None) else None
+                                             for h, w in zip(hot, warm, strict=True)]),
+        "pages_with_text_upper_bound": _sum_all([h + w if h is not None and w is not None else None
+                                                 for h, w in zip(hot, warm, strict=True)]),
+        "editions_text_bound_unknown": sum(1 for h, w in zip(hot, warm, strict=True) if h is None or w is None),
+        "gaps_total": _sum(gaps),
+        "newest_event_recorded_at": min(events, key=lambda p: p[0])[1] if events else None,
+        # The stream's last events could not be read for these: their newest event is unknown, not "none".
+        "editions_event_unreadable": sum(1 for r in ran if r.get("last_event_unreadable") is True),
+    }, fsync=False)  # rebuilt by the next report (every Living sources poll reads one): never worth a flush on a GET
+
+
+def read_wiki_coverage() -> dict | None:
+    return _read_record(_WIKI_FILE, _WIKI_SCHEMA)
+
+
+def _wiki_method(rec: dict) -> str:
+    def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
+        v = _int_or_none(rec.get(key))
+        return str(v) if v is not None else "an unknown number of"
+
+    unknown = []
+    for key, what in (("editions_pages_unknown", "pages seen"), ("editions_without_total", "own article count"),
+                      ("editions_text_bound_unknown", "text count in one tier")):
+        k = _int_or_none(rec.get(key))
+        if k:
+            unknown.append(f"{k} editions' {what} unknown, never 0")
+    k = _int_or_none(rec.get("editions_event_unreadable"))
+    if k:
+        unknown.append(f"{k} editions' last event could not be read, which is not the same as none")
+    lo, up = _int_or_none(rec.get("pages_with_text_lower_bound")), _int_or_none(rec.get("pages_with_text_upper_bound"))
+    if lo is not None and up is not None and up >= lo:
+        text = f"between {lo} and {up} pages with a text (a page promoted from WARM to HOT may be counted twice)"
+    elif lo is not None:
+        text = f"at least {lo} pages with a text (the upper bound is unknown while an edition's WARM count is)"
+    else:
+        text = "an unknown number of pages with a text"
+    return (f"the per-edition wiki coverage report's own counts, from its last read of the lane: {n('editions_with_a_run')} of "
+            f"{n('editions_listed')} editions listed have run; {n('editions_with_pages_seen')} have pages seen and "
+            f"{n('editions_with_text')} hold a text; {n('pages_seen')} pages seen, {text}, "
+            f"{n('gaps_total')} gaps"
+            + (f" ({'; '.join(unknown)})" if unknown else "")
+            + ". A first slice is one edition with pages seen or a stored text. No edition is named; nothing is divided.")
+
+
+def _wiki_block() -> dict:
+    rec = read_wiki_coverage()
+    if rec is None:
+        return {"vertical": "wiki", "kind": "lane", "state": "not-measured", "first_slice": False,
+                "reason": "no wiki coverage report has read a wiki lane on this machine (the lane has never run, or no report "
+                          "has been taken since: Living sources, the lane counters or an all-diagnostics bundle make one)"}
+    pages_n = _int_or_none(rec.get("editions_with_pages_seen")) or 0
+    text_n = _int_or_none(rec.get("editions_with_text")) or 0
+    keys = ("measured", "editions_listed", "editions_with_a_run", "editions_with_pages_seen", "editions_with_text",
+            "editions_walk_complete", "pages_seen", "editions_pages_unknown", "edition_articles", "editions_without_total",
+            "pages_with_text_lower_bound", "pages_with_text_upper_bound", "editions_text_bound_unknown", "gaps_total",
+            "newest_event_recorded_at", "editions_event_unreadable")
+    block = {"vertical": "wiki", "kind": "lane", "state": "recorded", "first_slice": pages_n > 0 or text_n > 0,
+             "as_of": rec.get("measured_at"), **{k: rec.get(k) for k in keys}, "method": _wiki_method(rec)}
+    if not block["first_slice"]:
+        block["reason"] = "the last wiki coverage report counted no edition with pages seen or a stored text"
+    return block
+
+
 def _k13_verticals(spec: dict) -> dict:
     """K13: one block per vertical and per lane (R751(a)), read from what each recorded. The value is a COUNT (blocks whose
     first slice is in), with n = the blocks listed; never a share, never a blend of their figures."""
     blocks = []
-    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block), ("osm", _osm_block)):
+    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block), ("osm", _osm_block),
+                        ("wiki", _wiki_block)):
         try:
             blocks.append(build())
         except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others

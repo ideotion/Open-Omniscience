@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 
 from src.medical.lane_models import (
     WANTED_KINDS,
+    MedicalCited,
     MedicalClassChange,
     MedicalFile,
     MedicalPaper,
@@ -162,6 +163,62 @@ def user_wanted(session: Session) -> Wanted:
     for kind, value in session.execute(select(MedicalWanted.id_kind, MedicalWanted.value)):
         out._set(kind).add(value)
     return out
+
+
+def replace_cited(session: Session, cited: Wanted) -> int:
+    """Store the corpus-cited ids the last scan found, replacing the previous snapshot whole."""
+    from sqlalchemy import delete
+
+    session.execute(delete(MedicalCited))
+    now = _now()
+    n = 0
+    for kind in WANTED_KINDS:
+        for value in sorted(cited._set(kind)):
+            session.add(MedicalCited(id_kind=kind, value=value, seen_at=now))
+            n += 1
+    session.flush()
+    return n
+
+
+def cited_wanted(session: Session) -> Wanted:
+    out = Wanted()
+    for kind, value in session.execute(select(MedicalCited.id_kind, MedicalCited.value)):
+        out._set(kind).add(value)
+    return out
+
+
+def coverage(session: Session) -> dict:
+    """How many of the ids the corpus cites (and the user named) have a kept record, and how many do not.
+
+    R750: a cited paper with no kept record is NOT FOUND YET, never "does not exist": the update
+    files carry only the papers NLM revised recently, so most cited papers are absent from them.
+    The count of the ones not found is part of the answer, so the UI can say it beside the rest.
+    """
+    papers = session.execute(select(MedicalPaper.pmid, MedicalPaper.doi, MedicalPaper.pmcid)).all()
+    have = {
+        "pmid": {str(p) for p, _d, _c in papers},
+        "doi": {d.lower() for _p, d, _c in papers if d},
+        "pmcid": {c for _p, _d, c in papers if c},
+    }
+
+    def _count(w: Wanted) -> tuple[int, int]:
+        total = found = 0
+        for kind in WANTED_KINDS:
+            ids = w._set(kind)
+            total += len(ids)
+            found += len(ids & have[kind])
+        return total, found
+
+    cited_total, cited_found = _count(cited_wanted(session))
+    named_total, named_found = _count(user_wanted(session))
+    return {
+        "cited": cited_total,
+        "cited_found": cited_found,
+        "cited_not_found": cited_total - cited_found,
+        "named": named_total,
+        "named_found": named_found,
+        "named_not_found": named_total - named_found,
+    }
 
 
 def _now() -> datetime:
@@ -306,13 +363,13 @@ def apply_file(
     }
 
 
-def record_failed_file(session: Session, name: str, exc: BaseException) -> None:
+def record_failed_file(session: Session, name: str, error_class: str) -> None:
     """A pass that did not finish says so; its kept changes were rolled back with it."""
     session.add(
         MedicalFile(
             name=name if FILE_NAME.fullmatch(name) else "unnamed",
             status="failed",
-            error=type(exc).__name__[:128],
+            error=error_class[:128],
             finished_at=_now(),
         )
     )
@@ -329,12 +386,11 @@ def summary(session: Session) -> dict:
             select(MedicalPaper.provenance_class, func.count()).group_by(MedicalPaper.provenance_class)
         ).all()
     }
-    last = session.execute(
-        select(MedicalFile.name, MedicalFile.finished_at)
-        .where(MedicalFile.status == "finished")
-        .order_by(MedicalFile.finished_at.desc(), MedicalFile.id.desc())
-        .limit(1)
-    ).first()
+    finished = session.execute(
+        select(MedicalFile.name, MedicalFile.finished_at).where(MedicalFile.status == "finished")
+    ).all()
+    # The NEWEST file by NLM's own sequence, never by when this install happened to apply it.
+    last = max(finished, key=lambda r: (file_sequence(r[0]), r[1] or datetime.min.replace(tzinfo=UTC))) if finished else None
     return {
         "papers": sum(by_class.values()),
         "by_class": {k: int(by_class.get(k, 0)) for k in ("journal", "preprint", "retracted")},

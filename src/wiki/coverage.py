@@ -237,6 +237,20 @@ def _located_block(lane: Any = None, *, budget: float | None = None, compact: bo
     }
 
 
+def _record_k13(rows: list[dict[str, Any]], measured: bool) -> None:
+    """Hand K13's wiki block (row 184, R751(a)) the report's counts, from the full rows before the bundle's compact form trims them.
+
+    Counts and one time only: no edition code leaves here, since which editions an operator follows beyond the twelve is theirs.
+    Best-effort: a failed record never touches the report.
+    """
+    try:
+        from src.monitoring.kpi import record_wiki_coverage
+
+        record_wiki_coverage(rows, measured)
+    except Exception:  # noqa: BLE001 - a side record never breaks a report
+        pass
+
+
 def edition_coverage(
     lane: Any, *, now: datetime | None = None, newest_gaps: bool = True, located_budget: float | None = None
 ) -> dict[str, Any]:
@@ -350,6 +364,7 @@ def edition_coverage(
         "gaps": sum(r["gaps"]["total"] for r in rows),
     }
     measured = totals["editions_with_a_run"] > 0
+    _record_k13(rows, measured)
     if not newest_gaps:
         # The bundle member (R413, net-zero): an edition that never ran is its name and the reason, not a dozen nulls.
         rows = [r if r["has_run"] else {k: r[k] for k in ("edition", "has_run", "reason")} for r in rows]

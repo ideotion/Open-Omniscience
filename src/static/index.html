@@ -3193,6 +3193,27 @@
     </section>
     </details>
 
+    <details class="adv-sec" data-adv="medical">
+      <summary><span class="adv-sec-t">Medical papers</span> <span class="muted">— PubMed records of the papers your articles cite</span></summary>
+    <!-- S07-01 (R745, R750): the medical lane. Fetching egresses to NLM, so the button passes the ONE
+         network consent (invariant #14) in app-medical.js and the endpoint refuses on its own as well
+         (#14f). The disclosure AND the gap are VISIBLE by default, never behind a toggle (R750), and the
+         count of cited papers not found is shown beside the rest. No inline handlers. -->
+    <section class="panel" id="medical-lane">
+      <h2 style="margin-top:0;font-size:13px">Medical papers <span class="muted">&mdash; PubMed update files</span></h2>
+      <p class="hint" style="margin-top:0">Each PubMed update file is tens of megabytes. The app reads it whole and keeps only the papers your articles cite or that you named; the rest is discarded, never stored.</p>
+      <p class="card-caveat" style="margin-top:6px">Only papers NLM revised recently are in the update files, so most papers your articles cite will not be found yet. A paper not found here is not missing from PubMed.</p>
+      <p class="hint" style="margin-top:6px">Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.</p>
+      <div id="medical-counts" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div class="row" style="align-items:center;gap:8px;margin-top:8px">
+        <label for="medical-files">Files per run</label>
+        <input id="medical-files" type="number" min="1" max="30" value="7" style="width:5em">
+        <button type="button" id="medical-fetch-btn" title="Sends requests to ftp.ncbi.nlm.nih.gov. Refused while airplane mode is on.">Fetch from PubMed</button>
+      </div>
+      <div id="medical-status" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
+    </section>
+    </details>
+
     <details class="adv-sec" data-adv="keywords">
       <summary><span class="adv-sec-t">Keywords</span> <span class="muted">— explore, curate, filter</span></summary>
     <section class="panel">
@@ -4501,6 +4522,7 @@
   <script src="/static/app-insights.js"></script>
   <script src="/static/app-patterns.js"></script>
   <script src="/static/app-ipcc.js"></script>
+  <script src="/static/app-medical.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>
   <script src="/static/app-climate.js"></script>

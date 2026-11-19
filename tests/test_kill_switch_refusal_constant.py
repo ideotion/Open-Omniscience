@@ -317,9 +317,10 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
 # measured on 2026-10-27 at 854610514 (main) and at 1fd3040f8 (the same sites, one more commit): eight HTTP 409 details (governments,
 # source_management x2, entities, insights, discovery x2, ingestion; nine with ipcc), four statistics fetchers (seven from 2026-11-07: fetch_gistemp, fetch_usgs_quakes, fetch_owid_dataset; eight with fetch_ghcnd_station, nine with fetch_nsidc, ten with fetch_oni), three catalogue loaders, two entity loaders, the
 # ring loader, the mailbox import and the IPCC SPM loader (ingest/ipcc_spm.py): 9 + 10 + 3 + 2 + 1 + 1 + 1 = 27, recounted 2026-11-09; 28 with the climate fetch endpoint (api/climate.py, 2026-11-13, R661); 29 with the place anomaly endpoint (api/weather.py, R675); 30 with the weather context endpoint (api/weather.py, R683); 31 with
-# the stats bounded read's between-chunk check (stats/fetch.py _bounded_get, review row 19: Stop ends a download under way). A thirty-second site that says the constant is a conscious change of this number, which is the point of pinning
+# the stats bounded read's between-chunk check (stats/fetch.py _bounded_get, review row 19: Stop ends a download under way); 35 with the medical
+# fetch (R750: medical/fetch.py's run_fetch and _get pre-checks and its mid-run airplane-mode reason, and api/medical.py's 409). A thirty-sixth site that says the constant is a conscious change of this number, which is the point of pinning
 # it; a site that goes back to a literal fails the scan above it.
-_PRE_CHECK_SITES = 31
+_PRE_CHECK_SITES = 35
 _CONSTANT = "NETWORK_REFUSED"
 _DEFINING_MODULE = "src.ingest.fetch_verdict"
 
