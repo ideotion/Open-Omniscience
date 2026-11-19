@@ -65,7 +65,8 @@ def test_nothing_recorded_is_not_measured_with_no_value_and_no_date(isolated):
     assert m["verdict"] == "not-measurable-here"
     assert m["value"] is None and m["as_of"] is None
     assert {b["vertical"]: b["state"] for b in m["verticals"]} == {"climate": "not-measured", "elections": "not-measured",
-                                                                 "law": "not-measured", "osm": "not-measured"}
+                                                                 "law": "not-measured", "osm": "not-measured",
+                                                                 "wiki": "not-measured"}
     assert all(b["reason"] for b in m["verticals"])
     assert K.run_kpi_selftest()["passed"]
 
@@ -76,7 +77,7 @@ def test_a_recorded_fetch_is_counted_with_its_own_date_and_an_open_bar(isolated)
     m = _k13()
     assert m["verdict"] == "measured-no-bar"
     assert "pending-ruling" in m["target"]
-    assert (m["value"], m["n"]) == (1, 4)
+    assert (m["value"], m["n"]) == (1, 5)
     assert m["as_of"] == rec["measured_at"]
     row = _block(m, "climate")["datasets"][0]
     assert (row["dataset"], row["figures"], row["outcome"]) == ("oni", 120, "fetched, stored new or revised figures")
@@ -99,7 +100,7 @@ def test_a_source_that_gave_no_figures_is_recorded_but_is_no_first_slice(isolate
     assert block["state"] == "recorded" and block["first_slice"] is False
     assert block["datasets"][0]["outcome"] == "source gave no figures"
     # Measured: the count is 0 of 2, a value, not "not measured".
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 4)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -149,7 +150,7 @@ def test_an_election_snapshot_with_rows_is_the_elections_first_slice(isolated, m
     block = _block(m, "elections")
     assert block["state"] == "recorded" and block["first_slice"] is True
     assert block["snapshot_rows"] == 42 and block["floor_countries"] > 0
-    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 4, "2026-11-01")
+    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 5, "2026-11-01")
 
 
 def test_an_empty_snapshot_is_recorded_but_is_no_first_slice(isolated, monkeypatch):
@@ -199,7 +200,7 @@ def test_both_verticals_are_counted_apart_never_blended(isolated, monkeypatch):
     _snapshot(monkeypatch, _SNAP)
     K.record_climate_fetch(_fetch())
     m = _k13()
-    assert (m["value"], m["n"]) == (2, 4)
+    assert (m["value"], m["n"]) == (2, 5)
     assert "climate, elections" in m["method"]
 
 
@@ -223,6 +224,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     K.record_climate_fetch(_fetch())
     K.record_law_coverage(_law_report())
     K.record_osm_lane([_osm_row()])
+    K.record_wiki_coverage([_wiki_row()], True)
     _snapshot(monkeypatch, _SNAP)
 
     def refuse(*a, **k):
@@ -232,7 +234,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     monkeypatch.setattr(socket, "create_connection", refuse)
     monkeypatch.setattr(socket.socket, "connect", refuse)
     m = _k13()
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 4, 4)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 5, 5)
     assert all(b["state"] == "recorded" for b in m["verticals"])  # every block read its record, none hit its error path
 
 
@@ -319,6 +321,15 @@ def test_a_failing_record_never_fails_a_fetch_already_kept(isolated, monkeypatch
 
 
 # --------------------------------------------------------------------------- row 184: the law lane (R751(a))
+def _wiki_row(edition: str = "fr", *, ran: bool = True, pages=150, total=100, hot=2, warm=5, gaps=1,
+              event: str | None = "2026-11-18T06:00:00+00:00", complete: bool = False) -> dict:
+    if not ran:
+        return {"edition": edition, "has_run": False, "reason": "no-run-yet"}
+    return {"edition": edition, "has_run": True, "pages_seen": pages, "edition_articles": total, "walk_complete": complete,
+            "full_text": {"hot_pages_with_text": hot, "warm_pages_with_text": warm},
+            "gaps": {"total": gaps, "by_reason": {"retention": gaps}}, "last_event_recorded_at": event}
+
+
 def _osm_row(alpha3: str = "FRA", *, status: str = "complete", diffs=3, gaps=1,
              applied: str | None = "2026-11-18T06:00:00+00:00") -> dict:
     return {"alpha3": alpha3, "status": status, "diffs_recorded": diffs, "gaps_total": gaps, "last_applied_at": applied}
@@ -349,7 +360,7 @@ def test_the_law_lane_is_a_block_under_k13_never_a_new_metric(isolated):
     assert (block["documents"], block["jurisdictions"], block["never_checked"]) == (12, 2, 1)
     assert (block["oldest_check_age_hours"], block["newest_check_age_hours"]) == (300.0, 2.5)
     assert block["floor_by_state"] == {"tracked": 2, "verified-not-yet-tracked": 1, "unverified": 2, "no-eligible-source": 0}
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 4)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 5)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -466,7 +477,7 @@ def test_an_absent_osm_lane_is_a_measurement_not_a_gap(isolated):
     m = _k13()
     block = _block(m, "osm")
     assert (block["state"], block["lane"], block["first_slice"]) == ("recorded", "absent", False)
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 4)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
 
 
 def test_the_newest_applied_time_is_compared_by_age_and_odd_ones_are_ignored(isolated):
@@ -555,3 +566,139 @@ def test_a_failing_record_never_breaks_the_member_on_a_present_lane(osm_lane_dir
     monkeypatch.setattr(K, "record_osm_lane", boom)
     got = D.diagnostics_member(20_000)
     assert got["lane"] == "present" and "error" not in got and got["countries_without_updates"] == ["ZZZ"]
+
+
+# --------------------------------------------------------------------------- row 184: the wiki lane (R751(a))
+def test_the_wiki_lane_is_a_block_under_k13_counted_never_named(isolated):
+    rows = [_wiki_row("fr", complete=True), _wiki_row("de", pages=0, hot=0, warm=None, gaps=0, event=None),
+            _wiki_row("en", ran=False), _wiki_row("xx", total=None, hot=0, warm=0, pages=40, event="2026-11-19T01:00:00")]
+    assert K.record_wiki_coverage(rows, True) is not None
+    text = (isolated / "lane-wiki.json").read_text(encoding="utf-8")
+    for code in ('"fr"', '"de"', '"en"', '"xx"'):
+        assert code not in text
+    snap = K.kpi_snapshot()
+    assert len(snap["metrics"]) == 14  # a block, no new K id
+    block = _block(next(x for x in snap["metrics"] if x["id"] == "K13"), "wiki")
+    assert (block["kind"], block["state"], block["first_slice"]) == ("lane", "recorded", True)
+    assert (block["editions_listed"], block["editions_with_a_run"], block["editions_walk_complete"]) == (4, 3, 1)
+    assert (block["editions_with_pages_seen"], block["editions_with_text"]) == (2, 1)
+    assert (block["pages_seen"], block["edition_articles"], block["editions_without_total"]) == (190, 200, 1)
+    # Text bounds per edition: fr max(2,5)=5 / 2+5=7; de (HOT 0, WARM unknown) 0 / unknown; xx 0 / 0.
+    # The upper bound is a bound only when every part is known; de's WARM is not, so it is unknown and the text says "at least".
+    assert (block["pages_with_text_lower_bound"], block["pages_with_text_upper_bound"]) == (5, None)
+    assert "at least 5 pages with a text" in block["method"]
+    assert block["editions_text_bound_unknown"] == 1 and block["gaps_total"] == 2
+    assert block["newest_event_recorded_at"] == "2026-11-19T01:00:00"
+    assert "1 editions' own article count unknown, never 0" in block["method"]
+    assert K.run_kpi_selftest()["passed"]
+
+
+def test_a_wiki_report_with_nothing_seen_is_recorded_with_no_first_slice(isolated):
+    K.record_wiki_coverage([_wiki_row(ran=False), _wiki_row("de", ran=False)], False)
+    m = _k13()
+    block = _block(m, "wiki")
+    assert (block["state"], block["first_slice"], block["measured"]) == ("recorded", False, False)
+    # No edition ran, so no edition could give a figure: unknown, never 0.
+    for key in ("pages_seen", "edition_articles", "gaps_total", "pages_with_text_lower_bound", "pages_with_text_upper_bound"):
+        assert block[key] is None, key
+    assert "no edition with pages seen" in block["reason"] and " 0 pages seen" not in block["method"]
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
+
+
+def test_a_wiki_sum_no_edition_could_give_is_unknown_never_zero(isolated):
+    K.record_wiki_coverage([_wiki_row(pages=None, total=None, hot=0, warm=None, gaps=None)], True)
+    block = _block(_k13(), "wiki")
+    assert (block["pages_seen"], block["edition_articles"], block["gaps_total"]) == (None, None, None)
+    assert block["pages_with_text_upper_bound"] is None and block["pages_with_text_lower_bound"] == 0
+    assert "an unknown number of pages seen" in block["method"]
+    assert "an unknown number of gaps" in block["method"]
+
+
+@pytest.mark.parametrize("rows,measured", [(None, True), ("rows", True), ([], "yes")])
+def test_a_wiki_report_of_the_wrong_shape_writes_nothing(isolated, rows, measured):
+    assert K.record_wiki_coverage(rows, measured) is None
+    assert not (isolated / "lane-wiki.json").exists()
+
+
+def test_a_hand_edited_wiki_record_never_reaches_the_method_as_a_claim(isolated):
+    K.record_wiki_coverage([_wiki_row()], True)
+    path = isolated / "lane-wiki.json"
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    rec.update({"editions_with_pages_seen": True, "editions_with_text": "lots", "pages_seen": -3})
+    path.write_text(json.dumps(rec), encoding="utf-8")
+    block = _block(_k13(), "wiki")
+    assert block["first_slice"] is False
+    assert "lots" not in block["method"] and "True" not in block["method"] and "-3" not in block["method"]
+
+
+def test_the_coverage_report_records_and_the_kpi_get_does_not_open_the_lane(tmp_path, monkeypatch):
+    """End to end: the per-edition report (what Living sources, the counters and the bundle call) writes the record from its
+    full rows, the compact bundle form included; the KPI GET reads it and never opens the lane."""
+    from datetime import UTC, datetime
+
+    from src.versioned import store
+    from src.wiki.coverage import edition_coverage
+    from src.wiki.lane_models import WikiWalkCursor
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    _snapshot(monkeypatch, _NONE)
+    store.dispose_all()
+    store.create_lane("wiki")
+    t0 = datetime(2026, 11, 1, tzinfo=UTC)
+    try:
+        with store.lane_session("wiki") as lane:
+            lane.add(WikiWalkCursor(edition="fr", pages_seen=150, edition_articles=100, started_at=t0, updated_at=t0))
+            lane.commit()
+            edition_coverage(lane, now=t0, newest_gaps=False)  # the compact form trims unrun rows; the record must not
+        path = tmp_path / "diagnostics" / "lane-wiki.json"
+        assert '"fr"' not in path.read_text(encoding="utf-8")
+
+        def refuse(*a, **k):
+            raise AssertionError("the KPI GET opened the wiki lane")
+
+        monkeypatch.setattr(store, "lane_session", refuse)
+        block = _block(_k13(), "wiki")
+        assert (block["first_slice"], block["editions_with_a_run"], block["pages_seen"]) == (True, 1, 150)
+        assert block["editions_listed"] >= 12  # the twelve are listed whether or not they ran
+    finally:
+        store.dispose_all()
+
+
+def test_a_failing_record_never_breaks_the_coverage_report(tmp_path, monkeypatch):
+    from src.versioned import store
+    from src.wiki.coverage import edition_coverage
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    store.dispose_all()
+    store.create_lane("wiki")
+
+    def boom(rows, measured):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(K, "record_wiki_coverage", boom)
+    try:
+        with store.lane_session("wiki") as lane:
+            rep = edition_coverage(lane)
+        assert rep["measured"] is False and rep["reason"] == "lane-never-run" and len(rep["editions"]) >= 12
+    finally:
+        store.dispose_all()
+
+
+def test_a_wiki_upper_bound_never_sits_below_the_lower(isolated):
+    """HOT is always counted, WARM may be unknown: a partial upper sum could read "between 10 and 0". It is unknown instead."""
+    K.record_wiki_coverage([_wiki_row("aa", hot=10, warm=None), _wiki_row("bb", hot=0, warm=0)], True)
+    block = _block(_k13(), "wiki")
+    assert (block["pages_with_text_lower_bound"], block["pages_with_text_upper_bound"]) == (10, None)
+    assert "between" not in block["method"] and "at least 10 pages with a text" in block["method"]
+    K.record_wiki_coverage([_wiki_row("aa", hot=10, warm=4), _wiki_row("bb", hot=0, warm=0)], True)
+    assert "between 10 and 14 pages with a text" in _block(_k13(), "wiki")["method"]
+
+
+def test_an_unreadable_last_event_is_counted_apart_from_none(isolated):
+    row = {**_wiki_row(event=None), "last_event_unreadable": True}
+    K.record_wiki_coverage([row], True)
+    block = _block(_k13(), "wiki")
+    assert block["newest_event_recorded_at"] is None and block["editions_event_unreadable"] == 1
+    assert "last event could not be read" in block["method"]
