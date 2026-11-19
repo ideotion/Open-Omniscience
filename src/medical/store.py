@@ -32,6 +32,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -403,3 +404,89 @@ def summary(session: Session) -> dict:
             {"name": last[0], "finished_at": last[1].isoformat() if last[1] else None} if last else None
         ),
     }
+
+
+#: Status links that name a later notice about THIS record (the paper itself was corrected or flagged).
+_IN_CHUNK = 900
+_ABOUT_THIS = {"ErratumIn": "erratum", "ExpressionOfConcernIn": "concern", "RetractionIn": "retraction",
+               "RetractedandRepublishedIn": "retraction"}
+
+
+def papers_cited_by(session: Session, cited: dict[int, Wanted]) -> dict:
+    """The kept records a set of articles cites, each with the articles that cite it. Local only.
+
+    ``cited`` maps an article id to the paper ids its links name. A paper is listed at its NEWEST
+    kept version, with its provenance class as the record states it, the notices the record links
+    to (an erratum, an expression of concern, a retraction), the date this install first saw it
+    become retracted (when it changed class here), and its withdrawal mark. An id with no kept
+    record is counted in ``not_found`` and never listed: R750, a paper missing HERE is not missing
+    from PubMed. Nothing is scored or interpreted; the order is by how many of the articles cite
+    the paper, then by PMID, so equal counts never read as a ranking between them.
+    """
+    union = Wanted()
+    for w in cited.values():
+        for kind in WANTED_KINDS:
+            union._set(kind).update(w._set(kind))
+    if not len(union):
+        return {"papers": [], "cited": 0, "found": 0, "not_found": 0}
+    rows: list[MedicalPaper] = []
+    seen_rows: set[int] = set()
+    for column, values in ((MedicalPaper.pmid, sorted(int(p) for p in union.pmid)), (MedicalPaper.doi, sorted(union.doi)),
+                           (MedicalPaper.pmcid, sorted(union.pmcid))):
+        for i in range(0, len(values), _IN_CHUNK):  # the repo's bound-variable ceiling, one chunk at a time
+            for r in session.execute(select(MedicalPaper).where(column.in_(values[i:i + _IN_CHUNK]))).scalars():
+                if r.id not in seen_rows:
+                    seen_rows.add(r.id)
+                    rows.append(r)
+    newest: dict[int, MedicalPaper] = {}
+    for r in rows:
+        if r.pmid not in newest or r.version > newest[r.pmid].version:
+            newest[r.pmid] = r
+    found_ids: dict[str, set[str]] = {"pmid": set(), "doi": set(), "pmcid": set()}
+    for r in rows:
+        found_ids["pmid"].add(str(r.pmid))
+        if r.doi:
+            found_ids["doi"].add(r.doi)
+        if r.pmcid:
+            found_ids["pmcid"].add(r.pmcid)
+    retracted_at: dict[int, datetime] = {}
+    kept = sorted(newest)
+    for i in range(0, len(kept), _IN_CHUNK):
+        for pmid, at in session.execute(
+            select(MedicalClassChange.pmid, MedicalClassChange.recorded_at).where(
+                MedicalClassChange.pmid.in_(kept[i:i + _IN_CHUNK]), MedicalClassChange.to_class == "retracted"
+            )
+        ).all():
+            if pmid not in retracted_at or at < retracted_at[pmid]:
+                retracted_at[pmid] = at
+    papers: list[dict[str, Any]] = []
+    for pmid, r in newest.items():
+        citing = sorted(
+            aid for aid, w in cited.items()
+            if str(pmid) in w.pmid or (r.doi and r.doi in w.doi) or (r.pmcid and r.pmcid in w.pmcid)
+        )
+        notices = sorted({_ABOUT_THIS[lk[0]] for lk in json.loads(r.status_links_json or "[]")
+                          if isinstance(lk, list) and lk and lk[0] in _ABOUT_THIS})
+        at = retracted_at.get(pmid)
+        papers.append({
+            "pmid": pmid,
+            "version": r.version,
+            "title": r.title,
+            "vernacular_title": r.vernacular_title,
+            "journal": r.journal,
+            "pub_date": r.pub_date or r.pub_date_text,
+            "doi": r.doi,
+            "pmcid": r.pmcid,
+            "provenance_class": r.provenance_class,
+            "notice_kind": r.notice_kind,
+            "notices": notices,
+            "retracted_seen_at": at.isoformat() if at else None,
+            "withdrawn": r.withdrawn_at is not None,
+            "has_abstract": r.abstract_json is not None,
+            "source_file": r.source_file,
+            "cited_by": len(citing),
+            "article_ids": citing[:50],
+        })
+    papers.sort(key=lambda p: (-p["cited_by"], p["pmid"]))
+    found = sum(len(union._set(k) & found_ids[k]) for k in WANTED_KINDS)
+    return {"papers": papers, "cited": len(union), "found": found, "not_found": len(union) - found}

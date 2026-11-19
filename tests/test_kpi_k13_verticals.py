@@ -60,12 +60,23 @@ def _fetch(dataset: str = "oni", *, figures: int = 120, new: int = 120, revised:
             "tally": {"new": new, "revised": revised, "unchanged": figures - new - revised}}
 
 
+def _medical(**over) -> dict:
+    rec = {"fetched_at": "2026-11-18T10:00:00+00:00", "listed": 40, "remaining": 33, "applied": 7, "failed": None,
+           "stopped": False, "papers": 3, "by_class": {"journal": 2, "preprint": 0, "retracted": 1},
+           "coverage": {"cited": 10, "cited_found": 3, "cited_not_found": 7, "named": 0, "named_found": 0,
+                        "named_not_found": 0},
+           "last_file": "pubmed25n1400.xml.gz"}
+    rec.update(over)
+    return rec
+
+
 def test_nothing_recorded_is_not_measured_with_no_value_and_no_date(isolated):
     m = _k13()
     assert m["verdict"] == "not-measurable-here"
     assert m["value"] is None and m["as_of"] is None
     assert {b["vertical"]: b["state"] for b in m["verticals"]} == {"climate": "not-measured", "elections": "not-measured",
-                                                                 "law": "not-measured", "osm": "not-measured",
+                                                                 "law": "not-measured", "medical": "not-measured",
+                                                                 "osm": "not-measured",
                                                                  "wiki": "not-measured"}
     assert all(b["reason"] for b in m["verticals"])
     assert K.run_kpi_selftest()["passed"]
@@ -77,7 +88,7 @@ def test_a_recorded_fetch_is_counted_with_its_own_date_and_an_open_bar(isolated)
     m = _k13()
     assert m["verdict"] == "measured-no-bar"
     assert "pending-ruling" in m["target"]
-    assert (m["value"], m["n"]) == (1, 5)
+    assert (m["value"], m["n"]) == (1, 6)
     assert m["as_of"] == rec["measured_at"]
     row = _block(m, "climate")["datasets"][0]
     assert (row["dataset"], row["figures"], row["outcome"]) == ("oni", 120, "fetched, stored new or revised figures")
@@ -100,7 +111,7 @@ def test_a_source_that_gave_no_figures_is_recorded_but_is_no_first_slice(isolate
     assert block["state"] == "recorded" and block["first_slice"] is False
     assert block["datasets"][0]["outcome"] == "source gave no figures"
     # Measured: the count is 0 of 2, a value, not "not measured".
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 6)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -150,7 +161,7 @@ def test_an_election_snapshot_with_rows_is_the_elections_first_slice(isolated, m
     block = _block(m, "elections")
     assert block["state"] == "recorded" and block["first_slice"] is True
     assert block["snapshot_rows"] == 42 and block["floor_countries"] > 0
-    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 5, "2026-11-01")
+    assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 6, "2026-11-01")
 
 
 def test_an_empty_snapshot_is_recorded_but_is_no_first_slice(isolated, monkeypatch):
@@ -200,7 +211,7 @@ def test_both_verticals_are_counted_apart_never_blended(isolated, monkeypatch):
     _snapshot(monkeypatch, _SNAP)
     K.record_climate_fetch(_fetch())
     m = _k13()
-    assert (m["value"], m["n"]) == (2, 5)
+    assert (m["value"], m["n"]) == (2, 6)
     assert "climate, elections" in m["method"]
 
 
@@ -225,6 +236,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     K.record_law_coverage(_law_report())
     K.record_osm_lane([_osm_row()])
     K.record_wiki_coverage([_wiki_row()], True)
+    K.record_medical_fetch(_medical())
     _snapshot(monkeypatch, _SNAP)
 
     def refuse(*a, **k):
@@ -234,7 +246,7 @@ def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
     monkeypatch.setattr(socket, "create_connection", refuse)
     monkeypatch.setattr(socket.socket, "connect", refuse)
     m = _k13()
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 5, 5)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 6, 6)
     assert all(b["state"] == "recorded" for b in m["verticals"])  # every block read its record, none hit its error path
 
 
@@ -360,7 +372,7 @@ def test_the_law_lane_is_a_block_under_k13_never_a_new_metric(isolated):
     assert (block["documents"], block["jurisdictions"], block["never_checked"]) == (12, 2, 1)
     assert (block["oldest_check_age_hours"], block["newest_check_age_hours"]) == (300.0, 2.5)
     assert block["floor_by_state"] == {"tracked": 2, "verified-not-yet-tracked": 1, "unverified": 2, "no-eligible-source": 0}
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 5)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 1, 6)
     assert K.run_kpi_selftest()["passed"]
 
 
@@ -477,7 +489,7 @@ def test_an_absent_osm_lane_is_a_measurement_not_a_gap(isolated):
     m = _k13()
     block = _block(m, "osm")
     assert (block["state"], block["lane"], block["first_slice"]) == ("recorded", "absent", False)
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 6)
 
 
 def test_the_newest_applied_time_is_compared_by_age_and_odd_ones_are_ignored(isolated):
@@ -602,7 +614,7 @@ def test_a_wiki_report_with_nothing_seen_is_recorded_with_no_first_slice(isolate
     for key in ("pages_seen", "edition_articles", "gaps_total", "pages_with_text_lower_bound", "pages_with_text_upper_bound"):
         assert block[key] is None, key
     assert "no edition with pages seen" in block["reason"] and " 0 pages seen" not in block["method"]
-    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
+    assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 6)
 
 
 def test_a_wiki_sum_no_edition_could_give_is_unknown_never_zero(isolated):
@@ -702,3 +714,29 @@ def test_an_unreadable_last_event_is_counted_apart_from_none(isolated):
     block = _block(_k13(), "wiki")
     assert block["newest_event_recorded_at"] is None and block["editions_event_unreadable"] == 1
     assert "last event could not be read" in block["method"]
+
+
+# --------------------------------------------------------------------------- the medical block (row 173, PR 4)
+
+
+def test_a_medical_fetch_is_a_block_with_counts_and_its_newest_file(isolated):
+    K.record_medical_fetch(_medical())
+    block = _block(_k13(), "medical")
+    assert block["state"] == "recorded" and block["first_slice"] is True
+    assert block["newest_file_applied"] == "pubmed25n1400.xml.gz"
+    assert block["coverage"]["cited_not_found"] == 7  # the gap travels with the block (R750)
+    assert block["outcome"] == "fetched, applied new update files"
+
+
+def test_the_medical_record_never_holds_a_paper_id(isolated):
+    K.record_medical_fetch(_medical(last_file="10.1000/secret-doi", cited_ids=["12345"], pmid=12345))
+    text = (isolated / "vertical-medical.json").read_text(encoding="utf-8")
+    assert "secret" not in text and "12345" not in text
+    assert _block(_k13(), "medical")["first_slice"] is False  # no NLM file name: nothing applied that it can name
+
+
+def test_a_medical_fetch_that_applied_nothing_or_failed_says_so(isolated):
+    K.record_medical_fetch(_medical(applied=0, last_file=None))
+    assert _block(_k13(), "medical")["outcome"] == "fetched, no new update file applied"
+    K.record_medical_fetch(_medical(applied=0, failed="FileRefused"))
+    assert "FileRefused" in _block(_k13(), "medical")["outcome"]

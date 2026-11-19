@@ -47,6 +47,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -756,6 +757,77 @@ def read_climate_fetches() -> dict | None:
     return _read_record(_CLIMATE_FILE, _CLIMATE_SCHEMA)
 
 
+_MEDICAL_FILE, _MEDICAL_SCHEMA = "vertical-medical.json", "oo-vertical-medical-1"
+_MEDICAL_COUNTS = ("cited", "cited_found", "cited_not_found", "named", "named_found", "named_not_found")
+
+
+def record_medical_fetch(record: dict) -> dict | None:
+    """Write down the last PubMed fetch (K13). Called by the medical fetch job once it ran, never by the KPI GET.
+
+    COUNTS ONLY, and NLM's own public file name: which papers the corpus cites is the user's, and this file is plaintext
+    beside the encrypted library, so no PMID, DOI or PMCID is ever written here. ``applied`` 0 is kept as 0 (the run read
+    the listing and applied nothing: nothing was new, or the first file failed), and the failure is named by its class."""
+    if not isinstance(record, dict):
+        return None
+    raw_cov, raw_class = record.get("coverage"), record.get("by_class")
+    cov: dict = raw_cov if isinstance(raw_cov, dict) else {}
+    by_class: dict = raw_class if isinstance(raw_class, dict) else {}
+    last = record.get("last_file")
+    failed = record.get("failed")
+    fields = {
+        "fetched_at": str(record.get("fetched_at") or _now()),
+        "listed": _int_or_none(record.get("listed")),
+        "remaining": _int_or_none(record.get("remaining")),
+        "applied": _int_or_none(record.get("applied")),
+        "failed": failed[:64] if isinstance(failed, str) else None,
+        "stopped": bool(record.get("stopped")),
+        "papers": _int_or_none(record.get("papers")),
+        "by_class": {k: _int_or_none(by_class.get(k)) for k in ("journal", "preprint", "retracted")},
+        "coverage": {k: _int_or_none(cov.get(k)) for k in _MEDICAL_COUNTS},
+        # A name that is not NLM's own pattern is not written: nothing but a public file name belongs here.
+        "last_file": last if isinstance(last, str) and re.fullmatch(r"pubmed[0-9]{2}n[0-9]{4}\.xml(\.gz)?", last) else None,
+    }
+    return _write_record(_MEDICAL_FILE, _MEDICAL_SCHEMA, fields)
+
+
+def read_medical_fetch() -> dict | None:
+    return _read_record(_MEDICAL_FILE, _MEDICAL_SCHEMA)
+
+
+def _medical_block() -> dict:
+    rec = read_medical_fetch()
+    if rec is None:
+        return {"vertical": "medical", "state": "not-measured", "first_slice": False,
+                "reason": "no PubMed fetch has been recorded on this machine (Advanced, Medical papers: Fetch records one)"}
+    applied, failed = rec.get("applied"), rec.get("failed")
+    if failed:
+        outcome = f"fetched, stopped at a file that failed ({failed})"
+    elif not isinstance(applied, int):
+        outcome = "fetched, what it applied was not recorded"
+    elif applied == 0:
+        outcome = "fetched, no new update file applied"
+    else:
+        outcome = "fetched, applied new update files"
+    cov = rec.get("coverage") if isinstance(rec.get("coverage"), dict) else {}
+    block = {
+        "vertical": "medical", "state": "recorded", "as_of": rec.get("fetched_at"), "age_days": _age_days(rec.get("fetched_at")),
+        # The first slice is in once one update file has been applied, whatever it kept: the update files are the transport.
+        "first_slice": bool(rec.get("last_file")),
+        "newest_file_applied": rec.get("last_file"), "files_applied_last_run": applied, "files_listed": rec.get("listed"),
+        "files_remaining": rec.get("remaining"), "stopped": rec.get("stopped"), "outcome": outcome,
+        "papers_kept": rec.get("papers"), "by_class": rec.get("by_class"), "coverage": cov,
+        "method": (
+            "Read from the last PubMed fetch's own record: how many of NLM's update files it applied, how many remain, how "
+            "many records are kept per provenance class, and how many cited paper ids were found or not found yet. Update "
+            "files carry only papers NLM revised recently, so a cited paper not found here is not missing from PubMed (R750). "
+            "Counts only; no id is written to the record."
+        ),
+    }
+    if not block["first_slice"]:
+        block["reason"] = "the last PubMed fetch has not applied an update file yet"
+    return block
+
+
 def _climate_block() -> dict:
     rec = read_climate_fetches()
     try:
@@ -1131,8 +1203,8 @@ def _k13_verticals(spec: dict) -> dict:
     """K13: one block per vertical and per lane (R751(a)), read from what each recorded. The value is a COUNT (blocks whose
     first slice is in), with n = the blocks listed; never a share, never a blend of their figures."""
     blocks = []
-    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block), ("osm", _osm_block),
-                        ("wiki", _wiki_block)):
+    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block),
+                        ("medical", _medical_block), ("osm", _osm_block), ("wiki", _wiki_block)):
         try:
             blocks.append(build())
         except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others
