@@ -234,12 +234,19 @@ def geocode(q: str = Query(..., min_length=1, max_length=300)) -> dict:
 
 @router.get("/view")
 def osm_view(
-    w: float = Query(...), s: float = Query(...), e: float = Query(...), n: float = Query(...)
+    w: float = Query(...), s: float = Query(...), e: float = Query(...), n: float = Query(...),
+    layer: str = Query("objects", pattern="^(objects|streets)$"),
 ) -> dict:
-    """What the map draws of the lane in one view box, under the published caps (S6, Q822)."""
-    from src.osm.view import ViewError, view
+    """What the map draws of the lane in one view box, under the published caps (S6, Q822).
+
+    ``layer=streets`` is the street view (S07-02 S2, Q821 = b): the roads alone, drawn by this
+    app from ``osm.db``, never a tile server.
+    """
+    from src.osm.view import ViewError, streets, view
 
     try:
+        if layer == "streets":
+            return streets(w, s, e, n)
         return view(w, s, e, n)
     except ViewError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from None
