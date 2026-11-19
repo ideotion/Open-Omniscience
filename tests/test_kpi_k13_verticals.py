@@ -151,10 +151,47 @@ def test_an_election_snapshot_with_rows_is_the_elections_first_slice(isolated, m
     assert (m["verdict"], m["value"], m["n"], m["as_of"]) == ("measured-no-bar", 1, 2, "2026-11-01")
 
 
-def test_an_empty_snapshot_is_not_a_first_slice(isolated, monkeypatch):
+def test_an_empty_snapshot_is_recorded_but_is_no_first_slice(isolated, monkeypatch):
+    """A snapshot on disk with no rows is a measurement (the run found nothing), like a climate source with no figures."""
     _snapshot(monkeypatch, {**_SNAP, "rows": 0})
-    block = _block(_k13(), "elections")
-    assert block["first_slice"] is False and "reason" in block
+    m = _k13()
+    block = _block(m, "elections")
+    assert block["state"] == "recorded" and block["first_slice"] is False
+    assert "holds no rows" in block["reason"]
+    assert (m["verdict"], m["value"], m["as_of"]) == ("measured-no-bar", 0, "2026-11-01")
+    assert K.run_kpi_selftest()["passed"]
+
+
+def test_an_empty_answer_for_one_unit_never_erases_another_unit_s_figures(isolated):
+    """A fetch is one station or region; the record is per dataset. Station B answering empty after station A brought
+    figures must not turn the dataset's first slice off."""
+    K.record_climate_fetch(_fetch("ghcnd", figures=120, new=120, param="A"))
+    K.record_climate_fetch(_fetch("ghcnd", figures=0, new=0, param="B"))
+    m = _k13()
+    row = _block(m, "climate")["datasets"][0]
+    assert row["outcome"] == "source gave no figures"  # the last fetch is still told as it was
+    assert row["last_fetch_with_figures_at"] == "2026-11-18T10:00:00+00:00"
+    assert _block(m, "climate")["first_slice"] is True and m["value"] == 1
+
+
+def test_a_record_that_does_not_say_what_was_stored_claims_nothing(isolated):
+    K.record_climate_fetch({"dataset": "oni", "fetched_at": "2026-11-18T10:00:00+00:00", "figures": 50})
+    row = _block(_k13(), "climate")["datasets"][0]
+    assert row["outcome"] == "fetched, what it stored was not recorded"
+
+
+def test_a_tampered_date_degrades_one_block_never_the_whole_metric(isolated, monkeypatch):
+    _snapshot(monkeypatch, _SNAP)
+    K.record_climate_fetch(_fetch())
+    path = isolated / "vertical-climate.json"
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    rec["measured_at"] = 12345
+    rec["datasets"]["oni"]["fetched_at"] = ["not", "a", "date"]
+    path.write_text(json.dumps(rec), encoding="utf-8")
+    m = _k13()
+    assert m["verdict"] == "measured-no-bar" and m["value"] == 2
+    assert m["as_of"] == "2026-11-01"  # the one readable date
+    assert _block(m, "climate")["datasets"][0]["age_days"] is None
 
 
 def test_both_verticals_are_counted_apart_never_blended(isolated, monkeypatch):
@@ -178,17 +215,22 @@ def test_one_vertical_failing_never_hides_the_other(isolated, monkeypatch):
     assert (m["verdict"], m["value"]) == ("measured-no-bar", 1)
 
 
-def test_the_kpi_get_fetches_nothing(isolated, monkeypatch):
-    """The board reads; it never fetches. Every climate fetch path raises if touched."""
-    from src.stats import climate
+def test_the_kpi_get_opens_no_socket(isolated, monkeypatch):
+    """The board reads; it never fetches. Any name lookup or connection, on either vertical's path, fails the test."""
+    import socket
+
+    K.record_climate_fetch(_fetch())
+    _snapshot(monkeypatch, _SNAP)
 
     def refuse(*a, **k):
-        raise AssertionError("the KPI GET reached a fetch")
+        raise AssertionError("the KPI GET reached the network")
 
-    monkeypatch.setattr(climate, "fetch_and_store", refuse)
-    monkeypatch.setattr(climate, "run_fetch", refuse)
-    K.record_climate_fetch(_fetch())
-    assert _k13()["verdict"] == "measured-no-bar"
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    m = _k13()
+    assert (m["verdict"], m["value"]) == ("measured-no-bar", 2)
+    assert all(b["state"] == "recorded" for b in m["verticals"])  # neither block fell into its error path
 
 
 def test_the_fetch_job_records_after_its_session_closed(isolated, monkeypatch):
@@ -248,3 +290,26 @@ def test_a_session_that_fails_to_commit_records_nothing(isolated, monkeypatch):
     with pytest.raises(RuntimeError):
         api._fetch_worker(Ctx(), dataset="oni", param=None)
     assert not (isolated / "vertical-climate.json").exists()
+
+
+def test_a_failing_record_never_fails_a_fetch_already_kept(isolated, monkeypatch):
+    from src.api import climate as api
+    from src.database import session as dbs
+    from src.stats import climate
+
+    @contextlib.contextmanager
+    def scope():
+        yield object()
+
+    def broken(record):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(dbs, "session_scope", scope)
+    monkeypatch.setattr(climate, "fetch_and_store", lambda db, d, p, progress=None: _fetch(d))
+    monkeypatch.setattr(K, "record_climate_fetch", broken)
+
+    class Ctx:
+        def set_progress(self, **kw):
+            pass
+
+    assert api._fetch_worker(Ctx(), dataset="oni", param=None)["figures"] == 120
