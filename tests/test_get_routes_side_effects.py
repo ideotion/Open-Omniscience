@@ -111,6 +111,12 @@ _AMBIENT_FILES = frozenset(
         "briefing_cache.json",  # derived: the briefing refresh thread writes it whenever a request started one
         "card_quality_selfcheck.jsonl",  # the same refresh's card self-check, one line beside that cache (newest 200)
         ".oo-instance-id",  # the data folder's random tag (src/paths.instance_tag), made once by the first export that names it
+        # The list of backup drives that were given a temporary corpus copy (src/backup/stream_backup.py): written only by an export's copy
+        # step and by the boot janitor's sweep thread (oo-backup-remembered-sweep), never on a request. Seen on Windows charged to
+        # /api/bulletin/editions/{filename}/annexes (row 166, run 44459679795), which answers 404 for the walk's filename before it builds
+        # anything: a thread an earlier test left running wrote it into the data folder this walk had just set (data_dir() reads
+        # OO_DATA_DIR at each call), in that request's time window.
+        "backup-temp-dests.json",
     }
 )
 # The lazy rollup build (R308). With the `[columnar]` extra (duckdb) the first demand for a rollup builds it in a daemon thread, BY DESIGN

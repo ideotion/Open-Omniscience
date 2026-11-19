@@ -368,7 +368,12 @@ def refuse(name):
         starts.append(name)
         raise RuntimeError('a process start at import: ' + name)
     return fn
-subprocess.Popen = refuse('subprocess.Popen')
+class _RefusedPopen(subprocess.Popen):
+    # A class, not a function: asyncio on Windows SUBCLASSES subprocess.Popen at import (windows_utils), and a function there
+    # failed the import itself (row 166, run 44459679795: "function() argument 'code' must be code, not str"). Building one refuses.
+    def __init__(self, *a, **k):
+        refuse('subprocess.Popen')()
+subprocess.Popen = _RefusedPopen
 for attr in ('fork', 'posix_spawn', 'posix_spawnp', 'execve', 'execv', 'execvp', 'execvpe', 'execl', 'execle', 'execlp', 'execlpe',
              'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'system', 'popen'):
     if hasattr(os, attr):
