@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -113,10 +114,13 @@ _SPECS: tuple[dict, ...] = (
      "direction": "up", "target": "100% at 1.0 + human UX pass",
      "source_endpoint": "R3 (AppVM ui_walk)",
      "nm": "awaits R3 — the flagged-surface inventory does not exist in-process yet"},
+    # R751(d): the target names the open bar instead of a pass condition no ruling has set (Q1017 = a: bars are set from
+    # recorded values, S08-02 S2), so a recorded vertical reads measured-no-bar, never green on an unruled freshness.
     {"id": "K13", "name": "Vertical coverage", "direction": "exact",
-     "target": "first slice ingested + freshness green, per §4 vertical",
-     "source_endpoint": "/api/diagnostics/freshness",
-     "nm": "per-vertical coverage diagnostics await the §4 vertical builds"},
+     "target": "pending-ruling-V1-6 (per vertical: first slice ingested + freshness; bars by S08-02 S2)",
+     "source_endpoint": "/api/climate/fetch · /api/diagnostics/elections-floor",
+     "nm": "no vertical has a first measurement on this machine yet (no climate fetch recorded, no Wikidata election "
+           "snapshot on disk); nothing is fetched or scanned on this GET"},
     {"id": "K14", "name": "Development health (suite · mypy ratchet · open P0s)",
      "direction": "exact", "target": "suite green · mypy ≤ baseline · open data-loss P0s = 0",
      "source_endpoint": "CI",
@@ -413,7 +417,7 @@ def _age_days(iso: str | None) -> float | None:
         return None
     try:
         then = datetime.fromisoformat(iso)
-    except ValueError:
+    except (TypeError, ValueError):  # a hand-edited record may hold a number or a list here
         return None
     if then.tzinfo is None:
         then = then.replace(tzinfo=UTC)
@@ -695,7 +699,175 @@ def _k8_sources(spec: dict) -> dict:
     return entry
 
 
-_RESOLVERS = {"K2": _k2_latency, "K5": _k5_noise, "K6": _k6_coverage, "K7": _k7_dates, "K8": _k8_sources, "K11": _k11_i18n}
+# --------------------------------------------------------------------------- K13, the verticals (row 183, R751)
+# The R706 channel again for climate: a fetch writes down what it stored where it stores it, and K13 only reads that file.
+# The elections block reads its two files directly instead, the way K11 reads the locale files: the shipped catalogue and
+# the Wikidata snapshot the operator's networked run left on disk ARE the persisted measurement, cheap to read (one YAML,
+# one JSON, cached by the snapshot's own stamp), and a copy of them written by the diagnostic would only go stale.
+# Lane blocks (law, OSM, wiki) and the 0.7/0.8 verticals join the same ``verticals`` list (R751(a)): blocks under K13,
+# no new K id.
+_CLIMATE_FILE, _CLIMATE_SCHEMA = "vertical-climate.json", "oo-vertical-climate-1"
+_CLIMATE_LOCK = threading.Lock()  # two fetches finishing together must not drop each other's dataset
+
+
+def record_climate_fetch(record: dict) -> dict | None:
+    """Write down one climate fetch (K13). Called by the climate fetch job once its session committed, never by the KPI GET.
+
+    Kept per DATASET, the last fetch of each: its time, how many figures the source gave, and how many were new or revised.
+    The unit fetched (a region, a GHCN station) is NOT written: this file is plaintext beside the encrypted library, and
+    which station someone reads is theirs. ``figures`` 0 is kept as 0: the source answered with nothing, a fact of its own.
+    A fetch is one UNIT (a region, a station) while the entry is per dataset, so the last fetch that DID bring figures is
+    kept beside the last fetch: an empty answer for one station never erases the figures another station's fetch stored."""
+    if not isinstance(record, dict):
+        return None
+    dataset = record.get("dataset")
+    try:
+        from src.stats.climate import DATASETS
+    except Exception:  # noqa: BLE001 - without the dataset list nothing can be checked, so nothing is written
+        return None
+    if not isinstance(dataset, str) or dataset not in DATASETS:
+        return None
+    raw_tally = record.get("tally")
+    tally: dict = raw_tally if isinstance(raw_tally, dict) else {}
+    entry: dict = {
+        "fetched_at": str(record.get("fetched_at") or _now()),
+        "figures": _int_or_none(record.get("figures")),
+        "new": _int_or_none(tally.get("new")),
+        "revised": _int_or_none(tally.get("revised")),
+    }
+    with _CLIMATE_LOCK:
+        prev: dict = _read_record(_CLIMATE_FILE, _CLIMATE_SCHEMA) or {}
+        held = prev.get("datasets")
+        datasets: dict = {k: v for k, v in held.items() if k in DATASETS and isinstance(v, dict)} if isinstance(held, dict) else {}
+        earlier = datasets.get(dataset) or {}
+        if isinstance(entry["figures"], int) and entry["figures"] > 0:
+            entry["last_with_figures"] = {"fetched_at": entry["fetched_at"], "figures": entry["figures"]}
+        elif isinstance(earlier.get("last_with_figures"), dict):
+            entry["last_with_figures"] = earlier["last_with_figures"]
+        datasets[dataset] = entry
+        return _write_record(_CLIMATE_FILE, _CLIMATE_SCHEMA, {"datasets": dict(sorted(datasets.items()))})
+
+
+def read_climate_fetches() -> dict | None:
+    return _read_record(_CLIMATE_FILE, _CLIMATE_SCHEMA)
+
+
+def _climate_block() -> dict:
+    rec = read_climate_fetches()
+    try:
+        from src.stats.climate import DATASETS
+
+        listed = len(DATASETS)
+    except Exception:  # noqa: BLE001 - the count is a label; the block still reads without it
+        listed = None
+    datasets = (rec or {}).get("datasets")
+    if rec is None or not isinstance(datasets, dict) or not datasets:
+        return {"vertical": "climate", "state": "not-measured", "first_slice": False,
+                "reason": "no climate fetch has been recorded on this machine (the Climate tab's Fetch button records one)"}
+    rows = []
+    for name, d in sorted(datasets.items()):
+        if not isinstance(d, dict):
+            continue
+        figures, new, revised = d.get("figures"), d.get("new"), d.get("revised")
+        kept = d.get("last_with_figures") if isinstance(d.get("last_with_figures"), dict) else None
+        if figures == 0:
+            outcome = "source gave no figures"
+        elif not isinstance(new, int) or not isinstance(revised, int):
+            outcome = "fetched, what it stored was not recorded"  # never claim new figures the record does not show
+        elif new == 0 and revised == 0:
+            # A fetch that stored nothing new is a fetch: the source had nothing new, never "not read".
+            outcome = "fetched, nothing new"
+        else:
+            outcome = "fetched, stored new or revised figures"
+        rows.append({
+            "dataset": name, "fetched_at": d.get("fetched_at"), "age_days": _age_days(d.get("fetched_at")),
+            "figures": figures, "new": new, "revised": revised, "outcome": outcome,
+            "last_fetch_with_figures_at": kept.get("fetched_at") if kept else None,
+            "has_figures": (isinstance(figures, int) and figures > 0) or kept is not None,
+        })
+    if not rows:
+        return {"vertical": "climate", "state": "not-measured", "first_slice": False,
+                "reason": "the climate fetch record holds no readable dataset entry"}
+    with_figures = sum(1 for r in rows if r["has_figures"])
+    return {
+        "vertical": "climate", "state": "recorded", "first_slice": with_figures > 0, "as_of": rec.get("measured_at"),
+        "datasets_fetched": len(rows), "datasets_listed": listed, "datasets": rows,
+        "method": (f"the last recorded fetch of each climate dataset: {len(rows)} of "
+                   f"{listed if listed is not None else 'the'} datasets fetched on this machine, {with_figures} of them "
+                   "with figures from the source at some fetch. Each age is the fetch's own; no "
+                   "freshness bar is set (S08-02 S2), so no dataset is called fresh or stale."),
+    }
+
+
+def _elections_block() -> dict:
+    """The elections floor, read from the shipped catalogue and the snapshot file on disk (no fetch, no scan)."""
+    from datetime import date
+
+    from src.civic.coverage_floor import floor_coverage
+    from src.events.catalog import layered_events
+
+    today = date.today()
+    events, snap = layered_events(today)  # one read, so the snapshot line and the counts agree
+    rep = floor_coverage(today, events=events)
+    rows = snap.get("rows")
+    present = snap.get("state") == "present"
+    loaded = present and isinstance(rows, int) and rows > 0
+    # A snapshot on disk is a measurement even when it holds no rows (the run found nothing), the same as a climate fetch
+    # whose source gave no figures: recorded, but no first slice. Only an absent or unreadable snapshot is "not measured".
+    block = {
+        "vertical": "elections", "state": "recorded" if present else "not-measured", "first_slice": loaded,
+        "as_of": snap.get("as_of") if present else None,
+        "floor_countries": rep.get("floor_countries"), "covered": rep.get("covered_n"),
+        "only_passed_projection": rep.get("only_passed_projection_n"),
+        "present_but_dateless": rep.get("present_but_dateless_n"), "missing": rep.get("missing_n"),
+        "floor_as_of": rep.get("as_of"),
+        "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
+        "snapshot_age_days": _age_days(snap.get("as_of")), "snapshot_rows": rows,
+        "method": ("the elections floor diagnostic's own counts over the shipped catalogue layered with the Wikidata "
+                   "snapshot on disk, each state apart (covered, only a passed projection, present but dateless, "
+                   "missing). The first slice is the snapshot, so the vertical counts as ingested only when a snapshot "
+                   "with rows is present; the shipped catalogue alone is not an ingest. Read from files, never fetched."),
+    }
+    if not present:
+        block["reason"] = (f"no readable Wikidata election snapshot on this machine (state: {snap.get('state')}); the "
+                           "operator's networked run writes one")
+    elif not loaded:
+        block["reason"] = "the Wikidata election snapshot on this machine holds no rows, so there is no first slice"
+    return block
+
+
+def _k13_verticals(spec: dict) -> dict:
+    """K13: one block per vertical, read from what each recorded. The value is a COUNT (verticals whose first slice is in),
+    with n = the verticals listed; never a share, never a blend of their figures."""
+    blocks = []
+    for name, build in (("climate", _climate_block), ("elections", _elections_block)):
+        try:
+            blocks.append(build())
+        except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others
+            blocks.append({"vertical": name, "state": "not-measured", "first_slice": False,
+                           "reason": f"its block could not be read ({type(exc).__name__})"})
+    recorded = [b for b in blocks if b["state"] == "recorded"]
+    if not recorded:
+        entry = _entry(spec)
+        entry["verticals"] = blocks
+        return entry
+    ingested = [b["vertical"] for b in blocks if b["first_slice"]]
+    # The newest of the blocks' own dates (a fetch time, a snapshot date): compared by age, since the two are not one format.
+    # A date in the future (clock skew) is not "newer" than today's: its age counts as 0.
+    dated = [(max(age, 0.0), b.get("as_of")) for b in recorded if (age := _age_days(b.get("as_of"))) is not None]
+    as_of = min(dated, key=lambda pair: pair[0])[1] if dated else None
+    entry = _entry(spec, value=len(ingested), n=len(blocks), as_of=as_of, verdict=_NO_BAR, method=(
+        f"{len(ingested)} of the {len(blocks)} verticals listed have a first slice in "
+        f"({', '.join(ingested) if ingested else 'none'}); each vertical's block below carries its own figures, date and "
+        "method, read from what it recorded where it measured. A count, not a score: the blocks are never blended. A "
+        "persisted measurement, never fetched or re-run here. The bar is open (Q1017 = a, S08-02 S2), so no verdict is given."
+    ))
+    entry["verticals"] = blocks
+    return entry
+
+
+_RESOLVERS = {"K2": _k2_latency, "K5": _k5_noise, "K6": _k6_coverage, "K7": _k7_dates, "K8": _k8_sources, "K11": _k11_i18n,
+              "K13": _k13_verticals}
 
 
 def kpi_snapshot(session=None) -> dict:  # noqa: ARG001 - session accepted for the endpoint contract
