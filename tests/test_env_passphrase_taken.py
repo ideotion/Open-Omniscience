@@ -368,9 +368,9 @@ def refuse(name):
         starts.append(name)
         raise RuntimeError('a process start at import: ' + name)
     return fn
-# A class, not a function: on Windows ``asyncio.windows_utils`` subclasses ``subprocess.Popen`` at import (row 150), and a function
-# there failed the import before the app was reached. Making one still refuses, and so does any subclass's.
 class _RefusedPopen(subprocess.Popen):
+    # A class, not a function: asyncio on Windows SUBCLASSES subprocess.Popen at import (windows_utils), and a function there
+    # failed the import itself (row 166, run 44459679795: "function() argument 'code' must be code, not str"). Building one refuses.
     def __init__(self, *a, **k):
         refuse('subprocess.Popen')()
 subprocess.Popen = _RefusedPopen

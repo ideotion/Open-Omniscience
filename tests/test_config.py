@@ -50,6 +50,22 @@ def temp_config_dir():
         reset_config()
 
 
+@pytest.fixture
+def no_repo_configs(monkeypatch):
+    """Load the configuration as if the checkout had no configs/ folder, without touching it.
+
+    ``Config._load_yaml_files`` reads configs/settings.yaml and configs/sources.yml only when they exist, so making it
+    load nothing is what a missing folder means to it. These tests used to RENAME the checkout's configs/ away and back:
+    under ``-n`` another worker's process reads catalogues there at any moment, and one that did so in that window
+    failed (row 180, the same family as row 167). The shared folder is never moved now."""
+    from config.settings import Config
+
+    monkeypatch.setattr(Config, "_load_yaml_files", lambda self: None)
+    reset_config()
+    yield
+    reset_config()
+
+
 @pytest.fixture(autouse=True)
 def reset_config_after_test():
     """Reset config after each test."""
@@ -60,19 +76,8 @@ def reset_config_after_test():
 class TestConfig:
     """Tests for the Config class."""
 
-    def test_default_values(self):
+    def test_default_values(self, no_repo_configs):
         """Test that default values are set correctly."""
-        # Reset config to avoid loading from YAML files
-        reset_config()
-
-        # Temporarily rename configs directory to prevent loading
-        repo_configs = Path(__file__).parent.parent / "configs"
-
-        # Backup and remove configs directory temporarily
-        backup_dir = repo_configs.with_suffix(".backup")
-        if repo_configs.exists():
-            repo_configs.rename(backup_dir)
-
         try:
             config = get_config()
 
@@ -100,22 +105,10 @@ class TestConfig:
             # Version might be loaded from YAML
             assert config.app_version is not None
         finally:
-            # Restore configs directory
-            if backup_dir.exists():
-                backup_dir.rename(repo_configs)
             reset_config()
 
-    def test_environment_variable_loading(self):
+    def test_environment_variable_loading(self, no_repo_configs):
         """Test that environment variables override defaults."""
-        # Temporarily rename configs directory to prevent YAML loading
-        repo_configs = Path(__file__).parent.parent / "configs"
-        backup_dir = repo_configs.with_suffix(".backup")
-
-        # Backup and remove configs directory temporarily
-        configs_existed = repo_configs.exists()
-        if configs_existed:
-            repo_configs.rename(backup_dir)
-
         try:
             # Reset config to ensure fresh load
             reset_config()
@@ -140,10 +133,6 @@ class TestConfig:
                 del os.environ["LOG_LEVEL"]
             # Reset config after test
             reset_config()
-
-            # Restore configs directory
-            if configs_existed:
-                backup_dir.rename(repo_configs)
 
     def test_get_database_url_sqlite(self):
         """Test get_database_url with SQLite."""
@@ -277,23 +266,9 @@ class TestYamlLoading:
 class TestValidation:
     """Tests for configuration validation."""
 
-    def test_empty_database_url_raises_error(self, monkeypatch):
+    def test_empty_database_url_raises_error(self, no_repo_configs):
         """Test that empty database URL raises an error."""
         from config.settings import Config
 
-        # Temporarily rename configs directory to prevent YAML loading
-        repo_configs = Path(__file__).parent.parent / "configs"
-        backup_dir = repo_configs.with_suffix(".backup")
-
-        # Backup and remove configs directory temporarily
-        configs_existed = repo_configs.exists()
-        if configs_existed:
-            repo_configs.rename(backup_dir)
-
-        try:
-            with pytest.raises(ValueError, match="Database URL is not configured"):
-                Config(database_url="")
-        finally:
-            # Restore configs directory
-            if configs_existed:
-                backup_dir.rename(repo_configs)
+        with pytest.raises(ValueError, match="Database URL is not configured"):
+            Config(database_url="")

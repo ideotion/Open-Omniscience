@@ -347,7 +347,14 @@ def test_only_an_oo_volumes_1_manifest_explains_a_leftover(tmp_path):
     assert leftover_plaintext(out) == []
 
 
-def test_a_copy_that_cannot_be_removed_is_named_and_the_rest_still_go(tmp_path, monkeypatch):
+@pytest.mark.parametrize("by_handle", [True, False], ids=["folder-handle", "no-folder-handle"])
+def test_a_copy_that_cannot_be_removed_is_named_and_the_rest_still_go(tmp_path, monkeypatch, by_handle):
+    """Both branches, on every OS: the one without folder handles is the one Windows takes, and its Path.unlink went past this
+    module's os, so the stuck copy was removed anyway there and the test went red only on Windows (row 166, run 44459679795)."""
+    if not by_handle:
+        import src.backup.import_scan as import_scan
+
+        monkeypatch.setattr(import_scan, "can_scan_by_handle", lambda: False)
     out = _legacy_set(tmp_path)
     names = [
         v["name"]

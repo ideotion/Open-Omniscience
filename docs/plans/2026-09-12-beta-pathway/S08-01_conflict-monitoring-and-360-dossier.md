@@ -7,13 +7,14 @@
 > evolution surface (S05-07), StatFigure, the Agenda, Places (S05-04) and every vertical — the
 > signed-evidence export (`src/api/reporting.py`), `docs/SECURITY.md` + the hover. Must NOT touch: ACLED
 > (V1-3: no code path, not even user-fetch), OpenSanctions (OUT), GDELT as a firehose (§4.6), any «conflict
-> intensity score», a single casualty number, OSM-derived rows in any export (Q823 ⛔).
+> intensity score», a single casualty number, an OSM-derived row in an export WITHOUT OSM's credit and the ODbL
+> share-alike line (Q823 = a, answered 2026-09-29).
 > **Implements:** carried V1 content — `V1_PATHWAY_2026-07-14.md` §3 (lines 297–343: the 0.8 row and the
 > amendment «0.8 conflict is unchanged except that V1-3 removes OpenSanctions»), §4.0, §4.4, §8 item 4,
 > ruled 2026-09-07 (V1-1, V1-2, V1-3). No sheet IDs.
 > **Gated on:** the `v0.7.0` tag; S05-03 (the spine the dossier is over), S05-11 (the claim workspace and
 > the Conjunction Lens the evidence trails reuse), S05-04 / S05-07 / S04-09 (the rails), S04-01 (the host
-> list); Q823 ⛔ for the export's OSM rows.
+> list). (Q823 was answered (a) on 2026-09-29: it no longer gates the export's OSM rows.)
 > **Sequencing:** the conflict vertical first (it is a rail); the dossier second (it needs ≥ 6 rails with
 > data for one entity); the licence fetches and the real-entity click-through are the operator's.
 
@@ -42,7 +43,10 @@ No sheet question ID belongs to this slice. The rulings it implements, verbatim 
 - §7 V1-2 (no key-gated source, at all); V1-3 («EXCLUDE ENTIRELY — no code path, not even user-fetch» for
   redistribution-forbidding or non-commercial terms; ACLED-class).
 - Consumed from the sheet: Q1001 / Q1002 / Q1014 (hosts, hover, transport); Q1017 = a (K13 measured first);
-  Q823 ⛔ (blank — no OSM-derived row in the signed export); Q1128 = a.
+  Q823 = a (answered 2026-09-29: OSM-derived rows may enter the signed export with OSM's credit and the ODbL
+  share-alike line, through `src/backup/attribution.py`); Q1128 = a; R747 (2026-11-19: the 2026-09-07 V1 rulings
+  are this row's default while `RC11` = b's round is unwritten, and UCDP comes through its keyless versioned
+  download files).
 
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
@@ -56,6 +60,12 @@ No sheet question ID belongs to this slice. The rulings it implements, verbatim 
   `src/stats/bulk.py` is the network-free wide-CSV / ZIP parser (V-Dem, UCDP shapes). The analysis window
   (`#tab-analyze`, `ooSubtabs`, invariant #22) is the composition pattern; invariant #31 (a lens, never a
   second source of truth) is the rule the dossier inherits.
+- **Re-checked 2026-11-19 (R747's PR): the grep above is out of date.** A dossier SEED exists since 0.5
+  (S05-11 S4): `src/entities/dossier.py` (`qid_dossier`), `GET /api/entities/dossier`,
+  `src/static/app-dossier.js` (`openDossier`), opened from the Place card and from a "who" entity in the
+  analysis. It joins 5 rails by QID (news, Wikipedia, law, Places, map) and names the ones it does not
+  (markets, agenda, law versions) with a reason. S2 EXTENDS it (more rails, the export, the entry points);
+  it is not a second window. The conflict vertical's parser is `src/conflict/ucdp.py` (S1, no network).
 - V1 §4.4 (2026-07-14): no row reached ✅ — `sipri.org`, `ucdp.uu.se` www and `api.unhcr.org` docs 403'd
   the fetcher; UCDP GED + Candidate is reported CC BY 4.0 (`ucdpapi.pcr.uu.se/api/gedevents/<version>`, no
   key, version-numbered), SIPRI attribution-required / «commercial = permission», UNHCR CC BY 4.0
@@ -91,9 +101,9 @@ No sheet question ID belongs to this slice. The rulings it implements, verbatim 
   claim-workspace pattern of S05-11), and a rail with no data says so — the window renders the rails it
   has, never padded to six. The dossier is a LENS: it reads each rail's store, keeps no second copy, computes
   no composite. Its signed-evidence export reuses `src/api/reporting.py`'s bundles and verifies through
-  `verify_bundle`; OSM-derived rows are excluded from the export while Q823 ⛔ is blank, and the export says
-  what it excluded.
-- **Why (ruling):** §8 item 4; §3's 0.8 row; invariants #22 and #31; Q823 ⛔.
+  `verify_bundle`; OSM-derived rows ride in the export with OSM's credit and the ODbL share-alike line
+  (Q823 = a), and the export says which rails it carries and which it does not.
+- **Why (ruling):** §8 item 4; §3's 0.8 row; invariants #22 and #31; Q823 = a.
 - **Acceptance:** the row's «one real entity's dossier is shown joining ≥ 6 rails with each rail's
   provenance and caveat visible … the signed-evidence export of that dossier verifies, and the surface is
   Chromium-verified + click-through».
@@ -127,13 +137,17 @@ maintainer's pass.
 
 1. The ✅ licence fetches on a networked machine: UCDP (CC BY 4.0), SIPRI's terms, UNHCR's page, ReliefWeb,
    HDX per dataset, V-Dem's variant; robots / UA on `ucdp.uu.se` and the API host → the PR body and the
-   catalogue's licence lines.
+   catalogue's licence lines. Added by R747: whether the UCDP API (`ucdpapi.pcr.uu.se`) asks for an access
+   token (the conflict lane reads the keyless download files unless the probe shows the API keyless), and
+   ReliefWeb's `appname` policy (whether a name must be pre-approved, which would make it registration-gated
+   under V1-2).
 2. The maintainer's runs where the sandbox's egress refuses a host (probe first; report per host).
 3. The click-through on one real entity of the maintainer's corpus (the demonstration entity is theirs).
 
 ## 6. What this slice may not decide
 
-- **Q823 ⛔** — the export's OSM rows; excluded and stated until ruled.
+- ~~**Q823 ⛔** — the export's OSM rows; excluded and stated until ruled.~~ Answered (a) on 2026-09-29: the
+  rows ride with OSM's credit and the ODbL share-alike line (corrected 2026-11-19 under R747).
 - **ACLED's press RSS feed** in `configs/sources.yml` is article content, not the event dataset V1-3
   excludes; whether it stays is a licence question for the maintainer, recorded — not decided here.
 - **The demonstration entity, the entry-point placement, the rail order, module names** — design notes.
