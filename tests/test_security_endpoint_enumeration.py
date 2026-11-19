@@ -195,6 +195,10 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
     "git-scm.com":
         "same shape: an install.ps1 remediation message pointing at the Git download "
         "page for a human, never fetched by the script",
+    "www.w3.org":
+        "an XML NAMESPACE identifier (MathML's, in the PubMed parser src/medical/pubmed_xml.py; also "
+        "SKOS and SVG elsewhere): a name the parser compares element tags against, never a URL "
+        "anything dereferences. src/medical/pubmed_xml.py imports nothing that can open a socket",
     "www.apple.com":
         "the DOCTYPE public identifier of the macOS LaunchAgent plist install.sh "
         "writes. macOS does not dereference it; no HTTP request exists here",
