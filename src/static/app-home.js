@@ -2078,8 +2078,8 @@
             ${weatherBox}
             <div class="acts">
               ${openBtn}
-              ${dossierBtn}
               ${typeof ooPatternListButton === "function" ? ooPatternListButton(c) : ""}
+              ${dossierBtn}
               ${recipeBtn}
               ${weatherBtn}
               <button class="secondary tiny" data-on-click="addToDraft(${esc(JSON.stringify(c.id))})">+ Add to draft</button>

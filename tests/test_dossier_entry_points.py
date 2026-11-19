@@ -21,7 +21,7 @@ import pytest
 
 from src.api import diagnostics_slots as slots
 from src.entities import dossier_diagnostics as DD
-from tests.js_source_helper import read_static
+from tests.js_source_helper import function_source, read_static
 from tests.test_dossier_seed import ZED, db, lanes, rings, seeded  # noqa: F401 - fixtures
 
 COUNTRY_KEYS = ["news", "wikipedia", "law", "places", "map", "stats", "climate", "agenda", "elections"]
@@ -114,13 +114,12 @@ def test_opening_a_dossier_through_the_route_counts_it(db, seeded, lanes):  # no
 
 def test_the_three_entry_points_are_wired_in_the_shipped_sources():
     corpus, analysis, home = read_static("app-corpus.js"), read_static("app-analysis.js"), read_static("app-home.js")
-    i = corpus.index("function kwQidHtml(")
-    assert "dossierButtonHtml(qid)" in corpus[i:i + 1400], "a keyword with a QID offers its dossier"
+    assert "dossierButtonHtml(qid)" in function_source(corpus, "kwQidHtml"), "a keyword with a QID offers its dossier"
     assert "dossierSearchHint(" in analysis and "seq === _searchSeq" in analysis, "an Explore search names its item"
     assert "openDossierForTerm(" in home and "${dossierBtn}" in home, "a Lead card offers its dossier"
     assert "kwQidHtml(row, {noDossier: !!(opts && opts.inButton)})" in corpus, "never a button nested in a chip button"
-    j = home.index("const dossierBtn")
-    assert "_dq" in home[j - 400:j + 300] and "_aq" not in home[j:j + 300], "only the name a Lead's title quotes"
+    assert "const dossierBtn = (_dq.trim() &&" in home and "openDossierForTerm(${esc(JSON.stringify(_dq.trim()))})" in home, \
+        "only the name a Lead's title quotes"
     on = read_static("oo-on.js")
     assert on.count('"openDossier"') == 2 and on.count('"openDossierForTerm"') == 2
 
