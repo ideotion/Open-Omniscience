@@ -2025,10 +2025,15 @@ def test_a_start_that_lands_between_the_latch_and_its_table_set_re_reads_instead
     reg = damage.registry
     real = reg._apply_incident
     seen: list = []
+    fired: list = []
 
     def wrapped(*a, **kw):
         out = real(*a, **kw)
-        if not seen:  # the re-read's own answer comes through here too
+        # The re-read's own answer comes through here too, and it can arrive on its own thread BEFORE the retry below
+        # returns: so the hook is marked fired before it starts the retry, not after (row 169, a race macOS -n 4 found:
+        # checking `seen` let the re-read's pass start a second retry, and the test read [[], []]).
+        if not fired:
+            fired.append(1)
             seen.append(reg.retry(reason="a start in the gap", files=(FILE_CORPUS,)))
         return out
 

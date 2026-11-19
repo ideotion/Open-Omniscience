@@ -1412,7 +1412,7 @@
           </label>` : "";
       const granHtml = (opts.onGranularity || _disp.shown || hasAdmin1) ? `
         <div class="oomap-gran" role="group" aria-label="${esc(t("Granularity"))}"
-             style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;z-index:5">
+             style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;pointer-events:auto">
           ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Country"))}</button>
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Continent"))}</button>` : ""}
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""}>${esc(t("Places"))}</button>` : ""}
@@ -1424,6 +1424,11 @@
           ${hasAdmin1 && !regionVals ? `<button class="tiny secondary" data-oomap-regions aria-pressed="${_ooMapRegionsOn ? "true" : "false"}"${_ooMapRegionsOn ? ' style="border-color:var(--accent);color:var(--accent-text)"' : ""} title="${esc(t("Show or hide the first-level regions (states, provinces, regions) OpenStreetMap draws inside each country."))}">${esc(t("Regions"))}</button>` : ""}
           ${worldviewHtml}
         </div>` : "";
+      // The layer buttons and the time slider share ONE bottom stack (.oomap-bottom, row 162): the
+      // slider used to sit at a fixed 36 px above the edge, so once the buttons wrapped to a second
+      // row (more layers, a longer language) it lay over them, and the Signals button that turns it
+      // off could not be clicked. Stacked, the slider always sits just above however many rows the
+      // buttons take; the empty part of the stack lets clicks and drags through to the map.
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
       // A Linear/Log toggle (batch F item 1) chooses the position->year mapping; the
@@ -1443,7 +1448,7 @@
           }).join("")}
         </div>` : "";
       const sliderHtml = opts.signalsOn ? `
-        <div class="oomap-time" style="position:absolute;bottom:36px;left:8px;right:8px;z-index:5;display:flex;flex-direction:column;gap:1px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px">
+        <div class="oomap-time" style="align-self:stretch;display:flex;flex-direction:column;gap:1px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px;pointer-events:auto">
           <div style="display:flex;align-items:center;gap:8px">
             <input type="range" data-oomap-focus min="0" max="1000" value="${opts.focusSlider != null ? opts.focusSlider : 1000}" step="1" style="flex:1" aria-label="${esc(t("Moment in focus"))}">
             <strong data-oomap-focuslabel style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
@@ -1496,7 +1501,7 @@
           <button class="tiny secondary" data-oomap="reset" title="${esc(t("Reset view"))}">⟲</button>
           <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
         </div>
-        ${pickerHtml}${granHtml}${sliderHtml}
+        ${pickerHtml}${(granHtml || sliderHtml) ? `<div class="oomap-bottom" style="position:absolute;bottom:8px;left:8px;right:8px;z-index:5;display:flex;flex-direction:column-reverse;align-items:flex-start;gap:4px;pointer-events:none">${granHtml}${sliderHtml}</div>` : ""}
         </div>
         <ul class="sr-only">${srTop}</ul>
       </div>
@@ -1661,6 +1666,77 @@
       road: ["--muted", 0, 0.9], power: ["--caveat", 0, 0.9], building: ["--muted", 0.18, 0.6],
       landuse: ["--muted", 0.08, 0.35], water: ["--accent", 0.22, 0.7],
     };
+    // THE STREET VIEW (S07-02 S2, Q821 = b): below a view this wide (degrees of longitude, the
+    // server's STREET_VIEW_MAX_DEG) the layer asks for the roads alone and draws them itself, by
+    // class, from this computer's osm.db: never a tile server, never WebGL. The server applies the
+    // caps and leaves out whole classes in its fixed order; this draws exactly what came back.
+    const OO_OSM_STREET_MAX_DEG = 0.2;
+    // One entry per server class, most important first: [label, stroke px, colour, alpha, casing].
+    const _OO_OSM_STREET_STYLE = [
+      ["motorways", 4.2, "--accent", 1, true], ["trunk roads", 3.8, "--accent", 0.9, true],
+      ["primary roads", 3.4, "--caveat", 0.95, true], ["secondary roads", 2.8, "--caveat", 0.8, true],
+      ["tertiary roads", 2.3, "--fg", 0.7, true], ["minor streets", 1.5, "--fg", 0.55, false],
+      ["service roads", 1, "--muted", 0.75, false], ["paths", 0.8, "--muted", 0.6, false],
+      ["other roads", 0.8, "--muted", 0.5, false],
+    ];
+    const _OO_OSM_STREET_LABELS = 60;
+    // Label widths, measured once per name and font (measureText is the costly call in a dense view).
+    const _ooOsmTextW = new Map();
+    // toScreen(road) -> the road's vertices in canvas pixels, computed ONCE per road per draw and
+    // shared by the strokes and the labels.
+    function _ooOsmDrawStreets(ctx, roads, toScreen, color, sz) {
+      // One path per class, lowest first, so the important roads sit on top; a casing in the
+      // page's background under the major classes keeps them legible where they cross.
+      const byK = _OO_OSM_STREET_STYLE.map(() => []);
+      const scr = new Map();
+      for (const r of roads) {
+        if (!r.c || r.c.length < 2) continue;
+        const pts = toScreen(r); scr.set(r, pts);
+        (byK[r.k] || byK[byK.length - 1]).push(pts);
+      }
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      const trace = (lines) => { ctx.beginPath(); for (const l of lines) l.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); };
+      for (let k = byK.length - 1; k >= 0; k--) {
+        if (!byK[k].length) continue;
+        const st = _OO_OSM_STREET_STYLE[k];
+        trace(byK[k]);
+        if (st[4]) { ctx.globalAlpha = 0.9; ctx.strokeStyle = color("--bg"); ctx.lineWidth = st[1] + 2; ctx.stroke(); }
+        ctx.globalAlpha = st[3]; ctx.strokeStyle = color(st[2]); ctx.lineWidth = st[1]; ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // Names: the major and minor named roads, most important first, one label per name, along
+      // the longest segment in sight, never overlapping another label, at most _OO_OSM_STREET_LABELS.
+      ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const placed = [], seen = new Set();
+      const named = roads.filter((r) => r.name && r.k <= 5 && scr.has(r)).sort((a, b) => a.k - b.k);
+      for (const r of named) {
+        if (placed.length >= _OO_OSM_STREET_LABELS) break;
+        if (seen.has(r.name)) continue;
+        const pts = scr.get(r);
+        let best = null, bl = 0;
+        for (let i = 1; i < pts.length; i++) {
+          const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+          if (mx < 0 || my < 0 || mx > sz.w || my > sz.h) continue;
+          const len = Math.hypot(x1 - x0, y1 - y0); if (len > bl) { bl = len; best = [x0, y0, x1, y1]; }
+        }
+        let tw = _ooOsmTextW.get(r.name);
+        if (tw == null) { if (_ooOsmTextW.size > 20000) _ooOsmTextW.clear(); tw = ctx.measureText(r.name).width; _ooOsmTextW.set(r.name, tw); }
+        if (!best || bl < tw + 8) continue;
+        let a = Math.atan2(best[3] - best[1], best[2] - best[0]);
+        if (a > Math.PI / 2) a -= Math.PI; else if (a < -Math.PI / 2) a += Math.PI;   // never upside down
+        const cx = (best[0] + best[2]) / 2, cy = (best[1] + best[3]) / 2;
+        const hw = (Math.abs(Math.cos(a)) * tw + Math.abs(Math.sin(a)) * 12) / 2 + 2;
+        const hh = (Math.abs(Math.sin(a)) * tw + Math.abs(Math.cos(a)) * 12) / 2 + 2;
+        const box = [cx - hw, cy - hh, cx + hw, cy + hh];
+        if (placed.some((p) => !(box[2] < p[0] || box[0] > p[2] || box[3] < p[1] || box[1] > p[3]))) continue;
+        placed.push(box); seen.add(r.name);
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
+        ctx.lineWidth = 3; ctx.strokeStyle = color("--bg"); ctx.strokeText(r.name, 0, 0);
+        ctx.fillStyle = color("--fg"); ctx.fillText(r.name, 0, 0);
+        ctx.restore();
+      }
+      return placed.length;
+    }
     function _ooOsmLaneBox(vb) {
       // Equal Earth has no rectangular lon/lat box, so the view's edges are sampled.
       let w = 180, e = -180, s = 90, n = -90;
@@ -1676,21 +1752,32 @@
     function _ooOsmLaneLayer(host, svg) {
       const wrap = svg.parentElement; if (!wrap) return null;
       if (getComputedStyle(wrap).position === "static") wrap.style.position = "relative";
+      // The canvas sits in a clipping box the size of the map, so a bitmap moved during a gesture
+      // (below) never spills over the controls or the page around the map.
+      const clip = document.createElement("div");
+      clip.setAttribute("aria-hidden", "true");
+      clip.style.cssText = "position:absolute;pointer-events:none;overflow:hidden";
       const cv = document.createElement("canvas");
       cv.setAttribute("aria-hidden", "true");
-      cv.style.cssText = "position:absolute;pointer-events:none";
-      wrap.appendChild(cv);
+      cv.style.cssText = "position:absolute;left:0;top:0;pointer-events:none;transform-origin:0 0";
+      clip.appendChild(cv);
+      wrap.appendChild(clip);
       // A re-render of the map (regions toggle, worldview) builds a NEW layer; the old one must
       // stop touching the legend the new one now owns.
       const gen = host._ooLaneGen = (host._ooLaneGen || 0) + 1;
-      let data = null, cur = null, timer = null, seq = 0, readMs = null, drawMs = null;
+      let data = null, cur = null, timer = null, seq = 0, readMs = null, drawMs = null, raf = 0;
+      let drawnAt = null, drawnSz = null, settle = null;
       const css = getComputedStyle(host);
       const color = (v) => (css.getPropertyValue(v) || "").trim() || "#888";
       const place = () => {
         const r = svg.getBoundingClientRect(), pr = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-        cv.style.left = `${r.left - pr.left}px`; cv.style.top = `${r.top - pr.top}px`;
+        clip.style.left = `${r.left - pr.left}px`; clip.style.top = `${r.top - pr.top}px`;
+        clip.style.width = `${r.width}px`; clip.style.height = `${r.height}px`;
         cv.style.width = `${r.width}px`; cv.style.height = `${r.height}px`;
-        cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+        // Resizing the backing store reallocates it: only when the size really changed.
+        const bw = Math.round(r.width * dpr), bh = Math.round(r.height * dpr);
+        if (cv.width !== bw) cv.width = bw;
+        if (cv.height !== bh) cv.height = bh;
         return { w: r.width, h: r.height, dpr };
       };
       const draw = () => {
@@ -1699,14 +1786,24 @@
         const sz = place(), ctx = cv.getContext("2d"); if (!ctx || !cur) return;
         ctx.setTransform(sz.dpr, 0, 0, sz.dpr, 0, 0);
         ctx.clearRect(0, 0, sz.w, sz.h);
+        cv.style.transform = ""; cv.style.visibility = ""; drawnAt = { ...cur }; drawnSz = sz;
         if (!data) return;
         const px = (lat, lon) => { const q = project(lon, lat); return [(q.x - cur.x) / cur.w * sz.w, (q.y - cur.y) / cur.h * sz.h]; };
-        if (data.status === "clusters") {
+        // Over the caps even for the most important road class, the street answer carries the
+        // object layer's own answer, and that is what is drawn.
+        const d = data.status === "too-many" && data.fallback ? data.fallback : data;
+        if (data.status === "streets") {
+          // The projection is view-independent (Q801's seam), so each vertex is projected once per
+          // answer and a pan or zoom only rescales it.
+          if (!data._proj) data._proj = new Map(data.roads.map((r) => [r, (r.c || []).map(([la, lo]) => { const q = project(lo, la); return [q.x, q.y]; })]));
+          const kx = sz.w / cur.w, ky = sz.h / cur.h;
+          _ooOsmDrawStreets(ctx, data.roads, (r) => data._proj.get(r).map(([x, y]) => [(x - cur.x) * kx, (y - cur.y) * ky]), color, sz);
+        } else if (d.status === "clusters") {
           // Area ∝ count, against the view's largest cluster or 50, whichever is more, so a view
           // of small clusters is not drawn as large as a city's.
-          const max = Math.max(50, ...data.clusters.map((c) => c.n));
+          const max = Math.max(50, ...d.clusters.map((c) => c.n));
           ctx.font = "10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          for (const c of data.clusters) {
+          for (const c of d.clusters) {
             const [x, y] = px(c.lat, c.lon), r = Math.max(2.5, 18 * Math.sqrt(c.n / max));
             ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
             ctx.globalAlpha = 0.9; ctx.strokeStyle = color("--bg"); ctx.lineWidth = 3; ctx.stroke();   // a halo over any fill
@@ -1714,8 +1811,8 @@
             ctx.globalAlpha = 1; ctx.strokeStyle = color("--accent"); ctx.lineWidth = 1; ctx.stroke();
             if (r >= 9) { ctx.fillStyle = color("--fg"); ctx.fillText(fmtNum(c.n, 0), x, y); }
           }
-        } else if (data.status === "objects") {
-          for (const f of data.objects) {
+        } else if (d.status === "objects") {
+          for (const f of d.objects) {
             const st = _OO_OSM_KIND_STYLE[f.k] || ["--muted", 0, 0.8], col = color(st[0]);
             if (f.c && f.c.length >= 2) {
               ctx.beginPath();
@@ -1740,11 +1837,13 @@
         const my = ++seq, box = _ooOsmLaneBox(cur), t0 = performance.now();
         if (!(box.w < box.e && box.s < box.n)) return;
         try {
-          const d = await api("/api/osm/view?" + new URLSearchParams({ w: box.w, s: box.s, e: box.e, n: box.n }).toString());
+          const q = { w: box.w, s: box.s, e: box.e, n: box.n };
+          if (box.e - box.w <= OO_OSM_STREET_MAX_DEG) Object.assign(q, { layer: "streets" });
+          const d = await api("/api/osm/view?" + new URLSearchParams(q).toString());
           if (my !== seq) return;                        // a newer view was asked for meanwhile
           readMs = Math.round(performance.now() - t0); data = d; draw();
         } catch (e) {
-          if (my !== seq) return;
+          if (my !== seq || host._ooLaneGen !== gen) return;   // a superseded layer never writes the new one's legend
           const el = host.querySelector("[data-oomap-osmlane]");
           if (el) el.textContent = ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("OpenStreetMap: the view could not be read.");
         }
@@ -1752,7 +1851,21 @@
       return {
         view(vb) {
           cur = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
-          draw();                                        // the last answer, re-placed at once
+          // DURING A GESTURE the last picture is MOVED, not redrawn: the projection ignores the
+          // view (Q801's seam), so a pan or zoom of the drawn bitmap is exactly a translate and a
+          // scale, and costs no raster however dense the streets. Measured in Chromium at the
+          // caps: redrawing on every wheel or drag event cost 70-115 ms tasks per event; moving
+          // the bitmap costs none. The real redraw comes once the view has been still 120 ms,
+          // and the read for the new view after 180 ms, as before.
+          if (drawnAt && drawnSz && data) {
+            const k = drawnAt.w / cur.w;
+            const tx = (drawnAt.x - cur.x) / cur.w * drawnSz.w, ty = (drawnAt.y - cur.y) / cur.h * drawnSz.h;
+            cv.style.transform = `translate(${tx}px, ${ty}px) scale(${k})`;
+            // Far past the drawn scale the moved picture says nothing true (a cluster blown up
+            // eightfold): it is hidden until the redraw rather than stretched.
+            cv.style.visibility = k > 8 || k < 0.125 ? "hidden" : "";
+          } else if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); });
+          clearTimeout(settle); settle = setTimeout(draw, 120);
           clearTimeout(timer); timer = setTimeout(fetchView, 180);
         },
       };
@@ -1761,6 +1874,36 @@
       const el = host.querySelector("[data-oomap-osmlane]"); if (!el || !d) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const c = d.caps || {};
+      const timing = _mapTf("Read in {read} ms, drawn in {draw} ms on this machine.", { read: fmtNum(readMs, 0), draw: fmtNum(drawMs, 0) });
+      if (d.layer === "streets" && d.status !== "no-lane" && d.status !== "not-indexed") {
+        // The street view. Its vintage is what the roads are AS OF: the extract's date and the
+        // last daily diff applied, per country in sight, never a claim that they are up to date.
+        const names = (ks) => {
+          const l = ks.map((k) => t((_OO_OSM_STREET_STYLE[(d.classes || []).indexOf(k)] || [k])[0]));
+          try { return new Intl.ListFormat((window.OOI18N && OOI18N.current && OOI18N.current()) || "en", { type: "conjunction" }).format(l); }
+          catch (e) { return l.join(", "); }
+        };
+        let sline;
+        if (d.status === "no-roads") sline = t("No roads ingested for this area.");
+        else if (d.status === "too-many") {
+          const fb = d.fallback || {};
+          sline = fb.status === "clusters" ? t("Too many roads for one view, even of the most important class: drawn as clusters.")
+            : _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(fb.total || 0, 0) });
+        }
+        else {
+          sline = _mapTf("OpenStreetMap streets in view: {n}. Drawn: {d}.", { n: fmtNum(d.total, 0), d: fmtNum(d.drawn, 0) });
+          if (d.dropped && d.dropped.length) sline += " " + _mapTf("Left out to stay within the caps: {classes}.", { classes: names(d.dropped) });
+          // Counted and not drawn, so "Drawn" is what is on the canvas and the rest is accounted for.
+          if (d.subpixel) sline += " " + _mapTf("Too small to see at this zoom: {n}.", { n: fmtNum(d.subpixel, 0) });
+          if (d.no_shape) sline += " " + _mapTf("With no stored shape: {n}.", { n: fmtNum(d.no_shape, 0) });
+        }
+        const day = (iso) => (iso ? ooIsoDate(iso) : t("not stated in the extract"));
+        const vint = (d.vintage || []).map((v) => _mapTf("Extract date {a}: {d}.", { a: v.alpha3, d: day(v.extract_date) }) + " "
+          + (v.last_diff ? _mapTf("Last applied diff {a}: {d}.", { a: v.alpha3, d: day(v.last_diff) }) : t("No daily diff applied since the extract."))).join(" ");
+        el.textContent = sline + (vint ? " " + vint : "");
+        el.title = `${_mapTf(c.streets_method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0) })} ${timing}`;
+        return;
+      }
       let line;
       if (d.status === "no-lane" || d.status === "not-indexed") line = t("OpenStreetMap: no country's map data is ready here yet.");
       else if (d.status === "clusters") line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.", { n: fmtNum(d.total, 0), c: fmtNum(d.clusters.length, 0) });
@@ -1769,7 +1912,7 @@
       el.textContent = line;
       el.title = `${_mapTf(c.method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0), grid: c.cluster_grid })} `
         + (d.status === "clusters" && c.cluster_edge ? `${t(c.cluster_edge)} ` : "")
-        + _mapTf("Read in {read} ms, drawn in {draw} ms on this machine.", { read: fmtNum(readMs, 0), draw: fmtNum(drawMs, 0) });
+        + timing;
     }
 
     // Instance-local viewBox zoom/pan (the Google-Maps "controls inside the map"

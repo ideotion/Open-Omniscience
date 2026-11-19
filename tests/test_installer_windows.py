@@ -229,8 +229,8 @@ def test_extras_fallback_is_the_set_windows_ci_actually_installs(ps1: str):
     """The fallback may only claim an extra the Windows lane proves every run."""
     assert "$ProvenExtras = 'analysis'" in ps1
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    portability = ci.split("portability:", 1)[1].split("sqlcipher-smoke:", 1)[0]
-    assert "windows-latest" in portability
+    portability = ci.split("portability-windows:", 1)[1].split("sqlcipher-smoke:", 1)[0]
+    assert "runs-on: windows-latest" in portability
     assert 'pip install -e ".[analysis,dev]"' in portability
 
 

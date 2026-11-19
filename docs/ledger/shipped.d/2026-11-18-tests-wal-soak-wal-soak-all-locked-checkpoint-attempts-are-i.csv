@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,tests/wal-soak,"WAL soak: all-locked checkpoint attempts are inconclusive, not red",SHIPPED,PR #2128; row 170,tests/test_wal_starvation_soak.py,"macOS 4-worker run: every checkpoint attempt raised OperationalError (table locked by the mutant cursor) so checkpoint_attempts was 0 and the round read red. Now attempts_began/attempt_errors are recorded; a round whose attempts all ended in the lock refusal is inconclusive (skip, never pass); red stays for no attempt began or any other error. Test-only."

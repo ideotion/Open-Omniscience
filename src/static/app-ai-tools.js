@@ -1117,60 +1117,24 @@
         return;
       }
       const h = _aiHealth;
-      if (h && h.available) {
-        if (_aiBusy()) {
-          el.className = "pill ok ai-busy";
-          // The label is written HERE, at paint time, from the keyed twin the server
-          // sends beside it (the task-manager rows' own label_i18n / label_vars), so a
-          // language switch rewrites it with no request. A model name is data.
-          const busy = !_aiBusyLabel ? ""
-            : (_aiBusyLabel.data != null ? _aiBusyLabel.data
-              : (typeof _jobLabel === "function" ? _jobLabel(_aiBusyLabel, t) : t(_aiBusyLabel.label)));
-          el.title = (busy ? busy + " — " : "") + t("AI is working right now");
-        } else {
-          el.className = "pill ok";
-          el.title = t("AI — click to open AI settings");
-        }
+      if (h && h.available && _aiBusy()) {
+        el.className = "pill ok ai-busy";
+        // The label is written HERE, at paint time, from the keyed twin the server
+        // sends beside it (the task-manager rows' own label_i18n / label_vars), so a
+        // language switch rewrites it with no request. A model name is data.
+        const busy = !_aiBusyLabel ? ""
+          : (_aiBusyLabel.data != null ? _aiBusyLabel.data
+            : (typeof _jobLabel === "function" ? _jobLabel(_aiBusyLabel, t) : t(_aiBusyLabel.label)));
+        el.title = (busy ? busy + " — " : "") + t("AI is working right now");
         return;
       }
-      if (h && h.hardware_practical === false) {
-        // HARDWARE SUITABILITY (2026-07-30): a state distinct from "offline".
-        // Starting a backend would not fix this machine, so the pill must NOT
-        // invite that — it points at the disclosure + the override instead.
-        // `=== false` on purpose: `null` means the probe could not decide, which
-        // must fall through to the ordinary offline copy rather than assert a
-        // hardware verdict nothing measured.
-        el.className = "pill warn ai-off";
-        el.title = (h.hardware_reason ? h.hardware_reason + " — " : "")
-          + t("AI features are off by default on this hardware — open AI settings to override");
-        return;
-      }
-      el.className = "pill warn ai-off";
-      if (!h) {
-        // The health probe itself failed, so a backend is certainly not serving:
-        // showing the neutral pill here would read as "fine" on no evidence.
-        el.title = t("AI — click to open AI settings");
-        return;
-      }
-      // V4 (2026-07-29): the red pill must name the REAL situation. `no_backend`
-      // means NOTHING is reachable (not merely that the selected backend is down),
-      // so it leads with that fact instead of a generic "offline".
-      //
-      // In the UI language (2026-09-27 re-walk T-7). The lead used to be the server's
-      // own resolution sentence, `backend_reason`, which is English composed at run
-      // time ("no GPU detected (or vLLM unavailable), and Ollama is NOT reachable
-      // either -- …"), so a French, Arabic or Chinese hover opened in English. What
-      // `no_backend` asserts is fixed -- the server sets it exactly when neither Ollama
-      // nor vLLM answers (src/llm/backend.py _result) -- so that fact is one keyed
-      // sentence here. The server's full reason, with which hardware and which backend
-      // it chose, stays one click away: the pill opens Settings -> AI, whose "Active
-      // backend" line prints it. `h.detail` below is still the client's English
-      // exception text; it has no keyed twin on the server yet.
-      const why = h.no_backend
-        ? t("No AI backend is reachable right now — neither Ollama nor vLLM answers.")
-        : (h.detail || "");
-      el.title = (why ? why + " — " : "")
-        + t("AI is offline — click to start it, or open AI settings to install one");
+      // Everything the health answer alone decides (ready, unsuitable hardware, probe
+      // failed, offline with its reason) comes from ONE function in ai-pill.js, which the
+      // task manager's pill calls too (row 164): the two pages cannot drift apart again.
+      // The reasoning for each state is written there, beside the code.
+      const s = window.ooAiPillState(h, t);
+      el.className = s.cls;
+      el.title = s.title;
     }
 
     // Work the SERVER is doing (background sweeps, a batch holding the model) has to
