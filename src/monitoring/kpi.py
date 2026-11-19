@@ -119,9 +119,11 @@ _SPECS: tuple[dict, ...] = (
     # recorded values, S08-02 S2), so a recorded vertical reads measured-no-bar, never green on an unruled freshness.
     {"id": "K13", "name": "Vertical coverage", "direction": "exact",
      "target": "pending-ruling-V1-6 (per vertical: first slice ingested + freshness; bars by S08-02 S2)",
-     "source_endpoint": "/api/climate/fetch · /api/diagnostics/elections-floor",
-     "nm": "no vertical has a first measurement on this machine yet (no climate fetch recorded, no Wikidata election "
-           "snapshot on disk); nothing is fetched or scanned on this GET"},
+     "source_endpoint": ("/api/climate/fetch · /api/diagnostics/elections-floor · /api/diagnostics/law-coverage · "
+                         "diagnostics bundle (osm-change-files.json)"),
+     "nm": "no vertical or lane has a first measurement on this machine yet (no climate fetch recorded, no Wikidata "
+           "election snapshot on disk, no law coverage report or OSM change-file read recorded); nothing is fetched or "
+           "scanned on this GET"},
     {"id": "K14", "name": "Development health (suite · mypy ratchet · open P0s)",
      "direction": "exact", "target": "suite green · mypy ≤ baseline · open data-loss P0s = 0",
      "source_endpoint": "CI",
@@ -921,11 +923,104 @@ def _law_block() -> dict:
     return block
 
 
+# --------------------------------------------------------------------------- K13, the OSM lane (row 184, R751(a))
+# The OSM change-file member reads the lane store on demand when a diagnostics bundle is built; it writes its counts here as it
+# reads them. Never a country code: which countries an operator follows is theirs, so only how many.
+_OSM_FILE, _OSM_SCHEMA = "lane-osm.json", "oo-lane-osm-1"
+
+
+def record_osm_lane(rows: list | None) -> dict | None:
+    """Write down what the OSM change-file member counted (K13's OSM block). ``rows`` is the member's per-country rows, or
+    ``None`` when no OSM lane exists on this install. Counts and the newest applied time only; nothing is divided."""
+    if rows is None:
+        return _write_record(_OSM_FILE, _OSM_SCHEMA, {"lane": "absent", "countries": 0})
+    if not isinstance(rows, list):
+        return None
+    rs = [r for r in rows if isinstance(r, dict)]
+
+    def _known(key: str) -> tuple[int | None, int]:
+        # (sum over the countries whose table answered, the countries whose table did not). When none answered, the sum is
+        # unknown (None), never 0: an old lane that cannot say is not a lane with no change file.
+        vals = [_int_or_none(r.get(key)) for r in rs]
+        known = [v for v in vals if v is not None]
+        return (sum(known) if known or not rs else None), len(vals) - len(known)
+
+    diffs, diffs_unknown = _known("diffs_recorded")
+    gaps, gaps_unknown = _known("gaps_total")
+    statuses: dict = {}
+    for r in rs:
+        st = r.get("status") if isinstance(r.get("status"), str) else "unknown"
+        statuses[st] = statuses.get(st, 0) + 1
+    applied = [(age, a) for r in rs if isinstance(a := r.get("last_applied_at"), str) and (age := _age_days(a)) is not None]
+    return _write_record(_OSM_FILE, _OSM_SCHEMA, {
+        "lane": "present",
+        "countries": len(rs),
+        "countries_by_status": dict(sorted(statuses.items())),
+        "countries_with_change_files": sum(1 for r in rs if (_int_or_none(r.get("diffs_recorded")) or 0) > 0),
+        "change_files_recorded": diffs,
+        "countries_change_files_unknown": diffs_unknown,
+        "gaps_total": gaps,
+        "countries_gaps_unknown": gaps_unknown,
+        "newest_change_file_applied_at": min(applied, key=lambda p: p[0])[1] if applied else None,
+    })
+
+
+def read_osm_lane() -> dict | None:
+    return _read_record(_OSM_FILE, _OSM_SCHEMA)
+
+
+def _osm_method(rec: dict, complete_n: int) -> str:
+    def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
+        v = _int_or_none(rec.get(key))
+        return str(v) if v is not None else "an unknown number of"
+
+    unknown = []
+    for key, what in (("countries_change_files_unknown", "change files"), ("countries_gaps_unknown", "gaps")):
+        k = _int_or_none(rec.get(key))
+        if k:
+            unknown.append(f"{k} countries' lane predates the table of {what}, so their {what} are unknown, never 0")
+    return (f"the OSM change-file member's own counts, from its last read of the lane store: {n('countries')} countries "
+            f"listed, {complete_n} of them cut to completion; {n('change_files_recorded')} daily change files recorded over "
+            f"{n('countries_with_change_files')} countries, {n('gaps_total')} gaps"
+            + (f" ({'; '.join(unknown)})" if unknown else "")
+            + ". A first slice is one country cut to completion. No country is named; nothing is divided.")
+
+
+def _osm_block() -> dict:
+    rec = read_osm_lane()
+    if rec is None:
+        return {"vertical": "osm", "kind": "lane", "state": "not-measured", "first_slice": False,
+                "reason": "no OpenStreetMap change-file record has been read on this machine (take an all-diagnostics bundle)"}
+    if rec.get("lane") == "absent":
+        return {"vertical": "osm", "kind": "lane", "state": "recorded", "first_slice": False, "as_of": rec.get("measured_at"),
+                "lane": "absent", "countries": 0,
+                "method": "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.",
+                "reason": "no OpenStreetMap country has been cut on this install"}
+    raw_status = rec.get("countries_by_status")
+    by_status: dict = raw_status if isinstance(raw_status, dict) else {}
+    complete_n: int = _int_or_none(by_status.get("complete")) or 0
+    countries = rec.get("countries")
+    block = {
+        "vertical": "osm", "kind": "lane", "state": "recorded", "first_slice": complete_n > 0,
+        "as_of": rec.get("measured_at"), "lane": "present",
+        "countries": countries, "countries_by_status": by_status,
+        "countries_with_change_files": rec.get("countries_with_change_files"),
+        "change_files_recorded": rec.get("change_files_recorded"),
+        "countries_change_files_unknown": rec.get("countries_change_files_unknown"),
+        "gaps_total": rec.get("gaps_total"), "countries_gaps_unknown": rec.get("countries_gaps_unknown"),
+        "newest_change_file_applied_at": rec.get("newest_change_file_applied_at"),
+        "method": _osm_method(rec, complete_n),
+    }
+    if not block["first_slice"]:
+        block["reason"] = "no OpenStreetMap country has been cut to completion"
+    return block
+
+
 def _k13_verticals(spec: dict) -> dict:
     """K13: one block per vertical and per lane (R751(a)), read from what each recorded. The value is a COUNT (blocks whose
     first slice is in), with n = the blocks listed; never a share, never a blend of their figures."""
     blocks = []
-    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block)):
+    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block), ("osm", _osm_block)):
         try:
             blocks.append(build())
         except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others

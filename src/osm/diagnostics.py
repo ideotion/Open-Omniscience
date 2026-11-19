@@ -198,6 +198,20 @@ def _cut_to_fit(out: dict[str, Any], budget: int) -> bool:
         est -= lost
 
 
+def _record_k13(rows: list[dict[str, Any]] | None) -> None:
+    """Hand K13's OSM block (row 184, R751(a)) the lane's counts, from the rows this member just read, before any cut to fit.
+
+    Counts and one time only: no country code leaves here, since which countries an operator follows is theirs. ``None`` is the
+    absent lane. Best-effort: a failed record never touches the member.
+    """
+    try:
+        from src.monitoring.kpi import record_osm_lane
+
+        record_osm_lane(rows)
+    except Exception:  # noqa: BLE001 - a side record never breaks a bundle member
+        pass
+
+
 def _build() -> dict[str, Any]:
     from src.osm.lane_models import OsmCountry
     from src.versioned import store
@@ -217,10 +231,12 @@ def _build() -> dict[str, Any]:
     if not store.lane_exists("osm"):
         out["lane"] = "absent"
         out["reason"] = "no OpenStreetMap country has been cut on this install"
+        _record_k13(None)
         return out
     with store.lane_session("osm") as s:
         have = _tables(s)
         rows = [_country(s, c, have) for c in s.query(OsmCountry).order_by(OsmCountry.alpha3)]
+    _record_k13(rows)
     # A country no change file or gap has touched has nothing to report beyond its position, so it is listed by code and the rows are
     # the countries the daily files have actually done something to, newest first (a gap's time counts as much as a file's).
     # A table the lane lacks (``None``) leaves the question unanswered, so that country stays listed with its position rather than being
