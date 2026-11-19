@@ -49,13 +49,14 @@ def _record_for_k13(result: dict) -> None:
 
         with store.lane_session(M.LANE) as s:
             held = M.summary(s)
-        failed = result.get("failed") or {}
         record_medical_fetch({
             "fetched_at": datetime.now(UTC).isoformat(),
             "listed": result.get("listed"),
             "remaining": result.get("remaining"),
             "applied": len(result.get("applied") or []),
-            "failed": failed.get("error"),
+            # Whether the run stopped at a failure, never its text: the failure carries scrubbed
+            # exception words, and nothing derived from them belongs in a plaintext record.
+            "failed": result.get("failed") is not None,
             "stopped": bool(result.get("stopped")),
             "coverage": result.get("coverage") or {},
             "papers": held["papers"],

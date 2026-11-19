@@ -61,7 +61,7 @@ def _fetch(dataset: str = "oni", *, figures: int = 120, new: int = 120, revised:
 
 
 def _medical(**over) -> dict:
-    rec = {"fetched_at": "2026-11-18T10:00:00+00:00", "listed": 40, "remaining": 33, "applied": 7, "failed": None,
+    rec = {"fetched_at": "2026-11-18T10:00:00+00:00", "listed": 40, "remaining": 33, "applied": 7, "failed": False,
            "stopped": False, "papers": 3, "by_class": {"journal": 2, "preprint": 0, "retracted": 1},
            "coverage": {"cited": 10, "cited_found": 3, "cited_not_found": 7, "named": 0, "named_found": 0,
                         "named_not_found": 0},
@@ -738,5 +738,7 @@ def test_the_medical_record_never_holds_a_paper_id(isolated):
 def test_a_medical_fetch_that_applied_nothing_or_failed_says_so(isolated):
     K.record_medical_fetch(_medical(applied=0, last_file=None))
     assert _block(_k13(), "medical")["outcome"] == "fetched, no new update file applied"
-    K.record_medical_fetch(_medical(applied=0, failed="FileRefused"))
-    assert "FileRefused" in _block(_k13(), "medical")["outcome"]
+    K.record_medical_fetch(_medical(applied=0, failed=True))
+    assert _block(_k13(), "medical")["outcome"].startswith("fetched, stopped at a file that failed")
+    K.record_medical_fetch(_medical(applied=0, failed="FileRefused: some exception text"))
+    assert "exception text" not in (isolated / "vertical-medical.json").read_text(encoding="utf-8")

@@ -766,7 +766,8 @@ def record_medical_fetch(record: dict) -> dict | None:
 
     COUNTS ONLY, and NLM's own public file name: which papers the corpus cites is the user's, and this file is plaintext
     beside the encrypted library, so no PMID, DOI or PMCID is ever written here. ``applied`` 0 is kept as 0 (the run read
-    the listing and applied nothing: nothing was new, or the first file failed), and the failure is named by its class."""
+    the listing and applied nothing: nothing was new, or the first file failed), and a failure is a yes or no: its words
+    are exception text, which the task manager shows and this plaintext record does not keep."""
     if not isinstance(record, dict):
         return None
     raw_cov, raw_class = record.get("coverage"), record.get("by_class")
@@ -779,7 +780,7 @@ def record_medical_fetch(record: dict) -> dict | None:
         "listed": _int_or_none(record.get("listed")),
         "remaining": _int_or_none(record.get("remaining")),
         "applied": _int_or_none(record.get("applied")),
-        "failed": failed[:64] if isinstance(failed, str) else None,
+        "failed": failed is True,
         "stopped": bool(record.get("stopped")),
         "papers": _int_or_none(record.get("papers")),
         "by_class": {k: _int_or_none(by_class.get(k)) for k in ("journal", "preprint", "retracted")},
@@ -800,8 +801,8 @@ def _medical_block() -> dict:
         return {"vertical": "medical", "state": "not-measured", "first_slice": False,
                 "reason": "no PubMed fetch has been recorded on this machine (Advanced, Medical papers: Fetch records one)"}
     applied, failed = rec.get("applied"), rec.get("failed")
-    if failed:
-        outcome = f"fetched, stopped at a file that failed ({failed})"
+    if failed is True:
+        outcome = "fetched, stopped at a file that failed (the task manager names it)"
     elif not isinstance(applied, int):
         outcome = "fetched, what it applied was not recorded"
     elif applied == 0:
