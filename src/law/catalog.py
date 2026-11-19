@@ -445,6 +445,33 @@ def _previous_urls(d: dict) -> list[str]:
     return [u.strip() for u in raw if isinstance(u, str) and u.strip()]
 
 
+def format_move_targets(catalog: dict | None) -> dict[tuple[str, str], str]:
+    """``(jurisdiction, previous_url) -> current_url`` for every row that names where it moved from (R753). Pure.
+
+    The tracker asks this for a document still polled at an old address: the catalogue row
+    that lists that address under ``previous_urls`` is where the document moves to, under
+    R753's rule. An old address claimed by TWO rows maps nowhere, because which act it was
+    is not something this table can decide, and a move is never made on a guess.
+    """
+    out: dict[tuple[str, str], str] = {}
+    contested: set[tuple[str, str]] = set()
+    for d in (catalog or {}).get("documents") or ():
+        url = d.get("url")
+        if not isinstance(url, str) or not url.strip():
+            continue
+        juris = law_jurisdiction(d.get("jurisdiction"))
+        for old in _previous_urls(dict(d)):
+            key = (juris, old)
+            if old == url or key in contested:
+                continue
+            if key in out and out[key] != url:
+                contested.add(key)
+                del out[key]
+                continue
+            out[key] = url
+    return out
+
+
 def register_documents(
     session: Session, path: Path | None = None, generated_path: Path | None = None
 ) -> dict[str, int]:

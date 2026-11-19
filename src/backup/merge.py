@@ -2498,6 +2498,8 @@ _MERGE_HANDLED = {
     "source_articles", "article_links", "article_source_relationships",
     "article_analyses", "article_mentioned_dates", "wiki_pages", "wiki_revisions",
     "law_documents", "law_revisions", "commodity_prices", "market_extraction_rules",
+    # 2026-11-19, R753: a law document's move from one published format to another.
+    "law_format_changes",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
     "source_qualification_attempts", "host_mismatch_confirmed",
     # 2026-11-17, row 121 (G4): a person's keep / set-aside decision on a suggested IPCC prediction.
@@ -5654,6 +5656,22 @@ def _key_law_documents(con, side: str, schema: str) -> None:
             [(i, j, law_jurisdiction_key(j), u) for i, j, u in rows],
         )
     con.execute(f"CREATE INDEX temp.{table}_key_url ON {table} (key, url)")  # noqa: S608  # nosec B608 # as above
+    # R753: every address a document has been tracked at. A document that moved format (its HTML
+    # page to its own XML) keeps its old address in `law_format_changes.from_url`, and a backup
+    # taken on either side of the move must find it there, or a restore would bring the other
+    # address back as a second copy of the same act.
+    alias = f"law_alias_{side}"
+    con.execute(f"DROP TABLE IF EXISTS temp.{alias}")  # noqa: S608  # `side` is a module literal
+    con.execute(f"CREATE TEMP TABLE {alias} (id INTEGER NOT NULL, key TEXT, url TEXT)")  # noqa: S608  # as above
+    con.execute(f"INSERT INTO temp.{alias} (id, key, url) SELECT id, key, url FROM temp.{table}")  # noqa: S608  # nosec B608 # as above
+    if con.execute(
+        f"SELECT 1 FROM {schema}.sqlite_master WHERE type = 'table' AND name = 'law_format_changes'"  # noqa: S608  # nosec B608 # as above
+    ).fetchone():
+        con.execute(
+            f"INSERT INTO temp.{alias} (id, key, url) SELECT f.document_id, k.key, f.from_url"  # noqa: S608  # nosec B608 # as above
+            f" FROM {schema}.law_format_changes f JOIN temp.{table} k ON k.id = f.document_id"
+        )
+    con.execute(f"CREATE INDEX temp.{alias}_key_url ON {alias} (key, url)")  # noqa: S608  # nosec B608 # as above
     if side == "inc":
         # A SIBLING: a staged document whose identity another staged document shares (the backup itself holds one document under two
         # spellings). Such rows are matched as they always were, by the exact spelling, so that two staged rows are never mapped onto one
@@ -5668,16 +5686,40 @@ def _key_law_documents(con, side: str, schema: str) -> None:
 #: "The working copy already holds staged law document ``i``" (``ki`` is its row in ``temp.law_key_inc``): by the KEY of its jurisdiction, so an
 #: old backup's ``gbr`` finds a pasted ``uk``; and, for a staged document that shares its identity with another staged one (a backup that
 #: holds one document under two spellings), by the exact spelling, as it always was.
+#: R753: a staged document is ALSO held when one of its addresses (its url, or an address it moved from) meets one of a working-copy
+#: document's addresses, and no other staged document claims that working-copy document the same way. Two claimants map nowhere by
+#: this route (each falls back to the exact match above, or is inserted), because two documents' children must never meet on one row.
+_LAW_MOVED_UNIQUE = (
+    "EXISTS (SELECT 1 FROM temp.law_alias_pair p WHERE p.inc_id = i.id"
+    " AND NOT EXISTS (SELECT 1 FROM temp.law_alias_pair q WHERE q.main_id = p.main_id AND q.inc_id <> p.inc_id))"
+)
 _LAW_HELD = (
-    "((ki.sib = 0 AND EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url))"
+    "((ki.sib = 0 AND (EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url) OR " + _LAW_MOVED_UNIQUE + "))"
     " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)))"
 )
+
+
+def _pair_law_addresses(con) -> None:
+    """``temp.law_alias_pair(inc_id, main_id)``: a staged document and a working-copy document that share an address (R753).
+
+    Built from the two ``temp.law_alias_<side>`` tables :func:`_key_law_documents` leaves behind; sibling staged documents (see
+    there) are left out, because they are matched by their exact spelling only."""
+    con.execute("DROP TABLE IF EXISTS temp.law_alias_pair")
+    con.execute("CREATE TEMP TABLE law_alias_pair (inc_id INTEGER NOT NULL, main_id INTEGER NOT NULL)")
+    con.execute(
+        "INSERT INTO temp.law_alias_pair (inc_id, main_id) SELECT DISTINCT ai.id, am.id"
+        " FROM temp.law_alias_inc ai JOIN temp.law_alias_main am ON am.key = ai.key AND am.url = ai.url"
+        " JOIN temp.law_key_inc ki ON ki.id = ai.id WHERE ki.sib = 0"
+    )
+    con.execute("CREATE INDEX temp.law_alias_pair_inc ON law_alias_pair (inc_id)")
+    con.execute("CREATE INDEX temp.law_alias_pair_main ON law_alias_pair (main_id)")
 
 
 def _merge_law(con, batch_id, results) -> None:
     r = DomainResult()
     _key_law_documents(con, "main", "main")
     _key_law_documents(con, "inc", "inc")
+    _pair_law_addresses(con)
     r.duplicate = _count(
         con,
         "SELECT COUNT(*) FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id WHERE " + _LAW_HELD,  # nosec B608 # _LAW_HELD is a module constant (a WHERE fragment of this file's own table names); no request, user or file value reaches the statement
@@ -5721,13 +5763,18 @@ def _merge_law(con, batch_id, results) -> None:
     # Written as the exact spelling's lowest id, else the key's lowest id, and NOT as ``ORDER BY <exact> DESC, id LIMIT 1``: SQLite 3.45.1
     # (Ubuntu 24.04, what CI runs) answers "no such column" for an outer column named in a subquery's ORDER BY, and 3.53 accepts it.
     _key_law_documents(con, "main", "main")
+    _pair_law_addresses(con)
+    # The third choice is R753's: a document met through an address it (or the working copy's document) moved from, claimed by no
+    # other staged document -- the same test ``_LAW_HELD`` used, so a document counted as held always has a home here.
     _build_map(
         con, "map_law",
         "SELECT id, home FROM ("
         " SELECT i.id AS id, COALESCE("
         "  (SELECT MIN(km.id) FROM temp.law_key_main km"
         "   WHERE km.key = ki.key AND km.url = i.url AND km.jurisdiction = i.jurisdiction),"
-        "  (SELECT MIN(km.id) FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url)) AS home"
+        "  (SELECT MIN(km.id) FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url),"
+        "  CASE WHEN ki.sib = 0 THEN (SELECT MIN(p.main_id) FROM temp.law_alias_pair p WHERE p.inc_id = i.id"
+        "   AND NOT EXISTS (SELECT 1 FROM temp.law_alias_pair q WHERE q.main_id = p.main_id AND q.inc_id <> p.inc_id)) END) AS home"
         " FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id) WHERE home IS NOT NULL",
     )
     rev = DomainResult()
@@ -5834,6 +5881,54 @@ def _merge_law(con, batch_id, results) -> None:
     )
     summ.duplicate = max(0, summ.duplicate - summ.conflict)
     results["law_revision_summaries"] = summ
+    if _inc_has_table(con, "law_format_changes"):
+        results["law_format_changes"] = _merge_law_format_changes(con, batch_id)
+
+
+def _merge_law_format_changes(con, batch_id) -> DomainResult:
+    """R753's history rows: a staged document's move from one published format to another.
+
+    ADDITIVE, AND THE WORKING COPY'S OWN STATE DECIDES. A row is copied only when the document it
+    lands on has made that same move here (its address IS the row's ``to_url``), and only once per
+    (document, from_url, to_url). A row whose document is still at its old address here is
+    REPORTED and not applied: applying it would record a move this copy never made, and the
+    tracker would then read that row as a move made once and undone, and never make it at all.
+    The document moves on its own next poll, under the same rule, and records its own row.
+
+    ``from_latest_text_revid`` is a LOCAL revision id, so it is remapped through
+    ``temp.map_law_rev`` and left NULL where the revision is not in this corpus."""
+    fc = DomainResult()
+    same = (
+        "SELECT 1 FROM main.law_format_changes t"
+        " WHERE t.document_id = ml.new AND t.from_url = i.from_url AND t.to_url = i.to_url"
+    )
+    base = (
+        " FROM inc.law_format_changes i JOIN temp.map_law ml ON ml.old = i.document_id"  # nosec B608 # fixed table names
+        " JOIN main.law_documents m ON m.id = ml.new"
+    )
+    fc.duplicate = _count(con, "SELECT COUNT(*)" + base + " WHERE EXISTS (" + same + ")")  # nosec B608 # module literals only
+    conflicts = con.execute(
+        "SELECT m.jurisdiction, i.from_url, i.to_url, m.url" + base  # nosec B608 # module literals only
+        + " WHERE m.url <> i.to_url AND NOT EXISTS (" + same + ") ORDER BY m.id, i.id"
+    ).fetchall()
+    fc.conflict = len(conflicts)
+    for juris, from_url, to_url, here in conflicts[:_SAMPLE_LIMIT]:
+        fc.conflicts.append({
+            "jurisdiction": juris, "from_url": from_url, "to_url": to_url, "address_here": here,
+            "outcome": "not applied: this copy has not made the move; it is made by its own next poll",
+        })
+    fc.new = _insert_tracked(
+        con, batch_id, "law_format_changes",
+        "INSERT INTO main.law_format_changes (document_id, changed_at, from_url, to_url, from_format, to_format,"  # nosec B608 # module literals only
+        " from_hash, to_hash, from_baseline_hash, from_baseline_text, from_latest_text, from_latest_text_revid, reason)"
+        " SELECT ml.new, i.changed_at, i.from_url, i.to_url, i.from_format, i.to_format, i.from_hash, i.to_hash,"
+        " i.from_baseline_hash, i.from_baseline_text, i.from_latest_text,"
+        " (SELECT mr.new FROM temp.map_law_rev mr WHERE mr.old = i.from_latest_text_revid), i.reason"
+        + base + " WHERE m.url = i.to_url AND NOT EXISTS (" + same + ")",
+    )
+    if fc.conflict:
+        fc.note = "a move this copy has not made is reported, never applied (R753)"
+    return fc
 
 
 def _merge_watches(con, batch_id, results) -> None:
