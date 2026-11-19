@@ -550,6 +550,33 @@ def _resume_watchers_retired(request):
     assert not left, f"{request.node.nodeid} left a resume watcher running: {left}"
 
 
+#: The boot janitor's sweep of remembered backup drives (``oo-backup-remembered-sweep``) reads the data folder's
+#: ``backup-temp-dests.json`` and walks local folders: on a test machine it ends in well under a second.
+_REMEMBERED_SWEEP_JOIN_S = 10.0
+
+
+@pytest.fixture(autouse=True)
+def _remembered_sweep_joined(request):
+    """No ``oo-backup-remembered-sweep`` thread outlives the test that started it. An app boot (``cleanup_stale_staging``)
+    starts it on a daemon thread, and one a test left running finished in a LATER test, where it rewrote that test's own
+    ``backup-temp-dests.json`` (row 166 g: a GET looked as if it had written the file). Join it, briefly, and fail the
+    test that left one still running, by name. Looked up in ``sys.modules`` so a test that never imported it pays nothing."""
+    yield
+    import sys
+
+    sb = sys.modules.get("src.backup.stream_backup")
+    if sb is None:
+        return
+    me = threading.current_thread()
+    live = [t for t in _enumerate_threads() if t.name == "oo-backup-remembered-sweep" and t is not me]
+    end = _monotonic() + _REMEMBERED_SWEEP_JOIN_S
+    for t in live:
+        with contextlib.suppress(RuntimeError):  # listed but not yet started
+            t.join(timeout=max(0.0, end - _monotonic()))
+    left = [f"{t.name} (ident {t.ident})" for t in live if t.is_alive()]
+    assert not left, f"{request.node.nodeid} left the remembered-drive sweep running: {left}"
+
+
 @pytest.fixture(autouse=True)
 def _vitals_history_isolated():
     """The vitals history (``src.monitoring.vitals_history``, R119) is a process-global recorder
@@ -1009,11 +1036,30 @@ _HANG_DEADLINE: list[float] = []  # the running test's deadline on the monotonic
 # only. None does today (measured on shard 2 under ``-n 4``); this keeps it so. Every process (the controller and each
 # worker) takes the sha256 of every file under configs/ when its session starts and again when it ends, and a difference
 # fails the run, naming the files. ``OO_TEST_CONFIGS_GUARD_DIR`` points it at another folder (its own test only).
-def _configs_fingerprint() -> dict[str, str]:
-    import hashlib
+# A folder RENAMED away and back (row 180: tests/test_config.py did that, and a neighbour worker's child process failed
+# to import its stopwords in the window) leaves every file as it was, so the files alone cannot see it: the folder's own
+# change time can, since a rename moves it even when the name comes back. Taken on POSIX only: on Windows ``st_ctime`` is
+# the creation time, which a rename keeps.
+def _configs_root():
     from pathlib import Path
 
-    root = Path(os.environ.get("OO_TEST_CONFIGS_GUARD_DIR") or Path(__file__).resolve().parents[1] / "configs")
+    return Path(os.environ.get("OO_TEST_CONFIGS_GUARD_DIR") or Path(__file__).resolve().parents[1] / "configs")
+
+
+def _configs_folder_stamp() -> tuple[int, int] | None:
+    if os.name == "nt":
+        return None
+    try:
+        st = _configs_root().stat()
+    except OSError:
+        return None
+    return (st.st_ino, st.st_ctime_ns)
+
+
+def _configs_fingerprint() -> dict[str, str]:
+    import hashlib
+
+    root = _configs_root()
     found: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
         if "__pycache__" in path.parts or not path.is_file():
@@ -1026,9 +1072,11 @@ def _configs_fingerprint() -> dict[str, str]:
 
 
 _CONFIGS_AT_START: list[dict[str, str]] = []
+_CONFIGS_FOLDER_AT_START: list[tuple[int, int] | None] = []
 
 
 def pytest_sessionstart(session):
+    _CONFIGS_FOLDER_AT_START[:] = [_configs_folder_stamp()]
     _CONFIGS_AT_START[:] = [_configs_fingerprint()]
 
 
@@ -1037,10 +1085,15 @@ def pytest_sessionfinish(session, exitstatus):
     if not _CONFIGS_AT_START:
         return
     start, end = _CONFIGS_AT_START[0], _configs_fingerprint()
-    if start == end:
+    folder_start, folder_end = (_CONFIGS_FOLDER_AT_START or [None])[0], _configs_folder_stamp()
+    if start != end:
+        changed = sorted(name for name in start.keys() | end.keys() if start.get(name) != end.get(name))
+        what = ", ".join(f"{n} ({'added' if n not in start else 'removed' if n not in end else 'changed'})" for n in changed)
+    elif folder_start is not None and folder_end is not None and folder_start != folder_end:
+        # Same files, but the folder itself was renamed (or replaced, or re-permissioned) and put back (row 180).
+        what = "the folder itself was renamed away and back, replaced or re-permissioned (row 180)"
+    else:
         return
-    changed = sorted(name for name in start.keys() | end.keys() if start.get(name) != end.get(name))
-    what = ", ".join(f"{n} ({'added' if n not in start else 'removed' if n not in end else 'changed'})" for n in changed)
     message = f"a test changed the checkout's configs/ during this run (row 167): {what}"
     reporter = session.config.pluginmanager.get_plugin("terminalreporter")
     if reporter is not None:
