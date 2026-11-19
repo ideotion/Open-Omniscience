@@ -729,9 +729,9 @@ def test_a_medical_fetch_is_a_block_with_counts_and_its_newest_file(isolated):
 
 
 def test_the_medical_record_never_holds_a_paper_id(isolated):
-    K.record_medical_fetch(_medical(last_file="10.1000/secret-doi", cited_ids=["12345"], pmid=12345))
+    K.record_medical_fetch(_medical(last_file="10.1000/needle-doi", cited_ids=["12345"], pmid=12345))
     text = (isolated / "vertical-medical.json").read_text(encoding="utf-8")
-    assert "secret" not in text and "12345" not in text
+    assert "needle" not in text and "12345" not in text
     assert _block(_k13(), "medical")["first_slice"] is False  # no NLM file name: nothing applied that it can name
 
 
