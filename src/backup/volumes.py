@@ -328,7 +328,8 @@ def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str])
     allowed = set(leftover_plaintext(out_dir))  # Windows: no folder handles
     for name in [n for n in dict.fromkeys(names) if n in allowed]:
         try:
-            (Path(out_dir) / name).unlink()
+            # os.unlink, the one call both branches make (Path.unlink reaches os through pathlib, past this module's own os).
+            os.unlink(Path(out_dir) / name)
             removed.append(name)
         except FileNotFoundError:
             continue
