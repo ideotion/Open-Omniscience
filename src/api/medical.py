@@ -52,12 +52,14 @@ def _record_for_k13(result: dict) -> None:
 
     try:
         from src.medical import store as M
-        from src.monitoring.kpi import record_medical_fetch
+        from src.monitoring.kpi import _MEDICAL_COUNTS, record_medical_fetch
         from src.versioned import store
 
         with store.lane_session(M.LANE) as s:
             held = M.summary(s)
         newest = held["last_file"]
+        raw_cov = result.get("coverage")
+        cov = raw_cov if isinstance(raw_cov, dict) else {}
         record_medical_fetch({
             "fetched_at": datetime.now(UTC).isoformat(),
             "listed": int(result.get("listed") or 0),
@@ -67,7 +69,8 @@ def _record_for_k13(result: dict) -> None:
             # exception words, and nothing derived from them belongs in a plaintext record.
             "failed": result.get("failed") is not None,
             "stopped": bool(result.get("stopped")),
-            "coverage": {k: int(v) for k, v in (result.get("coverage") or {}).items() if isinstance(v, int)},
+            # Keys from the record's own constant list, never the keys of the dict handed in.
+            "coverage": {k: int(cov[k]) for k in _MEDICAL_COUNTS if isinstance(cov.get(k), int)},
             # Counts and a name rebuilt from NLM's own sequence numbers: nothing read here is copied whole.
             "papers": int(held["papers"]),
             "by_class": {c: int(held["by_class"].get(c, 0)) for c in ("journal", "preprint", "retracted")},

@@ -761,6 +761,11 @@ _MEDICAL_FILE, _MEDICAL_SCHEMA = "vertical-medical.json", "oo-vertical-medical-1
 _MEDICAL_COUNTS = ("cited", "cited_found", "cited_not_found", "named", "named_found", "named_not_found")
 
 
+def _medical_count(v) -> int | None:
+    """A new int equal to a non-negative count, or None: the value written is never the object passed in."""
+    return int(v) if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+
 def record_medical_fetch(record: dict) -> dict | None:
     """Write down the last PubMed fetch (K13). Called by the medical fetch job once it ran, never by the KPI GET.
 
@@ -770,23 +775,28 @@ def record_medical_fetch(record: dict) -> dict | None:
     are exception text, which the task manager shows and this plaintext record does not keep."""
     if not isinstance(record, dict):
         return None
+    # Every value written is an object built HERE (a fresh int, a re-serialised timestamp, a name rebuilt from
+    # NLM's two sequence numbers): nothing the caller handed in is copied through to the plaintext file.
     raw_cov, raw_class = record.get("coverage"), record.get("by_class")
     cov: dict = raw_cov if isinstance(raw_cov, dict) else {}
     by_class: dict = raw_class if isinstance(raw_class, dict) else {}
-    last = record.get("last_file")
-    failed = record.get("failed")
+    try:
+        fetched_at = datetime.fromisoformat(str(record.get("fetched_at"))).isoformat()
+    except (TypeError, ValueError):
+        fetched_at = _now()
+    m = re.fullmatch(r"pubmed([0-9]{2})n([0-9]{4})\.xml(\.gz)?", str(record.get("last_file") or ""))
     fields = {
-        "fetched_at": str(record.get("fetched_at") or _now()),
-        "listed": _int_or_none(record.get("listed")),
-        "remaining": _int_or_none(record.get("remaining")),
-        "applied": _int_or_none(record.get("applied")),
-        "failed": failed is True,
-        "stopped": bool(record.get("stopped")),
-        "papers": _int_or_none(record.get("papers")),
-        "by_class": {k: _int_or_none(by_class.get(k)) for k in ("journal", "preprint", "retracted")},
-        "coverage": {k: _int_or_none(cov.get(k)) for k in _MEDICAL_COUNTS},
+        "fetched_at": fetched_at,
+        "listed": _medical_count(record.get("listed")),
+        "remaining": _medical_count(record.get("remaining")),
+        "applied": _medical_count(record.get("applied")),
+        "failed": record.get("failed") is True,
+        "stopped": record.get("stopped") is True,
+        "papers": _medical_count(record.get("papers")),
+        "by_class": {k: _medical_count(by_class.get(k)) for k in ("journal", "preprint", "retracted")},
+        "coverage": {k: _medical_count(cov.get(k)) for k in _MEDICAL_COUNTS},
         # A name that is not NLM's own pattern is not written: nothing but a public file name belongs here.
-        "last_file": last if isinstance(last, str) and re.fullmatch(r"pubmed[0-9]{2}n[0-9]{4}\.xml(\.gz)?", last) else None,
+        "last_file": f"pubmed{int(m.group(1)):02d}n{int(m.group(2)):04d}.xml.gz" if m else None,
     }
     return _write_record(_MEDICAL_FILE, _MEDICAL_SCHEMA, fields)
 
