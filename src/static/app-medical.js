@@ -16,10 +16,10 @@
     const c = d.coverage || {};
     const k = d.by_class || {};
     const lines = [];
-    lines.push(_tf("Your articles cite {cited} papers: {found} found, {missing} not found yet.",
+    lines.push(_tf("Your articles cite {cited} paper identifiers (PMID, DOI or PMCID): {found} found, {missing} not found yet.",
       {cited: c.cited || 0, found: c.cited_found || 0, missing: c.cited_not_found || 0}));
     if (c.named) {
-      lines.push(_tf("You named {named} papers: {found} found, {missing} not found yet.",
+      lines.push(_tf("You named {named} paper identifiers: {found} found, {missing} not found yet.",
         {named: c.named, found: c.named_found || 0, missing: c.named_not_found || 0}));
     }
     lines.push(_tf("Kept: {papers} records ({journal} journal, {preprint} preprint, {retracted} retracted; {withdrawn} withdrawn).",
@@ -75,14 +75,21 @@
         return;
       }
       const r = job.result || {};
+      if (r.stopped && r.listed == null) {
+        // Stopped during the corpus scan: nothing was asked of NLM and the last counts stand.
+        if (st) st.textContent = t("Stopped before the end, as asked.");
+        return;
+      }
       const applied = (r.applied || []).length;
       let msg = _tf("Applied {applied} files; {remaining} listed files not applied yet.",
         {applied: applied, remaining: r.remaining || 0});
       if (r.failed) {
         msg += " " + (r.failed.error === "airplane_mode"
           ? t("Stopped: airplane mode is on.")
-          : _tf("Stopped at {file}: {error}", {file: r.failed.file, error: r.failed.reason || r.failed.error}));
-      } else if (r.stopped || job.state === "cancelled") {
+          : _tf("{n} files could not be applied and will be tried again; the first, {file}: {error}",
+              {n: r.failed_files || 1, file: r.failed.file, error: r.failed.reason || r.failed.error}));
+      }
+      if (r.stopped || job.state === "cancelled") {
         msg += " " + t("Stopped before the end, as asked.");
       }
       if (st) st.textContent = msg;

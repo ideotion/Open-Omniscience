@@ -25,7 +25,10 @@ THE BOUNDS. Each body is read in chunks under a byte cap (``_bounded_get``), the
 read between chunks so Stop ends a download under way, and the gzip stream is read under its own
 decompressed-size cap, so a compression bomb stops the same way. Each file is checked against
 NLM's ``.md5`` before a single record of it is applied. The timeout bounds each read, not the
-whole transfer: a server that drips bytes keeps the call waiting (named, not hidden).
+whole transfer: a server that drips bytes keeps the call waiting (named, not hidden). Peak memory
+for one file is about twice ``MAX_FILE_BYTES`` (the read buffer and its copy coexist briefly). The
+decompressed cap bounds the bytes parsed, not the size of one record's parse tree: a single record
+of near-cap size served by the host itself would be held whole while it is read (named, not hidden).
 """
 
 from __future__ import annotations
@@ -72,7 +75,7 @@ _MD5 = re.compile(r"\b([0-9a-f]{32})\b")
 # The corpus scan: which outbound links name a paper, and how its id is read from the link.
 _CITE_PMID = re.compile(r"(?:pubmed\.ncbi\.nlm\.nih\.gov/|ncbi\.nlm\.nih\.gov/pubmed/)([1-9][0-9]{0,9})(?![0-9])", re.I)
 _CITE_PMCID = re.compile(r"(?:pmc\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov/pmc)/articles/(PMC[1-9][0-9]{0,9})(?![0-9])", re.I)
-_CITE_DOI = re.compile(r"(?:dx\.)?doi\.org/(10\.[0-9]{4,9}/[^\s?#\"'<>]+)", re.I)
+_CITE_DOI = re.compile(r"(?:^|//|//www\.)(?:dx\.)?doi\.org/(10\.[0-9]{4,9}/[^\s?#\"'<>]+)", re.I)
 _LINK_HINTS = ("%pubmed%", "%/pmc/articles/%", "%pmc.ncbi%", "%doi.org/10.%")
 _SCAN_BATCH = 5000
 
@@ -229,8 +232,10 @@ def run_fetch(
     """One consented click: scan the corpus for cited ids, list the update files, and apply the next ``files`` not yet applied.
 
     The oldest unapplied files go first, so a later file always lands after the one before it. A
-    file that fails is recorded as failed and ends the run (its error class is named, never a URL);
-    the files applied before it stay applied.
+    file that fails is recorded as failed (its error class is named, never a URL) and the run goes on
+    to the next one, so one file that fails the same way every time cannot block every later file;
+    the failed one is tried again on the next click, and ``apply_file`` skips whatever a newer file
+    already overtook. Airplane mode coming on ends the run, named as such.
     """
     from src.database.session import session_scope
     from src.versioned import store
@@ -242,6 +247,11 @@ def run_fetch(
     progress(0, files + 1, "reading the papers your articles cite")
     with session_scope() as db:
         cited = cited_in_corpus(db, stopping=stopping)
+    if stopping():
+        # A scan cut short is partial: it must not replace the last full snapshot, and a stop asked
+        # for before any request means no request is sent.
+        return {"cited_ids": None, "named_ids": None, "listed": None, "remaining": None, "applied": [],
+                "failed": None, "stopped": True, "coverage": None}
     with store.lane_session(M.LANE) as s:
         n_cited = M.replace_cited(s, cited)
         named = M.user_wanted(s)
@@ -256,6 +266,7 @@ def run_fetch(
     todo = [n for n in listed if n not in done][:files]
     applied: list[dict] = []
     failed: dict | None = None
+    failures = 0
     for i, name in enumerate(todo, start=1):
         if stopping():
             break
@@ -263,14 +274,19 @@ def run_fetch(
         try:
             body = _get(http, UPDATE_BASE + name, MAX_FILE_BYTES)
             applied.append(apply_body(name, body, _expected_md5(http, name), wanted))
-        except Exception as exc:  # noqa: BLE001 - recorded on the file's row and named in the result, then the run ends
+        except Exception as exc:  # noqa: BLE001 - recorded on the file's row and named in the result
             if kill_switch_active():
                 # Airplane mode came on mid-run: named as such (#14e), and not charged to the file, which did nothing wrong.
                 failed = {"file": name, "error": "airplane_mode", "reason": NETWORK_REFUSED}
                 break
             _record_failure(name, exc)
-            failed = {"file": name, "error": type(exc).__name__, "reason": str(exc)[:300] if isinstance(exc, FileRefused) else None}
-            break
+            failures += 1
+            if failed is None:
+                failed = {
+                    "file": name,
+                    "error": type(exc).__name__,
+                    "reason": str(exc)[:300] if isinstance(exc, FileRefused) else None,
+                }
     with store.lane_session(M.LANE) as s:
         cov = M.coverage(s)
     return {
@@ -280,6 +296,7 @@ def run_fetch(
         "remaining": max(0, len([n for n in listed if n not in done]) - len(applied)),
         "applied": applied,
         "failed": failed,
-        "stopped": stopping() and failed is None and len(applied) < len(todo),
+        "failed_files": failures,
+        "stopped": stopping() and len(applied) + failures < len(todo),
         "coverage": cov,
     }

@@ -205,16 +205,20 @@ def test_the_oldest_unapplied_file_goes_first_and_a_finished_file_is_not_fetched
     assert F.UPDATE_BASE + "pubmed25n1300.xml.gz" not in site.asked
 
 
-def test_a_checksum_mismatch_applies_nothing_and_ends_the_run(medical, no_corpus):
+def test_a_checksum_mismatch_applies_nothing_and_does_not_block_the_next_file(medical, no_corpus):
     no_corpus["w"] = _wanted(pmid={"90000001"})
-    out = F.run_fetch(2, session=_site(md5_override="0" * 32))
-    assert out["applied"] == []
-    assert out["failed"]["error"] == "FileRefused"
-    assert "checksum" in out["failed"]["reason"]
-    assert _papers() == set()
+    site = _site()
+    good = site.bodies[F.UPDATE_BASE + NAMES[1] + ".md5"]
+    site.bodies[F.UPDATE_BASE + NAMES[0] + ".md5"] = b"MD5 (x) = " + b"0" * 32 + b"\n"
+    out = F.run_fetch(2, session=site)
+    assert out["failed"]["file"] == NAMES[0] and out["failed"]["error"] == "FileRefused"
+    assert "checksum" in out["failed"]["reason"] and out["failed_files"] == 1
+    assert len(out["applied"]) == 1, "one file that always fails cannot block every later file"
+    assert good  # the second file's own checksum is untouched
     with store.lane_session("medical") as s:
-        rows = s.execute(select(MedicalFile.name, MedicalFile.status)).all()
-    assert rows == [("pubmed25n1300.xml.gz", "failed")], "only the first file was tried; the run ended there"
+        rows = dict(s.execute(select(MedicalFile.name, MedicalFile.status)).all())
+    assert rows == {NAMES[0]: "failed", NAMES[1]: "finished"}
+    assert out["remaining"] == 1, "the failed file stays to be tried again"
 
 
 def test_a_body_past_its_cap_is_refused_before_it_is_read_whole(medical, no_corpus, monkeypatch):
@@ -306,3 +310,15 @@ def test_the_panel_states_the_gap_and_the_disclosure_visibly():
     js = (ROOT / "src" / "static" / "app-medical.js").read_text(encoding="utf-8")
     assert "ensureOnline" in js and "consent: true" in js
     assert "{missing} not found yet" in js, "the count of cited papers not found is drawn"
+
+
+def test_a_stop_during_the_corpus_scan_sends_nothing_and_keeps_the_last_snapshot(medical, no_corpus):
+    no_corpus["w"] = _wanted(pmid={"90000001", "12345678"})
+    F.run_fetch(1, session=_site())
+    site = _site()
+    no_corpus["w"] = _wanted(pmid={"1"})
+    out = F.run_fetch(1, session=site, stopping=lambda: True)
+    assert out["stopped"] is True and out["listed"] is None
+    assert site.asked == [], "a stop asked for before any request sends none"
+    with store.lane_session("medical") as s:
+        assert M.coverage(s)["cited"] == 2, "a partial scan never replaces the last full snapshot"

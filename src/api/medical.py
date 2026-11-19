@@ -53,6 +53,7 @@ def medical_status() -> dict:
     from src.versioned import store
 
     if store.lane_path(M.LANE).exists():
+        store.create_lane(M.LANE)  # idempotent: a table a newer version added exists before it is read
         with store.lane_session(M.LANE) as s:
             out = M.summary(s)
             cov = M.coverage(s)
