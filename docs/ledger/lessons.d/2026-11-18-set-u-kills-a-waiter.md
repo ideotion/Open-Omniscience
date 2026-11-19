@@ -1,4 +1,4 @@
-## 2026-11-18 — Shell helpers run under the launcher's set -u: a variable read before anything set it kills the shell and its row (row 172)
+## 2026-11-18 — Shell helpers run under the launcher's set -u: a variable read before anything set it kills the shell and its row (row 172, PR #2132)
 
 **What was found.** The launcher runs with `set -euo pipefail`, and the record helpers inherit it: in the launcher, in the deferred child and in the filter. Row 172's first build added a per-waiter record variable read as `${_OO_LOCK_NOPID% *}` on a waiter's first look at a lock with no pid file. Under `set -u` that read is "unbound variable", and a non-interactive shell EXITS on it. `||` and `if` switch off `-e`, never `-u`. A waiter that met a lock in the instant between its maker's mkdir and its pid create died with its row. The eight-launcher tests lost 1 or 2 of 8 rows in about one run in two under load. The helper tests passed, because they source the helpers into a plain `bash -c` without the launcher's options. Row 100's directory mark has had the same read since it was written, met only on a drive without hard links (the new test fails on main for that case).
 
