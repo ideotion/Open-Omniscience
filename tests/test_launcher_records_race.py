@@ -1562,8 +1562,10 @@ def test_the_claim_falls_back_to_the_o_excl_create_without_links_or_a_writable_t
     if case == "no-links":
         pre = f'ln() {{ echo tried >> "{tmp_path}/ln"; return 1; }}; '
     else:
-        pre = 'printf() { _n=$((${_n:-0} + 1)); [ "$_n" -gt 1 ] || return 1; builtin printf "$@"; }; '
-    r = subprocess.run(["bash", "-c", f'. "{h}"; {pre}_oo_rec_claim "{lock}/pid"; echo "rc=$? me=$BASHPID"; _oo_rec_claim "{lock}/pid"; echo "again=$?"'],
+        # the first write fails, whichever way this bash writes its pid (printf with BASHPID, a forked sh without it: bash 3.2, macOS)
+        pre = ('printf() { _n=$((${_n:-0} + 1)); [ "$_n" -gt 1 ] || return 1; builtin printf "$@"; }; '
+               'sh() { _n=$((${_n:-0} + 1)); [ "$_n" -gt 1 ] || return 1; command sh "$@"; }; ')
+    r = subprocess.run(["bash", "-c", f'. "{h}"; {pre}_oo_rec_claim "{lock}/pid"; echo "rc=$? me=${{BASHPID:-$$}}"; _oo_rec_claim "{lock}/pid"; echo "again=$?"'],
                        env=env, capture_output=True, text=True, timeout=30)
     assert "rc=0" in r.stdout and "again=1" in r.stdout, (r.stdout, r.stderr)
     me = re.search(r"me=(\d+)", r.stdout).group(1)
@@ -1704,7 +1706,7 @@ def test_a_slow_live_holder_that_writes_its_pid_during_the_takers_pause_keeps_it
     nolinks = "" if links else "ln() { return 1; }; "
     hold = _HOLD.format(t=tmp_path, f=f)
     slow = (f'_oo_rec_claim() {{ ( set -C; : > "$1" ) 2>/dev/null || return 1; : > "{tmp_path}/made"; i=0; '
-            f'while [ ! -e "{tmp_path}/go" ] && [ $i -lt 2000 ]; do command sleep 0.01; i=$((i + 1)); done; builtin printf "%s\\n" "$BASHPID" > "$1"; }}; ')
+            f'while [ ! -e "{tmp_path}/go" ] && [ $i -lt 2000 ]; do command sleep 0.01; i=$((i + 1)); done; builtin printf "%s\\n" "${{BASHPID:-$$}}" > "$1"; }}; ')
     pause = (f'sleep() {{ SECONDS=$((SECONDS + 1)); if [ "$1" = 1 ]; then : > "{tmp_path}/go"; i=0; '
              f'while [ ! -s "{lock}/pid" ] && [ $i -lt 2000 ]; do command sleep 0.01; i=$((i + 1)); done; fi; command sleep "$@"; }}; ')
     maker = subprocess.Popen(["bash", "-c", f'. "{h}"; {nolinks}{hold}{slow}OO_REC_LOCK_WAIT_MS=60000; oo_rec_locked "{f}" hold \'{{"pid":4}}\'; echo "rc=$?"'],
