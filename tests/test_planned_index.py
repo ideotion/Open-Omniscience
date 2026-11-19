@@ -69,10 +69,18 @@ def test_it_finds_the_ruling_that_governs_the_next_change_to_a_file(entries):
 
 
 def test_it_finds_an_UNANSWERED_ruling_standing_over_a_code_path(entries):
-    """Q925 is the unanswered law-adapter-order question, and the adapter registry is
-    where an unaware session would answer it for itself."""
-    hits = [e for e in _by_path(entries, "src/law/adapters/registry.py") if e.id == "Q925"]
+    """Q823 reads unanswered on its row, and the attribution module is where an unaware
+    session would answer it for itself. (Q925 was this test's example until its row was
+    corrected on 2026-11-19: it was answered on 2026-09-29.)"""
+    hits = [e for e in _by_path(entries, "src/backup/attribution.py") if e.id == "Q823"]
     assert hits and hits[0].status == "pending-ruling"
+
+
+def test_an_answered_ruling_no_longer_stands_over_its_code_path(entries):
+    """Q925 = a (2026-09-29). The registry it governs now IMPLEMENTS it: an unanswered
+    reading would fail every PR that adds the next adapter in the ruled order."""
+    hits = [e for e in _by_path(entries, "src/law/adapters/registry.py") if e.id == "Q925"]
+    assert hits and all(e.status == "ruled" for e in hits)
 
 
 def test_it_carries_a_briefs_own_MUST_NOT_TOUCH_clause(entries):
@@ -180,10 +188,10 @@ def test_an_unplanned_path_says_so_AND_says_the_absence_is_weak_evidence():
 
 
 def test_strict_FAILS_on_a_code_path_under_an_unanswered_ruling():
-    out = _run("--strict", "src/law/adapters/registry.py")
+    out = _run("--strict", "src/backup/attribution.py")
     assert out.returncode == 2, out.stdout
-    assert "Q925" in out.stdout
-    assert "ACK Q925" in out.stdout, "the failure must say how to proceed deliberately"
+    assert "Q823" in out.stdout
+    assert "ACK Q823" in out.stdout, "the failure must say how to proceed deliberately"
 
 
 def test_strict_PASSES_on_a_ledger_file_every_session_is_required_to_edit():
@@ -225,11 +233,12 @@ def test_the_pending_rule_agrees_with_twelve_KNOWN_TRUTH_rows():
     predicate has to disagree with the ledger out loud."""
     pending = planned_index.pending_ruling_ids()
 
-    for rid in ("Q823", "Q925", "Q1009", "Q1113", "RC02", "RC03"):
+    for rid in ("Q823", "Q1009", "Q1113", "RC02", "RC03"):
         assert rid in pending, f"{rid} is unanswered and must read pending"
     # RC10 read pending until the maintainer answered it in chat on 2026-09-27; its row
     # still records the old blank in words, which must not read as pending again.
-    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28", "RC10", "RC01"):
+    # Q925 likewise: answered 2026-09-29, its row corrected 2026-11-19 (row 186).
+    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28", "RC10", "RC01", "Q925"):
         assert rid not in pending, f"{rid} is answered and must not read pending"
 
 

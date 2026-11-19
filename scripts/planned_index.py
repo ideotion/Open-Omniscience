@@ -179,9 +179,9 @@ def _row_is_pending(cells: list[str]) -> bool:
     the `src/static/index.html` regression was, one table over: an enforcement SITE is not
     a forbidden path.
 
-    The authoritative signals, validated against twelve known-truth rows (six pending:
-    Q823, Q925, Q1009, Q1113, RC02, RC03; not: Q301, Q1101, Q1103, L5, R26, R28, and RC10 and RC01,
-    both answered 2026-09-27):
+    The authoritative signals, validated against known-truth rows (five pending:
+    Q823, Q1009, Q1113, RC02, RC03; not: Q301, Q1101, Q1103, L5, R26, R28, and RC10 and RC01,
+    both answered 2026-09-27, and Q925, answered 2026-09-29 and its row corrected 2026-11-19):
     the SOURCE column says pending («sheet pending», «RC round (blank…)» whose verdict
     opens PENDING), or the verdict itself opens with PENDING / reads «→ PENDING»."""
     source, verdict = cells[3], cells[2]

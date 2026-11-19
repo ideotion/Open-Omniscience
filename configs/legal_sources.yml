@@ -43,8 +43,8 @@ sources:
 - {name: "Légifrance (France)", domain: legifrance.gouv.fr, country: FRA, language: fr, source_type: legal, tags: [law, legislation, gazette, official]}
 - {name: "Gesetze im Internet (Germany)", domain: gesetze-im-internet.de, country: DEU, language: de, source_type: legal,
    tags: [law, legislation, official],
-   structured: {formats: [xml, html], bulk: "per-act XML (recorded from the S04-10 brief's SEARCH-VERIFIED section; not fetched here)", api: "none confirmed", api_key_required: false},
-   verified: {tier: unverified, as_of: "2026-09-18", method: "no adapter in this tree reads this format; the host is egress-blocked from the build sandbox"}}
+   structured: {formats: [gii, xml, html], bulk: "per-act XML as /ACT/xml.zip (ACT = the act's folder, e.g. gg), indexed by /gii-toc.xml (recorded from the S04-10 brief's SEARCH-VERIFIED section; the URL shape agrees with two independent open-source tools that download it; not fetched here)", api: "none confirmed", api_key_required: false},
+   verified: {tier: fixture, as_of: "2026-11-19", method: "the gii adapter in this tree parses tests/fixtures/law/gii/*.xml, byte-for-byte excerpts of the portal's own files for the Grundgesetz and the BDSG as archived by an independent daily mirror on 2026-11-19 (see tests/fixtures/law/PROVENANCE.md); the live host has never answered from this sandbox"}}
 - {name: "Boletín Oficial del Estado (Spain)", domain: boe.es, country: ESP, language: es, source_type: legal, tags: [law, gazette, official]}
 - {name: "Gazzetta Ufficiale (Italy)", domain: gazzettaufficiale.it, country: ITA, language: it, source_type: legal, tags: [law, gazette, official]}
 - {name: "Wetten.overheid.nl (Netherlands)", domain: wetten.overheid.nl, country: NLD, language: nl, source_type: legal, tags: [law, legislation, official]}
@@ -129,10 +129,15 @@ documents:
 - {jurisdiction: EUU, title: "Charter of Fundamental Rights of the EU", category: legislation, consolidated: true, country: EUU, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:12012P/TXT", official_url: "https://eur-lex.europa.eu/eli/treaty/char_2012/oj"}
 # gesetze-im-internet.de: the /<act>/ page is a TABLE OF CONTENTS (per-article
 # links + site chrome) -- tracking it captures navigation, not law (live-test
-# bug 2026-06-10). Track the single-page "Gesamtausgabe" HTML instead; the
-# human-facing official_url stays on the TOC. Wrong doc-id => fails loudly.
-- {jurisdiction: DEU, title: "Grundgesetz (Basic Law) — consolidated", category: legislation, consolidated: true, country: DEU, language: de, url: "https://www.gesetze-im-internet.de/gg/BJNR000010949.html", official_url: "https://www.gesetze-im-internet.de/gg/"}
-- {jurisdiction: DEU, title: "Bundesdatenschutzgesetz (BDSG 2018)", category: legislation, consolidated: true, country: DEU, language: de, url: "https://www.gesetze-im-internet.de/bdsg_2018/BJNR209710017.html", official_url: "https://www.gesetze-im-internet.de/bdsg_2018/"}
+# bug 2026-06-10). Since Q925 = a's second adapter (src/law/adapters/gii.py) the
+# act is tracked from the portal's own XML, /<act>/xml.zip, which has no chrome
+# to strip and carries the provision tree and the signing date. The human-facing
+# official_url stays on the TOC. `previous_urls` names the "Gesamtausgabe" HTML a
+# store registered before: such a store keeps tracking that row and is NOT given
+# a second copy of the same act (moving it onto the XML would record the change
+# of format as an amendment; that migration is its own piece of work).
+- {jurisdiction: DEU, title: "Grundgesetz (Basic Law) — consolidated", category: legislation, consolidated: true, country: DEU, language: de, url: "https://www.gesetze-im-internet.de/gg/xml.zip", official_url: "https://www.gesetze-im-internet.de/gg/", previous_urls: ["https://www.gesetze-im-internet.de/gg/BJNR000010949.html"]}
+- {jurisdiction: DEU, title: "Bundesdatenschutzgesetz (BDSG 2018)", category: legislation, consolidated: true, country: DEU, language: de, url: "https://www.gesetze-im-internet.de/bdsg_2018/xml.zip", official_url: "https://www.gesetze-im-internet.de/bdsg_2018/", previous_urls: ["https://www.gesetze-im-internet.de/bdsg_2018/BJNR209710017.html"]}
 - {jurisdiction: CAN, title: "Canadian Charter of Rights and Freedoms", category: legislation, consolidated: true, country: CAN, language: en, url: "https://laws-lois.justice.gc.ca/eng/const/page-12.html", official_url: "https://laws-lois.justice.gc.ca/eng/const/"}
 - {jurisdiction: CAN, title: "Privacy Act (R.S.C., 1985, c. P-21)", category: legislation, consolidated: true, country: CAN, language: en, url: "https://laws-lois.justice.gc.ca/eng/acts/P-21/", official_url: "https://laws-lois.justice.gc.ca/eng/acts/P-21/"}
 - {jurisdiction: INT, title: "Universal Declaration of Human Rights (UN)", category: legislation, consolidated: true, country: INT, language: en, url: "https://www.un.org/en/about-us/universal-declaration-of-human-rights", official_url: "https://www.un.org/en/about-us/universal-declaration-of-human-rights"}
