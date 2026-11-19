@@ -3737,6 +3737,13 @@ _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 # translation falls back to English (same rule as the UI chrome). The lang code
 # is validated against this pattern so it can never traverse the filesystem.
 _LANG_RE = re.compile(r"^[a-z]{2}$")
+#: The languages a translated draft may be served in: the UI's own locale files, English excepted. The requested code is
+#: looked up here and the path is built from the TABLE's value, never from the request (CodeQL py/path-injection, #2157).
+_DOC_LANGS: dict[str, str] = {
+    p.stem: p.stem
+    for p in sorted((Path(__file__).parent.parent / "static" / "locales").glob("*.json"))
+    if p.stem != "en" and _LANG_RE.fullmatch(p.stem)
+}
 
 
 def _doc_path(meta: dict[str, str], lang: str | None) -> tuple[Path, str]:
@@ -3747,10 +3754,11 @@ def _doc_path(meta: dict[str, str], lang: str | None) -> tuple[Path, str]:
     """
     if meta.get("english_only"):
         return _DOCS_DIR / meta["file"], "en"
-    if lang and lang != "en" and _LANG_RE.fullmatch(lang):
-        candidate = _DOCS_DIR / "i18n" / lang / meta["file"]
+    code = _DOC_LANGS.get(lang or "")
+    if code is not None:
+        candidate = _DOCS_DIR / "i18n" / code / meta["file"]
         if candidate.exists():
-            return candidate, lang
+            return candidate, code
     return _DOCS_DIR / meta["file"], "en"
 
 
