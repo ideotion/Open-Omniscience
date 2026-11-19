@@ -38,6 +38,14 @@ def _fetch_worker(ctx, *, files: int) -> dict:
     return result
 
 
+def _nlm_name(name: str) -> str | None:
+    """NLM's file name, rebuilt from its two sequence numbers, or None for anything that is not one."""
+    from src.medical.store import FILE_NAME
+
+    m = FILE_NAME.fullmatch(name or "")
+    return f"pubmed{int(m.group(1)):02d}n{int(m.group(2)):04d}.xml.gz" if m else None
+
+
 def _record_for_k13(result: dict) -> None:
     """K13's medical block (R751(a)): counts and NLM's public file name, never an id the corpus cites."""
     from datetime import UTC, datetime
@@ -49,19 +57,21 @@ def _record_for_k13(result: dict) -> None:
 
         with store.lane_session(M.LANE) as s:
             held = M.summary(s)
+        newest = held["last_file"]
         record_medical_fetch({
             "fetched_at": datetime.now(UTC).isoformat(),
-            "listed": result.get("listed"),
-            "remaining": result.get("remaining"),
+            "listed": int(result.get("listed") or 0),
+            "remaining": int(result.get("remaining") or 0),
             "applied": len(result.get("applied") or []),
             # Whether the run stopped at a failure, never its text: the failure carries scrubbed
             # exception words, and nothing derived from them belongs in a plaintext record.
             "failed": result.get("failed") is not None,
             "stopped": bool(result.get("stopped")),
-            "coverage": result.get("coverage") or {},
-            "papers": held["papers"],
-            "by_class": held["by_class"],
-            "last_file": (held["last_file"] or {}).get("name"),
+            "coverage": {k: int(v) for k, v in (result.get("coverage") or {}).items() if isinstance(v, int)},
+            # Counts and a name rebuilt from NLM's own sequence numbers: nothing read here is copied whole.
+            "papers": int(held["papers"]),
+            "by_class": {c: int(held["by_class"].get(c, 0)) for c in ("journal", "preprint", "retracted")},
+            "last_file": _nlm_name(newest["name"]) if newest else None,
         })
     except Exception:  # noqa: BLE001 - a diagnostic that cannot be written never fails the fetch it describes
         return
