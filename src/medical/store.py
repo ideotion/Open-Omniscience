@@ -112,8 +112,14 @@ class Wanted:
     doi: set[str] = field(default_factory=set)
     pmcid: set[str] = field(default_factory=set)
 
+    def _set(self, kind: str) -> set[str]:
+        sets = {"pmid": self.pmid, "doi": self.doi, "pmcid": self.pmcid}
+        if kind not in sets:
+            raise ValueError(f"unknown identifier kind {kind!r}")
+        return sets[kind]
+
     def add(self, kind: str, value: str) -> None:
-        getattr(self, kind).add(normalise_id(kind, value))
+        self._set(kind).add(normalise_id(kind, value))
 
     def matches(self, rec: PubmedRecord) -> bool:
         if str(rec.pmid) in self.pmid:
@@ -154,7 +160,7 @@ def remove_wanted(session: Session, kind: str, value: str) -> bool:
 def user_wanted(session: Session) -> Wanted:
     out = Wanted()
     for kind, value in session.execute(select(MedicalWanted.id_kind, MedicalWanted.value)):
-        getattr(out, kind).add(value)
+        out._set(kind).add(value)
     return out
 
 
