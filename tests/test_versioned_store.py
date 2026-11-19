@@ -233,7 +233,7 @@ def test_an_unknown_kind_is_refused_before_any_path_is_built():
 
 
 def test_every_lane_owns_a_distinct_file_beside_the_corpus(tmp_path, monkeypatch):
-    """Q1004's shape: ``corpus.db`` + ``wiki.db`` + ``osm.db`` + ``law.db``, distinct.
+    """Q1004's shape: ``corpus.db`` + ``wiki.db`` + ``osm.db`` + ``law.db`` + ``medical.db`` (S07-01), distinct.
 
     Also asserts none of them IS the corpus file — a lane that resolved to the
     corpus path would put lane tables in ``corpus.db``, which is the exact bloat
@@ -241,7 +241,7 @@ def test_every_lane_owns_a_distinct_file_beside_the_corpus(tmp_path, monkeypatch
     """
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     names = [store.lane_path(spec.kind).name for spec in all_lanes()]
-    assert sorted(names) == ["law.db", "osm.db", "wiki.db"]
+    assert sorted(names) == ["law.db", "medical.db", "osm.db", "wiki.db"]
     assert len(set(names)) == len(names), "two lanes share a file"
     assert "open_omniscience.db" not in names
 

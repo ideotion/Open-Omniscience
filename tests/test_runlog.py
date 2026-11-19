@@ -237,6 +237,11 @@ def test_an_unmeasurable_field_is_omitted_with_a_reason_never_zeroed(monkeypatch
     assert any("kids" in u for u in b["unmeasured"])
 
 
+#: What a child walk returns when it found one worker: (kids, total cpu_s, total rss_mb), the shape of
+#: ``runlog._sample_children``. Returned at once, so a test decides what the walk costs.
+_CHEAP_WALK: tuple[list[dict], float, float] = ([{"pid": 4242, "cpu_s": 1.0, "rss_mb": 10.0, "age_s": 5.0}], 1.0, 10.0)
+
+
 def test_an_expensive_child_walk_backs_off_and_then_COMES_BACK(monkeypatch):
     """THE FIELD BUG. This used to be a one-way latch, and it was tripped by the
     WHOLE beat's cost -- so in a 19 h import a single 25.9 ms beat during `merging`
@@ -245,13 +250,14 @@ def test_an_expensive_child_walk_backs_off_and_then_COMES_BACK(monkeypatch):
     to measure, because a healthy process pool leaves the parent near-idle and
     parent CPU alone cannot tell a working pool from a wedged one."""
     rl = _begin_unsampled(kind="import", label="x")
-    real = runlog._sample_children
     slow = {"on": True}
 
     def _slow(proc, limit=24):
+        # A stand-in walker whose cost the test sets: the real one scans the whole process table, and on a busy
+        # runner that alone can pass the budget (row 174), which would make the "comes back" beat a second backoff.
         if slow["on"]:
             time.sleep((runlog._CHILD_WALK_BUDGET_MS + 10) / 1000.0)
-        return real(proc, limit)
+        return _CHEAP_WALK
 
     monkeypatch.setattr(runlog, "_sample_children", _slow)
 
@@ -280,6 +286,10 @@ def test_the_walk_is_charged_for_ITS_cost_not_the_whole_beats(monkeypatch):
     measurement that answers "stuck or slow?" for a reason unrelated to it -- which
     is exactly how the field run lost it during `merging`."""
     rl = _begin_unsampled(kind="import", label="x")
+    # The walk itself is a stand-in that costs nothing: what is under test is WHICH cost the budget is charged with.
+    # The real walk scans the whole process table, and on a busy macOS runner that alone passed 25 ms (row 174,
+    # run 44432919479), so the test read the walk's own cost as the slow probe's.
+    monkeypatch.setattr(runlog, "_sample_children", lambda proc, limit=24: _CHEAP_WALK)
 
     import psutil as _ps
 

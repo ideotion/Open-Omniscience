@@ -48,7 +48,14 @@ from src.versioned.models import (
 #: replication sequence, the last change file applied (sequence and time), and the border's rings (without which a change cannot be placed).
 #: Four columns on a 17-column table of one row per country (the ceiling moves by two because the table was not the widest before it);
 #: a separate position table would let the position and the objects disagree.
-COLUMN_CEILING = 21
+#:
+#: RAISED 21 -> 26 by 0.7 row A, medical half (row 173, R745/R746, 2026-11-19): ``medical_papers`` keeps one
+#: PubMed record version per row. Its columns are the record's own fields (title, vernacular title, abstract,
+#: its copyright line, journal, date and the date as printed, four lists, DOI, PMCID), the provenance class and
+#: notice kind with the links that justify them, the truncation mark, and the bookkeeping that keeps an older
+#: update file from overwriting a newer statement (source file, first and last seen, withdrawal time and file).
+#: Splitting it would put a record and the withdrawal that applies to it in two tables that could disagree.
+COLUMN_CEILING = 26
 
 #: ``osm_objects`` is the ONE lane table whose width is a RULING rather than a shape: Q810 = a
 #: asks for curated tag columns and its note asks for the list to be EXTENDED to shrink the
@@ -69,6 +76,7 @@ def _lane_tables():
     # alone. Importing them here makes every check below cover every lane table, whatever
     # ran first (found 2026-09-28, when the widest table became a wiki one).
     import src.law.lane_models  # noqa: F401
+    import src.medical.lane_models  # noqa: F401
     import src.osm.lane_models  # noqa: F401
     import src.wiki.lane_models  # noqa: F401
 

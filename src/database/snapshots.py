@@ -253,6 +253,7 @@ _GAUGE_METRICS: dict[str, Callable[[Session], int | None]] = {
     "lane_mib_wiki": _gauge_lane_mib("wiki"),
     "lane_mib_law": _gauge_lane_mib("law"),
     "lane_mib_osm": _gauge_lane_mib("osm"),
+    "lane_mib_medical": _gauge_lane_mib("medical"),
 }
 
 ALL_METRICS = tuple(_SNAPSHOT_TABLES) + tuple(_FILTERED_METRICS) + ("articles_per_hour",)
