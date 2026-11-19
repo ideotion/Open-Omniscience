@@ -1346,11 +1346,11 @@ def test_a_lock_whose_maker_was_killed_before_its_pid_file_is_taken_over_after_a
     out = run("", 300)
     assert "rc=99" in out and lock.is_dir(), ("a lock seen with no pid for less than a minute of the waiter's clock is waited for, however old", out)
     os.utime(lock)  # young again
-    out = run(_MINUTE_LOOKS, 2000)
+    out = run(_MINUTE_LOOKS, 800)  # 81 looks: past the minute, and no more forks than that proves
     assert "rc=99" in out and lock.is_dir(), ("a minute of the waiter's clock is not enough while the directory's mtime is young", out)
     (lock / "pid").write_text("", encoding="utf-8")
     _old(lock)
-    out = run(_MINUTE_LOOKS, 2000)
+    out = run(_MINUTE_LOOKS, 800)
     assert "rc=99" in out and lock.is_dir(), ("a lock with a pid file, even an empty one, is never taken over this way", out)
     (lock / "pid").unlink()
     _old(lock)
