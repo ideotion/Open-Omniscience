@@ -321,7 +321,7 @@ def _lane_names() -> list[str]:
 
         return [spec.filename for spec in all_lanes()]
     except Exception:  # noqa: BLE001 - the registry's names as of writing; a whole rewrite is the slow fallback, never a skip
-        return ["wiki.db", "law.db", "osm.db"]
+        return ["wiki.db", "law.db", "osm.db", "medical.db"]
 
 
 def _app_only(scope: dict | None) -> dict | None:

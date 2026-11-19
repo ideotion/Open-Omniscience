@@ -669,9 +669,10 @@ def _corpus_bytes() -> int | None:
     except Exception:  # noqa: BLE001
         return None
     with contextlib.suppress(Exception):
+        from src.versioned.lanes import all_lanes
         from src.versioned.store import lane_file_bytes
 
-        for kind in ("wiki", "law", "osm"):
+        for kind in (spec.kind for spec in all_lanes()):
             b = lane_file_bytes(kind)
             if b:
                 total += int(b)

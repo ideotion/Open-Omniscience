@@ -330,3 +330,82 @@ def test_a_doi_written_in_capitals_in_the_record_still_matches(medical):
     wanted.add("doi", "10.9999/abc.def")
     _apply(xml, wanted)
     assert _papers()[55].doi == "10.9999/abc.def"
+
+
+# --- the store review read's findings (2026-11-19), each pinned ------------------------------
+
+
+def _many(*records: tuple[int, int, str], deletions: tuple[tuple[int, int], ...] = ()) -> bytes:
+    body = "".join(
+        f'<PubmedArticle><MedlineCitation><PMID Version="{v}">{p}</PMID><Article><ArticleTitle>t</ArticleTitle>'
+        f"<PublicationTypeList><PublicationType>{pt}</PublicationType></PublicationTypeList></Article></MedlineCitation></PubmedArticle>"
+        for p, v, pt in records
+    )
+    if deletions:
+        body += "<DeleteCitation>" + "".join(f'<PMID Version="{v}">{p}</PMID>' for p, v in deletions) + "</DeleteCitation>"
+    return f'<?xml version="1.0"?><PubmedArticleSet>{body}</PubmedArticleSet>'.encode()
+
+
+def _want(*pmids: str) -> M.Wanted:
+    w = M.Wanted()
+    for p in pmids:
+        w.add("pmid", p)
+    return w
+
+
+def test_a_record_stated_twice_in_one_file_is_kept_once_with_its_last_statement(medical):
+    out = _apply(_many((77, 1, "Journal Article"), (77, 1, "Retracted Publication")), _want("77"))
+    assert (out["kept"], out["updated"]) == (1, 1)
+    assert _papers()[77].provenance_class == "retracted"
+
+
+def test_a_withdrawal_later_in_the_same_file_reaches_the_record_kept_earlier_in_it(medical):
+    out = _apply(_many((77, 1, "Journal Article"), deletions=((77, 1),)), _want("77"))
+    assert out["withdrawn"] == 1 and _papers()[77].withdrawn_at is not None
+
+
+def test_a_withdrawal_of_one_version_leaves_the_other_version(medical):
+    _apply(_many((77, 1, "Journal Article"), (77, 2, "Journal Article")), _want("77"))
+    out = _apply(_many(deletions=((77, 2),)), M.Wanted(), "pubmed25n1301.xml.gz")
+    assert out["withdrawn"] == 1
+    with store.lane_session("medical") as s:
+        rows = {r.version: r.withdrawn_at for r in s.execute(select(MedicalPaper)).scalars()}
+    assert rows[1] is None and rows[2] is not None
+
+
+def test_a_later_file_restating_a_withdrawn_record_brings_it_back(medical):
+    _apply(_many((77, 1, "Journal Article"), deletions=((77, 1),)), _want("77"), "pubmed25n1300.xml.gz")
+    _apply(_many((77, 1, "Journal Article")), _want("77"), "pubmed25n1301.xml.gz")
+    paper = _papers()[77]
+    assert paper.withdrawn_at is None and paper.withdrawn_in_file is None
+
+
+def test_an_older_file_applied_after_a_newer_one_never_undoes_a_retraction(medical):
+    _apply(_many((77, 1, "Retracted Publication")), _want("77"), "pubmed25n1301.xml.gz")
+    out = _apply(_many((77, 1, "Journal Article"), (78, 1, "Journal Article")), _want("77", "78"), "pubmed25n0005.xml.gz")
+    assert out["older_skipped"] == 1 and out["kept"] == 1  # the older file still ADDS what the store lacks
+    papers = _papers()
+    assert papers[77].provenance_class == "retracted" and papers[77].source_file == "pubmed25n1301.xml.gz"
+    assert sorted(papers) == [77, 78]
+    with store.lane_session("medical") as s:
+        assert s.execute(select(MedicalClassChange)).scalars().all() == []
+
+
+def test_an_older_file_never_withdraws_what_a_newer_one_stated(medical):
+    _apply(_many((77, 1, "Journal Article")), _want("77"), "pubmed25n1301.xml.gz")
+    out = _apply(_many(deletions=((77, 1),)), M.Wanted(), "pubmed25n1300.xml.gz")
+    assert (out["withdrawn"], out["older_skipped"]) == (0, 1)
+    assert _papers()[77].withdrawn_at is None
+
+
+def test_a_new_years_baseline_ranks_after_last_years_updates():
+    assert M.file_sequence("pubmed26n0001.xml.gz") > M.file_sequence("pubmed25n1400.xml.gz")
+    assert M.file_sequence("not-a-file") < M.file_sequence("pubmed25n0001.xml")
+
+
+def test_every_fallback_name_list_and_every_lane_loop_includes_medical_db():
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("src/safety/uninstall.py", "src/safety/data_scope.py", "src/database/open_stats.py"):
+        assert '"medical.db"' in (root / rel).read_text(encoding="utf-8"), rel
+    release = (root / "src/monitoring/release_run.py").read_text(encoding="utf-8")
+    assert 'for kind in ("wiki", "law", "osm"):' not in release

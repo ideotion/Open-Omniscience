@@ -50,7 +50,19 @@ LANE = "medical"
 _PMID = re.compile(r"[1-9][0-9]{0,9}")
 _PMCID = re.compile(r"PMC[1-9][0-9]{0,9}")
 #: NLM's own file names: ``pubmed25n0001.xml.gz`` (baseline) or ``pubmed25n1300.xml.gz`` (update).
-FILE_NAME = re.compile(r"pubmed[0-9]{2}n[0-9]{4}\.xml(\.gz)?")
+FILE_NAME = re.compile(r"pubmed([0-9]{2})n([0-9]{4})\.xml(\.gz)?")
+
+
+def file_sequence(name: str) -> tuple[int, int]:
+    """(release year, file number) of an NLM file: the order NLM published them in.
+
+    A later file states a record as NLM holds it LATER, so an older file applied after a newer
+    one (a baseline re-scanned for a newly named id, say) may add records the store lacks but may
+    never overwrite or withdraw one a newer file stated. ``(-1, -1)`` for a name that is not
+    NLM's (only ``record_failed_file`` stores one), so it never outranks a real file.
+    """
+    m = FILE_NAME.fullmatch(name or "")
+    return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
 
 
 def normalise_id(kind: str, value: str) -> str:
@@ -186,13 +198,22 @@ def apply_file(
     """
     if not FILE_NAME.fullmatch(name):
         raise ValueError("not an NLM PubMed file name")
-    kept = updated = withdrawn = 0
+    seq = file_sequence(name)
+    kept = updated = withdrawn = older_skipped = 0
     for item in items:
         if isinstance(item, PubmedDeletion):
+            # The withdrawn VERSION only: a deletion of version 2 leaves version 1 as it was.
             rows = session.execute(
-                select(MedicalPaper).where(MedicalPaper.pmid == item.pmid, MedicalPaper.withdrawn_at.is_(None))
+                select(MedicalPaper).where(
+                    MedicalPaper.pmid == item.pmid,
+                    MedicalPaper.version == item.version,
+                    MedicalPaper.withdrawn_at.is_(None),
+                )
             ).scalars()
             for gone in rows:
+                if file_sequence(gone.source_file) > seq:
+                    older_skipped += 1  # a newer file stated it after this withdrawal
+                    continue
                 gone.withdrawn_at = _now()
                 gone.withdrawn_in_file = name
                 withdrawn += 1
@@ -205,7 +226,14 @@ def apply_file(
         values = _fields(item)
         if row is None:
             session.add(MedicalPaper(pmid=item.pmid, version=item.version, source_file=name, **values))
+            # Flushed at once: the lane's sessions do not autoflush, and the same record stated
+            # again later in this file, or withdrawn later in it, must find this row, not insert
+            # a second one that breaks the unique key and loses the whole pass.
+            session.flush()
             kept += 1
+            continue
+        if file_sequence(row.source_file) > seq:
+            older_skipped += 1  # an older file never overwrites what a newer one stated
             continue
         if row.provenance_class != item.provenance_class:
             session.add(
@@ -242,7 +270,14 @@ def apply_file(
         )
     )
     session.flush()
-    return {"file": name, "read": tally.articles, "kept": kept, "updated": updated, "withdrawn": withdrawn}
+    return {
+        "file": name,
+        "read": tally.articles,
+        "kept": kept,
+        "updated": updated,
+        "withdrawn": withdrawn,
+        "older_skipped": older_skipped,
+    }
 
 
 def record_failed_file(session: Session, name: str, exc: BaseException) -> None:
