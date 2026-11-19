@@ -45,16 +45,25 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      windows:
+        description: "Also run the six Windows observation legs on this ref (R743: they run nightly on main, and here only when a branch needs Windows proof)"
+        type: boolean
+        default: false
   # Weekly security cadence (RM-10 / 0.0.8 WP2): a freshly published CVE should
   # surface even in a quiet week, without waiting for a push.
+  # NIGHTLY WINDOWS (R743, 2026-11-18): the Windows observation legs run once a night on main, in six shards, and nowhere else unless a dispatch
+  # asks for them. Each job that runs on a schedule names ITS cron (github.event.schedule), so the two crons never start each other's jobs. 02:00 sits
+  # four hours before the Monday run: a scheduled run takes the per-ref concurrency group, which cancels in progress, so the two must not overlap.
   schedule:
     - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+    - cron: "0 2 * * *"  # every night 02:00 UTC: Windows observation (R743)
 
 jobs:
   # Lightweight weekly job (RM-10): dependency + SAST audit only. Runs ONLY on
   # the schedule; the push/PR lanes get the same gates in the `static` job (R668).
   scheduled-audit:
-    if: github.event_name == 'schedule'
+    if: github.event.schedule == '0 6 * * 1'
     runs-on: ubuntu-latest
     name: Weekly security audit (bandit + pip-audit)
     steps:
@@ -870,31 +879,28 @@ jobs:
             tests/test_wave7_poll_cache.py tests/test_external_freshness.py
 
   # ----------------------------------------------------------------------- #
-  # PORTABILITY (macOS and Windows) RUNS WEEKLY + ON DEMAND, IN THREE SHARDS, NOT PER PUSH (R461, 2026-11-07). Windows came off the per-push path on
-  # 2026-09-26 (it hit its 45-minute cap on every run sampled, PRH-29). macOS followed because the cap was ARITHMETIC, not a hang: the job ran the whole
-  # suite in ONE process, which Linux needs three shards of 26 to 31 minutes to cover, so on run 42377447182 pytest began 13:43:20 and `timeout-minutes: 45`
-  # cancelled it 14:27:42. Every push held a macOS runner for 44 minutes (the scarcest pool) and produced no result. Now each OS runs the same three
-  # shards the Linux jobs use (scripts/ci_shard.py, the same cost table, so N stays 3), under a 60-minute cap per leg; the per-push macOS signal that
-  # remains is the SQLCipher wheel smoke below (a second). The lane stays an observation: continue-on-error, never required.
+  # PORTABILITY OBSERVATION, macOS: THREE SHARDS, ON EVERY DISPATCH AND WEEKLY (R461, 2026-11-07; R743, 2026-11-18). Never part of a plain pull_request
+  # run; each PR head gets its macOS result from the dispatch its CI line triggers ("macOS never red" is a merge gate, so it needs a result on every head).
+  # The job once ran the whole suite in ONE process, which Linux needs three shards of 26 to 31 minutes to cover, so on run 42377447182
+  # `timeout-minutes: 45` cancelled it with no result. Now it runs the same three shards the Linux jobs use (scripts/ci_shard.py, the same cost table),
+  # under a 60-minute cap per leg. The lane stays an observation: continue-on-error, never required. Windows has its own job below (R743).
   # ----------------------------------------------------------------------- #
   portability:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 6 * * 1' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [macos-latest]
         shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}
     name: Portability observation (${{ matrix.os }}, shard ${{ matrix.shard }} of 3)
     continue-on-error: true  # observation lane: graduates to required when green
-    # 60 min per macOS leg: a third of the suite is about 28 min on Linux; a leg that needs more than twice that is a finding, and the cap keeps it from
-    # burning six hours (the Windows hang, PRH-29) before anyone reads the log. 90 min per Windows leg (row 93, the planner's call over more shards:
-    # runners are the bottleneck and these legs run only weekly and on dispatch): with no hang left, shard 2 was still at 49% when the 60-minute cap
-    # stopped it (run 43803278424). A hang now ends a leg in 10 minutes on its own (OO_TEST_HANG_LIMIT_S below), so the cap only bounds slowness.
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 90 || 60 }}
+    # 60 min per leg: a third of the suite is about 28 min on Linux and 16-21 min here under four workers (run 44355305198); a leg that needs more than
+    # twice that is a finding, and the cap keeps it from burning hours before anyone reads the log.
+    timeout-minutes: 60
     defaults:
       run:
-        shell: bash  # one shell on every OS: the Windows default is PowerShell, which does not expand "$RUNNER_TEMP" or read `@FILE` the same way
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -918,15 +924,10 @@ jobs:
       # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first and why `-r` needs `fE` beside it): a macOS skip count that differs from Linux's is read from this log. No junit report here.
       # A test that does not return within OO_TEST_HANG_LIMIT_S seconds ends the run with every thread's traceback written to
       # test-hang-report.txt after a line naming it, and every test slower than OO_TEST_SLOW_S is listed in test-slow-report.txt as it ends
-      # (tests/conftest.py, row 93): a hang costs 10 minutes and names itself, instead of going silent until the 60-minute cap cancels the
-      # leg (job 133057809613: shard 1 on Windows stopped at 23% for 30 minutes), and a leg the cap stops still says where its time went.
-      # FOUR WORKERS ON macOS, ONE PROCESS ON WINDOWS (row 163). In one process, Windows shard 2 took 5,137 s for 11,587 tests (run 44334404721),
-      # 3.7 times its Linux cost, spread over the file-heavy tests (the top 300 files held 94%; tests over 20 s only 290 s). `-n 4 --dist loadfile`
-      # (four vCPUs and limited memory, so not `auto`; the suite's fixed file placement, tests/_xdist_placement.py, as on Linux) took the macOS legs
-      # from near 60 minutes to 16-21 (run 44355305198). On Windows it gained nothing: the same test took 4 to 6 times longer with four running
-      # (test_host_pairs' short-note test 28.8 s -> 184.4 s), and shard 2 reached 82% in 81 minutes against 100% in 86 alone, so the cost there is
-      # I/O serialized below the tests, not CPU. Windows stays in one process until that is settled. Under workers, each worker writes its own
-      # report files, the name plus `.gw0` ... (tests/conftest.py), which the next step prints.
+      # (tests/conftest.py, row 93): a hang costs 10 minutes and names itself, and a leg the cap stops still says where its time went.
+      # FOUR WORKERS (row 163): `-n 4 --dist loadfile` (four vCPUs and limited memory, so not `auto`; the suite's fixed file placement,
+      # tests/_xdist_placement.py, as on Linux) took these legs from near 60 minutes to 16-21 (run 44355305198). Under workers, each worker writes its
+      # own report files, the name plus `.gw0` ... (tests/conftest.py), which the next step prints.
       - name: Test (pytest)
         env:
           OO_TEST_HANG_LIMIT_S: "600"
@@ -934,8 +935,7 @@ jobs:
           OO_TEST_SLOW_S: "20"
           OO_TEST_SLOW_REPORT: test-slow-report.txt
           OO_TEST_FAIL_REPORT: test-fail-report.txt
-          OO_PORTABILITY_WORKERS: ${{ matrix.os == 'macos-latest' && '-n 4 --dist loadfile' || '' }}
-        run: python -m pytest -q $OO_PORTABILITY_WORKERS -rsfE @shard.args
+        run: python -m pytest -q -n 4 --dist loadfile -rsfE @shard.args
 
       - name: Name a test that hung, and the slow tests
         if: always()
@@ -972,6 +972,97 @@ jobs:
           fi
         env:
           OO_TEST_SLOW_S: "20"
+
+
+  # ----------------------------------------------------------------------- #
+  # PORTABILITY OBSERVATION, Windows: SIX SHARDS, NIGHTLY ON main, AND ON A DISPATCH THAT ASKS FOR IT (R743, 2026-11-18). On every PR dispatch the three
+  # Windows legs hit their 90-minute cap and proved nothing while holding runners every PR line shares: in one process shard 2 took 5,012-5,137 s
+  # (runs 44334404721 and #2124's), shard 1 reached 93% at the cap. The cost is the disk, not Defender (real-time protection is already off on these
+  # runners, and excluding the test folders changed 5,137 s to 5,012 s) and not CPU (`-n 4` made each test 4-6 times slower and the leg no faster,
+  # row 163). Six shards of the same cost table give about 45 minutes a leg, which is affordable once a day. A branch that needs Windows proof runs
+  # the workflow by hand with `windows: true`. Non-required (continue-on-error), with the same hang, slow and failure reports as macOS.
+  # ----------------------------------------------------------------------- #
+  portability-windows:
+    if: github.event.schedule == '0 2 * * *' || (github.event_name == 'workflow_dispatch' && inputs.windows)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    runs-on: windows-latest
+    name: Portability observation (windows-latest, shard ${{ matrix.shard }} of 6)
+    continue-on-error: true  # observation lane: never required
+    # 90 min per leg, as before (row 93): a sixth of the suite is predicted at about 45 minutes here, so the cap only bounds slowness. A hang ends a leg
+    # in 10 minutes on its own (OO_TEST_HANG_LIMIT_S below).
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash  # the Windows default is PowerShell, which does not expand "$RUNNER_TEMP" or read `@FILE` the same way
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev]"
+
+      - name: Boot check
+        run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
+
+      # The file list is written inside the workspace (shard.args), not under $RUNNER_TEMP: on Windows that is a drive-lettered backslash path.
+      - name: Plan this shard (which test files it runs)
+        run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/6 --out shard.args
+
+      # One process (row 163: four workers gained nothing here, the cost is I/O serialized below the tests). `-rsfE` as on macOS; no junit report.
+      - name: Test (pytest)
+        env:
+          OO_TEST_HANG_LIMIT_S: "600"
+          OO_TEST_HANG_REPORT: test-hang-report.txt
+          OO_TEST_SLOW_S: "20"
+          OO_TEST_SLOW_REPORT: test-slow-report.txt
+          OO_TEST_FAIL_REPORT: test-fail-report.txt
+        run: python -m pytest -q -rsfE @shard.args
+
+      - name: Name a test that hung, and the slow tests
+        if: always()
+        run: |
+          # One file per xdist worker (test-hang-report.txt.gw0 ...), and the bare name from a run without workers.
+          shopt -s nullglob
+          hung=0; stopped=0
+          for f in test-hang-report.txt*; do
+            [ -s "$f" ] || continue
+            if grep -q '^Timeout (' "$f"; then
+              echo "::error title=A test hung::$(head -n 1 "$f")"
+              cat "$f"; hung=1
+            else
+              echo "::warning title=Stopped from outside::the run was stopped (job cap or cancel) while this test ran, before its own limit: $(head -n 1 "$f")"
+              stopped=1
+            fi
+          done
+          if [ "$hung$stopped" = "00" ]; then echo "No test ran past the hang limit."; fi
+          slow=(test-slow-report.txt*)
+          if [ ${#slow[@]} -gt 0 ] && [ -n "$(cat "${slow[@]}")" ]; then
+            echo "Tests slower than ${OO_TEST_SLOW_S:-20} s, slowest first:"
+            sort -rn "${slow[@]}" > test-slow-sorted.txt  # no pipe into head: under pipefail a closed pipe fails the step
+            head -n 60 test-slow-sorted.txt
+          fi
+          # Every failure as it happened (tests/conftest.py, row 109): a leg the cap stops never prints pytest's own list.
+          fails=(test-fail-report.txt*)
+          if [ ${#fails[@]} -gt 0 ] && [ -n "$(cat "${fails[@]}")" ]; then
+            echo "Failures, as each worker met them ($(cat "${fails[@]}" | grep -c '^FAILED')):"
+            for f in "${fails[@]}"; do
+              if [ -s "$f" ]; then echo "--- $f"; cat "$f"; fi
+            done
+          else
+            echo "No test failed before the run ended."
+          fi
+        env:
+          OO_TEST_SLOW_S: "20"
+
 
   # SQLCipher driver proof on every OS (gate zero, executed for real): the
   # at-rest encryption batch (PR-E) must not land on wheel inspection alone.

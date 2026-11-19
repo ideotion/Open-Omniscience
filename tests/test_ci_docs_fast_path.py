@@ -9,6 +9,7 @@ touches code but is judged documentation, or a job that was never told to wait f
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -30,7 +31,8 @@ _NOT_GATED = {
     "test-all": "aggregator: the required check `test`; reports on every run",
     "core-only-all": "aggregator: the required check Core-only; reports on every run",
     "sqlcipher-smoke": "a second per OS; the one per-push macOS signal",
-    "portability": "weekly and on demand only; never part of a pull request",
+    "portability": "macOS, weekly and on every dispatch; never part of a plain pull_request run",
+    "portability-windows": "Windows, nightly on main and on a dispatch that asks for it (R743); never part of a pull request",
 }
 
 
@@ -125,7 +127,35 @@ def test_the_fast_path_runs_only_when_the_decision_says_so_and_checks_the_ledger
 
 def test_portability_is_not_part_of_a_pull_request_and_fits_its_cap():
     job = _jobs()["portability"]
-    assert job["if"] == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
-    assert job["strategy"]["matrix"]["shard"] == [1, 2, 3]
-    # 90 min for a Windows leg, 60 for macOS (row 93): the only expression this guard accepts, so a cap cannot quietly grow
-    assert job["timeout-minutes"] == "${{ matrix.os == 'windows-latest' && 90 || 60 }}" and job["continue-on-error"] is True
+    assert job["if"] == "github.event.schedule == '0 6 * * 1' || github.event_name == 'workflow_dispatch'"
+    assert job["strategy"]["matrix"] == {"os": ["macos-latest"], "shard": [1, 2, 3]}, "Windows has its own job (R743)"
+    # 60 min a macOS leg (row 93): a cap cannot quietly grow
+    assert job["timeout-minutes"] == 60 and job["continue-on-error"] is True
+
+
+def test_windows_runs_nightly_on_main_and_on_request_in_six_non_required_shards():
+    """R743: on every PR dispatch the three Windows legs hit their cap and proved nothing; they run once a night, and when a dispatch asks."""
+    workflow = yaml.safe_load(_CI.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["portability-windows"]
+    crons = [c["cron"] for c in workflow[True]["schedule"]]
+    assert job["if"] == "github.event.schedule == '0 2 * * *' || (github.event_name == 'workflow_dispatch' && inputs.windows)"
+    assert "0 2 * * *" in crons and "0 6 * * 1" in crons
+    windows = workflow[True]["workflow_dispatch"]["inputs"]["windows"]
+    assert windows["type"] == "boolean" and windows["default"] is False, "a plain dispatch (every PR line) must not start the Windows legs"
+    assert job["runs-on"] == "windows-latest" and job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4, 5, 6]
+    assert job["timeout-minutes"] == 90 and job["continue-on-error"] is True
+    plan = [s["run"] for s in job["steps"] if "ci_shard.py plan" in str(s.get("run") or "")]
+    assert plan == ["python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/6 --out shard.args"], plan
+    assert "macos-latest" not in str(job) and "windows-latest" not in str(workflow["jobs"]["portability"]["strategy"])
+
+
+def test_each_scheduled_job_names_its_own_cron():
+    """Two crons: a job that tested only ``event_name == 'schedule'`` would run on both, so the weekly audit would run every night."""
+    workflow = yaml.safe_load(_CI.read_text(encoding="utf-8"))
+    crons = {c["cron"] for c in workflow[True]["schedule"]}
+    for name, job in workflow["jobs"].items():
+        cond = str(job.get("if") or "")
+        assert "event_name == 'schedule'" not in cond, f"{name} runs on every cron; name the one it wants with github.event.schedule"
+        for cron in re.findall(r"github\.event\.schedule == '([^']+)'", cond):
+            assert cron in crons, f"{name} waits for a cron the workflow does not have: {cron}"
+    assert workflow["jobs"]["scheduled-audit"]["if"] == "github.event.schedule == '0 6 * * 1'"

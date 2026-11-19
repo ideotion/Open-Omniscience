@@ -123,6 +123,11 @@
         _openAdvanced("sources");
         return;
       }
+      if (name === "models") {  // Settings → AI, the task manager's AI pill links here (row 164)
+        showTab("settings", push);
+        try { _setSubtabs.select("models"); } catch (e) { showSetCat("models"); }
+        return;
+      }
       if (name === "wiki") {  // Wikipedia moved into Settings → Wikipedia (content-first §6)
         showTab("settings", push);
         try { _setSubtabs.select("wikipedia"); } catch (e) { showSetCat("wikipedia"); }

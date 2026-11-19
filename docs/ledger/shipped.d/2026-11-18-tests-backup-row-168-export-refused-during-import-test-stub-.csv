@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,tests/backup,"row 168: export-refused-during-import test stub returns stopped, so the restore thread no longer dies on KeyError",SHIPPED,PR #2125,tests/test_export_job.py,"The test's restore stub left out the stopped key that the real restore_folder_backup always returns, so the worker thread died on KeyError after the export was refused and the warning rode run summaries. Test-only: the stub now matches the real shape and the test asserts the worker ended done."
