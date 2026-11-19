@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-18,tests/database,"row 169: latch-gap re-read test marks its hook fired before the retry, closing a race macOS -n 4 found",SHIPPED,PR #2130,tests/test_database_verify.py,"The test's hook checked seen and appended only after reg.retry returned, so the re-read finishing on its own thread passed the same hook first and started a second retry ([[], []]). The hook is now marked fired before the retry. With a 1 s pause widening the window, the old guard fails and the new one passes. Test-only."
