@@ -13,14 +13,14 @@
   }
 
   function _countsHtml(d) {
-    const c = d.coverage || {};
+    const cov = d.coverage || {};
     const k = d.by_class || {};
     const lines = [];
     lines.push(_tf("Your articles cite {cited} paper identifiers (PMID, DOI or PMCID): {found} found, {missing} not found yet.",
-      {cited: c.cited || 0, found: c.cited_found || 0, missing: c.cited_not_found || 0}));
-    if (c.named) {
+      {cited: cov.cited || 0, found: cov.cited_found || 0, missing: cov.cited_not_found || 0}));
+    if (cov.named) {
       lines.push(_tf("You named {named} paper identifiers: {found} found, {missing} not found yet.",
-        {named: c.named, found: c.named_found || 0, missing: c.named_not_found || 0}));
+        {named: cov.named, found: cov.named_found || 0, missing: cov.named_not_found || 0}));
     }
     lines.push(_tf("Kept: {papers} records ({journal} journal, {preprint} preprint, {retracted} retracted; {withdrawn} withdrawn).",
       {papers: d.papers || 0, journal: k.journal || 0, preprint: k.preprint || 0, retracted: k.retracted || 0,
@@ -32,8 +32,8 @@
   }
 
   async function loadMedical() {
-    const host = document.getElementById("medical-counts");
-    if (!host) return;
+    const countsEl = document.getElementById("medical-counts");
+    if (!countsEl) return;
     if (!_wired) {
       _wired = true;
       const b = document.getElementById("medical-fetch-btn");
@@ -41,43 +41,42 @@
     }
     try {
       const d = await api("/api/medical/status");
-      host.innerHTML = _countsHtml(d);
+      countsEl.innerHTML = _countsHtml(d);
       const inp = document.getElementById("medical-files");
       if (inp && d.max_files) inp.max = String(d.max_files);
     } catch (e) {
-      host.textContent = _t("Medical papers status failed:") + " " + e.message;
+      countsEl.textContent = _t("Medical papers status failed:") + " " + e.message;
     }
   }
 
   async function medicalFetch() {
-    const t = _t;
-    const st = document.getElementById("medical-status");
+        const statusEl = document.getElementById("medical-status");
     const inp = document.getElementById("medical-files");
     const files = Math.max(1, Math.min(30, parseInt(inp && inp.value, 10) || 7));
     // The ONE consent (invariant #14); its answer is USED.
     if (typeof ensureOnline === "function"
-        && !await ensureOnline(t("Fetch PubMed update files from ftp.ncbi.nlm.nih.gov (tens of megabytes each, over your transport)"))) return;
-    if (st) st.textContent = t("Fetching in the background…");
+        && !await ensureOnline(_t("Fetch PubMed update files from ftp.ncbi.nlm.nih.gov (tens of megabytes each, over your transport)"))) return;
+    if (statusEl) statusEl.textContent = _t("Fetching in the background…");
     try {
       const started = await api("/api/medical/fetch",
         {method: "POST", body: JSON.stringify({consent: true, files: files})});
       if (started && started.started === false) {
-        if (st) st.textContent = t("A PubMed fetch is already running; try again when it finishes.");
+        if (statusEl) statusEl.textContent = _t("A PubMed fetch is already running; try again when it finishes.");
         return;
       }
       const job = await pollJobStatus("/api/medical/fetch/status");
       if (job.state === "error") {
-        if (st) st.textContent = t("PubMed fetch failed:") + " " + (job.error || "");
+        if (statusEl) statusEl.textContent = _t("PubMed fetch failed:") + " " + (job.error || "");
         return;
       }
       if (_jobStillRunning(job)) {
-        if (st) st.textContent = t("Still running in the background — check the task manager for the result.");
+        if (statusEl) statusEl.textContent = _t("Still running in the background — check the task manager for the result.");
         return;
       }
       const r = job.result || {};
       if (r.stopped && r.listed == null) {
         // Stopped during the corpus scan: nothing was asked of NLM and the last counts stand.
-        if (st) st.textContent = t("Stopped before the end, as asked.");
+        if (statusEl) statusEl.textContent = _t("Stopped before the end, as asked.");
         return;
       }
       const applied = (r.applied || []).length;
@@ -85,17 +84,17 @@
         {applied: applied, remaining: r.remaining || 0});
       if (r.failed) {
         msg += " " + (r.failed.error === "airplane_mode"
-          ? t("Stopped: airplane mode is on.")
+          ? _t("Stopped: airplane mode is on.")
           : _tf("Stopped at {file}: {error}. Files are applied in NLM's order, so this one is tried again first next time.",
               {file: r.failed.file, error: r.failed.reason || r.failed.error}));
       }
       if (r.stopped) {
-        msg += " " + t("Stopped before the end, as asked.");
+        msg += " " + _t("Stopped before the end, as asked.");
       }
-      if (st) st.textContent = msg;
+      if (statusEl) statusEl.textContent = msg;
       loadMedical();
     } catch (e) {
-      if (st) st.textContent = t("PubMed fetch failed:") + " " + e.message;
+      if (statusEl) statusEl.textContent = _t("PubMed fetch failed:") + " " + e.message;
     }
   }
 

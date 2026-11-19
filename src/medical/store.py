@@ -363,13 +363,13 @@ def apply_file(
     }
 
 
-def record_failed_file(session: Session, name: str, exc: BaseException) -> None:
+def record_failed_file(session: Session, name: str, error_class: str) -> None:
     """A pass that did not finish says so; its kept changes were rolled back with it."""
     session.add(
         MedicalFile(
             name=name if FILE_NAME.fullmatch(name) else "unnamed",
             status="failed",
-            error=type(exc).__name__[:128],
+            error=error_class[:128],
             finished_at=_now(),
         )
     )

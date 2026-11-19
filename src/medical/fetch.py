@@ -44,6 +44,7 @@ from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.medical import store as M
 from src.medical.pubmed_xml import ParseTally, parse_pubmed
+from src.monitoring.secret_scrub import record_text
 
 PUBMED_HOST = "ftp.ncbi.nlm.nih.gov"
 PUBMED_HOSTS = (PUBMED_HOST,)
@@ -140,8 +141,8 @@ def _get(session: Any, url: str, max_bytes: int) -> bytes:
         raise RuntimeError(NETWORK_REFUSED)
     try:
         resp = _bounded_get(session, url, max_chars=max_bytes // 4)
-    except BodyTooLarge as exc:
-        raise FileRefused(str(exc)) from exc
+    except BodyTooLarge:
+        raise FileRefused(f"the body went past {max_bytes} bytes, the most this file may hold; reading stopped") from None
     resp.raise_for_status()
     return bytes(resp.content)
 
@@ -214,11 +215,11 @@ def _done_files() -> set[str]:
         return set(s.execute(select(MedicalFile.name).where(MedicalFile.status == "finished")).scalars())
 
 
-def _record_failure(name: str, exc: BaseException) -> None:
+def _record_failure(name: str, error_class: str) -> None:
     from src.versioned import store
 
     with store.lane_session(M.LANE) as s:
-        M.record_failed_file(s, name, exc)
+        M.record_failed_file(s, name, error_class)
         s.commit()
 
 
@@ -281,12 +282,14 @@ def run_fetch(
                 # Airplane mode came on mid-run: named as such (#14e), and not charged to the file, which did nothing wrong.
                 failed = {"file": name, "error": "airplane_mode", "reason": NETWORK_REFUSED}
                 break
-            _record_failure(name, exc)
+            error_class = type(exc).__name__
+            _record_failure(name, error_class)
             failures += 1
             failed = {
                 "file": name,
-                "error": type(exc).__name__,
-                "reason": str(exc)[:300] if isinstance(exc, FileRefused) else None,
+                "error": error_class,
+                # Only this module's own refusals carry words worth showing (sizes, a checksum); scrubbed all the same.
+                "reason": record_text(exc, limit=300) if isinstance(exc, FileRefused) else None,
             }
             break
     with store.lane_session(M.LANE) as s:
