@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-19,tests,fake sqlcipher3 no longer poisons the driver-class caches (row 188),shipped,PR #2150,tests/conftest.py; tests/test_email_ingest.py; tests/test_driver_class_caches.py,"test_email_ingest's fake-sqlcipher3 tests left write._db_operational_error_types cached without the real OperationalError, so a later real locked error read as not locked (order dependent). They clear the caches via a fixture; the teardown hook fails any test leaving a fake driver or a stale driver-class cache; an AST ratchet pins the cached list."
