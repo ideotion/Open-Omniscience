@@ -34,6 +34,10 @@ def _fetch_worker(ctx, *, dataset: str, param: str | None) -> dict:
 
     with session_scope() as db:
         record = fetch_and_store(db, dataset, param, progress=progress)
+    # K13 (row 183): written after the session committed, so the KPI never reports a fetch the library did not keep.
+    from src.monitoring.kpi import record_climate_fetch
+
+    record_climate_fetch(record)
     return {
         "dataset": record["dataset"],
         "param": record["param"],
