@@ -938,9 +938,12 @@ def record_osm_lane(rows: list | None) -> dict | None:
         return None
     rs = [r for r in rows if isinstance(r, dict)]
 
-    def _known(key: str) -> tuple[int, int]:  # (sum over countries whose table answered, countries whose table did not)
+    def _known(key: str) -> tuple[int | None, int]:
+        # (sum over the countries whose table answered, the countries whose table did not). When none answered, the sum is
+        # unknown (None), never 0: an old lane that cannot say is not a lane with no change file.
         vals = [_int_or_none(r.get(key)) for r in rs]
-        return sum(v for v in vals if v is not None), sum(1 for v in vals if v is None)
+        known = [v for v in vals if v is not None]
+        return (sum(known) if known or not rs else None), len(vals) - len(known)
 
     diffs, diffs_unknown = _known("diffs_recorded")
     gaps, gaps_unknown = _known("gaps_total")
@@ -966,6 +969,23 @@ def read_osm_lane() -> dict | None:
     return _read_record(_OSM_FILE, _OSM_SCHEMA)
 
 
+def _osm_method(rec: dict, complete_n: int) -> str:
+    def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
+        v = _int_or_none(rec.get(key))
+        return str(v) if v is not None else "an unknown number of"
+
+    unknown = []
+    for key, what in (("countries_change_files_unknown", "change files"), ("countries_gaps_unknown", "gaps")):
+        k = _int_or_none(rec.get(key))
+        if k:
+            unknown.append(f"{k} countries' lane predates the table of {what}, so their {what} are unknown, never 0")
+    return (f"the OSM change-file member's own counts, from its last read of the lane store: {n('countries')} countries "
+            f"listed, {complete_n} of them cut to completion; {n('change_files_recorded')} daily change files recorded over "
+            f"{n('countries_with_change_files')} countries, {n('gaps_total')} gaps"
+            + (f" ({'; '.join(unknown)})" if unknown else "")
+            + ". A first slice is one country cut to completion. No country is named; nothing is divided.")
+
+
 def _osm_block() -> dict:
     rec = read_osm_lane()
     if rec is None:
@@ -989,12 +1009,7 @@ def _osm_block() -> dict:
         "countries_change_files_unknown": rec.get("countries_change_files_unknown"),
         "gaps_total": rec.get("gaps_total"), "countries_gaps_unknown": rec.get("countries_gaps_unknown"),
         "newest_change_file_applied_at": rec.get("newest_change_file_applied_at"),
-        "method": (f"the OSM change-file member's own counts, from its last read of the lane store: {countries} countries "
-                   f"listed, {complete_n} of them cut to completion; {rec.get('change_files_recorded')} daily change files "
-                   f"recorded over {rec.get('countries_with_change_files')} countries"
-                   + (f" ({rec.get('countries_change_files_unknown')} countries' lane predates the record, so theirs are "
-                      "unknown, never 0)" if rec.get("countries_change_files_unknown") else "")
-                   + ". A first slice is one country cut to completion. No country is named; nothing is divided."),
+        "method": _osm_method(rec, complete_n),
     }
     if not block["first_slice"]:
         block["reason"] = "no OpenStreetMap country has been cut to completion"

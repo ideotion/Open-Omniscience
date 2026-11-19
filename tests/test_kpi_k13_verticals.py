@@ -516,3 +516,42 @@ def test_a_failing_record_never_breaks_the_member(osm_lane_dir, monkeypatch):
     monkeypatch.setattr(K, "record_osm_lane", boom)
     got = D.diagnostics_member(20_000)
     assert got["lane"] == "absent" and "error" not in got
+
+
+def test_a_lane_where_no_country_can_say_records_unknown_never_zero(isolated):
+    """Every country on a lane older than the run and gap tables: the sums are unknown, never 0."""
+    K.record_osm_lane([_osm_row("AAA", diffs=None, gaps=None, applied=None),
+                       _osm_row("BBB", diffs=None, gaps=None, applied=None)])
+    block = _block(_k13(), "osm")
+    assert (block["change_files_recorded"], block["gaps_total"]) == (None, None)
+    assert (block["countries_change_files_unknown"], block["countries_gaps_unknown"]) == (2, 2)
+    assert "an unknown number of daily change files" in block["method"]
+    assert "an unknown number of gaps" in block["method"] and "their gaps are unknown, never 0" in block["method"]
+    assert " 0 daily change files" not in block["method"]
+
+
+def test_a_hand_edited_osm_record_never_reaches_the_method_as_a_claim(isolated):
+    K.record_osm_lane([_osm_row()])
+    path = isolated / "lane-osm.json"
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    rec.update({"countries": "many", "change_files_recorded": True, "countries_change_files_unknown": True,
+                "countries_by_status": {"complete": True}})
+    path.write_text(json.dumps(rec), encoding="utf-8")
+    block = _block(_k13(), "osm")
+    assert block["first_slice"] is False
+    assert "many" not in block["method"] and "True" not in block["method"]
+    assert "an unknown number of countries listed" in block["method"]
+
+
+def test_a_failing_record_never_breaks_the_member_on_a_present_lane(osm_lane_dir, monkeypatch):
+    from src.osm import diagnostics as D
+    from src.osm import ingest
+
+    assert ingest.ingest_country(_extract(osm_lane_dir), "ZZ", reader="python").status == "complete"
+
+    def boom(rows):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(K, "record_osm_lane", boom)
+    got = D.diagnostics_member(20_000)
+    assert got["lane"] == "present" and "error" not in got and got["countries_without_updates"] == ["ZZZ"]
