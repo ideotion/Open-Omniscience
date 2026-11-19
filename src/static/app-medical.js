@@ -127,7 +127,7 @@
     if (p.pmcid) ids.push(p.pmcid);
     const meta = [p.journal, p.pub_date].filter(Boolean).map(esc).join(" · ");
     const since = p.retracted_seen_at
-      ? `<div class="card-caveat">${esc(_tf("Retracted in this install's copy since {date}.", {date: String(p.retracted_seen_at).slice(0, 10)}))}</div>`
+      ? `<div class="card-caveat">${esc(_tf("Retracted in this install's copy since {date}.", {date: ooIsoDate(p.retracted_seen_at)}))}</div>`
       : "";
     const title = p.title || p.vernacular_title || _t("(no title in the record)");
     return `<div class="med-paper" style="padding:8px 0;border-bottom:1px solid var(--line)">
@@ -140,15 +140,15 @@
   }
 
   async function renderAnPapers(params) {
-    const host = document.getElementById("an-papers");
-    if (!host || !params) return;
+    const papersEl = document.getElementById("an-papers");
+    if (!papersEl || !params) return;
     const seq = ++_papersSeq;
-    host.innerHTML = `<div class="muted">${esc(_t("Loading…"))}</div>`;
-    let d;
+    papersEl.innerHTML = `<div class="muted">${esc(_t("Loading…"))}</div>`;
+    let res;
     try {
-      d = await api("/api/medical/corpus-papers?" + params.toString());
+      res = await api("/api/medical/corpus-papers?" + params.toString());
     } catch (e) {
-      if (seq === _papersSeq) host.textContent = _t("Medical papers failed:") + " " + e.message;
+      if (seq === _papersSeq) papersEl.textContent = _t("Medical papers failed:") + " " + e.message;
       return;
     }
     if (seq !== _papersSeq) return;  // a newer analysis superseded this one
@@ -156,22 +156,22 @@
     parts.push(`<p class="card-caveat" style="margin-top:0">${esc(_t("This app never gives medical advice. A paper listed here is one your articles link to, not a recommendation."))}</p>`);
     parts.push(`<p class="hint" style="margin-top:0">${esc(_t("Shown beside the news, never mixed into it. Each badge is the class the PubMed record states; peer review is the journal's claim and is not checked here."))}</p>`);
     parts.push(`<div>${esc(_tf("{citing} of {n} analysed articles cite {cited} paper identifiers: {found} found here, {missing} not found yet.",
-      {citing: d.articles_citing || 0, n: d.n_articles || 0, cited: d.cited || 0, found: d.found || 0, missing: d.not_found || 0}))}</div>`);
-    if (d.capped) parts.push(`<div class="hint">${esc(_tf("Only the first {n} articles were read.", {n: d.n_articles || 0}))}</div>`);
+      {citing: res.articles_citing || 0, n: res.n_articles || 0, cited: res.cited || 0, found: res.found || 0, missing: res.not_found || 0}))}</div>`);
+    if (res.capped) parts.push(`<div class="hint">${esc(_tf("Only the first {n} articles were read.", {n: res.n_articles || 0}))}</div>`);
     parts.push(`<p class="card-caveat">${esc(_t("Only papers NLM revised recently are in the update files, so most papers your articles cite will not be found yet. A paper not found here is not missing from PubMed."))}</p>`);
-    parts.push(`<div class="hint">${esc(d.last_file
-      ? _tf("Newest file applied: {name}.", {name: d.last_file.name}) + (d.last_file.finished_at ? " (" + String(d.last_file.finished_at).slice(0, 10) + ")" : "")
+    parts.push(`<div class="hint">${esc(res.last_file
+      ? _tf("Newest file applied: {name}.", {name: res.last_file.name}) + (res.last_file.finished_at ? " (" + ooIsoDate(res.last_file.finished_at) + ")" : "")
       : _t("No update file applied yet."))}</div>`);
-    const papers = d.papers || [];
-    if (!d.cited) {
+    const papers = res.papers || [];
+    if (!res.cited) {
       parts.push(`<div class="muted" style="margin-top:8px">${esc(_t("No paper identifier found in these articles' links."))}</div>`);
     } else if (!papers.length) {
       parts.push(`<div class="muted" style="margin-top:8px">${esc(_t("None of the cited papers is kept yet. Fetch PubMed update files in Advanced, Medical papers."))}</div>`);
     } else {
       parts.push(`<div style="margin-top:8px">${papers.map(_paperHtml).join("")}</div>`);
     }
-    host.innerHTML = parts.join("");
-    host.querySelectorAll("[data-med-open]").forEach((b) => b.addEventListener("click", () => {
+    papersEl.innerHTML = parts.join("");
+    papersEl.querySelectorAll("[data-med-open]").forEach((b) => b.addEventListener("click", () => {
       const p = papers[+b.getAttribute("data-med-open")];
       if (p && typeof openAnalysisForIds === "function") {
         openAnalysisForIds(p.article_ids, _t("Citing") + " PMID " + p.pmid);
