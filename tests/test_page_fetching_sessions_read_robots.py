@@ -245,6 +245,7 @@ API_OR_DATA_FILE = {
     "src/monitoring/release_run.py": ("the 0.4 release run reads one Hugging Face URL", "https://huggingface.co/api/models/"),
     "src/osm/replication.py": ("**Maps / OpenStreetMap**", "data files, so no robots.txt read"),
     "src/stats/fetch.py": ("**Official statistics**", "published APIs, so no robots.txt read"),
+    "src/medical/fetch.py": ("**Medical papers (PubMed)**", "no robots.txt read"),
     "src/wiki/client.py": ("**Wikipedia / Wikimedia**", "an API or a dump file, so no robots.txt read"),
     "src/wiki/dumps.py": ("**Wikipedia / Wikimedia**", "an API or a dump file, so no robots.txt read"),
     "src/wiki/ores.py": ("**Wikipedia / Wikimedia**", "an API or a dump file, so no robots.txt read"),

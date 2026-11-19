@@ -133,6 +133,27 @@ class MedicalWanted(LaneBase):
     __table_args__ = (UniqueConstraint("id_kind", "value", name="uq_medical_wanted"),)
 
 
+class MedicalCited(LaneBase):
+    """An identifier the user's corpus cites, as the last fetch found it (R745's other half).
+
+    Rebuilt whole by each fetch from a read-only scan of the corpus's outbound links, so it is a
+    snapshot, never a history: what it holds is what the corpus cited when the last fetch ran. It
+    is kept here, in the lane, so the status the UI shows (how many cited papers were found, and
+    how many were not) is a read of this file alone, never a scan of the corpus.
+    """
+
+    __tablename__ = "medical_cited"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: One of ``WANTED_KINDS``.
+    id_kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    #: Normalised by ``src.medical.store.normalise_id``.
+    value: Mapped[str] = mapped_column(String(300), nullable=False)
+    seen_at: Mapped[datetime] = mapped_column(LaneUTCDateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (UniqueConstraint("id_kind", "value", name="uq_medical_cited"),)
+
+
 class MedicalFile(LaneBase):
     """One NLM file this install processed, and what the pass kept from it."""
 
@@ -163,4 +184,10 @@ class MedicalFile(LaneBase):
 
 
 #: ``medical.db`` ONLY, exactly as ``LAW_LANE_MODELS`` go to ``law.db`` only.
-MEDICAL_LANE_MODELS: tuple[type[LaneBase], ...] = (MedicalPaper, MedicalClassChange, MedicalWanted, MedicalFile)
+MEDICAL_LANE_MODELS: tuple[type[LaneBase], ...] = (
+    MedicalPaper,
+    MedicalClassChange,
+    MedicalWanted,
+    MedicalCited,
+    MedicalFile,
+)

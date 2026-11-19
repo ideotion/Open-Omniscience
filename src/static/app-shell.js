@@ -624,6 +624,7 @@
       stats:    () => { loadStatAgencies(); },
       // The IPCC reports click surface: a local list read only; the fetch is a button.
       ipcc:     () => { if (typeof loadIpccSpm === "function") loadIpccSpm(); },
+      medical:  () => { if (typeof loadMedical === "function") loadMedical(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration();
                         loadKeywordFilter(); loadRingGaps();

@@ -1192,6 +1192,7 @@ POPUP_LANE_LISTS = [
     ("src.analytics.ring_loader", "API_HOSTS", ("keyword-rings",)),
     ("src.entities.items", "API_HOSTS", ("entity-items",)),
     ("src.ingest.ipcc_spm", "API_HOSTS", ("ipcc",)),
+    ("src.medical.fetch", "PUBMED_HOSTS", ("medical",)),
     ("src.entities.gazetteer_build", "API_HOSTS", ("entity-items",)),
     ("src.monitoring.release_run", "HF_API_HOSTS", ("ai",)),
     ("src.services.duckduckgo", "DuckDuckGoSearch.ALLOWED_HOSTS", ("topic-discovery",)),
