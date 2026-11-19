@@ -186,6 +186,10 @@
           + (d.article_ids_bounded ? ` <span class="muted small">${esc(tf("the first {shown} of {n}", {shown: k, n}))}</span>` : "")
           + `</div>`;
       }
+      // S08-01 S2: the dossier as a signed evidence bundle, through the same review as every
+      // other export (what the file holds, plaintext, the key) before anything is written.
+      html += `<div style="margin-top:8px"><button type="button" class="secondary dossier-evidence">`
+        + `${esc(t("Export signed evidence"))}</button></div>`;
       html += `<p class="muted small" style="margin-top:8px">${esc(t(d.method || ""))}</p>`;
       // The caveat is VISIBLE, never behind a hover (the informed-consent rule).
       html += `<p class="card-caveat">${esc(t(d.caveat || ""))}</p>`;
@@ -215,6 +219,14 @@
         if (place) {
           dlg.close();
           if (typeof openPlaceCard === "function") openPlaceCard(place.getAttribute("data-place-id"));
+          return;
+        }
+        if (tgt.closest(".dossier-evidence") && _dossierLast && typeof openEvidenceReview === "function") {
+          const d = _dossierLast;
+          const label = (d.item || {}).label;
+          dlg.close();
+          openEvidenceReview({dossier_qid: d.qid, lang: d.lang || "en",
+                              case_name: label && label !== d.qid ? label + " · " + d.qid : d.qid});
           return;
         }
         if (tgt.closest(".dossier-open") && _dossierLast) {

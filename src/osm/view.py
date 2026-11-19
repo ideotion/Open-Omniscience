@@ -335,3 +335,187 @@ def view(w: float, s: float, e: float, n: float) -> dict[str, Any]:
             out.update(status="objects", total=len(rows), objects=feats, vertices=vertices, shapes=shapes)
     out["seconds"] = round(time.monotonic() - t0, 3)
     return out
+
+
+# --------------------------------------------------------------------------- #
+#  The street layer (S07-02 S2, Q821 = b, Q822)                                #
+# --------------------------------------------------------------------------- #
+
+#: The widest view, in degrees of longitude, the street layer serves. About 22 km at the equator
+#: and 15 km at 48 degrees north: wide enough for a town, narrow enough that a dense city's roads
+#: stay within the caps once the smallest classes are dropped. A wider view is the object layer's.
+STREET_VIEW_MAX_DEG = 0.2
+
+#: The street classes, MOST important first, by the stored ``highway`` value only (Q809's road is
+#: a way with ``highway=*``; the value is ``osm_objects.primary_value``). Over a cap, classes are
+#: dropped from the END of this tuple, one whole class at a time, and the answer names each one
+#: dropped. A value in no class falls in the last, ``other``, and is the first to go.
+#: Pinned by tests/test_osm_streets.py: reordering it is a visible change, never a silent one.
+STREET_CLASSES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("motorway", frozenset({"motorway", "motorway_link"})),
+    ("trunk", frozenset({"trunk", "trunk_link"})),
+    ("primary", frozenset({"primary", "primary_link"})),
+    ("secondary", frozenset({"secondary", "secondary_link"})),
+    ("tertiary", frozenset({"tertiary", "tertiary_link"})),
+    ("minor", frozenset({"unclassified", "residential", "living_street", "road"})),
+    ("service", frozenset({"service", "pedestrian", "busway", "track"})),
+    ("path", frozenset({"footway", "path", "cycleway", "bridleway", "steps", "corridor"})),
+    ("other", frozenset()),
+)
+
+STREETS_METHOD = (
+    "Streets are drawn from the roads in this computer's OpenStreetMap data, never from a tile "
+    "server. Up to {points} roads and {vertices} vertices are drawn in a view; above either, the "
+    "least important road classes are left out one whole class at a time, in a fixed order "
+    "(paths first, motorways last), and the legend names each class left out."
+)
+
+
+def street_class(value: str | None) -> int:
+    """The index in :data:`STREET_CLASSES` of a stored ``highway`` value; unknown is ``other``."""
+    for i, (_, values) in enumerate(STREET_CLASSES):
+        if value in values:
+            return i
+    return len(STREET_CLASSES) - 1
+
+
+def _iso(d: datetime | None) -> str | None:
+    if d is None:
+        return None
+    return (d if d.tzinfo else d.replace(tzinfo=UTC)).isoformat()
+
+
+def streets(west: float, south: float, east: float, north: float) -> dict[str, Any]:
+    """The roads to draw in the box ``west, south, east, north``, under the published caps. Reads ``osm.db`` only.
+
+    ``status`` is ``streets`` (``roads`` drawn and ``drawn`` their count; of the kept classes, ``subpixel``
+    roads are smaller than a pixel at this zoom and ``no_shape`` have no stored shape, both counted and
+    not drawn; ``dropped`` names the classes left out),
+    ``no-roads`` (the lane is ready and no road of it lies in the box), ``too-many`` (the most
+    important class alone is over a cap: the caller draws the object layer's clusters and says so),
+    or the object layer's ``no-lane`` / ``not-indexed``. ``vintage`` lists, for each country whose
+    roads are in the box, its extract date and the timestamp of the last daily change applied:
+    what the drawing is as of, never "current".
+    """
+    from sqlalchemy import text
+
+    from src.osm.geometry import decode_coords
+    from src.osm.lane_models import OsmCountry, OsmViewIndex, osm_objects_table
+    from src.osm.tags import column_name
+    from src.versioned import store
+
+    x0, y0, x1, y1 = parse_bbox(west, south, east, north)
+    if x1 - x0 > STREET_VIEW_MAX_DEG + 1e-9 or y1 - y0 > 2 * STREET_VIEW_MAX_DEG + 1e-9:
+        # The height is bounded too, so a direct call cannot scan a whole meridian strip.
+        raise ViewError(f"the street layer serves views up to {STREET_VIEW_MAX_DEG} degrees wide and twice that tall")
+    t0 = time.monotonic()
+    out: dict[str, Any] = {
+        "bbox": [x0, y0, x1, y1], "layer": "streets",
+        "caps": {**caps(), "streets_method": STREETS_METHOD, "street_view_max_deg": STREET_VIEW_MAX_DEG},
+        "classes": [c for c, _ in STREET_CLASSES],
+    }
+    if not store.lane_exists("osm"):
+        return {**out, "status": "no-lane", "total": 0, "seconds": 0.0}
+    p = {"w": x0, "s": y0, "e": x1, "n": y1}
+    hit = "r.max_lon >= :w AND r.min_lon <= :e AND r.max_lat >= :s AND r.min_lat <= :n AND o.kind = 'road'"
+    with store.lane_session("osm") as ses:
+        if not ses.query(OsmViewIndex).count():
+            return {**out, "status": "not-indexed", "total": 0, "seconds": 0.0}
+        _ensure(ses)
+        per_value = ses.execute(
+            text(
+                "SELECT o.primary_value, count(*), group_concat(DISTINCT o.country_alpha3) "  # nosec B608 # hit is a constant clause; values are bound
+                f"FROM osm_rtree r JOIN osm_objects o ON o.id = r.id WHERE {hit} GROUP BY o.primary_value"
+            ),
+            p,
+        ).all()
+        counts = [0] * len(STREET_CLASSES)
+        countries: set[str] = set()
+        for value, c, a3s in per_value:
+            counts[street_class(value)] += int(c)
+            countries.update(x for x in (a3s or "").split(",") if x)
+        total = sum(counts)
+        out["counts"] = dict(zip(out["classes"], counts, strict=True))
+        out["total"] = total
+        vint = []
+        if countries:
+            for c in ses.query(OsmCountry).filter(OsmCountry.alpha3.in_(sorted(countries))).order_by(OsmCountry.alpha3):
+                vint.append({
+                    "alpha3": c.alpha3, "extract_date": _iso(c.extract_vintage),
+                    "last_diff": _iso(c.diff_timestamp), "diff_sequence": c.diff_sequence,
+                })
+        out["vintage"] = vint
+        if not total:
+            out.update(status="no-roads", roads=[], dropped=[])
+            out["seconds"] = round(time.monotonic() - t0, 3)
+            return out
+        # The count cap first: keep whole classes from the top while they fit.
+        keep = 0
+        running = 0
+        for i, c in enumerate(counts):
+            if running + c > POINTS_PER_VIEW:
+                break
+            running += c
+            keep = i + 1
+        name = osm_objects_table.c[column_name("name")].name
+        tol = (x1 - x0) / SIMPLIFY_PX
+        roads: list[dict[str, Any]] = []
+        vertices = 0
+        subpixel = no_shape = 0
+        # Nothing to read when the kept classes hold no road (the too-many case below).
+        if sum(counts[:keep]):
+            rows = ses.execute(
+                text(
+                    f"SELECT o.osm_type, o.osm_id, o.primary_value, o.geom, o.{name} "  # nosec B608 # name is a column name read from the table definition, never input
+                    f"FROM osm_rtree r JOIN osm_objects o ON o.id = r.id WHERE {hit} ORDER BY o.id"
+                ),
+                p,
+            ).all()
+            by_class: list[list[dict[str, Any]]] = [[] for _ in STREET_CLASSES]
+            verts = [0] * len(STREET_CLASSES)
+            subs = [0] * len(STREET_CLASSES)
+            bare = [0] * len(STREET_CLASSES)
+            for otype, oid, value, geom, label in rows:
+                k = street_class(value)
+                if k >= keep:
+                    continue
+                shape = decode_coords(geom) if geom else None
+                if not shape or len(shape) < 2:
+                    bare[k] += 1
+                    continue
+                lats = [q[0] for q in shape]
+                lons = [q[1] for q in shape]
+                if max(lats) - min(lats) < tol and max(lons) - min(lons) < tol:
+                    subs[k] += 1
+                    continue
+                thinned = thin(shape, tol)
+                f: dict[str, Any] = {"o": f"{otype}/{oid}", "k": k, "v": value,
+                                     "c": [[round(a, 6), round(b, 6)] for a, b in thinned]}
+                if label:
+                    f["name"] = label
+                by_class[k].append(f)
+                verts[k] += len(thinned)
+            # Then the vertex cap: still whole classes, still from the top.
+            kept = 0
+            for i in range(keep):
+                if vertices + verts[i] > VERTICES_PER_VIEW:
+                    break
+                vertices += verts[i]
+                kept = i + 1
+            keep = kept
+            for i in range(keep):
+                roads.extend(by_class[i])
+                subpixel += subs[i]
+                no_shape += bare[i]
+        if not sum(counts[:keep]):
+            out.update(status="too-many", roads=[], dropped=[c for c, k in zip(out["classes"], counts, strict=True) if k])
+        else:
+            dropped = [out["classes"][i] for i in range(keep, len(STREET_CLASSES)) if counts[i]]
+            out.update(status="streets", roads=roads, dropped=dropped, vertices=vertices,
+                       drawn=len(roads), subpixel=subpixel, no_shape=no_shape)
+    if out["status"] == "too-many":
+        # Even the most important class present is over a cap: draw what the object layer draws
+        # (clusters, or shapes as points), and keep the street answer's counts beside it.
+        out["fallback"] = view(x0, y0, x1, y1)
+    out["seconds"] = round(time.monotonic() - t0, 3)
+    return out
