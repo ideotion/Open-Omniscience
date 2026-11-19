@@ -584,7 +584,9 @@ def test_the_wiki_lane_is_a_block_under_k13_counted_never_named(isolated):
     assert (block["editions_with_pages_seen"], block["editions_with_text"]) == (2, 1)
     assert (block["pages_seen"], block["edition_articles"], block["editions_without_total"]) == (190, 200, 1)
     # Text bounds per edition: fr max(2,5)=5 / 2+5=7; de (HOT 0, WARM unknown) 0 / unknown; xx 0 / 0.
-    assert (block["pages_with_text_lower_bound"], block["pages_with_text_upper_bound"]) == (5, 7)
+    # The upper bound is a bound only when every part is known; de's WARM is not, so it is unknown and the text says "at least".
+    assert (block["pages_with_text_lower_bound"], block["pages_with_text_upper_bound"]) == (5, None)
+    assert "at least 5 pages with a text" in block["method"]
     assert block["editions_text_bound_unknown"] == 1 and block["gaps_total"] == 2
     assert block["newest_event_recorded_at"] == "2026-11-19T01:00:00"
     assert "1 editions' own article count unknown, never 0" in block["method"]
@@ -596,7 +598,10 @@ def test_a_wiki_report_with_nothing_seen_is_recorded_with_no_first_slice(isolate
     m = _k13()
     block = _block(m, "wiki")
     assert (block["state"], block["first_slice"], block["measured"]) == ("recorded", False, False)
-    assert block["pages_seen"] == 0 and "no edition with pages seen" in block["reason"]
+    # No edition ran, so no edition could give a figure: unknown, never 0.
+    for key in ("pages_seen", "edition_articles", "gaps_total", "pages_with_text_lower_bound", "pages_with_text_upper_bound"):
+        assert block[key] is None, key
+    assert "no edition with pages seen" in block["reason"] and " 0 pages seen" not in block["method"]
     assert (m["verdict"], m["value"], m["n"]) == ("measured-no-bar", 0, 5)
 
 
@@ -679,3 +684,21 @@ def test_a_failing_record_never_breaks_the_coverage_report(tmp_path, monkeypatch
         assert rep["measured"] is False and rep["reason"] == "lane-never-run" and len(rep["editions"]) >= 12
     finally:
         store.dispose_all()
+
+
+def test_a_wiki_upper_bound_never_sits_below_the_lower(isolated):
+    """HOT is always counted, WARM may be unknown: a partial upper sum could read "between 10 and 0". It is unknown instead."""
+    K.record_wiki_coverage([_wiki_row("aa", hot=10, warm=None), _wiki_row("bb", hot=0, warm=0)], True)
+    block = _block(_k13(), "wiki")
+    assert (block["pages_with_text_lower_bound"], block["pages_with_text_upper_bound"]) == (10, None)
+    assert "between" not in block["method"] and "at least 10 pages with a text" in block["method"]
+    K.record_wiki_coverage([_wiki_row("aa", hot=10, warm=4), _wiki_row("bb", hot=0, warm=0)], True)
+    assert "between 10 and 14 pages with a text" in _block(_k13(), "wiki")["method"]
+
+
+def test_an_unreadable_last_event_is_counted_apart_from_none(isolated):
+    row = {**_wiki_row(event=None), "last_event_unreadable": True}
+    K.record_wiki_coverage([row], True)
+    block = _block(_k13(), "wiki")
+    assert block["newest_event_recorded_at"] is None and block["editions_event_unreadable"] == 1
+    assert "last event could not be read" in block["method"]

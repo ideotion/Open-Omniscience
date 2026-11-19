@@ -517,14 +517,15 @@ _DATES_FILE, _DATES_SCHEMA = "date-extraction-coverage.json", "oo-date-extractio
 _SOURCES_FILE, _SOURCES_SCHEMA = "source-audit-status.json", "oo-source-audit-status-1"
 
 
-def _write_record(name: str, schema: str, fields: dict) -> dict | None:
+def _write_record(name: str, schema: str, fields: dict, *, fsync: bool = True) -> dict | None:
     """Persist one instrument's measurement beside K6's record. Best-effort: a failed write records nothing (the KPI then says
     no run recorded one) and never breaks the diagnostic that measured it."""
     record = {"schema": schema, "measured_at": _now(), **fields}
     try:
         from src.safety.file_lock import atomic_replace
 
-        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8",
+                       fsync=fsync)
     except Exception:  # noqa: BLE001 - a diagnostic side-record never breaks the diagnostic
         return None
     return record
@@ -1036,9 +1037,12 @@ def record_wiki_coverage(rows: list | None, measured: bool) -> dict | None:
         ft = r.get("full_text")
         return _int_or_none(ft.get(key)) if isinstance(ft, dict) else None
 
-    def _sum(vals: list) -> int | None:  # the sum of what is known; when nothing is, unknown (None), never 0
+    def _sum(vals: list) -> int | None:  # the sum of what is known; when nothing is (or no edition ran), unknown (None), never 0
         known = [v for v in vals if v is not None]
-        return sum(known) if known or not vals else None
+        return sum(known) if known else None
+
+    def _sum_all(vals: list) -> int | None:  # an UPPER bound is only one when every part is known: a partial sum may sit below the lower
+        return sum(vals) if vals and all(v is not None for v in vals) else None
 
     ran = [r for r in rs if r.get("has_run") is True]
     pages = [_count(r, "pages_seen") for r in ran]
@@ -1061,12 +1065,14 @@ def record_wiki_coverage(rows: list | None, measured: bool) -> dict | None:
         # HOT and WARM may both hold one page (a promotion keeps its WARM row): the report's own two bounds, summed per edition.
         "pages_with_text_lower_bound": _sum([max(h or 0, w or 0) if (h is not None or w is not None) else None
                                              for h, w in zip(hot, warm, strict=True)]),
-        "pages_with_text_upper_bound": _sum([h + w if h is not None and w is not None else None
-                                             for h, w in zip(hot, warm, strict=True)]),
+        "pages_with_text_upper_bound": _sum_all([h + w if h is not None and w is not None else None
+                                                 for h, w in zip(hot, warm, strict=True)]),
         "editions_text_bound_unknown": sum(1 for h, w in zip(hot, warm, strict=True) if h is None or w is None),
         "gaps_total": _sum(gaps),
         "newest_event_recorded_at": min(events, key=lambda p: p[0])[1] if events else None,
-    })
+        # The stream's last events could not be read for these: their newest event is unknown, not "none".
+        "editions_event_unreadable": sum(1 for r in ran if r.get("last_event_unreadable") is True),
+    }, fsync=False)  # rebuilt by the next report (every Living sources poll reads one): never worth a flush on a GET
 
 
 def read_wiki_coverage() -> dict | None:
@@ -1084,10 +1090,19 @@ def _wiki_method(rec: dict) -> str:
         k = _int_or_none(rec.get(key))
         if k:
             unknown.append(f"{k} editions' {what} unknown, never 0")
+    k = _int_or_none(rec.get("editions_event_unreadable"))
+    if k:
+        unknown.append(f"{k} editions' last event could not be read, which is not the same as none")
+    lo, up = _int_or_none(rec.get("pages_with_text_lower_bound")), _int_or_none(rec.get("pages_with_text_upper_bound"))
+    if lo is not None and up is not None and up >= lo:
+        text = f"between {lo} and {up} pages with a text (a page promoted from WARM to HOT may be counted twice)"
+    elif lo is not None:
+        text = f"at least {lo} pages with a text (the upper bound is unknown while an edition's WARM count is)"
+    else:
+        text = "an unknown number of pages with a text"
     return (f"the per-edition wiki coverage report's own counts, from its last read of the lane: {n('editions_with_a_run')} of "
             f"{n('editions_listed')} editions listed have run; {n('editions_with_pages_seen')} have pages seen and "
-            f"{n('editions_with_text')} hold a text; {n('pages_seen')} pages seen, between {n('pages_with_text_lower_bound')} "
-            f"and {n('pages_with_text_upper_bound')} pages with a text (a page promoted from WARM to HOT may be counted twice), "
+            f"{n('editions_with_text')} hold a text; {n('pages_seen')} pages seen, {text}, "
             f"{n('gaps_total')} gaps"
             + (f" ({'; '.join(unknown)})" if unknown else "")
             + ". A first slice is one edition with pages seen or a stored text. No edition is named; nothing is divided.")
@@ -1104,7 +1119,7 @@ def _wiki_block() -> dict:
     keys = ("measured", "editions_listed", "editions_with_a_run", "editions_with_pages_seen", "editions_with_text",
             "editions_walk_complete", "pages_seen", "editions_pages_unknown", "edition_articles", "editions_without_total",
             "pages_with_text_lower_bound", "pages_with_text_upper_bound", "editions_text_bound_unknown", "gaps_total",
-            "newest_event_recorded_at")
+            "newest_event_recorded_at", "editions_event_unreadable")
     block = {"vertical": "wiki", "kind": "lane", "state": "recorded", "first_slice": pages_n > 0 or text_n > 0,
              "as_of": rec.get("measured_at"), **{k: rec.get(k) for k in keys}, "method": _wiki_method(rec)}
     if not block["first_slice"]:
