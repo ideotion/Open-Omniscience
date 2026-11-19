@@ -37,12 +37,12 @@ METHOD = (
     "A synthetic street grid exactly at the published caps ({roads} roads, {vertices} vertices, most of them minor streets, the major roads longer with a straight run, every road "
     "named) is drawn {frames} times in Chromium with the app's own street drawing function, panned one pixel per frame. draw_ms is the "
     "time of one full redraw (clear, every class stroked, the labels placed) ending with a one-pixel read that makes the canvas finish "
-    "the frame; frame_ms is the time between two animation frames while one redraw runs in each, so it includes the browser's own "
-    "painting and is never below the display's frame interval. The first {warmup} frames are not counted."
+    "the frame; frame_ms is the time between two animation frames while one redraw runs in each, with no read-back (as in the app), "
+    "so it includes the browser's own painting and is never below the display's frame interval. The first {warmup} frames are not counted."
 )
 CAVEAT = (
     "A synthetic grid, not a real city: a real view at the caps has the same numbers of roads and vertices but other lengths, crossings "
-    "and names. A headless browser draws without the display a person uses, often in software. The figure is this machine's, under the "
+    "and names. A headless browser draws without the display a person uses, often in software; draw_ms's read-back can also move a canvas the GPU drew to the CPU, which frame_ms avoids. The figure is this machine's, under the "
     "label it was given."
 )
 
@@ -54,12 +54,20 @@ CLASS_SHARE = (0.005, 0.005, 0.02, 0.03, 0.06, 0.48, 0.25, 0.14, 0.01)
 
 
 def _clean(value: Any, limit: int) -> str:
-    """Letters, digits, spaces and ``.,-_()+`` only (anything else becomes ``-``), at most ``limit`` characters.
+    """Letters, digits, spaces and ``-_()+`` only (anything else becomes ``-``), at most ``limit`` characters.
 
-    The record's free fields name a machine or a browser; a slash or a colon would let one carry a path or an address into a bundle
-    that promises neither.
+    The label names a KIND of machine ("sandbox", "reference VM"), never a host. No slash, colon or dot survives, so no path, URL,
+    dotted address or host name does; and a run of three or more digit groups (an address whose dots became dashes) is dropped too.
     """
-    return "".join(ch if (ch.isalnum() or ch in " .,-_()+") else "-" for ch in str(value or ""))[:limit].strip()
+    text = "".join(ch if (ch.isalnum() or ch in " -_()+") else "-" for ch in str(value or ""))
+    return _ADDRESSY.sub("-", text)[:limit].strip()
+
+
+_ADDRESSY = re.compile(r"\d+(?:-+\d+){2,}")
+#: The only browser string shown: what the script writes.
+_BROWSER = re.compile(r"Chromium \d+(?:\.\d+){0,3} \(headless\)")
+#: An os or arch name as Python's platform module gives one.
+_PLATFORM = re.compile(r"[A-Za-z0-9_]{1,20}")
 
 
 def clean_label(value: Any) -> str:
@@ -123,11 +131,13 @@ def synthetic_grid(roads: int, vertices: int, width: float, height: float) -> li
     return out
 
 
-def _path():
+def _path(create: bool = False):
+    """Where the record lives; only a write creates the folder, so reading an install that never measured leaves no trace."""
     from src.paths import data_dir
 
     d = data_dir() / "diagnostics"
-    d.mkdir(parents=True, exist_ok=True)
+    if create:
+        d.mkdir(parents=True, exist_ok=True)
     return d / RECORD_NAME
 
 
@@ -141,14 +151,19 @@ def record(result: dict[str, Any]) -> dict[str, Any] | None:
     try:
         from src.safety.file_lock import atomic_replace
 
-        atomic_replace(_path(), json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_replace(_path(create=True), json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:  # noqa: BLE001 - a measurement's record never breaks the measurement
         return None
     return rec
 
 
 def _num(v: Any) -> float | int | None:
-    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
+    """A JSON number, or None. An int is taken as it is (``math.isfinite`` would raise on one too large for a float)."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    return v if isinstance(v, float) and math.isfinite(v) else None
 
 
 def _dict(v: Any) -> dict[str, Any]:
@@ -192,10 +207,10 @@ def member_slot() -> dict[str, Any]:
         "canvas": {k: _num(canvas.get(k)) for k in ("w", "h", "dpr")},
         "draw_ms": draw,
         "frame_ms": frame,
-        "browser": (_clean(browser, 60) or None) if isinstance(browser, str) else None,
+        "browser": browser if isinstance(browser, str) and _BROWSER.fullmatch(browser) else None,
         "machine": {
-            "os": (_clean(machine["os"], 20) or None) if isinstance(machine.get("os"), str) else None,
-            "arch": (_clean(machine["arch"], 20) or None) if isinstance(machine.get("arch"), str) else None,
+            "os": machine["os"] if isinstance(machine.get("os"), str) and _PLATFORM.fullmatch(machine["os"]) else None,
+            "arch": machine["arch"] if isinstance(machine.get("arch"), str) and _PLATFORM.fullmatch(machine["arch"]) else None,
             "cpus": _num(machine.get("cpus")),
             "memory_gb": _num(machine.get("memory_gb")),
         },

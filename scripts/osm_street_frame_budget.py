@@ -68,7 +68,8 @@ def drawing_source() -> str:
 
 # The page: one canvas, the app's colours as fixed values (a theme's own are read from CSS in the app), and a measuring loop. Each frame
 # pans the grid by a pixel, maps every road to the screen as the app's draw() does (a multiply and an add per vertex), redraws it whole,
-# and reads one pixel back so the canvas has really finished the frame before the clock stops.
+# and, in the timed loop, reads one pixel back so the canvas has really finished the frame before the clock stops. The animation-frame
+# loop reads nothing back, as the app's draw() reads nothing back.
 _PAGE_JS = r"""
 (async ({ roads, frames, warmup, w, h }) => {
   const cv = document.createElement("canvas");
@@ -80,23 +81,23 @@ _PAGE_JS = r"""
   const pal = { "--bg": "#101418", "--fg": "#e6e6e6", "--muted": "#8a94a0", "--accent": "#4aa3ff", "--caveat": "#eab44e" };
   const color = (v) => pal[v] || "#888";
   const sz = { w, h };
-  const one = (i) => {
+  const one = (i, readBack) => {
     const t0 = performance.now();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const dx = -(i % 40);
     const placed = _ooOsmDrawStreets(ctx, roads, (r) => r.c.map(([x, y]) => [x + dx, y]), color, sz);
-    ctx.getImageData(0, 0, 1, 1);
+    if (readBack) ctx.getImageData(0, 0, 1, 1);
     return [performance.now() - t0, placed];
   };
   const draw = [], frame = [];
   let labels = 0;
-  for (let i = 0; i < warmup + frames; i++) { const [ms, p] = one(i); labels = p; if (i >= warmup) draw.push(ms); }
+  for (let i = 0; i < warmup + frames; i++) { const [ms, p] = one(i, true); labels = p; if (i >= warmup) draw.push(ms); }
   await new Promise((done) => {
     let i = 0, last = null;
     const tick = (now) => {
       if (last !== null && i > warmup) frame.push(now - last);
-      last = now; one(i); i++;
+      last = now; one(i, false); i++;
       if (i <= warmup + frames) requestAnimationFrame(tick); else done();
     };
     requestAnimationFrame(tick);

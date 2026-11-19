@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def record_path(tmp_path, monkeypatch):
     p = tmp_path / fb.RECORD_NAME
-    monkeypatch.setattr(fb, "_path", lambda: p)
+    monkeypatch.setattr(fb, "_path", lambda create=False: p)
     return p
 
 
@@ -153,7 +153,7 @@ def test_a_hand_edited_record_passes_no_free_text_and_no_wrong_kinds(record_path
     got = fb.member_slot()
     text = json.dumps(got)
     assert "secret-host" not in text and "/home/someone" not in text
-    assert len(got["label"]) == fb.LABEL_MAX and len(got["browser"]) == 60 and len(got["machine"]["os"]) == 20
+    assert len(got["label"]) == fb.LABEL_MAX and got["browser"] is None and got["machine"]["os"] is None
     assert got["machine"]["arch"] is None and got["machine"]["cpus"] is None and got["machine"]["memory_gb"] is None
     assert got["draw_ms"] is None and got["unmeasured"] == {"draw_ms": "this run did not record it"}
 
@@ -167,7 +167,7 @@ def test_the_slot_stays_small_at_its_widest(record_path):
 
 
 def test_a_failed_write_records_nothing(monkeypatch, tmp_path):
-    monkeypatch.setattr(fb, "_path", lambda: tmp_path / "no-such-dir" / "deeper" / fb.RECORD_NAME)
+    monkeypatch.setattr(fb, "_path", lambda create=False: tmp_path / "no-such-dir" / "deeper" / fb.RECORD_NAME)
     assert fb.record(_run()) is None
 
 
@@ -226,8 +226,38 @@ def test_a_label_carries_no_path_or_address(record_path):
     fb.record(_run(label="/home/me/vm: http://10.0.0.1", browser="Chromium/1 (x)"))
     got = fb.member_slot()
     text = json.dumps(got)
-    assert "/" not in text and ":" not in got["label"] and ":" not in got["browser"]
+    assert "/" not in text and ":" not in got["label"]
     assert got["label"].startswith("-home-me-vm") and fb.clean_label("") == "unlabelled"
+    assert "10" not in got["label"] and got["browser"] is None
+
+
+@pytest.mark.parametrize("label", ["build at 192.168.1.20", "jdoe-laptop.corp.example.com", "fe80::1", "10-0-0-1"])
+def test_no_address_or_dotted_host_survives_in_a_label(label):
+    got = fb.clean_label(label)
+    assert "." not in got and ":" not in got and "192" not in got and "0-0-1" not in got
+
+
+def test_a_plain_label_is_kept():
+    assert fb.clean_label("reference VM (2 cores, 3 GB)") == "reference VM (2 cores- 3 GB)"
+    assert fb.clean_label("sandbox") == "sandbox"
+
+
+def test_an_integer_too_large_for_a_float_does_not_raise(record_path):
+    fb.record(_run())
+    text = record_path.read_text(encoding="utf-8").replace('"cpus": 4', '"cpus": 1' + "0" * 400)
+    record_path.write_text(text, encoding="utf-8")
+    got = fb.member_slot()
+    assert got["state"] == "measured" and got["machine"]["cpus"] == 10**400
+
+
+def test_reading_an_install_that_never_measured_creates_nothing(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src import paths
+
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    assert fb.member_slot()["state"] == "not measured"
+    assert not (tmp_path / "diagnostics").exists()
+    assert fb.record(_run()) is not None and (tmp_path / "diagnostics" / fb.RECORD_NAME).exists()
 
 
 def test_a_time_the_record_did_not_write_is_not_shown(record_path):
