@@ -22,6 +22,38 @@ def _work(session, **kw):
             "by_reason": {"x": 1}, "last_id": 9, "done": True, "write": False}
 
 
+class _Session:
+    """A session the worker can close. The factory used to return None: the worker's ``session.close()``
+    then raised AFTER the batch, the run ended in ``error`` instead of ``done``, and ``error`` is
+    resumable -- so a second caller that took the lock after the worker finished was rightly let in,
+    and the race test failed whenever the scheduler ordered it that way (row 176)."""
+
+    def close(self) -> None:
+        pass
+
+
+def _paused_manager(tmp_path, cls=qj.QuarantineJobManager):
+    mgr = cls(state_path=tmp_path / "q.json")
+    mgr._state, mgr._cursor, mgr._total, mgr._done = "paused", 5, 20, 5
+    mgr._tally = {"scanned": 5, "quarantined": 2, "reason:x": 2}
+    mgr._work_fn = _work
+    mgr._session_factory = _Session
+    return mgr
+
+
+def test_a_second_resume_after_the_first_run_finished_is_refused(tmp_path):
+    """The concurrent test's worst ordering, made deterministic: the second caller arrives only once the
+    first run has finished. It must find the run done, not resumable."""
+    mgr = _paused_manager(tmp_path)
+    mgr.resume()
+    assert mgr._thread is not None
+    mgr._thread.join(30)
+    assert mgr.status()["state"] == "done", mgr.status()
+    with pytest.raises(RuntimeError):
+        mgr.resume()
+    assert mgr.status()["tally"]["scanned"] == 8
+
+
 def test_two_concurrent_resumes_count_the_remaining_work_once(tmp_path):
     barrier = threading.Barrier(2)
     turn = threading.Lock()
@@ -46,11 +78,7 @@ def test_two_concurrent_resumes_count_the_remaining_work_once(tmp_path):
             threading.Thread(target=lambda: (worker.join(10), a_finished.set()), daemon=True).start()
             return out
 
-    mgr = Meet(state_path=tmp_path / "q.json")
-    mgr._state, mgr._cursor, mgr._total, mgr._done = "paused", 5, 20, 5
-    mgr._tally = {"scanned": 5, "quarantined": 2, "reason:x": 2}
-    mgr._work_fn = _work
-    mgr._session_factory = lambda: None
+    mgr = _paused_manager(tmp_path, Meet)
 
     outcomes: list[str] = []
 
