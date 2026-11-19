@@ -205,20 +205,48 @@ def test_the_oldest_unapplied_file_goes_first_and_a_finished_file_is_not_fetched
     assert F.UPDATE_BASE + "pubmed25n1300.xml.gz" not in site.asked
 
 
-def test_a_checksum_mismatch_applies_nothing_and_does_not_block_the_next_file(medical, no_corpus):
+def test_a_checksum_mismatch_applies_nothing_and_no_newer_file_overtakes_it(medical, no_corpus):
     no_corpus["w"] = _wanted(pmid={"90000001"})
     site = _site()
-    good = site.bodies[F.UPDATE_BASE + NAMES[1] + ".md5"]
     site.bodies[F.UPDATE_BASE + NAMES[0] + ".md5"] = b"MD5 (x) = " + b"0" * 32 + b"\n"
     out = F.run_fetch(2, session=site)
     assert out["failed"]["file"] == NAMES[0] and out["failed"]["error"] == "FileRefused"
-    assert "checksum" in out["failed"]["reason"] and out["failed_files"] == 1
-    assert len(out["applied"]) == 1, "one file that always fails cannot block every later file"
-    assert good  # the second file's own checksum is untouched
+    assert "checksum" in out["failed"]["reason"]
+    assert out["applied"] == [] and _papers() == set()
+    assert F.UPDATE_BASE + NAMES[1] not in site.asked, (
+        "a newer file must never land before an older one that failed: its deletions of records not "
+        "kept yet leave no trace, so the older file could later bring a deleted record back"
+    )
     with store.lane_session("medical") as s:
-        rows = dict(s.execute(select(MedicalFile.name, MedicalFile.status)).all())
-    assert rows == {NAMES[0]: "failed", NAMES[1]: "finished"}
-    assert out["remaining"] == 1, "the failed file stays to be tried again"
+        rows = s.execute(select(MedicalFile.name, MedicalFile.status)).all()
+    assert rows == [(NAMES[0], "failed")]
+    assert out["remaining"] == 2
+    site.bodies[F.UPDATE_BASE + NAMES[0] + ".md5"] = site.bodies[F.UPDATE_BASE + NAMES[1] + ".md5"]
+    again = F.run_fetch(2, session=site)
+    assert len(again["applied"]) == 2 and again["failed"] is None and again["remaining"] == 0
+
+
+def test_the_newest_file_is_named_by_nlm_sequence_not_by_when_it_was_applied(medical):
+    from datetime import UTC, datetime, timedelta
+
+    store.create_lane("medical")
+    now = datetime.now(UTC)
+    with store.lane_session("medical") as s:
+        s.add(MedicalFile(name="pubmed25n1301.xml.gz", status="finished", finished_at=now))
+        s.add(MedicalFile(name="pubmed25n1300.xml.gz", status="finished", finished_at=now + timedelta(hours=1)))
+    with store.lane_session("medical") as s:
+        assert M.summary(s)["last_file"]["name"] == "pubmed25n1301.xml.gz"
+
+
+def test_a_stop_inside_the_file_loop_is_reported_as_stopped(medical, no_corpus):
+    calls = {"n": 0}
+
+    def _stopping() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 2  # the after-scan check and the first file pass, then stop
+
+    out = F.run_fetch(2, session=_site(), stopping=_stopping)
+    assert len(out["applied"]) == 1 and out["stopped"] is True and out["failed"] is None
 
 
 def test_a_body_past_its_cap_is_refused_before_it_is_read_whole(medical, no_corpus, monkeypatch):

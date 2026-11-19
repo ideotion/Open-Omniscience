@@ -232,10 +232,12 @@ def run_fetch(
     """One consented click: scan the corpus for cited ids, list the update files, and apply the next ``files`` not yet applied.
 
     The oldest unapplied files go first, so a later file always lands after the one before it. A
-    file that fails is recorded as failed (its error class is named, never a URL) and the run goes on
-    to the next one, so one file that fails the same way every time cannot block every later file;
-    the failed one is tried again on the next click, and ``apply_file`` skips whatever a newer file
-    already overtook. Airplane mode coming on ends the run, named as such.
+    file that fails is recorded as failed (its error class is named, never a URL) and ENDS the run, and
+    it is tried again first on the next click. Files are applied strictly in NLM's order because a
+    deletion in a newer file of a record not yet kept leaves no trace: applying a newer file before an
+    older one that failed would let the older one later bring a deleted record back as live. Order is
+    worth more than progress; the panel names the file the run stopped at. Airplane mode coming on
+    ends the run too, named as such.
     """
     from src.database.session import session_scope
     from src.versioned import store
@@ -281,12 +283,12 @@ def run_fetch(
                 break
             _record_failure(name, exc)
             failures += 1
-            if failed is None:
-                failed = {
-                    "file": name,
-                    "error": type(exc).__name__,
-                    "reason": str(exc)[:300] if isinstance(exc, FileRefused) else None,
-                }
+            failed = {
+                "file": name,
+                "error": type(exc).__name__,
+                "reason": str(exc)[:300] if isinstance(exc, FileRefused) else None,
+            }
+            break
     with store.lane_session(M.LANE) as s:
         cov = M.coverage(s)
     return {

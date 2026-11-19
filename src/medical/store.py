@@ -386,12 +386,11 @@ def summary(session: Session) -> dict:
             select(MedicalPaper.provenance_class, func.count()).group_by(MedicalPaper.provenance_class)
         ).all()
     }
-    last = session.execute(
-        select(MedicalFile.name, MedicalFile.finished_at)
-        .where(MedicalFile.status == "finished")
-        .order_by(MedicalFile.finished_at.desc(), MedicalFile.id.desc())
-        .limit(1)
-    ).first()
+    finished = session.execute(
+        select(MedicalFile.name, MedicalFile.finished_at).where(MedicalFile.status == "finished")
+    ).all()
+    # The NEWEST file by NLM's own sequence, never by when this install happened to apply it.
+    last = max(finished, key=lambda r: (file_sequence(r[0]), r[1] or datetime.min.replace(tzinfo=UTC))) if finished else None
     return {
         "papers": sum(by_class.values()),
         "by_class": {k: int(by_class.get(k, 0)) for k in ("journal", "preprint", "retracted")},

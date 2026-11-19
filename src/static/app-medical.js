@@ -86,10 +86,10 @@
       if (r.failed) {
         msg += " " + (r.failed.error === "airplane_mode"
           ? t("Stopped: airplane mode is on.")
-          : _tf("{n} files could not be applied and will be tried again; the first, {file}: {error}",
-              {n: r.failed_files || 1, file: r.failed.file, error: r.failed.reason || r.failed.error}));
+          : _tf("Stopped at {file}: {error}. Files are applied in NLM's order, so this one is tried again first next time.",
+              {file: r.failed.file, error: r.failed.reason || r.failed.error}));
       }
-      if (r.stopped || job.state === "cancelled") {
+      if (r.stopped) {
         msg += " " + t("Stopped before the end, as asked.");
       }
       if (st) st.textContent = msg;
