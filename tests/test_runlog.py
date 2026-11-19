@@ -285,6 +285,15 @@ def test_the_walk_is_charged_for_ITS_cost_not_the_whole_beats(monkeypatch):
 
     _real_vm = _ps.virtual_memory
 
+    # The walk is a stand-in that costs nothing, so the ONLY slow thing in the beat is the unrelated probe. The real walk
+    # (psutil children(recursive=True)) scans the whole process table on macOS, and on a busy runner it alone passed the
+    # 25 ms budget and backed off, failing this test for a reason it does not test (row 174, run 44432919479, macOS
+    # shard 3: child_walk == "backoff-cost"). That the real walk's own cost is charged is pinned by the backoff test above.
+    def _free_walk(proc, limit=24):
+        return [{"pid": 4242, "cpu_s": 1.0}], 1.0, 10.0
+
+    monkeypatch.setattr(runlog, "_sample_children", _free_walk)
+
     def _slow_unrelated():
         time.sleep((runlog._CHILD_WALK_BUDGET_MS + 20) / 1000.0)
         return _real_vm()
@@ -294,9 +303,12 @@ def test_the_walk_is_charged_for_ITS_cost_not_the_whole_beats(monkeypatch):
     b = rl._beat({})
     assert b["bc_ms"] > runlog._CHILD_WALK_BUDGET_MS, "the beat really was slow"
     # ...and the walk, which was cheap, is neither disabled nor backed off.
-    assert "kids_n" in b and b.get("child_walk") is None
+    assert "kids_n" in b and b.get("child_walk") is None, b
+    assert b["kids_ms"] < runlog._CHILD_WALK_BUDGET_MS < b["bc_ms"], ("the walk is timed on its own, apart from the beat", b)
     b2 = rl._beat(b)
-    assert "kids_n" in b2, "an unrelated slow probe must not cost the child walk"
+    assert "kids_n" in b2 and b2.get("child_walk") is None, ("an unrelated slow probe must not cost the child walk", b2)
+    b3 = rl._beat(b2)
+    assert "kids_n" in b3 and b3.get("child_walk") is None, ("nor back it off for the beats after", b3)
 
 
 def test_a_rate_needs_two_samples_and_a_nonzero_window():
