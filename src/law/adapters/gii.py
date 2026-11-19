@@ -227,6 +227,10 @@ _KNOWN = {
 }
 
 _WS_RE = re.compile(r"\s+")
+_GII_HEAD_RE = re.compile(
+    r"(?:<\?xml[^>]*\?>\s*)?(?:<!--.*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?(?:<!--.*?-->\s*)*<dokumente[\s>/]",
+    re.IGNORECASE | re.DOTALL,
+)
 _KENNZAHL_RE = re.compile(r"^\d+$")
 
 
@@ -352,10 +356,10 @@ def looks_like_gii(body) -> bool:
         head = body[:600]
     else:
         return False
-    head = head.lstrip("﻿").lstrip()
-    if not head.startswith("<"):
-        return False
-    return "<dokumente" in head
+    head = head.lstrip("\ufeff").lstrip()
+    # The FIRST element must be <dokumente>, after at most a declaration, a doctype and
+    # comments: a page that merely mentions the tag further in is not the portal's XML.
+    return _GII_HEAD_RE.match(head) is not None
 
 
 def parse_gii(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedLaw:
@@ -413,9 +417,18 @@ def parse_gii(data: bytes | str, *, retrieved_on: str | None = None) -> ParsedLa
         if _norm(_field(meta, "enbez") or "").lower() in _TOC_ENBEZ:
             excluded_chars += _ink(_block_text(norm))
             continue
-        for child in norm.iter():
-            if _local(child.tag) in ("metadaten", "fussnoten"):
+        # Only where the format puts them: the norm's own metadata and the footnotes directly
+        # under its textdaten. Each subtree is walked ONCE: searching every descendant would
+        # re-walk a nested copy at every level, quadratic in a crafted file's depth. Text
+        # under any other placement stays in the denominator and costs recovery.
+        for child in norm:
+            name = _local(child.tag)
+            if name == "metadaten":
                 excluded_chars += _ink(_block_text(child))
+            elif name == "textdaten":
+                for part in child:
+                    if _local(part.tag) == "fussnoten":
+                        excluded_chars += _ink(_block_text(part))
     body_chars = max(0, _ink(_block_text(root)) - excluded_chars)
 
     for index, norm in enumerate(norms):

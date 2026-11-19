@@ -530,3 +530,23 @@ def test_a_malformed_previous_urls_is_ignored_rather_than_raised(value, expected
     from src.law.catalog import _previous_urls
 
     assert _previous_urls({"previous_urls": value}) == expected
+
+
+def test_nested_footnotes_are_walked_ONCE_not_once_per_level():
+    """A crafted file nesting <fussnoten> thousands deep cost time quadratic in the depth
+    when every descendant was searched (8,000 levels, 188 KB of XML, 0.6 KB zipped: 25 s).
+    Only the placements the format uses are excluded now; a nested copy is ordinary text,
+    so it stays in the denominator, and the document is refused on the floor instead."""
+    depth = 20_000
+    nested = "<fussnoten>t" * depth + "</fussnoten>" * depth
+    doc = _doc(_META, _para("§ 1", "Kurz.", extra="<anlage>" + nested + "</anlage>"))
+    with pytest.raises(AdapterRefusal) as err:
+        parse_gii(doc)
+    assert err.value.reason == "too little of the document was recovered"
+
+
+def test_the_pre_check_wants_dokumente_as_the_FIRST_element():
+    assert looks_like_gii(GG.read_bytes())
+    assert looks_like_gii(GG.read_text(encoding="utf-8"))
+    assert not looks_like_gii("<html><body><pre>&lt;dokumente&gt; <dokumente></pre></body></html>")
+    assert not looks_like_gii("<p>see <dokumente> below</p>")
