@@ -189,6 +189,18 @@ def test_the_codes_with_no_permanent_population_keep_their_state_and_are_named_a
     assert all(placed[cc] == FLOOR_NO_SOURCE for cc in WORLD_NO_PERMANENT_POPULATION), "still placed, never dropped"
     assert set(WORLD_NO_PERMANENT_POPULATION) <= set(ISO_3166_1_ALPHA2)
     assert "no_permanent_population" in block["method"] and "not research to do" in block["caveat"]
+    # R752: they keep their entry and state, and the research count leaves them out.
+    n_none = len(block["by_state"][FLOOR_NO_SOURCE])
+    assert block["no_eligible_source_no_permanent_population"] == len(WORLD_NO_PERMANENT_POPULATION)
+    assert block["no_eligible_source_to_research"] == n_none - len(WORLD_NO_PERMANENT_POPULATION)
+    assert block["states"][FLOOR_NO_SOURCE] == n_none, "the state count itself is unchanged"
+
+
+def test_a_code_with_no_permanent_population_that_has_a_source_is_not_subtracted_from_research():
+    block = world_report([], {"sources": [_src("aq.example", "aq", tier="live")]}, _floor("fr"), population=_NO_POP)
+    assert _states(block)["aq"] == FLOOR_VERIFIED_UNTRACKED
+    assert block["no_eligible_source_no_permanent_population"] == 6
+    assert block["no_eligible_source_to_research"] == len(block["by_state"][FLOOR_NO_SOURCE]) - 6
 
 
 def test_hong_kong_and_macau_are_in_the_world_and_beside_zh_with_the_same_state():

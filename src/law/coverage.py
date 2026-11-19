@@ -464,7 +464,8 @@ _WORLD_METHOD = (
     "states as the floor, read the same way (one reading of the tracked documents and of the catalogue for both blocks): "
     "tracked, verified-not-yet-tracked, unverified, no-eligible-source. Territories, dependencies and uninhabited codes "
     "are included, because ISO lists them; the codes with no permanent population are also named in "
-    "no_permanent_population. Hong Kong and Macau are in this block and are also named beside zh in the floor block, with "
+    "no_permanent_population and left out of the research count no_eligible_source_to_research (R752), while keeping "
+    "their entry and state in by_state; dependencies are never grouped under a parent state (R752). Hong Kong and Macau are in this block and are also named beside zh in the floor block, with "
     "the same state. Within a state, countries go by population reached (R679) when the operator's "
     "table is present, by code otherwise (see order). A country code a tracked document states that is not in this list "
     "is named in tracked_codes_not_listed (a many-country code such as eu, or a retired or mistyped code), never dropped."
@@ -515,6 +516,12 @@ def world_report(
         # code): named, never dropped.
         "tracked_codes_not_listed": sorted(tracked - universe),
         "no_permanent_population": [cc for cc in WORLD_NO_PERMANENT_POPULATION if cc in set(countries)],
+        # R752: the research list is no-eligible-source WITHOUT the codes no one lives in; those are counted apart, never
+        # dropped from by_state (each code keeps its own entry and state).
+        "no_eligible_source_to_research": sum(1 for cc in by_state.get(FLOOR_NO_SOURCE, []) if cc not in WORLD_NO_PERMANENT_POPULATION),
+        "no_eligible_source_no_permanent_population": sum(
+            1 for cc in by_state.get(FLOOR_NO_SOURCE, []) if cc in WORLD_NO_PERMANENT_POPULATION
+        ),
         "method": _WORLD_METHOD,
         "caveat": _WORLD_CAVEAT,
     }
