@@ -119,7 +119,7 @@ def files_signal(category: str) -> str:
 
 
 def lane_signal(kind: str) -> str:
-    """``lane:<kind>``: a backup carries this living-source store (``wiki``, ``law``, ``osm``) as a member."""
+    """``lane:<kind>``: a backup carries this living-source store (``wiki``, ``law``, ``osm``, ``medical``) as a member."""
     return f"lane:{kind}"
 
 
@@ -208,6 +208,13 @@ def _openstreetmap_because(signals: set[str]) -> str | None:
     return ", ".join(hits) if hits else None
 
 
+def _pubmed_because(signals: set[str]) -> str | None:
+    # R746: a backup carries the medical store (``lane:medical``), whose rows are PubMed's own
+    # records. Nothing else carries them: the papers surface reads the store and exports nothing.
+    hits = sorted(s for s in signals if s == lane_signal("medical"))
+    return ", ".join(hits) if hits else None
+
+
 def _wikipedia_text() -> str:
     return (
         "Wikipedia text — CC BY-SA 4.0 "
@@ -236,6 +243,16 @@ def _openstreetmap_text() -> str:
     )
 
 
+def _pubmed_text() -> str:
+    # NLM's requested courtesy line; an abstract's own copyright notice is stored with the record.
+    return (
+        "PubMed records — courtesy of the U.S. National Library of Medicine "
+        "(https://www.nlm.nih.gov/databases/download/terms_and_conditions.html). An abstract may be "
+        "copyrighted by its publisher; the record's own copyright line is kept with it. Check those "
+        "terms before redistributing an abstract."
+    )
+
+
 def _db_ip_text() -> str:
     from src.geo.ip_geo import ATTRIBUTION
 
@@ -254,6 +271,7 @@ _REGISTRY: tuple[tuple[str, object, object], ...] = (
     ("wikipedia", _wikipedia_text, _wikipedia_because),
     ("law", _law_text, _law_because),
     ("openstreetmap", _openstreetmap_text, _openstreetmap_because),
+    ("pubmed", _pubmed_text, _pubmed_because),
     ("db_ip", _db_ip_text, _db_ip_because),
     ("open_meteo", _open_meteo_text, _open_meteo_because),
 )
