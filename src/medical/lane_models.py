@@ -15,8 +15,10 @@ names. A bulk update file is the TRANSPORT; after the match pass the rest of it 
 the ~38 M-record baseline is never ingested whole. ``medical_wanted`` holds the ids the user
 named; the corpus-cited ids are read from the corpus at match time and are never copied here.
 
-BACKUPS (R746): ``medical.db`` is a "waiting" lane: a backup does not carry it yet, the backup
-view says so, and every kept record can be fetched again from NLM.
+BACKUPS (R746): a backup carries ``medical.db`` and the import merges it additively
+(``src.backup.lane_merge._merge_medical``): a record only the backup holds is added, one both
+hold keeps this machine's row, the ids the user named join this list, and ``medical_files`` and
+``medical_cited`` (this machine's own reads) stay behind.
 
 FOUR TABLES.
 

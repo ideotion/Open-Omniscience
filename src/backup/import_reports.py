@@ -674,7 +674,7 @@ def read_import_report(filename: str) -> dict[str, Any]:
     return data
 
 
-_LANE_TITLES = {"wiki": "Wikipedia", "law": "Law", "osm": "Maps (OpenStreetMap)"}
+_LANE_TITLES = {"wiki": "Wikipedia", "law": "Law", "osm": "Maps (OpenStreetMap)", "medical": "Medical papers (PubMed)"}
 
 
 def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
@@ -736,6 +736,23 @@ def _living_sources_markdown(lines: list[str], living: dict[str, Any]) -> None:
                 f"computer never finished** ({', '.join(unfinished)}). This computer's copy was kept as it is; cutting "
                 "the country again here finishes it."
             )
+        med = lane.get("medical")
+        if isinstance(med, dict):
+            # R746: a paper both computers hold keeps this computer's row, and a row the backup holds in a
+            # shape this build never writes is not copied; both are said, never done silently.
+            med_newer = med.get("papers_backup_newer")
+            if isinstance(med_newer, int) and med_newer > 0:
+                lines.append(
+                    f"  - **The backup holds a copy from a newer PubMed file of {_fmt_count(med_newer)} papers this computer "
+                    "already has.** This computer's copy was kept whole; its next PubMed fetch reads that newer file itself."
+                )
+            refused = [(med.get(k), noun) for k, noun in (("papers_refused", "papers"), ("wanted_refused", "named identifiers"))]
+            for n, noun in refused:
+                if isinstance(n, int) and n > 0:
+                    lines.append(
+                        f"  - {_fmt_count(n)} {noun} in the backup were not copied: they were not in the form this "
+                        "version writes."
+                    )
         dropped = lane.get("warm_texts_dropped")
         if dropped:
             lines.append(

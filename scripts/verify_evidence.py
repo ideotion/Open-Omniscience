@@ -25,6 +25,10 @@ from src.reporting.evidence import verify_bundle  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
+    # A bundle's own text is printed back; on a cp1252 console (Windows) a non-ASCII case name must not crash it.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     if len(argv) not in (2, 3):
         print(
             "usage: python scripts/verify_evidence.py <bundle.json> [trusted_public_key_hex]",
@@ -35,7 +39,8 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 2
-    bundle = json.loads(Path(argv[1]).read_text())
+    # The browser saves UTF-8; never the locale's codec (cp1252 on Windows broke non-ASCII bundles, row 198).
+    bundle = json.loads(Path(argv[1]).read_text(encoding="utf-8-sig"))
     trusted = argv[2] if len(argv) == 3 else None
     ok, reason = verify_bundle(bundle, trusted_public_key=trusted)
     manifest = bundle.get("manifest", {})
