@@ -73,6 +73,7 @@ for (const [label, style, attr] of [["computed style", "rtl", null], ["dir attri
 }
 // the computed style wins over a stale attribute: the style is what the reader sees
 check(make("ltr", "rtl").press("b", "ArrowRight").to === "c", "the computed direction wins over a dir attribute");
+check(make("rtl", "ltr").press("b", "ArrowLeft").to === "c", "and the other way round");
 // up, down, Home and End keep DOM order in both directions
 for (const style of ["ltr", "rtl"]) {
   const s = make(style, null);

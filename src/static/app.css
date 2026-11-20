@@ -2400,8 +2400,8 @@
 .dossier-list { margin: 4px 0 10px; padding-inline-start: 18px; }
 .dossier-list li { margin: 3px 0; }
 /* The dossier's rails as subtabs (row 178): the strip WRAPS like every nav.tabs, so every rail name stays
-   in view without a sideways scroll (the Chromium walk, row 192); a tab's own label never breaks. */
-.dossier-tabs { position: static; margin-top: 8px; }
+   in view (the Chromium walk, row 192); a tab's own label never breaks. */
+.dossier-tabs { position: static; margin-top: 8px; overflow-x: auto; } /* one label wider than a phone scrolls in the strip, never the page */
 .dossier-tabs > button { white-space: nowrap; }
 .dossier-panel .dossier-list { margin-top: 4px; }
 .dossier-source { margin: 0 0 6px; }

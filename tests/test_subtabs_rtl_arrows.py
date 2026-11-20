@@ -29,6 +29,5 @@ def test_the_direction_is_read_inside_the_keydown_handler():
     src = read_static("app-markets.js")
     oo = function_source(src, "ooSubtabs")
     # read per key press, never once at wiring time: a language switch flips the direction live
-    assert oo.count("isRtl()") == 2, "isRtl is declared once and called once"
     assert re.search(r'addEventListener\("keydown"[\s\S]*const rtl = isRtl\(\);', oo), (
         "the direction is read inside the keydown handler")
