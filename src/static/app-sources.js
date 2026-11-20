@@ -1961,11 +1961,17 @@
       } catch (e) { _schedTargetsLast = null; el.textContent = _failMsg("Could not preview targets: {error}", e); }
     }
 
+    // R756: a refused start says what the network is doing NOW, read by the server from the kill switch after the refusal
+    // ("Airplane mode is on, as it was before this start." or "The network stays on, ..."). Each sentence is one locale key.
+    function _networkAfterRefusal(e, t9) {
+      const sentence = e && e.detail && typeof e.detail === "object" ? e.detail.network : "";
+      return sentence ? " " + t9(sentence) : "";
+    }
     async function schedulerStart() {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!await ensureOnline(t9("Start continuous background collection"))) return;
       try { renderSchedStatus(await api("/api/scheduler/start", {method: "POST"}));
-        toast("Scheduler started."); } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); }
+        toast("Scheduler started."); } catch (e) { toast(_failMsg("Start failed: {error}", e) + _networkAfterRefusal(e, t9), "err"); }
     }
     async function schedulerStop() {
       try { renderSchedStatus(await api("/api/scheduler/stop", {method: "POST"}));
@@ -1986,7 +1992,7 @@
             if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch({refresh: true}); loadDbStats(); } }
           catch { clearInterval(poll); }
         }, 1500);
-      } catch (e) { toast(_failMsg("Run now failed: {error}", e), "err"); }
+      } catch (e) { toast(_failMsg("Run now failed: {error}", e) + _networkAfterRefusal(e, t9), "err"); }
     }
 
     async function saveScheduler() {

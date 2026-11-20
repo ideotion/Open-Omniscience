@@ -370,12 +370,12 @@ class _Loop:
     def __init__(self, error: BaseException | None = None, started: bool = True) -> None:
         self.error, self.started = error, started
 
-    def start(self) -> bool:
+    def start(self, gate=None) -> bool:
         if self.error is not None:
             raise self.error
         return self.started
 
-    def run_now(self) -> bool:
+    def run_now(self, gate=None) -> bool:
         return self.start()
 
     def status(self) -> dict:
@@ -404,7 +404,7 @@ def test_a_collection_start_whose_loop_thread_cannot_start_answers_409_not_500(c
     _cannot_start(monkeypatch, runner)
     after = _scheduler_route(monkeypatch, scheduler)
     r = client.post("/api/scheduler/start")
-    assert r.status_code == 409 and _CANNOT_START in r.json()["detail"]
+    assert r.status_code == 409 and _CANNOT_START in r.json()["detail"]["error"]
     assert scheduler.is_running() is False
     assert after == [], "the Wikipedia lane was resumed after a start that did not happen"
 
@@ -437,7 +437,7 @@ def test_a_run_now_whose_thread_cannot_start_answers_409_not_500(client, monkeyp
     _cannot_start(monkeypatch, runner)
     after = _scheduler_route(monkeypatch, scheduler)
     r = client.post("/api/scheduler/run-now")
-    assert r.status_code == 409 and _CANNOT_START in r.json()["detail"]
+    assert r.status_code == 409 and _CANNOT_START in r.json()["detail"]["error"]
     status = scheduler.status()
     assert status["active"] is False and status["running"] is False
     assert after == [], "the Wikipedia lane was resumed after a run that did not begin"

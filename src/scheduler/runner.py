@@ -1865,6 +1865,21 @@ def _log_pause_in_force() -> bool:
         return False
 
 
+def _after_gate(gate: threading.Event | None, target: Callable[[], object]) -> Callable[[], object]:
+    """``target``, run only once ``gate`` is set (R756); ``target`` itself when there is no gate.
+
+    The collection start's route makes the thread first and clears the kill switch after, so a start whose thread cannot be made leaves the
+    switch exactly as it found it, with no moment in between when anything could fetch. The thread waits here for that clear."""
+    if gate is None:
+        return target
+
+    def gated() -> object:
+        gate.wait()
+        return target()
+
+    return gated
+
+
 class BackgroundScheduler:
     """Daemon-thread scheduler with explicit start/stop and non-overlapping run-now.
 
@@ -1970,8 +1985,12 @@ class BackgroundScheduler:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self) -> bool:
+    def start(self, gate: threading.Event | None = None) -> bool:
         """Start the scheduling loop. Returns False if it was already running, or while an exclusive operation holds the machine.
+
+        ``gate`` (R756): when given, the loop's thread is made and started but waits on it before it runs anything, so a caller can open the
+        network only once the thread exists -- a start that cannot make its thread then never opened anything. The caller MUST set it
+        (``POST /api/scheduler/start`` does, in a ``finally``).
 
         The hold (R367, F5 of the read of #1607) is refused here exactly as :meth:`run_now` refuses it: the Start button, the network toggle going
         online and the unattended start would otherwise put the loop back in the middle of an import, whose dialog says collection is paused. A
@@ -1992,7 +2011,7 @@ class BackgroundScheduler:
             self._stop.clear()
             previous = (self._thread, self._started_at)
             self._started_at = datetime.now(UTC)
-            self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
+            self._thread = threading.Thread(target=_after_gate(gate, self._loop_recorded), name="oo-scheduler", daemon=True)
             try:
                 self._thread.start()
             except Exception:
@@ -2048,8 +2067,8 @@ class BackgroundScheduler:
             self._next_run = None
         return True
 
-    def run_now(self) -> bool:
-        """Trigger an immediate one-off run in a worker thread.
+    def run_now(self, gate: threading.Event | None = None) -> bool:
+        """Trigger an immediate one-off run in a worker thread (``gate``: as in :meth:`start`, R756).
 
         Returns False if a run (scheduled or manual) is already in progress, OR
         an exclusive operation currently holds the machine (see
@@ -2069,7 +2088,7 @@ class BackgroundScheduler:
             if self._active or self._exclusive_hold:
                 return False
         _ensure_storage_supervisor()
-        threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
+        threading.Thread(target=_after_gate(gate, self._do_run), name="oo-scrape-now", daemon=True).start()
         return True
 
     def hold_exclusive(self, claim: list[bool] | None = None) -> None:
