@@ -12,8 +12,8 @@ read; 16 re-read the corpus or time the machine, and took 380 to 2,661 s. So:
 * the RECORDS run first, with collection still running, and
 * the SCANS run after them, under the exclusive window, in one of two modes:
   - ``quick`` (the default): one shared budget, :data:`SCAN_BUDGET_S`, scans shortest first;
-  - ``thorough``: one shared budget too, :data:`THOROUGH_BUDGET_S` by default (R757), every scan still under its own
-    300 s deadline; the operator's ``budget_min`` replaces the default for one run, ``OO_DIAG_THOROUGH_BUDGET_S`` for the install.
+  - ``thorough``: every scan under its own 300 s deadline and no shared budget by default (R466); the operator's ``budget_min``
+    sets one for one run, ``OO_DIAG_THOROUGH_BUDGET_S`` for the install (R757, amended to defer to R466).
 
 A scan that does not fit is NAMED (``skipped-budget``, with its own estimate and the reason), never
 dropped without a word and never written as a smaller version of itself.
@@ -66,13 +66,12 @@ SCAN_FLOOR_S = 30.0
 #: states no estimate: the longest a scan was ever allowed.
 DEFAULT_SCAN_S = 300.0
 
-#: THE THOROUGH BUILD'S DEFAULT SCAN BUDGET (R757, row 209), in seconds. Before it Thorough had none: 16 scans of up to 300 s
-#: each could hold collection for 80 minutes, and a field build on a 12 M-mention corpus took 53.5 (RELEASE_0.5_GATE item 44).
-#: 30 minutes, not R757's literal 10: Quick already spends 600 s, and a lab machine's Thorough scans took 145 s and 246 s in all,
-#: so 1800 s runs every scan on such a machine and still bounds the worst case the gate measured. The operator's ``budget_min``
-#: wins for one run, ``OO_DIAG_THOROUGH_BUDGET_S`` (seconds) for the install; what a build ran under is in its manifest's
-#: ``scan_limits``, beside where each figure can be changed.
-THOROUGH_BUDGET_S = 1800.0
+#: THE THOROUGH BUILD'S DEFAULT SCAN BUDGET, in seconds: NONE (R466, the user's answer S3 = b: "none by default, so with no budget
+#: set it behaves as today"). R757 (row 209) asked for a default total and was amended to defer to R466. So a Thorough build has no
+#: total unless its operator sets one per run (``budget_min``) or for the install (``OO_DIAG_THOROUGH_BUDGET_S``, seconds); 16 scans
+#: of up to 300 s each can then hold collection for 80 minutes, and a field build on a 12 M-mention corpus took 53.5
+#: (RELEASE_0.5_GATE item 44). What a build ran under is in its manifest's ``scan_limits``, beside where each figure is changed.
+THOROUGH_BUDGET_S: float | None = None
 
 #: The environment variable that replaces :data:`THOROUGH_BUDGET_S` for an install, in seconds.
 THOROUGH_BUDGET_ENV = "OO_DIAG_THOROUGH_BUDGET_S"
@@ -250,12 +249,12 @@ def operator_budget_s(minutes: Any) -> float | None:
     return seconds
 
 
-def thorough_default_budget_s(env: dict[str, str] | None = None) -> tuple[float, str]:
-    """``(seconds, set_by)``: the budget a Thorough build runs under when its operator set none (R757).
+def thorough_default_budget_s(env: dict[str, str] | None = None) -> tuple[float | None, str | None]:
+    """``(seconds, set_by)``: the budget a Thorough build runs under when its operator set none for the run.
 
-    ``set_by`` is ``environment`` when :data:`THOROUGH_BUDGET_ENV` holds a finite number of seconds above zero, else
-    ``default`` (:data:`THOROUGH_BUDGET_S`). A value that is not one is the default, never "no limit": R757 asks for a
-    stated cap, and an operator who wants a longer build says so per run (``budget_min`` has no upper bound)."""
+    ``(seconds, "environment")`` when :data:`THOROUGH_BUDGET_ENV` holds a finite number of seconds above zero; otherwise
+    :data:`THOROUGH_BUDGET_S` with ``"default"``, which is ``(None, None)``: no budget (R466). A value that is not a number of
+    seconds sets nothing, and :func:`scan_limits` says it was ignored rather than leaving the operator to guess."""
     import os
 
     raw = (os.environ if env is None else env).get(THOROUGH_BUDGET_ENV, "")
@@ -265,21 +264,21 @@ def thorough_default_budget_s(env: dict[str, str] | None = None) -> tuple[float,
         value = math.nan
     if math.isfinite(value) and value > 0:
         return value, "environment"
-    return THOROUGH_BUDGET_S, "default"
+    return (THOROUGH_BUDGET_S, "default") if THOROUGH_BUDGET_S is not None else (None, None)
 
 
-def scan_budget_for(mode: str, thorough_budget_s: float | None) -> float:
-    """The one shared scan budget a build runs under: Quick's own :data:`SCAN_BUDGET_S`; for Thorough the operator's, or
-    :func:`thorough_default_budget_s` when they set none (R757). An operator budget is never applied to Quick, whose budget
-    is the product's."""
+def scan_budget_for(mode: str, thorough_budget_s: float | None) -> float | None:
+    """The one shared scan budget a build runs under: Quick's own :data:`SCAN_BUDGET_S`; for Thorough the operator's, else the
+    install's (:func:`thorough_default_budget_s`), else ``None``: no budget (R466). An operator budget is never applied to
+    Quick, whose budget is the product's."""
     if mode == "quick":
         return SCAN_BUDGET_S
     return thorough_budget_s if thorough_budget_s is not None else thorough_default_budget_s()[0]
 
 
-def scan_budget_set_by(mode: str, thorough_budget_s: float | None) -> str:
+def scan_budget_set_by(mode: str, thorough_budget_s: float | None) -> str | None:
     """Who set the budget :func:`scan_budget_for` returns: ``product`` (Quick), ``operator`` (``budget_min``),
-    ``environment`` (:data:`THOROUGH_BUDGET_ENV`) or ``default`` (:data:`THOROUGH_BUDGET_S`)."""
+    ``environment`` (:data:`THOROUGH_BUDGET_ENV`), or ``None`` when there is none."""
     if mode == "quick":
         return "product"
     if thorough_budget_s is not None:
@@ -288,13 +287,19 @@ def scan_budget_set_by(mode: str, thorough_budget_s: float | None) -> str:
 
 
 def scan_limits(mode: str, thorough_budget_s: float | None, db_cap_s: float, nondb_cap_s: float) -> dict[str, Any]:
-    """The manifest's ``scan_limits`` header (R757): the total a build's scans ran under, who set it, each scan's own cap,
-    and where every one of them can be changed, so a reader never has to know the code to read the limits."""
+    """The manifest's ``scan_limits`` header (R757): the total a build's scans ran under (``None``: no total, R466), who set
+    it, each scan's own cap, and where every one of them can be changed, so a reader never has to know the code to read the
+    limits."""
+    import os
+
+    raw = str(os.environ.get(THOROUGH_BUDGET_ENV, "")).strip()
+    ignored = bool(raw) and mode != "quick" and thorough_budget_s is None and thorough_default_budget_s()[1] != "environment"
     return {
         "mode": mode,
         "total_s": scan_budget_for(mode, thorough_budget_s),
         "total_set_by": scan_budget_set_by(mode, thorough_budget_s),
         "thorough_default_s": THOROUGH_BUDGET_S,
+        **({"environment_ignored": f"{THOROUGH_BUDGET_ENV} is set but is not a number of seconds above zero"} if ignored else {}),
         "per_scan_cap_s": {"database": db_cap_s, "other": nondb_cap_s},
         "floor_s": SCAN_FLOOR_S,
         "override": dict(LIMIT_OVERRIDES),

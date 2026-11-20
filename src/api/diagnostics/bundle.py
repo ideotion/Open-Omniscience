@@ -2741,12 +2741,12 @@ def _all_diagnostics_manifest(
         # member non-zero") is only meaningful against a FULL run. `complete_profile` is
         # the one boolean a gate check should read -- never the member count, which a light
         # run keeps intact by design because the declined members are still listed.
-        "profile": _profile_block(profile, results, mode, operator_budget=mode != "quick"),
+        "profile": _profile_block(profile, results, mode, operator_budget=mode != "quick" and _plan.scan_budget_for(mode, thorough_budget_s) is not None),
         # THE MODE AND WHAT IT LEFT OUT (R124): Quick spends one budget on the scans and names
         # every scan it did not reach; Thorough runs them all under their own deadlines. Read from
         # the members this run wrote, so it cannot disagree with them.
         "mode": mode,
-        # S3 + R757: a Thorough build runs under the budget its operator set, else its default (30 min, or the install's own).
+        # S3 + R757: a Thorough build runs under the budget its operator set, else the install's, else none (R466).
         "scan_budget_s": _plan.scan_budget_for(mode, thorough_budget_s),
         "scan_budget_set_by": _plan.scan_budget_set_by(mode, thorough_budget_s),
         "scans": _plan.scans_block(
@@ -3041,7 +3041,7 @@ def _write_all_diagnostics_zip(
                 whose = {
                     "product": "the Quick build's scan budget", "operator": "the scan budget the operator set",
                     "environment": f"the Thorough scan budget set by {_plan.THOROUGH_BUDGET_ENV}",
-                }.get(_plan.scan_budget_set_by(mode, thorough_budget_s), "the Thorough build's default scan budget")
+                }.get(_plan.scan_budget_set_by(mode, thorough_budget_s) or "", "the scan budget")
                 skipped_reason = (
                     f"{whose} of {budget_s:.0f} s was spent ({elapsed_s:.0f} s "
                     f"used by the scans before this one); this scan is expected to take about "

@@ -12,8 +12,8 @@ WHAT MUST NOT REGRESS, one test each:
    smaller of its own deadline and the time left, and a scan that never starts is NAMED
    (``skipped-budget``, its estimate, the reason) -- in the member entry, in the archive and in
    the manifest's ``scans`` block -- and makes ``complete_profile`` False.
-3. Thorough runs every scan under its own deadline and, since R757, under a default shared budget of 30 minutes
-   (``OO_DIAG_THOROUGH_BUDGET_S`` for the install, ``budget_min`` for one run); a scan a limit ends says so in words.
+3. Thorough has no shared budget by default (R466): every scan runs under its own deadline; ``budget_min`` sets one for a
+   run and ``OO_DIAG_THOROUGH_BUDGET_S`` for the install (R757); a scan a limit ends says so in words.
 4. Nothing a mode does is silent: a machine refusal still wins over a budget skip, a cut scan says
    the budget cut it, an unrecognised mode is Thorough (never a smaller build than asked for).
 """
@@ -342,7 +342,7 @@ def test_a_scan_the_budget_cuts_gets_the_time_left_and_says_the_budget_set_it(mo
     assert all(r["budget_cut"] is True for r in results)
 
 
-def test_thorough_gives_every_scan_its_own_deadline_inside_its_default_budget(monkeypatch):
+def test_thorough_gives_every_scan_its_own_deadline_and_no_budget(monkeypatch):
     clock, window = _Clock(), _Window()
     monkeypatch.setattr(B, "_mono", clock)
     seen: list[float] = []
@@ -358,10 +358,10 @@ def test_thorough_gives_every_scan_its_own_deadline_inside_its_default_budget(mo
     results, man, _, _ = _build(members, mode="thorough", scan_window=window)
     assert seen == [300.0, 300.0, 300.0]
     assert all(r["outcome"] == "ok" and "budget_cut" not in r for r in results)
-    assert man["mode"] == "thorough" and man["scan_budget_s"] == plan.THOROUGH_BUDGET_S == 1800.0
-    assert man["scan_budget_set_by"] == "default"
-    assert man["scans"]["skipped"] == [] and man["scans"]["scan_budget_s"] == 1800.0
-    assert man["scans"]["cut_by_budget"] == [], "1200 s of scans fit inside the 1800 s default"
+    assert man["mode"] == "thorough" and man["scan_budget_s"] is None and plan.THOROUGH_BUDGET_S is None, "R466"
+    assert man["scan_budget_set_by"] is None and man["scan_limits"]["total_s"] is None
+    assert man["scans"]["skipped"] == [] and man["scans"]["scan_budget_s"] is None
+    assert man["scans"]["cut_by_budget"] == [], "Thorough has no budget to cut by"
     assert man["profile"]["complete_profile"] is True
 
 
@@ -629,13 +629,13 @@ def test_thorough_with_an_operator_budget_skips_and_names_what_it_did_not_reach(
     assert man["profile"]["complete_profile"] is False and "longer budget" in man["profile"]["note"]
 
 
-def test_thorough_without_an_operator_budget_runs_under_the_default(monkeypatch):
+def test_thorough_without_a_budget_is_unchanged(monkeypatch):
     clock, window, seen = _Clock(), _Window(), []
     monkeypatch.setattr(B, "_mono", clock)
     monkeypatch.delenv(plan.THOROUGH_BUDGET_ENV, raising=False)
     members = _members(clock, window, seen, costs={"s-tiny.json": 400.0})
     _, man, _, _ = _build(members, mode="thorough", scan_window=window)
-    assert man["scan_budget_s"] == 1800.0 and man["scan_budget_set_by"] == "default" and man["scans"]["skipped"] == []
+    assert man["scan_budget_s"] is None and man["scan_budget_set_by"] is None and man["scans"]["skipped"] == []
 
 
 def test_quick_keeps_its_own_budget_whatever_the_operator_passed(monkeypatch):
@@ -680,19 +680,18 @@ def test_the_panel_offers_the_budget_beside_thorough_only_and_never_remembers_it
 
 
 # ---- R757 (row 209): the Thorough build's default budget, its header, and what a limit says -----------------------
-def test_the_thorough_default_is_thirty_minutes_and_the_install_may_change_it():
-    assert plan.thorough_default_budget_s({}) == (1800.0, "default")
+def test_the_thorough_default_is_no_budget_and_the_install_may_set_one():
+    assert plan.thorough_default_budget_s({}) == (None, None), "R466: none by default"
     assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: "3600"}) == (3600.0, "environment")
     assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: " 90.5 "}) == (90.5, "environment")
 
 
 @pytest.mark.parametrize("bad", ["", "0", "-5", "abc", "nan", "inf", "none"])
-def test_an_unreadable_install_budget_is_the_default_never_no_limit(bad):
-    """R757 asks for a stated cap: a typo in the environment must not lift it."""
-    assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: bad}) == (1800.0, "default")
+def test_an_unreadable_install_budget_sets_nothing(bad):
+    assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: bad}) == (None, None)
 
 
-def test_the_thorough_default_stops_starting_scans_and_names_each_as_not_started(monkeypatch):
+def test_the_install_budget_stops_starting_scans_and_names_each_as_not_started(monkeypatch):
     clock, window, seen = _Clock(), _Window(), []
     monkeypatch.setattr(B, "_mono", clock)
     monkeypatch.setenv(plan.THOROUGH_BUDGET_ENV, "100")
@@ -731,7 +730,7 @@ def test_a_scan_its_own_cap_stopped_is_told_apart_from_the_budget():
     "mode, given, env, total, by",
     [
         ("quick", None, None, 100.0, "product"),
-        ("thorough", None, None, 1800.0, "default"),
+        ("thorough", None, None, None, None),
         ("thorough", None, "2400", 2400.0, "environment"),
         ("thorough", 600.0, "2400", 600.0, "operator"),
     ],
@@ -756,12 +755,23 @@ def test_the_manifest_opens_with_the_limits_it_ran_under_and_where_each_is_chang
     assert plan.STATUS_BUDGET_REACHED in lim["at_limit"]
 
 
-def test_the_estimate_states_the_thorough_default_and_the_panel_note_uses_it(monkeypatch):
+def test_the_estimate_states_the_thorough_budget_and_the_panel_note_uses_one(monkeypatch):
     from pathlib import Path
 
     monkeypatch.delenv(plan.THOROUGH_BUDGET_ENV, raising=False)
     monkeypatch.setattr(scan_estimate, "_mention_rows", lambda: None)
     body = json.loads(bytes(scan_estimate.all_diagnostics_estimate().body))
-    assert body["thorough"]["budget_s"] == 1800.0 and body["thorough"]["budget_set_by"] == "default"
+    assert body["thorough"]["budget_s"] is None and body["thorough"]["budget_set_by"] is None
+    monkeypatch.setenv(plan.THOROUGH_BUDGET_ENV, "1800")
+    body = json.loads(bytes(scan_estimate.all_diagnostics_estimate().body))
+    assert body["thorough"]["budget_s"] == 1800.0 and body["thorough"]["budget_set_by"] == "environment"
     js = (Path(__file__).resolve().parent.parent / "src" / "static" / "app-diagnostics.js").read_text(encoding="utf-8")
     assert "th.budget_s" in js and "its default limit" in js
+
+
+def test_a_set_but_unreadable_install_budget_is_named_in_the_header(monkeypatch):
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    monkeypatch.setenv(plan.THOROUGH_BUDGET_ENV, "thirty")
+    _, man, _, _ = _build(_members(clock, window, seen), mode="thorough", scan_window=window)
+    assert man["scan_limits"]["total_s"] is None and plan.THOROUGH_BUDGET_ENV in man["scan_limits"]["environment_ignored"]
