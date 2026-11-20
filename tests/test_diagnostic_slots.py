@@ -749,13 +749,17 @@ def test_selftests_keep_the_full_output_only_for_one_that_did_not_pass(monkeypat
 # ---------------------------------------------------------------------------------------------------
 #  5. The budgets and the 4 MB of R119 (the coordinator's condition at the go on D)
 # ---------------------------------------------------------------------------------------------------
+#: R119's 4,000,000 bytes, kept as the budget for the WHOLE archive. Since row 211 (the user's 2026-11-15 rule) the archive is
+#: handed over in parts of ``dv.volume_max_bytes()`` (200,000 bytes), so the part size no longer bounds the archive; this does.
+_ARCHIVE_BUDGET = 4_000_000
+
 def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_table_states():
     """Worst case, every byte of the slots and of the new members incompressible: the budgets, the
     plan's estimate of the other new members, the largest zip actually measured and the volumes'
     own per-part overhead still leave the room the table states under one part. A budget raised
     carelessly eats the headroom and this fails; the answer is to measure again."""
-    cap = dv.volume_max_bytes()
-    assert cap == 4_000_000
+    cap = _ARCHIVE_BUDGET
+    assert dv.volume_max_bytes() == 200_000 < cap, "the archive is split into 200 KB parts; the budget is the whole archive's"
     worst = (
         sum(s.budget_bytes for s in slots.SLOTS)
         + slots.OTHER_NEW_MEMBERS_BYTES
@@ -793,7 +797,7 @@ def test_a_budget_raised_past_the_headroom_fails_the_pin(monkeypatch):
         sum(s.budget_bytes for s in slots.SLOTS) + slots.OTHER_NEW_MEMBERS_BYTES
         + slots.LARGEST_ZIP_MEASURED_BYTES + dv._ZIP_OVERHEAD_MAX
     )
-    assert dv.volume_max_bytes() - worst < slots.HEADROOM_AT_LEAST_BYTES, "four times the budgets must trip the pin"
+    assert _ARCHIVE_BUDGET - worst < slots.HEADROOM_AT_LEAST_BYTES, "four times the budgets must trip the pin"
 
 
 def test_a_member_far_over_its_budget_is_named_over_budget_cut_on_record_boundaries_and_none_is_dropped(
@@ -816,7 +820,7 @@ def test_a_member_far_over_its_budget_is_named_over_budget_cut_on_record_boundar
     vol_dir = tmp_path / "v"
     manifest = dv.write_volume_set(src, vol_dir)
     assert manifest["cut_members"] == ["giant.json"], "the cut is named, never silent"
-    assert all(v["bytes"] <= 4_000_000 for v in manifest["volumes"]) and len(manifest["volumes"]) >= 2
+    assert all(v["bytes"] <= dv.volume_max_bytes() for v in manifest["volumes"]) and len(manifest["volumes"]) >= 2
     (dest,) = [Path(p) for p in dv.reassemble_cut_members(vol_dir, tmp_path / "back")]
     assert json.loads(dest.read_text(encoding="utf-8")) == giant_member(100_000), "nothing was dropped"
 
