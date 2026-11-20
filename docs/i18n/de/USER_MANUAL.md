@@ -1038,6 +1038,25 @@ Zoom ＋/－, Zoomen mit dem Mausrad, Verschieben durch Ziehen, ⛶ Vergrößern
   Proxy ist, nicht der Server).
 - **Küstenlinien und Grenzen werden mitgeliefert:** Die Geometrie der Länder und Küsten wird mit der App ausgeliefert
   (Natural Earth, vergröbert) – nichts zu erstellen, keine Grenzen erfunden.
+- **OpenStreetMap-Daten und Straßen, mit veröffentlichten Grenzen:** Sobald Sie die
+  OpenStreetMap-Daten eines Landes heruntergeladen haben (in den Einstellungen), erscheinen seine
+  Objekte auf dieser Karte, auf diesem Computer aus diesen Daten gezeichnet – kein Kachelserver,
+  kein anderer Host. Wie viel eine Ansicht zeichnet, ist begrenzt, und die Grenzen werden genannt,
+  nicht verborgen:
+  - bis zu **8.000 Objekte** in einer Ansicht werden einzeln gezeichnet; mehr werden als
+    **Cluster** auf einem 40-mal-40-Raster gezeichnet, jeder mit seiner genauen Anzahl;
+  - Formen werden auf etwa ein Bildschirmpixel ausgedünnt, und über **60.000 Stützpunkten** in
+    einer Ansicht wird jede Form als ihr Punkt gezeichnet;
+  - in eine Ansicht von **0,2 Grad Breite oder weniger** hineingezoomt, zeichnet die Karte
+    **Straßen** aus den heruntergeladenen Wegen, unter denselben zwei Grenzen (8.000 Straßen,
+    60.000 Stützpunkte). Über einer davon werden die unwichtigsten Straßenklassen weggelassen,
+    jeweils eine ganze Klasse (Pfade zuerst, Autobahnen zuletzt), und die Statuszeile der Karte
+    nennt jede weggelassene Klasse.
+
+  Die Statuszeile sagt auch, wie viele Objekte in der Ansicht liegen und wie viele gezeichnet
+  wurden, mit dem Auszugsdatum der Daten und der zuletzt angewandten täglichen Aktualisierung;
+  ihre Hover-Blase wiederholt die geltenden Grenzen. Die Zahlen können nach einer Messung auf einem
+  bescheidenen Referenzrechner angepasst werden; die Hover-Blase zeigt immer die aktuellen.
 
 Daten, *von denen* ein Bericht handelt, werden außerdem zu **Datums-Tags pro Artikel**: Öffnen Sie die Offline-Leseansicht
 eines Artikels, um sie aufgelistet zu sehen, jeden Kandidaten zu **bestätigen oder abzulehnen** oder bei Bedarf zu **extrahieren**;

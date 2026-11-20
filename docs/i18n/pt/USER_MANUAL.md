@@ -1031,6 +1031,24 @@ zoom ＋/－, zoom pela roda do mouse, arrastar para mover, ⛶ ampliar, e os se
   proxy, não o servidor).
 - **Litorais e fronteiras vêm incluídos:** a geometria de países/litorais acompanha o aplicativo
   (Natural Earth, simplificada) — nada a construir, nenhuma fronteira inventada.
+- **Dados do OpenStreetMap e ruas, com limites publicados:** depois de transferir os dados do
+  OpenStreetMap de um país (nas Definições), os seus objetos aparecem neste mapa, desenhados neste
+  computador a partir desses dados — sem servidor de mosaicos nem outro anfitrião. O que uma vista
+  desenha tem um teto, e os tetos são indicados, não escondidos:
+  - até **8.000 objetos** numa vista são desenhados um a um; acima disso, são desenhados como
+    **agrupamentos** numa grelha de 40 por 40, cada um com a sua contagem exata;
+  - as formas são simplificadas para cerca de um píxel de ecrã e, acima de **60.000 vértices**
+    numa vista, cada forma é desenhada como o seu ponto;
+  - ao aproximar até uma vista com **0,2 graus de largura ou menos**, o mapa desenha as **ruas** a
+    partir das vias transferidas, com os mesmos dois tetos (8.000 vias, 60.000 vértices). Acima de
+    qualquer um, as classes de via menos importantes são omitidas, uma classe inteira de cada vez
+    (os caminhos primeiro, as autoestradas por último), e a linha de estado do mapa nomeia cada
+    classe omitida.
+
+  A linha de estado diz também quantos objetos estão na vista e quantos foram desenhados, com a
+  data de extração dos dados e a última atualização diária aplicada; o seu balão ao passar o cursor
+  repete os tetos em vigor. Estes números podem ser revistos após medição numa máquina de
+  referência modesta; o balão mostra sempre os atuais.
 
 As datas *de que* uma matéria trata também viram **tags de data por artigo**: abra o leitor offline
 de um artigo para vê-las listadas, **confirmar ou rejeitar** cada candidata, ou **extrair** sob demanda;

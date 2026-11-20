@@ -1057,6 +1057,24 @@ zoom ＋/－, zoom con la rueda, desplazamiento arrastrando, ⛶ ampliar y los s
   proxy, no el servidor).
 - **Las costas y fronteras vienen incluidas:** la geometría de países y costas se distribuye con la aplicación
   (Natural Earth, simplificada): no hay nada que generar y no se inventa ninguna frontera.
+- **Datos de OpenStreetMap y calles, con límites publicados:** una vez descargados los datos
+  de OpenStreetMap de un país (en Ajustes), sus objetos aparecen en este mapa, dibujados en este
+  ordenador a partir de esos datos — sin servidor de teselas ni otro host. Lo que dibuja una vista
+  tiene un tope, y los topes se indican, no se ocultan:
+  - hasta **8.000 objetos** en una vista se dibujan uno a uno; si hay más, se dibujan como
+    **grupos** en una cuadrícula de 40 por 40, cada uno con su recuento exacto;
+  - las formas se simplifican a cerca de un píxel de pantalla y, por encima de **60.000 vértices**
+    en una vista, cada forma se dibuja como su punto;
+  - al acercarse a una vista de **0,2 grados de ancho o menos**, el mapa dibuja las **calles** a
+    partir de las vías descargadas, con los mismos dos topes (8.000 vías, 60.000 vértices). Si se
+    supera alguno, se omiten las clases de vía menos importantes, una clase entera cada vez (los
+    senderos primero, las autopistas al final), y la línea de estado del mapa nombra cada clase
+    omitida.
+
+  La línea de estado también dice cuántos objetos hay en la vista y cuántos se dibujaron, con la
+  fecha de extracción de los datos y la última actualización diaria aplicada; su burbuja al pasar
+  el cursor repite los topes vigentes. Estas cifras pueden revisarse tras medirlas en una máquina de
+  referencia modesta; la burbuja muestra siempre las actuales.
 
 Las fechas *de las que trata* una noticia se convierten también en **etiquetas de fecha por artículo**: abra el lector
 sin conexión de un artículo para verlas enumeradas, **confirme o rechace** cada candidata, o **extráigalas** a petición;
