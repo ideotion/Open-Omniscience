@@ -326,6 +326,18 @@ def test_an_unclosed_block_opener_no_longer_costs_a_scan_per_opener(unit):
     assert ratio < 8, f"4x the input cost {ratio:.1f}x the characters searched -- the quadratic scan is back"
 
 
+# 16x the input, not 4x (row 203, 2026-11-20). At 4x the bar sat at 2x linear and 2x under quadratic (8 between 4
+# and 16), so ONE slow sample on a shared runner was enough: the macOS lane measured 8.2 on code that is linear. At 16x
+# linear is ~16 and a scan per opener ~256, so the bar at 3x linear still sits 5x under the defect -- more room on BOTH
+# sides, in the ratio that matters. The large input stays 200,000 characters (12,500 x 16), as before, so a returning
+# quadratic scan fails in the time it always did instead of running for minutes. Measured 2026-11-20 on a 4-core
+# container: linear 12.9-16.2 over 50 runs of the ten shapes on the thread clock, 13.4-16.5 on the wall clock Windows
+# uses; a deliberately quadratic <ref> pattern 276-289.
+_E2E_SMALL = 12_500
+_E2E_FACTOR = 16
+_E2E_BAR = 48
+
+
 def test_the_wiki_strip_is_linear_on_EVERY_shape_that_reaches_it():
     """END-TO-END, and now for all of them (2026-09-09).
 
@@ -362,9 +374,9 @@ def test_the_wiki_strip_is_linear_on_EVERY_shape_that_reaches_it():
         "Lorem ipsum dolor sit amet. [https://x y ",
         "Lorem ipsum dolor sit amet. [https://x ",
     ):
-        ratio = _scaling(plain_from_wikitext, unit, small=50_000)
-        assert ratio < 8, (
-            f"{unit!r}: 4x the input cost {ratio:.1f}x the time through the whole strip"
+        ratio = _scaling(plain_from_wikitext, unit, small=_E2E_SMALL, factor=_E2E_FACTOR)
+        assert ratio < _E2E_BAR, (
+            f"{unit!r}: {_E2E_FACTOR}x the input cost {ratio:.1f}x the time through the whole strip"
         )
 
 

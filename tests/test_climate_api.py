@@ -400,3 +400,20 @@ def test_the_oni_header_is_the_documented_layout_not_a_refused_line(db):
     record = climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(odd, "2026-11-02T00:00:00+00:00"))
     assert record["diagnostics"]["refused_total"] == 1
     assert record["diagnostics"]["refused_sample"][0]["text"].startswith("XYZ")
+
+
+def test_the_two_keyed_services_left_out_are_named_on_the_tab_in_every_language():
+    """Row 193 (S06-04 S2): FIRMS and OpenAQ need an account key, so they are out, and the tab says so
+    in a visible line beside the caveat, never in a hover or behind a toggle."""
+    import json
+
+    html = (_STATIC / "index.html").read_text(encoding="utf-8")
+    page = html.split('id="tab-climate"', 1)[1].split('id="tab-indices"', 1)[0]
+    m = re.search(r'<div class="hint" id="climate-not-included">([^<]+)</div>', page)
+    assert m, "the not-included line is on the Climate tab"
+    text = m.group(1)
+    assert "NASA FIRMS" in text and "OpenAQ" in text and "account key" in text
+    assert page.index('id="climate-caveat"') < page.index('id="climate-not-included"') < page.index('id="climate-status"')
+    for path in sorted((_STATIC / "locales").glob("*.json")):
+        tr = json.loads(path.read_text(encoding="utf-8")).get(text)
+        assert tr and "FIRMS" in tr and "OpenAQ" in tr, path.name

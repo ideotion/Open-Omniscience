@@ -270,6 +270,45 @@ def _route_selects(session, qid: str) -> tuple[dict, list]:
     return routes, places
 
 
+#: The routes an article can join by, in the order the UI names them.
+ROUTE_KEYS = ("entities", "keywords", "places")
+
+
+def _rail_items(session, ids_sub, source_ids: list[int], routes: dict) -> list[dict]:
+    """The newest joined articles of one rail (its sources), each with the routes it joined by.
+
+    Row 200 (S08-01 S2, «each rail shows its own store's rows … evidence trails per item»): the
+    rail's count stays the whole count; this is the first ``_LIST_LIMIT`` rows of it, newest
+    first, an undated article last. ``joined_by`` names the routes, never a weight: an article
+    that joined two ways is not "more" about the item, it is reached twice.
+    """
+    from src.database.models import Article, Source
+
+    if not source_ids:
+        return []
+    rows = session.execute(
+        select(Article.id, Article.title, Article.published_at, Source.domain)
+        .join(Source, Article.source_id == Source.id)
+        .where(Article.id.in_(ids_sub.scalar_subquery()), Article.source_id.in_(source_ids))
+        .order_by(Article.published_at.is_(None), Article.published_at.desc(), Article.id.desc())
+        .limit(_LIST_LIMIT)
+    ).all()
+    shown = [int(r[0]) for r in rows]
+    joined: dict[int, list[str]] = {i: [] for i in shown}
+    for key in ROUTE_KEYS:
+        if key not in routes or not shown:
+            continue
+        sub = routes[key][0].subquery()
+        for (aid,) in session.execute(select(sub.c[0]).where(sub.c[0].in_(shown)).distinct()):
+            joined[int(aid)].append(key)
+    return [
+        {"id": int(i), "title": t, "domain": d,
+         "published_at": p.date().isoformat() if p is not None else None,
+         "joined_by": joined[int(i)]}
+        for i, t, p, d in rows
+    ]
+
+
 def _count(session, sel) -> int:
     sub = sel.distinct().subquery()
     return int(session.execute(select(func.count()).select_from(sub)).scalar() or 0)
@@ -498,19 +537,23 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
         ids = []
 
     channels: dict[str, int] = {}
-    for _sid, dom, st, k in by_source:
+    rail_sources: dict[str, list[int]] = {"news": [], "wikipedia": [], "law": []}
+    for sid, dom, st, k in by_source:
         cls = provenance_of(dom, st)
         channels[cls] = channels.get(cls, 0) + int(k)
+        rail_sources["wikipedia" if cls == WIKIPEDIA else "law" if cls == LAW else "news"].append(int(sid))
     news_channels = {c: k for c, k in sorted(channels.items()) if c not in (WIKIPEDIA, LAW)}
+    items = {key: _rail_items(session, ids_sub, rail_sources[key], routes) if routes else []
+             for key in rail_sources}
 
     wiki_lane = wiki_pages_for_qid(qid, limit=_LIST_LIMIT)
     map_lane = _map_objects(qid)
     rails = [
         {"key": "news", "joined": True, "articles": sum(news_channels.values()),
-         "by_channel": news_channels},
+         "by_channel": news_channels, "items": items["news"]},
         {"key": "wikipedia", "joined": True, "articles": channels.get(WIKIPEDIA, 0),
-         "lane": wiki_lane},
-        {"key": "law", "joined": True, "articles": channels.get(LAW, 0)},
+         "items": items["wikipedia"], "lane": wiki_lane},
+        {"key": "law", "joined": True, "articles": channels.get(LAW, 0), "items": items["law"]},
         {"key": "places", "joined": True, "count": len(places),
          "places": [{"id": p.id, "name": p.name, "kind": p.kind, "country": p.country,
                      "articles": mention_count(session, p)} for p in places[:_LIST_LIMIT]]},
