@@ -94,12 +94,14 @@ def test_the_vllm_install_and_the_model_snapshot_are_refused_in_protected_mode(m
     with pytest.raises(vl.VllmLifecycleError) as exc:
         vl._check_online()
     assert str(exc.value) == AI_INSTALL_PROTECTED_REFUSAL
-    with pytest.raises(vl.VllmLifecycleError):
+    with pytest.raises(vl.VllmLifecycleError) as exc2:
         vl.run_model_download_job(
             None,
             model="org/model",
             runner=lambda *a, **k: (_ for _ in ()).throw(AssertionError("ran")),
         )
+    # the message, not only the type: VllmUnsupportedError (no vLLM here) subclasses it and is raised just after the check
+    assert str(exc2.value) == AI_INSTALL_PROTECTED_REFUSAL
     _settings(monkeypatch)
     vl._check_online()  # standard mode, online: allowed
 
@@ -130,6 +132,8 @@ def test_an_ollama_model_pull_is_refused_in_protected_mode_before_the_request(mo
         ("/api/llm/models/install", {"keys": ["x"]}),
         ("/api/llm/models/pull-custom", {"identifier": "qwen2.5:3b"}),
         ("/api/llm/pull/queue", {"model": "qwen2.5:3b"}),
+        ("/api/llm/pull", {"model": "qwen2.5:3b"}),
+        ("/api/llm/install/run", {"path": "/nonexistent/install.sh"}),
     ],
 )
 def test_the_install_routes_answer_409_in_protected_mode_before_any_job_starts(
@@ -168,3 +172,27 @@ def test_the_dialog_is_shown_even_when_the_app_is_already_online_and_protected_m
     dlg = html.split('<dialog id="ai-egress-consent"', 1)[1].split("</dialog>", 1)[0]
     offline_only = dlg.split('id="ai-egress-offline"', 1)[1].split("</div>\n    <div", 1)[0]
     assert "not through your" in dlg and "not through your" not in offline_only
+
+
+def test_only_the_setup_chain_skips_its_later_asks_and_a_slow_click_rereads_the_window():
+    """R763 asks every time, but the "Set up local AI" chain shows the dialog once for all its steps, as it promises; and an
+    OK pressed after the window closed itself while the dialog was open reopens it rather than being refused as airplane mode."""
+    core = (_ROOT / "src/static/app-core.js").read_text(encoding="utf-8")
+    body = function_body(core, "ensureAiEgress")
+    assert "opts && opts.alreadyAsked && (online || windowOpen)" in body
+    assert body.index('ai_install_blocked === "protected"') < body.index("opts.alreadyAsked"), (
+        "a chain is refused too"
+    )
+    ok = body.split("ok.onclick", 1)[1]
+    assert 'api("/api/system/egress-window")' in ok and "_openEgressWindow()" in ok
+    chain = (_ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    assert "prepareOllamaInstall({alreadyAsked: true})" in chain
+    assert "_installDefaultModel(null, {confirmed: true})" in chain
+    settings = (_ROOT / "src/static/app-settings.js").read_text(encoding="utf-8")
+    # the only flagged calls (the chain passing it, the two steps taking it); every other caller asks every time
+    assert (chain + settings).count("alreadyAsked: ") == 3
+    for fn, flag in (
+        ("prepareOllamaInstall", "opts.alreadyAsked"),
+        ("_installDefaultModel", "opts.confirmed"),
+    ):
+        assert "{alreadyAsked: !!(opts && " + flag + ")}" in function_body(settings, fn), fn

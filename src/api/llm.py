@@ -836,6 +836,7 @@ def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_ollama_client
 
     if not _MODEL_RE.match(req.model or ""):
         raise HTTPException(status_code=400, detail="invalid model name")
+    _refuse_protected_ai_install()  # R763: a status code, before the stream; the client refuses again inside it
 
     def _stream():
         try:
@@ -954,6 +955,8 @@ def llm_install_run(req: InstallRunRequest):
     import json as _json
 
     from src.llm.installer import InstallerError, run_installer
+
+    _refuse_protected_ai_install()  # R763: a status code, before the stream; run_installer refuses again inside it
 
     def _stream():
         try:

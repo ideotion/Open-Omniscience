@@ -354,13 +354,14 @@
         `<div id="llm-install-detail" class="hint" style="margin-top:8px"></div>` +
         `<pre id="llm-install-log" style="display:none;max-height:220px;overflow:auto;background:var(--bg2);padding:8px;border-radius:6px;margin-top:8px;font:12px ui-monospace,monospace;white-space:pre-wrap"></pre></div>`;
     }
-    async function prepareOllamaInstall() {
+    async function prepareOllamaInstall(opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const detail = $("llm-install-detail"); const btn = $("llm-install-prepare-btn");
       // The AI-install egress window, not full online: this needs a few
       // infrastructure hosts, not the whole catalogue, and must not start the
-      // collector. Already-online installs skip the ask entirely.
-      if (!await ensureAiEgress(t("Download and verify the official Ollama installer (downloads over the clear internet)"))) return;
+      // collector. Asked every time (R763), unless the setup chain already asked.
+      if (!await ensureAiEgress(t("Download and verify the official Ollama installer (downloads over the clear internet)"),
+        {alreadyAsked: !!(opts && opts.alreadyAsked)})) return;
       if (btn) { btn.disabled = true; }
       if (detail) detail.textContent = t("Downloading and verifying…");
       let d;
@@ -558,10 +559,11 @@
         (p.caveats || []).join("\n")
       );
       if (!ok) return;
-      // Allow the install online WITHOUT starting the collector. A no-op when the
-      // app is already online or the setup chain already opened the window, so
-      // this never becomes a second ask for the same bytes.
-      if (!await ensureAiEgress(t("Download the default model (several GB over the clear internet)"))) return;
+      // Allow the install online WITHOUT starting the collector. Asked every time
+      // (R763), except inside the setup chain, which asked once for all its steps
+      // (opts.confirmed) and so is not asked again for the same bytes.
+      if (!await ensureAiEgress(t("Download the default model (several GB over the clear internet)"),
+        {alreadyAsked: !!(opts && opts.confirmed)})) return;
       const was = btn ? btn.textContent : "";
       if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
       try {
