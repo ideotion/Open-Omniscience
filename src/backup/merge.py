@@ -4562,18 +4562,20 @@ def _carried_country(code: str | None, form: str, canonical) -> str | None:
     return converted if converted is not None else code
 
 
-def _stamp_pages(con, table: str, engine: str) -> Iterator[tuple]:
-    """``(article_id, inputs)`` of every incoming stamp in ``table`` that names ``engine``, by ascending article id, one page of
+def _stamp_pages(con, table: str, engines: tuple[str, ...]) -> Iterator[tuple]:
+    """``(article_id, inputs)`` of every incoming stamp in ``table`` that names one of ``engines`` (R758: the canonical id and the
+    pre-R758 Windows id of the same engine), by ascending article id, one page of
     ``_CARRY_PLAN_CHUNK`` at a time. ``table`` is always a module literal below, never input. The walk is over the STAMPS and not over the
     articles, so a stamp whose article row the backup does not hold cannot end it; and each page is one seek on the stamp table's primary key,
     so the walk reads every stamp once (a UNION of the two tables with an ORDER BY and a LIMIT had to read the next row of BOTH sides for every
     row it returned, which the staged copy -- it has no planner statistics -- turned into a scan of the longer table per page)."""
     last = -(2**63)
+    marks = ",".join("?" * len(engines))
     while True:
         rows = _q(
             con,
-            f"SELECT article_id, inputs FROM inc.{table} WHERE engine = ? AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 # module-local literal table names
-            (engine, last, _CARRY_PLAN_CHUNK),
+            f"SELECT article_id, inputs FROM inc.{table} WHERE engine IN ({marks}) AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 # module-local literal table names; one "?" per engine
+            (*engines, last, _CARRY_PLAN_CHUNK),
         )
         yield from rows
         if len(rows) < _CARRY_PLAN_CHUNK:
@@ -4581,13 +4583,13 @@ def _stamp_pages(con, table: str, engine: str) -> Iterator[tuple]:
         last = int(rows[-1][0])
 
 
-def _stamped_candidates(con, kw_engine: str, www_engine: str | None) -> Iterator[tuple]:
+def _stamped_candidates(con, kw_engines: tuple[str, ...], www_engine: str | None) -> Iterator[tuple]:
     """``(article_id, keyword_inputs, www_inputs)`` for every incoming article holding EITHER stamp from this machine's engines, once each,
     by ascending article id. ``keyword_inputs`` / ``www_inputs`` are None for the half the article does not hold. The two stamp tables are
     read by one cursor each and merged here."""
-    streams = [((int(a), 0, i) for a, i in _stamp_pages(con, "article_index_stamps", kw_engine))]
+    streams = [((int(a), 0, i) for a, i in _stamp_pages(con, "article_index_stamps", kw_engines))]
     if www_engine is not None:
-        streams.append(((int(a), 1, i) for a, i in _stamp_pages(con, "article_www_stamps", www_engine)))
+        streams.append(((int(a), 1, i) for a, i in _stamp_pages(con, "article_www_stamps", (www_engine,))))
     for aid, group in groupby(heapq.merge(*streams), key=lambda t: t[0]):
         by_half = {which: inputs for _a, which, inputs in group}
         yield aid, by_half.get(0), by_half.get(1)
@@ -4666,14 +4668,18 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         plan["reason"] = "this corpus has no stamps table to record a carry in"
         return
     try:
-        from src.analytics.engine_identity import baseline_engine_id
+        from src.analytics.engine_identity import baseline_engine_ids
 
-        local = baseline_engine_id()
+        # R758: the canonical id (written on every carried stamp) and the pre-R758 Windows id of the same engine (accepted, never written).
+        accepted = baseline_engine_ids()
+        local = accepted[0]
     except Exception as exc:  # noqa: BLE001 - no identity, no carry; the re-index still runs
         log_failure(_LOG, "could not compute the engine identity; carrying nothing", exc, level=logging.WARNING)
         plan["reason"] = "this machine's engine identity could not be computed"
         return
     plan["engine"] = local
+    if len(accepted) > 1:
+        plan["engine_also_accepted"] = list(accepted[1:])
     # Which engines the backup's articles were stamped by (field 2026-11-15: five stamps, none this machine's). Counts per
     # opaque stamp, the ten largest; read before any refusal below so every report that got this far says it.
     _engine_mix(con, plan, "incoming_engines", "article_index_stamps")
@@ -4695,7 +4701,9 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         )
         return
     plan["stamped"] = _count(
-        con, "SELECT COUNT(*) FROM inc.article_index_stamps WHERE engine = ?", (local,)
+        con,
+        f"SELECT COUNT(*) FROM inc.article_index_stamps WHERE engine IN ({','.join('?' * len(accepted))})",  # noqa: S608  # nosec B608 # one "?" per accepted id, never input
+        accepted,
     )
     # The places and entities (R415). The carry needs both tables and a www identity this machine can compute; without any of them the
     # keywords still carry on their own stamp and the places and entities are left to the post-swap re-index, said in ``www_reason``.
@@ -4847,7 +4855,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         )
 
     slice_: list = []
-    for cand in _stamped_candidates(con, local, www_engine):
+    for cand in _stamped_candidates(con, accepted, www_engine):
         plan["candidates"] += 1
         slice_.append(cand)
         if len(slice_) >= _CARRY_PLAN_CHUNK:
@@ -8537,7 +8545,7 @@ _BACKLOG_SQL = (
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
     " LEFT JOIN article_index_stamps st"
-    "   ON st.article_id = m.row_id AND st.engine = :engine"
+    "   ON st.article_id = m.row_id AND st.engine IN (:engine, :kw_legacy)"
     " LEFT JOIN article_www_stamps ws"
     "   ON ws.article_id = st.article_id AND ws.engine = :www_engine"
     " WHERE b.status = :s"
@@ -8560,7 +8568,7 @@ _BACKLOG_SQL = (
 _BACKLOG_LOST_SQL = (
     "SELECT m.batch_id, COUNT(*) FROM articles a"
     " CROSS JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
-    " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine = :engine"
+    " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine IN (:engine, :kw_legacy)"
     " LEFT JOIN article_www_stamps ws ON ws.article_id = st.article_id AND ws.engine = :www_engine"
     " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND ws.article_id IS NULL"  # noqa: S608  # nosec B608 # two constants of src/database/stand_in.py, never input
     " GROUP BY m.batch_id"
@@ -8568,18 +8576,24 @@ _BACKLOG_LOST_SQL = (
 
 
 def _backlog_engine() -> str:
-    """The identity a re-index would stamp now. If it cannot be computed, a value no
-    stamp can equal -- so every article counts as owed. "Cannot tell" overstates the
-    backlog; it must never hide one."""
-    try:
-        from src.analytics.engine_identity import baseline_engine_id
+    """The identity a re-index would stamp now (the canonical one, R758), or ``<unknown>``: :func:`_backlog_engines`' first."""
+    return _backlog_engines()[0]
 
-        return baseline_engine_id()
+
+def _backlog_engines() -> tuple[str, str]:
+    """The identity a re-index would stamp now, and the pre-R758 Windows id of the same engine that a stamp may still name (R758; the
+    same id twice when they agree), for ``:engine`` and ``:kw_legacy``. If it cannot be computed, a value no stamp can equal -- so
+    every article counts as owed. "Cannot tell" overstates the backlog; it must never hide one."""
+    try:
+        from src.analytics.engine_identity import baseline_engine_ids
+
+        ids = baseline_engine_ids()
+        return ids[0], ids[-1]
     except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
         # no exc_info and no log_failure: its traceback ends with the engine's own words, and rides the diagnostics bundle
         said = record_text(exc, typed=True)
         _LOG.warning("could not compute the engine identity for the backlog: %s", said)
-        return "<unknown>"
+        return "<unknown>", "<unknown>"
 
 
 def _backlog_www_engine() -> str:
@@ -8602,12 +8616,13 @@ def _backlog_rows(session) -> list[tuple]:
     stand-ins the batch lists that are not certified (:data:`_BACKLOG_LOST_SQL`); the owed count is ``articles - certified - lost``."""
     from sqlalchemy import text
 
-    engine_id = _backlog_engine()
+    engine_id, engine_legacy = _backlog_engines()
     www_engine = _backlog_www_engine()
-    rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": engine_id, "www_engine": www_engine}).fetchall()
+    ids = {"engine": engine_id, "kw_legacy": engine_legacy, "www_engine": www_engine}
+    rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED, **ids}).fetchall()
     if not rows:
         return []
-    lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id, "www_engine": www_engine})}
+    lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), ids)}
     # The two statements share no snapshot, so ``lost`` is held to what the first one says the batch can owe (``articles - certified``): a race
     # between them can make a batch owe less than it does for one poll, never a negative number. The one race found is a stamp deleted between
     # the reads (a stand-in is never stamped and a merged batch gets no new rows): the first statement counted that article as certified, the
@@ -8755,6 +8770,7 @@ def reindex_imported_articles(
         # re-indexed into exactly the rows it already has. Skipped. Read from
         # the narrow stamps tables, never from the article rows. R415: BOTH stamps -- an article with only the keyword
         # stamp still owes its places and entities, and one with only the www stamp still owes its keywords.
+        kw_ids = _backlog_engines()
         certified = {
             int(r[0])
             for r in session.execute(
@@ -8763,9 +8779,9 @@ def reindex_imported_articles(
                     " JOIN article_index_stamps st ON st.article_id = m.row_id"
                     " JOIN article_www_stamps ws ON ws.article_id = m.row_id"
                     " WHERE m.batch_id = :b AND m.table_name = 'articles'"
-                    " AND st.engine = :e AND ws.engine = :w"
+                    " AND st.engine IN (:e, :el) AND ws.engine = :w"
                 ),
-                {"b": batch_id, "e": _backlog_engine(), "w": _backlog_www_engine()},
+                {"b": batch_id, "e": kw_ids[0], "el": kw_ids[1], "w": _backlog_www_engine()},
             ).fetchall()
         }
         # A stand-in (the place-holder a salvage copy writes at a lost id, which a backup of that copy carries and the merge records here) is

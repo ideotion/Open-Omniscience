@@ -522,7 +522,7 @@ def test_every_module_a_pass_loads_is_hashed_or_triaged(probe):
     the identity cannot see change. Triage each new one: hash it, or say why not."""
     known = set(ei.ENGINE_MODULES) | set(ei.NOT_OUTPUT_AFFECTING)
     loaded = {
-        str(Path(f).resolve().relative_to(_REPO)) for f in probe["modules"].values()
+        Path(f).resolve().relative_to(_REPO).as_posix() for f in probe["modules"].values()
         if _REPO in Path(f).resolve().parents
     }
     untriaged = sorted(loaded - known)
@@ -542,7 +542,7 @@ def test_every_repo_file_a_pass_opens_is_hashed_or_triaged(probe):
         p = Path(f)
         if _REPO not in p.parents or "site-packages" in p.parts or p.suffix == ".py":
             continue
-        rel = str(p.relative_to(_REPO))
+        rel = p.relative_to(_REPO).as_posix()  # the lists are posix on every OS (row 210)
         if rel in covered or rel.startswith(exempt):
             continue
         untriaged.append(rel)
@@ -577,3 +577,70 @@ def test_the_closure_probe_is_not_vacuous(probe):
     names = set(probe["modules"])
     assert {"src.analytics.extract", "src.timemap.whostore", "src.analytics.store"} <= names
     assert any("stopwords" in f for f in probe["opened"])
+
+
+# --- R758 (row 210): data file names are POSIX; the pre-R758 Windows id is accepted, never written ---------- #
+
+class _WinRepo:
+    """A repo root whose glob answers the way pathlib does on Windows: relative paths that print with backslashes."""
+
+    def __init__(self, names):
+        self._names = names
+
+    def glob(self, pattern):
+        from pathlib import PureWindowsPath
+
+        root = self
+
+        class _P:
+            def __init__(self, n):
+                self._n = n
+
+            def is_file(self):
+                return True
+
+            def relative_to(self, base):
+                assert base is root
+                return PureWindowsPath(self._n)
+
+        return [_P(n) for n in self._names]
+
+
+def test_a_windows_glob_gives_the_same_canonical_names_as_linux(monkeypatch):
+    monkeypatch.setattr(ei, "_REPO", _WinRepo(["configs\\stopwords_iso\\de.txt"]))
+    assert str(ei._REPO.glob("x")[0].relative_to(ei._REPO)) == "configs\\stopwords_iso\\de.txt"  # the pre-R758 name
+    assert ei._expand(("configs/stopwords_iso/*.txt", "configs/keyword_equivalents.yml")) == [
+        "configs/keyword_equivalents.yml", "configs/stopwords_iso/de.txt"]
+    # The legacy names are what that Windows install hashed: the glob match with backslashes, a literal as written.
+    assert ei._expand(("configs/stopwords_iso/*.txt", "configs/keyword_equivalents.yml"), legacy=True) == [
+        "configs/keyword_equivalents.yml", "configs\\stopwords_iso\\de.txt"]
+
+
+def test_the_legacy_id_differs_from_the_canonical_one_only_in_file_names():
+    canonical, legacy = ei._kw_data_files(), ei._kw_data_files(legacy=True)
+    assert not any("\\" in n for n in canonical)
+    assert any("\\" in n for n in legacy)
+    assert sorted(n.replace("\\", "/") for n in legacy) == canonical
+    ids = ei.baseline_engine_ids()
+    assert ids == (ei.baseline_engine_id(), ei.engine_id(extractor_name="baseline", legacy=True)) and ids[0] != ids[1]
+    assert ei.accepted_engine_ids(extractor_name="baseline") == ids
+
+
+def test_a_pass_keeps_a_legacy_stamp_it_could_have_written_and_a_full_pass_writes_the_canonical_id():
+    from sqlalchemy import text
+
+    s = _session()
+    a = _article(s)
+    ex = get_extractor("baseline")
+    index_article(s, a, extractor=ex, country=None)
+    engine, inputs = _stamp(s, a)
+    assert engine == ei.baseline_engine_id()
+    legacy = ei.baseline_engine_ids()[1]
+    s.execute(text("UPDATE article_index_stamps SET engine = :e WHERE article_id = :a"), {"e": legacy, "a": a.id})
+    s.commit()
+    # A keyword-only pass rewrites part of the article; the rest is the earlier pass's -- the same engine, so the stamp stays.
+    index_article(s, a, extractor=ex, country=None, scope="keywords")
+    assert _stamp(s, a) == (legacy, inputs)
+    # A full pass stamps what it is: the canonical id, never the legacy one.
+    index_article(s, a, extractor=ex, country=None)
+    assert _stamp(s, a) == (ei.baseline_engine_id(), inputs)

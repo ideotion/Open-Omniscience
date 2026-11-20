@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "06b3bbf00b25b080d00bc68947f7e42f39bc84946391589769e991ad18ea6317",
+  "digest": "5ca54037ea5b758693716c4ce947d02529ad7230b55b5385ab594793ef6e270c",
   "log": [
     {
       "version": 1,
@@ -97,6 +97,12 @@
       "digest": "06b3bbf00b25b080d00bc68947f7e42f39bc84946391589769e991ad18ea6317",
       "kind": "same",
       "note": "src/analytics/store.py gained catch_up_source_counters and a chunked scoped reconcile_source_counters (Source.article_count bookkeeping, row 75); no function index_article calls changed, so the rows an article gets are identical"
+    },
+    {
+      "version": 3,
+      "digest": "5ca54037ea5b758693716c4ce947d02529ad7230b55b5385ab594793ef6e270c",
+      "kind": "same",
+      "note": "R758 row 210: the engine identity hashes data file names in POSIX form and also accepts the pre-R758 Windows id of the same bytes; the rows index_article writes are unchanged"
     }
   ]
 }
