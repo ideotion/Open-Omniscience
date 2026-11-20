@@ -283,7 +283,9 @@ async function test(name, fn) { await fn(); n++; console.log("ok  - " + name); }
     await M.loadStatAgencies();
     const cov = $("stat-coverage");
     assert.ok(cov.textContent.includes("News page verified for 0 of 1 (about 152 planned)"), cov.textContent);
-    assert.strictEqual(cov.title, "M. C.");
+    // Each sentence goes through t(): the hover is a caveat surface and reads in the UI language
+    // (the 0.6 row A walk found it English in every locale).
+    assert.strictEqual(cov.title, "«en:M.» «en:C.»");
     API_ANSWERS["/api/stats/agencies"] = { agencies: [], continents_covered: [] };
     await M.loadStatAgencies();
     assert.ok(!cov.textContent.includes("verified"), "no progress block, no line");

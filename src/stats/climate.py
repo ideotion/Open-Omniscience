@@ -229,6 +229,15 @@ def _current_month(now: datetime | None = None) -> str:
     return f"{n.year:04d}-{n.month:02d}"
 
 
+#: CPC's ONI header, token by token (``src.stats.oni`` documents the published shape).
+_ONI_HEADER = ("SEAS", "YR", "TOTAL", "ANOM")
+
+
+def _oni_header(refusal: dict) -> bool:
+    """Is this refusal CPC's documented header line, and nothing else?"""
+    return tuple(str(refusal.get("text") or "").upper().split()) == _ONI_HEADER
+
+
 def run_fetch(dataset: str, param: str | None, *, fetchers: Any = None) -> tuple[list[StatFigure], dict, list[str]]:
     """Fetch one unit through its guarded fetcher. Returns (figures, diagnostics, requested URLs).
 
@@ -250,11 +259,17 @@ def run_fetch(dataset: str, param: str | None, *, fetchers: Any = None) -> tuple
         return parsed.figures, diag, [fetchers.nsidc_url(p)]
     if dataset == "oni":
         parsed = fetchers.fetch_oni()
+        # The parser refuses CPC's own header line on purpose (it is not a data row, and
+        # ``tests/test_oni_parser.py`` pins that). It is the documented layout, though, so the
+        # Climate tab must not report it as "a line not matching the documented layout": every
+        # real fetch would then claim one refusal that never happened (found by the 0.6 row A walk).
+        refused = [r for r in parsed.refused if not _oni_header(r)]
         diag = {
             "rows_read": parsed.rows_read,
             "figures": len(parsed.figures),
-            "refused_total": len(parsed.refused),
-            "refused_sample": list(parsed.refused[:SAMPLE_KEPT]),
+            "refused_total": len(refused),
+            "refused_sample": refused[:SAMPLE_KEPT],
+            "header_lines": len(parsed.refused) - len(refused),
         }
         return parsed.figures, diag, [fetchers.ONI_URL]
     if dataset == "usgs":
