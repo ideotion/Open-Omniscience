@@ -51,8 +51,10 @@ REPO_URL_HTTPS = f"https://github.com/{REPO}"
 TAGS_URL = f"https://api.github.com/repos/{REPO}/tags?per_page=100"
 GITHUB_API_HOSTS = ("api.github.com",)
 
-TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+#: ASCII digits and an end that admits no trailing newline (``\d`` takes any Unicode digit and ``$`` matches before a final "\n"): the security read
+#: of R760 found both laxer than the ref git is handed.
+TAG_RE = re.compile(r"^v([0-9]+)\.([0-9]+)\.([0-9]+)\Z")
+SHA_RE = re.compile(r"^[0-9a-f]{40}\Z")
 #: How long a check stays good for an apply, seconds.
 CHECK_TTL_S = 3600
 _MAX_BODY = 2_000_000
@@ -231,7 +233,11 @@ def check(get_json: Any = None, *, root: Path | None = None, now: float | None =
     fetch = get_json or _get_json
     cur = current_version()
     cur_t = _vtuple(cur) or (0, 0, 0)
-    newest = pick_newest_tag(_all_tags(fetch))
+    rows = _all_tags(fetch)
+    if not isinstance(rows, list):
+        # An answer that is not a tags list (an error body served with 200) says nothing about releases: a read failure, never "no release".
+        raise UpdateError("The update check could not read a version from GitHub.")
+    newest = pick_newest_tag(rows)
     if newest is None:
         # No release tag: there is no release to update to, and nothing else is offered in its place (Q1136, R760). This answer cannot be
         # applied: validate_apply refuses it, since it is not available and its ref is not a tag.

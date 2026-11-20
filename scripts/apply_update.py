@@ -56,8 +56,8 @@ WAIT_S = 1800
 GIT_TIMEOUT_S = 600
 PIP_TIMEOUT_S = 3600
 ORIGIN_OK = "https://github.com/ideotion/open-omniscience"
-TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+\Z")  # ASCII digits, no trailing newline (R760 security read)
+SHA_RE = re.compile(r"^[0-9a-f]{40}\Z")
 #: How long the restarted app gets to answer on its port before its start is called unconfirmed (a first boot after an update can migrate).
 BOOT_WAIT_S = 900
 #: The passphrase variables (``src/monitoring/secret_scrub.py:HELD_ENV_VARS``; a test pins the two equal). No child of this helper gets them.

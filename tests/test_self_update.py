@@ -76,8 +76,21 @@ def test_with_no_release_tag_the_check_says_so_and_offers_nothing_else(monkeypat
     for ref, sha in (("main", SHA_B), ("", "")):
         with pytest.raises(su.UpdateError):
             su.validate_apply(ref, sha)
-    # A tags answer that is not a list (rate limit, error body) is no tag either, and offers nothing.
-    assert su.check(lambda url: {"message": "rate limited"})["no_release"] is True
+    # A tags answer that is not a list (an error body served with 200) is a read failure, never "no release" and never an offer.
+    with pytest.raises(su.UpdateError, match="could not read"):
+        su.check(lambda url: {"message": "rate limited"})
+
+
+def test_the_tag_and_sha_rules_take_ascii_digits_and_no_trailing_newline():
+    """R760 security read: ``\\d`` matched any Unicode digit and ``$`` matched before a final newline, in both files."""
+    h = _helper()
+    for rx in (su.TAG_RE, h.TAG_RE):
+        assert rx.match("v0.6.0") and rx.match("v10.20.30")
+        for bad in ("v0.6.0\n", "v\u0669.0.0", "v0.6.0-rc1", "main", "refs/tags/v0.6.0", " v0.6.0"):
+            assert not rx.match(bad), (rx.pattern, bad)
+    for rx in (su.SHA_RE, h.SHA_RE):
+        assert rx.match(SHA_B) and not rx.match(SHA_B + "\n")
+    assert su.pick_newest_tag(_tags(("v\u0669.0.0", SHA_A), ("v0.6.0", SHA_B))) == ("v0.6.0", SHA_B)
 
 
 def test_a_ref_that_is_not_a_release_tag_never_reaches_the_apply(monkeypatch):
