@@ -1029,6 +1029,7 @@ def test_r748_the_process_probe_counts_any_git_and_cannot_tell_without_a_name_or
     monkeypatch.setitem(_sys.modules, "psutil", None)  # import fails
     assert h.git_processes_running() is None
 
+
 def test_a_failure_after_the_swap_keeps_the_result_it_already_wrote(tmp_path, monkeypatch):
     h = _helper()
     plan = _plan_file(tmp_path)

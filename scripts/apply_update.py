@@ -249,7 +249,9 @@ def roll_back(root: Path, old: str, changed: list[str], py: str, *, new: str = "
 def git_processes_running() -> bool | None:
     """True if any process whose name starts with ``git`` runs on this machine, False if positively none, None when that cannot be told
     (psutil missing or refusing, or a process whose name it cannot read). Deliberately broad: the git that holds a lock is not ours to
-    name (its wrapper was killed), so ANY git process counts as a possible holder, and only a machine with none at all is a False."""
+    name (its wrapper was killed), so ANY git process counts as a possible holder, and only a machine with none at all is a False. The
+    price is stated: an unrelated git left open (a Git Bash window, an editor polling git) keeps this True, so the update then waits its
+    bound and says rollback_incomplete as before R748 rather than reset under a git it cannot tell apart."""
     try:
         import psutil
     except ImportError:
