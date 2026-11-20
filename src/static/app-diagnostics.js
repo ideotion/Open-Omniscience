@@ -1071,7 +1071,7 @@
       }
       const cap = Number((listing && (listing.part_max_bytes || listing.volume_max_bytes)) || 0);
       // A cap under 1 MB (an operator's OO_DIAG_VOLUME_MAX_MB below 1) reads «0.02», never «0 MB each».
-      const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "4");
+      const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "0.2");
       _partsStatus(tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
                       {n: set.files.length, mb, m: set.mcount, parts: set.pcount})
         + " " + t("Your browser may ask once to allow several downloads: allow them."));
@@ -1151,7 +1151,7 @@
     }
 
     // THE ARCHIVE AS NUMBERED FILES, AGAIN (field session 2026-09-11, reshaped 2026-10-01).
-    // It hands over the ALREADY-BUILT archive: itself when it fits one file, else files of at most 4 MB that each open on their own
+    // It hands over the ALREADY-BUILT archive: itself when it fits one file, else files of at most 200 KB that each open on their own
     // and saves them from the typed part number on. It deliberately does NOT start a build:
     // "send it again" and "spend the next few hours rebuilding" are different asks, and a button
     // that quietly did the second when the operator meant the first would be the worst moment to

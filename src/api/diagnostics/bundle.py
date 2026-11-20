@@ -4145,7 +4145,7 @@ def all_diagnostics_volumes() -> JSONResponse:
     """The finished archive as the file or files to hand over: ITSELF when it fits one file, otherwise
     split into size-bounded, independently-openable ZIP volumes.
 
-    WHEN THE ARCHIVE FITS (``UPLOAD_PART_BYTES``, 4,000,000 bytes, R119) the answer is the archive
+    WHEN THE ARCHIVE FITS (``DIAG_PART_BYTES``, 200,000 bytes, the user's 2026-11-15 rule) the answer is the archive
     as it is, ``oo-diagnostics-<stamp>.zip``, listed in the same shape as a numbered set with one file
     of ``kind: "archive"``: no split (seconds to a minute saved, and none of the doubled disk
     footprint below), no manifest zip, no ``volumes-readme.json``. A numbered set left from an
