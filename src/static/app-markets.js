@@ -2758,6 +2758,18 @@
     function ooSubtabs(nav, onSelect, opts) {
       if (!nav) return null;
       opts = opts || {};
+      // The strip's own writing direction, read where the key is pressed (a language switch flips it
+      // without re-wiring): the computed style when there is one, else the nearest dir attribute.
+      function isRtl() {
+        try {
+          if (typeof getComputedStyle === "function") {
+            const dir = getComputedStyle(nav).direction;
+            if (dir) return dir === "rtl";
+          }
+        } catch (_) { /* not an element a style can be read from: fall through to the attribute */ }
+        const host = typeof nav.closest === "function" ? nav.closest("[dir]") : null;
+        return !!(host && String(host.getAttribute("dir")).toLowerCase() === "rtl");
+      }
       // Query buttons LIVE on every operation, never capture once: surfaces like the
       // Markets category tabs REBUILD this nav's buttons on a re-render and call
       // ooSubtabs again, but the click/keydown listeners are wired once (_ooWired), so
@@ -2804,8 +2816,12 @@
           const i = btns.indexOf(document.activeElement);
           if (i < 0) return;
           let j = i;
-          if (e.key === "ArrowRight" || e.key === "ArrowDown") j = (i + 1) % btns.length;
-          else if (e.key === "ArrowLeft" || e.key === "ArrowUp") j = (i - 1 + btns.length) % btns.length;
+          // Left and right are VISUAL: in a right-to-left strip the next tab sits to the left, so
+          // ←/→ swap there (row 192, found on the Arabic dossier walk). Up and down keep DOM order.
+          const rtl = isRtl();
+          const fwd = rtl ? "ArrowLeft" : "ArrowRight", back = rtl ? "ArrowRight" : "ArrowLeft";
+          if (e.key === fwd || e.key === "ArrowDown") j = (i + 1) % btns.length;
+          else if (e.key === back || e.key === "ArrowUp") j = (i - 1 + btns.length) % btns.length;
           else if (e.key === "Home") j = 0;
           else if (e.key === "End") j = btns.length - 1;
           else return;
