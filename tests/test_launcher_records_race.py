@@ -434,20 +434,53 @@ def _token_env(tmp: Path) -> tuple[dict[str, str], str]:
     return env, token
 
 
-def _writers_alive(token: str) -> list[int]:
-    """The live processes that carry ``token`` in their environment: the launchers and every deferred writer they started (a child inherits it)."""
+#: WHAT THIS GRACE PROTECTS (row 191): a process caught between ``exec`` and its loader filling in its argument and environment pages reads with an
+#: EMPTY environment, so its token is invisible for that moment. ``Popen`` returns inside that window (the parent is let go when the old image is
+#: released, before the new one's pages are set): MEASURED 20 Nov, reading a child's environment the instant ``Popen`` returned found no token in 419 of
+#: 2000 spawns beside 6 busy loops on 4 CPUs, and in 201 of 500 unloaded. A look that took "no token" for "not a writer" then read a writer that had
+#: just started as already ended, and failed it as LOST at 0.0 s (local suite on #2158; macOS shard 3 on #2145). A process of this user whose
+#: environment reads empty or cannot be read is therefore counted as STARTING while it is younger than this, and the look waits for it; past it, an
+#: empty environment is that process's own and it is no writer. The window lasts microseconds to milliseconds, so the grace costs nothing but a
+#: rescan, and a process that really runs with an empty environment delays the look by this much at most.
+STARTING_GRACE_S = 5.0
+
+
+def _writer_scan(token: str) -> tuple[list[int], list[int]]:
+    """``(alive, starting)``: the live processes that carry ``token`` in their environment (the launchers and every deferred writer they started; a
+    child inherits it), and the young processes of this user whose environment cannot be read yet (see ``STARTING_GRACE_S``)."""
     import psutil
 
-    alive = []
+    alive, starting = [], []
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    now = time.time()
     for proc in psutil.process_iter():
         try:
-            if proc.status() == psutil.STATUS_ZOMBIE:
+            if proc.pid == os.getpid() or proc.status() == psutil.STATUS_ZOMBIE:
                 continue
-            if proc.environ().get("OO_TEST_WRITER_TOKEN") == token:
+            try:
+                env = proc.environ()
+            except (psutil.AccessDenied, psutil.ZombieProcess):  # macOS answers a process mid-exec this way (a true zombie was skipped above)
+                env = None
+            if env and env.get("OO_TEST_WRITER_TOKEN") == token:
                 alive.append(proc.pid)
+            elif not env and now - proc.create_time() < STARTING_GRACE_S and _is_own_user_process(proc, uid):
+                starting.append(proc.pid)
         except (psutil.Error, OSError):
             continue
-    return alive
+    return alive, starting
+
+
+def _is_own_user_process(proc, uid: int | None) -> bool:
+    """A process this user started, and not a kernel thread (which runs as root with no environment at all, and is started all the time)."""
+    if uid is not None and proc.uids().real != uid:
+        return False
+    return not (sys.platform.startswith("linux") and (proc.pid == 2 or proc.ppid() == 2))
+
+
+def _writers_alive(token: str) -> list[int]:
+    """Every process the look must still wait for: the token's writers, and the processes too young to say whether they are one."""
+    alive, starting = _writer_scan(token)
+    return alive + starting
 
 
 def _logs(tmp: Path) -> str:
@@ -463,15 +496,16 @@ def _assert_all_present_once_writers_end(pids: list[int], f: Path, what: str, to
     """Wait for every writer of the run to END, then look once: a row missing then was lost, not late (item 66)."""
     start = time.monotonic()
     while True:
-        alive = _writers_alive(token)
-        if not alive or time.monotonic() - start >= wait_s:
+        alive, starting = _writer_scan(token)
+        if not (alive or starting) or time.monotonic() - start >= wait_s:
             break
         time.sleep(0.1)
     waited = time.monotonic() - start
     rows, torn = _rows(f)
     missing = [p for p in pids if p not in {r.get("pid") for r in rows}]
-    assert not alive, (f"{what}: LATE, not proven lost: {len(alive)} deferred writer(s) still running after {waited:.1f} s, "
-                       f"{len(missing)} of {len(pids)} rows not in yet ({_logs(tmp)})")
+    assert not (alive or starting), (f"{what}: LATE, not proven lost: {len(alive)} deferred writer(s) still running"
+                                     + (f" and {len(starting)} process(es) still starting" if starting else "")
+                                     + f" after {waited:.1f} s, {len(missing)} of {len(pids)} rows not in yet ({_logs(tmp)})")
     assert not missing, (f"{what}: {len(missing)} of {len(pids)} rows LOST: every writer had ended ({waited:.1f} s) and {len(rows)} lines are left, "
                          f"{torn} torn ({_logs(tmp)})")
     assert not torn, f"{what}: {torn} torn lines"
@@ -499,6 +533,31 @@ def test_the_writer_wait_tells_late_from_lost(tmp_path):
             _assert_all_present_once_writers_end([666], f, "late", token, tmp_path, wait_s=0.5)
     finally:
         w.kill()
+        w.wait()
+
+
+def test_a_writer_caught_mid_exec_is_waited_for_not_read_as_ended(tmp_path, monkeypatch):
+    """Row 191, red before: a process read between ``exec`` and its loader setting its pages has no environment yet (see ``STARTING_GRACE_S``), so the
+    look found no token, took the writer for ended and failed a row that was on its way as LOST at 0.0 s. That window is made long here, for the one
+    writer: its environment reads empty for its first 0.5 s, as a loaded runner can make it. The look now waits for it and finds its row."""
+    psutil = pytest.importorskip("psutil")
+    f = tmp_path / "launcher_exits.jsonl"
+    _seed(f, 5)
+    env, token = _token_env(tmp_path)
+    w = subprocess.Popen([sys.executable, "-c", f"import json,time; time.sleep(1.0); open({str(f)!r},'a').write(json.dumps({{'pid': 777}})+'\\n')"],
+                         env=env)
+    real = psutil.Process.environ
+    born = time.monotonic()
+
+    def environ(self):
+        if self.pid == w.pid and time.monotonic() - born < 0.5:
+            return {}
+        return real(self)
+
+    monkeypatch.setattr(psutil.Process, "environ", environ)
+    try:
+        _assert_all_present_once_writers_end([777], f, "mid-exec", token, tmp_path, wait_s=60)
+    finally:
         w.wait()
 
 
