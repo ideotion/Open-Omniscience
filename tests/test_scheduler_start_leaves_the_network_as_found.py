@@ -105,15 +105,17 @@ class _Recording:
         self.ran = threading.Event()
 
     def _make(self, gate, label: str) -> bool:
-        from src.scheduler.runner import _after_gate
-
         self.seen[f"{label}: while the thread was being made"] = ingest.kill_switch_active()
 
         def body() -> None:
             self.seen[f"{label}: when the thread ran"] = ingest.kill_switch_active()
             self.ran.set()
 
-        threading.Thread(target=_after_gate(gate, body), daemon=True).start()
+        def gated() -> None:
+            if gate is None or gate.wait():
+                body()
+
+        threading.Thread(target=gated, daemon=True).start()
         return True
 
     def start(self, gate=None) -> bool:

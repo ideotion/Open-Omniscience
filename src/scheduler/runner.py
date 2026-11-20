@@ -1866,7 +1866,8 @@ def _log_pause_in_force() -> bool:
 
 
 class StartGate:
-    """What a gated collection thread waits on before it runs anything (R756): opened, or cancelled.
+    """What a gated collection thread waits on before it runs anything (R756): opened, or cancelled. The loop's and the one-off run's
+    threads take it as an argument (``_loop_recorded(gate)``, ``_do_run(gate=...)``), so their targets stay the methods themselves.
 
     ``POST /api/scheduler/start`` and ``/run-now`` make the thread first and open the network after. When they then decline to open it (a
     Stop engaged the switch while the thread was being made), they CANCEL the gate, and the thread returns without running its target: a
@@ -1887,22 +1888,6 @@ class StartGate:
         """Block until opened or cancelled; True when opened."""
         self._decided.wait()
         return self._go
-
-
-def _after_gate(gate: StartGate | None, target: Callable[[], object]) -> Callable[[], object]:
-    """``target``, run only once ``gate`` is opened and never if it is cancelled (R756); ``target`` itself when there is no gate.
-
-    The collection start's route makes the thread first and clears the kill switch after, so a start whose thread cannot be made leaves the
-    switch exactly as it found it, with no moment in between when anything could fetch. The thread waits here for that clear."""
-    if gate is None:
-        return target
-
-    def gated() -> object:
-        if not gate.wait():
-            return None
-        return target()
-
-    return gated
 
 
 class BackgroundScheduler:
@@ -2037,7 +2022,7 @@ class BackgroundScheduler:
             self._stop.clear()
             previous = (self._thread, self._started_at)
             self._started_at = datetime.now(UTC)
-            self._thread = threading.Thread(target=_after_gate(gate, self._loop_recorded), name="oo-scheduler", daemon=True)
+            self._thread = threading.Thread(target=self._loop_recorded, args=(gate,), name="oo-scheduler", daemon=True)
             try:
                 self._thread.start()
             except Exception:
@@ -2059,7 +2044,7 @@ class BackgroundScheduler:
             deferred, self._start_deferred = self._start_deferred, False
         return deferred
 
-    def _loop_recorded(self) -> None:
+    def _loop_recorded(self, gate: StartGate | None = None) -> None:
         """The loop, bracketed by the two ledger events the chronology reads its bar from
         (RR-10, 2026-09-24): collection started, collection stopped. Recorded HERE, on
         the loop's own thread, because every way collection starts or stops passes
@@ -2069,6 +2054,8 @@ class BackgroundScheduler:
         bounded, and a pass deep in a write can outlive it by many minutes). A process
         that dies with the loop running records no stop; the chronology closes the
         stretch at the session's end instead."""
+        if gate is not None and not gate.wait():
+            return  # cancelled before it began (R756): no pass, no ledger pair, and is_running() turns false again
         _ledger_collection(True)
         failure: str | None = None
         try:
@@ -2114,7 +2101,7 @@ class BackgroundScheduler:
             if self._active or self._exclusive_hold:
                 return False
         _ensure_storage_supervisor()
-        threading.Thread(target=_after_gate(gate, self._do_run), name="oo-scrape-now", daemon=True).start()
+        threading.Thread(target=self._do_run, kwargs={"gate": gate}, name="oo-scrape-now", daemon=True).start()
         return True
 
     def hold_exclusive(self, claim: list[bool] | None = None) -> None:
@@ -2327,7 +2314,10 @@ class BackgroundScheduler:
             # Guarded clear: never wipe a phase a just-started pass owns.
             _phase_set(None)
 
-    def _do_run(self) -> None:
+    def _do_run(self, gate: StartGate | None = None) -> None:
+        # A "Run now" thread waits for the route to open the network first, and returns without running if it declined (R756).
+        if gate is not None and not gate.wait():
+            return
         # Skip if another run holds the lock (manual + scheduled racing).
         if not self._run_lock.acquire(blocking=False):
             return

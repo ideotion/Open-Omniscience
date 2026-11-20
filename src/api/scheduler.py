@@ -403,11 +403,11 @@ _STOPPED_DURING_START = "Collection was stopped while it was starting, so the ne
 _STOP_KEPT = "Airplane mode is on: the Stop is kept."
 
 
-def _refusal(error: str, engaged: bool, network: str | None = None) -> HTTPException:
+def _refusal(reason: str, engaged: bool, network: str | None = None) -> HTTPException:
     return HTTPException(
         status_code=409,
         detail={
-            "error": error,
+            "error": reason,
             "kill_switch": "engaged" if engaged else "off",
             "network": network or _NETWORK_AFTER_REFUSAL[engaged],
         },
