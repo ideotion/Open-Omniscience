@@ -1961,11 +1961,20 @@
       } catch (e) { _schedTargetsLast = null; el.textContent = _failMsg("Could not preview targets: {error}", e); }
     }
 
+    // R756: a refused start says what the network is doing NOW, read by the server from the kill switch after the refusal
+    // ("Airplane mode is on, as it was before this start." or "The network stays on, ..."). Each sentence is one locale key.
+    // The reason goes through t9 as well: when it is one of the route's own sentences (a Stop that landed during the start) it is a
+    // key; a refusal's own words (an exception) are not, and t9 hands them back unchanged.
+    function _startRefusalMsg(template, e, t9) {
+      const d = e && e.detail && typeof e.detail === "object" && !Array.isArray(e.detail) ? e.detail : null;
+      if (!d || !d.network) return _failMsg(template, e);
+      return _failMsg(template, {message: t9(String(d.error || ""))}) + " " + t9(d.network);
+    }
     async function schedulerStart() {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!await ensureOnline(t9("Start continuous background collection"))) return;
       try { renderSchedStatus(await api("/api/scheduler/start", {method: "POST"}));
-        toast("Scheduler started."); } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); }
+        toast("Scheduler started."); } catch (e) { toast(_startRefusalMsg("Start failed: {error}", e, t9), "err"); }
     }
     async function schedulerStop() {
       try { renderSchedStatus(await api("/api/scheduler/stop", {method: "POST"}));
@@ -1986,7 +1995,7 @@
             if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch({refresh: true}); loadDbStats(); } }
           catch { clearInterval(poll); }
         }, 1500);
-      } catch (e) { toast(_failMsg("Run now failed: {error}", e), "err"); }
+      } catch (e) { toast(_startRefusalMsg("Run now failed: {error}", e, t9), "err"); }
     }
 
     async function saveScheduler() {

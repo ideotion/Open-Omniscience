@@ -161,10 +161,10 @@ def test_the_collection_start_buttons_resume_only_a_lane_that_was_on(
     import src.wiki.service as svc
 
     class _Scheduler:
-        def start(self):
+        def start(self, gate=None):
             return True
 
-        def run_now(self):
+        def run_now(self, gate=None):
             return True
 
         def status(self):

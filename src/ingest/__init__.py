@@ -1059,6 +1059,21 @@ def clear_kill_switch() -> None:
         _KILL.clear()
 
 
+def clear_kill_switch_unless_engaged_since(epoch: int) -> bool:
+    """Clear the switch, but only if it was not engaged after ``epoch`` was captured; whether it cleared (R756).
+
+    For a caller that decides to go online, does slow work, and then opens the network: a Stop pressed during that work (the Stop button,
+    the airplane toggle, a panic) must win over the earlier decision, never be undone by it. The test and the clear take the lock an
+    engagement counts itself under, so an engagement lands wholly before (the count moved: nothing is cleared) or wholly after (it engages
+    the switch again) -- never between them.
+    """
+    with _KILL_EPOCH_LOCK:
+        if _KILL_EPOCH != epoch:
+            return False
+        _KILL.clear()
+        return True
+
+
 def kill_switch_active() -> bool:
     return _KILL.is_set()
 
