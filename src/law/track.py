@@ -325,7 +325,7 @@ def _record_lane(doc: LawDocument, revision: LawRevision | None, parsed: object 
     return record_document(doc, revision, parsed, provisions=provisions)
 
 
-def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dict:
+def track_document(session, fetcher, doc: LawDocument, *, extractor=None, move_to: str | None = None) -> dict:
     """Fetch one tracked legal document and record a baseline or a change. Honest status.
 
     On a successful baseline / change / revert (and a first-time backfill on an
@@ -334,6 +334,9 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     full on the :class:`LawRevision` (``full_text``) — the versioned-sources
     model (a law = an Article + a linked revision/audit trail). The text is then
     ingested into the corpus through the one ``index_article`` hook.
+
+    ``move_to`` is the address the catalogue now names for this document (R753, see
+    :func:`_move_format`); the batch trackers read it from ``previous_urls`` once per pass.
     """
     from src.ingest import (
         CrawlDelayDeferred,
@@ -530,6 +533,15 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         # would leave most of the corpus without an identity, a licence or a provenance
         # for as long as the law stood.
         _record_lane(doc, None, parsed)
+        # R753: a document still polled at an address its catalogue row has moved away from
+        # moves on THIS poll only -- the HTML just read equals what is stored (rule b), read
+        # by the extractor that produced it (condition 3: ``h == last_hash`` is that check,
+        # and the extractor re-baseline below never runs on the same pass).
+        if move_to and move_to != doc.url and reason == "ok":
+            moved = _move_format(session, fetcher, doc, move_to=move_to, html_text=text, now=now,
+                                 extractor=extractor)
+            if moved is not None:
+                return moved
         return {"document_id": doc.id, "status": "unchanged"}
 
     # THE EXTRACTOR CHANGED, NOT THE LAW. The boilerplate strip removes chrome this
@@ -661,6 +673,180 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     }
 
 
+# R753 condition 4: an XML reading far shorter than the HTML one it replaces is not trusted.
+# The HTML reading carries no chrome (the strip removed it) but does carry the footnotes and the
+# table of contents the adapter sets aside, so the XML is legitimately somewhat shorter; under
+# half is a different document, a fragment, or a parse gone wrong.
+_MOVE_MIN_LENGTH_RATIO = 0.5
+_MOVE_STAYS = "unchanged; stays on its HTML address: "
+# The act's title must appear in the opening of the stored HTML text (its heading), see below.
+_MOVE_TITLE_WINDOW = 2000
+
+
+def _same_origin(a: str, b: str) -> bool:
+    """Same scheme, host and port: R753 covers one more request to the SAME host, and an
+    ``http://`` address on it would be a transport downgrade, not the same host."""
+    try:
+        sa, sb = urlsplit(a), urlsplit(b)
+        return bool(sa.hostname) and (sa.scheme.lower(), (sa.hostname or "").lower(), sa.port) == (
+            sb.scheme.lower(), (sb.hostname or "").lower(), sb.port
+        )
+    except ValueError:
+        return False
+
+
+def _normalised(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text: str, now, extractor) -> dict | None:
+    """Move ``doc`` from its HTML address to ``move_to`` without recording an amendment (R753).
+
+    Called only on a poll whose HTML reading equals the stored text (rule b). One more
+    request, to the same host, through the same fetcher (robots, politeness, the kill
+    switch), inside the pass the operator already consented to (rule e, condition 5).
+    Every refusal leaves the document on its HTML address with the reason in its status
+    and stores nothing from the XML (rule d, condition 4); ``None`` is returned then and
+    the poll reads as the ordinary "unchanged" it was.
+
+    On success the XML text becomes the document's baseline and latest text, so the next
+    amendment is measured against the XML and never against the HTML (condition 6), and a
+    :class:`LawFormatChange` row records the move and keeps everything it replaced
+    (conditions 1 and 2). No :class:`LawRevision` is written: nothing was amended.
+    """
+    from src.database.models import LawFormatChange
+    from src.ingest import CrawlDelayDeferred, FetchError
+    from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL_HEAD
+    from src.law.catalog import law_jurisdiction
+
+    def stay(why: str) -> None:
+        doc.last_status = (_MOVE_STAYS + why)[:255]
+        session.commit()
+
+    old_url = doc.url
+    if not _same_origin(old_url, move_to):
+        stay("the catalogue's new address is on another host, which R753 does not cover")
+        return None
+    juris = law_jurisdiction(doc.jurisdiction)
+    holders = session.query(LawDocument.jurisdiction).filter(LawDocument.url == move_to, LawDocument.id != doc.id).all()
+    if any(law_jurisdiction(j) == juris for (j,) in holders):
+        stay("another tracked document already holds the new address")
+        return None
+    if session.query(LawFormatChange.id).filter_by(document_id=doc.id, from_url=old_url, to_url=move_to).first():
+        stay("this move was made once and undone; it is not made again on its own")
+        return None
+
+    try:
+        result = fetcher.fetch(move_to, require_html=False, keep_bytes=True)
+    except CrawlDelayDeferred as exc:
+        stay(f"the XML read was deferred: {record_text(exc, limit=120)}")
+        return None
+    except FetchError as exc:
+        if record_text(exc).startswith(KILL_SWITCH_REFUSAL_HEAD):
+            stay("the XML read was refused by the kill switch (airplane mode); nothing was requested")
+        else:
+            stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
+        return None
+    except Exception as exc:  # noqa: BLE001 - the socket guard raises OSError; a move must never break tracking
+        from src.ingest.airplane import AirplaneModeError
+
+        if isinstance(exc, AirplaneModeError):
+            # the socket-level guard refused it (invariant #14e corollary: a kill-switch refusal is named as such)
+            stay("the XML read was refused by the kill switch (airplane mode); nothing was sent")
+        else:
+            stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
+        return None
+
+    # Condition 5: the text must come FROM the same host, not only be asked of it. The fetcher
+    # follows a redirect to another host (under that host's own robots), so the answer's own
+    # address is checked before a byte of it is read as the act.
+    final_url = getattr(result, "final_url", None) or move_to
+    if not _same_origin(old_url, final_url):
+        stay("the XML address redirected to another host, which R753 does not cover")
+        return None
+    xml_text, xml_reason, parsed = _document_text(result, retrieved_on=now.date().isoformat())
+    if parsed is None or xml_reason not in ("gii", "clml"):
+        what = "it answered with a web page" if xml_reason == "ok" else (xml_reason or "no reason given")[:100]
+        stay(f"the new address did not read as a structured act ({what})")
+        return None
+    if not xml_text or len(xml_text) < _MIN_TEXT:
+        stay("the XML reading is empty")
+        return None
+    if len(xml_text) < _MOVE_MIN_LENGTH_RATIO * len(html_text):
+        stay(f"the XML reading is far shorter than the HTML ({len(xml_text)} vs {len(html_text)} characters)")
+        return None
+    # The act's own title must open the stored HTML text (the page's heading), not merely occur
+    # in it: German acts cite one another by full title, so a substring of the whole text
+    # would accept a mis-mapped act whose name the right one happens to quote.
+    title = (getattr(parsed, "title", None) or "").strip()
+    if not title or _normalised(title) not in _normalised(html_text)[:_MOVE_TITLE_WINDOW]:
+        stay("the XML names an act the stored HTML text does not")
+        return None
+
+    xml_hash = hashlib.sha256(xml_text.encode("utf-8")).hexdigest()
+    session.add(
+        LawFormatChange(
+            document_id=doc.id,
+            changed_at=now,
+            from_url=old_url,
+            to_url=move_to,
+            from_format="html",
+            to_format=xml_reason,
+            from_hash=doc.last_hash or "",
+            to_hash=xml_hash,
+            from_baseline_hash=doc.baseline_hash,
+            from_baseline_text=doc.baseline_text,
+            from_latest_text=doc.latest_text,
+            from_latest_text_revid=doc.latest_text_revid,
+            reason="R753: the HTML read in the same pass matched the stored text",
+        )
+    )
+    doc.url = move_to
+    doc.baseline_text = xml_text
+    doc.baseline_hash = xml_hash
+    doc.last_hash = xml_hash
+    doc.last_size = len(xml_text)
+    doc.latest_text = xml_text
+    doc.last_status = (
+        "re-read from the portal's XML (format change); "
+        "the HTML read in the same pass matched the stored text"
+    )
+    try:
+        session.commit()
+    except Exception as exc:  # noqa: BLE001 - is_integrity_error is the precise discriminator
+        if not is_integrity_error(exc):
+            raise
+        # Another session took the address (or made this same move) between the check and
+        # the commit: nothing moved HERE.
+        session.rollback()
+        if doc.url == move_to:
+            return {"document_id": doc.id, "status": "unchanged"}  # the other pass moved it; its status stands
+        doc.last_checked_at = now
+        stay("another tracked document already holds the new address")
+        return None
+    _ingest_to_corpus(session, doc, extractor)
+    _record_lane(doc, None, parsed)
+    return {"document_id": doc.id, "status": "moved", "from_url": old_url, "to_url": move_to}
+
+
+def _move_targets(session) -> dict[tuple[str, str], str]:
+    """The catalogue's moves, read once per pass. Empty (no move) when the catalogue cannot be read."""
+    try:
+        from src.law.catalog import format_move_targets, load_legal_catalog
+
+        return format_move_targets(load_legal_catalog())
+    except Exception as exc:  # noqa: BLE001 - a catalogue problem must never stop tracking
+        log_failure(_LOG, "law tracking: catalogue moves unreadable; no document moves this pass", exc,
+                    level=logging.WARNING)
+        return {}
+
+
+def _move_to_for(targets: dict[tuple[str, str], str], doc: LawDocument) -> str | None:
+    from src.law.catalog import law_jurisdiction
+
+    return targets.get((law_jurisdiction(doc.jurisdiction), doc.url)) if targets else None
+
+
 def _batch_extractor(extractor):
     """Build the keyword extractor ONCE per batch (laws index like any article)."""
     if extractor is not None:
@@ -722,6 +908,7 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
     from src.database.query import capped
 
     extractor = _batch_extractor(extractor)
+    targets = _move_targets(session)
     docs = capped(
         session.query(LawDocument).filter_by(watched=True).order_by(LawDocument.id.asc()),
         limit_documents,  # 0 = every watched document (no cap)
@@ -739,7 +926,7 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
         # database, where a one-off failure would escape the loop here instead of being one counted error below.
         doc_id = sa_inspect(doc).identity[0]
         try:
-            res = track_document(session, fetcher, doc, extractor=extractor)
+            res = track_document(session, fetcher, doc, extractor=extractor, move_to=_move_to_for(targets, doc))
         except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
             log_failure(_LOG, f"law tracking: document {doc_id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned transaction so it can't roll back the batch
@@ -763,6 +950,8 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
             tally["unchanged"] += 1
         elif status == "deferred":
             tally["deferred"] = tally.get("deferred", 0) + 1
+        elif status == "moved":
+            tally["moved"] = tally.get("moved", 0) + 1  # R753: present only when a document moved format
     return tally
 
 
@@ -805,6 +994,7 @@ def auto_track_due(
     from datetime import timedelta
 
     extractor = _batch_extractor(extractor)
+    targets = _move_targets(session)
     if batch is None:
         watched_count = session.query(LawDocument).filter_by(watched=True).count()
         batch = adaptive_track_budget(watched_count)
@@ -840,7 +1030,7 @@ def auto_track_due(
             continue
         try:
             doc = session.get(LawDocument, doc_id)  # inside the guard: a locked database is one error, not a dead pass
-            res = track_document(session, fetcher, doc, extractor=extractor)
+            res = track_document(session, fetcher, doc, extractor=extractor, move_to=_move_to_for(targets, doc))
         except Exception as exc:  # noqa: BLE001 - one bad document must not abort the batch
             log_failure(_LOG, f"law auto-track: document {doc_id} failed", exc, level=logging.WARNING)
             session.rollback()  # clear a poisoned txn so one dup can't roll back the WHOLE pass
@@ -868,4 +1058,6 @@ def auto_track_due(
             tally["unchanged"] += 1
         elif status == "deferred":
             tally["deferred"] = tally.get("deferred", 0) + 1
+        elif status == "moved":
+            tally["moved"] = tally.get("moved", 0) + 1  # R753: present only when a document moved format
     return tally

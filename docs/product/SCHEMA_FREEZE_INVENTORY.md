@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `c2a6e8f1d4b7` (84 migrations, base first).
+Head: `d7e3a9b2c5f1` (85 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -97,8 +97,9 @@ Head: `c2a6e8f1d4b7` (84 migrations, base first).
 | 82 | `c4e8a2d6f1b9` | `a7c3e5f19b20` | `c4e8a2d6f1b9_keyword_day_counts.py` |
 | 83 | `f61a2b3c4d5e` | `c4e8a2d6f1b9` | `f61a2b3c4d5e_article_fetched_host.py` |
 | 84 | `c2a6e8f1d4b7` | `f61a2b3c4d5e` | `c2a6e8f1d4b7_ipcc_predictions.py` |
+| 85 | `d7e3a9b2c5f1` | `c2a6e8f1d4b7` | `d7e3a9b2c5f1_law_format_changes.py` |
 
-## 2. Main database: tables (61, from `src/database/models.py`)
+## 2. Main database: tables (62, from `src/database/models.py`)
 
 ### `ai_custom_prompt`
 
@@ -602,6 +603,25 @@ Head: `c2a6e8f1d4b7` (84 migrations, base first).
 | `enacted_on` | VARCHAR(32) | yes |  |
 | `lane_key` | VARCHAR(36) | yes |  |
 | `created_at` | DATETIME | yes |  |
+
+### `law_format_changes`
+
+| column | type | null | key |
+|---|---|---|---|
+| `id` | INTEGER | no | primary |
+| `document_id` | INTEGER | no | foreign |
+| `changed_at` | DATETIME | yes |  |
+| `from_url` | VARCHAR(1000) | no |  |
+| `to_url` | VARCHAR(1000) | no |  |
+| `from_format` | VARCHAR(40) | no |  |
+| `to_format` | VARCHAR(40) | no |  |
+| `from_hash` | VARCHAR(64) | no |  |
+| `to_hash` | VARCHAR(64) | no |  |
+| `from_baseline_hash` | VARCHAR(64) | yes |  |
+| `from_baseline_text` | BLOB | yes |  |
+| `from_latest_text` | BLOB | yes |  |
+| `from_latest_text_revid` | INTEGER | yes |  |
+| `reason` | VARCHAR(255) | yes |  |
 
 ### `law_revision_summaries`
 

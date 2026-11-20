@@ -1053,6 +1053,8 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/law/track.py': {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('track_document', 'if not is_integrity_error(exc):'): 2,
+        # R753: the move's commit race reads the same bool, nothing of its text
+        ('_move_format', 'if not is_integrity_error(exc):'): 1,
         # the two batch trackers hand the caught exception to the R294 back-off, whose body is read by this same scan and uses it only
         # through record_text (the stored status) and log_failure; no text of it is made here
         ('track_watched', '_back_off_after_crash(session, doc_id, exc)'): 1,

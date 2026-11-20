@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -53,6 +54,12 @@ def _verdict_of(last_status: str | None) -> str:
         # Crawl-delay, so the text cannot tell the two apart, and calling a failed request "deferred" would hide it. It keeps
         # reading as an error until the document is checked again and the row is rewritten.
         return "deferred"
+    if s.startswith("unchanged; "):
+        # R753: "unchanged; stays on its HTML address: <why>". The document was read and has
+        # not changed; only the move to the catalogue's XML address was not made, for the reason
+        # given. Judged before the substring checks below: a reason quoting the XML address's
+        # own robots refusal is not a verdict on the document that was read.
+        return "unchanged"
     if "robots.txt disallows" in s:
         # The host's own rule, read and applied. Judged first, so an address that happens to
         # carry the words below cannot turn a disallow into the other case.
@@ -72,7 +79,7 @@ def _verdict_of(last_status: str | None) -> str:
         return "error"
     if "no usable text" in s or "too short" in s or s.startswith("empty") or "scanned" in s:
         return "empty"
-    if s.startswith("re-read with"):
+    if s.startswith("re-read with") or s.startswith("re-read from"):
         # The strip stage re-read this document's own baseline: the extractor changed,
         # the law did not. Without this it fell through to "other" -- so the one outcome
         # that means ruling 35 SUCCEEDED read as the one that means we do not know what
@@ -378,6 +385,31 @@ def remove_law_document(document_id: int, db: Session = Depends(get_db)) -> dict
     return {"id": doc.id, "watched": False}
 
 
+def _format_changes(db: Session, document_id: int) -> list:
+    from src.database.models import LawFormatChange
+
+    return (
+        db.query(LawFormatChange)
+        .filter_by(document_id=document_id)
+        .order_by(LawFormatChange.changed_at.desc(), LawFormatChange.id.desc())
+        .all()
+    )
+
+
+def _format_change_dict(c) -> dict:
+    return {
+        "changed_at": c.changed_at.isoformat() if c.changed_at else None,
+        "from_url": c.from_url,
+        "to_url": c.to_url,
+        "from_format": c.from_format,
+        "to_format": c.to_format,
+        "from_hash": c.from_hash,
+        "to_hash": c.to_hash,
+        "previous_reading_kept": c.from_baseline_text is not None or c.from_latest_text is not None,
+        "reason": c.reason,
+    }
+
+
 @router.get("/documents/{document_id}")
 def law_document(document_id: int, db: Session = Depends(get_db)) -> dict:
     """One document with its change history (diffs)."""
@@ -394,6 +426,9 @@ def law_document(document_id: int, db: Session = Depends(get_db)) -> dict:
     return {
         **_doc_dict(doc, revisions=len(revs)),
         "caveat": _CAVEAT,
+        # R753: moves between published formats. Not amendments, never counted among the
+        # revisions above, and listed beside them so the history says the reading changed.
+        "format_changes": [_format_change_dict(c) for c in _format_changes(db, doc.id)],
         "revisions": [
             {
                 "id": r.id,
@@ -1118,6 +1153,35 @@ def view_law_document(
         )
 
     provisions_html = _provision_timeline_html(_provision_timeline_payload(db, doc), _html.escape)
+    # R753 condition 1: a move between published formats is a permanent, visible entry in this
+    # history, placed by its date among the amendments and never counted as one. Label and value
+    # are separate elements throughout, so the walker translates the words and leaves the
+    # addresses and hashes alone.
+    dated = [((r.observed_at or datetime.min), item) for r, item in zip(revs, rev_items, strict=True)]
+    for c in _format_changes(db, doc.id):
+        when = c.changed_at.strftime("%Y-%m-%d %H:%M") if c.changed_at else "—"
+        from_href = safe_href(c.from_url) or ""
+        to_href = safe_href(c.to_url) or ""
+        dated.append((
+            c.changed_at or datetime.min,
+            f"<details class='rev fmt'><summary>{when} · <span>format change: now read from the publisher's own XML</span>"
+            f"</summary><div class='basis'><span>Not an amendment: the page read in the same pass matched the stored "
+            f"text, so the act did not change, only how it is read.</span></div>"
+            f"<div class='mrow'><span>Previous address</span> <a class='ext' href='{_html.escape(from_href)}'>"
+            f"{_html.escape(c.from_url)}</a></div>"
+            f"<div class='mrow'><span>New address</span> <a class='ext' href='{_html.escape(to_href)}'>"
+            f"{_html.escape(c.to_url)}</a></div>"
+            f"<div class='mrow'><span>Text hash before</span> <code>{_html.escape(c.from_hash or '')}</code></div>"
+            f"<div class='mrow'><span>Text hash after</span> <code>{_html.escape(c.to_hash or '')}</code></div>"
+            + (
+                "<div class='muted'><span>The previous reading is kept with this entry.</span></div>"
+                if (c.from_baseline_text is not None or c.from_latest_text is not None)
+                else ""
+            )
+            + "</details>",
+        ))
+    if len(dated) > len(rev_items):
+        rev_items = [item for _when, item in sorted(dated, key=lambda t: t[0].replace(tzinfo=None), reverse=True)]
     revs_html = (
         ("<section class='history'><h2>Amendment history</h2>" + "".join(rev_items) + "</section>")
         if rev_items
