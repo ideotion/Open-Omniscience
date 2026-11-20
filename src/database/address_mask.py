@@ -253,23 +253,31 @@ def _written_forms(part: str) -> list[str]:
     """Every spelling of ``part`` a library may quote back in an exception (the first security read on R734 proved requests writes a
     re-quoted one): as written, percent-decoded, with tab/CR/LF taken out (urllib drops them), re-quoted the requests way, fully
     quoted, and with its escapes in upper and lower case."""
-    out: list[str] = []
+    bases: list[str] = []
     for base in (part, _decoded(part)):
         for form in (base, re.sub(r"[\t\r\n]", "", base)):
-            out.append(form)
-            for safe in (_REQUOTE_SAFE, _REQUOTE_SAFE_NO_PERCENT, ""):
-                try:
-                    out.append(quote(form, safe=safe))
-                except Exception:  # noqa: BLE001,S112 - one spelling it cannot write is one fewer, never a raise
-                    continue
+            # the escapes' case is changed BEFORE quoting too (row 107's first security read): urllib3 upper-cases a valid
+            # escape, and when the address holds a stray "%" requests then quotes every "%" again, so "ab%2fcd" is written
+            # "ab%252Fcd", a spelling that case-changing only AFTER the quote never makes
+            bases += [form, _HEX_ESCAPE_RE.sub(lambda m: m.group(0).upper(), form),
+                      _HEX_ESCAPE_RE.sub(lambda m: m.group(0).lower(), form)]
+    out: list[str] = []
+    for form in dict.fromkeys(bases):
+        out.append(form)
+        for safe in (_REQUOTE_SAFE, _REQUOTE_SAFE_NO_PERCENT, ""):
+            try:
+                out.append(quote(form, safe=safe))
+            except Exception:  # noqa: BLE001,S112 - one spelling it cannot write is one fewer, never a raise
+                continue
     for form in list(out):
         out.append(_HEX_ESCAPE_RE.sub(lambda m: m.group(0).upper(), form))
         out.append(_HEX_ESCAPE_RE.sub(lambda m: m.group(0).lower(), form))
-    return out
+    return list(dict.fromkeys(out))
 
 
-def _path_secrets(path: str) -> list[str]:
-    """The path tokens and path-parameter values :func:`masked_path` masks (R736), as written in ``path``."""
+def _path_secrets(path: str, contexts: list[str] | None = None) -> list[str]:
+    """The path tokens and path-parameter values :func:`masked_path` masks (R736), as written in ``path``; a masked path parameter's
+    own ``;name=value`` goes to ``contexts`` as well (row 107, see :func:`query_secrets`)."""
     out: list[str] = []
     for segment in path.split("/"):
         own, semi, params = segment.partition(";")
@@ -284,33 +292,60 @@ def _path_secrets(path: str) -> list[str]:
         if semi:
             for param in params.split(";"):
                 name, eq, value = param.partition("=")
-                out += [value] if eq and _NAME_RE.fullmatch(name) else [param]
+                if eq and _NAME_RE.fullmatch(name):
+                    if not value:
+                        continue  # nothing is hidden behind "name=": it is neither a secret nor a reason to withhold a text
+                    out.append(value)
+                else:
+                    out.append(param)
+                if contexts is not None and param:
+                    contexts.append(";" + param)
     return [p for p in out if p]
 
 
 def query_secrets(text: str, *, floor: int = 4, authority: bool = True) -> tuple[str, ...]:
-    """The query values :func:`masked_address` masks in ``text``, each as written and percent-decoded, for a scrub to take out of an
-    exception's text that quotes the address in its own words (requests writes ``url: /rss?token=...``). Only values of at least
-    ``floor`` characters (the scrub withholds a WHOLE text that holds a part under its floor, so passing a short one would withhold
-    every failure of an address carrying ``?x=1``). STATED LIMIT: a masked value under ``floor`` characters can therefore stay in an
-    exception's text (the address itself, written by :func:`masked_address`, never shows it). Each value is given in every spelling
-    :func:`_written_forms` lists. Empty when there is no query or it cannot be read. NEVER raises."""
+    """The query values (and R736 path parameters) :func:`masked_address` masks in ``text``, for a scrub to take out of an
+    exception's text that quotes the address in its own words (requests writes ``url: /rss?token=...``). Each value is given alone
+    AND in its context: the item behind the separator written before it in this address (``?pin=123``, ``&pin=123``, ``;pin=123``,
+    and a path parameter's ``;name=value``) and the item itself, every one in every spelling :func:`_written_forms` lists.
+
+    WHY THE CONTEXT (row 107): the scrub takes a secret out of free text only from ``floor`` characters up, and WITHHOLDS a whole text
+    that holds a shorter one, since a one-to-three-character needle cannot be cut out of a sentence without cutting other words. A
+    value alone under the floor (``?pin=123``) was therefore left out, and it stayed readable in the exception's text. Libraries quote
+    the address in one piece, so the value is cut out with its name around it instead: ``?pin=123`` reaches the floor where ``123``
+    does not, and the rest of the sentence is kept. A context still under the floor is handed over short, ON PURPOSE, so the scrub
+    withholds the text: the fail-closed answer for the rare address that short, which is a bare item or a path parameter of at most
+    two characters (``?7``, ``&ab``, ``/a;b/``) or an item whose name and value together are one character (``?a=1`` is not: it is
+    four). Such a text loses its reason (DNS, refused, TLS), never the class. A name with no value (``?q=``) hides nothing and adds
+    nothing.
+
+    Empty when there is no query or it cannot be read. NEVER raises."""
     try:
         base, _mark, query = text.split("#", 1)[0].partition("?")
-        out: list[str] = _path_secrets(base[_path_start(base) if authority else 0 :])
-        for item in (_SEPARATOR_RE.split(query)[::2] if query else []):
+        contexts: list[str] = []
+        out: list[str] = _path_secrets(base[_path_start(base) if authority else 0 :], contexts)
+        pieces = _SEPARATOR_RE.split(query) if query else []
+        for k in range(0, len(pieces), 2):
+            item, mark = pieces[k], ("?" if k == 0 else pieces[k - 1])
             name, eq, value = item.partition("=")
             if not eq:
                 if item and not (_NAME_RE.fullmatch(item) and _is_harmless(item)):
                     out.append(item)
+                    contexts.append(mark + item)
                 continue
             if not _NAME_RE.fullmatch(name):
                 out += (name, value)
-            elif not (_is_harmless(name) and _KEPT_VALUE_RE.fullmatch(value)):
-                out.append(value)
-        forms: list[str] = []
-        for part in out:
-            forms += _written_forms(part)
-        return tuple(dict.fromkeys(p for p in forms if len(p) >= floor))
+                contexts.append(mark + item)
+            elif value and not (_is_harmless(name) and _KEPT_VALUE_RE.fullmatch(value)):
+                out += (value, item)
+                contexts.append(mark + item)
+        forms = [p for part in out for p in _written_forms(part) if len(p) >= floor]
+        short: list[str] = []
+        for part in contexts:
+            for p in _written_forms(part):
+                (forms if len(p) >= floor else short).append(p)
+        return tuple(dict.fromkeys(forms + [p for p in short if p]))
     except Exception:  # noqa: BLE001 - written from inside a failure; no secret is better than a raise that replaces it
         return ()
+
+

@@ -356,7 +356,8 @@ def _origin(url: str) -> tuple[str, str] | None:
 def address_secrets(url: str) -> tuple[str, ...]:
     """Every secret ``url`` can carry, for a scrub to take out of an exception's text that quotes it in its own words: the
     credentials (:func:`userinfo_secrets`) and, under R734, the query values :func:`failure_url` masks
-    (``src.database.address_mask.query_secrets``, each at least four characters, the scrub's floor). NEVER raises."""
+    (``src.database.address_mask.query_secrets``: each value alone and in its context, so one under the scrub's four-character
+    floor still leaves with its name; row 107). NEVER raises."""
     try:
         from src.database.address_mask import query_secrets
 
