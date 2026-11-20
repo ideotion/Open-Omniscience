@@ -38,6 +38,10 @@ _LOCAL_RING = """rings:
 """
 
 
+#: The name a later build's member would carry (R755 F6); a restore by THIS build must not place it.
+EXTRA_MEMBER_NAME = "future/blob-pack-0001.bin"
+
+
 def _bootstrap() -> None:
     """Create this data dir's schema from the MODELS, the same metadata the migration
     chain converges on. ``alembic upgrade head`` is exercised separately (and by CI);
@@ -119,10 +123,22 @@ def _seed() -> dict:
     # exercise the signature refusal instead of the schema acceptance.
     previous = os.environ["OO_FIXTURE_SCHEMA"]
     current, art.BACKUP_SCHEMA = art.BACKUP_SCHEMA, previous
+    collect = art._collect_members
+    if os.environ.get("OO_FIXTURE_EXTRA_MEMBER") == "1":
+        # A member of a role this build does not know, as a LATER build might add one (R755 F6), signed with the rest:
+        # the writer's own collector is wrapped, so the manifest names it and the signature covers it.
+        extra = Path(os.environ["OO_DATA_DIR"]) / "future-member.bin"
+        extra.write_bytes(b"a member this build has never heard of")
+
+        def _with_extra(*a, **kw):
+            return [*collect(*a, **kw), art.Member(EXTRA_MEMBER_NAME, "future-pack", extra)]
+
+        art._collect_members = _with_extra
     try:
         art.write_backup_v2(dest, passphrase=None)
     finally:
         art.BACKUP_SCHEMA = current
+        art._collect_members = collect
     return {"dest": str(dest), "schema_written": previous, "current_schema": current,
             "bytes": dest.stat().st_size}
 
@@ -141,6 +157,7 @@ def _restore() -> dict:
     report = restore_legacy_path(src_path, None, trust_fetch_history=trust)
 
     out: dict = {"restore_ok": True, "artifact_kind": report.get("artifact_kind")}
+    out["extra_member_placed"] = (Path(os.environ["OO_DATA_DIR"]) / EXTRA_MEMBER_NAME).exists()
     with SessionLocal() as s:
         out["countries"] = sorted(
             c for (c,) in s.query(Source.country).all() if c is not None
