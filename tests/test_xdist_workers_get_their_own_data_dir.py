@@ -14,8 +14,11 @@ import pytest
 
 @pytest.mark.skipif(not os.environ.get("PYTEST_XDIST_WORKER"), reason="needs `pytest -n N` (a worker process)")
 def test_a_worker_does_not_share_the_controllers_data_dir():
-    mark = os.environ.get("OO_TESTS_DEFAULT_DATA_DIR")
+    import tests.conftest as conftest
+
+    mark = conftest._PARENT_DATA_DIR  # what the controller marked as its own; since row 218 the variable names the worker's own
     if not mark:  # the controller chose no directory of its own (OO_DATA_DIR was set before the run): nothing to compare against
         pytest.skip("the controller recorded no default data directory (OO_DATA_DIR was given to the run)")
     assert os.environ["OO_DATA_DIR"] != mark, "this worker runs in the controller's data directory"
+    assert os.environ["OO_TESTS_DEFAULT_DATA_DIR"] == os.environ["OO_DATA_DIR"], "a worker marks its own directory for its children"
     assert os.path.isdir(os.environ["OO_DATA_DIR"])
