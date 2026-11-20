@@ -32,7 +32,7 @@ function extract(name) {
 }
 
 const FNS = ["_dossierChannel", "_dossierRailName", "_dossierNotJoinedReason", "_dossierLaneAbsence", "passportLine",
-             "_dossierRailSource", "_dossierRailCount", "_dossierRailBody", "_dossierTabsHtml", "_dossierRailPanel", "dossierHtml", "_dossierPaint"];
+             "_dossierRailSource", "_dossierRailCount", "_dossierItemsHtml", "_dossierRailBody", "_dossierTabsHtml", "_dossierRailPanel", "dossierHtml", "_dossierPaint"];
 const harness = `
   let _dossierLast = null, _dossierTab = "overview";
   const EL = {};
@@ -94,6 +94,25 @@ check(R._dossierRailSource("law_versions", t).startsWith("From "), "an unknown r
 const lastPanel = html.lastIndexOf("dossier-panel");
 check(html.indexOf("THE-CAVEAT") > html.indexOf("</div>", html.indexOf("data-panel=\"elections\"")), "the caveat is below the panels");
 check(html.indexOf("THE-METHOD") > lastPanel && html.indexOf("THE-CAVEAT") > lastPanel, "the method and caveat are outside every panel");
+
+// Row 200: a corpus rail lists its rows. Each opens the LOCAL reader first (invariant #6), names how it
+// joined (never a weight), keeps an undated row undated, and the rail says how many are not listed.
+const items = [
+  {id: 7, title: "A <b>title</b>", domain: "zz.example", published_at: "2026-03-01", joined_by: ["entities", "places"]},
+  {id: 8, title: "", domain: "law.zz", published_at: null, joined_by: ["keywords", "made-up"]},
+];
+const listed = R._dossierRailBody({key: "news", articles: 30, by_channel: {web: 30}, items}, d, t, tf);
+check(listed.includes('href="/api/articles/7/view"') && listed.includes('href="/api/articles/8/view"'), "each row opens the local reader");
+check(!/https?:\/\//.test(listed), "no row links to the original first");
+check(listed.includes("A &lt;b&gt;title&lt;/b&gt;"), "a title is escaped");
+check(listed.includes("(untitled)") && listed.includes("undated"), "an empty title and a missing date are said, never invented");
+check(listed.includes("joined through: a person or organisation named · a place named"), "both routes named for a row reached twice");
+check(listed.includes("joined through: a keyword") && !listed.includes("made-up"), "an unknown route code is never shown raw");
+check(listed.includes("2 of 30 shown"), "the rail says how many rows are not listed");
+const all = R._dossierRailBody({key: "law", articles: 2, items}, d, t, tf);
+check(!all.includes("of 2 shown"), "no cut line when every row is listed");
+check(R._dossierRailBody({key: "wikipedia", articles: 0, items: [], lane: {available: true, pages: []}}, d, t, tf).indexOf("dossier-items") === -1,
+      "a rail with no articles lists none");
 
 // _dossierPaint with the REAL ooSubtabs (app-markets.js) over a minimal DOM: the component drives the
 // panels, keeps the open tab across a repaint, and falls back to Overview for a tab the item lacks.
