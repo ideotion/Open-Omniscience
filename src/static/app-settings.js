@@ -53,10 +53,13 @@
     //    against (`total` null) the figure is ABSENT with that reason, never a guessed number.
     //  - served = English for a non-English reader: the AI sentence, then why the page is not in their language.
     //  - English reader, English document: the AI sentence alone.
-    function docBannerHtml(wanted, served, done, total, language) {
+    //  - R751(b): a document kept in English only (CHANGES, SECURITY, ROADMAP; the server's X-OO-Doc-English-Only) says so to EVERY
+    //    reader, English included, after the AI sentence: it changes almost daily, so no translation is offered.
+    function docBannerHtml(wanted, served, done, total, language, englishOnly) {
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const ai = tf("This help text was written by AI and may contain mistakes.", {});
       const box = (kind, text) => `<div class="hint doc-banner" data-doc-banner="${kind}" role="note" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px"><span>${esc(text ? ai + " " + text : ai)}</span></div>`;
+      if (englishOnly) return box("english-only", tf("This document is kept in English only: it changes almost daily, so a translation would be out of date on arrival.", {}));
       if (!wanted || wanted === "en") return box("ai", "");
       if (served === "en") return box("fallback", tf("This document has no draft in this language yet ({language}), so the English original is shown.", { language }));
       if (total == null || done == null) {
@@ -84,6 +87,7 @@
         if (!r.ok) throw new Error(String(r.status));
         const raw = await r.text();
         const served = r.headers.get("X-OO-Doc-Lang") || "en";
+        const englishOnly = r.headers.get("X-OO-Doc-English-Only") === "1";
         // The figure needs the English document to count against: one more local read, only when a draft was served.
         let total = null;
         if (served !== "en") {
@@ -95,7 +99,7 @@
         if (gen !== _docGen) return;   // a newer load (another document, or this one in another language) owns the pane, the banner and _docRaw
         const language = (window.OOI18N && OOI18N.meta && OOI18N.meta.native) || lang;
         _docRaw = raw;
-        _docBanner = docBannerHtml(lang, served, total == null ? null : docSections(raw), total, language);
+        _docBanner = docBannerHtml(lang, served, total == null ? null : docSections(raw), total, language, englishOnly);
         prose.innerHTML = _docBanner + mdToHtml(_docRaw);
         const at = anchor ? prose.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(anchor) : anchor)) : null;
         (at || prose).scrollIntoView({block: at ? "start" : "nearest"});

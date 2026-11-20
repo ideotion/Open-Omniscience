@@ -94,6 +94,19 @@ for (const [done, total] of [[8, null], [null, 17], [null, null]]) {
   assert.ok(/no draft in this language yet \(日本語\), so the English original is shown\./.test(text(html)), text(html));
 }
 
+// --- R751(b): a document kept in English only says so to EVERY reader, English included --------------- //
+{
+  const ONLY = "This document is kept in English only: it changes almost daily, so a translation would be out of date on arrival.";
+  for (const args of [["en", "en", null, null, "English"], ["fr", "en", null, null, "Français"], ["ja", "en", 3, 9, "日本語"], ["", "en", null, null, ""]]) {
+    const html = bare.docBannerHtml(...args, true);
+    assert.ok(html.includes('data-doc-banner="english-only"'), html);
+    assert.strictEqual(text(html), AI + " " + ONLY, "the English-only line must follow the AI sentence, alone: " + html);
+    assert.ok(!/no draft in this language|Translation \(/.test(text(html)), "an English-only document is not a missing draft: " + html);
+  }
+  // without the flag nothing changes
+  assert.ok(bare.docBannerHtml("en", "en", null, null, "English", false).includes('data-doc-banner="ai"'));
+}
+
 // --- the language name is data: escaped, and never translated --------------- //
 {
   const html = bare.docBannerHtml("fr", "fr", 1, 2, "<b>x</b>");

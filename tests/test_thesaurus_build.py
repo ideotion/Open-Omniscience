@@ -90,7 +90,12 @@ def test_a_zip_source_is_read_and_a_zip_with_several_xml_members_needs_one_named
     s = _build(tmp_path / "z", source=one)
     assert s["source"]["member"] == "eurovoc.rdf" and s["source"]["kind"] == "zip"
     assert s["source"]["member_sha256"] == hashlib.sha256(MINI.read_bytes()).hexdigest(), "the member's own bytes"
-    assert (tmp_path / "z" / "eurovoc.json").stat().st_mode & 0o777 == 0o644, "readable by the app as another user"
+    # The mode an ordinary file given 0o644 reads back here: Windows keeps only the read-only bit (0o666 there, row 150).
+    ref = tmp_path / "mode-reference"
+    ref.write_bytes(b"")
+    ref.chmod(0o644)
+    assert (tmp_path / "z" / "eurovoc.json").stat().st_mode & 0o777 == ref.stat().st_mode & 0o777, \
+        "readable by the app as another user"
     two = tmp_path / "two.zip"
     with zipfile.ZipFile(two, "w") as zf:
         zf.write(MINI, "a.rdf")
@@ -344,6 +349,27 @@ def test_a_same_size_rewrite_with_its_old_mtime_put_back_is_still_caught(tmp_pat
     os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
     assert ts.thesaurus_status("eurovoc", d)["state"] == "hash_mismatch"
     assert ts.load_thesaurus("eurovoc", d)[0] is None
+
+
+def test_where_ctime_is_the_creation_time_the_hash_is_read_again_every_time(tmp_path, monkeypatch):
+    """Row 150: on Windows ``st_ctime_ns`` is the creation time, so the stamp of a same-size rewrite with its old mtime put back
+    is the stamp it had. There the hash never comes from the memo. Simulated here by a stamp that ignores the rewrite."""
+    d = tmp_path / "th"
+    _build(d)
+    path = d / "eurovoc.json"
+    good = path.read_bytes()
+    frozen = ts._stamp(path)
+    real_stamp = ts._stamp
+    monkeypatch.setattr(ts, "_stamp", lambda p: frozen if Path(p) == path else real_stamp(p))
+    monkeypatch.setattr(ts, "_CHANGE_TIME_IS_TRUSTED", False)
+    assert ts.thesaurus_status("eurovoc", d)["state"] == "ok"
+    doc = json.loads(good)
+    doc["vintage"] = "2026-11-02"
+    changed = ts.canonical_bytes(doc)
+    assert len(changed) == len(good)
+    path.write_bytes(changed)
+    assert ts._stamp(path) == frozen, "the simulated platform cannot see the rewrite in the stamp"
+    assert ts.thesaurus_status("eurovoc", d)["state"] == "hash_mismatch"
 
 
 def test_the_bytes_do_not_depend_on_the_hash_seed(tmp_path):

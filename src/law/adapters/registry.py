@@ -9,14 +9,15 @@ text-only sources fill the same model with one provision". Q909 = a asks for thr
 source CLASSES, in a stated order of preference. This module is both vocabularies and
 the lookup between them, and it is deliberately the ONLY place either is written.
 
-**ONE ADAPTER IS REGISTERED: CLML.** That is not an omission — Q925 ⛔ (the adapter
-ORDER and the first managed dataset) is PENDING, and choosing a second format would be
-answering it. The framework exists so the answer, when it comes, is a registration and
-a parser module rather than a change to any caller: ``adapter_for`` already resolves by
-token, ``parse_with`` already normalises the refusal, and the model, the tracker and the
-reader already read a ``ParsedLaw`` without knowing which parser made it. The test that
-matters proves exactly that — a second adapter is registered in a test and round-trips
-without touching a line of production code.
+**TWO ADAPTERS ARE REGISTERED, IN THE ORDER Q925 RULED.** Q925 ⛔ (the adapter ORDER and
+the first managed dataset) was answered (a) on 2026-09-29: legislation.gov.uk (``clml``)
+→ gesetze-im-internet (``gii``) → e-Gov → EUR-Lex → LEGI last. The next format added
+here is e-Gov's, and adding one out of that order is re-answering Q925 rather than
+implementing it. Each answer is a registration and a parser module rather than a change
+to any caller: ``adapter_for`` resolves by token, ``parse_with`` normalises the refusal,
+and the model, the tracker and the reader read a ``ParsedLaw`` without knowing which
+parser made it. A test registers a further adapter and round-trips it without touching
+a line of production code, which is what keeps that claim measured.
 
 A FORMAT TOKEN IS NOT A GUESS. ``adapter_for`` refuses an unknown token by name rather
 than falling back to the HTML path, because a source declaring ``uslm`` and silently
@@ -82,8 +83,8 @@ class UnknownFormatError(ValueError):
 
 
 #: format token -> parser. A parser takes ``(data, *, retrieved_on)`` and returns a
-#: ``ParsedLaw`` or raises ``AdapterRefusal``. Deliberately a plain dict of one entry:
-#: the second entry is Q925's to add.
+#: ``ParsedLaw`` or raises ``AdapterRefusal``. Deliberately a plain dict: its entries
+#: follow Q925 = a's order (``clml``, then ``gii``; e-Gov's format is next).
 _ADAPTERS: Final[dict[str, Callable[..., ParsedLaw]]] = {}
 
 
@@ -97,8 +98,10 @@ def _register_builtin() -> None:
     if _ADAPTERS:
         return
     from src.law.adapters.clml import parse_clml
+    from src.law.adapters.gii import parse_gii
 
     _ADAPTERS["clml"] = parse_clml
+    _ADAPTERS["gii"] = parse_gii
 
 
 def known_formats() -> tuple[str, ...]:

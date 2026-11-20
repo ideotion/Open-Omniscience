@@ -49,9 +49,11 @@ from src.law.model import LICENCES
 # ---------------------------------------------------------------------------
 
 
-def test_only_the_CLML_adapter_is_registered_because_Q925_is_PENDING():
-    """Not an omission. Choosing a second format IS the pending decision."""
-    assert known_formats() == ("clml",)
+def test_the_registered_adapters_are_Q925s_first_two_and_nothing_else():
+    """Q925 = a (2026-09-29): legislation.gov.uk -> gesetze-im-internet -> e-Gov -> EUR-Lex
+    -> LEGI. The first two are built; a third format here that is not e-Gov's would be
+    re-answering Q925 rather than implementing it."""
+    assert known_formats() == ("clml", "gii")
 
 
 def test_a_SECOND_adapter_fits_with_no_production_change():
@@ -245,13 +247,14 @@ def test_the_tier_is_NOT_derived_from_the_research_status():
     assert verified_tier(researched)["tier"] == "unverified"
 
 
-def test_the_CLML_source_is_fixture_verified_and_the_other_two_are_not():
-    """The honest state of this tree: the adapter reads CLML fixtures, and all three
-    priority hosts are egress-blocked from the build sandbox."""
+def test_the_two_adapted_sources_are_fixture_verified_and_the_EU_is_not():
+    """The honest state of this tree: adapters read CLML and gii fixtures, no EU adapter
+    exists, and all three priority hosts are egress-blocked from the build sandbox — so
+    no row may claim ``live``."""
     rows = {s["domain"]: s for s in load_legal_catalog()["sources"]}
     assert verified_tier(rows["legislation.gov.uk"])["tier"] == "fixture"
     assert verified_tier(rows["eur-lex.europa.eu"])["tier"] == "unverified"
-    assert verified_tier(rows["gesetze-im-internet.de"])["tier"] == "unverified"
+    assert verified_tier(rows["gesetze-im-internet.de"])["tier"] == "fixture"
     for domain in ("legislation.gov.uk", "eur-lex.europa.eu", "gesetze-im-internet.de"):
         method = verified_tier(rows[domain])["method"] or ""
         assert method, "a tier with no method cannot be re-checked"
@@ -317,7 +320,8 @@ def test_the_seam_report_is_current_and_RANKS_NOTHING():
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
     text = (root / "docs" / "product" / "LAW_ADAPTER_SEAM.md").read_text(encoding="utf-8")
-    assert "PENDING" in text and "Q925" in text
+    assert "Q925" in text and "ANSWERED (a)" in text
+    assert "is **PENDING**" not in text, "Q925 was answered on 2026-09-29; the seam must not say otherwise"
     # No ranking COLUMN, and no ranking word inside a row. Checked on the table rows
     # rather than on the whole file: the first draft searched the prose too and tripped
     # on a sentence describing which hosts the BRIEF names, which ranks nothing. A test

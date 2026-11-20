@@ -10,7 +10,8 @@
    default: n articles · sources · countries · languages · date span, with the articles
    missing a country, a language or a date counted on the same line rather than dropped.
 
-   Opened from the place card and from a Who chip whose name resolves to one Wikidata item.
+   Opened from the place card, from a Who chip whose name resolves to one Wikidata item, and
+   (row 178) from a keyword with a QID, an Explore search naming one item and a Lead card.
    Counts and lists only: no verdict, no score, no model. Every read is local (the server
    makes no network call to build it), so it needs no online consent.
 
@@ -285,6 +286,11 @@
                               case_name: label && label !== d.qid ? label + " · " + d.qid : d.qid});
           return;
         }
+        const cand = tgt.closest(".dossier-candidate");
+        if (cand) {
+          openDossier(cand.getAttribute("data-qid"));
+          return;
+        }
         if (tgt.closest(".dossier-open") && _dossierLast) {
           const d = _dossierLast;
           dlg.close();
@@ -322,4 +328,88 @@
       const dlg = $("dossier");
       if (!dlg || !dlg.open || !_dossierLast) return;
       openDossier(_dossierLast.qid);
+    }
+
+    // ---- The entry points (S08-01 S2, row 178): a keyword, an Explore search, a Lead ---- //
+    // WHERE THE BUTTON LIVES (the brief leaves it to the PR): beside the thing that names the item,
+    // never a main tab. A keyword that already resolved to one QID carries a "Dossier" button next
+    // to its QID; an Explore search whose words name exactly one item gets one line in the result
+    // count; a Lead card's back face gets a button among its actions, resolved when pressed. All
+    // three open the one #dossier dialog, and every read is local (the ring table, no network).
+
+    function _dossierQidOk(qid) { return typeof qid === "string" && /^Q[1-9][0-9]*$/.test(qid); }
+
+    // The button for an item already known. A keyword chip is clickable itself, so the click stops.
+    function dossierButtonHtml(qid) {
+      if (!_dossierQidOk(qid)) return "";
+      const t = _dossierT();
+      return ` <button type="button" class="secondary tiny dossier-launch" data-i18n-dyn`
+        + ` title="${esc(t("Open the dossier of this item: every rail this machine joins to it"))}"`
+        + ` data-on-click='ooStop(event);openDossier(${esc(JSON.stringify(qid))})'>${esc(t("Dossier"))}</button>`;
+    }
+
+    // The words of a search or a Lead, as one name the ring table may know. Boolean syntax, field
+    // filters and wildcards are not a name, so they are not asked.
+    function _dossierTermOf(text) {
+      let s = String(text || "").trim();
+      const m = s.match(/^["“](.+)["”]$/);
+      if (m) s = m[1].trim();
+      if (!s || s.length > 120) return "";
+      if (/[()*:"“”]/.test(s) || /\b(AND|OR|NOT)\b/.test(s)) return "";
+      return s;
+    }
+
+    // {qid} when the term names exactly one item, {candidates} when it names several, {} when none.
+    async function _dossierResolve(term) {
+      // A target language, because the ladder lists the candidates of a shared name only then.
+      const lang = (typeof uiLangCode === "function") ? String(uiLangCode()).split("-")[0].toLowerCase() : "en";
+      const r = await api("/api/entities/resolve?" + new URLSearchParams({term, target_lang: lang || "en"}).toString());
+      if (r && _dossierQidOk(r.qid)) return {qid: r.qid};
+      const c = ((r && r.candidate_qids) || []).filter(_dossierQidOk);
+      return c.length ? {candidates: c} : {};
+    }
+
+    // A Lead: resolved when pressed, so a Home page of cards costs no lookup. A term that names no
+    // item, or several, says so in the dialog; several are listed, each opening its own dossier.
+    async function openDossierForTerm(text) {
+      const dlg = $("dossier");
+      if (!dlg) return;
+      _dossierWire();
+      const t = _dossierT(), tf = _dossierTf();
+      const term = _dossierTermOf(text) || String(text || "").trim();
+      const seq = ++_dossierSeq;
+      _dossierLast = null;
+      $("dossier-title").textContent = term;
+      $("dossier-qid").textContent = "";
+      $("dossier-body").innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (!dlg.open) dlg.showModal();
+      try {
+        const r = _dossierTermOf(text) ? await _dossierResolve(term) : {};
+        if (seq !== _dossierSeq) return;
+        if (r.qid) { openDossier(r.qid); return; }
+        if (r.candidates) {
+          $("dossier-body").innerHTML = `<p>${esc(tf("“{term}” names several Wikidata items on this machine. Pick one:", {term}))}</p>`
+            + `<p>${r.candidates.map((q) => `<button type="button" class="secondary tiny dossier-candidate" data-qid="${esc(q)}">${esc(q)}</button>`).join(" ")}</p>`;
+          return;
+        }
+        $("dossier-body").innerHTML = `<p class="muted">${esc(tf("No single Wikidata item is known for “{term}” on this machine, so there is no dossier to open.", {term}))}</p>`;
+      } catch (e) {
+        if (seq !== _dossierSeq) return;
+        $("dossier-body").innerHTML = `<div class="note err">${esc(t("Could not open the dossier:") + " " + e.message)}</div>`;
+      }
+    }
+
+    // An Explore search: one line in the result count when the words name exactly one item. Quiet
+    // otherwise (a search that names no item is not a failure). isCurrent() drops a stale answer.
+    async function dossierSearchHint(text, host, isCurrent) {
+      const term = _dossierTermOf(text);
+      if (!term || !host) return;
+      let r;
+      try { r = await _dossierResolve(term); } catch (e) { return; }
+      if (!r.qid || (isCurrent && !isCurrent())) return;
+      const t = _dossierT();
+      const span = document.createElement("span");
+      span.className = "dossier-hint";
+      span.innerHTML = ` · ${esc(t("Wikidata item"))} <span dir="ltr">${esc(r.qid)}</span>` + dossierButtonHtml(r.qid);
+      host.appendChild(span);
     }

@@ -33,11 +33,14 @@ _DOCS = _ROOT / "docs"
 #: PROPOSED staging (row E; measured 2026-11-04 in characters: tranche 1 = 250,293, tranche 2 = 150,490, tranche 3 = 349,446).
 TRANCHES: dict[int, tuple[str, ...]] = {
     1: ("user-manual", "quickstart"),
-    2: ("governance", "ethics", "security", "contributing", "architecture"),
-    3: ("design", "roadmap", "changes"),
+    2: ("governance", "ethics", "contributing", "architecture"),
+    3: ("design",),
 }
+#: R751(b) (2026-11-19): served in English only, with a visible line saying so, in every language: they change almost daily, so a
+#: translation would be out of date on arrival. In no tranche, and no draft of them may exist (it would never be served).
+ENGLISH_ONLY: tuple[str, ...] = ("security", "roadmap", "changes")
 #: COMPLETE (slug, lang) drafts per tranche that must always exist. Raise it with the drafts; lowering it needs a ruling.
-FLOOR: dict[int, int] = {1: 22, 2: 0, 3: 0}
+FLOOR: dict[int, int] = {1: 22, 2: 22, 3: 0}
 #: Drafts that exist and are served but are NOT complete: the reason is the measurement, never a judgement of the translation.
 PARTIAL: dict[tuple[str, str], str] = {}
 
@@ -93,11 +96,12 @@ def _state(slug: str, file: str, lang: str) -> tuple[str, str]:
 
 
 def _table() -> dict[tuple[str, str], tuple[str, str]]:
-    return {(slug, lang): _state(slug, file, lang) for slug, file in _served_docs().items() for lang in _locales()}
+    return {(slug, lang): _state(slug, file, lang) for slug, file in _served_docs().items() for lang in _locales()
+            if slug not in ENGLISH_ONLY}
 
 
 def test_every_served_document_belongs_to_exactly_one_tranche():
-    placed = [s for slugs in TRANCHES.values() for s in slugs]
+    placed = [s for slugs in TRANCHES.values() for s in slugs] + list(ENGLISH_ONLY)
     assert sorted(placed) == sorted(_served_docs()), (
         f"a Help document is in no tranche, or in two: tranches hold {sorted(placed)}, _DOCS serves {sorted(_served_docs())}"
     )
@@ -169,6 +173,11 @@ def test_the_served_language_header_and_the_list_flag_tell_the_truth(client):
         for slug in _served_docs():
             r = client.get(f"/api/docs/{slug}?lang={lang}")
             assert r.status_code == 200, (slug, lang)
+            if slug in ENGLISH_ONLY:
+                assert r.headers["x-oo-doc-lang"] == "en" and r.headers["x-oo-doc-english-only"] == "1", (slug, lang)
+                assert listed[slug] is False, (slug, lang)
+                continue
+            assert "x-oo-doc-english-only" not in r.headers, (slug, lang)
             exists = table[(slug, lang)][0] != "absent"
             assert r.headers["x-oo-doc-lang"] == (lang if exists else "en"), (slug, lang, r.headers["x-oo-doc-lang"])
             assert listed[slug] is exists, (slug, lang)
@@ -180,3 +189,29 @@ def test_the_locale_list_is_the_uis_twelve():
     meta = json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))["_meta"]
     assert meta["status"] == "source"
     assert len(_locales()) == 11
+
+
+def test_the_english_only_documents_are_flagged_and_carry_no_draft(client):
+    """R751(b): the list and the response both say so, and no draft sits in docs/i18n for one (it would never be served)."""
+    from src.api.main import _DOCS as DOCS
+
+    flagged = {slug for slug, meta in DOCS.items() if meta.get("english_only")}
+    assert flagged == set(ENGLISH_ONLY), flagged
+    listed = {d["slug"]: d["english_only"] for d in client.get("/api/docs?lang=fr").json()["docs"]}
+    assert {s for s, v in listed.items() if v} == set(ENGLISH_ONLY)
+    assert client.get("/api/docs/changes?lang=en").headers["x-oo-doc-english-only"] == "1"
+    for slug in ENGLISH_ONLY:
+        for lang in _locales():
+            assert not (_DOCS / "i18n" / lang / DOCS[slug]["file"]).exists(), f"{lang}/{DOCS[slug]['file']} is a draft that is never served"
+
+
+def test_an_english_only_document_is_served_in_english_even_when_a_draft_lies_on_disk(client, tmp_path, monkeypatch):
+    """The flag wins over a file: a stray draft of CHANGES in docs/i18n/fr is not served."""
+    import src.api.main as M
+
+    (tmp_path / "i18n" / "fr").mkdir(parents=True)
+    (tmp_path / "CHANGES.md").write_text("# Changes\n", encoding="utf-8")
+    (tmp_path / "i18n" / "fr" / "CHANGES.md").write_text("<!-- fr -->\n# Changements\n", encoding="utf-8")
+    monkeypatch.setattr(M, "_DOCS_DIR", tmp_path)
+    r = client.get("/api/docs/changes?lang=fr")
+    assert r.headers["x-oo-doc-lang"] == "en" and r.text == "# Changes\n"

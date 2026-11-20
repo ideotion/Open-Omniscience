@@ -63,7 +63,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.catalog.countries import country_display_code
-from src.law.catalog import law_jurisdiction
+from src.database.address_mask import masked_address
+from src.law.catalog import _previous_urls, law_jurisdiction
 from src.law.model import (
     _REFUSED_DOC_TYPES,
     DOC_TYPES,
@@ -214,14 +215,34 @@ def declared_for(catalog: Mapping | None, *, jurisdiction: str | None, url: str 
     Exact equality on both halves of the key. A row for the same URL in another
     jurisdiction, or for a neighbouring URL in the same one, is a different document and
     declares nothing for this one.
+
+    A stored document registered under an address the catalogue row has since moved
+    away from is the SAME act: ``register_documents`` keeps that stored row through the
+    catalogue row's ``previous_urls`` rather than re-pointing it, so the declaration
+    reaches it the same way (row 186's follow-up 2). An exact match always wins, and an
+    old address that two catalogue rows both claim declares nothing: which act it was
+    is not something this lookup can decide.
     """
     if not catalog or not url or not jurisdiction:
         return None
-    wanted = (law_jurisdiction(jurisdiction), url)
+    juris = law_jurisdiction(jurisdiction)
+    wanted = (juris, url)
+    former: list[Mapping] = []
     for row in catalog.get("documents") or ():
         # Both sides in the stored spelling: a catalogue read through the loader already is, a hand-built one may not be.
-        if (law_jurisdiction(row.get("jurisdiction")), row.get("url")) == wanted:
+        row_juris = law_jurisdiction(row.get("jurisdiction"))
+        if (row_juris, row.get("url")) == wanted:
             return declared_of(row)
+        if row_juris == juris and url in _previous_urls(dict(row)):
+            former.append(row)
+    if len(former) == 1:
+        return declared_of(former[0])
+    if former:
+        _LOG.warning(
+            "law catalogue: %d rows name %r as a previous address; none of their declarations is applied to it",
+            len(former),
+            masked_address(url),
+        )
     return None
 
 

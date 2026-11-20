@@ -500,7 +500,11 @@ def test_a_clean_write_replaces_every_file_and_keeps_its_mode(tmp_path, monkeypa
     (tmp_path / "configs" / "a.yml").chmod(0o640)
     assert mod.main() == 0
     assert _bytes(tmp_path) == {"a.yml": b"sources:\n  - {name: A, country: FRA}\n", "b.yml": b"sources:\n  - {name: B, country: DEU}\n"}
-    assert (tmp_path / "configs" / "a.yml").stat().st_mode & 0o777 == 0o640
+    # The mode an ordinary file given 0o640 reads back here: Windows keeps only the read-only bit, so it reads 0o666 there (row 150).
+    ref = tmp_path / "mode-reference"
+    ref.write_bytes(b"")
+    ref.chmod(0o640)
+    assert (tmp_path / "configs" / "a.yml").stat().st_mode & 0o777 == ref.stat().st_mode & 0o777
     assert not list((tmp_path / "configs").glob(".*.tmp"))
 
 
