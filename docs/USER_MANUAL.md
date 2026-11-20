@@ -39,7 +39,7 @@ HTTP API) and troubleshooting.
      [Sources](#33-sources-in-settings--advanced--sources) · [Library](#34-library) · [Markets](#35-markets) ·
      [Indices](#35a-indices) · [Insights](#36-insights) ·
      [World map](#36a-world-map) · [Agenda](#36b-agenda) ·
-     [Living sources](#36b-living-sources) · [Climate](#36c-climate) · [Observatory](#36d-observatory) ·
+     [Living sources](#36b-living-sources) · [Climate](#36c-climate) · [Observatory](#36d-observatory) · [Medical papers](#36e-medical-papers) ·
      [Wikipedia](#37-wikipedia-in-settings--wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
@@ -1182,6 +1182,35 @@ domains.
   keywords outside every galaxy).
 - The same corpus always draws the same sky, so a change you see is a change in your
   data. There is no composite score.
+
+### 3.6e Medical papers
+
+**What it's for:** reading the PubMed records of the medical and scientific papers your
+articles link to, beside the news and never mixed into it. **This app never gives medical
+advice:** a paper listed here is one your articles cite, not a recommendation.
+
+**Where to find it.** **Settings → Advanced → Medical papers** shows what is kept and holds
+the **Fetch from PubMed** button. In an analysis (**Explore**), the **Medical papers** subtab
+lists the kept papers that the analysed articles link to, with how many articles cite each.
+
+**How it fetches.** Nothing is downloaded until you press **Fetch from PubMed**. It contacts
+one server, `ftp.ncbi.nlm.nih.gov`, and reads NLM's PubMed *update files* (7 per run by
+default, at most 30), each tens of megabytes. It passes the same consent popup as every
+other network action, is refused while airplane mode is on, and runs in the background; the
+task manager shows it, and **Stop** ends a download under way. No paper identifier is ever
+sent to NCBI.
+
+**What is kept.** Each file is read whole and checked against NLM's checksum. Only the
+records your articles cite (through a PubMed, PMC or DOI link) or that you named are kept,
+in their own file, `medical.db`; the rest is discarded and never written to disk. A backup
+carries `medical.db`, and every kept record can also be fetched again.
+
+**What you can rely on.** Each paper shows the class its record states: **Journal record**
+(peer review is the journal's claim; this app does not check it), **Preprint** (not peer
+reviewed) or **Retracted**. An erratum, an expression of concern, a retraction notice and a
+record withdrawn from PubMed each get their own badge. Update files carry only the papers
+NLM revised recently, so most papers your articles cite will **not be found yet**: their
+count is shown, and a paper not found here is not missing from PubMed.
 
 ### 3.7 Wikipedia *(in Settings → Wikipedia)*
 

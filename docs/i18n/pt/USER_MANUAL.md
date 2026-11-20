@@ -41,7 +41,7 @@ completa) e da solução de problemas.
      [Fontes](#33-fontes-em-configurações--avançado--fontes) · [Biblioteca](#34-biblioteca) · [Mercados](#35-mercados) ·
      [Índices](#35a-índices) · [Análises](#36-análises) ·
      [Mapa-múndi](#36a-mapa-múndi) · [Agenda](#36b-agenda) ·
-     [Fontes vivas](#36b-fontes-vivas) · [Clima](#36c-clima) · [Observatório](#36d-observatório) ·
+     [Fontes vivas](#36b-fontes-vivas) · [Clima](#36c-clima) · [Observatório](#36d-observatório) · [Artigos médicos](#36e-artigos-médicos) ·
      [Wikipédia](#37-wikipédia-em-configurações--wikipédia) ·
      [Provas e custódia](#38-provas-e-custódia) · [Configurações](#39-configurações) ·
      [Ajuda e documentação](#310-ajuda-e-documentação)
@@ -1184,6 +1184,40 @@ domínios temáticos.
   palavras-chave fora de qualquer galáxia).
 - O mesmo corpus sempre desenha o mesmo céu, então uma mudança que você vê é uma mudança nos seus
   dados. Não há pontuação composta.
+
+### 3.6e Artigos médicos
+
+**Para que serve:** ler os registos do PubMed dos artigos médicos e científicos para os
+quais os seus artigos apontam, ao lado das notícias e nunca misturados com elas. **Esta
+aplicação nunca dá aconselhamento médico:** um artigo listado aqui é um que os seus artigos
+citam, não uma recomendação.
+
+**Onde encontrar.** **Configurações → Avançado → Artigos médicos** mostra o que é guardado e
+tem o botão **Obter do PubMed**. Numa análise (**Explorar**), o subseparador **Artigos
+médicos** lista os artigos guardados para os quais apontam os artigos analisados, com
+quantos artigos citam cada um.
+
+**Como obtém os dados.** Nada é descarregado até carregar em **Obter do PubMed**. Contacta
+um único servidor, `ftp.ncbi.nlm.nih.gov`, e lê os *ficheiros de atualização* do PubMed da
+NLM (7 por execução por omissão, 30 no máximo), cada um com dezenas de megabytes. Passa pela
+mesma janela de consentimento que qualquer outra ação de rede, é recusado enquanto o modo de
+avião estiver ativo e corre em segundo plano; o gestor de tarefas mostra-o, e **Parar**
+termina uma transferência em curso. Nenhum identificador de artigo é alguma vez enviado ao
+NCBI.
+
+**O que é guardado.** Cada ficheiro é lido por inteiro e verificado com a soma de controlo
+da NLM. Só são guardados os registos que os seus artigos citam (através de uma ligação
+PubMed, PMC ou DOI) ou que indicou, num ficheiro próprio, `medical.db`; o resto é descartado
+e nunca é escrito no disco. Uma cópia de segurança inclui `medical.db`, e cada registo
+guardado também pode ser obtido novamente.
+
+**Com o que pode contar.** Cada artigo mostra a classe que o seu registo indica: **Registo
+de revista** (a revisão por pares é a afirmação da revista; esta aplicação não a verifica),
+**Preprint** (sem revisão por pares) ou **Retratado**. Uma errata, uma manifestação de
+preocupação, um aviso de retratação e um registo retirado do PubMed têm cada um o seu próprio
+distintivo. Os ficheiros de atualização só trazem os artigos que a NLM reviu recentemente,
+por isso a maioria dos artigos citados pelos seus artigos **ainda não será encontrada**: o
+número deles é mostrado, e um artigo não encontrado aqui não falta por isso no PubMed.
 
 ### 3.7 Wikipédia *(em Configurações → Wikipédia)*
 

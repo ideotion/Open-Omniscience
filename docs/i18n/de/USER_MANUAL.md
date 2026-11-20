@@ -41,7 +41,7 @@ HTTP-API) und Hilfe bei der Fehlersuche.
      [Quellen](#33-quellen-unter-einstellungen--erweitert--quellen) · [Bibliothek](#34-bibliothek) · [Märkte](#35-märkte) ·
      [Indizes](#35a-indizes) · [Einblicke](#36-einblicke) ·
      [Weltkarte](#36a-weltkarte) · [Agenda](#36b-agenda) ·
-     [Lebende Quellen](#36b-lebende-quellen) · [Klima](#36c-klima) · [Sternwarte](#36d-sternwarte) ·
+     [Lebende Quellen](#36b-lebende-quellen) · [Klima](#36c-klima) · [Sternwarte](#36d-sternwarte) · [Medizinische Fachartikel](#36e-medizinische-fachartikel) ·
      [Wikipedia](#37-wikipedia-unter-einstellungen--wikipedia) ·
      [Beweise & Verwahrung](#38-beweise--verwahrung) · [Einstellungen](#39-einstellungen) ·
      [Hilfe & Doku](#310-hilfe--doku)
@@ -1192,6 +1192,41 @@ Themenbereichen.
   Schlüsselwörter außerhalb jeder Galaxie).
 - Derselbe Korpus zeichnet immer denselben Himmel, sodass eine Veränderung, die Sie sehen, eine Veränderung in Ihren
   Daten ist. Es gibt keine zusammengesetzte Bewertung.
+
+### 3.6e Medizinische Fachartikel
+
+**Wozu es dient:** die PubMed-Einträge der medizinischen und wissenschaftlichen
+Fachartikel lesen, auf die Ihre Artikel verlinken – neben den Nachrichten und nie mit ihnen
+vermischt. **Diese App gibt nie medizinischen Rat:** Ein hier aufgeführter Fachartikel ist
+einer, den Ihre Artikel zitieren, keine Empfehlung.
+
+**Wo Sie es finden.** **Einstellungen → Erweitert → Medizinische Fachartikel** zeigt, was
+behalten wird, und enthält die Schaltfläche **Von PubMed abrufen**. In einer Analyse
+(**Erkunden**) listet der Unterreiter **Medizinische Fachartikel** die behaltenen
+Fachartikel, auf die die analysierten Artikel verlinken, und wie viele Artikel jeden zitieren.
+
+**Wie abgerufen wird.** Nichts wird heruntergeladen, bevor Sie **Von PubMed abrufen**
+drücken. Die App kontaktiert einen einzigen Server, `ftp.ncbi.nlm.nih.gov`, und liest die
+PubMed-*Aktualisierungsdateien* der NLM (standardmäßig 7 pro Lauf, höchstens 30), jede
+mehrere Dutzend Megabyte groß. Der Abruf durchläuft dasselbe Zustimmungsfenster wie jede
+andere Netzwerkaktion, wird im Flugmodus abgelehnt und läuft im Hintergrund; der
+Task-Manager zeigt ihn, und **Stoppen** beendet einen laufenden Download. Keine Kennung
+eines Fachartikels wird je an das NCBI gesendet.
+
+**Was behalten wird.** Jede Datei wird vollständig gelesen und mit der Prüfsumme der NLM
+abgeglichen. Nur die Einträge, die Ihre Artikel zitieren (über einen PubMed-, PMC- oder
+DOI-Link) oder die Sie benannt haben, werden behalten, in einer eigenen Datei,
+`medical.db`; der Rest wird verworfen und nie auf die Festplatte geschrieben. Eine Sicherung
+enthält `medical.db`, und jeder behaltene Eintrag kann auch erneut abgerufen werden.
+
+**Worauf Sie sich verlassen können.** Jeder Fachartikel zeigt die Klasse, die sein Eintrag
+angibt: **Zeitschriften-Datensatz** (die Begutachtung ist die Angabe der Zeitschrift; diese
+App prüft sie nicht), **Preprint** (nicht begutachtet) oder **Zurückgezogen**. Ein Erratum,
+ein Ausdruck der Besorgnis, eine Rückzugsmitteilung und ein aus PubMed entfernter Eintrag
+erhalten jeweils ein eigenes Abzeichen. Aktualisierungsdateien enthalten nur die
+Fachartikel, die die NLM kürzlich überarbeitet hat, daher werden die meisten von Ihren
+Artikeln zitierten Fachartikel **noch nicht gefunden**: Ihre Anzahl wird angezeigt, und ein
+hier nicht gefundener Fachartikel fehlt deshalb nicht in PubMed.
 
 ### 3.7 Wikipedia *(unter Einstellungen → Wikipedia)*
 
