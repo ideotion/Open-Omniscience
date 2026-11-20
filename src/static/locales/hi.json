@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "पूरा नहीं हुआ: एन्क्रिप्टेड पुस्तकालय के साथ {n} स्टोर अब भी बिना एन्क्रिप्शन के हैं। उन्हें अगली बार अनलॉक करने पर पूरा किया जाता है, या नीचे अपना पासफ़्रेज़ लिखें और अभी पूरा करने के लिए एन्क्रिप्ट बटन दबाएँ।",
   "Not found in your stored copy of this article": "इस लेख की आपकी संग्रहीत प्रति में नहीं मिला",
   "Not in your corpus yet — no stats.": "अभी तक आपके संग्रह में नहीं — कोई आँकड़े नहीं।",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "शामिल नहीं: आग का पता लगाना (NASA FIRMS) और वायु गुणवत्ता (OpenAQ)। दोनों सेवाओं के लिए खाता कुंजी चाहिए, और मौजूदा निर्णयों के तहत यह टैब केवल ऐसे स्रोतों का उपयोग करता है जिन्हें कुंजी की ज़रूरत नहीं।",
   "Not joined yet": "अभी नहीं जुड़ा",
   "Not joined, so not in the file: {list}": "जुड़े नहीं, इसलिए फ़ाइल में नहीं: {list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "नहीं मिला: आपके OpenStreetMap देशों का कोई भी पता लिखे गए हर शब्द को नहीं रखता। उसकी जगह कुछ मिलता-जुलता नहीं दिखाया जाता।",
@@ -4981,6 +4982,7 @@
   "Small multiples": "छोटे बहु-चार्ट",
   "Small states": "छोटे राज्य",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "सबसे छोटा: {small}, {smallSize}। सबसे बड़ा: {large}, {largeSize}।",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "मध्यावधि और जल्दी बुलाए गए चुनाव एक ज्ञात कमी हैं: कम समय में घोषित चुनाव यहाँ तभी दिखता है जब कैटलॉग उसे सूचीबद्ध करता है, इसलिए उसका न दिखना इस बात का संकेत नहीं कि कोई चुनाव नहीं आ रहा।",
   "Snap range to": "सीमा को इस इकाई में बाँधें",
   "Snapshotting your corpus…": "आपके कॉर्पस का स्नैपशॉट लिया जा रहा है…",
   "Snippet": "अंश",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "शामिल नहीं: आग का पता लगाना (NASA FIRMS) और वायु गुणवत्ता (OpenAQ)। दोनों सेवाओं के लिए खाता कुंजी चाहिए, और मौजूदा निर्णयों के तहत यह टैब केवल ऐसे स्रोतों का उपयोग करता है जिन्हें कुंजी की ज़रूरत नहीं।",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "मध्यावधि और जल्दी बुलाए गए चुनाव एक ज्ञात कमी हैं: कम समय में घोषित चुनाव यहाँ तभी दिखता है जब कैटलॉग उसे सूचीबद्ध करता है, इसलिए उसका न दिखना इस बात का संकेत नहीं कि कोई चुनाव नहीं आ रहा।"
+  "🛒 Draft (": "🛒 ड्राफ़्ट ("
 }

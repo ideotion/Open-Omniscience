@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.",
   "Not found in your stored copy of this article": "Not found in your stored copy of this article",
   "Not in your corpus yet — no stats.": "Not in your corpus yet — no stats.",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.",
   "Not joined yet": "Not joined yet",
   "Not joined, so not in the file: {list}": "Not joined, so not in the file: {list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.",
@@ -4981,6 +4982,7 @@
   "Small multiples": "Small multiples",
   "Small states": "Small states",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.",
   "Snap range to": "Snap range to",
   "Snapshotting your corpus…": "Snapshotting your corpus…",
   "Snippet": "Snippet",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming."
+  "🛒 Draft (": "🛒 Draft ("
 }

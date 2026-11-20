@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "Belum selesai: {n} penyimpanan masih belum terenkripsi di samping pustaka yang terenkripsi. Penyimpanan itu diselesaikan saat pembukaan kunci berikutnya, atau ketik frasa sandi Anda di bawah dan tekan tombol enkripsi untuk menyelesaikannya sekarang.",
   "Not found in your stored copy of this article": "Tidak ditemukan dalam salinan artikel ini yang Anda simpan",
   "Not in your corpus yet — no stats.": "Belum ada di korpus Anda — tidak ada statistik.",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Tidak termasuk: deteksi kebakaran (NASA FIRMS) dan kualitas udara (OpenAQ). Kedua layanan memerlukan kunci akun, dan menurut keputusan saat ini tab ini hanya memakai sumber yang tidak memerlukannya.",
   "Not joined yet": "Belum terhubung",
   "Not joined, so not in the file: {list}": "Tidak terhubung, jadi tidak ada di berkas: {list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "Tidak terlokasi: tidak ada alamat di negara OpenStreetMap Anda yang memuat setiap kata yang diketik. Tidak ada yang mirip ditawarkan sebagai gantinya.",
@@ -4981,6 +4982,7 @@
   "Small multiples": "Multipel kecil",
   "Small states": "Negara kecil",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "Terkecil: {small}, {smallSize}. Terbesar: {large}, {largeSize}.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Pemilu dini dan pemilu dipercepat adalah celah yang diketahui: pemilu yang diumumkan mendadak baru muncul di sini setelah katalog mencantumkannya, jadi ketiadaannya bukan tanda bahwa tidak ada pemilu yang akan datang.",
   "Snap range to": "Sesuaikan rentang ke",
   "Snapshotting your corpus…": "Mengambil snapshot korpus Anda…",
   "Snippet": "Kutipan",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Tidak termasuk: deteksi kebakaran (NASA FIRMS) dan kualitas udara (OpenAQ). Kedua layanan memerlukan kunci akun, dan menurut keputusan saat ini tab ini hanya memakai sumber yang tidak memerlukannya.",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Pemilu dini dan pemilu dipercepat adalah celah yang diketahui: pemilu yang diumumkan mendadak baru muncul di sini setelah katalog mencantumkannya, jadi ketiadaannya bukan tanda bahwa tidak ada pemilu yang akan datang."
+  "🛒 Draft (": "🛒 Draf ("
 }

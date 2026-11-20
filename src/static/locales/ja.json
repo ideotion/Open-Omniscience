@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "未完了: 暗号化されたライブラリの横に、まだ暗号化されていないストアが {n} 件あります。次回のロック解除時に完了します。今すぐ完了するには、下にパスフレーズを入力して暗号化ボタンを押してください。",
   "Not found in your stored copy of this article": "この記事の保存されたコピーには見つかりません",
   "Not in your corpus yet — no stats.": "まだコーパスにありません — 統計なし。",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "含まれていないもの：火災検知（NASA FIRMS）と大気質（OpenAQ）。どちらのサービスもアカウントキーが必要で、現在の決定ではこのタブはキー不要の情報源のみを使います。",
   "Not joined yet": "まだ結びつけていないもの",
   "Not joined, so not in the file: {list}": "結び付いていないため、ファイルに含まれないもの：{list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "特定できません：入力したすべての語を含む住所は、あなたの OpenStreetMap の国にありません。近いものを代わりに示すことはしません。",
@@ -4981,6 +4982,7 @@
   "Small multiples": "スモールマルチプル",
   "Small states": "小国",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "最小：{small}、{smallSize}。最大：{large}、{largeSize}。",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "解散総選挙や前倒し選挙は既知の欠落です。急に決まった選挙は、カタログに載って初めてここに表示されます。表示がないことは、選挙が予定されていないことを意味しません。",
   "Snap range to": "範囲を揃える単位",
   "Snapshotting your corpus…": "コーパスのスナップショットを作成中…",
   "Snippet": "抜粋",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "含まれていないもの：火災検知（NASA FIRMS）と大気質（OpenAQ）。どちらのサービスもアカウントキーが必要で、現在の決定ではこのタブはキー不要の情報源のみを使います。",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "解散総選挙や前倒し選挙は既知の欠落です。急に決まった選挙は、カタログに載って初めてここに表示されます。表示がないことは、選挙が予定されていないことを意味しません。"
+  "🛒 Draft (": "🛒 草稿 ("
 }

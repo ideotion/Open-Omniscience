@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "Pas terminé : {n} magasin(s) encore non chiffré(s) à côté de la bibliothèque chiffrée. Ils sont terminés au prochain déverrouillage, ou saisissez votre phrase secrète ci-dessous et appuyez sur le bouton de chiffrement pour terminer maintenant.",
   "Not found in your stored copy of this article": "Introuvable dans votre copie enregistrée de cet article",
   "Not in your corpus yet — no stats.": "Pas encore dans votre corpus — aucune statistique.",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Non inclus : les détections d'incendies (NASA FIRMS) et la qualité de l'air (OpenAQ). Ces deux services exigent une clé de compte, et selon les décisions actuelles cet onglet n'utilise que des sources qui n'en demandent aucune.",
   "Not joined yet": "Pas encore relié",
   "Not joined, so not in the file: {list}": "Non reliés, donc absents du fichier : {list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "Non localisée : aucune adresse de vos pays OpenStreetMap ne contient tous les mots saisis. Rien d’approchant n’est proposé à la place.",
@@ -4981,6 +4982,7 @@
   "Small multiples": "Petits multiples",
   "Small states": "Petits États",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "Plus petite : {small}, {smallSize}. Plus grande : {large}, {largeSize}.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Les élections anticipées sont une lacune connue : une élection convoquée à bref délai n'apparaît ici qu'une fois inscrite au catalogue, donc son absence n'indique pas qu'aucune ne se prépare.",
   "Snap range to": "Caler la plage sur",
   "Snapshotting your corpus…": "Prise d'un instantané de votre corpus…",
   "Snippet": "Extrait",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Non inclus : les détections d'incendies (NASA FIRMS) et la qualité de l'air (OpenAQ). Ces deux services exigent une clé de compte, et selon les décisions actuelles cet onglet n'utilise que des sources qui n'en demandent aucune.",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Les élections anticipées sont une lacune connue : une élection convoquée à bref délai n'apparaît ici qu'une fois inscrite au catalogue, donc son absence n'indique pas qu'aucune ne se prépare."
+  "🛒 Draft (": "🛒 Brouillon ("
 }

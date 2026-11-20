@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "Не завершено: хранилищ, ещё не зашифрованных рядом с зашифрованной библиотекой: {n}. Они будут завершены при следующей разблокировке, или введите парольную фразу ниже и нажмите кнопку шифрования, чтобы завершить сейчас.",
   "Not found in your stored copy of this article": "Не найдено в вашей сохранённой копии этой статьи",
   "Not in your corpus yet — no stats.": "Пока нет в вашем корпусе — статистики нет.",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Не включено: обнаружение пожаров (NASA FIRMS) и качество воздуха (OpenAQ). Обоим сервисам нужен ключ учётной записи, а по действующим решениям эта вкладка использует только источники, которым ключ не нужен.",
   "Not joined yet": "Пока не связано",
   "Not joined, so not in the file: {list}": "Не привязаны, поэтому их нет в файле: {list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "Не найдено: ни один адрес ваших стран OpenStreetMap не содержит всех введённых слов. Ничего похожего взамен не предлагается.",
@@ -4981,6 +4982,7 @@
   "Small multiples": "Малые кратные",
   "Small states": "Малые государства",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "Наименьшая: {small}, {smallSize}. Наибольшая: {large}, {largeSize}.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Досрочные выборы — известный пробел: выборы, назначенные в короткий срок, появляются здесь только после того, как их внесут в каталог, поэтому их отсутствие не означает, что выборов не будет.",
   "Snap range to": "Привязать диапазон к",
   "Snapshotting your corpus…": "Создание снимка вашего корпуса…",
   "Snippet": "Фрагмент",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Не включено: обнаружение пожаров (NASA FIRMS) и качество воздуха (OpenAQ). Обоим сервисам нужен ключ учётной записи, а по действующим решениям эта вкладка использует только источники, которым ключ не нужен.",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Досрочные выборы — известный пробел: выборы, назначенные в короткий срок, появляются здесь только после того, как их внесут в каталог, поэтому их отсутствие не означает, что выборов не будет."
+  "🛒 Draft (": "🛒 Черновик ("
 }

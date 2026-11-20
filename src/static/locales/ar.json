@@ -3591,6 +3591,7 @@
   "Not finished: {n} store(s) still unencrypted beside the encrypted library. They are finished at the next unlock, or type your passphrase below and press the encrypt button to finish now.": "لم يكتمل: {n} من المخازن لا يزال غير مشفّر بجانب المكتبة المشفّرة. يُستكمل عند فتح القفل التالي، أو اكتب عبارة المرور أدناه واضغط زر التشفير لإكماله الآن.",
   "Not found in your stored copy of this article": "غير موجود في نسختك المحفوظة من هذا المقال",
   "Not in your corpus yet — no stats.": "ليست في مجموعتك بعد — لا إحصاءات.",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "غير مشمول: رصد الحرائق (NASA FIRMS) وجودة الهواء (OpenAQ). تتطلب الخدمتان مفتاح حساب، ووفق القرارات الحالية لا يستخدم هذا التبويب إلا مصادر لا تحتاج إلى مفتاح.",
   "Not joined yet": "غير مرتبط بعد",
   "Not joined, so not in the file: {list}": "غير مرتبطة، لذا ليست في الملف: {list}",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "لم يُحدَّد الموقع: لا يحتوي أي عنوان في بلدان OpenStreetMap الخاصة بك على كل الكلمات المكتوبة. لا يُعرض شيء قريب بديلًا.",
@@ -4981,6 +4982,7 @@
   "Small multiples": "المخططات المصغّرة",
   "Small states": "الدول الصغيرة",
   "Smallest: {small}, {smallSize}. Largest: {large}, {largeSize}.": "الأصغر: {small}، {smallSize}. الأكبر: {large}، {largeSize}.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "الانتخابات المبكرة ثغرة معروفة: الانتخابات التي يُدعى إليها في مهلة قصيرة لا تظهر هنا إلا بعد إدراجها في الفهرس، لذا فغيابها ليس دليلًا على عدم وجود انتخابات قادمة.",
   "Snap range to": "محاذاة النطاق إلى",
   "Snapshotting your corpus…": "جارٍ أخذ لقطة من مجموعتك…",
   "Snippet": "المقتطف",
@@ -8338,7 +8340,5 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة (",
-  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "غير مشمول: رصد الحرائق (NASA FIRMS) وجودة الهواء (OpenAQ). تتطلب الخدمتان مفتاح حساب، ووفق القرارات الحالية لا يستخدم هذا التبويب إلا مصادر لا تحتاج إلى مفتاح.",
-  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "الانتخابات المبكرة ثغرة معروفة: الانتخابات التي يُدعى إليها في مهلة قصيرة لا تظهر هنا إلا بعد إدراجها في الفهرس، لذا فغيابها ليس دليلًا على عدم وجود انتخابات قادمة."
+  "🛒 Draft (": "🛒 المسودة ("
 }
