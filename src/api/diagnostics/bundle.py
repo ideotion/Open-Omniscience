@@ -2253,12 +2253,12 @@ def _checks_counts(checks: Any) -> tuple[int, int, int] | None:
 
 
 def _budget_marker_note(budget_cut: bool, deadline_used: float | None) -> str:
-    """The line a deadline marker gains when the Quick scan budget, not the scan's own deadline, set the time it had: without it
-    a marker reads as if the scan had been given its whole deadline."""
+    """The line a deadline marker gains when the scan budget (Quick's, or Thorough's since R757), not the scan's own deadline, set
+    the time it had: without it a marker reads as if the scan had been given its whole deadline."""
     if not budget_cut:
         return ""
     seconds = f"{deadline_used:.0f} s " if deadline_used is not None else ""
-    return f"\n(the {seconds}deadline was the time the Quick scan budget had left, not the scan's own)"
+    return f"\n({_plan.STATUS_BUDGET_REACHED}: the {seconds}deadline was the time the scan budget had left, not the scan's own)"
 
 
 def _selftest_verdict(value: Any) -> dict:
@@ -2574,7 +2574,7 @@ def _profile_block(profile: str, results: list[dict], mode: str = "thorough", op
             f"This is a {mode.upper()} build, and it is INCOMPLETE: " + ", ".join(over_budget)
             + " did not start because the scan budget was spent (see `scans`). Nothing was "
             "declined by the machine or by the operator. "
-            + ("Run it again with a longer budget, or none, to collect them." if operator_budget
+            + ("Run it again with a longer budget to collect them." if operator_budget
                else "Run the Thorough build to collect them.")
         )
     elif not declined:
@@ -2659,6 +2659,10 @@ def _all_diagnostics_manifest(
     return {
         "export_schema": "oo-export-1",
         "kind": "all-diagnostics",
+        # R757: THE LIMITS THIS BUILD RAN UNDER, at the head of the file, with where each one is changed.
+        "scan_limits": _plan.scan_limits(
+            mode, thorough_budget_s, _all_diag_db_member_deadline_s(), _all_diag_nondb_member_deadline_s()
+        ),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "python": _sys.version.split()[0],
         "platform": platform.platform(),
@@ -2737,16 +2741,14 @@ def _all_diagnostics_manifest(
         # member non-zero") is only meaningful against a FULL run. `complete_profile` is
         # the one boolean a gate check should read -- never the member count, which a light
         # run keeps intact by design because the declined members are still listed.
-        "profile": _profile_block(profile, results, mode, operator_budget=mode != "quick" and thorough_budget_s is not None),
+        "profile": _profile_block(profile, results, mode, operator_budget=mode != "quick" and _plan.scan_budget_for(mode, thorough_budget_s) is not None),
         # THE MODE AND WHAT IT LEFT OUT (R124): Quick spends one budget on the scans and names
         # every scan it did not reach; Thorough runs them all under their own deadlines. Read from
         # the members this run wrote, so it cannot disagree with them.
         "mode": mode,
-        # S3: a Thorough build runs under the budget its operator set, when one was set (none by default).
+        # S3 + R757: a Thorough build runs under the budget its operator set, else the install's, else none (R466).
         "scan_budget_s": _plan.scan_budget_for(mode, thorough_budget_s),
-        "scan_budget_set_by": (
-            "product" if mode == "quick" else ("operator" if thorough_budget_s is not None else None)
-        ),
+        "scan_budget_set_by": _plan.scan_budget_set_by(mode, thorough_budget_s),
         "scans": _plan.scans_block(
             results, mode=mode, budget_s=_plan.scan_budget_for(mode, thorough_budget_s), table=scan_costs, basis=scan_basis
         ),
@@ -3036,13 +3038,16 @@ def _write_all_diagnostics_zip(
                 budget_s is not None and is_scan_member and declined_reason is None
                 and _plan.scan_deadline_s(_plan.DEFAULT_SCAN_S, elapsed_s, budget_s)[0] is None
             ):
-                whose = "the Quick build's scan budget" if mode == "quick" else "the scan budget the operator set"
+                whose = {
+                    "product": "the Quick build's scan budget", "operator": "the scan budget the operator set",
+                    "environment": f"the Thorough scan budget set by {_plan.THOROUGH_BUDGET_ENV}",
+                }.get(_plan.scan_budget_set_by(mode, thorough_budget_s) or "", "the scan budget")
                 skipped_reason = (
                     f"{whose} of {budget_s:.0f} s was spent ({elapsed_s:.0f} s "
                     f"used by the scans before this one); this scan is expected to take about "
                     f"{_plan.scan_est_s(name, scan_costs):.0f} s. "
                     + ("Run the Thorough build to collect it" if mode == "quick"
-                       else "Run it again with a longer budget, or none, to collect it")
+                       else "Run it again with a longer budget to collect it")
                 )
             budget_cut = False
             abandoned = False
@@ -3120,7 +3125,7 @@ def _write_all_diagnostics_zip(
                     marker = (
                         f"member exceeded its {deadline_used or _all_diag_nondb_member_deadline_s():.0f}s "
                         "wall-clock deadline"
-                        + (" (the time the Quick scan budget had left)" if budget_cut else "")
+                        + (f" (the time the scan budget had left: {_plan.STATUS_BUDGET_REACHED})" if budget_cut else "")
                         + " and was abandoned (non-DB member): the thread reading it was not stopped and can still be running"
                     ).encode()
                     zf.writestr(name + ".skipped-deadline.txt", marker)
@@ -3179,6 +3184,10 @@ def _write_all_diagnostics_zip(
                     entry["budget_cut"] = True
                 if skipped_reason is not None and outcome == "skipped-budget":
                     entry["skipped_reason"] = skipped_reason
+                status_text = _plan.scan_status_text(outcome, budget_cut)
+                if status_text is not None:
+                    # R757: a scan a limit ended says so in words, never as a pass or a fail.
+                    entry["status_text"] = status_text
             if abandoned:
                 # A thread cannot be stopped from outside: the member left it running (a scan after the window
                 # closed, a record beside collection), and a reader of the machine's load must be able to tell,
@@ -4136,7 +4145,7 @@ def all_diagnostics_volumes() -> JSONResponse:
     """The finished archive as the file or files to hand over: ITSELF when it fits one file, otherwise
     split into size-bounded, independently-openable ZIP volumes.
 
-    WHEN THE ARCHIVE FITS (``UPLOAD_PART_BYTES``, 4,000,000 bytes, R119) the answer is the archive
+    WHEN THE ARCHIVE FITS (``DIAG_PART_BYTES``, 200,000 bytes, the user's 2026-11-15 rule) the answer is the archive
     as it is, ``oo-diagnostics-<stamp>.zip``, listed in the same shape as a numbered set with one file
     of ``kind: "archive"``: no split (seconds to a minute saved, and none of the doubled disk
     footprint below), no manifest zip, no ``volumes-readme.json``. A numbered set left from an

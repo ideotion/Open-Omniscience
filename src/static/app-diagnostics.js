@@ -235,6 +235,15 @@
           {limit: Math.max(1, Math.round(limitMin))}
         );
       }
+      // R757: with no limit of the operator's, Thorough stops starting scans at its default budget; when that is shorter than the
+      // estimate (or there is no estimate), the default is the pause the person will see, and the note says so.
+      const defMin = th && typeof th.budget_s === "number" && th.budget_s > 0 ? th.budget_s / 60 : 0;
+      if (!(limitMin > 0) && defMin > 0 && (!known || defMin < th.est_s / 60)) {
+        return tf(
+          "Thorough pauses collection for at most about {limit} min, its default limit, plus up to 15 s while a stopped scan saves its place; scans not reached are named in the file.",
+          {limit: Math.max(1, Math.round(defMin))}
+        );
+      }
       if (!th || typeof th.est_s !== "number" || !(th.scans > 0)) {
         return t("Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.");
       }
@@ -1142,7 +1151,7 @@
     }
 
     // THE ARCHIVE AS NUMBERED FILES, AGAIN (field session 2026-09-11, reshaped 2026-10-01).
-    // It hands over the ALREADY-BUILT archive: itself when it fits one file, else files of at most 4 MB that each open on their own
+    // It hands over the ALREADY-BUILT archive: itself when it fits one file, else files of at most 200 KB that each open on their own
     // and saves them from the typed part number on. It deliberately does NOT start a build:
     // "send it again" and "spend the next few hours rebuilding" are different asks, and a button
     // that quietly did the second when the operator meant the first would be the worst moment to

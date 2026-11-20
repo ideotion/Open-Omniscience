@@ -62,7 +62,8 @@ THE 1 MB CAP, AND CUTS ON RECORD BOUNDARIES (maintainer-asked 2026-10-01: «cap 
 zip to 1MB (same for diagnostics), by splitting and numbering the files adequately»). The
 default cap is now :data:`~src.analytics.upload_parts.UPLOAD_PART_BYTES` (1,000,000 bytes; the
 9 MB default protected the common attachment limit, and the maintainer's own uploads failed from
-about 1.2 MB; 4,000,000 since 2026-10-06, R119, and an archive that fits it is handed over whole,
+about 1.2 MB; 4,000,000 since 2026-10-06, R119; 200,000 since 2026-11-20, :data:`DIAG_PART_BYTES`, the user's
+2026-11-15 rule), and an archive that fits it is handed over whole,
 not split: see ``all_diagnostics_volumes``), volumes are named ``<stem>-part-NN-of-MM.zip`` and the descriptor travels as
 ``<stem>-manifest.zip`` (a zip: uploads of other formats are the ones that failed; the
 ``volumes.json`` sidecar stays for the readers that want it). A member too large for a volume is
@@ -87,7 +88,6 @@ from pathlib import Path
 from typing import Any
 
 from src.analytics.upload_parts import (
-    UPLOAD_PART_BYTES,
     join_json_pieces,
     part_file_name,
     piece_document,
@@ -162,8 +162,16 @@ class VolumeRoomError(VolumeError):
     """Raised when the drive cannot take a volume set (the caller answers 507, not 500)."""
 
 
+#: THE DIAGNOSTICS PART SIZE: 200,000 bytes (row 211). The user's rule of 2026-11-15 («every file I send back must be
+#: at most 200 KB», measured: about half the 4 MB field parts would not upload, every one that did was under 175 KB) is
+#: later than R119's 4,000,000 and takes precedence. ``OO_DIAG_VOLUME_MAX_MB`` still overrides it. Only the diagnostics
+#: volumes: the keyword export's parts keep ``UPLOAD_PART_BYTES``.
+DIAG_PART_BYTES = 200_000
+
+
 def volume_max_bytes() -> int:
-    """The per-volume ceiling: ``UPLOAD_PART_BYTES`` (4,000,000 bytes, the maintainer's number),
+    """The per-volume ceiling: :data:`DIAG_PART_BYTES` (200,000 bytes, the user's 2026-11-15 rule; was ``UPLOAD_PART_BYTES``,
+    4,000,000, R119),
     env-tunable via ``OO_DIAG_VOLUME_MAX_MB`` for a channel that takes more. The unit is MiB, as it
     always was, so ``4`` means 4,194,304 bytes: past the default, which is the point of an override.
 
@@ -174,7 +182,7 @@ def volume_max_bytes() -> int:
     try:
         mb = float(os.environ["OO_DIAG_VOLUME_MAX_MB"])
     except (KeyError, ValueError):
-        return UPLOAD_PART_BYTES
+        return DIAG_PART_BYTES
     # Floored at 4 KiB only to forbid a zero/negative cap. The small floor is what
     # makes the split-member path testable without generating a 9 MB fixture.
     return max(4096, int(mb * 1024 * 1024))
