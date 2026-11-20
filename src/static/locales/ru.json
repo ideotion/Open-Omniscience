@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "Включён режим полёта, поэтому обновление не запущено. Сначала выйдите в сеть.",
   "Airplane mode is on.": "Включён режим полёта.",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "Включён режим полёта: ничего не загружено. Нажмите на самолёт в верхней панели, чтобы выйти в сеть, и повторите попытку.",
+  "Airplane mode is on: the Stop is kept.": "Режим полёта включён: остановка сохранена.",
   "Airplane mode is on: the update check did not run.": "Включён режим полёта: проверка обновления не выполнялась.",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "Режим полёта — включён. Нажмите, чтобы выйти в сеть в приложении (потребуется подтверждение).",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "Режим полёта — залитый значок означает офлайн: каждый новый сетевой запрос отклоняется немедленно.",

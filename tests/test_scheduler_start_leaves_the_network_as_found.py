@@ -158,7 +158,7 @@ def test_a_start_that_raises_something_else_opens_nothing_either(client, monkeyp
     assert ingest.kill_switch_active() is True
 
 
-def test_the_gate_opens_on_every_path_out_of_the_route(monkeypatch):
+def test_the_gate_is_decided_on_every_path_out_of_the_route(monkeypatch):
     """A thread made before a failure further on must never be left waiting: the route decides the gate in a ``finally`` -- and on any
     path but a clean opening it CANCELS it, so the thread returns without running."""
     from src.api import scheduler as scheduler_api
@@ -170,10 +170,12 @@ def test_the_gate_opens_on_every_path_out_of_the_route(monkeypatch):
         return True
 
     monkeypatch.setattr("src.ingest.note_operator_crossed_online", lambda: (_ for _ in ()).throw(OSError("boom")))
+    ingest.activate_kill_switch()
     with pytest.raises(OSError):
         scheduler_api._start_opening_the_network(call, "test")
     assert gates and gates[0]._decided.is_set(), "the gate was left undecided"
     assert gates[0].wait() is False, "a start that did not finish opening the network let its thread run"
+    assert ingest.kill_switch_active() is True, "a start that failed after the clear left the network open"
 
 
 def test_a_crash_between_the_thread_and_the_clear_boots_as_refused():
@@ -208,7 +210,7 @@ def test_the_ui_says_what_the_network_is_doing_after_a_refusal_in_every_language
     assert js.count('_startRefusalMsg("Run now failed: {error}", e, t9)') == 1
     for path in sorted((root / "src" / "static" / "locales").glob("*.json")):
         table = json.loads(path.read_text(encoding="utf-8"))
-        for sentence in [*scheduler_api._NETWORK_AFTER_REFUSAL.values(), scheduler_api._STOPPED_DURING_START]:
+        for sentence in [*scheduler_api._NETWORK_AFTER_REFUSAL.values(), scheduler_api._STOPPED_DURING_START, scheduler_api._STOP_KEPT]:
             assert table.get(sentence), f"{path.name} has no translation of {sentence!r}"
 
 
@@ -240,6 +242,7 @@ def test_a_stop_during_the_start_wins_and_the_network_stays_closed(client, monke
     detail = r.json()["detail"]
     assert detail["kill_switch"] == "engaged"
     assert detail["error"] == "Collection was stopped while it was starting, so the network was not opened."
+    assert detail["network"] == "Airplane mode is on: the Stop is kept.", "never 'as it was before' when the switch was off before"
     assert resumed == []
     assert not fake.ran.wait(0.5), "the thread ran under a switch the route did not clear (security read 1, second pass)"
 

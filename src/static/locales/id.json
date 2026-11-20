@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "Mode pesawat aktif, jadi pembaruan tidak dimulai. Hubungkan ke internet terlebih dahulu.",
   "Airplane mode is on.": "Mode pesawat menyala.",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "Mode pesawat aktif: tidak ada yang diambil. Klik ikon pesawat di bilah atas untuk daring, lalu coba lagi.",
+  "Airplane mode is on: the Stop is kept.": "Mode pesawat aktif: penghentian tetap berlaku.",
   "Airplane mode is on: the update check did not run.": "Mode pesawat aktif: pemeriksaan pembaruan tidak dijalankan.",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "Mode pesawat — aktif. Klik untuk daring di aplikasi (Anda akan diminta konfirmasi).",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "Mode pesawat — terisi berarti offline: setiap permintaan jaringan baru ditolak seketika.",

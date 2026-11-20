@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "हवाई जहाज़ मोड चालू है, इसलिए अपडेट शुरू नहीं हुआ। पहले ऑनलाइन जाएँ।",
   "Airplane mode is on.": "हवाई जहाज़ मोड चालू है।",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "हवाई जहाज़ मोड चालू है: कुछ भी नहीं लाया गया। ऑनलाइन होने के लिए ऊपरी बार में प्लेन पर क्लिक करें, फिर दोबारा कोशिश करें।",
+  "Airplane mode is on: the Stop is kept.": "एयरप्लेन मोड चालू है: रोक बनी रहती है।",
   "Airplane mode is on: the update check did not run.": "एयरप्लेन मोड चालू है: अपडेट की जाँच नहीं हुई।",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "एयरप्लेन मोड — सक्रिय। ऐप में ऑनलाइन होने के लिए क्लिक करें (आपसे पुष्टि माँगी जाएगी)।",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "वायुयान मोड — भरा हुआ मतलब ऑफ़लाइन: हर नया नेटवर्क अनुरोध तुरंत अस्वीकार कर दिया जाता है।",

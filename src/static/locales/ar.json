@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "وضع الطيران مفعّل، لذا لم يبدأ التحديث. اتصل بالإنترنت أولًا.",
   "Airplane mode is on.": "وضع الطيران مفعّل.",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "وضع الطيران قيد التشغيل: لم يُجلب أي شيء. انقر على أيقونة الطائرة في الشريط العلوي للاتصال، ثم حاول مرة أخرى.",
+  "Airplane mode is on: the Stop is kept.": "وضع الطيران مفعّل: يبقى الإيقاف ساريًا.",
   "Airplane mode is on: the update check did not run.": "وضع الطيران قيد التشغيل: لم يُجرَ فحص التحديث.",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "وضع الطيران — مُفعَّل. انقر للاتصال داخل التطبيق (سيُطلب منك التأكيد).",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "وضع الطيران — المملوء يعني دون اتصال: يُرفض كل طلب شبكي جديد فوراً.",

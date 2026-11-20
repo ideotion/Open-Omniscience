@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "Le mode avion est actif, la mise à jour n'a donc pas démarré. Passez d'abord en ligne.",
   "Airplane mode is on.": "Le mode avion est activé.",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "Le mode avion est activé : rien n'a été récupéré. Cliquez sur l'avion dans la barre du haut pour passer en ligne, puis réessayez.",
+  "Airplane mode is on: the Stop is kept.": "Le mode avion est activé : l’arrêt est maintenu.",
   "Airplane mode is on: the update check did not run.": "Le mode avion est activé : la vérification n'a pas eu lieu.",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "Mode avion — activé. Cliquez pour passer en ligne dans l'application (une confirmation vous sera demandée).",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "Mode avion — l'icône pleine signifie hors ligne : toute nouvelle requête réseau est refusée instantanément.",

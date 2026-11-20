@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "機内モードがオンのため、更新は開始されませんでした。先にオンラインにしてください。",
   "Airplane mode is on.": "機内モードがオンです。",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "機内モードがオンです。何も取得されませんでした。上部バーの飛行機をクリックしてオンラインにしてから、もう一度お試しください。",
+  "Airplane mode is on: the Stop is kept.": "機内モードはオンです。停止はそのまま維持されます。",
   "Airplane mode is on: the update check did not run.": "機内モードがオンです。アップデートの確認は実行されませんでした。",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "機内モード — 有効。クリックしてアプリでオンラインにします（確認を求められます）。",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "機内モード — 塗りつぶしはオフラインを意味します: 新しいネットワーク要求はすべて即座に拒否されます。",

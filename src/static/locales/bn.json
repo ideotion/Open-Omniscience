@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "এয়ারপ্লেন মোড চালু আছে, তাই আপডেট শুরু হয়নি। আগে অনলাইনে যান।",
   "Airplane mode is on.": "এয়ারপ্লেন মোড চালু আছে।",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "বিমান মোড চালু আছে: কিছুই আনা হয়নি। অনলাইনে যেতে উপরের বারে প্লেনের আইকনে ক্লিক করুন, তারপর আবার চেষ্টা করুন।",
+  "Airplane mode is on: the Stop is kept.": "এয়ারপ্লেন মোড চালু আছে: থামানো বহাল থাকে।",
   "Airplane mode is on: the update check did not run.": "এয়ারপ্লেন মোড চালু আছে: আপডেট পরীক্ষা চালানো হয়নি।",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "এয়ারপ্লেন মোড — সক্রিয়। অ্যাপে অনলাইনে যেতে ক্লিক করুন (আপনাকে নিশ্চিত করতে বলা হবে)।",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "বিমান মোড — ভরাট মানে অফলাইন: প্রতিটি নতুন নেটওয়ার্ক অনুরোধ সঙ্গে সঙ্গে প্রত্যাখ্যান করা হয়।",

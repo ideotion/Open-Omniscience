@@ -455,6 +455,7 @@
   "Airplane mode is on, so the update did not start. Go online first.": "飞行模式已开启，因此更新没有开始。请先联网。",
   "Airplane mode is on.": "飞行模式已开启。",
   "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.": "飞行模式已开启：未获取任何内容。请点击顶栏中的飞机图标联网，然后重试。",
+  "Airplane mode is on: the Stop is kept.": "飞行模式已开启：停止操作保持有效。",
   "Airplane mode is on: the update check did not run.": "飞行模式已开启：未执行更新检查。",
   "Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).": "飞行模式 — 已启用。点击以在应用中联网（将要求你确认）。",
   "Airplane mode — filled means offline: every new network request is refused instantly.": "飞行模式——图标填充表示离线：所有新的网络请求都会被立即拒绝。",

@@ -399,6 +399,8 @@ _NETWORK_AFTER_REFUSAL = {
 #: The reason a start that made its thread is refused all the same: a Stop (the Stop button, the airplane toggle, a panic) engaged the
 #: switch while the thread was being made, and a Stop is never undone by a start that began before it. A locale key.
 _STOPPED_DURING_START = "Collection was stopped while it was starting, so the network was not opened."
+#: The network sentence that goes with it: the switch is engaged now because of that Stop, whatever it was before this request.
+_STOP_KEPT = "Airplane mode is on: the Stop is kept."
 
 
 def _refusal(error: str, engaged: bool, network: str | None = None) -> HTTPException:
@@ -436,6 +438,7 @@ def _start_opening_the_network(call: Callable[[StartGate], bool], refused: str) 
     not a refusal and still answers the unhandled error -- with the switch untouched, too.
     """
     from src.ingest import (
+        activate_kill_switch,
         clear_kill_switch_unless_engaged_since,
         kill_switch_active,
         kill_switch_epoch,
@@ -456,8 +459,13 @@ def _start_opening_the_network(call: Callable[[StartGate], bool], refused: str) 
         if started:
             if not clear_kill_switch_unless_engaged_since(epoch):
                 _LOG.warning("%s: a Stop engaged the kill switch while the thread was being made; the network stays closed", refused)
-                raise _refusal(_STOPPED_DURING_START, True)
-            note_operator_crossed_online()  # an explicit start IS crossing online
+                raise _refusal(_STOPPED_DURING_START, True, _STOP_KEPT)
+            try:
+                note_operator_crossed_online()  # an explicit start IS crossing online
+            except BaseException:
+                # The thread is about to be cancelled (finally): a network opened for a start that will not run is closed again.
+                activate_kill_switch()
+                raise
             opened = True
     finally:
         # Never leave a thread waiting: on every path out of here the gate is decided. Opened only when the network was opened for it;
