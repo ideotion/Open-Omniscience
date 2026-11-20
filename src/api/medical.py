@@ -13,9 +13,14 @@ is not gated; it carries the disclosure and the gap (R750) so the UI shows them 
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from src.api.search_filters import AdvancedSearch, advanced_search_params
+from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
 
 router = APIRouter(prefix="/api/medical", tags=["medical"])
@@ -27,7 +32,52 @@ def _fetch_worker(ctx, *, files: int) -> dict:
     def _progress(done: int, total: int, detail: str) -> None:
         ctx.set_progress(done=done, total=total, detail=detail)
 
-    return run_fetch(files, progress=_progress, stopping=lambda: ctx.stopping)
+    result = run_fetch(files, progress=_progress, stopping=lambda: ctx.stopping)
+    if result.get("listed") is not None:  # a run stopped before any request is no fetch, and is not recorded
+        _record_for_k13(result)
+    return result
+
+
+def _nlm_name(name: str) -> str | None:
+    """NLM's file name, rebuilt from its two sequence numbers, or None for anything that is not one."""
+    from src.medical.store import FILE_NAME
+
+    m = FILE_NAME.fullmatch(name or "")
+    return f"pubmed{int(m.group(1)):02d}n{int(m.group(2)):04d}.xml.gz" if m else None
+
+
+def _record_for_k13(result: dict) -> None:
+    """K13's medical block (R751(a)): counts and NLM's public file name, never an id the corpus cites."""
+    from datetime import UTC, datetime
+
+    try:
+        from src.medical import store as M
+        from src.monitoring.kpi import _MEDICAL_COUNTS, record_medical_fetch
+        from src.versioned import store
+
+        with store.lane_session(M.LANE) as s:
+            held = M.summary(s)
+        newest = held["last_file"]
+        raw_cov = result.get("coverage")
+        cov = raw_cov if isinstance(raw_cov, dict) else {}
+        record_medical_fetch({
+            "fetched_at": datetime.now(UTC).isoformat(),
+            "listed": int(result.get("listed") or 0),
+            "remaining": int(result.get("remaining") or 0),
+            "applied": len(result.get("applied") or []),
+            # Whether the run stopped at a failure, never its text: the failure carries scrubbed
+            # exception words, and nothing derived from them belongs in a plaintext record.
+            "failed": result.get("failed") is not None,
+            "stopped": bool(result.get("stopped")),
+            # Keys from the record's own constant list, never the keys of the dict handed in.
+            "coverage": {k: int(cov[k]) for k in _MEDICAL_COUNTS if isinstance(cov.get(k), int)},
+            # Counts and a name rebuilt from NLM's own sequence numbers: nothing read here is copied whole.
+            "papers": int(held["papers"]),
+            "by_class": {c: int(held["by_class"].get(c, 0)) for c in ("journal", "preprint", "retracted")},
+            "last_file": _nlm_name(newest["name"]) if newest else None,
+        })
+    except Exception:  # noqa: BLE001 - a diagnostic that cannot be written never fails the fetch it describes
+        return
 
 
 #: A WRITER (it commits to ``medical.db``), and CANCELLABLE honestly: the worker reads
@@ -99,3 +149,77 @@ def medical_fetch(body: _FetchBody | None = None) -> dict:
 def medical_fetch_status() -> dict:
     """Live status of the PubMed fetch job (state, progress, result, error)."""
     return _FETCH_JOB.status()
+
+
+#: How many cited ids a single answer may look up, and how many articles it reads the links of.
+_PAPERS_ARTICLE_CAP = 900
+
+
+@router.get("/corpus-papers")
+def medical_corpus_papers(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: bool = True,
+    ui_lang: str | None = None,
+    sense: Annotated[list[str] | None, Query()] = None,
+    literal_cap: bool = True,
+    cap: int = Query(_PAPERS_ARTICLE_CAP, ge=1, le=_PAPERS_ARTICLE_CAP),
+    adv: AdvancedSearch = Depends(advanced_search_params),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The kept PubMed records the analysed articles cite, BESIDE the news, never blended into it (S07-01 S1).
+
+    Local only: the articles' own outbound links are read from ``corpus.db`` and matched against
+    ``medical.db``; nothing is requested and nothing is written (a lane never fetched answers with
+    every cited id counted as not found yet, and no file is created). Each paper carries its
+    provenance class and the notices its record links to; an id with no kept record is COUNTED,
+    never listed and never called missing from PubMed (R750)."""
+    from sqlalchemy import or_, select
+
+    from src.api.insights import _resolve_corpus
+    from src.database.models import ArticleLink
+    from src.medical import store as M
+    from src.medical.fetch import _LINK_HINTS, GAP, cited_ids
+    from src.versioned import store
+
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, cap=cap, expand=expand, ui_lang=ui_lang, sense=sense,
+        literal_cap=-1 if literal_cap else None, adv=adv,
+    )
+    urls: dict[int, list[str]] = {}
+    if ids:
+        hint = or_(*[ArticleLink.url.ilike(h) for h in _LINK_HINTS])
+        for aid, url in db.execute(
+            select(ArticleLink.article_id, ArticleLink.url).where(ArticleLink.article_id.in_(ids), hint)
+        ).all():
+            if url:
+                urls.setdefault(int(aid), []).append(url)
+    cited = {aid: w for aid, us in urls.items() if len(w := cited_ids(us))}
+    if store.lane_path(M.LANE).exists():
+        with store.lane_session(M.LANE) as s:
+            found = M.papers_cited_by(s, cited)
+            last = M.summary(s)["last_file"]
+    else:
+        n = sum(len(set().union(*(w._set(k) for w in cited.values()))) for k in M.WANTED_KINDS)
+        found = {"papers": [], "cited": n, "found": 0, "not_found": n}  # never fetched: every cited id is not found YET
+        last = None
+    return {
+        **found,
+        "n_articles": len(ids),
+        "articles_citing": len(cited),
+        "total_matched": total,
+        "capped": total > len(ids),
+        "last_file": last,
+        "gap": GAP,
+        "method": (
+            "The outbound links of the analysed articles are read for PubMed, PMC and DOI addresses, and each id "
+            "is looked up in this install's medical.db. Nothing is requested from the network. A paper is shown "
+            "with the provenance class its PubMed record states; peer review is the journal's claim, not checked here."
+        ),
+    }

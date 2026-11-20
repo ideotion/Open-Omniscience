@@ -471,6 +471,7 @@
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
       if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
       if (key === "competitive") renderAnCompetitive(_anLastParams);   // lazy: source-competitive on show
+      if (key === "papers" && typeof renderAnPapers === "function") renderAnPapers(_anLastParams);   // lazy: medical papers on show
     }
     // The OVERVIEW screen (THEME-3): an honest headline tile per lens (counts only, no
     // synthesis), each deep-linking to its subtab. Bounded summary fetches; degrades
@@ -2530,6 +2531,7 @@
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
       if ($("an-competitive") && $("an-competitive").style.display !== "none") setTimeout(() => renderAnCompetitive(p), 0);
+      if ($("an-papers") && $("an-papers").style.display !== "none" && typeof renderAnPapers === "function") setTimeout(() => renderAnPapers(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
