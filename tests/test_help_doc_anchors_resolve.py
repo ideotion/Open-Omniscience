@@ -94,7 +94,14 @@ def test_the_port_matches_the_shipped_slugifier_on_its_own_documented_cases():
     assert _slugify("`code` and **bold** and *em*") == "code-and-bold-and-em"
 
 
-@pytest.mark.parametrize("doc", _help_docs(), ids=lambda p: p.name)
+def _help_drafts() -> list[Path]:
+    """Every translated draft of a served document (``docs/i18n/<lang>/<FILE>``): the Help reader renders it with the same
+    slugifier, so a link copied from the English (``#versioning-policy``) lands on nothing under a translated heading."""
+    names = {d.name for d in _help_docs()}
+    return sorted(p for p in (_ROOT / "docs" / "i18n").glob("*/*.md") if p.name in names)
+
+
+@pytest.mark.parametrize("doc", _help_docs() + _help_drafts(), ids=lambda p: str(p.relative_to(_ROOT / "docs")))
 def test_every_in_page_link_resolves_to_a_heading(doc: Path):
     md = doc.read_text("utf-8")
     anchors = _anchors(md)
