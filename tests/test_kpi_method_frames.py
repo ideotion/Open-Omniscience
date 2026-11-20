@@ -11,8 +11,11 @@ What is pinned here, and why each is not a grep:
     module's own AST, so a new ``_fr("...")`` with no key fails here, not in a browser walk; the words a ``tr`` var may
     carry, K8's status tally, every not-measurable reason, every measure's name and target and the snapshot caveat too;
   * no frame call hides its template behind a computed string the scan cannot read;
-  * across real snapshots (the resolvers fed recorded files), every frame emitted is one the scan found, its English
-    equals the plain field, and a ``tr`` var holds a number or one of the keyed words -- never a stray English phrase.
+  * no frame is written as a dict literal the scan would not see (every frame goes through ``_fr``);
+  * across snapshots over recorded files (K2 with samples, K5-K8, and the law, OSM and wiki records with unknown counts),
+    every frame emitted is one the scan found, every hole has its data, and a ``tr`` var holds a number or one of the
+    keyed words -- never a stray English phrase. (The English rebuilding from its frames is by construction; that it is
+    the same English as before row 201 is what the existing tests/test_kpi*.py method assertions pin.)
 The UI that renders the frames is proven in tests/kpi_panel_node_test.js.
 """
 
@@ -85,6 +88,14 @@ def test_every_frame_call_names_its_template_as_a_literal():
     ]), unreadable
 
 
+def test_no_frame_is_written_as_a_dict_literal():
+    tree = ast.parse(_KPI.read_text("utf-8"))
+    literal = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Dict)
+               and any(isinstance(k, ast.Constant) and k.value == "t" for k in node.keys)]
+    # The one dict with a "t" key is _fr's own return value.
+    assert len(literal) == 1, f"a frame written by hand at line(s) {literal}: build it with _fr so the scan sees it"
+
+
 def test_every_template_name_target_and_word_is_keyed_in_every_language(locales):
     keys = _all_keys()
     assert len(keys) > 60, "the scan found too little: was _fr renamed?"
@@ -113,7 +124,9 @@ def _frames_in(obj, out: list[tuple[str, list[dict]]], key: str = "") -> None:
 
 
 def test_every_emitted_frame_is_scanned_and_rebuilds_its_english(tmp_path, monkeypatch):
-    """Snapshots over recorded files on every branch the resolvers take: what reaches the UI is only scanned keys."""
+    """Snapshots over recorded files: what reaches the UI is only scanned keys."""
+    from src.monitoring import latency
+
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     scanned = _all_keys()
     seen: list[tuple[str, list[dict]]] = []
@@ -131,6 +144,16 @@ def test_every_emitted_frame_is_scanned_and_rebuilds_its_english(tmp_path, monke
     kpi.record_osm_lane([{"status": "complete", "diffs_recorded": None, "gaps_total": None}])
     kpi.record_wiki_coverage([{"has_run": True, "pages_seen": None, "full_text": {"hot_pages_with_text": 3}}], True)
     _frames_in(kpi.kpi_snapshot(), seen)
+    # K2 with samples: the worst route, its slowest call before an unlock finished, and the split by kind.
+    monkeypatch.setattr(latency, "summary", lambda: {
+        "snappy_bar": {"bar_ms": 500.0, "breaching": 2, "interactive_routes": 9, "breaching_low_n": 1, "min_n": 20,
+                       "breaching_first_call_only": 1, "breaching_single_call": 1},
+        "routes": [{"route": "GET /api/articles", "p95_ms": 900.0, "window_n": 3, "snappy": "low-n",
+                    "slowest": {"ms": 1200.0, "status": 200, "started_after_unlock_s": -2.0, "ended_at": "2026-11-20"}}],
+        "unlock": {"count": 1}})
+    _frames_in(kpi.kpi_snapshot(), seen)
+    k2 = [t for field, frames in seen for t in (fr["t"] for fr in frames) if "interactive routes are over the bar" in t]
+    assert k2, "the K2 split was never emitted, so this test did not reach it"
     assert {field for field, _ in seen} >= {"method", "reason"}
     for field, frames in seen:
         for fr in frames:

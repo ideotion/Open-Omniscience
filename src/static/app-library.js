@@ -129,11 +129,12 @@
     // no frames (an older one) shows its English as before.
     function kpiFramesText(frames, english, h) {
       if (!Array.isArray(frames) || !frames.length) return english || "";
-      return frames.filter(f => f && typeof f.t === "string").map(f => {
+      const out = frames.filter(f => f && typeof f.t === "string").map(f => {
         const v = Object.assign({}, f.v || {});
         for (const k of (Array.isArray(f.tr) ? f.tr : [])) if (v[k] != null) v[k] = h.t(String(v[k]));
         return h.tf(f.t, v);
       }).join("");
+      return out || english || "";  // frames that render nothing (malformed) never hide the English
     }
     function kpiPanelHtml(snap, h) {
       const t = h.t;

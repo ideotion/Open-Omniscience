@@ -149,5 +149,9 @@ assert.ok(!html.includes("each block below"), "no English left where a frame tra
 // An older snapshot with no frames keeps its English method.
 html = kpiPanelHtml({metrics: [{id: "K1", name: "x", verdict: "not-measurable-here", target: "t", method: "plain english"}]}, HFR);
 assert.ok(html.includes('title="plain english"'));
+// Frames that render nothing (malformed) fall back to the English rather than hiding the hover.
+html = kpiPanelHtml({metrics: [{id: "K1", name: "x", verdict: "not-measurable-here", target: "t", method: "plain english",
+  method_i18n: [{}, null]}]}, HFR);
+assert.ok(html.includes('title="plain english"'), html);
 
 console.log("kpi panel: all assertions passed");
