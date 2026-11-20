@@ -1564,10 +1564,14 @@ def _after_osm(out: dict[str, Any]) -> None:
 # --------------------------------------------------------------------------- #
 #  The medical lane (R746): PubMed records the corpus cited or the user named
 # --------------------------------------------------------------------------- #
-#: An NLM file name as the app writes it (``src.medical.store.FILE_NAME``), as a SQL test.
+#: An NLM file name as the app writes it (``src.medical.store.FILE_NAME``), as a SQL test, from a
+#: release year no later than next year (``:med_yy``). The year matters: a record's newest file
+#: decides which later files may restate it (``store._last_word``), so a name from a year NLM has
+#: not reached would stop every real update to that record here. Within an accepted year a file
+#: number is not checked against NLM's listing (this build never reads it offline).
 _MED_FILE = (
     "(typeof({v}) = 'text' AND ({v} GLOB 'pubmed[0-9][0-9]n[0-9][0-9][0-9][0-9].xml' "
-    "OR {v} GLOB 'pubmed[0-9][0-9]n[0-9][0-9][0-9][0-9].xml.gz'))"
+    "OR {v} GLOB 'pubmed[0-9][0-9]n[0-9][0-9][0-9][0-9].xml.gz') AND CAST(substr({v}, 7, 2) AS INTEGER) <= :med_yy)"
 )
 #: A whole number in a range, stored as one (SQLite keeps whatever type a row was given).
 _MED_INT = "(typeof({v}) = 'integer' AND {v} BETWEEN {lo} AND {hi})"
@@ -1584,7 +1588,7 @@ _MED_LIST = (
 _MED_LINKS = (
     "(typeof({v}) = 'text' AND json_valid({v}) AND json_type({v}) = 'array' "
     "AND NOT EXISTS (SELECT 1 FROM json_each({v}) e WHERE e.type != 'array' OR json_array_length(e.value) != 3 "
-    "OR NOT ({refs}) OR json_type(e.value, '$[1]') NOT IN ('integer', 'null') "
+    "OR NOT coalesce({refs}, 0) OR json_type(e.value, '$[1]') NOT IN ('integer', 'null') "
     "OR json_type(e.value, '$[2]') NOT IN ('text', 'null') OR length(json_extract(e.value, '$[2]')) > 1000))"
 )
 #: An abstract is stored compressed. The backup's bytes are never copied: each is decompressed
@@ -1599,6 +1603,11 @@ _MED_IDS = {
     # corpus cites. A DOI in other scripts is refused rather than stored in a spelling the app never writes.
     "doi": "({v} GLOB '10.*/*' AND {v} = lower({v}) AND length({v}) <= 300 AND {v} NOT GLOB '*[^!-~]*')",
 }
+
+
+def _med_params() -> dict[str, Any]:
+    """The bound values every medical check reads: the timestamp horizon and the latest NLM release year."""
+    return {"horizon": _horizon(), "med_yy": (datetime.now(UTC).year + 1) % 100}
 
 
 def _med_paper_ok(alias: str, params: dict[str, Any]) -> str:
@@ -1648,17 +1657,19 @@ _MED_PAPER_COLS = (
 )
 
 
-def _med_require_rowid_key(conn: Any, table: str) -> None:
-    """Refuse a member whose ``id`` is not the table's INTEGER PRIMARY KEY.
+def _med_require_rowid(conn: Any, table: str) -> None:
+    """Refuse a member table whose rows cannot be named by their own ``rowid``.
 
-    The merge tests a row and later copies it by ``id``. A backup that declared ``id`` as a plain
-    column could give a tested row and an untested one the same ``id``, or none, and the copy
-    would pick up the untested one. As the rowid alias, ``id`` is unique and never NULL.
+    The merge tests a row and later copies it by its key in the backup file. That key is the
+    ROWID, never the ``id`` column: a backup may declare ``id`` so it holds NULL or repeats
+    (``INTEGER PRIMARY KEY DESC`` is not a rowid alias), and the copy would then pick an untested
+    row. The rowid is unique and never NULL in a rowid table; a ``WITHOUT ROWID`` table, or one
+    with a column named like the rowid (which would shadow it), is refused.
     """
-    cols = conn.execute(f'PRAGMA inc.table_info("{table}")').fetchall()
-    pks = [r for r in cols if int(r[5] or 0) > 0]
-    if len(pks) != 1 or pks[0][1] != "id" or str(pks[0][2] or "").upper() != "INTEGER":
-        raise LaneMergeError("the medical member's tables are not keyed the way this build writes them; refusing to merge it")
+    row = conn.execute("SELECT sql FROM inc.sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()
+    shadow = {str(r[1]).lower() for r in conn.execute(f'PRAGMA inc.table_info("{table}")').fetchall()} & {"rowid", "oid", "_rowid_"}
+    if row is None or "WITHOUT ROWID" in " ".join(str(row[0] or "").upper().split()) or shadow:
+        raise LaneMergeError("the medical member's tables are not stored the way this build writes them; refusing to merge it")
 
 
 def _med_abstract(blob: Any) -> bytes | None:
@@ -1697,19 +1708,21 @@ def _med_abstract(blob: Any) -> bytes | None:
 
             import zstandard
 
-            raw = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(body)).read(_MED_ABSTRACT_TEXT_MAX + 1)
+            raw = zstandard.ZstdDecompressor(max_window_size=1 << 23).stream_reader(io.BytesIO(body)).read(_MED_ABSTRACT_TEXT_MAX + 1)
         else:
             return None
         if len(raw) != size or hashlib.sha256(raw).digest() != digest:
             return None
         sections = json.loads(raw.decode("utf-8"))
-    except Exception:  # noqa: BLE001 - any codec, decode or parse failure means "not an abstract this build wrote"
+        if not isinstance(sections, list) or not all(
+            isinstance(x, list) and len(x) == 2 and (x[0] is None or isinstance(x[0], str)) and isinstance(x[1], str)
+            for x in sections
+        ):
+            return None
+        # A JSON escape can spell a lone surrogate, which no UTF-8 text holds: compressing raises, and the row is refused.
+        return database_compressor.compress_text_for_storage(json.dumps(sections, ensure_ascii=False))
+    except Exception:  # noqa: BLE001 - any codec, decode, parse or encode failure means "not an abstract this build wrote"
         return None
-    if not isinstance(sections, list) or not all(
-        isinstance(x, list) and len(x) == 2 and (x[0] is None or isinstance(x[0], str)) and isinstance(x[1], str) for x in sections
-    ):
-        return None
-    return database_compressor.compress_text_for_storage(json.dumps(sections, ensure_ascii=False))
 
 
 def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
@@ -1729,9 +1742,9 @@ def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
     conn.execute("CREATE TEMP TABLE lm_med_abstract (inc_id INTEGER PRIMARY KEY, abstract BLOB NOT NULL)")
     for table in ("medical_papers", "medical_wanted", "medical_class_changes"):
         if _has(conn, "inc", table):
-            _med_require_rowid_key(conn, table)
+            _med_require_rowid(conn, table)
     counts = out.setdefault("medical", {"papers_refused": 0, "wanted_refused": 0, "papers_backup_newer": 0})
-    params: dict[str, Any] = {"horizon": _horizon()}
+    params: dict[str, Any] = _med_params()
     if _has(conn, "inc", "medical_papers"):
         inc_cols = set(_columns(conn, "inc", "medical_papers"))
         if not set(_MED_PAPER_COLS) <= inc_cols:
@@ -1740,7 +1753,7 @@ def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
         # The key is written as the integer this machine computes from the checked value.
         conn.execute(
             "INSERT INTO temp.lm_med_papers (inc_id, pmid, version) "
-            "SELECT min(p.id), CAST(p.pmid AS INTEGER), CAST(p.version AS INTEGER) FROM inc.medical_papers p "  # noqa: S608  # nosec B608 # module literals; values bound
+            "SELECT min(p.rowid), CAST(p.pmid AS INTEGER), CAST(p.version AS INTEGER) FROM inc.medical_papers p "  # noqa: S608  # nosec B608 # module literals; values bound
             f"WHERE {ok} AND NOT EXISTS (SELECT 1 FROM main.medical_papers m WHERE m.pmid = p.pmid AND m.version = p.version) "
             "GROUP BY p.pmid, p.version",
             params,
@@ -1750,7 +1763,7 @@ def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
         # The abstracts of the rows to copy, rebuilt here; a row whose abstract is not one is refused.
         bad_abstract = []
         for inc_id, blob in conn.execute(
-            "SELECT k.inc_id, p.abstract_json FROM temp.lm_med_papers k JOIN inc.medical_papers p ON p.id = k.inc_id "
+            "SELECT k.inc_id, p.abstract_json FROM temp.lm_med_papers k JOIN inc.medical_papers p ON p.rowid = k.inc_id "
             "WHERE p.abstract_json IS NOT NULL"
         ).fetchall():
             rebuilt = _med_abstract(blob)
@@ -1763,7 +1776,7 @@ def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
         if _has(conn, "inc", "medical_class_changes"):
             from src.medical.pubmed_xml import CLASSES
 
-            cparams: dict[str, Any] = dict(params)
+            cparams: dict[str, Any] = dict(params)  # carries :horizon and :med_yy
             cok = " AND ".join(
                 [
                     _law_in("c.from_class", "mcf", CLASSES, cparams),
@@ -1774,7 +1787,7 @@ def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
                 ]
             )
             conn.execute(
-                "INSERT INTO temp.lm_med_changes (inc_id) SELECT c.id FROM temp.lm_med_papers k "  # noqa: S608  # nosec B608 # module literals; values bound
+                "INSERT INTO temp.lm_med_changes (inc_id) SELECT c.rowid FROM temp.lm_med_papers k "  # noqa: S608  # nosec B608 # module literals; values bound
                 f"JOIN inc.medical_class_changes c ON c.pmid = k.pmid AND c.version = k.version WHERE {cok}",
                 cparams,
             )
@@ -1794,7 +1807,7 @@ def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
         value_ok = " OR ".join(f"(w.id_kind = '{k}' AND {_MED_IDS[k].format(v='w.value')})" for k in WANTED_KINDS)
         wok = f"typeof(w.value) = 'text' AND {kind_ok} AND ({value_ok}) AND {_MED_WHEN.format(v='w.added_at')}"
         conn.execute(
-            "INSERT INTO temp.lm_med_wanted (inc_id) SELECT min(w.id) FROM inc.medical_wanted w "  # noqa: S608  # nosec B608 # module literals
+            "INSERT INTO temp.lm_med_wanted (inc_id) SELECT min(w.rowid) FROM inc.medical_wanted w "  # noqa: S608  # nosec B608 # module literals
             f"WHERE {wok} AND NOT EXISTS (SELECT 1 FROM main.medical_wanted m WHERE m.id_kind = w.id_kind AND m.value = w.value) "
             "GROUP BY w.id_kind, w.value",
             wparams,
@@ -1829,7 +1842,7 @@ def _merge_medical(conn: Any, out: dict[str, Any]) -> None:
     if _has(conn, "inc", "medical_wanted"):
         conn.execute(
             "DELETE FROM temp.lm_med_wanted WHERE EXISTS (SELECT 1 FROM inc.medical_wanted w JOIN main.medical_wanted m "
-            "ON m.id_kind = w.id_kind AND m.value = w.value WHERE w.id = lm_med_wanted.inc_id)"
+            "ON m.id_kind = w.id_kind AND m.value = w.value WHERE w.rowid = lm_med_wanted.inc_id)"
         )
     if _has(conn, "inc", "medical_papers"):
         cols = [c for c in _MED_PAPER_COLS if c not in ("pmid", "version", "abstract_json")]
@@ -1839,7 +1852,7 @@ def _merge_medical(conn: Any, out: dict[str, Any]) -> None:
         conn.execute(
             f'INSERT INTO main.medical_papers ("pmid", "version", "abstract_json", {names}) '  # noqa: S608  # nosec B608 # module literals
             f"SELECT k.pmid, k.version, a.abstract, {exprs} FROM temp.lm_med_papers k "
-            "JOIN inc.medical_papers p ON p.id = k.inc_id AND p.pmid = k.pmid AND p.version = k.version "
+            "JOIN inc.medical_papers p ON p.rowid = k.inc_id AND p.pmid = k.pmid AND p.version = k.version "
             "LEFT JOIN temp.lm_med_abstract a ON a.inc_id = k.inc_id"
         )
         tables["medical_papers"] = {"inserted": _changes(conn)}
@@ -1847,14 +1860,14 @@ def _merge_medical(conn: Any, out: dict[str, Any]) -> None:
             conn.execute(
                 "INSERT INTO main.medical_class_changes (pmid, version, from_class, to_class, source_file, recorded_at) "
                 "SELECT k.pmid, k.version, c.from_class, c.to_class, c.source_file, c.recorded_at "
-                "FROM temp.lm_med_changes x JOIN inc.medical_class_changes c ON c.id = x.inc_id "
+                "FROM temp.lm_med_changes x JOIN inc.medical_class_changes c ON c.rowid = x.inc_id "
                 "JOIN temp.lm_med_papers k ON k.pmid = c.pmid AND k.version = c.version ORDER BY c.id"
             )
             tables["medical_class_changes"] = {"inserted": _changes(conn)}
     if _has(conn, "inc", "medical_wanted"):
         conn.execute(
             "INSERT INTO main.medical_wanted (id_kind, value, added_at) "
-            "SELECT w.id_kind, w.value, w.added_at FROM temp.lm_med_wanted k JOIN inc.medical_wanted w ON w.id = k.inc_id"
+            "SELECT w.id_kind, w.value, w.added_at FROM temp.lm_med_wanted k JOIN inc.medical_wanted w ON w.rowid = k.inc_id"
         )
         tables["medical_wanted"] = {"inserted": _changes(conn)}
 

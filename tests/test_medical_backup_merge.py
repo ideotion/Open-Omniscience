@@ -254,15 +254,44 @@ def _edit_member(staging: Path, *sql: str, params: tuple = ()) -> None:
         con.close()
 
 
-def test_a_member_whose_id_is_not_the_rowid_key_is_refused(machines, tmp_path):
+@pytest.mark.parametrize("decl", ["id INTEGER", "id INTEGER PRIMARY KEY DESC"])
+def test_rows_are_copied_by_rowid_so_a_shared_or_null_id_never_smuggles_one_in(machines, tmp_path, decl):
     a, b, use = machines
     staging = _seed_b(b, use, tmp_path)
-    # A tested row and an untested one sharing an id: the copy must never pick the second.
+    # A tested row and an untested one sharing an id (or holding NULL): only the tested one may land.
     _edit_member(
         staging,
-        "CREATE TABLE w2 (id INTEGER, id_kind VARCHAR(8) NOT NULL, value VARCHAR(300) NOT NULL, added_at DATETIME NOT NULL)",
-        "INSERT INTO w2 SELECT id, id_kind, value, added_at FROM medical_wanted",
+        f"CREATE TABLE w2 ({decl}, id_kind VARCHAR(8) NOT NULL, value VARCHAR(300) NOT NULL, added_at DATETIME NOT NULL)",
+        "INSERT INTO w2 SELECT NULL, id_kind, value, added_at FROM medical_wanted",
         "INSERT INTO w2 VALUES (1, 'zzz', 'not an id', '2026-11-01 00:00:00.000000')",
+        "DROP TABLE medical_wanted",
+        "ALTER TABLE w2 RENAME TO medical_wanted",
+        f"CREATE TABLE p2 ({decl}, " + ", ".join(
+            f'"{c}"' for c in lane_merge._MED_PAPER_COLS
+        ) + ")",
+        "INSERT INTO p2 SELECT NULL, " + ", ".join(f'"{c}"' for c in lane_merge._MED_PAPER_COLS) + " FROM medical_papers WHERE pmid = 2",
+        "INSERT INTO p2 SELECT 1, " + ", ".join(
+            "'BOGUS'" if c == "provenance_class" else f'"{c}"' for c in lane_merge._MED_PAPER_COLS
+        ) + " FROM medical_papers WHERE pmid = 2",
+        "DROP TABLE medical_papers",
+        "ALTER TABLE p2 RENAME TO medical_papers",
+    )
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["state"] == "merged", rep
+    with store.lane_session(M.LANE) as s:
+        assert {(w.id_kind, w.value) for w in s.execute(select(MedicalWanted)).scalars()} == {("pmid", "5"), ("doi", "10.9999/named.by.b")}
+        assert {(p.pmid, p.provenance_class) for p in s.execute(select(MedicalPaper)).scalars()} == {(1, "journal"), (2, "retracted")}
+        M.user_wanted(s)  # never an id kind this build cannot read
+
+
+def test_a_without_rowid_member_or_one_shadowing_the_rowid_is_refused(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    _edit_member(
+        staging,
+        "CREATE TABLE w2 (id INTEGER PRIMARY KEY, rowid INTEGER, id_kind VARCHAR(8) NOT NULL, value VARCHAR(300) NOT NULL, added_at DATETIME NOT NULL)",
+        "INSERT INTO w2 (id, rowid, id_kind, value, added_at) SELECT id, 1, id_kind, value, added_at FROM medical_wanted",
         "DROP TABLE medical_wanted",
         "ALTER TABLE w2 RENAME TO medical_wanted",
     )
@@ -271,6 +300,51 @@ def test_a_member_whose_id_is_not_the_rowid_key_is_refused(machines, tmp_path):
     rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
     assert rep["lanes"][0]["state"] == "failed"
     assert _state() == before
+
+
+def test_a_file_from_a_year_nlm_has_not_reached_refuses_the_row(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    _edit_member(staging, "UPDATE medical_papers SET source_file = 'pubmed99n9999.xml.gz' WHERE pmid = 2")
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["medical"]["papers_refused"] == 1
+    with store.lane_session(M.LANE) as s:
+        assert {p.pmid for p in s.execute(select(MedicalPaper)).scalars()} == {1, 3}
+
+
+def test_an_abstract_with_a_lone_surrogate_refuses_its_row_not_the_lane(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    from src.utils.compression import CompressionAlgorithm, CompressionConfig, Compressor
+
+    blob = Compressor().compress(b'[["", "\\ud800"]]', algorithm=CompressionAlgorithm.ZLIB,
+                                 config=CompressionConfig(algorithm=CompressionAlgorithm.ZLIB, level=6))
+    con = sqlite3.connect(staging / "lanes" / "medical.db")
+    try:
+        con.execute("UPDATE medical_papers SET abstract_json = ? WHERE pmid = 2", (blob,))
+        con.commit()
+    finally:
+        con.close()
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["state"] == "merged"
+    assert rep["lanes"][0]["medical"]["papers_refused"] == 1
+    assert rep["lanes"][0]["tables"]["medical_papers"] == {"inserted": 1}
+
+
+def test_the_import_report_names_the_store_and_says_what_it_kept_and_refused():
+    from src.backup.import_reports import _living_sources_markdown
+
+    lines: list[str] = []
+    _living_sources_markdown(lines, {"lanes": [{
+        "kind": "medical", "state": "merged", "seconds": 0.1, "tables": {"medical_papers": {"inserted": 2}},
+        "medical": {"papers_refused": 3, "wanted_refused": 0, "papers_backup_newer": 1},
+    }]})
+    text = "\n".join(lines)
+    assert "Medical papers (PubMed): merged" in text and "Unknown store" not in text
+    assert "newer PubMed file of 1 papers" in text and "3 papers in the backup were not copied" in text
+    assert "named identifiers" not in text
 
 
 def test_an_abstract_is_rebuilt_here_and_a_bad_or_oversized_one_refuses_its_row(machines, tmp_path):
