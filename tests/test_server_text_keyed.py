@@ -9,7 +9,8 @@ calls, never a sentence the SERVER sends):
 * the SERVER: every ``said(field, template, ...)`` call in ``src/`` names its template as a string literal, and that
   template is a locale key in all twelve languages whose holes the call fills. A sentence cannot be added in English
   only, nor a hole left unfilled.
-* the PAGE: no client file prints a server caveat, method or reason raw (``esc(x.caveat)``, ``el.title = x.method``).
+* the PAGE: no client file prints a server caveat, method or reason raw (``esc(x.caveat)``, ``esc(x.caveat || "")``,
+  ``el.title = x.method``).
   Each goes through ``ooSaidHtml`` / ``ooSaidText`` (app-core.js), which renders the keyed frames, looks up a
   keyed constant, and otherwise shows the English behind the visible "Server text, in English" label (R289) -- never
   passed off as translated. The few sites left print text the PAGE built and translated itself; they are listed
@@ -32,10 +33,13 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "static"
 LOCALES = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
 
-#: A server sentence printed raw: escaped as is into HTML, or set as is on a title or a textContent.
+#: A server sentence printed raw: escaped as is into HTML (``esc(x.caveat)``, ``esc(x.caveat || "")``,
+#: ``esc((x && x.caveat) || "")``), or set as is on a title or a textContent. A sentence passed through t() first is a
+#: keyed lookup (option (i) of the row: the server sends a fixed key) and is not counted here.
 _RAW = re.compile(
-    r"esc\(\s*[\w$.]+\.(?:caveat|method|reason)\s*\)"
-    r"|\.(?:textContent|title)\s*=\s*[\w$.]+\.(?:caveat|method|reason)\s*(?:;|\|\||\+)"
+    r"esc\(\s*[\w$.]+\.(?:caveat|method|reason)\s*(?:\|\|\s*\"\"\s*)?\)"
+    r"|esc\(\s*\(\s*\w+\s*&&\s*[\w$.]+\.(?:caveat|method|reason)\s*\)\s*(?:\|\|\s*\"\"\s*)?\)"
+    r"|\.(?:textContent|title)\s*=\s*\(?\s*[\w$.]+\.(?:caveat|method|reason)\s*(?:;|\|\||\+)"
 )
 
 #: (file, the matched text) -> (how many, why it is not a server sentence). Exact: zero slack either way.
@@ -48,6 +52,11 @@ _PAGE_TEXT = {
     ("app-map.js", "esc(cd.caveat)"): (1, "ooViz.choroplethData writes it through the translator (keyed x12)"),
     ("app-map.js", ".textContent = cd.caveat +"): (1, "ooViz.choroplethData writes it through the translator"),
     ("app-markets.js", "esc(d.method)"): (1, "a correlation method's NAME (spearman), an identifier"),
+    # The standalone reader page (/api/articles/{id}/view) loads reader.js and i18n.js, never app-core.js: its
+    # caveat and method lines are the remaining item of this row, listed so the count cannot grow unseen.
+    ("reader.js", 'esc((d && d.caveat) || "")'): (2, "the standalone reader page has no app-core.js (remaining)"),
+    ("reader.js", 'esc((d && d.method) || "")'): (1, "the standalone reader page has no app-core.js (remaining)"),
+    ("reader.js", 'esc(d.method || "")'): (1, "the standalone reader page has no app-core.js (remaining)"),
 }
 
 
@@ -73,9 +82,11 @@ def test_no_page_prints_a_server_sentence_raw():
 
 def test_the_ratchet_sees_a_raw_print():
     """The pattern is the guard; prove it catches each shape it claims to."""
-    for line in ('x.innerHTML = `<p>${esc(d.caveat)}</p>`;', "el.title = r.method;", 'n.textContent = d.reason || "";'):
+    for line in ('x.innerHTML = `<p>${esc(d.caveat)}</p>`;', "el.title = r.method;", 'n.textContent = d.reason || "";',
+                 '`${esc(d.caveat || "")}`', '`${esc((r && r.reason) || "")}`', "el.title = (res.method || '') + x;"):
         assert _RAW.search(line), line
-    for line in ('el.title = ooSaidText(r, "method");', '`${ooSaidHtml(d, "caveat")}`', "el.textContent = t(d.caveat);"):
+    for line in ('el.title = ooSaidText(r, "method");', '`${ooSaidHtml(d, "caveat")}`', "el.textContent = t(d.caveat);",
+                 '`${esc(t(d.caveat || ""))}`', '`${esc((d && d.caveat) ? t(d.caveat) : "")}`'):
         assert not _RAW.search(line), line
 
 

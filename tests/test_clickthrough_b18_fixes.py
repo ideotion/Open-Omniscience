@@ -298,7 +298,7 @@ def test_the_world_maps_method_sentence_is_a_key_and_follows_a_switch():
     sentence = "".join(re.findall(r'"([^"]*)"', m.group(1)))
     _keyed_everywhere([sentence], translated=True)
     js = read_static("app-map.js")
-    assert_present(function_body(js, "_renderOoMapDim"), "method: _ooMapPayload.method ? t(_ooMapPayload.method)")
+    assert_present(function_body(js, "_renderOoMapDim"), 'method: ooSaidText(_ooMapPayload, "method")')
     boot = read_static("app-boot.js")
     assert any("_renderOoMapDim()" in b for b in event_listener_bodies(boot, "oo:langchange"))
 

@@ -489,7 +489,7 @@
             `<div class="row" style="gap:8px;align-items:center">` +
             `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
             `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
-            ` title="${esc((p.reason || "") + " " + (p.mechanism_note || ""))}"` +
+            ` title="${esc(ooSaidText(p, "reason") + " " + (p.mechanism_note || ""))}"` +
             ` data-on-change="setActiveModel(this.value)">${opts}</select>` +
             `<span class="pill">${esc(p.backend)}</span></div>`;
         }
@@ -508,7 +508,7 @@
             ? ` <span class="pill ok">${esc(t("Downloaded"))}</span>`
             : ` <button data-on-click="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
           `</p>`,
-          `<p class="hint">${esc(p.reason || "")}</p>`);
+          `<p class="hint">${ooSaidHtml(p, "reason")}</p>`);
         if (p.installed === null && !already) {
           lines.push(`<p class="hint">${esc(t("Whether it is already present here could not be read — downloading again is harmless."))}</p>`);
         }
@@ -1358,7 +1358,7 @@
         if (notes.length) {
           msg.innerHTML = `<span class="note warn">${esc(t("Some values were adjusted to stay in their safe range:"))}</span>` +
             notes.map(n => `<div class="hint">${esc(n.producer)} · ${esc(n.key)}${
-              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${esc(n.reason || "")}</div>`).join("");
+              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${ooSaidHtml(n, "reason")}</div>`).join("");
         } else {
           msg.innerHTML = `<span class="note ok">${esc(t("Lead settings saved."))}</span>`;
         }
@@ -1613,7 +1613,7 @@
         if (bad) {
           const rows = (r.mismatches || []).slice(0, 200).map(m =>
             `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
-            `<b class="muted" title="${esc(m.reason || "")}">${esc((m.stored_hash || "—").slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
+            `<b class="muted" title="${esc(ooSaidText(m, "reason"))}">${esc((m.stored_hash || "—").slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
           $("fixity-result").innerHTML =
             `<div class="note err">${esc(n(bad))} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
         } else {

@@ -71,6 +71,13 @@ check(fr.ooSaidText(reason, "reason") === "ignoré : scanned", "a plain value is
 reason.reason_i18n[0].tr = ["why"];
 check(fr.ooSaidText(reason, "reason") === "ignoré : numérisé", "a `tr` value is itself a keyed word");
 
+// a frame whose template this locale does not hold (a newer server, an older cached page) fills in English: labelled,
+// never passed off as translated
+const newer = { caveat: "Seen 3 times.", caveat_i18n: [{ t: "Seen {n} times.", v: { n: 3 } }] };
+check(fr.ooSaidText(newer, "caveat") === "Texte du serveur, en anglais : Seen N3 times.", "an unknown template is labelled English");
+check(fr.ooSaidHtml(newer, "caveat").includes('<span lang="en" dir="ltr">Seen N3 times.</span>'), "and isolated left to right");
+check(en.ooSaidText(newer, "caveat") === "Seen N3 times.", "an English page needs no label for it");
+
 // no frames: an English sentence that IS a key is looked up
 check(fr.ooSaidText({ caveat: "Stored with care." }, "caveat") === "Conservé avec soin.", "a keyed constant translates");
 

@@ -212,7 +212,7 @@
       host.innerHTML =
         `<div class="hint">${esc(t("The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility."))}</div>` +
         cards +
-        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ${esc(cs.caveat || "")}</div>`;
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ${ooSaidHtml(cs, "caveat")}</div>`;
       // Source name → the existing source-profile view (reuse loadProfile).
       host.querySelectorAll(".csrc-prof").forEach(a =>
         a.addEventListener("click", (e) => {
@@ -332,7 +332,7 @@
         `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
           `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
           `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
-          `${esc(cs.caveat || "")} ${esc((fr && fr.caveat) || "")}</div>`;
+          `${ooSaidHtml(cs, "caveat")} ${ooSaidHtml(fr, "caveat")}</div>`;
     }
 
     // Keyword-analysis sub-tab: a ranked TABLE of the corpus's co-occurring
@@ -367,7 +367,7 @@
         `<th data-sort="${key}" role="button" tabindex="0" style="cursor:pointer;text-align:right;padding:4px 8px;white-space:nowrap"
             title="${esc(title)}">${esc(label)}${_ckwSort === key ? " ▾" : ""}</th>`;
       host.innerHTML =
-        `<div class="hint">${esc(t("Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score."))} ${esc(d.method || "")} ${esc(d.caveat || "")}</div>` +
+        `<div class="hint">${esc(t("Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score."))} ${ooSaidHtml(d, "method")} ${ooSaidHtml(d, "caveat")}</div>` +
         `<table style="width:100%;border-collapse:collapse;font-size:13px">
            <thead><tr style="border-bottom:1px solid var(--line)">
              <th style="text-align:start;padding:4px 8px">${esc(t("Keyword"))}</th>
@@ -1485,7 +1485,7 @@
         + scopeLine
         + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
         + `<div style="margin-top:6px">${open}${near}</div>${bounded}`
-        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(t(d.caveat || ""))}</div>`
+        + `<div class="card-caveat" title="${esc(ooSaidText(d, "method"))}">${esc(t(d.caveat || ""))}</div>`
         + (d.n_combined > 0 ? conjPanelsHtml(pfx, d, t, tf) : "");
     }
     // The three views over the SAME set, each with its own method sentence.

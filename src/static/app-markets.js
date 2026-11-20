@@ -2739,7 +2739,7 @@
         }
         el.innerHTML =
           `<div style="margin:0 0 6px;font-size:13px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</div>` +
-          body + `<div class="hint" style="margin-top:6px">${esc(d.caveat || "")}</div>`;
+          body + `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) {
         el.innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
       }

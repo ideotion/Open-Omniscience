@@ -46,6 +46,8 @@ function extractConst(name, end) {
 }
 
 const FUNCS = [
+  // row 206: the server's method and caveat go through the shared helpers
+  "ooLabelHtml", "ooLabelText", "_ooSaidFramed", "ooSaidText", "ooSaidHtml",
   "_osmCredit", "loadOsmGeography", "_osmGeogReloadSoon", "_osmGeogSigOf", "_osmGeogShellOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
 ];
 const src =

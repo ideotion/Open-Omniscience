@@ -109,9 +109,14 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s) => s;
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
       const frames = obj && obj[field + "_i18n"];
       if (Array.isArray(frames)) {
+        let unkeyed = false;
         const out = frames.filter(f => f && typeof f.t === "string").map(f => {
+          // A template this page's locale does not hold (a newer server, a cached older page) fills in ENGLISH:
+          // tf gives no sign of it, so ask t() -- and label the result rather than pass it off as translated.
+          if (t(f.t) === f.t) unkeyed = true;
           const v = {}, src = (f.v && typeof f.v === "object") ? f.v : {};
           const tr = Array.isArray(f.tr) ? f.tr : [];
           Object.keys(src).forEach(k => {
@@ -122,12 +127,11 @@
           });
           return tf(f.t, v);
         }).filter(Boolean).join(" ");
-        if (out) return {text: out, english: false};
+        if (out) return {text: out, english: unkeyed && lang !== "en"};
       }
       const s = (obj && obj[field] != null) ? String(obj[field]) : "";
       if (!s) return {text: "", english: false};
       const tr = t(s);
-      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
       return {text: tr, english: tr === s && lang !== "en"};
     }
     function ooSaidText(obj, field) {
@@ -136,6 +140,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s) => s;
       return ooLabelText(t("Server text, in English"), r.text);
     }
+    // Drawn in the page's language, like every t() line: a surface follows a language switch when it redraws. (A
+    // keyed constant could go in as English for the i18n walker to re-translate on a switch, but the walker skips
+    // every [data-i18n-dyn] container, where that English would then stand unlabelled.)
     function ooSaidHtml(obj, field) {
       const r = _ooSaidFramed(obj, field);
       if (!r.english) return esc(r.text);
@@ -3158,7 +3165,7 @@
           _covBar(x.reached, x.fresh, x.total) + `</div>`;
       }).join("");
       el.innerHTML = head + _renderEquilibrium(t) + sect(t("By tag")) + (rows || `<div class="muted">${esc(t("No tagged sources yet."))}</div>`) +
-        `<div class="vnote">${esc(d.method || "")} ${esc(d.caveat || "")} ` +
+        `<div class="vnote">${ooSaidHtml(d, "method")} ${ooSaidHtml(d, "caveat")} ` +
         `<button class="lnk" data-on-click="loadTagCoverage(true)">${esc(t("Refresh"))}</button></div>`;
     }
 

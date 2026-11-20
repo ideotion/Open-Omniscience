@@ -1676,7 +1676,7 @@
             (st.removable ? "" : ` — ${esc(t("kept"))}`) + `</div>`).join("") + `</div>`
         : "";
       box.innerHTML =
-        `<div>${esc(plan.method || "")}</div>` + rows + both + storeRows +
+        `<div>${ooSaidHtml(plan, "method")}</div>` + rows + both + storeRows +
         `<label class="small" style="display:block;margin-top:8px">` +
         `<input type="checkbox" id="ai-uninstall-models"> ` +
         esc(t("also delete the downloaded models in this app's folder")) + `</label>` +
@@ -1818,7 +1818,7 @@
       }).join("");
       box.innerHTML =
         `<div style="font-weight:600">${esc(t("Available models"))}</div>` +
-        `<div class="hint" style="margin:2px 0 6px">${esc(c.method || "")}</div>` +
+        `<div class="hint" style="margin:2px 0 6px">${ooSaidHtml(c, "method")}</div>` +
         rows +
         `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
         `<span id="mc-status" class="hint"></span></div>`;
@@ -2394,7 +2394,7 @@
         // four columns of translated headers do not fit a 375 px phone in de or ru, and it
         // pushed the whole page sideways instead (the re-walk review of M-8).
         el.innerHTML = `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
-          <div class="hint">${esc(d.caveat||"")}</div>`;
+          <div class="hint">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) {
         el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";
       }

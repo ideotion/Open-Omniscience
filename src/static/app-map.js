@@ -2922,7 +2922,7 @@
       $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
       // A city list the server did not compute (`partial`, `skipped` names it) is NOT an empty one: say why, not "No data".
       $("map-cities").innerHTML = (d.partial && (d.skipped || []).includes("cities"))
-        ? `<tr><td class="muted">${esc(d.caveat || "")}</td></tr>`
+        ? `<tr><td class="muted">${ooSaidHtml(d, "caveat")}</td></tr>`
         : rowsFor(d.cities || [], "City");
     }
     function repaintInsMapFromCache() {
@@ -5194,7 +5194,7 @@
         : t("Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.");
       out.innerHTML = `<div class="card">
         <h4>${esc(d.title)} <span class="muted" style="font-weight:normal">(${esc(d.wiki)})</span></h4>
-        <div class="muted small" title="${esc(d.method || "")}">${meta}</div>
+        <div class="muted small" title="${esc(ooSaidText(d, "method"))}">${meta}</div>
         ${toggle}
         <div class="card-caveat" style="margin-top:4px">${esc(note)}</div>
         <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(view === "plain" ? plain : d.wikitext)}</pre>

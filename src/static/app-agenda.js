@@ -2126,7 +2126,7 @@
       // this slot stays for a caveat that says something the intro does not.
       const _agIntro = "A forward-looking agenda of major recurring events.";
       $("agenda-monthhint").textContent =
-        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? AG.caveat : "";
+        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? ooSaidText(AG, "caveat") : "";
       if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
       if (isMonth) {
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));

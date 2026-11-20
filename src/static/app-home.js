@@ -693,7 +693,7 @@
             + (meta ? ` <span class="muted">— ${meta}</span>` : "")
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")
-          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
+          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
       }
     }
     // Populate a Latest facet <select> once (preserving the current selection), an "all"
@@ -978,7 +978,7 @@
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
-          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
+          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
         _renderOverviewTrends();   // the compact row folded into Overview (ruling 7a)
         _syncHomeSubtabs();
       } catch (e) {
@@ -2232,7 +2232,7 @@
         if (d.wiki_page) rows.push(`<div>${esc(t("Watched Wikipedia page:"))} <b>${esc(d.wiki_page.title)}</b> <span class="muted">(${esc(d.wiki_page.wiki)})</span></div>`);
         if (d.keywords && d.keywords.length) rows.push(`<div class="muted small">${esc(t("Top keywords of the local copy:"))} ${d.keywords.map(esc).join(", ")}</div>`);
         if (!d.local_article && !d.known_source && !d.cited_by_articles && !d.furniture_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
-        rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(d.method || "")}">${esc(t("Built from your local database only — no network call."))}</div>`);
+        rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(ooSaidText(d, "method"))}">${esc(t("Built from your local database only — no network call."))}</div>`);
         body.innerHTML = rows.join("");
         out.innerHTML = `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>` +
           `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(d.url)}</a>`;

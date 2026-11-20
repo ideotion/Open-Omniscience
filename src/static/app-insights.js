@@ -1043,7 +1043,7 @@
         // travels in the hover (invariant #17) rather than being dropped.
         box.innerHTML =
           '<div><strong>' + d.candidates + "</strong> " + esc(t("concepts have no ring")) + " · "
-          + '<span title="' + esc(d.method || "") + '">'
+          + '<span title="' + esc(ooSaidText(d, "method")) + '">'
           + esc(t("two Wikidata requests each, one request every 10 seconds"))
           + "</span></div>"
           + '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' + chips + "</div>";
@@ -1079,7 +1079,7 @@
           st.textContent = t("Rings loaded:") + " " + (res.written || 0) + "/" + (res.requested || 0)
             + (res.stopped ? " · " + t("stopped early") : "");
           // The result's own caveat, shown verbatim rather than re-worded: it is a caveat.
-          st.title = (res.method || "") + (res.caveat ? "\n\n" + res.caveat : "");
+          st.title = ooSaidText(res, "method") + (res.caveat ? "\n\n" + ooSaidText(res, "caveat") : "");
         }
         loadRingGaps();
       } catch (e) {
@@ -1126,7 +1126,7 @@
           + (d.missing_on_wikidata ? " · " + esc(tf("{n} no longer on Wikidata", {n: d.missing_on_wikidata})) : "")
           + "</div>"
           // THE RATE, NOT AN ETA (invariant #20): the cost as the rate it is.
-          + '<div data-i18n-dyn class="muted" style="margin-top:4px" title="' + esc(d.method || "") + '">'
+          + '<div data-i18n-dyn class="muted" style="margin-top:4px" title="' + esc(ooSaidText(d, "method")) + '">'
           + esc(tf("{n} requests, one every 10 seconds", {n: d.requests_needed || 0})) + "</div>";
       } catch (e) {
         box.innerHTML = '<div class="muted">' + esc(t("Could not read the pending items:")) + " " + esc(e.message) + "</div>";
