@@ -8338,5 +8338,7 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "غير مشمول: رصد الحرائق (NASA FIRMS) وجودة الهواء (OpenAQ). تتطلب الخدمتان مفتاح حساب، ووفق القرارات الحالية لا يستخدم هذا التبويب إلا مصادر لا تحتاج إلى مفتاح.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "الانتخابات المبكرة ثغرة معروفة: الانتخابات التي يُدعى إليها في مهلة قصيرة لا تظهر هنا إلا بعد إدراجها في الفهرس، لذا فغيابها ليس دليلًا على عدم وجود انتخابات قادمة."
 }

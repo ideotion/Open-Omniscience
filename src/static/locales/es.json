@@ -8338,5 +8338,7 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "No incluido: detecciones de incendios (NASA FIRMS) y calidad del aire (OpenAQ). Ambos servicios exigen una clave de cuenta y, según las decisiones actuales, esta pestaña solo usa fuentes que no la necesitan.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Las elecciones anticipadas son una laguna conocida: una elección convocada con poca antelación solo aparece aquí cuando el catálogo la recoge, así que su ausencia no indica que no se avecine ninguna."
 }

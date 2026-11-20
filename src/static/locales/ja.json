@@ -8338,5 +8338,7 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "含まれていないもの：火災検知（NASA FIRMS）と大気質（OpenAQ）。どちらのサービスもアカウントキーが必要で、現在の決定ではこのタブはキー不要の情報源のみを使います。",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "解散総選挙や前倒し選挙は既知の欠落です。急に決まった選挙は、カタログに載って初めてここに表示されます。表示がないことは、選挙が予定されていないことを意味しません。"
 }

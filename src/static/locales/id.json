@@ -8338,5 +8338,7 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "Tidak termasuk: deteksi kebakaran (NASA FIRMS) dan kualitas udara (OpenAQ). Kedua layanan memerlukan kunci akun, dan menurut keputusan saat ini tab ini hanya memakai sumber yang tidak memerlukannya.",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "Pemilu dini dan pemilu dipercepat adalah celah yang diketahui: pemilu yang diumumkan mendadak baru muncul di sini setelah katalog mencantumkannya, jadi ketiadaannya bukan tanda bahwa tidak ada pemilu yang akan datang."
 }

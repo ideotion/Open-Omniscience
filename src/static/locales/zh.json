@@ -8338,5 +8338,7 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "未包含：火点探测（NASA FIRMS）和空气质量（OpenAQ）。这两项服务都需要账户密钥，按照现行决定，此标签页只使用无需密钥的数据源。",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "提前选举和临时选举是已知的缺口：临时宣布的选举只有在目录收录后才会出现在这里，因此没有显示并不代表不会有选举。"
 }

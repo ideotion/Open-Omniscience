@@ -191,6 +191,7 @@ def test_the_report_lists_every_floor_country_and_states_the_missing(tmp_path):
     assert sorted(ln.split("|")[1].strip().lower() for ln in rows) == sorted(c.lower() for c in floor)
     assert "missing (no entry)" in text and "no election entry for this country" in text
     assert "| US | passed" in text, "the 2026 midterm reads as passed on 2026-11-13"
+    assert "- Gap: Snap and early elections are a known gap" in text, "row 194: the snap-election gap is stated"
     header = next(ln for ln in text.splitlines() if ln.startswith("| Country"))
     assert not any(b in header.lower() for b in ("score", "rating", "rank")), "counts and reasons only"
 

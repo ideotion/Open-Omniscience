@@ -8338,5 +8338,7 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "Not included: fire detections (NASA FIRMS) and air quality (OpenAQ). Both services require an account key, and under the current rulings this tab uses only sources that need none.": "অন্তর্ভুক্ত নয়: আগুন শনাক্তকরণ (NASA FIRMS) ও বায়ুর মান (OpenAQ)। দুটি পরিষেবাতেই অ্যাকাউন্ট কী লাগে, আর বর্তমান সিদ্ধান্ত অনুযায়ী এই ট্যাব কেবল এমন উৎস ব্যবহার করে যেগুলোর কী লাগে না।",
+  "Snap and early elections are a known gap: an election called at short notice appears here only once the catalogue lists it, so its absence is not a sign that none is coming.": "আগাম ও মধ্যবর্তী নির্বাচন একটি জানা ঘাটতি: স্বল্প সময়ের নোটিসে ডাকা নির্বাচন এখানে দেখা যায় কেবল ক্যাটালগে তালিকাভুক্ত হওয়ার পরে, তাই তার অনুপস্থিতি মানে এই নয় যে কোনো নির্বাচন আসছে না।"
 }
