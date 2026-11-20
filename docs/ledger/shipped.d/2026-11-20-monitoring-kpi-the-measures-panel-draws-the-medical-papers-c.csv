@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,monitoring/kpi,The measures panel draws the medical papers counts (row 207),shipped,PR #2186,src/static/app-library.js;tests/test_kpi_panel_ui.py;tests/kpi_panel_node_test.js,"The K13 medical block sent four counts the panel never drew (no _KPI_FIGURES entry); they are drawn now with labels x12, counts only, and a guard fails when any vertical the server sends has no figure list or name."
