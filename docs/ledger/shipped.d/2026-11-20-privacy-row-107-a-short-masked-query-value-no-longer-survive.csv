@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,privacy,Row 107: a short masked query value no longer survives in an exception's text,shipped,PR pending,src/database/address_mask.py;tests/test_address_mask_r734.py,"query_secrets hands the scrub each masked value in its context (name=value, behind ? & ;) as well as alone, so a value under the 4-character floor leaves requests' 'url: /rss?pin=123' with its name and the sentence is kept; a query too short for any context (?7) is handed over short so the scrub withholds that text. Closes R734's stated limit."

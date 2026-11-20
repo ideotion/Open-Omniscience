@@ -113,7 +113,64 @@ def test_the_ui_answers_keep_r637s_form():
 
 
 def test_address_secrets_add_the_query_values():
-    assert address_secrets("https://alice:hunter2@a.example/x?token=abcdef") == ("alice:hunter2", "alice", "hunter2", "abcdef")
+    secrets = address_secrets("https://alice:hunter2@a.example/x?token=abcdef")
+    assert secrets[:4] == ("alice:hunter2", "alice", "hunter2", "abcdef")
+    assert {"token=abcdef", "?token=abcdef", "&token=abcdef"} <= set(secrets)  # row 107: the value in its context too
+
+
+# ---------------------------------------------------------------------------------------------------------------- row 107
+def _requests_style(url: str) -> Exception:
+    """The words requests writes for a failed request: the path and query, re-quoted, inside its own sentence."""
+    from urllib.parse import urlsplit
+
+    from requests.utils import requote_uri
+
+    parts = urlsplit(requote_uri(url))
+    return ConnectionError(f"HTTPSConnectionPool(host='{parts.hostname}', port=443): Max retries exceeded with url: "
+                           f"{parts.path}?{parts.query} (Caused by NewConnectionError('Failed to establish a new connection'))")
+
+
+def _recorded(url: str) -> str:
+    from src.monitoring.secret_scrub import record_text
+
+    return record_text(_requests_style(url), *address_secrets(url))
+
+
+@pytest.mark.parametrize(
+    "url, secret",
+    [
+        ("https://news.example/rss?pin=123", "123"),  # red before: "123" is under the floor, so it was never handed to the scrub
+        ("https://news.example/rss?format=rss&pin=12", "12"),
+        ("https://news.example/rss?pin=1%7C2", "1%7C2"),  # the re-quoted spelling of a short value
+        ("https://news.example/rss?pin=1|2", "1%7C2"),  # ... written by requests itself
+        ("https://news.example/rss;s=9/x", ";s=9"),  # an R736 path parameter
+    ],
+)
+def test_a_SHORT_masked_value_leaves_the_exception_text_with_its_name(url, secret):
+    text = _recorded(url)
+    assert "Max retries exceeded" in text, "the sentence is kept: only the value and its name are taken out"
+    assert secret not in text, text
+
+
+def test_the_same_short_value_in_two_items_leaves_both_times():
+    text = _recorded("https://news.example/rss?a=12&b=12")
+    assert "12" not in text.split("url:", 1)[1].split("(Caused", 1)[0], text
+    assert "Max retries exceeded" in text
+
+
+def test_a_harmless_short_value_stays_and_an_unrelated_number_is_not_cut():
+    text = _recorded("https://news.example/rss?page=2&pin=123")
+    assert "page=2" in text, "an allowlisted value is not a secret"
+    assert "port=443" in text, "a number elsewhere in the sentence is untouched"
+    assert "123" not in text
+
+
+def test_a_query_too_short_for_any_context_withholds_the_text_rather_than_leak_it():
+    from src.monitoring.secret_scrub import UNREADABLE_TEXT
+
+    text = _recorded("https://news.example/rss?7")
+    assert "?7" not in text
+    assert text.endswith(UNREADABLE_TEXT) or UNREADABLE_TEXT in text or "withheld" in text.lower(), text
 
 
 @pytest.mark.parametrize(

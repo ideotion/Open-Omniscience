@@ -285,16 +285,25 @@ def _path_secrets(path: str) -> list[str]:
             for param in params.split(";"):
                 name, eq, value = param.partition("=")
                 out += [value] if eq and _NAME_RE.fullmatch(name) else [param]
+                if param:
+                    out.append(";" + param)  # row 107: the value in its context, so a short one leaves with its name
     return [p for p in out if p]
 
 
 def query_secrets(text: str, *, floor: int = 4, authority: bool = True) -> tuple[str, ...]:
-    """The query values :func:`masked_address` masks in ``text``, each as written and percent-decoded, for a scrub to take out of an
-    exception's text that quotes the address in its own words (requests writes ``url: /rss?token=...``). Only values of at least
-    ``floor`` characters (the scrub withholds a WHOLE text that holds a part under its floor, so passing a short one would withhold
-    every failure of an address carrying ``?x=1``). STATED LIMIT: a masked value under ``floor`` characters can therefore stay in an
-    exception's text (the address itself, written by :func:`masked_address`, never shows it). Each value is given in every spelling
-    :func:`_written_forms` lists. Empty when there is no query or it cannot be read. NEVER raises."""
+    """The query values :func:`masked_address` masks in ``text``, for a scrub to take out of an exception's text that quotes the
+    address in its own words (requests writes ``url: /rss?token=...``). Each value is given alone AND in its context: the whole item
+    (``pin=123``) and the item behind each separator a library writes before it (``?pin=123``, ``&pin=123``, ``;pin=123``), every one
+    in every spelling :func:`_written_forms` lists.
+
+    WHY THE CONTEXT (row 107): the scrub takes a secret out of free text only from ``floor`` characters up, and WITHHOLDS a whole text
+    that holds a shorter one, since a one-to-three-character needle cannot be cut out of a sentence without cutting other words. A
+    value alone under the floor (``?pin=123``) was therefore left out, and it stayed readable in the exception's text. Libraries quote
+    the address in one piece, so the value is cut out with its name around it instead: ``pin=123`` reaches the floor where ``123``
+    does not, and the rest of the sentence is kept. A value whose every context is still under the floor (``?1``) is handed over
+    short, ON PURPOSE: the scrub then withholds that text, which is the fail-closed answer for the rare address that short.
+
+    Empty when there is no query or it cannot be read. NEVER raises."""
     try:
         base, _mark, query = text.split("#", 1)[0].partition("?")
         out: list[str] = _path_secrets(base[_path_start(base) if authority else 0 :])
@@ -302,15 +311,29 @@ def query_secrets(text: str, *, floor: int = 4, authority: bool = True) -> tuple
             name, eq, value = item.partition("=")
             if not eq:
                 if item and not (_NAME_RE.fullmatch(item) and _is_harmless(item)):
-                    out.append(item)
+                    out += _in_context(item)
                 continue
             if not _NAME_RE.fullmatch(name):
-                out += (name, value)
+                out += (name, value, *_in_context(item))
             elif not (_is_harmless(name) and _KEPT_VALUE_RE.fullmatch(value)):
-                out.append(value)
+                out += [value, *_in_context(item)]
         forms: list[str] = []
+        short: list[str] = []
         for part in out:
-            forms += _written_forms(part)
-        return tuple(dict.fromkeys(p for p in forms if len(p) >= floor))
+            written = [p for p in _written_forms(part) if p]
+            forms += written
+            if part[:1] in _CONTEXT_MARKS:
+                # a value whose context is still under the floor (``?7``): handed over short, so the scrub withholds the text
+                short += [p for p in written if len(p) < floor]
+        return tuple(dict.fromkeys([p for p in forms if len(p) >= floor] + short))
     except Exception:  # noqa: BLE001 - written from inside a failure; no secret is better than a raise that replaces it
         return ()
+
+
+#: The separators a library writes before a query item when it quotes the address (row 107).
+_CONTEXT_MARKS = ("?", "&", ";")
+
+
+def _in_context(item: str) -> list[str]:
+    """``item`` (``name=value`` as written) behind each separator that can stand before it in a quoted address (row 107)."""
+    return [item, *(mark + item for mark in _CONTEXT_MARKS)]
