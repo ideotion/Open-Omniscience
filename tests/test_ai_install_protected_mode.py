@@ -69,7 +69,7 @@ def test_the_ollama_installer_script_is_refused_in_protected_mode_before_it_is_s
 
     spawned: list = []
     script = tmp_path / "s.sh"
-    script.write_text("true\n")
+    script.write_text("true\n", encoding="utf-8")
     monkeypatch.setattr(inst, "_validate_staged", lambda p: script)
     monkeypatch.setattr(inst, "_check_online", lambda: None)
     monkeypatch.setattr(inst, "_is_root", lambda: True)
