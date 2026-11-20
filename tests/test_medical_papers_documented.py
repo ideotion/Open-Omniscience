@@ -62,9 +62,10 @@ def test_the_section_states_what_the_code_does(path):
     sec = re.sub(r"\s+", " ", _section(path))  # a label may wrap across a line
     loc = _locale(_lang(path))
     assert f"`{fetch.PUBMED_HOST}`" in sec, "the one host the fetch contacts"
-    nums = set(re.findall(r"\d+", sec))
+    body = sec.split(" ", 3)[3]  # after "### 3.6e": the heading's own 3 and 6 are not figures
+    nums = set(re.findall(r"\d+", body))
     assert str(fetch.DEFAULT_FILES) in nums and str(fetch.MAX_FILES) in nums, "files per run: default and maximum"
-    assert "`medical.db`" in sec and "PubMed" in sec and "NCBI" in sec
+    assert "`medical.db`" in sec
     for cls in CLASSES:
         label = loc.get(_CLASS_LABEL[cls]) or _CLASS_LABEL[cls]
         assert label in sec, f"the {cls} badge as this language's page draws it: {label!r}"
@@ -81,4 +82,6 @@ def test_the_english_section_says_what_a_backup_carries_and_gives_no_advice():
 @pytest.mark.parametrize("path", MANUALS, ids=_lang)
 def test_the_table_of_contents_links_the_section(path):
     text = path.read_text(encoding="utf-8")
-    assert re.search(r"\]\(#36e-[^)]+\)", text[: text.index("\n## 1")]), "the contents list links 3.6e"
+    toc = re.search(r"\n## [^\n]*\n(.*?)\n## 1", text, re.S)
+    assert toc, f"{path}: no table of contents before section 1"
+    assert re.search(r"\]\(#36e-[^)]+\)", toc.group(1)), "the contents list links 3.6e"

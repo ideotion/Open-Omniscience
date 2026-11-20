@@ -1228,12 +1228,13 @@ Contacta un solo servidor, `ftp.ncbi.nlm.nih.gov`, y lee los *archivos de actual
 PubMed de la NLM (7 por ejecución por defecto, 30 como máximo), de decenas de megabytes cada
 uno. Pasa por la misma ventana de consentimiento que cualquier otra acción de red, se
 rechaza mientras el modo avión está activo y se ejecuta en segundo plano; el administrador
-de tareas lo muestra, y **Detener** termina una descarga en curso. Nunca se envía al NCBI
+de tareas lo muestra. **Cancelar** allí termina la ejecución tras el archivo en curso;
+activar el modo avión termina una descarga al instante. Nunca se envía al NCBI
 ningún identificador de artículo.
 
 **Qué se guarda.** Cada archivo se lee entero y se comprueba con la suma de control de la
 NLM. Solo se guardan los registros que sus artículos citan (mediante un enlace de PubMed,
-PMC o DOI) o que usted nombró, en su propio archivo, `medical.db`; el resto se descarta y
+PMC o DOI), en su propio archivo, `medical.db`; el resto se descarta y
 nunca se escribe en el disco. Una copia de seguridad incluye `medical.db`, y cada registro
 guardado también puede volver a obtenerse.
 

@@ -1197,12 +1197,11 @@ lists the kept papers that the analysed articles link to, with how many articles
 one server, `ftp.ncbi.nlm.nih.gov`, and reads NLM's PubMed *update files* (7 per run by
 default, at most 30), each tens of megabytes. It passes the same consent popup as every
 other network action, is refused while airplane mode is on, and runs in the background; the
-task manager shows it, and **Stop** ends a download under way. No paper identifier is ever
-sent to NCBI.
+task manager shows it. **Cancel** there ends the run after the file under way; turning
+airplane mode on ends a download at once. No paper identifier is ever sent to NCBI.
 
 **What is kept.** Each file is read whole and checked against NLM's checksum. Only the
-records your articles cite (through a PubMed, PMC or DOI link) or that you named are kept,
-in their own file, `medical.db`; the rest is discarded and never written to disk. A backup
+records your articles cite (through a PubMed, PMC or DOI link) are kept, in their own file, `medical.db`; the rest is discarded and never written to disk. A backup
 carries `medical.db`, and every kept record can also be fetched again.
 
 **What you can rely on.** Each paper shows the class its record states: **Journal record**

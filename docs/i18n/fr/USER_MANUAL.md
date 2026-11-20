@@ -1305,12 +1305,13 @@ PubMed**. Il contacte un seul serveur, `ftp.ncbi.nlm.nih.gov`, et lit les *fichi
 jour* PubMed de la NLM (7 par passage par défaut, 30 au plus), de plusieurs dizaines de
 mégaoctets chacun. Il passe par la même fenêtre de consentement que toute autre action
 réseau, est refusé tant que le mode avion est actif, et tourne en arrière-plan ; le
-gestionnaire de tâches l'affiche, et **Arrêter** interrompt un téléchargement en cours. Aucun
+gestionnaire de tâches l'affiche. **Annuler** y termine la récupération après le fichier en
+cours ; activer le mode avion interrompt aussitôt un téléchargement. Aucun
 identifiant d'article n'est jamais envoyé au NCBI.
 
 **Ce qui est gardé.** Chaque fichier est lu en entier et vérifié avec la somme de contrôle de
-la NLM. Seules les notices que vos articles citent (par un lien PubMed, PMC ou DOI) ou que
-vous avez nommées sont gardées, dans leur propre fichier, `medical.db` ; le reste est écarté
+la NLM. Seules les notices que vos articles citent (par un lien PubMed, PMC ou DOI) sont
+gardées, dans leur propre fichier, `medical.db` ; le reste est écarté
 et jamais écrit sur le disque. Une sauvegarde inclut `medical.db`, et chaque notice gardée
 peut aussi être récupérée à nouveau.
 

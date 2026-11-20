@@ -1210,12 +1210,13 @@ drücken. Die App kontaktiert einen einzigen Server, `ftp.ncbi.nlm.nih.gov`, und
 PubMed-*Aktualisierungsdateien* der NLM (standardmäßig 7 pro Lauf, höchstens 30), jede
 mehrere Dutzend Megabyte groß. Der Abruf durchläuft dasselbe Zustimmungsfenster wie jede
 andere Netzwerkaktion, wird im Flugmodus abgelehnt und läuft im Hintergrund; der
-Task-Manager zeigt ihn, und **Stoppen** beendet einen laufenden Download. Keine Kennung
+Task-Manager zeigt ihn. **Abbrechen** dort beendet den Lauf nach der laufenden Datei; das
+Einschalten des Flugmodus beendet einen Download sofort. Keine Kennung
 eines Fachartikels wird je an das NCBI gesendet.
 
 **Was behalten wird.** Jede Datei wird vollständig gelesen und mit der Prüfsumme der NLM
 abgeglichen. Nur die Einträge, die Ihre Artikel zitieren (über einen PubMed-, PMC- oder
-DOI-Link) oder die Sie benannt haben, werden behalten, in einer eigenen Datei,
+DOI-Link), werden behalten, in einer eigenen Datei,
 `medical.db`; der Rest wird verworfen und nie auf die Festplatte geschrieben. Eine Sicherung
 enthält `medical.db`, und jeder behaltene Eintrag kann auch erneut abgerufen werden.
 

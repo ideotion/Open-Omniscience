@@ -1201,13 +1201,14 @@ quantos artigos citam cada um.
 um único servidor, `ftp.ncbi.nlm.nih.gov`, e lê os *ficheiros de atualização* do PubMed da
 NLM (7 por execução por omissão, 30 no máximo), cada um com dezenas de megabytes. Passa pela
 mesma janela de consentimento que qualquer outra ação de rede, é recusado enquanto o modo de
-avião estiver ativo e corre em segundo plano; o gestor de tarefas mostra-o, e **Parar**
-termina uma transferência em curso. Nenhum identificador de artigo é alguma vez enviado ao
+avião estiver ativo e corre em segundo plano; o gestor de tarefas mostra-o. **Cancelar**
+aí termina a execução após o ficheiro em curso; ativar o modo de avião termina logo uma
+transferência. Nenhum identificador de artigo é alguma vez enviado ao
 NCBI.
 
 **O que é guardado.** Cada ficheiro é lido por inteiro e verificado com a soma de controlo
 da NLM. Só são guardados os registos que os seus artigos citam (através de uma ligação
-PubMed, PMC ou DOI) ou que indicou, num ficheiro próprio, `medical.db`; o resto é descartado
+PubMed, PMC ou DOI), num ficheiro próprio, `medical.db`; o resto é descartado
 e nunca é escrito no disco. Uma cópia de segurança inclui `medical.db`, e cada registo
 guardado também pode ser obtido novamente.
 

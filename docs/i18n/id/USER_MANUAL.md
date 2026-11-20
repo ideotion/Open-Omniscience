@@ -1201,12 +1201,12 @@ Aplikasi menghubungi satu server, `ftp.ncbi.nlm.nih.gov`, dan membaca *berkas pe
 PubMed dari NLM (secara bawaan 7 per proses, paling banyak 30), masing-masing puluhan
 megabita. Proses ini melewati jendela persetujuan yang sama dengan setiap tindakan jaringan
 lain, ditolak selama mode pesawat aktif, dan berjalan di latar belakang; pengelola tugas
-menampilkannya, dan **Hentikan** mengakhiri unduhan yang sedang berjalan. Tidak ada
+menampilkannya. **Batal** di sana mengakhiri proses setelah berkas yang sedang berjalan;
+menyalakan mode pesawat langsung mengakhiri unduhan. Tidak ada
 pengenal makalah yang pernah dikirim ke NCBI.
 
 **Apa yang disimpan.** Setiap berkas dibaca utuh dan dicocokkan dengan checksum NLM. Hanya
-catatan yang dikutip artikel Anda (melalui tautan PubMed, PMC, atau DOI) atau yang Anda
-sebutkan yang disimpan, di berkasnya sendiri, `medical.db`; sisanya dibuang dan tidak pernah
+catatan yang dikutip artikel Anda (melalui tautan PubMed, PMC, atau DOI) yang disimpan, di berkasnya sendiri, `medical.db`; sisanya dibuang dan tidak pernah
 ditulis ke disk. Cadangan menyertakan `medical.db`, dan setiap catatan yang disimpan juga
 dapat diambil lagi.
 
