@@ -1693,6 +1693,18 @@
     // keyword/topic cards this is the EXACT, full selection (openAnalysisFor re-runs
     // the same FTS search); for set-based cards it is the closest honest query and
     // the analysis window states its scope.
+    // The entity a Lead names, from its title's DATA (row 178): "" when it names none.
+    function cardEntityName(c) {
+      if (!c || c.type === "watch_match") return "";
+      const pools = [c.title_vars || {}];
+      ((c.i18n && Array.isArray(c.i18n.title)) ? c.i18n.title : []).forEach((fr) => pools.push((fr && fr.v) || {}));
+      for (const k of ["term", "keyword", "name", "country"]) {
+        for (const v of pools) {
+          if (typeof v[k] === "string" && v[k].trim()) return v[k].trim();
+        }
+      }
+      return "";
+    }
     function cardAnalyzeQuery(c) {
       const m = (c.title || "").match(/[“"]([^”"]{2,})[”"]/);
       if (m && m[1].trim()) return m[1].trim();
@@ -2032,6 +2044,14 @@
         : (_aq
           ? `<button class="lead-open" data-on-click="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
           : "");
+      // Row 178: the NAME a Lead is about, read from its title's data (a keyed frame's or title_vars'
+      // term / keyword / name / country), never regexed from the English title, which also quotes headlines
+      // and verbatim phrases that name no item. A watch's name is the operator's own label, not an entity.
+      // Resolved to its Wikidata item only when pressed (row 178 review).
+      const _dq = cardEntityName(c);
+      const dossierBtn = (_dq && typeof _dossierTermOf === "function" && _dossierTermOf(_dq))
+        ? `<button class="secondary tiny" data-on-click="openDossierForTerm(${esc(JSON.stringify(_dq))})" title="${esc(t("Open the dossier of the Wikidata item this Lead names, when exactly one is known"))}">${esc(t("Dossier"))}</button>`
+        : "";
       const chip = `<span class="chip">${esc(cardTypeLabel(c.type))}</span>`;
       const _title = cardTitle(c);
       // lead-card-nested-interactive (P1, axe): role="button" tabindex="0" on this
@@ -2072,6 +2092,7 @@
             <div class="acts">
               ${openBtn}
               ${typeof ooPatternListButton === "function" ? ooPatternListButton(c) : ""}
+              ${dossierBtn}
               ${recipeBtn}
               ${weatherBtn}
               <button class="secondary tiny" data-on-click="addToDraft(${esc(JSON.stringify(c.id))})">+ Add to draft</button>

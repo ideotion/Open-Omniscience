@@ -112,7 +112,6 @@ GET	/api/documents/pdf/imported-count	feature	3	Settings > Import (N)	PDF import
 GET	/api/entities/items/{qid}	internal		api	one cached Wikidata item for programmatic callers; no reader surface yet
 GET	/api/entities/places/by-wiki	internal		api	entity ladder step used server-side; no reader surface yet
 GET	/api/entities/places/search	internal		api	entity ladder lookup; the Map's place search uses its own route
-GET	/api/entities/resolve	internal		api	entity ladder lookup for programmatic callers
 GET	/api/events/astronomy/lunar-series	feature	3	Climate (H)	daily lunar-phase series for correlation studies
 GET	/api/events/climate	feature	2	Climate (H)	bundled El Nino episode list with verification status; the ONI subtab could show the episodes
 POST	/api/events/feeds/verify-batch	superseded			manual sweep retired by ruling (comment at app-agenda.js:953)

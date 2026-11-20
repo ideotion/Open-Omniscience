@@ -3700,6 +3700,7 @@ _DOCS: dict[str, dict[str, str]] = {
         "file": "SECURITY.md",
         "title": "Security",
         "blurb": "Threat model, local-first posture, and the security audit.",
+        "english_only": "R751(b): changes almost daily",
     },
     "design": {
         "file": "DESIGN.md",
@@ -3710,6 +3711,7 @@ _DOCS: dict[str, dict[str, str]] = {
         "file": "ROADMAP.md",
         "title": "Roadmap",
         "blurb": "Design memory, the phased plan + status, and open questions.",
+        "english_only": "R751(b): changes almost daily",
     },
     "architecture": {
         "file": "ARCHITECTURE.md",
@@ -3725,6 +3727,7 @@ _DOCS: dict[str, dict[str, str]] = {
         "file": "CHANGES.md",
         "title": "Changelog",
         "blurb": "What changed, release by release.",
+        "english_only": "R751(b): changes almost daily",
     },
 }
 _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
@@ -3734,14 +3737,28 @@ _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 # translation falls back to English (same rule as the UI chrome). The lang code
 # is validated against this pattern so it can never traverse the filesystem.
 _LANG_RE = re.compile(r"^[a-z]{2}$")
+#: The languages a translated draft may be served in: the UI's own locale files, English excepted. The requested code is
+#: looked up here and the path is built from the TABLE's value, never from the request (CodeQL py/path-injection, #2157).
+_DOC_LANGS: dict[str, str] = {
+    p.stem: p.stem
+    for p in sorted((Path(__file__).parent.parent / "static" / "locales").glob("*.json"))
+    if p.stem != "en" and _LANG_RE.fullmatch(p.stem)
+}
 
 
 def _doc_path(meta: dict[str, str], lang: str | None) -> tuple[Path, str]:
-    """The on-disk file for a doc in the requested language ('' = English)."""
-    if lang and lang != "en" and _LANG_RE.fullmatch(lang):
-        candidate = _DOCS_DIR / "i18n" / lang / meta["file"]
+    """The on-disk file for a doc in the requested language ('' = English).
+
+    A document marked ``english_only`` (R751(b): CHANGES, SECURITY and ROADMAP, which change almost daily) is served in English
+    whatever is asked and whatever lies in ``docs/i18n``: a translation would be out of date on arrival, and the reader says so.
+    """
+    if meta.get("english_only"):
+        return _DOCS_DIR / meta["file"], "en"
+    code = _DOC_LANGS.get(lang or "")
+    if code is not None:
+        candidate = _DOCS_DIR / "i18n" / code / meta["file"]
         if candidate.exists():
-            return candidate, lang
+            return candidate, code
     return _DOCS_DIR / meta["file"], "en"
 
 
@@ -3756,6 +3773,7 @@ async def list_docs(lang: str | None = None) -> dict:
                 "blurb": meta["blurb"],
                 "available": (_DOCS_DIR / meta["file"]).exists(),
                 "translated": _doc_path(meta, lang)[1] != "en" if lang else False,
+                "english_only": bool(meta.get("english_only")),
             }
             for slug, meta in _DOCS.items()
         ]
@@ -3777,9 +3795,11 @@ async def get_doc(slug: str, lang: str | None = None) -> PlainTextResponse:
     path, served_lang = _doc_path(meta, lang)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Doc not found on disk: {meta['file']}")
-    return PlainTextResponse(
-        path.read_text(encoding="utf-8"), headers={"X-OO-Doc-Lang": served_lang}
-    )
+    headers = {"X-OO-Doc-Lang": served_lang}
+    if meta.get("english_only"):
+        # R751(b): the reader shows a visible line saying the document is kept in English only, in every language.
+        headers["X-OO-Doc-English-Only"] = "1"
+    return PlainTextResponse(path.read_text(encoding="utf-8"), headers=headers)
 
 
 # Root endpoint to serve index.html
