@@ -1,8 +1,9 @@
-# Schema-freeze audit: the proposed judgement (0.8 row B)
+# Schema-freeze audit: the judgement (0.8 row B)
 
-**Status: PROPOSAL, not a ruling.** This is the written judgement that `RELEASE_0.8_GATE.md` row B and brief S08-02 S5
-ask for: which migration the freeze starts after, and which pending column or table is declared additive. Every choice
-below is numbered (F1 to F8) and stays a proposal until it is ruled; until then nothing here binds a PR. The facts it
+**Status: RULED R755 (2026-11-20, coordinator, on the proposal F1 to F8; recorded in `docs/ledger/RULINGS_INDEX.md` and
+`docs/ledger/OPEN_QUEUE.md`).** This is the written judgement that `RELEASE_0.8_GATE.md` row B and brief S08-02 S5 ask
+for: which migration the freeze starts after, and which pending column or table is declared additive. Each choice F1 to
+F8 below carries what was ruled on it; where the ruling changed the proposal, the ruling is what stands. The facts it
 judges are generated in [`SCHEMA_FREEZE_INVENTORY.md`](SCHEMA_FREEZE_INVENTORY.md) by `scripts/schema_audit.py`, read
 at `d8d5d6a06` (2026-11-20). No schema change comes with this document.
 
@@ -55,44 +56,45 @@ only the columns both files share (`src/backup/lane_merge.py`). Readers accept `
 (`ACCEPTED_BACKUP_SCHEMAS`, which «only ever joins»), `oo-volumes-1` and `oo-volumes-2`, and legacy bare `.db` /
 `.ooenc` files.
 
-## 2. The proposed judgement
+## 2. The judgement
 
-**F1. The freeze point.** The freeze starts after **the Alembic head at the `v0.8.0` tag**. Today that is #85
-`d7e3a9b2c5f1`. Every revision after it, from 0.9.0 on, is additive in the sense of F2. *Why the 0.8 tag and not
-0.9.0:* the 0.8 gate calls 0.8 «the last release in which a schema change may be non-additive», so a non-additive
-change that misses 0.8 has missed the window. *The alternative* is Q102's literal «only additive migrations after
-0.9.0», which leaves 0.9 itself one more non-additive release; it changes nothing today because nothing non-additive is
-queued for 0.9 (F5).
+**F1. The freeze point (ruled: Q102's letter).** The freeze starts after **0.9.0**, as Q102 = a says: every Alembic
+revision after the head at the `v0.9.0` tag is additive in the sense of F2. Until then, a non-additive change still
+needs its own ruling; this audit grants none. *The state today:* the head has been additive-only since **`v0.5.0`**
+(`8cbb54ef4`). The last non-additive revision, #77 `d5a1c7e9b3f2`, came in with `cb0169ee6` (2026-10-16), inside that
+tag; the six revisions added after it (#80 to #85, head `d7e3a9b2c5f1`) are all additive. (The proposal had suggested
+freezing at the `v0.8.0` tag; it was not adopted, because Q102 is the maintainer's own wording.)
 
-**F2. What «additive» means.** Allowed after the freeze: a new table; a new column that is nullable or carries a
+**F2. What «additive» means (ruled: adopted, with two precisions).** Allowed after the freeze: a new table; a new column that is nullable or carries a
 constant server default; a new index; a back-fill that writes ONLY the new column or table; a new trigger that writes
 only derived tables. Not allowed: dropping or renaming a table or column; changing a type; adding NOT NULL without a
-default; tightening a key or constraint; any UPDATE or DELETE of a row's existing source values.
+default; tightening a key or constraint; any UPDATE or DELETE of a row's existing source values. *The precisions:* a
+back-fill may write only columns added by the same change, and a new NOT NULL column must carry a default.
 
-**F3. Derived data is outside the freeze, by declaration.** Rebuilding a table that holds nothing a user or a source
+**F3. Derived data is outside the freeze, by declaration (ruled: adopted).** Rebuilding a table that holds nothing a user or a source
 supplied, and that is recomputed from tables that do, is not a schema change for the freeze: the FTS indexes and their
 tokenizer (R39), `wiki_lane_fts`, the `keyword_day_*` counters, the columnar store, the OSM view and place indexes,
-the dump index, and a re-extraction of derived rows under a new engine (R725/R726, held). Dropping or replacing an
+the dump index, and a re-extraction of derived rows under a new engine (R725/R726: their import hold stands separately and this audit does not lift it). Dropping or replacing an
 INDEX is also allowed (#9 and #68 are of this kind): it loses no data and a restore does not depend on it. Each such
 rebuild still states itself in the release notes (R319).
 
-**F4. The freeze covers all four paths in §1, not only Alembic.** A boot self-heal, a lane store's `create_schema`
+**F4. The freeze covers all four paths in §1, not only Alembic (ruled: adopted).** A boot self-heal, a lane store's `create_schema`
 and a raw-DDL table are held to F2 exactly like a revision. Two consequences:
 - `ensure_law_source_type` is a data rewrite on boot. It is idempotent and has run on every store started since Q919,
   so it may stay; but no NEW boot-time rewrite may be added after the freeze.
-- `lane_meta.schema_version` is written and never read. Proposed: leave it at `1` and say so in the 0.9 guard's
+- `lane_meta.schema_version` is written and never read. It stays at `1` and say so in the 0.9 guard's
   documentation, rather than give it meaning now; a lane store has no non-additive step to version.
 
-**F5. The pending work, each landed here or declared additive.**
+**F5. The pending work, each landed here or declared additive (ruled as below).**
 
-| pending | where cited | proposed declaration |
+| pending | where cited | declaration |
 |---|---|---|
-| Blob store (Q1009, R700, R707): `blobs`, `packs`, `blob_staging`, `blob_keys`, `pack_intents`, `pack_pins`, `articles.blob_addr` | `docs/design/BLOB_STORE_PHASE_C_DESIGN_2026-11-14.md` | **Additive**, on one condition: `articles.content` is never dropped or emptied by a migration. Moving text into packs (Q-W7) is done by the app at run time, with the column kept and read as a fallback, so an old backup still restores. If Q-W7 needs the column gone, it must land before `v0.8.0` or wait for 2.0. |
-| Language columns to ISO 639-2/3 (Q306, 0.5 row B) | `RELEASE_0.5_GATE.md` row B | **Not additive** (a rewrite of stored values). Proposed: land before `v0.8.0`, or follow the alpha-3 country pattern: an operator-run offline command plus a restore normaliser, never a migration. |
+| Blob store (Q1009, R700, R707): `blobs`, `packs`, `blob_staging`, `blob_keys`, `pack_intents`, `pack_pins`, `articles.blob_addr` | `docs/design/BLOB_STORE_PHASE_C_DESIGN_2026-11-14.md` | **Additive**, as long as no migration drops `articles.content`. Moving text into packs (Q-W7) is done by the app at run time, with the column kept and read as a fallback, so an old backup still restores. |
+| Language columns to ISO 639-2/3 (Q306, 0.5 row B) | `RELEASE_0.5_GATE.md` row B | **Not additive** (a rewrite of stored values). Either it lands before the freeze, or it follows the alpha-3 country pattern: an offline command the user runs plus a restore normaliser. **Never a boot rewrite.** |
 | Country flip of an existing store to alpha-3 | `src/backup/country_migration.py` (code merged; operator run owed) | Already an offline command, not a migration; it stays allowed after the freeze **as an operator command only**, and restore keeps normalising both forms. |
 | R725 / R726 re-extraction under a new WWW engine | `RULINGS_INDEX.md`; held during the mass import | Derived (F3). |
 | R39 FTS tokenizer rebuild | `RELEASE_0.5_GATE.md` | Derived (F3). |
-| Q416 keyword re-normalisation (lemmatisation), R96 segmented index | `OPEN_QUEUE.md`; held | **Needs a ruling.** The keyword tables carry user-made overrides (families, supergroups, tags), so a re-normalisation is not purely derived. Proposed: allowed only if it never rewrites a row a user made. |
+| Q416 keyword re-normalisation (lemmatisation), R96 segmented index | `OPEN_QUEUE.md`; held | **Never rewrites a user-made row** (watches, saved terms, family overrides, supergroups, tags: anything the user typed or chose). Derived rows may be rebuilt under F3. If a user-made row would need to change, it is mapped at read time and the case comes back for its own ruling. |
 | UCDP conflict store and the dossier tables (S08-01) | `S08-01` brief | Additive (new tables). |
 | `law_identifiers` (conditional) | `OPEN_QUEUE.md` | Additive (new lane table). |
 | Functional index on `lower(sources.domain)` | `OPEN_QUEUE.md` | Additive (index), with the expression-index drift note it carries. |
@@ -101,24 +103,27 @@ and a raw-DDL table are held to F2 exactly like a revision. Two consequences:
 No pending work drops or renames a database table or column. Q313's dropped column is an **export** column (CSV/JSON),
 not the database.
 
-**F6. The format identifiers are frozen at their current writers.** `oo-backup-3`, `oo-volumes-2`,
+**F6. The format identifiers are frozen at their current writers (ruled: adopted, with a test).** `oo-backup-3`, `oo-volumes-2`,
 `oo-folder-backup-1`, `oo-folder-verify-1`, `oo-export-request-1`, `oo-parity-1`, `oo-export-1`, `oo-custody-1`.
 Readers keep accepting `oo-backup-2` and `oo-volumes-1` through 1.x. After the freeze, a backup may gain a NEW member
 only if an older reader ignores it and a newer reader accepts its absence (the blob store's pack member is the case this
-is written for); anything else is a format bump and waits for 2.0.
+is written for); anything else is a format bump and waits for 2.0. `tests/test_restore_future_member.py` holds the rule:
+a backup written by this build with one extra member of a role this build does not know restores, and the extra member
+is ignored rather than placed.
 
-**F7. A stale default to correct before the freeze.** `merge_batches.artifact_kind` defaults to `"oo-backup-2"`
-(`src/database/models.py`, and the same literal in `src/backup/merge.py`), while the writer has been `oo-backup-3`
-since 0.4 row K. The default is used only when a batch's metadata names no kind. Proposed: correct it (a default
-change, additive) in 0.8, with a test that a batch records the kind it actually read.
+**F7. A stale default (ruled: fix it).** `merge_batches.artifact_kind` defaulted to `"oo-backup-2"` in the model and
+in `merge_corpus`'s fallback, while the writer has been `oo-backup-3` since 0.4 row K. A batch whose caller named no
+kind therefore read as an `oo-backup-2` restore. It is fixed in its own PR, #2178: both now record `"unknown"`, and the one
+production caller keeps passing the staged artifact's real kind.
 
-**F8. The proof stays the operator's.** A real restore of a pre-audit backup into the post-audit schema is
-`not-measurable-here` in the sandbox; it is an operator step of the 0.8 close, beside row B's owed alpha-3 run.
+**F8. The proof stays the operator's (ruled: on the user's FYI list; it does not block this document).** A real
+restore of a pre-audit backup into the post-audit schema is `not-measurable-here` in the sandbox; it is an operator step
+of the 0.8 close, beside row B's owed alpha-3 run.
 
 ## 3. The audited list and its cross-check
 
 The list below is every table and column of the main database and the lane stores as audited on 2026-11-20. It is what
-the freeze freezes. `tests/test_schema_freeze_audit.py` compares it with the live models in both directions and names
+the freeze will freeze at 0.9.0. `tests/test_schema_freeze_audit.py` compares it with the live models in both directions and names
 the table or column that differs: a column the code has and this list lacks, or the reverse, is a red until this
 document is updated (and, after the freeze, until the change is shown to be additive under F2). The raw-DDL tables and
 the format identifiers are held by the inventory's own test.
