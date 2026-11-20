@@ -535,11 +535,19 @@ def test_the_summary_of_a_set_is_the_summary_of_the_single_archive(db_path, data
     listing = _listing(db_path)
     d = _set_dir(data_dir, listing)
     parts = None
+    pieces: list[tuple[str, dict]] = []
     for f in listing["files"]:
         if f["kind"] == "part":
             with zipfile.ZipFile(d / f["name"]) as z:
                 if "summary.json" in z.namelist():
                     parts = json.loads(z.read("summary.json"))
+                for member in z.namelist():
+                    # At 200 KB a part (row 212) the summary may go out as summary.sNNN.json pieces.
+                    if member.startswith("summary.s") and member.endswith(".json"):
+                        doc = json.loads(z.read(member))
+                        pieces.append((member, {**doc["oo_part"], "value": doc["value"]}))
+    if parts is None and pieces:
+        parts = up.join_json_pieces(p for _m, p in sorted(pieces, key=lambda mp: mp[0]))
     assert parts is not None
     for doc in (whole, parts):
         doc.pop("generated_at", None)
