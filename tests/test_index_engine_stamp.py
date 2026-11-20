@@ -679,7 +679,7 @@ def test_a_canonical_name_holding_a_backslash_is_read_by_that_name(tmp_path, mon
     monkeypatch.setattr(ei, "_read", lambda rel: (tmp_path / rel).read_bytes() if (tmp_path / rel).is_file() else None)
     digests = []
     for words in ("[aaa]", "[bbb]"):
-        f.write_text(words)
+        f.write_text(words, encoding="utf-8")
         ei.data_digest.cache_clear()
         digests.append((ei.data_digest(), ei.data_digest(True)))
     ei.data_digest.cache_clear()
