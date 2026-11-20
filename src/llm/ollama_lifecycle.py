@@ -56,6 +56,12 @@ _LOG = logging.getLogger("llm.ollama_lifecycle")
 # report a false negative and short enough not to hang a UI click.
 _READY_TIMEOUT_S = 12.0
 _READY_POLL_S = 0.25
+#: How long the liveness probe waits for the loopback CONNECT, apart from the reply. A listening daemon's port is accepted by
+#: the kernel in well under a millisecond however busy the daemon is, so this only ever cuts short the case with nothing
+#: listening: on Windows a refused loopback connect is retried by the stack and takes about 2 s to fail (row 141), which every
+#: probe of an absent daemon paid in full. The reply itself keeps the caller's whole ``timeout``: a daemon that is up but slow
+#: to answer (loading a model) is still reported running.
+_PROBE_CONNECT_S = 0.5
 
 #: The daemon THIS process spawned, or None. Ownership is the whole basis on which
 #: ``stop`` is allowed to exist at all (see its docstring and the note at the foot of
@@ -90,7 +96,7 @@ def is_running(*, timeout: float = 2.0) -> bool:
     try:
         from src.llm.ollama import OllamaClient
 
-        return OllamaClient(timeout=timeout).is_available()
+        return OllamaClient(timeout=timeout, connect_timeout=_PROBE_CONNECT_S).is_available()
     except Exception:  # noqa: BLE001 - a probe must never crash a caller
         return False
 

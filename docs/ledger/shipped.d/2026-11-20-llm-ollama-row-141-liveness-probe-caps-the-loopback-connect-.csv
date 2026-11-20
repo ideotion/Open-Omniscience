@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,llm/ollama,Row 141: liveness probe caps the loopback connect at 0.5 s,SHIPPED,PR #2166,src/llm/ollama_lifecycle.py;src/llm/ollama.py;tests/test_ollama_probe_connect.py,"On Windows a refused loopback connect takes ~2 s; is_running waited it out, so every pull with no daemon paid it. Connect now capped at 0.5 s, reply keeps the whole timeout (a slow daemon still reads running); no state kept. Modelled: is_running 2.12 -> 0.51 s."
