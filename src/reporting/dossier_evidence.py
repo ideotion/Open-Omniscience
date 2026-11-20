@@ -86,6 +86,28 @@ def _without_watch_list(rails: list[dict]) -> list[dict]:
     return out
 
 
+def _items_in_bundle(rails: list[dict], bundled: set[int]) -> list[dict]:
+    """A corpus rail's listed rows, kept only where the article is one of the bundle's items.
+
+    The rail lists its NEWEST rows (row 200) while the bundle carries the first ids up to its
+    bound, so on a large dossier the two differ. A row the Merkle root does not cover would read
+    as signed evidence it is not, and its source would be missing from the licence lines. How many
+    listed rows were left out is carried beside the list, so an empty list is not read as "no rows".
+    """
+    def carried(a) -> bool:
+        aid = a.get("id") if isinstance(a, dict) else None
+        return isinstance(aid, int) and not isinstance(aid, bool) and aid in bundled
+
+    out = []
+    for r in rails:
+        if isinstance(r.get("items"), list):
+            kept = [a for a in r["items"] if carried(a)]
+            # Said, never left to be read as "no rows": the page listed these, the file does not carry them.
+            r = {**r, "items": kept, "items_not_in_bundle": len(r["items"]) - len(kept)}
+        out.append(r)
+    return out
+
+
 def _signals(session, article_ids: list[int], rails: list[dict]) -> set[str]:
     from sqlalchemy import select
 
@@ -132,7 +154,7 @@ def dossier_selection(session, qid: str, lang: str = "en") -> DossierSelection |
         ids = [int(i) for i in session.execute(
             select(Article.id).where(Article.id.in_(ids), not_a_stand_in_article()).order_by(Article.id)
         ).scalars()]
-    rails = _without_watch_list(list(d.get("rails") or []))
+    rails = _items_in_bundle(_without_watch_list(list(d.get("rails") or [])), set(ids))
     block = {
         "qid": d["qid"],
         "lang": d.get("lang"),

@@ -146,17 +146,39 @@
     }
 
     // One rail's rows, as the body of its panel.
+    // Row 200 (S08-01 S2): a corpus rail lists its newest joined articles, each opening the local
+    // reader first (invariant #6), with its source, its date and how it joined. The join is named,
+    // never weighed; the rail's count stays the whole count and the rest is said to be there.
+    function _dossierItemsHtml(r, t, tf) {
+      const JOIN = {entities: "a person or organisation named", keywords: "a keyword", places: "a place named"};
+      const items = r.items || [];
+      if (!items.length) return "";
+      const total = r.articles || items.length;
+      return `<ul class="dossier-list dossier-items">` + items.map((a) => {
+        const how = (a.joined_by || []).filter((k) => JOIN[k]).map((k) => t(JOIN[k])).join(" · ");
+        return `<li><a href="/api/articles/${Number(a.id)}/view" target="_blank" rel="noopener" dir="auto"`
+          + ` title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+          + ` <span class="muted small"><span dir="ltr">${esc(a.domain || "")}</span> · `
+          + `<span dir="ltr">${esc(a.published_at || t("undated"))}</span></span>`
+          + (how ? `<div class="muted small">${esc(tf("joined through: {how}", {how}))}</div>` : "")
+          + `</li>`;
+      }).join("") + `</ul>`
+        + (total > items.length ? `<div class="muted small">${esc(tf("{shown} of {n} shown", {shown: items.length, n: total}))}`
+          + ` · ${esc(t("The button below opens every joined article, all rails together."))}</div>` : "");
+    }
+
     function _dossierRailBody(r, d, t, tf) {
       let what = "";
       if (r.key === "news") {
         const ch = Object.keys(r.by_channel || {});
         what = esc(tf("{n} articles", {n: r.articles || 0}))
-          + (ch.length > 1 ? ` <span class="muted small">${esc(ch.map((c) => _dossierChannel(c, t) + " " + r.by_channel[c]).join(" · "))}</span>` : "");
+          + (ch.length > 1 ? ` <span class="muted small">${esc(ch.map((c) => _dossierChannel(c, t) + " " + r.by_channel[c]).join(" · "))}</span>` : "")
+          + _dossierItemsHtml(r, t, tf);
       } else if (r.key === "law") {
-        what = esc(tf("{n} articles", {n: r.articles || 0}));
+        what = esc(tf("{n} articles", {n: r.articles || 0})) + _dossierItemsHtml(r, t, tf);
       } else if (r.key === "wikipedia") {
         const lane = r.lane || {};
-        what = esc(tf("{n} corpus articles", {n: r.articles || 0}));
+        what = esc(tf("{n} corpus articles", {n: r.articles || 0})) + _dossierItemsHtml(r, t, tf);
         if (!lane.available) {
           what += `<div class="muted small">${esc(_dossierLaneAbsence(lane.reason, "wiki", t))}</div>`;
         } else if (!(lane.pages || []).length) {
