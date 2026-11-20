@@ -663,7 +663,7 @@
       html += `<div class="muted" style="font-size:.82em;margin-top:4px">`
         + `filtered (excluded from the funnel, not guilt either way): `
         + `commerce ${c.filtered_commerce || 0} · social ${c.filtered_social || 0} · infrastructure ${c.filtered_infrastructure || 0}</div>`;
-      html += `<div class="muted" style="font-size:.82em;margin-top:2px">${esc(tally.caveat || "")}</div>`;
+      html += `<div class="muted" style="font-size:.82em;margin-top:2px">${ooSaidHtml(tally, "caveat")}</div>`;
       return html;
     }
     // One compact line: each distinct server IP with its country and article count, first and

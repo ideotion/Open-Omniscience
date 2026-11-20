@@ -5185,7 +5185,7 @@ def test_corpus_window_sentiment_subtab():
     # 4. loadFraming emits the endpoint's caveat (the English-only VADER disclosure)
     #    so the disclosure is VISIBLE on this surface, not just the hover title.
     framing_fn = html.split("async function loadFraming(", 1)[1].split("\n    async function ", 1)[0]
-    assert "d.caveat" in framing_fn, (
+    assert 'ooSaidHtml(d, "caveat")' in framing_fn, (
         "the framing renderer must surface the endpoint caveat (English-only VADER "
         "disclosure) on every surface that reuses it, including the corpus window"
     )
@@ -5245,7 +5245,7 @@ def test_corpus_window_keywords_subtab():
     )
     # 6. honesty: the endpoint method/caveat travel onto the surface and n is shown;
     #    no composite score is invented.
-    assert "d.method" in kfn and "d.caveat" in kfn, (
+    assert 'ooSaidHtml(d, "method")' in kfn and 'ooSaidHtml(d, "caveat")' in kfn, (
         "the Keywords table must surface the endpoint's method + caveat (PMI honesty)"
     )
     assert "n_articles_with_term" in kfn, "the Keywords table must show n (real corpus count)"

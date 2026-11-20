@@ -38,7 +38,12 @@ def all_diagnostics_estimate() -> Response:
     rows = _mention_rows()
     return JSONResponse(
         {
-            "thorough": _plan.thorough_estimate(history, rows),
+            # R757: the default total a Thorough build stops starting scans at, so the panel states the pause it bounds.
+            "thorough": {
+                **_plan.thorough_estimate(history, rows),
+                "budget_s": _plan.scan_budget_for("thorough", None),
+                "budget_set_by": _plan.scan_budget_set_by("thorough", None),
+            },
             "quick": {"budget_s": _plan.SCAN_BUDGET_S},
             "mention_rows": rows,
         }

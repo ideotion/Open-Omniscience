@@ -248,7 +248,7 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   3.12 M mentions, one run each. The zip stays small: 58 to 59 files, under 3 MB uncompressed and under 0.5 MB as an archive, the largest
   member about 0.5 MB against the 12 MB per-member cap. Quick is held to 600 s of scans. Not measured: a current-tree Thorough build on a
   real written store, an encrypted store, a corpus past 12 M mentions. 0.5.1 takes the first real zip; whether Thorough should carry a
-  budget is a decision for then, not a defect now. Record: `rc-diagnostics/max-mode-zip-limits-export.md` in the project folder.
+  budget is a decision for then, not a defect now. Record: `rc-diagnostics/max-mode-zip-limits-export.md` in the project folder. **Decided (PR #2182, row 209):** R466 (the user, S3 = b) keeps NO default total; R757 is amended to defer to it. A total can be set per run (`budget_min`, R466) or per install (`OO_DIAG_THOROUGH_BUDGET_S`), every manifest opens with `scan_limits` (total, who set it, per-scan caps, where each is changed), and a scan a limit stopped reads "not finished, budget reached".
 - **45. `duckdb_limit_mb` is decimal megabytes** (measured on DuckDB 2.0.0: `SET memory_limit='1000MB'` reads back as 953.6 MiB): the
   figure is applied to DuckDB as `f"{n}MB"` (`src/analytics/columnar.py`) and compared in `rollup_serve.py`'s affordability check with
   `avail_mb`, which is mebibytes (`psutil` bytes / 1024^2). The two differ by 4.9 %, in the safe direction (the check overstates what the build

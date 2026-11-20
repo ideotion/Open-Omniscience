@@ -69,13 +69,13 @@ def test_the_list_view_never_concatenates_the_caveat_into_a_larger_node() -> Non
     element of its own.
     """
     render = _populated_render(_render_agenda())
-    assert "<span>${esc(AG.caveat)}</span>" in render, (
+    assert '<span>${ooSaidHtml(AG, "caveat")}</span>' in render, (
         "the served caveat must sit in its OWN element so i18n.js's whole-node "
         f"match can reach it; got: {render.strip()[:300]}"
     )
     # And nothing may share that node: the caveat's element must contain the
     # caveat and nothing else. A sibling after the closing tag is fine.
-    assert re.search(r"<span>\$\{esc\(AG\.caveat\)\}</span>", render), (
+    assert re.search(r'<span>\$\{ooSaidHtml\(AG, "caveat"\)\}</span>', render), (
         "the caveat's element must contain the caveat and nothing else"
     )
 
@@ -117,6 +117,6 @@ def test_the_empty_list_render_keeps_the_caveat_alone_in_its_node() -> None:
     line breaks a test rather than a locale.
     """
     render = _empty_render(_render_agenda())
-    assert '<p class="hint">${esc(AG.caveat)}</p>' in render, (
+    assert '<p class="hint">${ooSaidHtml(AG, "caveat")}</p>' in render, (
         f"the empty-list caveat must stay alone in its paragraph; got: {render.strip()[:300]}"
     )

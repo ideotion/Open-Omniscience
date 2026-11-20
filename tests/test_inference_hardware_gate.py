@@ -539,7 +539,7 @@ def test_only_the_exact_env_value_1_enables(monkeypatch):
 # --------------------------------------------------------------------------- #
 _KEYS = {
     "practical", "kind", "name", "vram_mb", "unified_ram_gb", "reason",
-    "method", "caveat", "overridden", "override_requested", "min_unified_ram_gb",
+    "method", "method_i18n", "caveat", "caveat_i18n", "overridden", "override_requested", "min_unified_ram_gb",
     # Ruling 15 (2026-07-31): the tiers, reported so no caller re-derives them.
     # "warnings" is in EVERY branch on purpose -- an absent key would read as
     # "nothing to warn about" in exactly the branch that forgot to set it.

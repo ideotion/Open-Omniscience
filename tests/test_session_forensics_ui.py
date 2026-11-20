@@ -52,11 +52,12 @@ def test_inference_and_method_wording_shown_verbatim() -> None:
     m = re.search(r"function _renderSessionForensics\(", app)
     assert m, "_renderSessionForensics missing"
     body = app[m.start() : app.index("async function loadSessionForensics(")]
-    # The method / inference strings are backend DATA (caveats) — rendered verbatim,
-    # never re-worded/keyed. All three method surfaces must be shown.
-    assert "esc(prev.method)" in body, "previous-session inference wording not shown"
-    assert "esc(u.method)" in body, "unlock method wording not shown"
-    assert "esc(inv.method)" in body, "inventory method wording not shown"
+    # The method / inference strings are backend DATA (caveats) — rendered as sent, never
+    # re-worded. All three method surfaces must be shown, through the shared helper (row 206),
+    # which labels them as the server's English on a page in another language (R289).
+    assert 'ooSaidHtml(prev, "method")' in body, "previous-session inference wording not shown"
+    assert 'ooSaidHtml(u, "method")' in body, "unlock method wording not shown"
+    assert 'ooSaidHtml(inv, "method")' in body, "inventory method wording not shown"
     # Shown in the visible caveat line, not hidden.
     assert '"card-caveat"' in body
 
