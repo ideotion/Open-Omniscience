@@ -1865,8 +1865,32 @@ def _log_pause_in_force() -> bool:
         return False
 
 
-def _after_gate(gate: threading.Event | None, target: Callable[[], object]) -> Callable[[], object]:
-    """``target``, run only once ``gate`` is set (R756); ``target`` itself when there is no gate.
+class StartGate:
+    """What a gated collection thread waits on before it runs anything (R756): opened, or cancelled.
+
+    ``POST /api/scheduler/start`` and ``/run-now`` make the thread first and open the network after. When they then decline to open it (a
+    Stop engaged the switch while the thread was being made), they CANCEL the gate, and the thread returns without running its target: a
+    pass that would run with every fetch refused, and a loop left "running" under airplane mode, are what the cancel is for."""
+
+    def __init__(self) -> None:
+        self._decided = threading.Event()
+        self._go = False
+
+    def open(self) -> None:
+        self._go = True
+        self._decided.set()
+
+    def cancel(self) -> None:
+        self._decided.set()
+
+    def wait(self) -> bool:
+        """Block until opened or cancelled; True when opened."""
+        self._decided.wait()
+        return self._go
+
+
+def _after_gate(gate: StartGate | None, target: Callable[[], object]) -> Callable[[], object]:
+    """``target``, run only once ``gate`` is opened and never if it is cancelled (R756); ``target`` itself when there is no gate.
 
     The collection start's route makes the thread first and clears the kill switch after, so a start whose thread cannot be made leaves the
     switch exactly as it found it, with no moment in between when anything could fetch. The thread waits here for that clear."""
@@ -1874,7 +1898,8 @@ def _after_gate(gate: threading.Event | None, target: Callable[[], object]) -> C
         return target
 
     def gated() -> object:
-        gate.wait()
+        if not gate.wait():
+            return None
         return target()
 
     return gated
@@ -1985,12 +2010,13 @@ class BackgroundScheduler:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self, gate: threading.Event | None = None) -> bool:
+    def start(self, gate: StartGate | None = None) -> bool:
         """Start the scheduling loop. Returns False if it was already running, or while an exclusive operation holds the machine.
 
         ``gate`` (R756): when given, the loop's thread is made and started but waits on it before it runs anything, so a caller can open the
-        network only once the thread exists -- a start that cannot make its thread then never opened anything. The caller MUST set it
-        (``POST /api/scheduler/start`` does, in a ``finally``).
+        network only once the thread exists -- a start that cannot make its thread then never opened anything. The caller MUST open or
+        cancel it (``POST /api/scheduler/start`` does, in a ``finally``); a cancelled loop thread exits without running, so ``is_running()``
+        turns false again.
 
         The hold (R367, F5 of the read of #1607) is refused here exactly as :meth:`run_now` refuses it: the Start button, the network toggle going
         online and the unattended start would otherwise put the loop back in the middle of an import, whose dialog says collection is paused. A
@@ -2067,7 +2093,7 @@ class BackgroundScheduler:
             self._next_run = None
         return True
 
-    def run_now(self, gate: threading.Event | None = None) -> bool:
+    def run_now(self, gate: StartGate | None = None) -> bool:
         """Trigger an immediate one-off run in a worker thread (``gate``: as in :meth:`start`, R756).
 
         Returns False if a run (scheduled or manual) is already in progress, OR

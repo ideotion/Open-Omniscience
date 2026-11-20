@@ -12,7 +12,6 @@ result -- never a simulated "healthy".
 from __future__ import annotations
 
 import logging
-import threading
 from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -27,7 +26,7 @@ from src.monitoring.secret_scrub import http_detail, log_failure
 from src.monitoring.server_load import server_load
 from src.scheduler import storage_guard
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
-from src.scheduler.runner import get_scheduler
+from src.scheduler.runner import StartGate, get_scheduler
 from src.scheduler.settings import (
     SchedulerSettingsError,
     load_settings,
@@ -413,7 +412,7 @@ def _refusal(error: str, engaged: bool, network: str | None = None) -> HTTPExcep
     )
 
 
-def _start_opening_the_network(call: Callable[[threading.Event], bool], refused: str) -> bool:
+def _start_opening_the_network(call: Callable[[StartGate], bool], refused: str) -> bool:
     """Make the collection thread, THEN open the network; a start that does not start opens nothing (R756).
 
     ``call`` is the scheduler's ``start`` or ``run_now``, given a gate its thread waits on. The kill switch is cleared only after it returns
@@ -427,6 +426,10 @@ def _start_opening_the_network(call: Callable[[threading.Event], bool], refused:
       began (:func:`src.ingest.clear_kill_switch_unless_engaged_since`), and otherwise the request is refused, saying so;
     - a start that works runs its first pass with the switch already clear.
 
+    STATED LIMIT: an exclusive operation's hold answers ``False`` and remembers the start for its resume, which gives way to an engaged
+    switch -- so an API caller who asks for a start while offline AND during an import gets ``started: false`` and no start afterwards. The
+    UI never does this (its consent popup goes online first, through the airplane button).
+
     A switch the operator had cleared before (the airplane button, which the UI's consent popup presses before it calls this route) stays
     clear: this route never engages it, it only declines to clear it. Nothing is persisted, so a process that dies between the thread and
     the clear boots in airplane mode like any other (the boot engage, src/api/main.py), which is the refused state. Any other exception is
@@ -439,8 +442,9 @@ def _start_opening_the_network(call: Callable[[threading.Event], bool], refused:
         note_operator_crossed_online,
     )
 
-    gate = threading.Event()
+    gate = StartGate()
     epoch = kill_switch_epoch()
+    opened = False
     try:
         try:
             started = call(gate)
@@ -454,8 +458,14 @@ def _start_opening_the_network(call: Callable[[threading.Event], bool], refused:
                 _LOG.warning("%s: a Stop engaged the kill switch while the thread was being made; the network stays closed", refused)
                 raise _refusal(_STOPPED_DURING_START, True)
             note_operator_crossed_online()  # an explicit start IS crossing online
+            opened = True
     finally:
-        gate.set()  # never leave a thread waiting: on any path out of here, the gate opens
+        # Never leave a thread waiting: on every path out of here the gate is decided. Opened only when the network was opened for it;
+        # on any other path the thread (if one was made) returns without running, so nothing runs under a switch this route did not clear.
+        if opened:
+            gate.open()
+        else:
+            gate.cancel()
     return started
 
 

@@ -104,7 +104,7 @@ class _Recording:
         self.seen: dict[str, bool] = {}
         self.ran = threading.Event()
 
-    def _make(self, gate: threading.Event | None, label: str) -> bool:
+    def _make(self, gate, label: str) -> bool:
         from src.scheduler.runner import _after_gate
 
         self.seen[f"{label}: while the thread was being made"] = ingest.kill_switch_active()
@@ -159,19 +159,21 @@ def test_a_start_that_raises_something_else_opens_nothing_either(client, monkeyp
 
 
 def test_the_gate_opens_on_every_path_out_of_the_route(monkeypatch):
-    """A thread made before a failure further on must never be left waiting: the route sets the gate in a ``finally``."""
+    """A thread made before a failure further on must never be left waiting: the route decides the gate in a ``finally`` -- and on any
+    path but a clean opening it CANCELS it, so the thread returns without running."""
     from src.api import scheduler as scheduler_api
 
-    gates: list[threading.Event] = []
+    gates: list = []
 
-    def call(gate: threading.Event) -> bool:
+    def call(gate) -> bool:
         gates.append(gate)
         return True
 
     monkeypatch.setattr("src.ingest.note_operator_crossed_online", lambda: (_ for _ in ()).throw(OSError("boom")))
     with pytest.raises(OSError):
         scheduler_api._start_opening_the_network(call, "test")
-    assert gates and gates[0].is_set()
+    assert gates and gates[0]._decided.is_set(), "the gate was left undecided"
+    assert gates[0].wait() is False, "a start that did not finish opening the network let its thread run"
 
 
 def test_a_crash_between_the_thread_and_the_clear_boots_as_refused():
@@ -188,7 +190,7 @@ def test_a_crash_between_the_thread_and_the_clear_boots_as_refused():
     from src.api import scheduler as scheduler_api
 
     src = inspect.getsource(scheduler_api._start_opening_the_network)
-    assert src.index("call(gate)") < src.index("clear_kill_switch_unless_engaged_since(epoch)") < src.index("gate.set()")
+    assert src.index("call(gate)") < src.index("clear_kill_switch_unless_engaged_since(epoch)") < src.index("gate.open()")
     for route in (scheduler_api.scheduler_start, scheduler_api.scheduler_run_now):
         assert "clear_kill_switch" not in inspect.getsource(route), "a route clears the switch before its thread exists again"
 
@@ -239,7 +241,7 @@ def test_a_stop_during_the_start_wins_and_the_network_stays_closed(client, monke
     assert detail["kill_switch"] == "engaged"
     assert detail["error"] == "Collection was stopped while it was starting, so the network was not opened."
     assert resumed == []
-    assert fake.ran.wait(5), "the gate stayed shut"
+    assert not fake.ran.wait(0.5), "the thread ran under a switch the route did not clear (security read 1, second pass)"
 
 
 class _NoThread:
@@ -272,3 +274,18 @@ def test_the_conditional_clear_refuses_after_any_engagement_and_clears_otherwise
     epoch = ingest.kill_switch_epoch()
     ingest.activate_kill_switch()
     assert ingest.clear_kill_switch_unless_engaged_since(epoch) is False and ingest.kill_switch_active()
+
+
+def test_a_cancelled_loop_thread_exits_without_running_and_the_scheduler_is_not_left_running(monkeypatch):
+    """The real scheduler: a cancelled gate ends the loop thread before its first step, so status does not say running after a 409."""
+    from src.scheduler import runner
+
+    ran: list[str] = []
+    scheduler = runner.BackgroundScheduler(run_once_fn=lambda: ran.append("pass") or {})
+    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: None)
+    monkeypatch.setattr(scheduler, "_loop_recorded", lambda: ran.append("loop"))
+    gate = runner.StartGate()
+    assert scheduler.start(gate=gate) is True
+    gate.cancel()
+    scheduler._thread.join(5)
+    assert scheduler.is_running() is False and ran == []
