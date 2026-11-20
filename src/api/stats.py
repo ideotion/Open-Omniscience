@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from src.catalog.countries import country_query_forms
 from src.monitoring.secret_scrub import http_detail
+from src.shared_text import said
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -72,11 +73,12 @@ def stat_agencies() -> dict:
                 "page live; until it runs, the gap between the numbers is the honest state."
             ),
         },
-        "caveat": (
+        **said(
+            "caveat",
             "A directory of WHO publishes official statistics — every entry is a "
             "STANCED source (a producing state has interests), never a credibility "
             "verdict. Figures, vintages and methodology come later, triangulated "
-            "side by side and never averaged."
+            "side by side and never averaged.",
         ),
     }
 
@@ -222,7 +224,7 @@ def fetch_figures(body: FigureFetchBody) -> dict:
         "fetched": len(figures),
         **tally,
         "sample": [f.to_dict() for f in figures[:10]],
-        "caveat": FETCH_CAVEAT,
+        **said("caveat", FETCH_CAVEAT),
     }
 
 
@@ -237,9 +239,10 @@ def list_stat_subscriptions() -> dict:
     return {
         "count": len(subs),
         "subscriptions": subs,
-        "caveat": (
+        **said(
+            "caveat",
             "Each tracked fetch is replayed every interval_days while you are online, "
-            "storing a new VINTAGE — revisions are preserved, never overwritten. No score."
+            "storing a new VINTAGE — revisions are preserved, never overwritten. No score.",
         ),
     }
 

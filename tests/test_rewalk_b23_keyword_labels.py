@@ -319,8 +319,9 @@ def test_the_framing_table_keeps_data_out_of_the_walker() -> None:
     body = function_body(read_static("app-ai-tools.js"), "loadFraming")
     assert "<td data-i18n-dyn>${esc(f.source)}</td>" in body
     assert re.search(r"<td[^>]*data-i18n-dyn>\$\{\(f\.top_terms", body)
-    assert '<div class="hint">${esc(d.caveat||"")}</div>' in body, (
-        "the caveat must stay a walker-reachable text node: it is translated as a key"
+    assert '<div class="hint">${ooSaidHtml(d, "caveat")}</div>' in body, (
+        "the caveat must stay in its own element, rendered through the shared helper (row 206): a key in the "
+        "reader's language, anything else labelled as the server's English"
     )
 
 

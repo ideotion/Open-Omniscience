@@ -88,6 +88,7 @@ from typing import TYPE_CHECKING, Any
 
 from src.monitoring import storage_events
 from src.monitoring.secret_scrub import is_driver_error, log_failure
+from src.shared_text import said
 
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
     from src.backup.artifact import StagedArtifact
@@ -2046,10 +2047,11 @@ def verify_stream_backup(
         "signature": None,
         "parity": None,
         "decrypted": False,
-        "method": (
+        **said(
+            "method",
             "manifest signature + per-volume ciphertext SHA-256 + structure; "
             "with the passphrase every volume is stream-decrypted into a hash "
-            "sink and member/envelope checksums are cross-checked"
+            "sink and member/envelope checksums are cross-checked",
         ),
     }
 
