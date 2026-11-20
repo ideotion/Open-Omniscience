@@ -397,21 +397,50 @@ _NETWORK_AFTER_REFUSAL = {
     False: "The network stays on, as you had set it before this start.",
 }
 
+#: The reason a start that made its thread is refused all the same: a Stop (the Stop button, the airplane toggle, a panic) engaged the
+#: switch while the thread was being made, and a Stop is never undone by a start that began before it. A locale key.
+_STOPPED_DURING_START = "Collection was stopped while it was starting, so the network was not opened."
+
+
+def _refusal(error: str, engaged: bool, network: str | None = None) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": error,
+            "kill_switch": "engaged" if engaged else "off",
+            "network": network or _NETWORK_AFTER_REFUSAL[engaged],
+        },
+    )
+
 
 def _start_opening_the_network(call: Callable[[threading.Event], bool], refused: str) -> bool:
-    """Make the collection thread, THEN open the network; a start that cannot make its thread opens nothing (R756).
+    """Make the collection thread, THEN open the network; a start that does not start opens nothing (R756).
 
-    ``call`` is the scheduler's ``start`` or ``run_now``, given a gate its thread waits on. The kill switch is cleared only after it returns,
-    and the gate is set after that, so: a refused start (the thread could not be made, ``RuntimeError``) leaves the switch in the state it
-    had immediately before this request, engaged or not, with no moment in between when anything could fetch; a start that works runs its
-    first pass with the switch already clear. A switch the operator had cleared before (the airplane button, which the UI's consent popup
-    presses before it calls this route) stays clear: this route never engages it, it only declines to clear it. Nothing is persisted, so a
-    process that dies between the thread and the clear boots in airplane mode like any other (the boot engage, src/api/main.py), which is
-    the refused state. Any other exception is not a refusal and still answers the unhandled error -- with the switch untouched, too.
+    ``call`` is the scheduler's ``start`` or ``run_now``, given a gate its thread waits on. The kill switch is cleared only after it returns
+    ``True`` (a thread was made), and the gate is set after that, so:
+
+    - a refused start (the thread could not be made, ``RuntimeError``) leaves the switch in the state it had immediately before this
+      request, engaged or not, with no moment in between when anything could fetch;
+    - a start that makes no thread (``False``: the loop already runs, a run is in flight, an exclusive operation holds the machine) opens
+      nothing either -- it leaves the switch as it found it, so a pass still winding down after a Stop is not handed the network back;
+    - a Stop that lands while the thread is being made wins: the clear happens only if the switch was not engaged since this request
+      began (:func:`src.ingest.clear_kill_switch_unless_engaged_since`), and otherwise the request is refused, saying so;
+    - a start that works runs its first pass with the switch already clear.
+
+    A switch the operator had cleared before (the airplane button, which the UI's consent popup presses before it calls this route) stays
+    clear: this route never engages it, it only declines to clear it. Nothing is persisted, so a process that dies between the thread and
+    the clear boots in airplane mode like any other (the boot engage, src/api/main.py), which is the refused state. Any other exception is
+    not a refusal and still answers the unhandled error -- with the switch untouched, too.
     """
-    from src.ingest import clear_kill_switch, kill_switch_active, note_operator_crossed_online
+    from src.ingest import (
+        clear_kill_switch_unless_engaged_since,
+        kill_switch_active,
+        kill_switch_epoch,
+        note_operator_crossed_online,
+    )
 
     gate = threading.Event()
+    epoch = kill_switch_epoch()
     try:
         try:
             started = call(gate)
@@ -419,17 +448,12 @@ def _start_opening_the_network(call: Callable[[threading.Event], bool], refused:
             # The thread could not start (R393): nothing runs, and the Wikipedia lane is not resumed as if collection had begun. A conflict
             # the operator can retry, never an unhandled 500. The detail says what the network is doing now, read from the switch itself.
             log_failure(_LOG, refused, exc, level=logging.WARNING)
-            engaged = kill_switch_active()
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": http_detail(exc),
-                    "kill_switch": "engaged" if engaged else "off",
-                    "network": _NETWORK_AFTER_REFUSAL[engaged],
-                },
-            ) from exc
-        clear_kill_switch()
-        note_operator_crossed_online()  # an explicit start IS crossing online
+            raise _refusal(http_detail(exc), kill_switch_active()) from exc
+        if started:
+            if not clear_kill_switch_unless_engaged_since(epoch):
+                _LOG.warning("%s: a Stop engaged the kill switch while the thread was being made; the network stays closed", refused)
+                raise _refusal(_STOPPED_DURING_START, True)
+            note_operator_crossed_online()  # an explicit start IS crossing online
     finally:
         gate.set()  # never leave a thread waiting: on any path out of here, the gate opens
     return started

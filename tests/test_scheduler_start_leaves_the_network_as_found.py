@@ -188,7 +188,7 @@ def test_a_crash_between_the_thread_and_the_clear_boots_as_refused():
     from src.api import scheduler as scheduler_api
 
     src = inspect.getsource(scheduler_api._start_opening_the_network)
-    assert src.index("call(gate)") < src.index("clear_kill_switch()") < src.index("gate.set()")
+    assert src.index("call(gate)") < src.index("clear_kill_switch_unless_engaged_since(epoch)") < src.index("gate.set()")
     for route in (scheduler_api.scheduler_start, scheduler_api.scheduler_run_now):
         assert "clear_kill_switch" not in inspect.getsource(route), "a route clears the switch before its thread exists again"
 
@@ -202,8 +202,73 @@ def test_the_ui_says_what_the_network_is_doing_after_a_refusal_in_every_language
 
     root = Path(__file__).resolve().parent.parent
     js = (root / "src" / "static" / "app-sources.js").read_text(encoding="utf-8")
-    assert js.count("+ _networkAfterRefusal(e, t9)") == 2, "both refusal toasts carry the network sentence"
+    assert js.count('_startRefusalMsg("Start failed: {error}", e, t9)') == 1
+    assert js.count('_startRefusalMsg("Run now failed: {error}", e, t9)') == 1
     for path in sorted((root / "src" / "static" / "locales").glob("*.json")):
         table = json.loads(path.read_text(encoding="utf-8"))
-        for sentence in scheduler_api._NETWORK_AFTER_REFUSAL.values():
+        for sentence in [*scheduler_api._NETWORK_AFTER_REFUSAL.values(), scheduler_api._STOPPED_DURING_START]:
             assert table.get(sentence), f"{path.name} has no translation of {sentence!r}"
+
+
+class _StopsDuringStart(_Recording):
+    """A stand-in whose thread is made while a Stop engages the switch (the window between the thread and the clear)."""
+
+    def _make(self, gate, label):
+        made = super()._make(gate, label)
+        ingest.activate_kill_switch()  # the Stop button, the airplane toggle or a panic, landing right here
+        return made
+
+
+@pytest.mark.parametrize("route", ["/api/scheduler/start", "/api/scheduler/run-now"])
+@pytest.mark.parametrize("engaged_before", [True, False])
+def test_a_stop_during_the_start_wins_and_the_network_stays_closed(client, monkeypatch, route, engaged_before):
+    """Both security reads of row 208 found it: with the clear moved after the thread, a Stop landing between them would have been
+    undone by the clear. The clear now happens only if the switch was not engaged since the request began."""
+    fake = _StopsDuringStart()
+    monkeypatch.setattr("src.api.scheduler.get_scheduler", lambda: fake)
+    resumed: list[str] = []
+    monkeypatch.setattr("src.api.scheduler._resume_wiki_lane", lambda: resumed.append("x"))
+    if engaged_before:
+        ingest.activate_kill_switch()
+    else:
+        ingest.clear_kill_switch()
+    r = client.post(route)
+    assert r.status_code == 409
+    assert ingest.kill_switch_active() is True, "a start undid a Stop pressed while it was starting"
+    detail = r.json()["detail"]
+    assert detail["kill_switch"] == "engaged"
+    assert detail["error"] == "Collection was stopped while it was starting, so the network was not opened."
+    assert resumed == []
+    assert fake.ran.wait(5), "the gate stayed shut"
+
+
+class _NoThread:
+    def start(self, gate=None) -> bool:
+        return False
+
+    run_now = start
+
+    def status(self) -> dict:
+        return {"running": False}
+
+
+@pytest.mark.parametrize("route", ["/api/scheduler/start", "/api/scheduler/run-now"])
+def test_a_start_that_makes_no_thread_opens_nothing(client, monkeypatch, route):
+    """``False`` (already running, a run in flight, an exclusive hold): no thread was made, so the switch is left as found -- a pass still
+    winding down after a Stop is not handed the network back."""
+    monkeypatch.setattr("src.api.scheduler.get_scheduler", lambda: _NoThread())
+    monkeypatch.setattr("src.api.scheduler._resume_wiki_lane", lambda: None)
+    monkeypatch.setattr("src.api.scheduler._status_payload", lambda: {})
+    ingest.activate_kill_switch()
+    r = client.post(route)
+    assert r.status_code == 200 and r.json()["started"] is False
+    assert ingest.kill_switch_active() is True
+
+
+def test_the_conditional_clear_refuses_after_any_engagement_and_clears_otherwise():
+    ingest.activate_kill_switch()
+    epoch = ingest.kill_switch_epoch()
+    assert ingest.clear_kill_switch_unless_engaged_since(epoch) is True and not ingest.kill_switch_active()
+    epoch = ingest.kill_switch_epoch()
+    ingest.activate_kill_switch()
+    assert ingest.clear_kill_switch_unless_engaged_since(epoch) is False and ingest.kill_switch_active()
