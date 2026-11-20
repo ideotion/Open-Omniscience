@@ -4499,7 +4499,7 @@
   "Record them, marked late": "Record them, marked late",
   "Recorded {n} entries, each marked late.": "Recorded {n} entries, each marked late.",
   "Recording began at {x}.": "Recording began at {x}.",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.",
   "Recursive crawl": "Recursive crawl",

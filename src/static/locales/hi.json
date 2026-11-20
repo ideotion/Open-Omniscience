@@ -4499,7 +4499,7 @@
   "Record them, marked late": "इन्हें दर्ज करें, विलंबित चिह्नित",
   "Recorded {n} entries, each marked late.": "{n} प्रविष्टियाँ दर्ज की गईं, हर एक विलंबित चिह्नित।",
   "Recording began at {x}.": "रिकॉर्डिंग {x} पर शुरू हुई।",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "रिकॉर्ड अपनी अलग फ़ाइल, medical.db, में रखे जाते हैं, आपके समाचार लेखों के साथ कभी नहीं मिलाए जाते। बैकअप अभी इसे शामिल नहीं करता; हर रखा गया रिकॉर्ड फिर से लाया जा सकता है।",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "रिकॉर्ड अपनी अलग फ़ाइल, medical.db, में रखे जाते हैं, आपके समाचार लेखों के साथ कभी नहीं मिलाए जाते। बैकअप में ये शामिल होते हैं, और हर रखा गया रिकॉर्ड फिर से भी लाया जा सकता है।",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "दर्ज करता है कि {site} इस स्रोत के लिए वैध रूप से प्रकाशित करता है। संग्रह फिर शुरू होता है और अलग रखे पेज लौट आते हैं। आप इसे बाद में वापस ले सकते हैं।",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "प्रत्येक मानक पद्धतिगत प्रकटीकरण के लिए, केवल यह दर्ज करता है कि इसे बताया गया या नहीं — कभी नहीं कि मान अच्छा है या नहीं। कोई संयुक्त स्कोर नहीं, कोई रैंकिंग नहीं, किसी सर्वेक्षण को कभी “बेकार” नहीं कहता।",
   "Recursive crawl": "पुनरावर्ती क्रॉल",

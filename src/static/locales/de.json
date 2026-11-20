@@ -4499,7 +4499,7 @@
   "Record them, marked late": "Eintragen, als verspätet markiert",
   "Recorded {n} entries, each marked late.": "{n} Einträge eingetragen, jeder als verspätet markiert.",
   "Recording began at {x}.": "Aufzeichnung begann am {x}.",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "Die Einträge liegen in einer eigenen Datei, medical.db, nie vermischt mit Ihren Nachrichtenartikeln. Eine Sicherung enthält sie noch nicht; jeder behaltene Eintrag kann erneut abgerufen werden.",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "Die Einträge liegen in einer eigenen Datei, medical.db, nie vermischt mit Ihren Nachrichtenartikeln. Eine Sicherung enthält sie, und jeder behaltene Eintrag kann auch erneut abgerufen werden.",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "Hält fest, dass {site} rechtmäßig für diese Quelle veröffentlicht. Die Sammlung wird fortgesetzt und die zurückgestellten Seiten kommen zurück. Sie können das später zurücknehmen.",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "Erfasst je Standard-Methodenangabe nur, ob sie ANGEGEBEN wurde — nie, ob der Wert gut ist. Keine zusammengesetzte Bewertung, kein Ranking, nennt eine Umfrage nie „nutzlos“.",
   "Recursive crawl": "Rekursives Crawling",

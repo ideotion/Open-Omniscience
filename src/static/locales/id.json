@@ -4499,7 +4499,7 @@
   "Record them, marked late": "Catat, ditandai terlambat",
   "Recorded {n} entries, each marked late.": "{n} entri dicatat, masing-masing ditandai terlambat.",
   "Recording began at {x}.": "Pencatatan dimulai pada {x}.",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "Catatan disimpan di berkasnya sendiri, medical.db, tidak pernah dicampur dengan artikel berita Anda. Cadangan belum menyertakannya; setiap catatan yang disimpan dapat diambil lagi.",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "Catatan disimpan di berkasnya sendiri, medical.db, tidak pernah dicampur dengan artikel berita Anda. Cadangan menyertakannya, dan setiap catatan yang disimpan juga dapat diambil lagi.",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "Mencatat bahwa {site} menerbitkan secara sah untuk sumber ini. Pengumpulan dilanjutkan dan halaman yang disisihkan kembali. Anda bisa menariknya nanti.",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "Untuk setiap pengungkapan metodologis standar, hanya mencatat apakah itu DINYATAKAN — bukan apakah nilainya baik. Tanpa skor gabungan, tanpa peringkat, tidak pernah menyebut jajak pendapat “tidak berguna”.",
   "Recursive crawl": "Perayapan rekursif",

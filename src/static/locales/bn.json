@@ -4499,7 +4499,7 @@
   "Record them, marked late": "এগুলো লিপিবদ্ধ করুন, বিলম্বিত চিহ্নসহ",
   "Recorded {n} entries, each marked late.": "{n}টি এন্ট্রি লিপিবদ্ধ হয়েছে, প্রতিটি বিলম্বিত চিহ্নসহ।",
   "Recording began at {x}.": "রেকর্ডিং শুরু হয়েছে {x}-এ।",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "রেকর্ডগুলো তাদের নিজস্ব ফাইল medical.db-তে রাখা হয়, কখনো আপনার সংবাদ নিবন্ধের সঙ্গে মেশানো হয় না। ব্যাকআপ এখনো এটি বহন করে না; রাখা প্রতিটি রেকর্ড আবার আনা যায়।",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "রেকর্ডগুলো তাদের নিজস্ব ফাইল medical.db-তে রাখা হয়, কখনো আপনার সংবাদ নিবন্ধের সঙ্গে মেশানো হয় না। ব্যাকআপ এগুলো বহন করে, আর রাখা প্রতিটি রেকর্ড আবারও আনা যায়।",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "লিখে রাখে যে {site} এই উৎসের জন্য বৈধভাবে প্রকাশ করে। সংগ্রহ আবার শুরু হয় এবং সরিয়ে রাখা পাতাগুলো ফিরে আসে। পরে এটি প্রত্যাহার করতে পারবেন।",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "প্রতিটি মানসম্মত পদ্ধতিগত প্রকাশের জন্য, এটি শুধু রেকর্ড করে যে তা উল্লিখিত ছিল কিনা — কখনো মানটি ভালো কিনা নয়। কোনো যৌগিক স্কোর নেই, কোনো র‍্যাঙ্কিং নেই, কখনো কোনো জরিপকে “অকেজো” বলে না।",
   "Recursive crawl": "পুনরাবৃত্ত ক্রল",

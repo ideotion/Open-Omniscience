@@ -4499,7 +4499,7 @@
   "Record them, marked late": "予以记录，并标记为补录",
   "Recorded {n} entries, each marked late.": "已记录 {n} 条条目，每条均标记为补录。",
   "Recording began at {x}.": "记录开始于 {x}。",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "记录保存在单独的文件 medical.db 中，从不与你的新闻文章混在一起。备份暂不包含它；每条保留的记录都可以重新获取。",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "记录保存在单独的文件 medical.db 中，从不与你的新闻文章混在一起。备份会包含这些记录；每条保留的记录也都可以重新获取。",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "记录 {site} 合法地为该来源发布内容。收集将恢复，被搁置的页面会回来。之后可以撤回。",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "针对每一项标准的方法学披露，只记录其是否被说明 — 绝不评判数值是否理想。没有综合评分、没有排名，也从不称某项民调“无用”。",
   "Recursive crawl": "递归抓取",

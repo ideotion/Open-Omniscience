@@ -4499,7 +4499,7 @@
   "Record them, marked late": "سجّلها مع وسمها بأنها متأخرة",
   "Recorded {n} entries, each marked late.": "[zero]سُجّل {n} قيد، وكلٌّ منها موسوم بأنه متأخر.[one]سُجّل {n} قيد، وكلٌّ منها موسوم بأنه متأخر.[two]سُجّل {n} قيدان، وكلٌّ منهما موسوم بأنه متأخر.[few]سُجّل {n} قيود، وكلٌّ منها موسوم بأنه متأخر.[many]سُجّل {n} قيداً، وكلٌّ منها موسوم بأنه متأخر.[other]سُجّل {n} قيد، وكلٌّ منها موسوم بأنه متأخر.",
   "Recording began at {x}.": "بدأ التسجيل في {x}.",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "تُحفظ السجلات في ملفها الخاص، medical.db، ولا تُخلط أبدًا بمقالاتك الإخبارية. لا تتضمنه النسخة الاحتياطية بعد؛ ويمكن جلب كل سجل محفوظ مرة أخرى.",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "تُحفظ السجلات في ملفها الخاص، medical.db، ولا تُخلط أبدًا بمقالاتك الإخبارية. تتضمنها النسخة الاحتياطية، ويمكن أيضًا جلب كل سجل محفوظ مرة أخرى.",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "يسجّل أن {site} ينشر بشكل مشروع لهذا المصدر. يُستأنف الجمع وتعود الصفحات الموضوعة جانبًا. يمكنك سحب ذلك لاحقًا.",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "يسجّل، لكل إفصاح منهجي معياري، ما إذا كان قد ذُكر فقط — وليس ما إذا كانت القيمة جيدة أبدًا. لا تقييم مركّب، ولا ترتيب، ولا وصف استطلاع بأنه ”عديم الفائدة“ أبدًا.",
   "Recursive crawl": "الزحف التكراري",

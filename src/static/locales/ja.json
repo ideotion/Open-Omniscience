@@ -4499,7 +4499,7 @@
   "Record them, marked late": "遅延の印を付けて記録",
   "Recorded {n} entries, each marked late.": "{n} 件のエントリを記録しました。それぞれに遅延の印が付いています。",
   "Recording began at {x}.": "記録開始：{x}。",
-  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup does not carry it yet; every kept record can be fetched again.": "レコードは専用のファイル medical.db に保存され、ニュース記事と混ざることはありません。バックアップにはまだ含まれませんが、保持したレコードはすべて再取得できます。",
+  "Records are kept in their own file, medical.db, never mixed with your news articles. A backup carries them, and every kept record can also be fetched again.": "レコードは専用のファイル medical.db に保存され、ニュース記事と混ざることはありません。バックアップにも含まれ、保持したレコードはすべて再取得することもできます。",
   "Records that {site} legitimately publishes for this source. Collection resumes and the set-aside pages come back. You can withdraw it later.": "{site} がこのソースのために正当に公開していることを記録します。収集が再開し、取り置いたページが戻ります。後で取り消せます。",
   "Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.": "標準的な各方法論的開示について、それが記載されたかどうかだけを記録します — 値の良し悪しは決して評価しません。合成スコアも順位付けもなく、調査を「無意味」と呼ぶこともありません。",
   "Recursive crawl": "再帰的クロール",
