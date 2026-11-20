@@ -5708,7 +5708,7 @@ _LAW_MOVED_UNIQUE_P = (
     " AND NOT EXISTS (SELECT 1 FROM temp.law_key_inc k2 JOIN temp.law_key_main km2 ON km2.key = k2.key AND km2.url = k2.url"
     "  WHERE km2.id = p.main_id AND k2.id <> p.inc_id)"
 )
-_LAW_MOVED_UNIQUE = "EXISTS (SELECT 1 FROM temp.law_alias_pair p WHERE p.inc_id = i.id AND " + _LAW_MOVED_UNIQUE_P + ")"
+_LAW_MOVED_UNIQUE = "EXISTS (SELECT 1 FROM temp.law_alias_pair p WHERE p.inc_id = i.id AND " + _LAW_MOVED_UNIQUE_P + ")"  # nosec B608 # module literals only: fixed table names, no request, user or file value
 
 
 def _catalogue_law_moves() -> set[tuple[str, str, str]]:
@@ -5730,7 +5730,7 @@ def _is_catalogue_move(moves: set[tuple[str, str, str]], jurisdiction, from_url,
 
 
 _LAW_HELD = (
-    "((ki.sib = 0 AND (EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url) OR " + _LAW_MOVED_UNIQUE + "))"
+    "((ki.sib = 0 AND (EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url) OR " + _LAW_MOVED_UNIQUE + "))"  # nosec B608 # module literals only: fixed table names, no request, user or file value
     " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)))"
 )
 
@@ -5804,7 +5804,7 @@ def _merge_law(con, batch_id, results) -> None:
     # other staged document -- the same test ``_LAW_HELD`` used, so a document counted as held always has a home here.
     _build_map(
         con, "map_law",
-        "SELECT id, home FROM ("
+        "SELECT id, home FROM ("  # nosec B608 # module literals only: fixed table names, no request, user or file value
         " SELECT i.id AS id, COALESCE("
         "  (SELECT MIN(km.id) FROM temp.law_key_main km"
         "   WHERE km.key = ki.key AND km.url = i.url AND km.jurisdiction = i.jurisdiction),"
