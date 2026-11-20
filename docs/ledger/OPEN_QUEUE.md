@@ -17065,3 +17065,18 @@ Ten rulings given between 2026-11-15 and 2026-11-17 were in the planner's log bu
 2. **`declared_for` does not read `previous_urls`.** It matches the catalogue by exact URL, so a kept HTML row no longer finds its catalogue row. Harmless today (neither German row declares an `identity`); the day one does, the declaration must reach the kept row too. **CLOSED 2026-11-19 (row 189's follow-up):** `declared_for` falls back to the one catalogue row of the same jurisdiction whose `previous_urls` names the address; an exact row wins, and an old address two rows both claim declares nothing (logged). Pinned in `tests/test_law_declared_identity.py`.
 3. **Six more rows read as unanswered although each was answered on 2026-09-29:** Q823, Q1009, Q1113, RC02, RC03, RC12. `scripts/planned_index.py::_row_is_pending` reads their source column (`sheet pending`) or their verdict's opening word (`PENDING`), both written before the answer, and `tests/test_planned_index.py` pins the first five as "unanswered" known truth. Q925 was fixed by rewriting its row; the others want the same, or a predicate that reads the `ANSWERED 2026-09-29` marker, and then the planned tests need a genuinely unanswered example. **CLOSED 2026-11-19 (row 189):** the six rows were re-worded to record the 2026-09-29 answers (the predicate is unchanged); the unanswered and slice-blocked examples now run on a synthetic tree, and `test_the_real_ledger_holds_no_STALE_pending_row` fails the next time an answered row keeps its pending wording. RC12's row still owes the `FUTURE_DEVELOPMENTS.md` §Poll analysis rewrite it names.
 4. **The live read.** The fixtures are byte-for-byte excerpts of the portal's files from an independent daily mirror, not a fetch from the host (egress-blocked from the build sandbox). Whether the portal serves `xml.zip` to this app and whether its `robots.txt` allows it is what the release run's law probe records on a machine with egress; until then the source's Q924 tier is `fixture`, not `live`.
+
+## 2026-11-20 — R755: the schema-freeze judgement (row 202, 0.8 gate row B)
+
+`R755` is added to `RULINGS_INDEX.md`. The coordinator ruled Lane O's proposal F1 to F8, written in
+`docs/product/SCHEMA_FREEZE_AUDIT.md`: the freeze starts after 0.9.0 (Q102's letter, not the proposed `v0.8.0` tag);
+additive is defined there, derived-data rebuilds sit outside it, and it covers the boot self-heals and the lane stores as
+well as Alembic. What stays open on this docket:
+
+1. **The operator's restore proof (F8).** A real restore of a pre-audit backup into the post-audit schema is
+   `not-measurable-here`; it is on the user's FYI list and does not block the document.
+2. **Q416 and Q306 when they are built.** Q416 never rewrites a user-made row; if one would need to change, it is mapped
+   at read time and the case comes back for its own ruling. Q306 lands before the freeze or is an offline user-run command
+   plus a restore normaliser, never a boot rewrite.
+3. **The 0.9 guard (0.9 row A).** `tests/test_schema_freeze_audit.py` holds the audit's list to the models by name; it is
+   not the freeze guard, which 0.9 row A builds and which must cover all four paths named in F4.

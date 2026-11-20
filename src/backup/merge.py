@@ -2330,7 +2330,7 @@ def merge_corpus(
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(UTC).isoformat(timespec="seconds"),
-                batch_meta.get("artifact_kind", "oo-backup-2"),
+                batch_meta.get("artifact_kind") or "unknown",  # never a guessed format (schema audit F7)
                 batch_meta.get("origin_fingerprint", "unsigned"),
                 batch_meta.get("app_version"),
                 batch_meta.get("alembic_rev"),

@@ -53,6 +53,11 @@ def load_calendars() -> list[dict]:
     return out
 
 
+def _plain(v: object) -> object:
+    """YAML reads an unquoted ``2024-06-09`` as a ``date``; the elections module reads ISO text."""
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
 def _coerce_year(v: object) -> int | None:
     """A 4-digit-ish year as int, or None. Defensive against bad YAML."""
     try:
@@ -139,6 +144,14 @@ def load_curated_events() -> list[dict]:
                 "window_year": _coerce_year(e.get("window_year")),
                 "origin_year": _coerce_year(e.get("origin_year")),
                 "until_year": _coerce_year(e.get("until_year")),
+                # An election's recurrence rule (S06-04 S1, the ruled PROJECTED tier): carried
+                # as written, never coerced here, because ``src.civic.elections`` parses and
+                # refuses each one (a missing or unreadable field means no projection, never
+                # a guess). Dropping them made the projected tier unreachable from the catalogue.
+                "interval_years": e.get("interval_years"),
+                "last_held": _plain(e.get("last_held")),
+                "recurrence_rule_source": e.get("recurrence_rule_source"),
+                "office": e.get("office"),
                 "confirmed": bool(e.get("confirmed", False)),
                 "official_url": str(e["official_url"]),
                 "tags": tags,

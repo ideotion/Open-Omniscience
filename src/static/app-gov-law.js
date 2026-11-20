@@ -665,9 +665,18 @@
       const weightingLine = (r) => {
         const w = r.weighting;
         if (!w) return "";
+        // The server names its weights in one of two fixed shapes; each is drawn in the UI language
+        // with the series id or the operator's own source name kept verbatim (the 0.6 row A walk
+        // found "stored series SP.POP.TOTL" printed in English inside every translated line).
+        const src = String(w.source || "");
+        const source = src.startsWith("stored series ")
+          ? _govTf("stored series {id}", {id: src.slice("stored series ".length)})
+          : src.startsWith("operator table: ")
+            ? _govTf("the operator's population table ({name})", {name: src.slice("operator table: ".length)})
+            : src;
         const base = w.stated
           ? _govTf("Weights: {source}, as of {as_of}. Covers {covered} of {total} members.",
-              {source: w.source, as_of: w.as_of || "—", covered: w.members_covered, total: w.members_total})
+              {source: source, as_of: w.as_of || "—", covered: w.members_covered, total: w.members_total})
           : _govTf("Weights: source not stated. Covers {covered} of {total} members.",
               {covered: w.members_covered, total: w.members_total});
         const tbl = (w.from_table && w.from_table.length && w.table)
