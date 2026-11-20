@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Apply a checked update after the app has exited, then start it again. Standard library only (it runs while the app's own environment is mid-swap).
+"""Apply a checked update after the app has exited, then start it again. Standard library only (it runs while the app's own environment is mid-swap), save
+one lazy ``psutil`` import on Windows (R748; a declared dependency, from the venv's site-packages, which the merge does not touch).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -62,6 +63,14 @@ BOOT_WAIT_S = 900
 SECRET_ENV = ("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
 #: Where a change can alter the live store when the new version starts (migrations, and init_db's own schema code).
 SCHEMA_PATHS = ("migrations/versions/", "src/database/")
+#: After a merge the timeout killed on Windows (R748, row 179): how long to wait for the git that may still hold ``.git/index.lock`` to let
+#: it go before the tree is put back. Killing Git for Windows' ``cmd\git.exe`` wrapper can leave the real ``git.exe`` running, finishing
+#: its checkout. MEASURED 2026-11-19: a full checkout between v0.4.0 and main (4,153 changed files of 6,457) took 1.3 s on Linux ext4;
+#: Windows NTFS with an antivirus scanning every new file is commonly tens of times slower, so 120 s (about 90 times the measurement)
+#: covers a git that was nearly done and still ends in minutes, not the 600 s a git step is allowed. Past it the lock is left alone and
+#: the update says it could not fully restore the previous version, as before.
+LOCK_RELEASE_WAIT_S = 120
+LOCK_POLL_S = 1.0
 LOCK_FILE = "update.lock"
 RESULT_FILE = "update-result.json"
 
@@ -237,7 +246,54 @@ def roll_back(root: Path, old: str, changed: list[str], py: str, *, new: str = "
     return True
 
 
-def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
+def git_processes_running() -> bool | None:
+    """True if any process whose name starts with ``git`` runs on this machine, False if positively none, None when that cannot be told
+    (psutil missing or refusing, or a process whose name it cannot read). Deliberately broad: the git that holds a lock is not ours to
+    name (its wrapper was killed), so ANY git process counts as a possible holder, and only a machine with none at all is a False. The
+    price is stated: an unrelated git left open (a Git Bash window, an editor polling git) keeps this True, so the update then waits its
+    bound and says rollback_incomplete as before R748 rather than reset under a git it cannot tell apart."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    try:
+        for proc in psutil.process_iter(["name"]):
+            name = proc.info.get("name")
+            if not isinstance(name, str):
+                return None  # AccessDenied or a zombie leaves the name unset: it could be the holder, so this cannot be told
+            if name.lower().startswith("git"):
+                return True
+    except Exception:  # noqa: BLE001 - any failure to look is "cannot tell", which waits
+        return None
+    return False
+
+
+def wait_for_index_lock(root: Path, *, wait_s: float = LOCK_RELEASE_WAIT_S, poll_s: float = LOCK_POLL_S, sleep=time.sleep,
+                        clock=time.monotonic, git_running=git_processes_running) -> bool:
+    """After a merge the timeout killed on Windows (R748, row 179): True once NO git process runs on this machine, so the tree can be put
+    back without a git still writing it.
+
+    The lock alone does not say that: the git its killed wrapper left behind may not have taken ``.git/index.lock`` yet, and an ff merge
+    lets the lock go BEFORE it moves HEAD, so a reset in that gap would be overtaken by the ref update (security and correctness reads of
+    #2160). So the answer waits for the process probe's plain False. A lock still there then is stale (that git died before it could
+    remove it) and is removed, the one case where removing it cannot pull a lock from under a live git. While any git process runs, or
+    when that cannot be told, nothing is touched; after ``wait_s`` the answer is False and the caller leaves the tree for the installer,
+    as before. (On Windows ``subprocess.run`` may itself wait for the real git before it reports the timeout, since that git holds the
+    output pipes: then this usually answers at once.)"""
+    lock = root / ".git" / "index.lock"
+    deadline = clock() + wait_s
+    while True:
+        if git_running() is False:
+            if lock.exists():
+                with contextlib.suppress(FileNotFoundError):
+                    lock.unlink()  # a PermissionError here (Windows: the file is open) propagates as "held": see the caller
+            return True
+        if clock() >= deadline:
+            return False
+        sleep(poll_s)
+
+
+def apply(plan: dict, *, git=_git, run=_run, windows: bool | None = None, sleep=time.sleep, lock_wait=wait_for_index_lock) -> tuple[str, str]:
     """Do steps 2-6. Returns ``(status, old_head)``; ``status`` is ``updated``, ``already_current`` or one fixed refusal word."""
     root = Path(plan["root"])
     ref, sha = plan["ref"], plan["sha"]
@@ -265,10 +321,12 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         return "already_current", old  # the checkout already contains that version (a pull without a reinstall, a tag behind main)
     if dependencies_changed(root, old, sha, git=git):
         return "dependencies_changed", old  # nothing swapped: the installer takes this release
-    if os.name == "nt":
+    if windows is None:
+        windows = os.name == "nt"
+    if windows:
         # The old window's launcher wrapper may still be finishing after the server's process exited, and cmd.exe resumes launch.cmd by byte
         # offset when it returns: give it a moment before the checkout (and so launch.cmd) can change; the console-script .exe is freed too.
-        time.sleep(5)
+        sleep(5)
     # Clean AGAIN, right before the swap: the fetch can take minutes, and an edit made meanwhile must stop the update rather than meet the
     # reset below (which would discard it).
     dirty = git(root, "status", "--porcelain")
@@ -276,15 +334,28 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         return "local_changes", old
     merged = git(root, "merge", "--ff-only", sha)
     if merged.returncode != 0:
-        if merged.returncode == 124 and os.name != "nt":
+        # The commits this helper itself may have left HEAD on: the old one, and (Windows, below) the new one a git that outlived its killed
+        # wrapper may have finished moving to.
+        ours = {old}
+        if merged.returncode == 124 and not windows:
             # killed by the timeout mid-checkout: on POSIX the killed git is reaped before this line, so its index lock is stale (and this
-            # helper holds update.lock, so no other git of ours runs here). NOT on Windows: killing Git for Windows' cmd\git.exe wrapper can
-            # leave the real git running and holding that lock, so it is left alone and the reset below fails: rollback_incomplete, said.
+            # helper holds update.lock, so no other git of ours runs here).
             with contextlib.suppress(OSError):
                 (root / ".git" / "index.lock").unlink()
+        elif merged.returncode == 124:
+            # Windows (R748, row 179): killing Git for Windows' cmd\git.exe wrapper can leave the real git running and holding the lock. Wait,
+            # bounded, for it to let go (it removes the lock when it ends); never remove a lock a live git may hold. Still held after the
+            # bound: the tree is left for the installer and the update says so, as before.
+            try:
+                released = lock_wait(root)
+            except OSError:
+                released = False  # the stale-lock removal was refused: something holds it after all
+            if not released:
+                return "rollback_incomplete", old
+            ours.add(sha)  # that git may have finished: HEAD on the new commit is still this helper's own merge, put back below
         head = git(root, "rev-parse", "HEAD")
         branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
-        if head.stdout.strip() != old or branch.stdout.strip() != "main":
+        if head.stdout.strip() not in ours or branch.stdout.strip() != "main":
             return "rollback_incomplete", old  # not where this helper left it: reset nothing
         # git writes the new files one by one BEFORE it moves HEAD: a merge that stopped part-way (a file held open, a path too long, the
         # timeout) leaves some files new under the old HEAD. Put the tree back; safe, as it was clean and HEAD is still the old commit.

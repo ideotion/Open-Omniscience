@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,entities/dossier,The dossier's rails as subtabs inside its dialog,shipped,PR #2161; row 178,src/static/app-dossier.js; tests/dossier_tabs_node_test.js,One ooSubtabs strip: Overview then each joined rail in server order; a rail without rows keeps its tab marked none here; each panel names where its rows come from; method and caveat stay below every panel.
