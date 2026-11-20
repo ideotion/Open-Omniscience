@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session as SASession
 from src.catalog.normalize import registrable_domain
 from src.database.models import Source
 from src.database.source_lookup import source_for_domain
+from src.shared_text import said
 from src.stats.agencies import list_agencies
 
 
@@ -124,10 +125,11 @@ def ingest_agencies_as_sources(session: SASession) -> dict:
             "with a known news/press section is enabled and crawled from there; one "
             "without is registered and left disabled until that URL is researched."
         ),
-        "caveat": (
+        **said(
+            "caveat",
             "Official producers are STANCED sources (a producing state has "
             "interests) — enabling one collects its written coverage, never its "
-            "datasets, and implies no endorsement. No credibility score."
+            "datasets, and implies no endorsement. No credibility score.",
         ),
     }
 

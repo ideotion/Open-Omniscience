@@ -34,6 +34,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
+from src.shared_text import said
 from src.stats.sdmx import StatFigure
 
 # --------------------------------------------------------------------------- #
@@ -210,5 +211,5 @@ def to_chart_series(
         "n_segments": len(segments),
         "unparseable_periods": unparseable,
         "duplicates_collapsed": duplicates_collapsed,
-        "caveat": _COMPARABILITY_CAVEAT,
+        **said("caveat", _COMPARABILITY_CAVEAT),
     }

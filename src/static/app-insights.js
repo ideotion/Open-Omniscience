@@ -1152,7 +1152,7 @@
           const osmLine = !osm ? "" : (osm.error ? " · " + t("The OpenStreetMap part could not be read.")
             : (osm.countries || []).length ? " · " + tf("{n} notable places from OpenStreetMap", {n: osm.places || 0}) : "");
           st.textContent = tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0}) + osmLine;
-          st.title = r.method || "";
+          st.title = ooSaidText(r, "method");
         }
         loadEntitySpine();
       } catch (e) { if (st) st.textContent = t("Could not resolve places:") + " " + e.message; }
@@ -1193,7 +1193,7 @@
           st.textContent = tf("{fetched} fetched · {missing} no longer on Wikidata · {refused} refused · {pending} left", {
             fetched: r.fetched || 0, missing: r.missing_on_wikidata || 0, refused: r.refused || 0, pending: r.pending || 0})
             + (r.stopped_by_airplane_mode ? " · " + t("stopped: airplane mode was turned on") : (r.stopped ? " · " + t("stopped early") : ""));
-          st.title = r.method || "";
+          st.title = ooSaidText(r, "method");
         }
         loadEntitySpine();
       } catch (e) {
@@ -1300,7 +1300,7 @@
           box.innerHTML = `<div class="muted">` + esc(
             _tfn("No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.",
               { a: String(d.min_articles), s: String(d.min_sources) })) + `</div>`;
-          if (meth && d.caveat) meth.textContent = d.caveat;
+          if (meth && d.caveat) meth.textContent = ooSaidText(d, "caveat");
           return;
         }
         const rows = clusters.map(c => {

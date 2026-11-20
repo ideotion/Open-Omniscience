@@ -643,8 +643,8 @@
         ph += '<div class="muted">' + ooLabelHtml(esc(t("Last recorded memory")),
               (smp.rss_mb != null ? esc(_mib(smp.rss_mb)) + " RSS" : "—") +
               (smp.mem_avail_mb != null ? " · " + esc(_tf("{size} available", { size: _mib(smp.mem_avail_mb) })) : "")) + "</div>";
-      if (prev.method) ph += '<div class="card-caveat">' + esc(prev.method) + "</div>";  // verbatim inference
-      if (prev.note) ph += '<div class="muted">' + esc(prev.note) + "</div>";
+      if (prev.method) ph += '<div class="card-caveat">' + ooSaidHtml(prev, "method") + "</div>";  // verbatim inference
+      if (prev.note) ph += '<div class="muted">' + ooSaidHtml(prev, "note") + "</div>";
       parts.push('<div style="margin-top:6px">' + ph + "</div>");
 
       // 2) Last unlock timing (why unlock was slow — one-time migrations / index / WAL recovery).
@@ -660,7 +660,7 @@
         if (Array.isArray(u.phases) && u.phases.length)
           uh += '<div class="muted">' + ooLabelHtml(esc(t("phases")),
                 u.phases.map((p) => esc(p.phase) + " (" + esc(_diagIso(_tf("{n} ms", { n: fmtNum(Math.round(p.ms), 0) }))) + ")").join(" · ")) + "</div>";
-        if (u.method) uh += '<div class="card-caveat">' + esc(u.method) + "</div>";  // verbatim method
+        if (u.method) uh += '<div class="card-caveat">' + ooSaidHtml(u, "method") + "</div>";  // verbatim method
         parts.push('<div style="margin-top:8px">' + uh + "</div>");
       }
 
@@ -689,8 +689,8 @@
               ent.map((e) => esc(e.name) + ' <span class="pill">' + esc(e.kind) + "</span> " + esc(humanBytes(e.bytes || 0)) +
                 (e.files ? " · " + esc(e.files === 1 ? _tf("{n} file", { n: fmtNum(1, 0) })
                   : _tf("{n} files", { n: fmtNum(e.files, 0) })) : "")).join("<br>") + "</div>";
-      if (inv.method) ih += '<div class="card-caveat">' + esc(inv.method) + "</div>";  // verbatim method
-      if (inv.note) ih += '<div class="muted">' + esc(inv.note) + "</div>";
+      if (inv.method) ih += '<div class="card-caveat">' + ooSaidHtml(inv, "method") + "</div>";  // verbatim method
+      if (inv.note) ih += '<div class="muted">' + ooSaidHtml(inv, "note") + "</div>";
       parts.push('<div style="margin-top:8px">' + ih + "</div>");
 
       return parts.join("");
@@ -830,7 +830,7 @@
         const dlg = $("chart-enlarge"); if (!dlg) { toast(t("Could not open the chart.")); return; }
         const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = t("Keyword-growth curve");
         const note = $("chart-enlarge-note");
-        if (note) { note.textContent = d.caveat || ""; note.style.display = d.caveat ? "" : "none"; }
+        if (note) { note.textContent = ooSaidText(d, "caveat"); note.style.display = d.caveat ? "" : "none"; }
         const body = $("chart-enlarge-body"); if (!body) return;
         const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
         // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
@@ -2558,7 +2558,7 @@
                  `${esc(t("AI-layer rows per hour, all categories"))}</div>` : "") +
           `<div class="card-caveat" style="margin-top:4px">${esc(sd.caveat || "")}</div>`;
       } else if (sd.reason) {
-        stored = `<div class="muted" style="margin-top:8px">${esc(sd.reason)}</div>`;
+        stored = `<div class="muted" style="margin-top:8px">${ooSaidHtml(sd, "reason")}</div>`;
       }
 
       const coord = (r.coordinator || {}).note
@@ -2871,7 +2871,7 @@
       // name — and its roster key is the only thing that says WHICH model is absent.
       const skipped = (res.skipped || []).map((s) => {
         const who = s.model || s.roster_key || "";
-        return `${esc(s.backend)}${who ? " · " + esc(who) : ""} — ${esc(s.reason)}`;
+        return `${esc(s.backend)}${who ? " · " + esc(who) : ""} — ${ooSaidHtml(s, "reason")}`;
       }).join("<br>");
       out.innerHTML = rows
         + (res.pairs_pending && res.pairs_pending.length
@@ -3080,7 +3080,7 @@
       const sep = (res.not_run_here || []).map((n) =>
         `${esc(n.name)} — ${esc(n.why)} (${esc(n.where)})`).join("<br>");
       if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
-      if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${esc(res.caveat)}</div>`);
+      if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${ooSaidHtml(res, "caveat")}</div>`);
       out.innerHTML = rows.join("");
     }
 

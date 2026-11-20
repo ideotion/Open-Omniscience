@@ -1418,7 +1418,7 @@
       if (rep.parity && typeof rep.parity === "object") {
         lines.push(`<div class="muted">${esc(t("Parity:"))} ${rep.parity.volumes} · ${esc(t("can still lose"))} ${rep.parity.tolerance_remaining}</div>`);
       }
-      if (rep.method) lines.push(`<div class="hint" style="margin-top:4px">${esc(t("Method:"))} ${esc(rep.method)}</div>`);
+      if (rep.method) lines.push(`<div class="hint" style="margin-top:4px">${esc(t("Method:"))} ${ooSaidHtml(rep, "method")}</div>`);
       host.innerHTML = lines.join("");
     }
 

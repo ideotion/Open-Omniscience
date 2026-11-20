@@ -862,7 +862,7 @@
       // matches: the label "Method" and the sentence itself.
       if (env.method) {
         parts.push(`<span class="fig-method">${esc(t9("Method"))}:</span> ` +
-          `<span class="fig-method">${esc(env.method)}</span>`);
+          `<span class="fig-method">${ooSaidHtml(env, "method")}</span>`);
       }
       // n === 0 is a real measurement ("nothing matched") and must print; only an
       // absent n is omitted. `n == null` catches undefined too, and nothing else.
@@ -885,7 +885,7 @@
       let html = parts.length ? `<div class="fig-meta"><span class="fig-method">` +
         parts.join(` <span class="muted">·</span> `) + `</span></div>` : "";
       if (env.caveat) {
-        html += `<div class="fig-meta"><span class="fig-caveat">${esc(env.caveat)}</span></div>`;
+        html += `<div class="fig-meta"><span class="fig-caveat">${ooSaidHtml(env, "caveat")}</span></div>`;
       }
       return html;
     }

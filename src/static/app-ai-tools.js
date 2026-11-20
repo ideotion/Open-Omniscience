@@ -1911,9 +1911,9 @@
             ? (hw.overridden
                 // Practical ONLY because the operator forced it: say so plainly, so
                 // an override is never mistaken for a hardware pass.
-                ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${esc(hw.reason)}</p>`
-                : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${esc(hw.reason)}</p>`)
-            : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${esc(hw.reason)}</p>`;
+                ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`
+                : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${ooSaidHtml(hw, "reason")}</p>`)
+            : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`;
           // RULING 15 (2026-07-31): the tier between "refused" and "fine" -- a
           // CPU-only machine, a thin-VRAM card, a small unified-memory Mac. These
           // are EXPECTATIONS, not refusals, and this is the ONE place on the tab
@@ -1929,10 +1929,10 @@
             ` data-on-change="setAllowImpracticalHw(this.checked)"> ` +
             `${esc(t("Run local AI anyway on this hardware"))}</label>` +
             ` <span class="muted">${esc(t("Your choice always wins — this is a default, never a block."))}</span></p>` +
-            `<p class="hint">${esc(hw.method)} ${esc(hw.caveat)}</p>`;
+            `<p class="hint">${ooSaidHtml(hw, "method")} ${ooSaidHtml(hw, "caveat")}</p>`;
         }
         box.innerHTML =
-          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
+          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${ooSaidHtml(b, "reason")}</span></p>` +
           // The GPU is named here only when there IS one -- its absence is stated
           // ONCE, in the hardware block below, with the consequence attached.
           // (Repeating "not detected" here made it the first of four identical

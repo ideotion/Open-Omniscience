@@ -1756,7 +1756,7 @@
       const reasons = (tl.results || []).filter((r) => r.status === "skipped" && r.reason);
       if (reasons.length) {
         html += `<div class="muted" style="margin-top:5px">` +
-          reasons.slice(0, 8).map((r) => `${esc(r.filename || "")}: ${esc(r.reason)}`).join("<br>") + `</div>`;
+          reasons.slice(0, 8).map((r) => `${esc(r.filename || "")}: ${ooSaidHtml(r, "reason")}`).join("<br>") + `</div>`;
       }
       return html;
     }

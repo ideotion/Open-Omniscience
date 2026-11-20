@@ -2440,7 +2440,7 @@
         // The server's method sentence is a fixed string, looked up as a key (R12): it
         // rode through in English under every locale. This render is re-run on a
         // language switch (app-boot's oo:langchange), so it follows the switch too.
-        method: _ooMapPayload.method ? t(_ooMapPayload.method) : "", caveat,
+        method: ooSaidText(_ooMapPayload, "method"), caveat,
         dimensions: dims.map(d => ({ id: d.id, label: d.label })), activeDim: dim.id,
         onDimension: id => { _ooMapDim = id; _renderOoMapDim(); },
         granularity: _ooMapGran,
@@ -3696,7 +3696,7 @@
       const label = t((OSM_COMP_KEYS.find(([k]) => k === _osmCompKey) || ["", ""])[1]);
       ooMap(host, {
         regionValues: vals, unit: "%", label, aria: label,
-        method: t(a.method || ""), caveat: t(a.caveat || ""),
+        method: ooSaidText(a, "method"), caveat: ooSaidText(a, "caveat"),
         valueLabel: (key, v) => {
           const e = byKey[key];
           return e && e.k ? ooLtrPct(osmCompTf("{share} % ({present} of {n})", { share: fmtNum(v, 1), present: fmtNum(e.k.present, 0), n: fmtNum(e.r.n, 0) })) : ooLtrPct(`${fmtNum(v, 1)} %`);
@@ -4313,7 +4313,7 @@
         return m === "places" ? `${fmtNum(r.raw, 0)} ${t("places")}`
           : osmCompTf("{count} of {n} places ({share})", { count: fmtNum(r.raw, 0), n: fmtNum(r.n, 0), share: _osmGeogShare(r.raw, r.n) });
       };
-      const common = { unit: share ? "%" : "", label, aria: label, method: t(_osmGeog.method || ""), valueLabel };   // the caveat is the panel's own line above: said once, whether or not a map is drawn
+      const common = { unit: share ? "%" : "", label, aria: label, method: ooSaidText(_osmGeog, "method"), valueLabel };   // the caveat is the panel's own line above: said once, whether or not a map is drawn
       if (_osmGeogLevel === "countries") await ooMap(host, Object.assign({ values }, common));
       else await ooMap(host, Object.assign({ regionValues: values }, common));
     }
@@ -4581,7 +4581,7 @@
         <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
         + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
       // The API caveat travels with the data, visible by default (informed consent).
-      if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
+      if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${ooSaidHtml(d, "caveat")}</div>`;
     }
     async function ingestStatSources() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -4608,7 +4608,7 @@
             + ` · ${ooLabelHtml(esc(t("already present")), esc(n(d.skipped_existing)))}`
             + split
             + (d.skipped_no_domain ? ` · ${ooLabelHtml(esc(t("skipped (no domain)")), esc(n(d.skipped_no_domain)))}` : "")
-            + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
+            + (d.caveat ? `<div class="muted" style="margin-top:5px">${ooSaidHtml(d, "caveat")}</div>` : "");
         }
         toast(t("Statistics producers registered."), "ok");
       } catch (e) {
@@ -4816,7 +4816,7 @@
           return `<tr><td>${ooAreaCell(c.ref_area, c.area_kind, c.area_name)}</td><td>${esc(c.time_period)}</td><td>${c.n_producers}</td><td>${cols}</td><td>${flag}</td></tr>`;
         }).join("");
         box.innerHTML = `<table><tr><th>Area</th><th>Period</th><th>#</th><th>Producers (side by side)</th><th>Comparability</th></tr>${cellHtml}</table>`
-          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
+          + (d.caveat ? `<div class="hint" style="margin-top:8px">${ooSaidHtml(d, "caveat")}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not triangulate: ${esc(e.message)}</div>`; }
     }
     // -- Revision anomalies (the reliable-memory check): History must not be silently
@@ -4866,8 +4866,8 @@
         + `<table><tr>${th("Agency")}${th("Series")}${th("Area")}${th("Period")}`
         + `${th("From → to", true)}${th("Change in value", true)}`
         + `${th("Robust z", true)}${th("Priors", true)}${th("Revised at")}</tr>${rows}</table>`
-        + (d.method ? `<div class="hint" style="margin-top:8px">${esc(d.method)}</div>` : "")
-        + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
+        + (d.method ? `<div class="hint" style="margin-top:8px">${ooSaidHtml(d, "method")}</div>` : "")
+        + (d.caveat ? `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>` : "");
     }
     // -- Honest stat chart: draws /api/stats/figures/series via ooViz.statChartGeometry.
     //    A comparability segment (unit/base-year/SA-NSA change) is its OWN path — never
@@ -4901,7 +4901,7 @@
         box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${aria}" style="max-width:${W}px;height:auto">${yLines}${xLabels}${paths}</svg>`
           + `<div class="hint">${total} points · ${esc(area)}${unit ? " · " + esc(unit) : ""}${breaks}</div>`
           + `<table class="sr-only"><caption>Stored values</caption><tr><th>Period</th><th>Value</th><th>Unit</th></tr>${trows}</table>`
-          + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
+          + (d.caveat ? `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not chart: ${esc(e.message)}</div>`; }
     }
     // -- Stat choropleth (§5B Phase C): colour a world map by one indicator, through the
@@ -5004,7 +5004,7 @@
           </tr>`;
         }).join("");
         box.innerHTML = `<table><tr><th>Source</th><th>Series</th><th>Interval</th><th>State</th><th>Last refresh</th><th></th></tr>${rows}</table>`
-          + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
+          + (d.caveat ? `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not load tracked figures: ${esc(e.message)}</div>`; }
     }
     async function toggleStatSub(id, enabled) {
