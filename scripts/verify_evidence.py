@@ -21,7 +21,7 @@ from pathlib import Path
 # Allow running from a checkout without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.reporting.console_text import console_safe  # noqa: E402
+from src.reporting.console_text import console_field, console_safe  # noqa: E402
 from src.reporting.evidence import verify_bundle  # noqa: E402
 
 
@@ -50,12 +50,12 @@ def main(argv: list[str]) -> int:
     trusted = argv[2] if len(argv) == 3 else None
     ok, reason = verify_bundle(bundle, trusted_public_key=trusted)
     manifest = bundle.get("manifest", {})
-    _say(f"bundle_version : {manifest.get('bundle_version')}")
-    _say(f"case_name      : {manifest.get('case_name')}")
-    _say(f"generated_at   : {manifest.get('generated_at')}")
-    _say(f"item_count     : {manifest.get('item_count')}")
-    _say(f"merkle_root    : {manifest.get('merkle_root')}")
-    _say(f"public_key     : {bundle.get('public_key')}")
+    _say(f"bundle_version : {console_field(manifest.get('bundle_version'))}")
+    _say(f"case_name      : {console_field(manifest.get('case_name'))}")
+    _say(f"generated_at   : {console_field(manifest.get('generated_at'))}")
+    _say(f"item_count     : {console_field(manifest.get('item_count'))}")
+    _say(f"merkle_root    : {console_field(manifest.get('merkle_root'))}")
+    _say(f"public_key     : {console_field(bundle.get('public_key'))}")
     _say(f"VERIFIED       : {ok}  ({reason})")
     return 0 if ok else 1
 

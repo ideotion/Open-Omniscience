@@ -130,3 +130,39 @@ def test_the_verifiers_print_only_through_the_safe_helper(script):
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "print"
     ]
     assert not bare, f"{script}: print() outside _say at lines {bare}"
+
+
+def test_a_long_field_is_cut_so_padding_cannot_wrap_a_fake_verdict_to_a_row_start(tmp_path):
+    """Security read, row 199: 'Case' + 200 spaces + the fake verdict has no unsafe character, but soft-wraps."""
+    key = load_or_create_signing_key(tmp_path / "k.pem")
+    bundle = build_signed_bundle([_Art(1, "alpha")], key, case_name="Case")
+    bundle["manifest"]["case_name"] = "Case" + " " * 200 + FAKE
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps(bundle), encoding="utf-8")
+    res = _run("verify_evidence.py", path)
+    out = res.stdout.decode("utf-8")
+    assert res.returncode == 1 and FAKE not in out, out
+    line = next(ln for ln in out.splitlines() if ln.startswith("case_name"))
+    assert "more characters, shown whole in the file" in line
+    assert len(line.split(" ... (+")[0]) <= len("case_name      : ") + console_field_max()
+
+
+def console_field_max() -> int:
+    from src.reporting.console_text import FIELD_MAX
+
+    return FIELD_MAX
+
+
+def test_console_field_keeps_hex_whole_and_never_splits_an_escape():
+    from src.reporting.console_text import console_field
+
+    key = (
+        "ab" * 1300
+    )  # an ML-DSA public key is thousands of hex digits; it is compared by eye, never cut
+    assert console_field(key) == key
+    assert console_field("short") == "short"
+    cut = console_field(
+        "\n" * 100, limit=10
+    )  # each escapes to 4 characters: 2 fit, the third would split
+    assert cut.startswith("\n\n ... (+98 more")
+    assert console_safe(cut).startswith("\\x0a\\x0a ... ")

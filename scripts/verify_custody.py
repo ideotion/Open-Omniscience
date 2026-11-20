@@ -50,7 +50,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.custody.log import ACCEPTED_UNENDORSED_NOTE, scope_note, verify_export_report  # noqa: E402
-from src.reporting.console_text import console_safe  # noqa: E402
+from src.reporting.console_text import console_field, console_safe  # noqa: E402
 
 
 def _say(line: object, *, file=None) -> None:
@@ -96,11 +96,11 @@ def main(argv: list[str]) -> int:
     # From the signed head when there is one (row 46): the bundle's top-level copies are not signed.
     raw_head = bundle.get("head")
     shown: dict = raw_head if isinstance(raw_head, dict) else bundle
-    _say(f"log_version    : {shown.get('log_version')}")
-    _say(f"item_id        : {shown.get('item_id')}")
-    _say(f"entry_count    : {shown.get('entry_count')}")
-    _say(f"signer ed25519 : {signer.get('ed25519_pub')}")
-    _say(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
+    _say(f"log_version    : {console_field(shown.get('log_version'))}")
+    _say(f"item_id        : {console_field(shown.get('item_id'))}")
+    _say(f"entry_count    : {console_field(shown.get('entry_count'))}")
+    _say(f"signer ed25519 : {console_field(signer.get('ed25519_pub'))}")
+    _say(f"signer ml-dsa  : {console_field(signer.get('ml_dsa_variant'))} {console_field(signer.get('ml_dsa_pub'))}")
     if ok:  # what a "verified" covers, said only beside one
         _say(f"scope          : {scope_note(bundle, report['notes'])}")
         for n in report["notes"]:

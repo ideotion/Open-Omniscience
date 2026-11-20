@@ -39,3 +39,29 @@ def console_safe(value: object) -> str:
         else:
             out.append(ch)
     return "".join(out)
+
+
+FIELD_MAX = 64
+_HEX = frozenset("0123456789abcdefABCDEF")
+
+
+def console_field(value: object, limit: int = FIELD_MAX) -> str:
+    """A bundle-supplied field for a ``label : value`` line, cut so that its ESCAPED form fits ``limit`` characters.
+
+    Escaping (``console_safe``, applied once to the whole line by the caller) keeps a field on ONE logical line, but a
+    long one still soft-wraps on a terminal, and padding can place ``VERIFIED       : True`` at the start of a visual
+    row. So a value longer than ``limit`` is cut and says how much was left out (the file holds it whole). A value made
+    only of hex digits is shown in full -- keys and hashes are compared by eye against known ones, and no hex text can
+    spell a verdict. Returns RAW text: the caller escapes the line, so nothing is escaped twice.
+    """
+    text = str(value)
+    if (text and set(text) <= _HEX) or len(console_safe(text)) <= limit:
+        return text
+    kept, used = 0, 0
+    for ch in text:
+        width = len(console_safe(ch))
+        if used + width > limit:
+            break
+        kept += 1
+        used += width
+    return text[:kept] + f" ... (+{len(text) - kept} more characters, shown whole in the file)"
