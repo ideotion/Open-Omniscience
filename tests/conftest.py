@@ -49,6 +49,9 @@ atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
 # worker's later tests failed with "disk I/O error" on every new connection. Every process now marks the directory it made its own, and
 # any process that inherits a marked directory takes its own, whether it is a worker or a child.
 _DEFAULT_MARK = "OO_TESTS_DEFAULT_DATA_DIR"
+# The directory the process that started this one marked as its own (the controller's for a worker, the test process's for a child), or
+# None; tests/test_xdist_workers_get_their_own_data_dir.py compares against it, since the variable itself now names this process's own.
+_PARENT_DATA_DIR = os.environ.get(_DEFAULT_MARK)
 if os.environ.get("OO_DATA_DIR") and os.environ.get("OO_DATA_DIR") == os.environ.get(_DEFAULT_MARK):
     os.environ["OO_DATA_DIR"] = _ISOLATED
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
