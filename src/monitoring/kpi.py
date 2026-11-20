@@ -132,12 +132,49 @@ _SPECS: tuple[dict, ...] = (
 )
 
 
-def _entry(spec: dict, *, value=None, n=None, as_of=None, verdict=_NM, method: str = "") -> dict:
+# --------------------------------------------------------------------------- row 201: the method as keyed FRAMES
+# A method used to be one English f-string with its figures welded in, so no locale key could ever match it and the hover
+# read English in all twelve languages. Each method is now a list of FRAMES, ``{"t": template, "v": vars}``: the template is
+# a fixed key with ``{name}`` holes, and the vars are the DATA (counts, dates, routes), which never translate. The pieces
+# join with NO separator (each template carries its own punctuation and spacing), and the English ``method`` field is BUILT
+# from the same frames, so the two cannot drift; it stays as the fallback for a client, or a saved snapshot, without them.
+# ``tr`` lists the vars whose value is itself a key (a word such as "an unknown number of" standing where a count would):
+# a number passes through it unchanged, because t() returns any string that is not a key.
+_HOLE = re.compile(r"\{(\w+)\}")
+#: Every value a ``tr`` var may carry that is not a number: each is a locale key (tests/test_kpi_method_frames.py).
+TR_WORDS = ("an unknown number of", "unknown number of", "an unknown number", "its")
+
+
+def _fr(template: str, *, tr: tuple[str, ...] = (), **variables) -> dict:
+    """One keyed piece of a method: ``template`` (a locale key) and the data that fills its holes, kept as the exact
+    English spelling (a string) so the English rebuilds byte for byte and a tuned figure never changes a key."""
+    out: dict = {"t": template, "v": {k: str(v) for k, v in variables.items()}}
+    if tr:
+        out["tr"] = list(tr)
+    return out
+
+
+def frames_text(frames: list[dict]) -> str:
+    """The English a list of method frames renders to. A hole with no value stays verbatim (the UI's tf does the same)."""
+    def _fill(fr: dict) -> str:
+        values: dict = fr.get("v") or {}
+        return _HOLE.sub(lambda m: str(values.get(m.group(1), m.group(0))), fr["t"])
+
+    return "".join(_fill(fr) for fr in frames or [])
+
+
+def _method(frames: list[dict], key: str = "method") -> dict:
+    """``{key: english, key_i18n: frames}``, to spread into a block."""
+    return {key: frames_text(frames), f"{key}_i18n": frames}
+
+
+def _entry(spec: dict, *, value=None, n=None, as_of=None, verdict=_NM, method: list[dict] | None = None) -> dict:
+    frames = method if method else ([_fr(spec["nm"])] if spec.get("nm") else [])
     return {
         "id": spec["id"],
         "name": spec["name"],
         "value": value,
-        "method": method or spec.get("nm", ""),
+        **_method(frames),
         "n": n,
         "as_of": as_of,
         "source_endpoint": spec.get("source_endpoint"),
@@ -145,6 +182,33 @@ def _entry(spec: dict, *, value=None, n=None, as_of=None, verdict=_NM, method: s
         "target": spec["target"],
         "verdict": verdict,
     }
+
+
+# Pieces chosen from a table rather than written at the call: (the first piece, a later piece). The first opens with its
+# own bracket or "; ", a later one with ", " or "; ", so no key is bare punctuation. Every string in these tables is a
+# locale key (FRAME_TABLES, scanned by tests/test_kpi_method_frames.py).
+_K2_KINDS: dict[str, tuple[str, str]] = {
+    "breaching_refusal_or_error_driven": ("; {n} only through refused or errored requests",
+                                          ", {n} only through refused or errored requests"),
+    "breaching_first_call_only": ("; {n} only on their first call", ", {n} only on their first call"),
+    "breaching_single_call": ("; {n} on a single call", ", {n} on a single call"),
+}
+_OSM_UNKNOWN: dict[str, tuple[str, str]] = {
+    "countries_change_files_unknown": (
+        " ({k} countries' lane predates the table of change files, so their change files are unknown, never 0",
+        "; {k} countries' lane predates the table of change files, so their change files are unknown, never 0"),
+    "countries_gaps_unknown": (" ({k} countries' lane predates the table of gaps, so their gaps are unknown, never 0",
+                               "; {k} countries' lane predates the table of gaps, so their gaps are unknown, never 0"),
+}
+_WIKI_UNKNOWN: dict[str, tuple[str, str]] = {
+    "editions_pages_unknown": (" ({k} editions' pages seen unknown, never 0", "; {k} editions' pages seen unknown, never 0"),
+    "editions_without_total": (" ({k} editions' own article count unknown, never 0",
+                               "; {k} editions' own article count unknown, never 0"),
+    "editions_text_bound_unknown": (" ({k} editions' text count in one tier unknown, never 0",
+                                    "; {k} editions' text count in one tier unknown, never 0"),
+    "editions_event_unreadable": (" ({k} editions' last event could not be read, which is not the same as none",
+                                  "; {k} editions' last event could not be read, which is not the same as none"),
+}
 
 
 def _k2_made_of(snappy_bar: dict, worst: dict, unlock: dict | None = None) -> tuple[str, str]:
@@ -163,56 +227,58 @@ def _k2_made_of(snappy_bar: dict, worst: dict, unlock: dict | None = None) -> tu
     not say "the last unlock" (a later one may exist) and, when the distance is absent, they read
     ``unlock`` (the summary's own stamp record) to tell "no unlock has ever finished here" from
     "none had finished when this call ended"."""
+    call, split = _k2_made_of_frames(snappy_bar, worst, unlock)
+    return frames_text(call), frames_text(split)
+
+
+def _k2_made_of_frames(snappy_bar: dict, worst: dict, unlock: dict | None = None) -> tuple[list[dict], list[dict]]:
+    """:func:`_k2_made_of` as keyed frames (row 201): the same two fragments, each a list of pieces."""
     from src.monitoring.unlock_marker import UNLOCK_ROUTES
 
     slowest = worst.get("slowest")
-    call = ""
+    call: list[dict] = []
     if isinstance(slowest, dict) and slowest.get("ms") is not None:
         d = slowest.get("started_after_unlock_s")
         ended = slowest.get("ended_at")
         finished = unlock.get("count") if isinstance(unlock, dict) else None
         if d is None:
             if ended is None:
-                # A clock that failed (or a summary that predates the stamp) leaves no end time, and
-                # then nothing can be said about where the call sat against an unlock, the case below
-                # that reads "it ended before any unlock had finished" included.
-                where = "its end time was not recorded, so its distance from an unlock is unknown"
+                # A clock that failed (or a summary that predates the stamp) leaves no end time, and then nothing can be
+                # said about where the call sat against an unlock, the case below that reads "it ended before any unlock
+                # had finished" included.
+                where = _fr("its end time was not recorded, so its distance from an unlock is unknown")
             elif not isinstance(finished, int):
-                where = "its distance from an unlock was not recorded"  # no stamp record to read
+                where = _fr("its distance from an unlock was not recorded")  # no stamp record to read
             elif finished >= 1:
-                where = "it ended before any unlock had finished in this process"
+                where = _fr("it ended before any unlock had finished in this process")
             else:
-                where = "no unlock has finished in this process, so its distance from one is unknown"
+                where = _fr("no unlock has finished in this process, so its distance from one is unknown")
         elif d >= 0:
-            where = f"it began {d:,.1f} s after the latest unlock to finish before it ended"
+            where = _fr("it began {s} s after the latest unlock to finish before it ended", s=f"{d:,.1f}")
+        elif worst.get("route") in UNLOCK_ROUTES:
+            # The stamp lies between this call's start and its end: an unlock finished while it ran. Only the two requests
+            # that PERFORM an unlock are that unlock's own request.
+            where = _fr("it began {s} s BEFORE an unlock finished while it ran (the unlock's own request)", s=f"{-d:,.1f}")
         else:
-            # The stamp lies between this call's start and its end: an unlock finished while it ran.
-            # Only the two requests that PERFORM an unlock are that unlock's own request.
-            own = " (the unlock's own request)" if worst.get("route") in UNLOCK_ROUTES else ""
-            where = f"it began {-d:,.1f} s BEFORE an unlock finished while it ran{own}"
-        call = (
-            f"; its slowest call took {float(slowest['ms']):,.1f} ms (status {slowest.get('status')})"
-            + (f", ended {ended}," if ended else ",")
-            + f" and {where}"
-        )
-    split = ""
+            where = _fr("it began {s} s BEFORE an unlock finished while it ran", s=f"{-d:,.1f}")
+        ms, status = f"{float(slowest['ms']):,.1f}", slowest.get("status")
+        call = [
+            _fr("; its slowest call took {ms} ms (status {status}), ended {ended}, and ", ms=ms, status=status, ended=ended)
+            if ended else _fr("; its slowest call took {ms} ms (status {status}), and ", ms=ms, status=status),
+            where,
+        ]
+    split: list[dict] = []
     breaching, interactive = snappy_bar.get("breaching"), snappy_bar.get("interactive_routes")
     if isinstance(breaching, int) and isinstance(interactive, int):
-        split = f"{breaching} of {interactive} interactive routes are over the bar"
+        split.append(_fr("{breaching} of {interactive} interactive routes are over the bar",
+                         breaching=breaching, interactive=interactive))
         thin, floor = snappy_bar.get("breaching_low_n"), snappy_bar.get("min_n")
         if isinstance(thin, int) and isinstance(floor, int):
-            split += f" ({thin} of them on fewer than {floor} samples)"
-        kinds = [
-            f"{snappy_bar[key]} {label}"
-            for key, label in (
-                ("breaching_refusal_or_error_driven", "only through refused or errored requests"),
-                ("breaching_first_call_only", "only on their first call"),
-                ("breaching_single_call", "on a single call"),
-            )
-            if isinstance(snappy_bar.get(key), int)
-        ]
+            split.append(_fr(" ({thin} of them on fewer than {floor} samples)", thin=thin, floor=floor))
+        kinds = [key for key in _K2_KINDS if isinstance(snappy_bar.get(key), int)]
         if kinds:
-            split += "; " + ", ".join(kinds) + " (counted by route, and overlapping)"
+            split += [_fr(_K2_KINDS[key][1 if i else 0], n=snappy_bar[key]) for i, key in enumerate(kinds)]
+            split.append(_fr(" (counted by route, and overlapping)"))
     return call, split
 
 
@@ -242,14 +308,14 @@ def _k2_latency(spec: dict) -> dict:
         r for r in (summ.get("routes") or []) if r.get("snappy") in ("pass", "fail", "low-n")
     ]
     if not interactive:
-        return _entry(spec, method=(
+        return _entry(spec, method=[_fr(
             "no interactive-route latency samples on this process yet — make a few reads first "
-            "(the reservoir is in-memory, per-process; empty is honest, not a gap)"))
+            "(the reservoir is in-memory, per-process; empty is honest, not a gap)")])
     worst = max(interactive, key=lambda r: float(r.get("p95_ms") or 0.0))
     worst_p95 = round(float(worst.get("p95_ms") or 0.0), 1)
     worst_n = int(worst.get("window_n") or 0)
     thin = worst.get("snappy") == "low-n"
-    call_note, split_note = _k2_made_of(snappy_bar, worst, summ.get("unlock"))
+    call_frames, split_frames = _k2_made_of_frames(snappy_bar, worst, summ.get("unlock"))
     return _entry(
         spec,
         value=worst_p95,
@@ -259,18 +325,16 @@ def _k2_latency(spec: dict) -> dict:
         as_of=_now(),
         verdict="red" if worst_p95 >= bar else "green",
         method=(
-            f"worst interactive-route p95 over the recent window vs the {bar:.0f} ms bar "
-            f"({worst.get('route')}, n={worst_n}"
-            + (
-                "; thin window — a real measurement whose typicality is unproven, never "
-                "a reason to withhold it"
-                if thin
-                else ""
-            )
-            + call_note
-            + ")"
-            + (f"; {split_note}" if split_note else "")
-            + "; measured, per-process reservoir, counts only, no score"
+            [_fr("worst interactive-route p95 over the recent window vs the {bar} ms bar ({route}, n={n}",
+                 bar=f"{bar:.0f}", route=worst.get("route"), n=worst_n)]
+            + ([_fr("; thin window — a real measurement whose typicality is unproven, never a reason to withhold it")]
+               if thin else [])
+            + call_frames
+            # The closing bracket rides the next piece, so no key is bare punctuation.
+            + ([_fr("); {breaching} of {interactive} interactive routes are over the bar", **split_frames[0]["v"])]
+               + split_frames[1:] if split_frames else [])
+            + [_fr("; measured, per-process reservoir, counts only, no score") if split_frames
+               else _fr("); measured, per-process reservoir, counts only, no score")]
         ),
     )
 
@@ -387,11 +451,11 @@ def _k6_sweep_block() -> dict:
             "verdict": _NM,
             "value": None,
             "as_of": None,
-            "method": (
+            **_method([_fr(
                 "no translation sweep has recorded a measurement on this machine -- turn "
                 "on background AI with keyword translation included; the sweep writes its "
                 "coverage at the end of every pass"
-            ),
+            )]),
         }
     head_n = rec.get("head_n")
     age = _age_days(rec.get("measured_at"))
@@ -405,14 +469,15 @@ def _k6_sweep_block() -> dict:
                    ("verified", "tentative", "untranslated", "same_language", "no_language")},
         "model": rec.get("model"),
         "pass_complete": rec.get("pass_complete"),
-        "method": (
-            f"Of the {head_n} most-spread keywords, {rec.get('tentative')} carry a TENTATIVE "
-            f"(≈, local-model) translation into {rec.get('target_lang')}, beside "
-            f"{rec.get('verified')} a verified ring translates and {rec.get('untranslated')} "
-            "nothing translates yet. Recorded by the translation sweep"
-            + (f", {age} day(s) ago" if age is not None else "")
-            + "; counts only, never re-run here, never summed with the ring figure."
-        ),
+        **_method([
+            _fr("Of the {head_n} most-spread keywords, {tentative} carry a TENTATIVE (≈, local-model) translation into "
+                "{lang}, beside {verified} a verified ring translates and {untranslated} nothing translates yet. "
+                "Recorded by the translation sweep",
+                head_n=head_n, tentative=rec.get("tentative"), lang=rec.get("target_lang"), verified=rec.get("verified"),
+                untranslated=rec.get("untranslated")),
+            *([_fr(", {age} day(s) ago", age=age)] if age is not None else []),
+            _fr("; counts only, never re-run here, never summed with the ring figure."),
+        ]),
     }
 
 
@@ -447,16 +512,14 @@ def _k6_ring_coverage(spec: dict) -> dict:
     pct, top_n = rec.get("pct"), rec.get("top_n")
     measured_at = rec.get("measured_at")
     age = _age_days(measured_at)
-    aged = f", measured {age} day(s) ago" if age is not None else ""
     if pct is None:
         # A run happened and produced no share. That is not-measurable in the ordinary
         # sense, so it carries no value and no as_of (the NM honesty guard); the date it
         # was looked at still belongs in the reason.
         return _entry(
             spec, n=top_n,
-            method=("the last keyword-engine run (" + str(measured_at) + ") found no top "
-                    "terms to divide by — an empty or unindexed corpus. No coverage share "
-                    "exists, which is a different fact from a coverage of 0"),
+            method=[_fr("the last keyword-engine run ({at}) found no top terms to divide by — an empty or unindexed "
+                        "corpus. No coverage share exists, which is a different fact from a coverage of 0", at=measured_at)],
         )
     return _entry(
         spec,
@@ -465,14 +528,15 @@ def _k6_ring_coverage(spec: dict) -> dict:
         as_of=measured_at,
         # target is "pending-ruling-V1-6": there is no bar, so green/red would be invented.
         verdict=_NO_BAR,
-        method=(
-            f"{rec.get('in_a_ring')} of the {top_n} most-mentioned keywords fall in one of "
-            f"{rec.get('rings_total')} cross-language rings ({pct}%), recorded by the "
-            f"keyword-engine diagnostic{aged}. A PERSISTED measurement of the corpus as it "
-            "was then, never re-run here and never re-stamped as fresh; counts only, no "
-            "score. The numeric bar is ruling V1-6, so the figure is reported and the "
-            "pass/fail verdict withheld rather than invented."
-        ),
+        method=[
+            _fr("{in_a_ring} of the {top_n} most-mentioned keywords fall in one of {rings} cross-language rings ({pct}%), "
+                "recorded by the keyword-engine diagnostic",
+                in_a_ring=rec.get("in_a_ring"), top_n=top_n, rings=rec.get("rings_total"), pct=pct),
+            *([_fr(", measured {age} day(s) ago", age=age)] if age is not None else []),
+            _fr(". A PERSISTED measurement of the corpus as it was then, never re-run here and never re-stamped as fresh; "
+                "counts only, no score. The numeric bar is ruling V1-6, so the figure is reported and the pass/fail "
+                "verdict withheld rather than invented."),
+        ],
     )
 
 
@@ -483,7 +547,7 @@ def _k11_i18n(spec: dict) -> dict:
     half (no un-keyed chrome strings) is a heavier scan verified in CI — noted, not re-run."""
     en_path = _LOCALES / "en.json"
     if not en_path.exists():
-        return _entry(spec, method="locale files not found in-process")
+        return _entry(spec, method=[_fr("locale files not found in-process")])
     source_keys = set(json.loads(en_path.read_text(encoding="utf-8")).keys())
     total = len(source_keys)
     worst_pct = 100.0
@@ -503,8 +567,8 @@ def _k11_i18n(spec: dict) -> dict:
         n=n_locales,
         as_of=_now(),
         verdict="green" if worst_pct >= 100.0 else "red",
-        method=(f"minimum locale key-coverage across {n_locales} locales vs en.json "
-                f"(lowest: {worst_code or '—'}); the audit-chrome=0 half is CI-verified"),
+        method=[_fr("minimum locale key-coverage across {n} locales vs en.json (lowest: {lowest}); the audit-chrome=0 half "
+                    "is CI-verified", n=n_locales, lowest=worst_code or "—")],
     )
 
 
@@ -621,9 +685,9 @@ def read_source_audit_status() -> dict | None:
     return _read_record(_SOURCES_FILE, _SOURCES_SCHEMA)
 
 
-def _ago(measured_at) -> str:
+def _ago(measured_at) -> list[dict]:
     age = _age_days(measured_at)
-    return f", {age} day(s) ago" if age is not None else ""
+    return [_fr(", {age} day(s) ago", age=age)] if age is not None else []
 
 
 def _k5_noise(spec: dict) -> dict:
@@ -632,12 +696,14 @@ def _k5_noise(spec: dict) -> dict:
     rec = read_keyword_generic_terms()
     if rec is None:
         return _entry(spec)
-    return _entry(spec, method=(
-        f"not measured: the keyword-engine run of {rec.get('measured_at')}{_ago(rec.get('measured_at'))} listed "
-        f"{rec.get('candidate_terms')} generic-term review candidates (up to {rec.get('top_per_language')} per language, "
-        f"{rec.get('languages')} languages), a list for a person to review, not a share of the top terms. No share is "
-        "measured anywhere, so none is shown or computed here; it needs the term set ruling V1-6 will define."
-    ))
+    return _entry(spec, method=[
+        _fr("not measured: the keyword-engine run of {at}", at=rec.get("measured_at")),
+        *_ago(rec.get("measured_at")),
+        _fr(" listed {n} generic-term review candidates (up to {per} per language, {langs} languages), a list for a person "
+            "to review, not a share of the top terms. No share is measured anywhere, so none is shown or computed here; it "
+            "needs the term set ruling V1-6 will define.",
+            n=rec.get("candidate_terms"), per=rec.get("top_per_language"), langs=rec.get("languages")),
+    ])
 
 
 def _k7_dates(spec: dict) -> dict:
@@ -647,18 +713,20 @@ def _k7_dates(spec: dict) -> dict:
         return _entry(spec)
     scanned, found, at, pct = rec.get("scanned"), rec.get("with_extracted"), rec.get("measured_at"), rec.get("coverage_pct")
     if not scanned or found is None or not isinstance(pct, (int, float)):
-        return _entry(spec, method=(
-            f"not measured: the date diagnostics run of {at} scanned no articles (an empty corpus), so no share exists; "
-            "that is a different fact from a coverage of 0"
-        ))
-    return _entry(spec, value=pct, n=scanned, as_of=at, verdict=_NO_BAR, method=(
-        f"{found} of the {scanned} most recent articles scanned (of {rec.get('articles_total')}) carry at least one date the "
-        f"extractor found ({pct}%), recorded by the standard date diagnostics run{_ago(at)} (the most recent "
-        f"{DATES_STANDARD_SCAN} articles, never the whole corpus once it is larger); "
-        f"{rec.get('datelike_no_extract')} more hold date-like text it did not turn into a date. A share of ARTICLES, not a "
-        "recall over every date in the text (the recall probe over-matches, so it is no denominator). A persisted "
-        "measurement, never re-run here; counts only. The bar is ruling V1-6, so no verdict is given."
-    ))
+        return _entry(spec, method=[_fr(
+            "not measured: the date diagnostics run of {at} scanned no articles (an empty corpus), so no share exists; "
+            "that is a different fact from a coverage of 0", at=at)])
+    return _entry(spec, value=pct, n=scanned, as_of=at, verdict=_NO_BAR, method=[
+        _fr("{found} of the {scanned} most recent articles scanned (of {total}) carry at least one date the extractor "
+            "found ({pct}%), recorded by the standard date diagnostics run",
+            found=found, scanned=scanned, total=rec.get("articles_total"), pct=pct),
+        *_ago(at),
+        _fr(" (the most recent {cap} articles, never the whole corpus once it is larger); {datelike} more hold date-like "
+            "text it did not turn into a date. A share of ARTICLES, not a recall over every date in the text (the recall "
+            "probe over-matches, so it is no denominator). A persisted measurement, never re-run here; counts only. The "
+            "bar is ruling V1-6, so no verdict is given.",
+            cap=DATES_STANDARD_SCAN, datelike=rec.get("datelike_no_extract")),
+    ])
 
 
 def _cohort_floor() -> int | str:
@@ -671,6 +739,21 @@ def _cohort_floor() -> int | str:
         return "its"
 
 
+#: K8's tally, one keyed piece per audit status: (the first piece, a later piece). A status the audit adds later reads
+#: through the ``None`` row, its id as data, until it is keyed here.
+_K8_TALLY: dict[str | None, tuple[str, str]] = {
+    "healthy": ("{n} healthy", ", {n} healthy"),
+    "watch": ("{n} watch", ", {n} watch"),
+    "degraded": ("{n} degraded", ", {n} degraded"),
+    "failing": ("{n} failing", ", {n} failing"),
+    None: ("{n} {status}", ", {n} {status}"),
+}
+
+
+#: The tables a frame's template is picked from (see ``_K2_KINDS``).
+FRAME_TABLES = (_K2_KINDS, _OSM_UNKNOWN, _WIKI_UNKNOWN, _K8_TALLY)
+
+
 def _k8_sources(spec: dict) -> dict:
     """K8: the share of audited sources whose extraction the last source audit rated healthy, with the per-region failing
     shares beside it (inspected, never folded into the figure)."""
@@ -681,25 +764,28 @@ def _k8_sources(spec: dict) -> dict:
     counts = {c.get("status"): c.get("n") for c in rec.get("status_counts") or [] if isinstance(c, dict)}
     healthy, pct = counts.get("healthy"), rec.get("healthy_pct")
     if not audited:
-        return _entry(spec, method=(
-            f"not measured: the source audit of {at} audited no source (none had {rec.get('min_articles')} articles), so "
-            "no share exists"
-        ))
+        return _entry(spec, method=[_fr(
+            "not measured: the source audit of {at} audited no source (none had {min} articles), so no share exists",
+            at=at, min=rec.get("min_articles"))])
     if healthy is None or not isinstance(pct, (int, float)):
-        return _entry(spec, method=f"not measured: the source audit of {at} recorded no healthy count, so no share exists")
-    tally = ", ".join(f"{n} {s}" for s, n in counts.items())
-    entry = _entry(spec, value=pct, n=audited, as_of=at, verdict=_NO_BAR, method=(
-        f"{healthy} of the {audited} audited sources read as healthy ({pct}%; {tally}), recorded by the source "
-        f"audit{_ago(at)}"
-        + (f", with {rec.get('allowlisted_domains')} allowlisted domain(s) capped at watch" if rec.get("allowlisted_domains")
-           else "")
-        + ". COHORT-RELATIVE, not absolute health: a source is healthy when none of its criteria falls in the bad tail of "
-        "its same-language cohort, so a large cohort holds some sources outside healthy by construction, and a cohort under "
-        f"the floor ({_cohort_floor()} sources) gets no soft baseline; the share can move when a cohort crosses that floor with no source "
-        "changing. Extraction validity, never editorial merit; each status is its own count, never blended. The per-region "
-        "failing shares ride beside it to be inspected, not scored. A persisted measurement, never re-run here. The bar is "
-        "ruling V1-6, so no verdict is given."
-    ))
+        return _entry(spec, method=[_fr(
+            "not measured: the source audit of {at} recorded no healthy count, so no share exists", at=at)])
+    tally = [_fr(_K8_TALLY.get(st, _K8_TALLY[None])[1 if i else 0], n=n, status=st)
+             for i, (st, n) in enumerate(counts.items())]
+    entry = _entry(spec, value=pct, n=audited, as_of=at, verdict=_NO_BAR, method=[
+        _fr("{healthy} of the {audited} audited sources read as healthy ({pct}%; ", healthy=healthy, audited=audited, pct=pct),
+        *tally,
+        _fr("), recorded by the source audit"),
+        *_ago(at),
+        *([_fr(", with {n} allowlisted domain(s) capped at watch", n=rec.get("allowlisted_domains"))]
+          if rec.get("allowlisted_domains") else []),
+        _fr(". COHORT-RELATIVE, not absolute health: a source is healthy when none of its criteria falls in the bad tail of "
+            "its same-language cohort, so a large cohort holds some sources outside healthy by construction, and a cohort "
+            "under the floor ({floor} sources) gets no soft baseline; the share can move when a cohort crosses that floor "
+            "with no source changing. Extraction validity, never editorial merit; each status is its own count, never "
+            "blended. The per-region failing shares ride beside it to be inspected, not scored. A persisted measurement, "
+            "never re-run here. The bar is ruling V1-6, so no verdict is given.", tr=("floor",), floor=_cohort_floor()),
+    ])
     entry["by_region"] = rec.get("by_region") or []
     return entry
 
@@ -809,7 +895,8 @@ def _medical_block() -> dict:
     rec = read_medical_fetch()
     if rec is None:
         return {"vertical": "medical", "state": "not-measured", "first_slice": False,
-                "reason": "no PubMed fetch has been recorded on this machine (Advanced, Medical papers: Fetch records one)"}
+                **_method([_fr("no PubMed fetch has been recorded on this machine (Advanced, Medical papers: Fetch records "
+                               "one)")], "reason")}
     applied, failed = rec.get("applied"), rec.get("failed")
     if failed is True:
         outcome = "fetched, stopped at a file that failed (the task manager names it)"
@@ -827,15 +914,14 @@ def _medical_block() -> dict:
         "newest_file_applied": rec.get("last_file"), "files_applied_last_run": applied, "files_listed": rec.get("listed"),
         "files_remaining": rec.get("remaining"), "stopped": rec.get("stopped"), "outcome": outcome,
         "papers_kept": rec.get("papers"), "by_class": rec.get("by_class"), "coverage": cov,
-        "method": (
+        **_method([_fr(
             "Read from the last PubMed fetch's own record: how many of NLM's update files it applied, how many remain, how "
             "many records are kept per provenance class, and how many cited paper ids were found or not found yet. Update "
             "files carry only papers NLM revised recently, so a cited paper not found here is not missing from PubMed (R750). "
-            "Counts only; no id is written to the record."
-        ),
+            "Counts only; no id is written to the record.")]),
     }
     if not block["first_slice"]:
-        block["reason"] = "the last PubMed fetch has not applied an update file yet"
+        block.update(_method([_fr("the last PubMed fetch has not applied an update file yet")], "reason"))
     return block
 
 
@@ -850,7 +936,8 @@ def _climate_block() -> dict:
     datasets = (rec or {}).get("datasets")
     if rec is None or not isinstance(datasets, dict) or not datasets:
         return {"vertical": "climate", "state": "not-measured", "first_slice": False,
-                "reason": "no climate fetch has been recorded on this machine (the Climate tab's Fetch button records one)"}
+                **_method([_fr("no climate fetch has been recorded on this machine (the Climate tab's Fetch button records "
+                               "one)")], "reason")}
     rows = []
     for name, d in sorted(datasets.items()):
         if not isinstance(d, dict):
@@ -874,15 +961,19 @@ def _climate_block() -> dict:
         })
     if not rows:
         return {"vertical": "climate", "state": "not-measured", "first_slice": False,
-                "reason": "the climate fetch record holds no readable dataset entry"}
+                **_method([_fr("the climate fetch record holds no readable dataset entry")], "reason")}
     with_figures = sum(1 for r in rows if r["has_figures"])
     return {
         "vertical": "climate", "state": "recorded", "first_slice": with_figures > 0, "as_of": rec.get("measured_at"),
         "datasets_fetched": len(rows), "datasets_listed": listed, "datasets": rows,
-        "method": (f"the last recorded fetch of each climate dataset: {len(rows)} of "
-                   f"{listed if listed is not None else 'the'} datasets fetched on this machine, {with_figures} of them "
-                   "with figures from the source at some fetch. Each age is the fetch's own; no "
-                   "freshness bar is set (S08-02 S2), so no dataset is called fresh or stale."),
+        **_method([
+            _fr("the last recorded fetch of each climate dataset: {n} of {listed} datasets fetched on this machine, ",
+                n=len(rows), listed=listed) if listed is not None
+            else _fr("the last recorded fetch of each climate dataset: {n} of the datasets fetched on this machine, ",
+                     n=len(rows)),
+            _fr("{with_figures} of them with figures from the source at some fetch. Each age is the fetch's own; no "
+                "freshness bar is set (S08-02 S2), so no dataset is called fresh or stale.", with_figures=with_figures),
+        ]),
     }
 
 
@@ -910,16 +1001,18 @@ def _elections_block() -> dict:
         "floor_as_of": rep.get("as_of"),
         "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
         "snapshot_age_days": _age_days(snap.get("as_of")), "snapshot_rows": rows,
-        "method": ("the elections floor diagnostic's own counts over the shipped catalogue layered with the Wikidata "
-                   "snapshot on disk, each state apart (covered, only a passed projection, present but dateless, "
-                   "missing). The first slice is the snapshot, so the vertical counts as ingested only when a snapshot "
-                   "with rows is present; the shipped catalogue alone is not an ingest. Read from files, never fetched."),
+        **_method([_fr(
+            "the elections floor diagnostic's own counts over the shipped catalogue layered with the Wikidata "
+            "snapshot on disk, each state apart (covered, only a passed projection, present but dateless, "
+            "missing). The first slice is the snapshot, so the vertical counts as ingested only when a snapshot "
+            "with rows is present; the shipped catalogue alone is not an ingest. Read from files, never fetched.")]),
     }
     if not present:
-        block["reason"] = (f"no readable Wikidata election snapshot on this machine (state: {snap.get('state')}); the "
-                           "operator's networked run writes one")
+        block.update(_method([_fr("no readable Wikidata election snapshot on this machine (state: {state}); the "
+                                  "operator's networked run writes one", state=snap.get("state"))], "reason"))
     elif not loaded:
-        block["reason"] = "the Wikidata election snapshot on this machine holds no rows, so there is no first slice"
+        block.update(_method([_fr("the Wikidata election snapshot on this machine holds no rows, so there is no first "
+                                  "slice")], "reason"))
     return block
 
 
@@ -978,8 +1071,8 @@ def _law_block() -> dict:
     rec = read_law_coverage()
     if rec is None:
         return {"vertical": "law", "kind": "lane", "state": "not-measured", "first_slice": False,
-                "reason": "no law coverage report has run on this machine (run the law coverage diagnostic, or take an "
-                          "all-diagnostics bundle)"}
+                **_method([_fr("no law coverage report has run on this machine (run the law coverage diagnostic, or take "
+                               "an all-diagnostics bundle)")], "reason")}
     docs = rec.get("documents")
     floor = rec.get("floor_by_state")
     floor_n = sum(v for v in floor.values() if isinstance(v, int)) if isinstance(floor, dict) else None
@@ -994,16 +1087,19 @@ def _law_block() -> dict:
         "newest_check_age_hours": rec.get("newest_check_age_hours"),
         "catalog_readable": rec.get("catalog_readable"), "floor_state": rec.get("floor_state"),
         "floor_by_state": floor,
-        "method": (f"the last law coverage report's own counts: {docs} tracked documents in {rec.get('jurisdictions')} "
-                   f"jurisdictions; of the {floor_n if floor_n is not None else 'unknown number of'} countries on the "
-                   f"language floor, {tracked if tracked is not None else 'an unknown number'} are tracked, "
-                   + ("and the other states are unknown: the law catalogue could not be read, so they were never looked "
-                      "up. " if unchecked else "each other state counted apart. ")
-                   + "A tracked-document count is an entry point, never a coverage claim, and nothing "
-                   "is divided. The check ages are the report's own, from when it ran."),
+        **_method([
+            _fr("the last law coverage report's own counts: {docs} tracked documents in {jur} jurisdictions; of the "
+                "{floor_n} countries on the language floor, {tracked} are tracked, ", tr=("floor_n", "tracked"),
+                docs=docs, jur=rec.get("jurisdictions"), floor_n=floor_n if floor_n is not None else "unknown number of",
+                tracked=tracked if tracked is not None else "an unknown number"),
+            _fr("and the other states are unknown: the law catalogue could not be read, so they were never looked up. ")
+            if unchecked else _fr("each other state counted apart. "),
+            _fr("A tracked-document count is an entry point, never a coverage claim, and nothing is divided. The check "
+                "ages are the report's own, from when it ran."),
+        ]),
     }
     if not block["first_slice"]:
-        block["reason"] = "the last law coverage report counted no tracked document"
+        block.update(_method([_fr("the last law coverage report counted no tracked document")], "reason"))
     return block
 
 
@@ -1053,33 +1149,39 @@ def read_osm_lane() -> dict | None:
     return _read_record(_OSM_FILE, _OSM_SCHEMA)
 
 
-def _osm_method(rec: dict, complete_n: int) -> str:
+def _osm_method(rec: dict, complete_n: int) -> list[dict]:
     def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
         v = _int_or_none(rec.get(key))
         return str(v) if v is not None else "an unknown number of"
 
-    unknown = []
-    for key, what in (("countries_change_files_unknown", "change files"), ("countries_gaps_unknown", "gaps")):
+    unknown: list[dict] = []
+    for key, pair in _OSM_UNKNOWN.items():
         k = _int_or_none(rec.get(key))
         if k:
-            unknown.append(f"{k} countries' lane predates the table of {what}, so their {what} are unknown, never 0")
-    return (f"the OSM change-file member's own counts, from its last read of the lane store: {n('countries')} countries "
-            f"listed, {complete_n} of them cut to completion; {n('change_files_recorded')} daily change files recorded over "
-            f"{n('countries_with_change_files')} countries, {n('gaps_total')} gaps"
-            + (f" ({'; '.join(unknown)})" if unknown else "")
-            + ". A first slice is one country cut to completion. No country is named; nothing is divided.")
+            unknown.append(_fr(pair[1 if unknown else 0], k=k))
+    return [
+        _fr("the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, "
+            "{complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, "
+            "{gaps} gaps", tr=("countries", "diffs", "with_files", "gaps"), countries=n("countries"), complete=complete_n,
+            diffs=n("change_files_recorded"), with_files=n("countries_with_change_files"), gaps=n("gaps_total")),
+        *unknown,
+        _fr("). A first slice is one country cut to completion. No country is named; nothing is divided.") if unknown
+        else _fr(". A first slice is one country cut to completion. No country is named; nothing is divided."),
+    ]
 
 
 def _osm_block() -> dict:
     rec = read_osm_lane()
     if rec is None:
         return {"vertical": "osm", "kind": "lane", "state": "not-measured", "first_slice": False,
-                "reason": "no OpenStreetMap change-file record has been read on this machine (take an all-diagnostics bundle)"}
+                **_method([_fr("no OpenStreetMap change-file record has been read on this machine (take an all-diagnostics "
+                               "bundle)")], "reason")}
     if rec.get("lane") == "absent":
         return {"vertical": "osm", "kind": "lane", "state": "recorded", "first_slice": False, "as_of": rec.get("measured_at"),
                 "lane": "absent", "countries": 0,
-                "method": "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.",
-                "reason": "no OpenStreetMap country has been cut on this install"}
+                **_method([_fr("the OSM change-file member's own read of the lane store: no OSM lane exists on this "
+                               "install.")]),
+                **_method([_fr("no OpenStreetMap country has been cut on this install")], "reason")}
     raw_status = rec.get("countries_by_status")
     by_status: dict = raw_status if isinstance(raw_status, dict) else {}
     complete_n: int = _int_or_none(by_status.get("complete")) or 0
@@ -1093,10 +1195,10 @@ def _osm_block() -> dict:
         "countries_change_files_unknown": rec.get("countries_change_files_unknown"),
         "gaps_total": rec.get("gaps_total"), "countries_gaps_unknown": rec.get("countries_gaps_unknown"),
         "newest_change_file_applied_at": rec.get("newest_change_file_applied_at"),
-        "method": _osm_method(rec, complete_n),
+        **_method(_osm_method(rec, complete_n)),
     }
     if not block["first_slice"]:
-        block["reason"] = "no OpenStreetMap country has been cut to completion"
+        block.update(_method([_fr("no OpenStreetMap country has been cut to completion")], "reason"))
     return block
 
 
@@ -1162,41 +1264,46 @@ def read_wiki_coverage() -> dict | None:
     return _read_record(_WIKI_FILE, _WIKI_SCHEMA)
 
 
-def _wiki_method(rec: dict) -> str:
+def _wiki_method(rec: dict) -> list[dict]:
     def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
         v = _int_or_none(rec.get(key))
         return str(v) if v is not None else "an unknown number of"
 
-    unknown = []
-    for key, what in (("editions_pages_unknown", "pages seen"), ("editions_without_total", "own article count"),
-                      ("editions_text_bound_unknown", "text count in one tier")):
+    unknown: list[dict] = []
+    for key, pair in _WIKI_UNKNOWN.items():
         k = _int_or_none(rec.get(key))
         if k:
-            unknown.append(f"{k} editions' {what} unknown, never 0")
-    k = _int_or_none(rec.get("editions_event_unreadable"))
-    if k:
-        unknown.append(f"{k} editions' last event could not be read, which is not the same as none")
+            unknown.append(_fr(pair[1 if unknown else 0], k=k))
     lo, up = _int_or_none(rec.get("pages_with_text_lower_bound")), _int_or_none(rec.get("pages_with_text_upper_bound"))
     if lo is not None and up is not None and up >= lo:
-        text = f"between {lo} and {up} pages with a text (a page promoted from WARM to HOT may be counted twice)"
+        text = _fr("between {lo} and {up} pages with a text (a page promoted from WARM to HOT may be counted twice)",
+                   lo=lo, up=up)
     elif lo is not None:
-        text = f"at least {lo} pages with a text (the upper bound is unknown while an edition's WARM count is)"
+        text = _fr("at least {lo} pages with a text (the upper bound is unknown while an edition's WARM count is)", lo=lo)
     else:
-        text = "an unknown number of pages with a text"
-    return (f"the per-edition wiki coverage report's own counts, from its last read of the lane: {n('editions_with_a_run')} of "
-            f"{n('editions_listed')} editions listed have run; {n('editions_with_pages_seen')} have pages seen and "
-            f"{n('editions_with_text')} hold a text; {n('pages_seen')} pages seen, {text}, "
-            f"{n('gaps_total')} gaps"
-            + (f" ({'; '.join(unknown)})" if unknown else "")
-            + ". A first slice is one edition with pages seen or a stored text. No edition is named; nothing is divided.")
+        text = _fr("an unknown number of pages with a text")
+    return [
+        _fr("the per-edition wiki coverage report's own counts, from its last read of the lane: {ran} of {listed} editions "
+            "listed have run; {with_pages} have pages seen and {with_text} hold a text; {pages} pages seen, ",
+            tr=("ran", "listed", "with_pages", "with_text", "pages"), ran=n("editions_with_a_run"),
+            listed=n("editions_listed"), with_pages=n("editions_with_pages_seen"), with_text=n("editions_with_text"),
+            pages=n("pages_seen")),
+        text,
+        _fr(", {gaps} gaps", tr=("gaps",), gaps=n("gaps_total")),
+        *unknown,
+        _fr("). A first slice is one edition with pages seen or a stored text. No edition is named; nothing is divided.")
+        if unknown else
+        _fr(". A first slice is one edition with pages seen or a stored text. No edition is named; nothing is divided."),
+    ]
 
 
 def _wiki_block() -> dict:
     rec = read_wiki_coverage()
     if rec is None:
         return {"vertical": "wiki", "kind": "lane", "state": "not-measured", "first_slice": False,
-                "reason": "no wiki coverage report has read a wiki lane on this machine (the lane has never run, or no report "
-                          "has been taken since: Living sources, the lane counters or an all-diagnostics bundle make one)"}
+                **_method([_fr("no wiki coverage report has read a wiki lane on this machine (the lane has never run, or "
+                               "no report has been taken since: Living sources, the lane counters or an all-diagnostics "
+                               "bundle make one)")], "reason")}
     pages_n = _int_or_none(rec.get("editions_with_pages_seen")) or 0
     text_n = _int_or_none(rec.get("editions_with_text")) or 0
     keys = ("measured", "editions_listed", "editions_with_a_run", "editions_with_pages_seen", "editions_with_text",
@@ -1204,9 +1311,10 @@ def _wiki_block() -> dict:
             "pages_with_text_lower_bound", "pages_with_text_upper_bound", "editions_text_bound_unknown", "gaps_total",
             "newest_event_recorded_at", "editions_event_unreadable")
     block = {"vertical": "wiki", "kind": "lane", "state": "recorded", "first_slice": pages_n > 0 or text_n > 0,
-             "as_of": rec.get("measured_at"), **{k: rec.get(k) for k in keys}, "method": _wiki_method(rec)}
+             "as_of": rec.get("measured_at"), **{k: rec.get(k) for k in keys}, **_method(_wiki_method(rec))}
     if not block["first_slice"]:
-        block["reason"] = "the last wiki coverage report counted no edition with pages seen or a stored text"
+        block.update(_method([_fr("the last wiki coverage report counted no edition with pages seen or a stored text")],
+                             "reason"))
     return block
 
 
@@ -1220,7 +1328,7 @@ def _k13_verticals(spec: dict) -> dict:
             blocks.append(build())
         except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others
             blocks.append({"vertical": name, "state": "not-measured", "first_slice": False,
-                           "reason": f"its block could not be read ({type(exc).__name__})"})
+                           **_method([_fr("its block could not be read ({error})", error=type(exc).__name__)], "reason")})
     recorded = [b for b in blocks if b["state"] == "recorded"]
     if not recorded:
         entry = _entry(spec)
@@ -1231,12 +1339,16 @@ def _k13_verticals(spec: dict) -> dict:
     # A date in the future (clock skew) is not "newer" than today's: its age counts as 0.
     dated = [(max(age, 0.0), b.get("as_of")) for b in recorded if (age := _age_days(b.get("as_of"))) is not None]
     as_of = min(dated, key=lambda pair: pair[0])[1] if dated else None
-    entry = _entry(spec, value=len(ingested), n=len(blocks), as_of=as_of, verdict=_NO_BAR, method=(
-        f"{len(ingested)} of the {len(blocks)} verticals and lanes listed have a first slice in "
-        f"({', '.join(ingested) if ingested else 'none'}); each block below carries its own figures, date and "
-        "method, read from what it recorded where it measured. A count, not a score: the blocks are never blended. A "
-        "persisted measurement, never fetched or re-run here. The bar is open (Q1017 = a, S08-02 S2), so no verdict is given."
-    ))
+    entry = _entry(spec, value=len(ingested), n=len(blocks), as_of=as_of, verdict=_NO_BAR, method=[
+        # The names are the blocks' own ids (data); each block below draws its translated name.
+        _fr("{n} of the {total} verticals and lanes listed have a first slice in ({names}); ", n=len(ingested),
+            total=len(blocks), names=", ".join(ingested)) if ingested
+        else _fr("{n} of the {total} verticals and lanes listed have a first slice in (none); ", n=len(ingested),
+                 total=len(blocks)),
+        _fr("each block below carries its own figures, date and method, read from what it recorded where it measured. A "
+            "count, not a score: the blocks are never blended. A persisted measurement, never fetched or re-run here. The "
+            "bar is open (Q1017 = a, S08-02 S2), so no verdict is given."),
+    ])
     entry["verticals"] = blocks
     return entry
 
@@ -1256,7 +1368,7 @@ def kpi_snapshot(session=None) -> dict:  # noqa: ARG001 - session accepted for t
         try:
             metrics.append(resolver(spec))
         except Exception as exc:  # noqa: BLE001 - a resolver fault degrades to not-measurable
-            metrics.append(_entry(spec, method=f"resolver error (not-measurable): {type(exc).__name__}"))
+            metrics.append(_entry(spec, method=[_fr("resolver error (not-measurable): {error}", error=type(exc).__name__)]))
     return {
         "schema": _SCHEMA,
         "generated_at": _now(),
