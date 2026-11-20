@@ -749,8 +749,11 @@ def test_selftests_keep_the_full_output_only_for_one_that_did_not_pass(monkeypat
 # ---------------------------------------------------------------------------------------------------
 #  5. The budgets and the 4 MB of R119 (the coordinator's condition at the go on D)
 # ---------------------------------------------------------------------------------------------------
-#: R119's 4,000,000 bytes, kept as the budget for the WHOLE archive. Since row 211 (the user's 2026-11-15 rule) the archive is
-#: handed over in parts of ``dv.volume_max_bytes()`` (200,000 bytes), so the part size no longer bounds the archive; this does.
+#: The SLOT PLAN'S SIZING REFERENCE, not an enforced cap: R119's 4,000,000 bytes, the part size the budgets in
+#: ``diagnostics_slots`` (``HEADROOM_AT_LEAST_BYTES`` and the figures beside it) were measured against. Nothing in the code caps the
+#: whole archive; the volume splitter enforces only the part size, ``dv.volume_max_bytes()``, 200,000 bytes since row 211 (the user's
+#: 2026-11-15 rule), and an archive above it is handed over as numbered parts. Pinning the budgets to this figure keeps them from
+#: growing unseen; pinning them to the part size would only say the archive is split, which it is by design.
 _ARCHIVE_BUDGET = 4_000_000
 
 def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_table_states():
@@ -759,7 +762,7 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     own per-part overhead still leave the room the table states under one part. A budget raised
     carelessly eats the headroom and this fails; the answer is to measure again."""
     cap = _ARCHIVE_BUDGET
-    assert dv.volume_max_bytes() == 200_000 < cap, "the archive is split into 200 KB parts; the budget is the whole archive's"
+    assert dv.volume_max_bytes() == 200_000 < cap, "the archive is split into 200 KB parts; the budgets are sized against the plan's reference"
     worst = (
         sum(s.budget_bytes for s in slots.SLOTS)
         + slots.OTHER_NEW_MEMBERS_BYTES
