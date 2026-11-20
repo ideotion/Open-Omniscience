@@ -64,7 +64,7 @@ def test_every_item_names_its_ruling():
 
 
 def test_the_never_section_holds_only_never_rulings():
-    """§2 must not list Q1135: RC13's 2026-09-29 answer and R99 rule that feature a build (Q1135's index line keeps its old CONFLICT note)."""
+    """§2 must not list Q1135: RC13's 2026-09-29 answer and R99 rule that feature a build (Q1135's index line records the CONFLICT as resolved)."""
     text = BACKLOG.read_text(encoding="utf-8")
     never = text.split("## 2.", 1)[1].split("## 3.", 1)[0]
     assert "Q1135" not in never

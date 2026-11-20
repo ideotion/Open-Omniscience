@@ -45,5 +45,4 @@ These are listed so that they are not proposed again.
 - **Religious calendars and the eclipse canon (Q1135).** Row H's text lists Q1135 = b («drop the feature») as
   never. RC13 was answered on 2026-09-29: a dedicated networked session researches the dates from published
   calendars and authorities, with eclipses (the eclipse half was confirmed as R99). So it is a ruled build,
-  neither never nor backlog, though Q1135's own index line still carries the old CONFLICT note. Rulings: Q1135,
-  RC13, R99.
+  neither never nor backlog (Q1135's index line records the CONFLICT as resolved). Rulings: Q1135, RC13, R99.
