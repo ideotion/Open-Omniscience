@@ -169,6 +169,11 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
         "the canonical ODbL 1.0 URL in the same OpenStreetMap attribution line (Q823 = a). "
         "src/backup/attribution.py imports nothing that can open a socket and "
         "dereferences nothing",
+    "www.nlm.nih.gov":
+        "NLM's terms page for its PubMed data, written INSIDE the PubMed attribution line a "
+        "backup carries when it holds the medical store (R746). The creativecommons.org shape: "
+        "a licence statement's own reference, never dereferenced; the app's PubMed downloads "
+        "go to ftp.ncbi.nlm.nih.gov, which is enumerated",
     "www.etalab.gouv.fr":
         "the canonical Licence Ouverte 2.0 URL in src/law/model.py's LICENCES registry "
         "(Q927 = a records a licence per document and shows it in the reader). The same "

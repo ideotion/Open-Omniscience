@@ -4228,6 +4228,7 @@
   "Pruning…": "整理中…",
   "PubMed fetch failed:": "PubMed の取得に失敗しました:",
   "PubMed indexes this record as a journal publication. Peer review is the journal's claim; this app does not check it. Not retracted in this copy of the record: a retraction recorded later may not be in it yet.": "PubMed はこの記録を学術誌の論文として収録しています。査読は学術誌の主張であり、このアプリでは確認していません。この記録のコピーでは撤回されていません。後で登録された撤回はまだ含まれていない可能性があります。",
+  "PubMed records — courtesy of the U.S. National Library of Medicine (https://www.nlm.nih.gov/databases/download/terms_and_conditions.html). An abstract may be copyrighted by its publisher; the record's own copyright line is kept with it. Check those terms before redistributing an abstract.": "PubMed レコード — 米国国立医学図書館の提供（https://www.nlm.nih.gov/databases/download/terms_and_conditions.html）。抄録には出版社の著作権がある場合があり、レコード自身の著作権表示はレコードと一緒に保存されています。抄録を再配布する前にその条件を確認してください。",
   "Public finance": "財政",
   "Public holidays": "祝日",
   "Publication dates can be imprecise or missing, and a shared calendar date is a coincidence, not a connection. Cross-time recall is sacred: this is a lens, never a reweighting.": "公開日は不正確だったり欠けていたりすることがあり、同じ暦の日付は偶然であって関係ではありません。時をまたぐ振り返りは大切です — これはレンズであり、重み付けの変更ではありません。",
