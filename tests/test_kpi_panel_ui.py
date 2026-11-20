@@ -17,7 +17,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from tests.js_source_helper import function_body
+from tests.js_source_helper import function_body, object_literal
 
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -81,9 +81,8 @@ def test_every_panel_string_is_keyed_in_all_twelve_locales() -> None:
 
 
 def _js_object_keys(src: str, name: str) -> set[str]:
-    """The keys of ``const NAME = {...};`` in the shipped module: each key is a bare name followed by a list or a string."""
-    at = src.index(f"const {name} = {{")
-    body = src[at: src.index("};", at)]
+    """The keys of ``const NAME = {...}`` in the shipped module: each key is a bare name followed by a list or a string."""
+    body = object_literal(src, name)
     return set(re.findall(r"(?<![\w\"])([A-Za-z_][A-Za-z0-9_]*): [\[\"]", body))
 
 
