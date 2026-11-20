@@ -50,6 +50,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.custody.log import ACCEPTED_UNENDORSED_NOTE, scope_note, verify_export_report  # noqa: E402
+from src.reporting.console_text import console_safe  # noqa: E402
+
+
+def _say(line: object, *, file=None) -> None:
+    """Every line goes out through console_safe: a bundle's own text can never draw a second verdict (row 199)."""
+    print(console_safe(line), file=file if file is not None else sys.stdout)
 
 
 def main(argv: list[str]) -> int:
@@ -62,10 +68,10 @@ def main(argv: list[str]) -> int:
     unknown = flags - {"--pin", "--accept-unendorsed-rotation"}
     if unknown:
         # A misspelt --pin must not verify without the pin it was meant to add.
-        print(f"unknown option(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+        _say(f"unknown option(s): {', '.join(sorted(unknown))}", file=sys.stderr)
         return 2
     if len(args) != 1:
-        print(
+        _say(
             "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin] [--accept-unendorsed-rotation]", file=sys.stderr
         )
         return 2
@@ -74,8 +80,9 @@ def main(argv: list[str]) -> int:
         bundle = json.loads(Path(args[0]).read_text(encoding="utf-8-sig"))  # UTF-8 as saved; never the locale's codec
     except (OSError, ValueError, RecursionError) as exc:  # ValueError: JSONDecodeError, UnicodeDecodeError, >4300-digit ints
         # A file cut mid-record is not JSON at all: refused by name, never a traceback.
-        print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
-              "a file cut mid-record reads like this")
+        _say("VERIFIED       : False")
+        _say("ISSUES:")
+        _say(f"  - not a readable custody bundle ({type(exc).__name__}: {exc}); a file cut mid-record reads like this")
         return 1
     if not isinstance(bundle, dict):
         bundle = {"entries": bundle}
@@ -89,24 +96,24 @@ def main(argv: list[str]) -> int:
     # From the signed head when there is one (row 46): the bundle's top-level copies are not signed.
     raw_head = bundle.get("head")
     shown: dict = raw_head if isinstance(raw_head, dict) else bundle
-    print(f"log_version    : {shown.get('log_version')}")
-    print(f"item_id        : {shown.get('item_id')}")
-    print(f"entry_count    : {shown.get('entry_count')}")
-    print(f"signer ed25519 : {signer.get('ed25519_pub')}")
-    print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
+    _say(f"log_version    : {shown.get('log_version')}")
+    _say(f"item_id        : {shown.get('item_id')}")
+    _say(f"entry_count    : {shown.get('entry_count')}")
+    _say(f"signer ed25519 : {signer.get('ed25519_pub')}")
+    _say(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
     if ok:  # what a "verified" covers, said only beside one
-        print(f"scope          : {scope_note(bundle, report['notes'])}")
+        _say(f"scope          : {scope_note(bundle, report['notes'])}")
         for n in report["notes"]:
-            print(f"key rotation   : {n}")
+            _say(f"key rotation   : {n}")
         # R714: an old-format bundle is never reported as equal to a new one.
-        print(f"format         : {report['format_note'] or 'the signed head commits to every entry hash'}")
+        _say(f"format         : {report['format_note'] or 'the signed head commits to every entry hash'}")
     unendorsed = ok and report["accepted_unendorsed"]
-    print(f"VERIFIED       : {ok}" + (" (old format: weaker guarantee)" if ok and report["format_note"] else "")
+    _say(f"VERIFIED       : {ok}" + (" (old format: weaker guarantee)" if ok and report["format_note"] else "")
           + (f" -- UNENDORSED KEY CHANGE ACCEPTED: {ACCEPTED_UNENDORSED_NOTE}" if unendorsed else ""))
     if issues:
-        print("ISSUES:")
+        _say("ISSUES:")
         for i in issues:
-            print(f"  - {i}")
+            _say(f"  - {i}")
     if not ok:
         return 1
     if unendorsed:
