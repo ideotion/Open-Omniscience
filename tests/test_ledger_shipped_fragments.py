@@ -107,3 +107,45 @@ def test_release_notes_reads_fragments_after_the_file(tmp_path):
     rows = rn.read_rows(csv_path)
     assert [r["date"] for r in rows] == ["2026-01-01", "2026-09-30"]
     assert rows[-1]["summary"] == _ROW["summary"]
+
+
+# Row 205: the release notes quote date, status and refs verbatim, so the check refuses what would read wrong there.
+def test_check_refuses_an_undated_row_in_the_shared_file(tmp_path):
+    p = tmp_path / "shipped.csv"
+    p.write_bytes(b"date,area,item,status,refs,key_paths,summary\r\n,x,An undated row,shipped,PR #0,k,s\n")
+    assert any("the date must be YYYY-MM-DD" in m and "An undated row" in m for m in ls.check(p))
+
+
+@pytest.mark.parametrize(
+    "fields, needle",
+    [
+        ({"refs": "R721; 0.6 row E"}, "refs name no pull request"),
+        ({"status": "shipped (draft)"}, "status still says draft"),
+        ({"status": "draft"}, "status still says draft"),
+        ({"status": "built (draft PR; CI pending)"}, "status still says draft"),
+    ],
+)
+def test_check_refuses_a_row_after_the_floor_without_its_pr_or_still_draft(tmp_path, fields, needle):
+    csv_path = _ledger(tmp_path)
+    ls.new({**_ROW, "date": ls.ROW_RULES_FROM, **fields}, csv_path)
+    assert any(needle in m for m in ls.check(csv_path))
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"refs": "R721; PR #2018"},
+        {"status": "shipped; first live run pending"},
+        {"status": "shipped (the drafts folder is now read)"},
+    ],
+)
+def test_check_accepts_a_row_after_the_floor_with_its_pr_and_a_final_status(tmp_path, fields):
+    csv_path = _ledger(tmp_path)
+    ls.new({**_ROW, "date": ls.ROW_RULES_FROM, **fields}, csv_path)
+    assert ls.check(csv_path) == []
+
+
+def test_rows_before_the_floor_stay_as_written(tmp_path):
+    csv_path = _ledger(tmp_path)
+    ls.new({**_ROW, "date": "2026-11-01", "status": "shipped (draft PR)", "refs": "R1"}, csv_path)
+    assert ls.check(csv_path) == []

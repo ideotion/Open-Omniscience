@@ -676,7 +676,9 @@ def test_the_real_ledger_partitions_exactly_for_the_real_tag_range():
         == len(rows)
     )
     assert sel.in_range, "the real v0.2.0..v0.3.0 range is not empty"
-    assert sel.undated, "the ledger really does carry undated rows (8 on 2026-09-15)"
+    # It carried 8 undated rows until row 205 (2026-11-20) dated them from their authoring commits; the
+    # ledger check (scripts/ledger_shipped.py, row_problems) now refuses an undated row, so none come back.
+    assert not sel.undated, [r.get("item") for r in sel.undated]
 
 
 def test_the_real_ledger_carries_no_placeholder_any_release_would_cite():
