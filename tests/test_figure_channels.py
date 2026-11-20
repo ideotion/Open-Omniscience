@@ -232,8 +232,8 @@ def test_figMeta_puts_the_method_sentence_in_its_own_element():
     assert 'esc(t9("Method"))}:</span>' in body, (
         "the label and the sentence must be separate elements, each an exact key"
     )
-    assert re.search(r'<span class="fig-method">\$\{esc\(env\.method\)\}</span>', body), (
-        "the method sentence must be alone in its element"
+    assert re.search(r'<span class="fig-method">\$\{ooSaidHtml\(env, "method"\)\}</span>', body), (
+        "the method sentence must be alone in its element, rendered through the shared helper (row 206)"
     )
 
 
