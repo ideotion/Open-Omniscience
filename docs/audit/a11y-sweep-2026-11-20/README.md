@@ -30,7 +30,7 @@ Add `OO_WALK_CHROMIUM=<path>` when the installed Playwright expects a different 
 
 **There were two runs.** The first, kept as `report-run1.json`, had no pass 3. Its pass 2 checked colour contrast
 only, and it kept only the first node's ratio. An Opus read of the first draft found those gaps, so the sweep was
-widened and run again. The second run gave the same results as the first for every finding but one, V1 below.
+widened and run again. For every check both runs made, the second run gave the same results as the first except V1 below; the second run also measured what the first could not (V2 in each theme, every node's ratio, the reader's dark palette).
 
 ## Verdict
 
@@ -46,7 +46,7 @@ The node count is summed over the widths named in the row.
 
 | # | Rule (impact, WCAG) | Page | Widths | Nodes | What fails |
 |---|---|---|---|---|---|
-| V1 | `link-in-text-block` (serious, 1.4.1) | Home, "Most recent" panel | 1440, first run only | 6 | `.home-recent-row > a`, the offline-copy links. The link colour `#5b9dd9` against the surrounding text `#e8ebf0` is 2.41:1, below the 3:1 floor, and the link has no underline. The panel starts `hidden` and opens once `loadHomeRecent` has picked a tag (`index.html:370`, `app-home.js:856`). In the first run it was open when axe ran at 1440. In every other run it was still hidden, and axe skips hidden content. The colour pair does not change, so this fails whenever the panel shows. |
+| V1 | `link-in-text-block` (serious, 1.4.1) | Home, "Most recent" panel | 1440, first run only | 6 | `.home-recent-row > a`, the offline-copy links. The link colour `#5b9dd9` against the surrounding text `#e8ebf0` is 2.41:1, below the 3:1 floor, and the link has no underline. The panel starts `hidden` and opens once `loadHomeRecent` (`app-home.js:830`) has picked a tag and `loadHomeRecentList` (`:856`) has its rows (`index.html:370`). In the first run it was open when axe ran at 1440. The sweep does not record the panel's state, so the absence in every other run is most likely the panel still being hidden (axe skips hidden content): inferred, not measured. The failing pair was measured in Ink only; the other themes and widths were never measured with the panel open. |
 | V2 | `link-in-text-block` (serious, 1.4.1) | Time map, the line shown when OpenStreetMap is not set up | 1440, 768, 390 | 3 | The "Settings → OpenStreetMap" link (`app-map.js:3528`). The link colour `#5b9dd9` against the muted text `#8c95a6` is 1.04:1, with no underline. |
 | V3 | `nested-interactive` (serious, 4.1.2) | Insights, keyword family buttons | 1440, 768, 390 | 9 | `button[data-on-click="pickTerm(…)"]` (`app-insights.js:151`) contains the Wikidata `a.kw-qid` link from `kwQidHtml` (`app-corpus.js:1117`), so a keyboard user cannot reach the link or hear it announced on its own. The link was kept inside the button on purpose (`app-corpus.js:1110-1111`, `noDossier`, the row 178 review), so the fix has to weigh that decision. |
 | V4 | `scrollable-region-focusable` (serious, 2.1.1) | Time map, the ranked country list | 1440, 768, 390 | 3 | The scroll box `.oomap-rank > div` (`app-map.js:761`) holds nothing focusable and has no `tabindex`, so a keyboard user cannot scroll it. |
