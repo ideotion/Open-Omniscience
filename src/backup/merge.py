@@ -5670,15 +5670,18 @@ def _key_law_documents(con, side: str, schema: str) -> None:
         # An address a document moved FROM is an alias only when the catalogue names that very
         # move. A backup is data from elsewhere: a history row it carries is otherwise a claim
         # that some other address is this act, and a false one would file a later, legitimate
-        # restore of that other act under this one, for good.
-        moves = _catalogue_law_moves()
+        # restore of that other act under this one, for good. The working copy's OWN rows are
+        # trusted as they stand (local wins): each was made here, by the tracker or by a merge
+        # that checked it, so a pre-move backup still finds its act when the catalogue cannot be
+        # read today.
+        moves = _catalogue_law_moves() if side == "inc" else set()
         rows = con.execute(
             f"SELECT f.document_id, k.key, k.jurisdiction, f.from_url, f.to_url"  # noqa: S608  # nosec B608 # as above
             f" FROM {schema}.law_format_changes f JOIN temp.{table} k ON k.id = f.document_id"
         ).fetchall()
         con.executemany(
             f"INSERT INTO temp.{alias} (id, key, url) VALUES (?, ?, ?)",  # noqa: S608  # nosec B608 # as above
-            [(i, key, frm) for i, key, juris, frm, to in rows if _is_catalogue_move(moves, juris, frm, to)],
+            [(i, key, frm) for i, key, juris, frm, to in rows if side == "main" or _is_catalogue_move(moves, juris, frm, to)],
         )
     con.execute(f"CREATE INDEX temp.{alias}_key_url ON {alias} (key, url)")  # noqa: S608  # nosec B608 # as above
     if side == "inc":
@@ -5724,6 +5727,8 @@ def _is_catalogue_move(moves: set[tuple[str, str, str]], jurisdiction, from_url,
     from src.law.catalog import law_jurisdiction
 
     return (law_jurisdiction(jurisdiction), from_url, to_url) in moves
+
+
 _LAW_HELD = (
     "((ki.sib = 0 AND (EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url) OR " + _LAW_MOVED_UNIQUE + "))"
     " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)))"
@@ -5938,6 +5943,13 @@ def _merge_law_format_changes(con, batch_id) -> DomainResult:
         " JOIN main.law_documents m ON m.id = ml.new"
     )
     fc.duplicate = _count(con, "SELECT COUNT(*)" + base + " WHERE EXISTS (" + same + ")")  # nosec B608 # module literals only
+    # The same move recorded on both sides with a different XML reading: the local entry stands
+    # (local wins) and the incoming one is REPORTED, never counted as a plain duplicate.
+    differing = con.execute(
+        "SELECT m.jurisdiction, i.from_url, i.to_url, m.url" + base  # nosec B608 # module literals only
+        + " WHERE EXISTS (" + same + ") AND NOT EXISTS (" + same + " AND t.to_hash = i.to_hash) ORDER BY m.id, i.id"
+    ).fetchall()
+    fc.duplicate -= len(differing)
     # A move the catalogue does not name is never applied either (see ``_key_law_documents``): it is
     # reported beside the moves this copy has not made, with its own reason.
     moves = _catalogue_law_moves()
@@ -5956,8 +5968,13 @@ def _merge_law_format_changes(con, batch_id) -> DomainResult:
         + " WHERE (m.url <> i.to_url OR EXISTS (SELECT 1 FROM temp.law_fmt_unnamed u WHERE u.id = i.id))"
         " AND NOT EXISTS (" + same + ") ORDER BY m.id, i.id"
     ).fetchall()
-    fc.conflict = len(conflicts)
-    for juris, from_url, to_url, here, is_unnamed in conflicts[:_SAMPLE_LIMIT]:
+    fc.conflict = len(conflicts) + len(differing)
+    for juris, from_url, to_url, here in differing[:_SAMPLE_LIMIT]:
+        fc.conflicts.append({
+            "jurisdiction": juris, "from_url": from_url, "to_url": to_url, "address_here": here,
+            "outcome": "not applied: this copy recorded the same move with a different text; its own entry is kept",
+        })
+    for juris, from_url, to_url, here, is_unnamed in conflicts[: max(0, _SAMPLE_LIMIT - len(fc.conflicts))]:
         fc.conflicts.append({
             "jurisdiction": juris, "from_url": from_url, "to_url": to_url, "address_here": here,
             "outcome": (
@@ -5976,7 +5993,7 @@ def _merge_law_format_changes(con, batch_id) -> DomainResult:
         " AND NOT EXISTS (SELECT 1 FROM temp.law_fmt_unnamed u WHERE u.id = i.id)",
     )
     if fc.conflict:
-        fc.note = "a move this copy has not made is reported, never applied (R753)"
+        fc.note = "a move this copy has not made, or recorded differently, is reported, never applied (R753)"
     return fc
 
 

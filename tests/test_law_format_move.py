@@ -213,7 +213,7 @@ def _assert_stayed(db, doc, html_text, needle):
     [
         (lambda: Portal(xml_error=FetchError("robots.txt disallows https://www.gesetze-im-internet.de/gg/xml.zip")),
          "could not be fetched"),
-        (lambda: Portal(xml_error=OSError("airplane mode")), "could not be fetched"),
+        (lambda: Portal(xml_error=OSError("connection reset")), "could not be fetched"),
         (lambda: Portal(archive=b"PK\x03\x04 not really an archive"), "did not read as a structured act"),
         (lambda: Portal(archive=_html().encode("utf-8")), "did not read as a structured act"),
     ],
@@ -383,6 +383,17 @@ _BATCH_META = {
 _T0 = datetime(2026, 11, 1, 12, 0, 0)
 
 
+def test_a_SOCKET_GUARD_refusal_of_the_xml_read_is_named_as_the_kill_switch(db):
+    """The socket-level guard raises an OSError, not the fetcher's FetchError; it is still the
+    operator's own airplane mode, and is named so (invariant #14e corollary)."""
+    from src.ingest.airplane import AirplaneModeError
+
+    doc = _tracked_from_html(db)
+    html_text = doc.baseline_text
+    track.track_document(db, Portal(xml_error=AirplaneModeError("airplane mode")), doc, move_to=XML_URL)
+    _assert_stayed(db, doc, html_text, "refused by the kill switch")
+
+
 def _corpus(path: Path):
     engine = create_engine(f"sqlite:///{path}", future=True)
     Base.metadata.create_all(engine)
@@ -464,6 +475,38 @@ def test_two_stores_that_both_moved_merge_without_a_second_history_row(tmp_path)
     with Session() as s:
         assert s.query(LawDocument).count() == 1
         assert s.query(LawFormatChange).count() == 1
+
+
+def test_the_same_move_recorded_DIFFERENTLY_is_reported_and_local_wins(tmp_path):
+    from src.backup.merge import merge_corpus
+
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    with _corpus(staged)() as s:
+        _store(s, moved=True, revisions=("r1",))
+        s.query(LawFormatChange).update({"to_hash": "h-xml-elsewhere"})
+        s.commit()
+    with _corpus(working)() as s:
+        _store(s, moved=True, revisions=("r1",))
+    report = merge_corpus(staged, working, _BATCH_META)
+    with _corpus(working)() as s:
+        (row,) = s.query(LawFormatChange).all()
+        assert row.to_hash == "h-xml", "local wins"
+    fc = _domain(report, "law_format_changes")
+    assert fc["conflict"] == 1 and fc["duplicate"] == 0, fc
+    assert "different text" in fc["conflicts"][0]["outcome"]
+
+
+def test_a_PRE_MOVE_backup_finds_its_act_even_when_the_catalogue_cannot_be_read(tmp_path, monkeypatch):
+    """The working copy's own history rows are trusted as they stand (local wins); only a backup's
+    rows need the catalogue to name the move."""
+    import src.backup.merge as merge_mod
+
+    monkeypatch.setattr(merge_mod, "_catalogue_law_moves", lambda: set())
+    Session, _report = _merge(tmp_path, local_moved=True, incoming_moved=False)
+    with Session() as s:
+        (doc,) = s.query(LawDocument).all()
+        assert doc.url == XML_URL
+        assert sorted(r.content_hash for r in s.query(LawRevision)) == ["r1", "r2"]
 
 
 def test_a_backup_from_before_the_table_existed_still_merges(tmp_path):

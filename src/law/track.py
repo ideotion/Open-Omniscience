@@ -748,7 +748,13 @@ def _move_format(session, fetcher, doc: LawDocument, *, move_to: str, html_text:
             stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
         return None
     except Exception as exc:  # noqa: BLE001 - the socket guard raises OSError; a move must never break tracking
-        stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
+        from src.ingest.airplane import AirplaneModeError
+
+        if isinstance(exc, AirplaneModeError):
+            # the socket-level guard refused it (invariant #14e corollary: a kill-switch refusal is named as such)
+            stay("the XML read was refused by the kill switch (airplane mode); nothing was sent")
+        else:
+            stay(f"the XML could not be fetched: {record_text(exc, limit=120)}")
         return None
 
     # Condition 5: the text must come FROM the same host, not only be asked of it. The fetcher
