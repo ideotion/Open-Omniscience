@@ -6646,6 +6646,7 @@
   "Years spanned": "またがる年",
   "Yes, keep a local search history": "はい、ローカルの検索履歴を保存する",
   "You are up to date.": "最新の状態です。",
+  "No release has been published yet, so there is nothing to update to.": "まだリリースが公開されていないため、更新できるものはありません。",
   "You can close the browser: jobs keep running here. Reopen it with Open UI.": "ブラウザは閉じてかまいません。ジョブはここで動き続けます。「画面を開く」でまた開けます。",
   "You can turn this on anyway in Settings → AI.": "設定 → AI からいつでも有効にできます。",
   "You chose the restore’s value. The value shown before is kept beside it, and switching back restores it.": "復元側の値を選びました。以前表示していた値は隣に保持されており、元に戻すと復元できます。",

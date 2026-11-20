@@ -6646,6 +6646,7 @@
   "Years spanned": "السنوات المشمولة",
   "Yes, keep a local search history": "نعم، احتفظ بسجل بحث محلي",
   "You are up to date.": "أنت على أحدث إصدار.",
+  "No release has been published yet, so there is nothing to update to.": "لم يُنشر أي إصدار بعد، لذا لا يوجد ما يمكن التحديث إليه.",
   "You can close the browser: jobs keep running here. Reopen it with Open UI.": "يمكنك إغلاق المتصفح: تستمر المهام هنا. أعد فتحه بزر «فتح الواجهة».",
   "You can turn this on anyway in Settings → AI.": "يمكنك تفعيله على أي حال من الإعدادات ← الذكاء الاصطناعي.",
   "You chose the restore’s value. The value shown before is kept beside it, and switching back restores it.": "اخترتَ قيمة الاستعادة. القيمة التي كانت معروضة من قبل محفوظة إلى جانبها، والعودة تستعيدها.",

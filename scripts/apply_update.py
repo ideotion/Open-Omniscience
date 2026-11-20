@@ -11,7 +11,8 @@ Steps, each of which refuses by leaving the install exactly as it was:
 1. wait for the app's process to exit (up to ``WAIT_S``, 30 min; if it does not, touch NOTHING and say so: this never kills the app);
    then, when something already answers on the app's port (the person or a supervisor started it again), refuse and touch nothing;
 2. the checkout must be on ``main``, clean, with ``origin`` = this repository over https;
-3. ``git fetch`` the named ref, and require the fetched commit to equal the planned ``sha`` byte for byte;
+3. ``git fetch`` the named release tag (a ``vX.Y.Z`` tag and nothing else: tags only, Q1136, R760), and require the fetched commit to equal
+   the planned ``sha`` byte for byte;
 4. when the new version changes the app's DEPENDENCIES (``requirements.lock``, or in ``pyproject.toml`` the dependency lists, the extras,
    ``requires-python`` or the build system), refuse BEFORE swapping (``dependencies_changed``): the installers resolve packages per install
    (``install.sh`` uses the lock only when it covers the chosen extras and the Python version, ``install.ps1`` never does), so no single
@@ -297,7 +298,8 @@ def apply(plan: dict, *, git=_git, run=_run, windows: bool | None = None, sleep=
     """Do steps 2-6. Returns ``(status, old_head)``; ``status`` is ``updated``, ``already_current`` or one fixed refusal word."""
     root = Path(plan["root"])
     ref, sha = plan["ref"], plan["sha"]
-    if not SHA_RE.match(sha) or not (TAG_RE.match(ref) or ref == "main"):
+    # Tags only (Q1136, R760): a plan naming anything but a vX.Y.Z tag (``main`` included) is refused before git is asked anything.
+    if not SHA_RE.match(sha) or not TAG_RE.match(ref) or plan.get("kind") != "tag":
         return "bad_plan", ""
     origin = git(root, "config", "--get", "remote.origin.url")
     if origin.returncode != 0 or origin.stdout.strip().removesuffix(".git").lower() != ORIGIN_OK:
@@ -311,7 +313,7 @@ def apply(plan: dict, *, git=_git, run=_run, windows: bool | None = None, sleep=
     old = git(root, "rev-parse", "HEAD").stdout.strip()
     if old == sha:
         return "already_current", old
-    refspec = f"refs/tags/{ref}" if ref != "main" else "refs/heads/main"
+    refspec = f"refs/tags/{ref}"
     if git(root, "fetch", "--no-tags", "origin", refspec).returncode != 0:
         return "fetch_failed", old
     fetched = git(root, "rev-parse", "FETCH_HEAD^{commit}")

@@ -9,8 +9,9 @@ checkout whose ``origin`` is not this repository, a dirty tree, a branch other t
 manual steps spelled out, so the button never guesses.
 
 WHAT "NEWER" MEANS. The highest ``vX.Y.Z`` tag the repository publishes, when it is above the running version; tags are the maintainer's releases
-(each is a GitHub pre-release today, so the release API's "latest" would answer nothing). Only a repository with NO such tag falls back to the tip of
-``main``, and the answer says so (``kind: "main"``). The check never moves backwards: a running version at or above the newest tag is "up to date".
+(each is a GitHub pre-release today, so the release API's "latest" would answer nothing). TAGS ONLY (Q1136, R760): a repository with no such tag has
+no release to update to, and the answer says exactly that (``kind: "none"``, ``no_release: true``); it never offers ``main``'s tip or anything else in
+its place. The check never moves backwards: a running version at or above the newest tag is "up to date".
 
 THE NETWORK. The CHECK is the one in-process fetch: one ``GET`` on ``api.github.com`` through :func:`src.safety.fetcher.guarded_session`, so the kill
 switch (airplane mode), the protected-mode proxy and the host list all apply, and the UI asks the ONE consent popup first. The ``git fetch`` of the update
@@ -45,10 +46,9 @@ _LOG = logging.getLogger("maintenance.self_update")
 
 REPO = "ideotion/Open-Omniscience"
 REPO_URL_HTTPS = f"https://github.com/{REPO}"
-#: The two endpoints the check reads, and the one host its session may talk to (``guarded_session(allowed_hosts=...)``): a redirect anywhere else is
-#: refused, not followed.
+#: The one endpoint the check reads (page after page), and the one host its session may talk to (``guarded_session(allowed_hosts=...)``): a redirect
+#: anywhere else is refused, not followed. There is no ``main`` endpoint: an update is a release tag or nothing (Q1136, R760).
 TAGS_URL = f"https://api.github.com/repos/{REPO}/tags?per_page=100"
-MAIN_URL = f"https://api.github.com/repos/{REPO}/commits/main"
 GITHUB_API_HOSTS = ("api.github.com",)
 
 TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
@@ -58,6 +58,8 @@ CHECK_TTL_S = 3600
 _MAX_BODY = 2_000_000
 
 RESULT_FILE = "update-result.json"
+#: The refusal for any ref that is not a release tag, at the apply and at the spawn (R760).
+NOT_A_RELEASE_TAG = "The version to install is not a release tag: only a published release can be installed."
 PLAN_FILE = "update-plan.json"
 
 _LAST_CHECK: dict[str, Any] = {}
@@ -230,31 +232,24 @@ def check(get_json: Any = None, *, root: Path | None = None, now: float | None =
     cur = current_version()
     cur_t = _vtuple(cur) or (0, 0, 0)
     newest = pick_newest_tag(_all_tags(fetch))
-    kind = "tag"
     if newest is None:
-        kind = "main"
-        row = fetch(MAIN_URL)
-        sha = row.get("sha") if isinstance(row, dict) else None
-        if not isinstance(sha, str) or not SHA_RE.match(sha):
-            raise UpdateError("The update check could not read a version from GitHub.")
-        newest = ("main", sha)
-    ref, sha = newest
-    if kind == "tag":
+        # No release tag: there is no release to update to, and nothing else is offered in its place (Q1136, R760). This answer cannot be
+        # applied: validate_apply refuses it, since it is not available and its ref is not a tag.
+        ref, sha, kind, latest, available = "", "", "none", "", False
+    else:
+        ref, sha = newest
+        kind = "tag"
         latest_t = _vtuple(ref) or (0, 0, 0)
         # The installed metadata can lag the checkout (a tag cut before its version flip, a pull without a reinstall): the commit we run being
         # the tag's commit is "up to date" whatever the metadata says.
         available = latest_t > cur_t and not _checkout_contains(root, sha)
         latest = ref.lstrip("v")
-    else:
-        # No release tag exists: main's tip is only "newer" when it is not the commit we run. Without a readable local head, say so.
-        head = _local_head(root)
-        available = bool(head) and head != sha
-        latest = sha[:9]
     status = install_status(root)
     result = {
         "current": cur,
         "latest": latest,
         "update_available": bool(available),
+        "no_release": newest is None,
         "kind": kind,
         "ref": ref,
         "sha": sha,
@@ -401,8 +396,9 @@ def validate_apply(ref: str, sha: str, *, now: float | None = None, root: Path |
         raise UpdateError("That check is more than an hour old: check again.")
     if ref != last["ref"] or sha != last["sha"] or not SHA_RE.match(sha):
         raise UpdateError("The version to install is not the one that was checked: check again.")
-    if last["kind"] == "tag" and not TAG_RE.match(ref):
-        raise UpdateError("The version to install is not a release tag.")
+    # Tags only (Q1136, R760), whatever the remembered check says: a ref that is not a vX.Y.Z tag, or a check that was not a tag answer, is refused.
+    if last.get("kind") != "tag" or not TAG_RE.match(ref):
+        raise UpdateError(NOT_A_RELEASE_TAG)
     st = install_status(root)
     if not st["can_apply"]:
         raise UpdateError(f"This install cannot be updated in place ({st['reason']}); the steps are shown instead.")
@@ -413,6 +409,8 @@ def launch_helper(ref: str, sha: str, kind: str, *, root: Path | None = None, po
     """Start :mod:`scripts.apply_update` detached, naming this process so it waits for it to exit. It does nothing until then."""
     from src.paths import data_dir, repo_root
 
+    if kind != "tag" or not TAG_RE.match(ref) or not SHA_RE.match(sha):
+        raise UpdateError(NOT_A_RELEASE_TAG)  # the same rule again at the spawn, so no caller can hand the helper anything but a release tag
     root = root or repo_root()
     script = root / "scripts" / "apply_update.py"
     if not script.is_file():
