@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,backup/merge,A merge batch records unknown rather than guessing oo-backup-2 (R755 F7),SHIPPED,PR #2178,src/database/models.py;src/backup/merge.py;tests/test_merge_batch_kind_honest.py,"merge_batches.artifact_kind defaulted to oo-backup-2 in the model and in merge_corpus's fallback; both now record unknown, and the restore keeps passing the staged artifact's real kind."
