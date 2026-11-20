@@ -45,7 +45,7 @@ def diag_dir(tmp_path, monkeypatch):
     return root
 
 
-def _archive(path: Path, *, random_bytes: int = 200_000) -> Path:
+def _archive(path: Path, *, random_bytes: int = 100_000) -> Path:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", json.dumps({"kind": "all-diagnostics"}))
         z.writestr("vitals.json", json.dumps([{"n": n, "v": "x" * 30} for n in range(2000)]))
@@ -67,7 +67,7 @@ def test_an_archive_within_the_cap_is_answered_with_itself(diag_dir):
     assert only["bytes"] == src.stat().st_size <= dv.volume_max_bytes()
     assert only["sha256"] == hashlib.sha256(src.read_bytes()).hexdigest()
     assert listing["download_base"] == "/api/diagnostics/all-job/volumes/"
-    assert listing["part_count"] == 1 and listing["part_max_bytes"] == 4_000_000
+    assert listing["part_count"] == 1 and listing["part_max_bytes"] == 200_000
 
 
 def test_no_volume_manifest_zip_or_readme_is_written_for_a_single_file(diag_dir):
@@ -90,7 +90,7 @@ def test_the_published_name_serves_the_archive_byte_for_byte(diag_dir):
 @pytest.mark.parametrize("extra", [0, 1])
 def test_the_cap_is_at_most_so_an_archive_of_exactly_the_cap_is_one_file(diag_dir, monkeypatch, extra):
     src = _archive(diag_dir / ARCHIVE)
-    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", src.stat().st_size - extra)
+    monkeypatch.setattr(dv, "DIAG_PART_BYTES", src.stat().st_size - extra)
     listing = _listing()
     if extra == 0:
         assert listing["single_file"] is True
@@ -100,13 +100,13 @@ def test_the_cap_is_at_most_so_an_archive_of_exactly_the_cap_is_one_file(diag_di
 
 
 def test_above_the_real_cap_the_numbered_scheme_is_the_answer_and_every_file_is_within_it(diag_dir):
-    _archive(diag_dir / ARCHIVE, random_bytes=9_000_000)  # about 9 MB that does not compress
-    assert dv.volume_max_bytes() == 4_000_000
+    _archive(diag_dir / ARCHIVE, random_bytes=900_000)  # about 0.9 MB that does not compress
+    assert dv.volume_max_bytes() == 200_000
     listing = _listing()
     assert "single_file" not in listing and listing["volume_count"] >= 3
     kinds = [f["kind"] for f in listing["files"]]
     assert kinds[0] == "manifest" and set(kinds[1:]) == {"part"}
-    assert all(f["bytes"] <= 4_000_000 for f in listing["files"])
+    assert all(f["bytes"] <= 200_000 for f in listing["files"])
     for f in listing["files"]:
         resp = d.all_diagnostics_volume_download(f["name"])
         assert Path(resp.path).stat().st_size == f["bytes"]
@@ -114,13 +114,13 @@ def test_above_the_real_cap_the_numbered_scheme_is_the_answer_and_every_file_is_
 
 def test_a_numbered_set_of_an_earlier_larger_archive_goes_when_a_smaller_one_answers(diag_dir, monkeypatch):
     big = _archive(diag_dir / "oo-all-diagnostics-20261005-090000.zip", random_bytes=900_000)
-    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", 300_000)
+    monkeypatch.setattr(dv, "DIAG_PART_BYTES", 300_000)
     first = _listing()
     volumes = d._all_diagnostics_volumes_dir()
     assert first["volume_count"] >= 3 and any(volumes.iterdir())
     big.unlink()
     _archive(diag_dir / ARCHIVE, random_bytes=1_000)
-    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", 4_000_000)
+    monkeypatch.setattr(dv, "DIAG_PART_BYTES", 4_000_000)
     assert _listing()["single_file"] is True
     assert list(volumes.iterdir()) == [], "the old bundle's parts must not sit beside the new one"
     with pytest.raises(HTTPException) as exc:
@@ -130,11 +130,11 @@ def test_a_numbered_set_of_an_earlier_larger_archive_goes_when_a_smaller_one_ans
 
 def test_a_set_whose_sidecar_cannot_be_removed_keeps_every_file_it_names(diag_dir, monkeypatch):
     big = _archive(diag_dir / "oo-all-diagnostics-20261005-090000.zip", random_bytes=900_000)
-    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", 300_000)
+    monkeypatch.setattr(dv, "DIAG_PART_BYTES", 300_000)
     first = _listing()
     big.unlink()
     _archive(diag_dir / ARCHIVE, random_bytes=1_000)
-    monkeypatch.setattr(dv, "UPLOAD_PART_BYTES", 4_000_000)
+    monkeypatch.setattr(dv, "DIAG_PART_BYTES", 4_000_000)
     volumes = d._all_diagnostics_volumes_dir()
     real_unlink = Path.unlink
 

@@ -1208,6 +1208,15 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     for (const lim of [0, 50, 60, 1e307]) {
       assert.ok(api._thoroughNoteText(est, lim).startsWith("Thorough pauses collection for about 50 min"), String(lim));
     }
+    // R757: with no limit of the operator's, the default budget is the pause the note states when it is shorter than the estimate
+    const defLine = "Thorough pauses collection for at most about 30 min, its default limit, plus up to 15 s while a stopped scan"
+      + " saves its place; scans not reached are named in the file.";
+    const withDef = {thorough: {est_s: 3000, scans: 5, from_this_machine: 2, budget_s: 1800}};
+    assert.strictEqual(api._thoroughNoteText(withDef, 0), defLine);
+    assert.strictEqual(api._thoroughNoteText({thorough: {budget_s: 1800}}, 0), defLine, "no estimate: the default is the figure");
+    assert.strictEqual(api._thoroughNoteText(withDef, 20), limitLine(20), "the operator's shorter limit wins");
+    assert.ok(api._thoroughNoteText(withDef, 60).startsWith("Thorough pauses collection for about 50 min"), "a longer operator limit replaces the default");
+    assert.ok(api._thoroughNoteText({thorough: {est_s: 600, scans: 5, budget_s: 1800}}, 0).startsWith("Thorough pauses collection for about 10 min"));
     const page = makePage();
     page.els["diag-thorough"].checked = true;
     page.els["diag-budget-wrap"] = {hidden: true};
