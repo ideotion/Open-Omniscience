@@ -274,7 +274,7 @@ def test_the_export_s_brackets_are_keyed_frames():
 # --- H-2: the topic-discovery disclosure ---------------------------------------------- #
 
 _H2_KEYS = (
-    "Enabled: topic-discovery queries will be sent to DuckDuckGo.",
+    "Enabled: topic-discovery queries will be sent to DuckDuckGo, and each site it returns will be visited.",
     "Disabled (the default): no topic query leaves this machine.",
     "External topic discovery enabled.",
     "External topic discovery disabled.",
@@ -292,7 +292,7 @@ def test_the_discovery_disclosure_and_toasts_are_keyed_x12_and_repaint():
     assert_present(save, 't("External topic discovery enabled.")')
     assert_present(save, 't("External topic discovery disabled.")')
     assert_present(function_body(app, "_paintDiscoveryResult"),
-                   't("Enabled: topic-discovery queries will be sent to DuckDuckGo.")')
+                   't("Enabled: topic-discovery queries will be sent to DuckDuckGo, and each site it returns will be visited.")')
     html = read_static("index.html")
     assert re.search(r'<div id="discovery-external-result"[^>]*\bdata-i18n-dyn\b', html), (
         "a t()-rendered line in a walker-owned node is cached as the English (H-2)"

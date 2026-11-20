@@ -1572,6 +1572,13 @@
                    t("the full list is in the security notes"));
       }
       if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
+      // R761 (row 224): a search lane also reaches every site the search RETURNS, which no
+      // table can name in advance. Say so, and name each feed address probed on each of
+      // them: `probePaths` is FEED_PROBE_PATHS exactly (a test ties the two).
+      if (lane.resultSites) {
+        parts.push(t("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:") +
+                   " " + (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · "));
+      }
       parts.push(_laneTransport(lane, kind));
       // A STEP, not only a host: part of this lane is programs the app starts, and the
       // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).
@@ -1595,7 +1602,10 @@
       // sibling `${n} ${t("sources")}` sites all render "1 sources" today. The
       // hover spells the number out in words, where the only lanes that reach it
       // are the two classes, whose counts are never 1.
-      const count = n ? ` <span class="muted">n=${n}</span>` : "";
+      const count = (n ? ` <span class="muted">n=${n}</span>` : "") +
+        // R761: visible on the row, not only in the hover -- the sites a search returns are
+        // contacted too, and the operator should see that before the click that goes online.
+        (lane.resultSites ? ` <span class="muted">${esc(t("+ each site the search returns"))}</span>` : "");
       // tabindex="0": the hosts live in the hover, and invariant #17 opens the bubble on
       // hover, KEYBOARD FOCUS or long-press. A plain span never takes focus, so Tab
       // skipped every lane and a keyboard user could not read one host (row H).

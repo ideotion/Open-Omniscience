@@ -3741,14 +3741,14 @@
 
       <hr>
       <h3 style="margin-bottom:6px">External topic discovery</h3>
-      <p class="muted" style="margin-top:0"><span>External topic discovery is the one feature that sends a free-text search query to an external service: it sends your topic query to DuckDuckGo to find candidate outlets.</span>
-        <strong>Your query leaves this machine.</strong>
+      <p class="muted" style="margin-top:0"><span>External topic discovery is the one feature that sends a free-text search query to an external service: it sends your topic query to DuckDuckGo to find candidate outlets, then visits each site the search returns (its robots.txt, its page, the feed links it names and common feed addresses such as /rss and /feed) to look for a feed.</span>
+        <strong>Your query leaves this machine, and each of those sites sees your visit.</strong>
         <span>Off by default; everything else works without it. (Discovering RSS feeds for sources you added yourself stays local-path and is not affected.)</span></p>
       <div class="row">
         <div style="flex:0 0 auto">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="discovery-external" data-on-change="saveDiscoveryExternal(this)">
-            Allow topic-discovery queries to DuckDuckGo
+            Allow topic-discovery queries to DuckDuckGo and visits to the sites it returns
           </label>
         </div>
       </div>
