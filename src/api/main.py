@@ -3096,7 +3096,16 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     except Exception as exc:  # noqa: BLE001 - the reader never fails for the furniture count; every link is then listed
         log_failure(logger, "outlet furniture count failed in reader", exc, level=logging.WARNING)
         shares = {"source_articles": None, "carried_by": {}, "furniture": set(), "method": ""}
-    for ln in links[:40]:
+    # Row 214: a cited link to a paper this install keeps shows that paper's class and notices (local, medical.db);
+    # a link whose paper is not kept here gets no mark at all (R750).
+    try:
+        from src.medical.reader_marks import link_marks, marks_html
+
+        paper_marks = link_marks([ln.url or "" for ln in links[:40]])
+    except Exception as exc:  # noqa: BLE001 - the reader never fails for the paper marks; the links are then unmarked
+        log_failure(logger, "paper marks failed in reader", exc, level=logging.WARNING)
+        paper_marks = {}
+    for pos, ln in enumerate(links[:40]):
         safe_ln = safe_href(ln.url)
         if not safe_ln:
             continue
@@ -3125,7 +3134,9 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         )
         cite_items.append(
             f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{label}</a>"
-            f"<span class='muted'> · {host}</span> {shared}</li>"
+            f"<span class='muted'> · {host}</span> {shared}"
+            + (marks_html(paper_marks[pos]) if pos in paper_marks else "")
+            + "</li>"
         )
     furniture_html = (
         f"<details class='cites-furniture'><summary class='muted' title='{_html.escape(shares['method'])}'>"
@@ -3496,6 +3507,11 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
   .cites ul {{ list-style:none; margin:0; padding:0; font: 14px/1.5 system-ui,sans-serif; }}
   .cites li {{ padding:6px 0; border-top:1px solid var(--line); }}
   .shared {{ color:var(--warn); font-weight:600; }}
+  /* Row 214: the Papers subtab's badges on a cited link to a kept paper (app.css .med-badge). */
+  .med-badge {{ display:inline-block; margin-inline-start:6px; padding:0 7px; border:1px solid var(--line);
+    border-radius:999px; font: 12px/1.6 system-ui,sans-serif; }}
+  .med-badge.med-retracted, .med-badge.med-notice-retraction {{ color:var(--warn); border-color:var(--warn); font-weight:600; }}
+  .med-badge.med-notice-concern, .med-badge.med-notice-erratum, .med-badge.med-withdrawn {{ border-style:dashed; }}
   a {{ color: var(--accent); }}
   footer {{ margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
     font: 13px/1.6 system-ui,sans-serif; color: var(--mut); }}
