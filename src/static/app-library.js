@@ -117,7 +117,7 @@
         ["missing", "missing"], ["snapshot_rows", "snapshot rows"]],
       law: [["documents", "tracked documents"], ["baselined", "baselined"], ["jurisdictions", "jurisdictions"],
         ["never_checked", "documents never checked"]],
-      // Row 207: the medical store holds counts only (K13), so only counts are drawn; no paper id or file name leaves it.
+      // Row 207: the medical store holds counts only (K13), so only counts are drawn; no paper id or file name is drawn.
       medical: [["files_applied_last_run", "update files applied last run"], ["files_listed", "update files listed"],
         ["files_remaining", "update files remaining"], ["papers_kept", "papers kept"]],
       osm: [["countries", "countries listed"], ["countries_with_change_files", "countries with change files"],

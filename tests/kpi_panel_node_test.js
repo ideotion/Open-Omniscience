@@ -74,8 +74,8 @@ assert.ok(text(kpiPanelHtml({}, H)).includes("No measures could be read."));
 assert.ok(text(kpiPanelHtml(null, H)).includes("No measures could be read."));
 
 // 4. The K13 blocks: each its own counts; an unreadable count reads unknown; a count the block never carries is not drawn.
-const k13 = {id: "K13", name: "Vertical coverage", value: 2, n: 5, as_of: "2026-11-18", verdict: "measured-no-bar",
-  target: "pending", method: "2 of the 5", verticals: [
+const k13 = {id: "K13", name: "Vertical coverage", value: 3, n: 6, as_of: "2026-11-18", verdict: "measured-no-bar",
+  target: "pending", method: "3 of the 6", verticals: [
     {vertical: "climate", state: "not-measured", first_slice: false, reason: "no climate fetch has been recorded"},
     {vertical: "elections", state: "not-measured", first_slice: false, floor_countries: 140, covered: 7, missing: 122,
       snapshot_rows: null, method: "the elections floor"},

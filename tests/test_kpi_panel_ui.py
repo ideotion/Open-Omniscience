@@ -84,7 +84,7 @@ def _js_object_keys(src: str, name: str) -> set[str]:
     """The keys of ``const NAME = {...};`` in the shipped module: each key is a bare name followed by a list or a string."""
     at = src.index(f"const {name} = {{")
     body = src[at: src.index("};", at)]
-    return set(re.findall(r"(?<![\w\"])([a-z_]+): [\[\"]", body))
+    return set(re.findall(r"(?<![\w\"])([A-Za-z_][A-Za-z0-9_]*): [\[\"]", body))
 
 
 def _server_verticals() -> list[str]:
@@ -118,7 +118,7 @@ def test_the_medical_figures_are_counts_the_real_block_sends(tmp_path, monkeypat
                             "last_file": "pubmed25n1400.xml.gz"})
     block = K._medical_block()
     lib = _read("app-library.js")
-    entry = lib[lib.index("      medical: [["): lib.index("      osm: [[")]
+    entry = re.search(r"\bmedical: \[(.*?)\]\],", lib, re.S).group(1)
     keys = re.findall(r'\["([a-z_]+)", "', entry)
     assert keys == ["files_applied_last_run", "files_listed", "files_remaining", "papers_kept"], keys
     assert {k: block[k] for k in keys} == {"files_applied_last_run": 7, "files_listed": 40, "files_remaining": 33,
