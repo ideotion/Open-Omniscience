@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,docs/osm,Street view caps published in the user manual x12 (row 196),SHIPPED,PR #2172,docs/USER_MANUAL.md;docs/i18n/*/USER_MANUAL.md;tests/test_street_caps_documented.py,"The World map section states the level-of-detail caps from src/osm/view.py (8,000 objects then clusters on a 40x40 grid; 60,000 vertices then points; streets at 0.2 degrees or narrower, least important classes left out whole and named) in all 12 manuals; a test pins the manuals to the constants."

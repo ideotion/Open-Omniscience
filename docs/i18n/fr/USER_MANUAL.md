@@ -1134,6 +1134,24 @@ zoom ＋/－, zoom à la molette, déplacement par glisser, ⛶ agrandir, et les
   proxy, pas au serveur).
 - **Les côtes et les frontières sont incluses :** la géométrie des pays et des côtes est livrée avec l'application
   (Natural Earth, simplifiée) : rien à construire, aucune frontière inventée.
+- **Données OpenStreetMap et rues, avec des limites publiées :** une fois les données
+  OpenStreetMap d'un pays téléchargées (dans les Paramètres), ses objets apparaissent sur cette
+  carte, dessinés sur cet ordinateur à partir de ces données — aucun serveur de tuiles, aucun
+  autre hôte. Ce qu'une vue dessine est plafonné, et les plafonds sont affichés, pas cachés :
+  - jusqu'à **8 000 objets** dans une vue sont dessinés un par un ; au-delà, ils sont dessinés
+    en **grappes** sur une grille de 40 sur 40, chacune avec son nombre exact ;
+  - les formes sont simplifiées à environ un pixel d'écran, et au-delà de **60 000 sommets**
+    dans une vue chaque forme est dessinée comme son point ;
+  - en zoomant sur une vue de **0,2 degré de large ou moins**, la carte dessine les **rues** à
+    partir des routes téléchargées, sous les deux mêmes plafonds (8 000 routes, 60 000 sommets).
+    Au-delà de l'un ou l'autre, les classes de routes les moins importantes sont omises, une
+    classe entière à la fois (les chemins d'abord, les autoroutes en dernier), et la ligne
+    d'état de la carte nomme chaque classe omise.
+
+  La ligne d'état indique aussi combien d'objets sont dans la vue et combien ont été dessinés,
+  avec la date d'extraction des données et la dernière mise à jour quotidienne appliquée ; sa
+  bulle de survol rappelle les plafonds en vigueur. Ces nombres pourront être révisés après
+  mesure sur une machine de référence modeste ; la bulle montre toujours les valeurs actuelles.
 
 Les dates *dont parle* un article deviennent aussi des **étiquettes de date propres à chaque article** : ouvrez le lecteur
 hors ligne d'un article pour les voir listées, **confirmer ou rejeter** chaque candidate, ou les **extraire** à la demande ;

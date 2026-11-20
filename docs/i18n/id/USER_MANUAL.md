@@ -1030,6 +1030,24 @@ zoom ＋/－, zoom dengan roda tetikus, geser dengan seret, ⛶ perbesar, dan pe
   proksi, bukan server).
 - **Garis pantai & perbatasan sudah disertakan:** geometri negara/garis pantai disertakan bersama aplikasi
   (Natural Earth, disederhanakan) — tidak ada yang perlu dibangun, tidak ada perbatasan yang direka.
+- **Data OpenStreetMap dan jalan, dengan batas yang dipublikasikan:** setelah Anda mengunduh data
+  OpenStreetMap suatu negara (di Pengaturan), objek-objeknya muncul di peta ini, digambar di
+  komputer ini dari data tersebut — tanpa server ubin, tanpa host lain. Jumlah yang digambar satu
+  tampilan dibatasi, dan batasnya dinyatakan, tidak disembunyikan:
+  - hingga **8.000 objek** dalam satu tampilan digambar satu per satu; lebih dari itu digambar
+    sebagai **klaster** pada kisi 40 kali 40, masing-masing dengan jumlah pastinya;
+  - bentuk disederhanakan hingga sekitar satu piksel layar, dan di atas **60.000 verteks** dalam
+    satu tampilan setiap bentuk digambar sebagai titiknya;
+  - saat diperbesar ke tampilan **selebar 0,2 derajat atau kurang**, peta menggambar **jalan** dari
+    ruas jalan yang diunduh dengan dua batas yang sama (8.000 ruas, 60.000 verteks). Di atas salah
+    satunya, kelas jalan yang paling tidak penting ditinggalkan satu kelas utuh setiap kali
+    (jalan setapak lebih dulu, jalan tol terakhir), dan baris status peta menyebut setiap kelas
+    yang ditinggalkan.
+
+  Baris status juga menyebut berapa objek dalam tampilan dan berapa yang digambar, beserta tanggal
+  ekstrak data dan pembaruan harian terakhir yang diterapkan; gelembung arahkan-kursornya mengulang
+  batas yang berlaku. Angka ini dapat direvisi setelah diukur pada mesin referensi sederhana;
+  gelembung selalu menampilkan angka yang berlaku.
 
 Tanggal yang *dibicarakan* sebuah berita juga menjadi **tag tanggal per artikel**: buka pembaca
 offline sebuah artikel untuk melihat daftarnya, **konfirmasi atau tolak** setiap kandidat, atau **ekstrak** sesuai permintaan;

@@ -528,6 +528,7 @@ class OllamaClient:
         base_url: str | None = None,
         timeout: float = 120.0,
         client: httpx.Client | None = None,
+        connect_timeout: float | None = None,
     ):
         # The getenv default is bound to a named local rather than inlined: mypy 2.3
         # types `x or os.getenv(k, "d")` as `str | None` even though the two-argument
@@ -540,7 +541,9 @@ class OllamaClient:
         # may use a MockTransport with a non-loopback nominal URL and never egress.
         if client is None:
             _require_loopback(self.base_url)
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
+        # ``connect_timeout`` caps the connect alone (the liveness probe's, row 141); the reply keeps the whole ``timeout``.
+        limits = timeout if connect_timeout is None else httpx.Timeout(timeout, connect=min(timeout, connect_timeout))
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits)
 
     # -- network kill switch ----------------------------------------------- #
 

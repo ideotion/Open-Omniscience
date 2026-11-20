@@ -71,7 +71,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     try:
-        bundle = json.loads(Path(args[0]).read_text())
+        bundle = json.loads(Path(args[0]).read_text(encoding="utf-8-sig"))  # UTF-8 as saved; never the locale's codec
     except (OSError, ValueError, RecursionError) as exc:  # ValueError: JSONDecodeError, UnicodeDecodeError, >4300-digit ints
         # A file cut mid-record is not JSON at all: refused by name, never a traceback.
         print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
