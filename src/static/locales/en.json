@@ -7752,7 +7752,7 @@
   "tertiary roads": "tertiary roads",
   "tested": "tested",
   "text not stored": "text not stored",
-  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps": "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps",
+  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps": "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps",
   "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.": "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.",
   "the Wikidata election snapshot on this machine holds no rows, so there is no first slice": "the Wikidata election snapshot on this machine holds no rows, so there is no first slice",
   "the archive produced no volumes": "the archive produced no volumes",

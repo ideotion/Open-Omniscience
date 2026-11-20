@@ -7752,7 +7752,7 @@
   "tertiary roads": "三级道路",
   "tested": "已检验",
   "text not stored": "未保存文本",
-  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps": "OSM 变更文件成员自身的计数，来自其最近一次对通道存储的读取：列出了 {countries} 个国家，其中 {complete} 个被完整切分；在 {with_files} 个国家中记录了 {files} 个每日变更文件，{gaps} 个缺口",
+  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps": "OSM 变更文件成员自身的计数，来自其最近一次对通道存储的读取：列出了 {countries} 个国家，其中 {complete} 个被完整切分；在 {with_files} 个国家中记录了 {diffs} 个每日变更文件，{gaps} 个缺口",
   "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.": "OSM 变更文件成员自身对通道存储的读取：本安装不存在 OSM 通道。",
   "the Wikidata election snapshot on this machine holds no rows, so there is no first slice": "本机的 Wikidata 选举快照没有任何行，因此没有首个切片",
   "the archive produced no volumes": "存档未生成任何分卷",

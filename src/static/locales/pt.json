@@ -7752,7 +7752,7 @@
   "tertiary roads": "estradas terciárias",
   "tested": "testados",
   "text not stored": "texto não armazenado",
-  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps": "as contagens próprias do membro de arquivos de alterações do OSM, desde sua última leitura do armazenamento da faixa: {countries} países listados, {complete} deles recortados até o fim; {files} arquivos de alterações diários registrados em {with_files} países, {gaps} lacunas",
+  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps": "as contagens próprias do membro de arquivos de alterações do OSM, desde sua última leitura do armazenamento da faixa: {countries} países listados, {complete} deles recortados até o fim; {diffs} arquivos de alterações diários registrados em {with_files} países, {gaps} lacunas",
   "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.": "a leitura própria do armazenamento da faixa pelo membro de arquivos de alterações do OSM: não existe faixa OSM nesta instalação.",
   "the Wikidata election snapshot on this machine holds no rows, so there is no first slice": "o snapshot eleitoral do Wikidata nesta máquina não contém linhas, então não há primeira fatia",
   "the archive produced no volumes": "o arquivo não produziu volumes",

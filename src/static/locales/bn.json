@@ -7752,7 +7752,7 @@
   "tertiary roads": "তৃতীয় স্তরের রাস্তা",
   "tested": "পরীক্ষিত",
   "text not stored": "পাঠ্য সংরক্ষিত নয়",
-  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps": "OSM পরিবর্তন-ফাইল সদস্যের নিজস্ব গণনা, লেন স্টোরের তার শেষ রিড থেকে: {countries}টি দেশ তালিকাভুক্ত, তাদের মধ্যে {complete}টি সম্পূর্ণ কাটা; {with_files}টি দেশ জুড়ে {files}টি দৈনিক পরিবর্তন ফাইল নথিভুক্ত, {gaps}টি ফাঁক",
+  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps": "OSM পরিবর্তন-ফাইল সদস্যের নিজস্ব গণনা, লেন স্টোরের তার শেষ রিড থেকে: {countries}টি দেশ তালিকাভুক্ত, তাদের মধ্যে {complete}টি সম্পূর্ণ কাটা; {with_files}টি দেশ জুড়ে {diffs}টি দৈনিক পরিবর্তন ফাইল নথিভুক্ত, {gaps}টি ফাঁক",
   "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.": "OSM পরিবর্তন-ফাইল সদস্যের লেন স্টোরের নিজস্ব রিড: এই ইনস্টলে কোনো OSM লেন নেই।",
   "the Wikidata election snapshot on this machine holds no rows, so there is no first slice": "এই মেশিনের Wikidata নির্বাচন স্ন্যাপশটে কোনো সারি নেই, তাই কোনো প্রথম স্লাইস নেই",
   "the archive produced no volumes": "আর্কাইভ থেকে কোনও খণ্ড তৈরি হয়নি",

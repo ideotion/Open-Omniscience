@@ -7752,7 +7752,7 @@
   "tertiary roads": "طرق من الدرجة الثالثة",
   "tested": "مُختبَرة",
   "text not stored": "النص غير مخزَّن",
-  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps": "أعداد عضو ملفات تغيير OSM نفسه، من آخر قراءة له لمخزن المسارات: {countries} بلد مدرج، {complete} منها مقطوعة حتى الاكتمال؛ {files} ملف تغيير يومي مسجّل عبر {with_files} بلد، {gaps} فجوة",
+  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps": "أعداد عضو ملفات تغيير OSM نفسه، من آخر قراءة له لمخزن المسارات: {countries} بلد مدرج، {complete} منها مقطوعة حتى الاكتمال؛ {diffs} ملف تغيير يومي مسجّل عبر {with_files} بلد، {gaps} فجوة",
   "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.": "قراءة عضو ملفات تغيير OSM نفسه لمخزن المسارات: لا يوجد مسار OSM في هذا التثبيت.",
   "the Wikidata election snapshot on this machine holds no rows, so there is no first slice": "لقطة انتخابات Wikidata على هذا الجهاز لا تحوي صفوفًا، لذا لا توجد شريحة أولى",
   "the archive produced no volumes": "لم يُنتج الأرشيف أي أجزاء",

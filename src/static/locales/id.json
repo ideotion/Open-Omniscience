@@ -7752,7 +7752,7 @@
   "tertiary roads": "jalan tersier",
   "tested": "diuji",
   "text not stored": "teks tidak disimpan",
-  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, {gaps} gaps": "hitungan milik anggota berkas perubahan OSM, dari pembacaan terakhirnya atas penyimpanan lajur: {countries} negara terdaftar, {complete} di antaranya dipotong hingga selesai; {files} berkas perubahan harian tercatat di {with_files} negara, {gaps} celah",
+  "the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, {complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, {gaps} gaps": "hitungan milik anggota berkas perubahan OSM, dari pembacaan terakhirnya atas penyimpanan lajur: {countries} negara terdaftar, {complete} di antaranya dipotong hingga selesai; {diffs} berkas perubahan harian tercatat di {with_files} negara, {gaps} celah",
   "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.": "pembacaan milik anggota berkas perubahan OSM atas penyimpanan lajur: tidak ada lajur OSM di instalasi ini.",
   "the Wikidata election snapshot on this machine holds no rows, so there is no first slice": "snapshot pemilu Wikidata di mesin ini tidak memuat baris, jadi tidak ada irisan pertama",
   "the archive produced no volumes": "arsip tidak menghasilkan bagian apa pun",

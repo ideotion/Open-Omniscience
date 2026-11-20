@@ -1161,9 +1161,9 @@ def _osm_method(rec: dict, complete_n: int) -> list[dict]:
             unknown.append(_fr(pair[1 if unknown else 0], k=k))
     return [
         _fr("the OSM change-file member's own counts, from its last read of the lane store: {countries} countries listed, "
-            "{complete} of them cut to completion; {files} daily change files recorded over {with_files} countries, "
-            "{gaps} gaps", tr=("countries", "files", "with_files", "gaps"), countries=n("countries"), complete=complete_n,
-            files=n("change_files_recorded"), with_files=n("countries_with_change_files"), gaps=n("gaps_total")),
+            "{complete} of them cut to completion; {diffs} daily change files recorded over {with_files} countries, "
+            "{gaps} gaps", tr=("countries", "diffs", "with_files", "gaps"), countries=n("countries"), complete=complete_n,
+            diffs=n("change_files_recorded"), with_files=n("countries_with_change_files"), gaps=n("gaps_total")),
         *unknown,
         _fr("). A first slice is one country cut to completion. No country is named; nothing is divided.") if unknown
         else _fr(". A first slice is one country cut to completion. No country is named; nothing is divided."),
