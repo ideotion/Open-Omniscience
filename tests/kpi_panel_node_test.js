@@ -104,7 +104,9 @@ assert.ok(html.includes('title="the law report&#39;s own counts"'), "each block'
 // 5. Hostile strings from a hand-edited record are escaped, never markup.
 html = kpiPanelHtml({metrics: [{id: "<b>", name: "<img src=x onerror=1>", value: "<i>", verdict: "weird", target: "<t>",
   method: '"><script>'}]}, H);
-assert.ok(!/<img|<script|<i>|<b>|<t>/.test(html.replace(/<\/?(div|b|span)( [^>]*)?>/g, "")), html);
+for (const raw of ["<img", "<script", "<i>", "<t>", "<b><"]) assert.ok(!html.toLowerCase().includes(raw), raw + " " + html);
+for (const safe of ["&lt;img src=x onerror=1&gt;", "&lt;b&gt;", "&lt;t&gt;", "&quot;&gt;&lt;script&gt;"])
+  assert.ok(html.includes(safe), safe + " " + html);
 // A value that is not a finite number is not printed as one.
 assert.ok(text(html).includes("value: unknown"));
 
