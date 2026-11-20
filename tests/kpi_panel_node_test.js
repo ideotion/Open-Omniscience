@@ -74,13 +74,16 @@ assert.ok(text(kpiPanelHtml({}, H)).includes("No measures could be read."));
 assert.ok(text(kpiPanelHtml(null, H)).includes("No measures could be read."));
 
 // 4. The K13 blocks: each its own counts; an unreadable count reads unknown; a count the block never carries is not drawn.
-const k13 = {id: "K13", name: "Vertical coverage", value: 2, n: 5, as_of: "2026-11-18", verdict: "measured-no-bar",
-  target: "pending", method: "2 of the 5", verticals: [
+const k13 = {id: "K13", name: "Vertical coverage", value: 3, n: 6, as_of: "2026-11-18", verdict: "measured-no-bar",
+  target: "pending", method: "3 of the 6", verticals: [
     {vertical: "climate", state: "not-measured", first_slice: false, reason: "no climate fetch has been recorded"},
     {vertical: "elections", state: "not-measured", first_slice: false, floor_countries: 140, covered: 7, missing: 122,
       snapshot_rows: null, method: "the elections floor"},
     {vertical: "law", kind: "lane", state: "recorded", first_slice: true, as_of: "2026-11-18T10:00:00+00:00", documents: 12,
       baselined: 10, jurisdictions: null, never_checked: 0, method: "the law report's own counts"},
+    {vertical: "medical", state: "recorded", first_slice: true, as_of: "2026-11-18T10:00:00+00:00",
+      files_applied_last_run: 7, files_listed: 40, files_remaining: 0, papers_kept: null,
+      newest_file_applied: "pubmed25n1400.xml.gz", method: "the last PubMed fetch's own record"},
     {vertical: "osm", kind: "lane", state: "recorded", first_slice: false, lane: "absent", countries: 0,
       reason: "no OpenStreetMap country has been cut"},
     {vertical: "wiki", kind: "lane", state: "recorded", first_slice: true, editions_listed: 3, pages_seen: 4000,
@@ -89,7 +92,7 @@ const k13 = {id: "K13", name: "Vertical coverage", value: 2, n: 5, as_of: "2026-
 html = kpiPanelHtml({metrics: [k13]}, H);
 txt = text(html);
 assert.ok(txt.includes("measured, no target set yet"));
-for (const name of ["Climate", "Elections", "Law", "OpenStreetMap", "Wikipedia"]) assert.ok(txt.includes(name), name);
+for (const name of ["Climate", "Elections", "Law", "Medical papers", "OpenStreetMap", "Wikipedia"]) assert.ok(txt.includes(name), name);
 assert.ok(txt.includes("Climate · not measured · no first slice yet"), txt);
 assert.ok(txt.includes("no climate fetch has been recorded"), "the reason is visible");
 assert.ok(!/datasets fetched/.test(txt), "a count the block does not carry is not drawn");
@@ -98,6 +101,11 @@ assert.ok(txt.includes("Law · recorded · first slice in · as of: 2026-11-18")
 assert.ok(txt.includes("jurisdictions: unknown") && txt.includes("documents never checked: 0"),
   "unknown and a real 0 stay apart");
 assert.ok(txt.includes("countries listed: 0"));
+// Row 207: the medical block draws its counts; an unreadable one reads unknown and a real 0 stays 0; its file name is no figure.
+assert.ok(txt.includes("Medical papers · recorded · first slice in"), txt);
+assert.ok(txt.includes("update files applied last run: 7") && txt.includes("update files listed: 40"), txt);
+assert.ok(txt.includes("update files remaining: 0") && txt.includes("papers kept: unknown"), txt);
+assert.ok(!txt.includes("pubmed25n1400"), "the newest file name is not drawn as a figure");
 assert.ok(txt.includes("gaps: unknown") && txt.includes("pages seen: 4000"));
 assert.ok(html.includes('title="the law report&#39;s own counts"'), "each block's method is its own hover title");
 

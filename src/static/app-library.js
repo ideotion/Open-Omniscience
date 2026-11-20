@@ -100,7 +100,7 @@
     // the snapshot reads only the in-process instruments and what each instrument recorded, never a scan or a fetch).
     // Each measure stands alone, as the snapshot says: no total, no count of the ones that meet their target, no score.
     // A measure with no value reads "unknown", never 0; its method rides the hover bubble (#17), and the caveat line
-    // stays on screen. K13 lists its five blocks (climate, elections, law, maps, Wikipedia) with their own counts,
+    // stays on screen. K13 lists its six blocks (climate, elections, law, medical papers, maps, Wikipedia) with their own counts,
     // date and method; a count a block could not read is "unknown", a count it never carries is not drawn.
     const _KPI_VERDICT = {
       "green": "meets its target",
@@ -117,6 +117,9 @@
         ["missing", "missing"], ["snapshot_rows", "snapshot rows"]],
       law: [["documents", "tracked documents"], ["baselined", "baselined"], ["jurisdictions", "jurisdictions"],
         ["never_checked", "documents never checked"]],
+      // Row 207: the medical store holds counts only (K13), so only counts are drawn; no paper id or file name is drawn.
+      medical: [["files_applied_last_run", "update files applied last run"], ["files_listed", "update files listed"],
+        ["files_remaining", "update files remaining"], ["papers_kept", "papers kept"]],
       osm: [["countries", "countries listed"], ["countries_with_change_files", "countries with change files"],
         ["change_files_recorded", "change files recorded"], ["gaps_total", "gaps"]],
       wiki: [["editions_listed", "editions listed"], ["editions_with_a_run", "editions that have run"],
