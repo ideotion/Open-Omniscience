@@ -85,3 +85,13 @@ def test_the_signed_export_lists_only_rows_its_root_covers(db, seeded, lanes, mo
     carried = {r["key"]: [a["id"] for a in r.get("items", [])] for r in sel.block["rails"]}
     assert carried["news"] == [seeded["a1"]]
     assert carried["wikipedia"] == [] and carried["law"] == [], "a row the bundle does not carry is not in the file"
+    dropped = {r["key"]: r.get("items_not_in_bundle") for r in sel.block["rails"] if "items" in r}
+    assert dropped == {"news": 0, "wikipedia": 1, "law": 1}, "the file says how many listed rows it left out"
+
+
+def test_only_a_real_article_id_passes_the_export_filter():
+    from src.reporting import dossier_evidence as DE
+
+    rails = [{"key": "news", "items": [{"id": 1}, {"id": True}, {"id": 2.0}, {"id": "2"}, {"id": 2}, "x"]}]
+    out = DE._items_in_bundle(rails, {1, 2})[0]
+    assert [a["id"] for a in out["items"]] == [1, 2] and out["items_not_in_bundle"] == 4

@@ -91,12 +91,19 @@ def _items_in_bundle(rails: list[dict], bundled: set[int]) -> list[dict]:
 
     The rail lists its NEWEST rows (row 200) while the bundle carries the first ids up to its
     bound, so on a large dossier the two differ. A row the Merkle root does not cover would read
-    as signed evidence it is not, and its source would be missing from the licence lines.
+    as signed evidence it is not, and its source would be missing from the licence lines. How many
+    listed rows were left out is carried beside the list, so an empty list is not read as "no rows".
     """
+    def carried(a) -> bool:
+        aid = a.get("id") if isinstance(a, dict) else None
+        return isinstance(aid, int) and not isinstance(aid, bool) and aid in bundled
+
     out = []
     for r in rails:
         if isinstance(r.get("items"), list):
-            r = {**r, "items": [a for a in r["items"] if isinstance(a, dict) and a.get("id") in bundled]}
+            kept = [a for a in r["items"] if carried(a)]
+            # Said, never left to be read as "no rows": the page listed these, the file does not carry them.
+            r = {**r, "items": kept, "items_not_in_bundle": len(r["items"]) - len(kept)}
         out.append(r)
     return out
 
