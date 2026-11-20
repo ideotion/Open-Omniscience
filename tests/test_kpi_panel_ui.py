@@ -11,6 +11,7 @@ in all twelve locales.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import subprocess
@@ -31,11 +32,12 @@ _STRINGS = [
     "meets its target", "misses its target", "not measurable here", "measured, no target set yet",
     "target", "recorded", "first slice in", "no first slice yet", "not measured", "unknown", "as of", "value", "n = {n}",
     "Loading…", "Could not load:",
-    "Climate", "Elections", "Law", "OpenStreetMap", "Wikipedia",
+    "Climate", "Elections", "Law", "Medical papers", "OpenStreetMap", "Wikipedia",
     "datasets fetched", "datasets listed", "countries on the floor", "countries covered", "only a passed projection",
     "present but dateless", "missing", "snapshot rows", "tracked documents", "baselined", "jurisdictions",
     "documents never checked", "countries listed", "countries with change files", "change files recorded", "gaps",
     "editions listed", "editions that have run", "editions with pages seen", "editions holding a text", "pages seen",
+    "update files applied last run", "update files listed", "update files remaining", "papers kept",
 ]
 
 
@@ -76,3 +78,48 @@ def test_every_panel_string_is_keyed_in_all_twelve_locales() -> None:
             if not str(data.get(s, "")).strip():
                 missing.append(f"{path.name}: {s[:48]!r}")
     assert not missing, missing
+
+
+def _js_object_keys(src: str, name: str) -> set[str]:
+    """The keys of ``const NAME = {...};`` in the shipped module: each key is a bare name followed by a list or a string."""
+    at = src.index(f"const {name} = {{")
+    body = src[at: src.index("};", at)]
+    return set(re.findall(r"(?<![\w\"])([a-z_]+): [\[\"]", body))
+
+
+def _server_verticals() -> list[str]:
+    """The vertical names ``_k13_verticals`` builds, read from its source: the one list the server sends."""
+    tree = ast.parse((_ROOT / "src" / "monitoring" / "kpi.py").read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_k13_verticals")
+    loop = next(n for n in ast.walk(fn) if isinstance(n, ast.For))
+    return [elt.elts[0].value for elt in loop.iter.elts]  # type: ignore[attr-defined]
+
+
+def test_every_vertical_the_server_sends_has_a_name_and_a_figure_list() -> None:
+    """Row 207: a block whose vertical has no ``_KPI_FIGURES`` entry shows its name and method but no number (the medical
+    block did, for one release). Guards every future vertical the same way."""
+    lib = _read("app-library.js")
+    names = _server_verticals()
+    assert len(names) >= 6 and "medical" in names, names
+    figures, labels = _js_object_keys(lib, "_KPI_FIGURES"), _js_object_keys(lib, "_KPI_VERTICAL")
+    assert not set(names) - figures, f"no figure list for {sorted(set(names) - figures)}"
+    assert not set(names) - labels, f"no name for {sorted(set(names) - labels)}"
+
+
+def test_the_medical_figures_are_counts_the_real_block_sends(tmp_path, monkeypatch) -> None:
+    """Each medical figure the panel draws is a key the real block carries, holding a count (K13: counts only); the
+    block's file name is not one of them."""
+    from src.monitoring import kpi as K
+
+    monkeypatch.setattr(K, "_coverage_path", lambda: tmp_path / "keyword-coverage.json")
+    K.record_medical_fetch({"fetched_at": "2026-11-18T10:00:00+00:00", "listed": 40, "remaining": 33, "applied": 7,
+                            "failed": False, "stopped": False, "papers": 3,
+                            "by_class": {"journal": 2, "preprint": 0, "retracted": 1}, "coverage": {},
+                            "last_file": "pubmed25n1400.xml.gz"})
+    block = K._medical_block()
+    lib = _read("app-library.js")
+    entry = lib[lib.index("      medical: [["): lib.index("      osm: [[")]
+    keys = re.findall(r'\["([a-z_]+)", "', entry)
+    assert keys == ["files_applied_last_run", "files_listed", "files_remaining", "papers_kept"], keys
+    assert {k: block[k] for k in keys} == {"files_applied_last_run": 7, "files_listed": 40, "files_remaining": 33,
+                                            "papers_kept": 3}
