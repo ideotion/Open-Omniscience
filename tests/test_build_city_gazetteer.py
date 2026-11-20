@@ -320,3 +320,36 @@ def test_a_trickling_server_is_cut_at_the_deadline(monkeypatch):
     with pytest.raises(M.AnswerTooLarge):
         _getter_with(monkeypatch, resp)(M.query_url(1000))
     assert resp.closed
+
+
+def test_a_watchdog_that_fires_before_the_clock_reads_the_deadline_is_still_the_deadline(monkeypatch):
+    """Row 204: on Windows a threading.Timer can fire a clock tick before time.monotonic() reaches the deadline.
+
+    The read then ended with the closed socket's OSError while the clock still said "not yet", and the cut was
+    reported as a dropped connection (exit 2, "refused") instead of the deadline (exit 1). The watchdog now records
+    that it cut the read. Here it fires at once, with the deadline an hour away, so the clock can never answer for it.
+    """
+    import threading
+
+    class _EarlyTimer:
+        def __init__(self, interval, fn):
+            self._fn = fn
+            self.daemon = False
+
+        def start(self):
+            self._fn()  # fires "early": long before the clock reaches the deadline
+
+        def cancel(self):
+            pass
+
+    class _Closed(_Resp):
+        def iter_content(self, n):
+            if self.closed:
+                raise OSError("connection closed")
+            yield b" "
+
+    monkeypatch.setattr(M, "threading", type("T", (), {"Timer": _EarlyTimer, "Event": threading.Event}))
+    monkeypatch.setattr(M, "READ_DEADLINE_S", 3600.0)
+    resp = _Closed()
+    with pytest.raises(M.AnswerTooLarge):
+        _getter_with(monkeypatch, resp)(M.query_url(1000))

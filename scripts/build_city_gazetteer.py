@@ -142,7 +142,15 @@ def _getter(settings: Any) -> Callable[[str], bytes]:
         resp = session.get(url, stream=True, timeout=(10, 30), headers={"Accept": "application/sparql-results+json"})
         # The deadline is for the whole read, so a server that trickles a byte under every socket timeout cannot hold the
         # run: a watchdog closes the response when the time is up, and the blocked read ends there.
-        watchdog = threading.Timer(max(0.0, deadline - time.monotonic()), resp.close)
+        # The watchdog records that IT cut the read: on Windows a timer can fire a clock tick before time.monotonic()
+        # reaches the deadline (row 204), so asking the clock afterwards misread the cut as a dropped connection.
+        cut = threading.Event()
+
+        def _cut() -> None:
+            cut.set()
+            resp.close()
+
+        watchdog = threading.Timer(max(0.0, deadline - time.monotonic()), _cut)
         watchdog.daemon = True
         watchdog.start()
         try:
@@ -155,16 +163,16 @@ def _getter(settings: Any) -> Callable[[str], bytes]:
             try:
                 for chunk in resp.iter_content(65536):
                     total += len(chunk)
-                    if total > MAX_ANSWER_BYTES or time.monotonic() > deadline:
+                    if total > MAX_ANSWER_BYTES or cut.is_set() or time.monotonic() > deadline:
                         raise AnswerTooLarge()
                     chunks.append(chunk)
             except AnswerTooLarge:
                 raise
             except Exception:
-                if time.monotonic() >= deadline:
+                if cut.is_set() or time.monotonic() >= deadline:
                     raise AnswerTooLarge() from None  # the watchdog closed it
                 raise
-            if time.monotonic() > deadline:
+            if cut.is_set() or time.monotonic() > deadline:
                 raise AnswerTooLarge()  # closed under the loop's feet, which can read as a short, clean end
             return b"".join(chunks)
         finally:
