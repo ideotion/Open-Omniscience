@@ -216,7 +216,7 @@ def test_a_whole_degree_coordinate_survives_the_browsers_save_and_still_verifies
     # What app-evidence.js does when it saves: JSON.stringify(bundle, null, 2) of the parsed answer.
     saved = subprocess.run([node, "-e", "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>"
                             "process.stdout.write(JSON.stringify(JSON.parse(s),null,2)))"],
-                           input=json.dumps(bundle), capture_output=True, text=True, check=True).stdout
+                           input=json.dumps(bundle), capture_output=True, text=True, encoding="utf-8", check=True).stdout
     ok, reason = ev.verify_bundle(json.loads(saved))
     assert ok is True, reason
 
