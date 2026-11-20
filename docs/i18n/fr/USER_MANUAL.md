@@ -44,7 +44,7 @@ données, variables d'environnement, l'API HTTP complète) et d'une section de d
      [Sources](#33-sources-dans-paramètres--avancé--sources) · [Bibliothèque](#34-bibliothèque) · [Marchés](#35-marchés) ·
      [Indices](#35a-indices) · [Analyses](#36-analyses) ·
      [Carte du monde](#36a-carte-du-monde) · [Agenda](#36b-agenda) ·
-     [Sources vivantes](#36b-sources-vivantes) · [Climat](#36c-climat) · [Observatoire](#36d-observatoire) ·
+     [Sources vivantes](#36b-sources-vivantes) · [Climat](#36c-climat) · [Observatoire](#36d-observatoire) · [Articles médicaux](#36e-articles-médicaux) ·
      [Wikipédia](#37-wikipedia-dans-paramètres--wikipédia) ·
      [Preuves & possession](#38-preuves-et-chaîne-de-possession) · [Paramètres](#39-paramètres) ·
      [Aide & docs](#310-aide--docs)
@@ -1287,6 +1287,42 @@ thématiques.
   les mots-clés en dehors de toute galaxie).
 - Le même corpus dessine toujours le même ciel : un changement que vous voyez est donc un changement dans vos
   données. Il n'y a pas de note composite.
+
+### 3.6e Articles médicaux
+
+**À quoi ça sert :** lire les notices PubMed des articles médicaux et scientifiques vers
+lesquels pointent vos articles, à côté de l'actualité et jamais mêlées à elle. **Cette
+application ne donne jamais d'avis médical :** un article listé ici est un article que vos
+articles citent, pas une recommandation.
+
+**Où le trouver.** **Paramètres → Avancé → Articles médicaux** montre ce qui est gardé et
+porte le bouton **Récupérer depuis PubMed**. Dans une analyse (**Explorer**), le sous-onglet
+**Articles médicaux** liste les articles gardés vers lesquels pointent les articles analysés,
+avec le nombre d'articles qui citent chacun.
+
+**Comment il récupère.** Rien n'est téléchargé avant que vous appuyiez sur **Récupérer depuis
+PubMed**. Il contacte un seul serveur, `ftp.ncbi.nlm.nih.gov`, et lit les *fichiers de mise à
+jour* PubMed de la NLM (7 par passage par défaut, 30 au plus), de plusieurs dizaines de
+mégaoctets chacun. Il passe par la même fenêtre de consentement que toute autre action
+réseau, est refusé tant que le mode avion est actif, et tourne en arrière-plan ; le
+gestionnaire de tâches l'affiche. **Annuler** y termine la récupération après le fichier en
+cours ; activer le mode avion interrompt aussitôt un téléchargement. Aucun
+identifiant d'article n'est jamais envoyé au NCBI.
+
+**Ce qui est gardé.** Chaque fichier est lu en entier et vérifié avec la somme de contrôle de
+la NLM. Seules les notices que vos articles citent (par un lien PubMed, PMC ou DOI) sont
+gardées, dans leur propre fichier, `medical.db` ; le reste est écarté
+et jamais écrit sur le disque. Une sauvegarde inclut `medical.db`, et chaque notice gardée
+peut aussi être récupérée à nouveau.
+
+**Ce sur quoi vous pouvez compter.** Chaque article affiche la catégorie qu'indique sa
+notice : **Notice de revue** (l'évaluation par les pairs est l'affirmation de la revue ;
+cette application ne la vérifie pas), **Prépublication** (non évaluée par les pairs) ou
+**Rétracté**. Un erratum, un avis de préoccupation, un avis de rétractation et une notice
+retirée de PubMed ont chacun leur propre badge. Les fichiers de mise à jour ne contiennent
+que les articles que la NLM a révisés récemment, donc la plupart des articles que vos
+articles citent ne seront **pas encore trouvés** : leur nombre est affiché, et un article
+introuvable ici ne manque pas pour autant dans PubMed.
 
 ### 3.7 Wikipedia *(dans Paramètres → Wikipédia)*
 

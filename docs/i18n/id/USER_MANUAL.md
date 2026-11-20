@@ -41,7 +41,7 @@ lengkap) dan pemecahan masalah.
      [Sumber](#33-sumber-di-pengaturan--lanjutan--sumber) · [Pustaka](#34-pustaka) · [Pasar](#35-pasar) ·
      [Indeks](#35a-indeks) · [Wawasan](#36-wawasan) ·
      [Peta dunia](#36a-peta-dunia) · [Agenda](#36b-agenda) ·
-     [Sumber hidup](#36b-sumber-hidup) · [Iklim](#36c-iklim) · [Observatorium](#36d-observatorium) ·
+     [Sumber hidup](#36b-sumber-hidup) · [Iklim](#36c-iklim) · [Observatorium](#36d-observatorium) · [Makalah medis](#36e-makalah-medis) ·
      [Wikipedia](#37-wikipedia-di-pengaturan--wikipedia) ·
      [Bukti & kustodi](#38-bukti--pengawasan) · [Pengaturan](#39-pengaturan) ·
      [Bantuan & dokumen](#310-bantuan--dokumen)
@@ -1183,6 +1183,40 @@ domain topik.
   kata kunci di luar semua galaksi).
 - Korpus yang sama selalu menggambar langit yang sama, sehingga perubahan yang Anda lihat adalah perubahan pada
   data Anda. Tidak ada skor gabungan.
+
+### 3.6e Makalah medis
+
+**Untuk apa:** membaca catatan PubMed dari makalah medis dan ilmiah yang ditautkan oleh
+artikel Anda, di samping berita dan tidak pernah dicampur dengannya. **Aplikasi ini tidak
+pernah memberi nasihat medis:** makalah yang tercantum di sini adalah makalah yang dikutip
+artikel Anda, bukan rekomendasi.
+
+**Di mana menemukannya.** **Pengaturan → Lanjutan → Makalah medis** menunjukkan apa yang
+disimpan dan memuat tombol **Ambil dari PubMed**. Dalam analisis (**Jelajahi**), subtab
+**Makalah medis** mencantumkan makalah tersimpan yang ditautkan oleh artikel yang dianalisis,
+beserta berapa artikel yang mengutip masing-masing.
+
+**Cara mengambil.** Tidak ada yang diunduh sampai Anda menekan **Ambil dari PubMed**.
+Aplikasi menghubungi satu server, `ftp.ncbi.nlm.nih.gov`, dan membaca *berkas pembaruan*
+PubMed dari NLM (secara bawaan 7 per proses, paling banyak 30), masing-masing puluhan
+megabita. Proses ini melewati jendela persetujuan yang sama dengan setiap tindakan jaringan
+lain, ditolak selama mode pesawat aktif, dan berjalan di latar belakang; pengelola tugas
+menampilkannya. **Batal** di sana mengakhiri proses setelah berkas yang sedang berjalan;
+menyalakan mode pesawat langsung mengakhiri unduhan. Tidak ada
+pengenal makalah yang pernah dikirim ke NCBI.
+
+**Apa yang disimpan.** Setiap berkas dibaca utuh dan dicocokkan dengan checksum NLM. Hanya
+catatan yang dikutip artikel Anda (melalui tautan PubMed, PMC, atau DOI) yang disimpan, di berkasnya sendiri, `medical.db`; sisanya dibuang dan tidak pernah
+ditulis ke disk. Cadangan menyertakan `medical.db`, dan setiap catatan yang disimpan juga
+dapat diambil lagi.
+
+**Yang dapat Anda andalkan.** Setiap makalah menampilkan kelas yang dinyatakan catatannya:
+**Catatan jurnal** (tinjauan sejawat adalah klaim jurnal; aplikasi ini tidak memeriksanya),
+**Pracetak** (belum ditinjau sejawat), atau **Ditarik**. Erratum, pernyataan keprihatinan,
+pemberitahuan penarikan, dan catatan yang ditarik dari PubMed masing-masing mendapat lencana
+sendiri. Berkas pembaruan hanya memuat makalah yang baru-baru ini direvisi NLM, sehingga
+sebagian besar makalah yang dikutip artikel Anda **belum ditemukan**: jumlahnya ditampilkan,
+dan makalah yang tidak ditemukan di sini tidak berarti tidak ada di PubMed.
 
 ### 3.7 Wikipedia *(di Pengaturan → Wikipedia)*
 
