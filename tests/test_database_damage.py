@@ -1130,7 +1130,7 @@ def test_the_operators_start_and_run_now_release_every_file_but_wikipedia(regist
     and a collection start that released its latch would un-pause a loop this button does not run."""
     import src.api.scheduler as api_sched
 
-    fake = type("S", (), {"start": lambda self: True, "run_now": lambda self: True})()
+    fake = type("S", (), {"start": lambda self, gate=None: True, "run_now": lambda self, gate=None: True})()
     monkeypatch.setattr(api_sched, "get_scheduler", lambda: fake)
     monkeypatch.setattr(api_sched, "_status_payload", lambda: {})
     for call in (api_sched.scheduler_start, api_sched.scheduler_run_now):

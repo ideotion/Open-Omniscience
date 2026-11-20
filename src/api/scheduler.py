@@ -12,6 +12,7 @@ result -- never a simulated "healthy".
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -25,7 +26,7 @@ from src.monitoring.secret_scrub import http_detail, log_failure
 from src.monitoring.server_load import server_load
 from src.scheduler import storage_guard
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
-from src.scheduler.runner import get_scheduler
+from src.scheduler.runner import StartGate, get_scheduler
 from src.scheduler.settings import (
     SchedulerSettingsError,
     load_settings,
@@ -388,14 +389,99 @@ def _resume_wiki_lane() -> None:
         log_failure(_LOG, "could not resume the Wikipedia lane after the start", exc, level=logging.WARNING)
 
 
+_NETWORK_AFTER_REFUSAL = {
+    # The two sentences the refusal ends with (R756), each one locale key, so the UI says in the reader's language what the network is
+    # doing now. Which one is decided by reading the switch AFTER the refusal, never assumed from what the route meant to do.
+    True: "Airplane mode is on, as it was before this start.",
+    False: "The network stays on, as you had set it before this start.",
+}
+
+#: The reason a start that made its thread is refused all the same: a Stop (the Stop button, the airplane toggle, a panic) engaged the
+#: switch while the thread was being made, and a Stop is never undone by a start that began before it. A locale key.
+_STOPPED_DURING_START = "Collection was stopped while it was starting, so the network was not opened."
+#: The network sentence that goes with it: the switch is engaged now because of that Stop, whatever it was before this request.
+_STOP_KEPT = "Airplane mode is on: the Stop is kept."
+
+
+def _refusal(reason: str, engaged: bool, network: str | None = None) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": reason,
+            "kill_switch": "engaged" if engaged else "off",
+            "network": network or _NETWORK_AFTER_REFUSAL[engaged],
+        },
+    )
+
+
+def _start_opening_the_network(call: Callable[[StartGate], bool], refused: str) -> bool:
+    """Make the collection thread, THEN open the network; a start that does not start opens nothing (R756).
+
+    ``call`` is the scheduler's ``start`` or ``run_now``, given a gate its thread waits on. The kill switch is cleared only after it returns
+    ``True`` (a thread was made), and the gate is set after that, so:
+
+    - a refused start (the thread could not be made, ``RuntimeError``) leaves the switch in the state it had immediately before this
+      request, engaged or not, with no moment in between when anything could fetch;
+    - a start that makes no thread (``False``: the loop already runs, a run is in flight, an exclusive operation holds the machine) opens
+      nothing either -- it leaves the switch as it found it, so a pass still winding down after a Stop is not handed the network back;
+    - a Stop that lands while the thread is being made wins: the clear happens only if the switch was not engaged since this request
+      began (:func:`src.ingest.clear_kill_switch_unless_engaged_since`), and otherwise the request is refused, saying so;
+    - a start that works runs its first pass with the switch already clear.
+
+    STATED LIMIT: an exclusive operation's hold answers ``False`` and remembers the start for its resume, which gives way to an engaged
+    switch -- so an API caller who asks for a start while offline AND during an import gets ``started: false`` and no start afterwards. The
+    UI never does this (its consent popup goes online first, through the airplane button).
+
+    A switch the operator had cleared before (the airplane button, which the UI's consent popup presses before it calls this route) stays
+    clear: this route never engages it, it only declines to clear it. Nothing is persisted, so a process that dies between the thread and
+    the clear boots in airplane mode like any other (the boot engage, src/api/main.py), which is the refused state. Any other exception is
+    not a refusal and still answers the unhandled error -- with the switch untouched, too.
+    """
+    from src.ingest import (
+        activate_kill_switch,
+        clear_kill_switch_unless_engaged_since,
+        kill_switch_active,
+        kill_switch_epoch,
+        note_operator_crossed_online,
+    )
+
+    gate = StartGate()
+    epoch = kill_switch_epoch()
+    opened = False
+    try:
+        try:
+            started = call(gate)
+        except RuntimeError as exc:
+            # The thread could not start (R393): nothing runs, and the Wikipedia lane is not resumed as if collection had begun. A conflict
+            # the operator can retry, never an unhandled 500. The detail says what the network is doing now, read from the switch itself.
+            log_failure(_LOG, refused, exc, level=logging.WARNING)
+            raise _refusal(http_detail(exc), kill_switch_active()) from exc
+        if started:
+            if not clear_kill_switch_unless_engaged_since(epoch):
+                _LOG.warning("%s: a Stop engaged the kill switch while the thread was being made; the network stays closed", refused)
+                raise _refusal(_STOPPED_DURING_START, True, _STOP_KEPT)
+            try:
+                note_operator_crossed_online()  # an explicit start IS crossing online
+            except BaseException:
+                # The thread is about to be cancelled (finally): a network opened for a start that will not run is closed again.
+                activate_kill_switch()
+                raise
+            opened = True
+    finally:
+        # Never leave a thread waiting: on every path out of here the gate is decided. Opened only when the network was opened for it;
+        # on any other path the thread (if one was made) returns without running, so nothing runs under a switch this route did not clear.
+        if opened:
+            gate.open()
+        else:
+            gate.cancel()
+    return started
+
+
 @router.post("/start")
 def scheduler_start() -> dict:
     """Start the background ingestion loop (the first run begins immediately)."""
-    from src.ingest import clear_kill_switch, note_operator_crossed_online
     from src.scheduler import memguard
 
-    clear_kill_switch()
-    note_operator_crossed_online()  # an explicit start IS crossing online
     # An explicit start is a USER ACTION: release a paused-low-memory latch and
     # try again (the guard re-trips after fresh sustained samples if memory is
     # still genuinely low — a retry, never a permanent override).
@@ -409,13 +495,10 @@ def scheduler_start() -> dict:
     # And the database-damage latch (database/damage.py): a RETRY too. The record of the incident
     # stays, and the first failed read puts the pause back.
     damage.retry_for_collection_start("operator started collection")
-    try:
-        started = get_scheduler().start()
-    except RuntimeError as exc:
-        # The loop's thread could not start (R393): ``BackgroundScheduler.start`` has undone its state and re-raised, so nothing runs and
-        # the Wikipedia lane below is not resumed as if collection had begun. A conflict the operator can retry, never an unhandled 500.
-        log_failure(_LOG, "collection start refused: the scheduler thread could not start", exc, level=logging.WARNING)
-        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
+    started = _start_opening_the_network(
+        lambda gate: get_scheduler().start(gate=gate),
+        "collection start refused: the scheduler thread could not start",
+    )
     _resume_wiki_lane()
     return {"started": started, **_status_payload()}
 
@@ -434,29 +517,20 @@ def scheduler_stop() -> dict:
 
 @router.post("/run-now")
 def scheduler_run_now() -> dict:
-    from src.ingest import clear_kill_switch, note_operator_crossed_online
+    """Trigger one immediate run. Returns started=False if a run is already active."""
     from src.scheduler import memguard
 
-    clear_kill_switch()
-    note_operator_crossed_online()  # a user-triggered run IS crossing online
     # A user-triggered run releases a paused-low-memory latch (see /start).
     memguard.memory_guard.reset(reason="operator ran collection now")
     storage_guard.storage_guard.reset(reason="operator ran collection now")
     damage.retry_for_collection_start("operator ran collection now")
-    """Trigger one immediate run. Returns started=False if a run is already active."""
-    try:
-        started = get_scheduler().run_now()
-    except RuntimeError as exc:
-        # The run's thread could not start (R393): ``run_now`` raises before it records anything in the scheduler's own state (``_active``,
-        # ``_thread`` and the rest are set on the run's thread, which never began), so there is nothing of the scheduler's to undo, and the
-        # Wikipedia lane below is not resumed as if a run had begun. A conflict the operator can retry, never an unhandled 500.
-        # STATED LIMIT: what the lines above already did stays done, as after a refused ``/start`` -- the kill switch is cleared and the
-        # crossing online noted, the memory-guard and storage-guard latches are reset, the database-damage pauses are released -- and
-        # ``run_now`` may have started the storage-guard supervisor, which keeps running (it needs no run). With no run and no loop
-        # nothing fetches, and the operator's next click retries; re-engaging the kill switch here would also undo an online state the
-        # operator chose before the click.
-        log_failure(_LOG, "run now refused: the scheduler thread could not start", exc, level=logging.WARNING)
-        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
+    # STATED LIMIT, narrowed by R756: a refused run (its thread could not start) leaves the kill switch as it found it -- see
+    # ``_start_opening_the_network``. The latch resets above stay done: they open nothing to the network, and the operator's next click
+    # retries. ``run_now`` may have started the storage-guard supervisor, which keeps running (it needs no run and fetches nothing).
+    started = _start_opening_the_network(
+        lambda gate: get_scheduler().run_now(gate=gate),
+        "run now refused: the scheduler thread could not start",
+    )
     _resume_wiki_lane()
     return {"started": started, **_status_payload()}
 
