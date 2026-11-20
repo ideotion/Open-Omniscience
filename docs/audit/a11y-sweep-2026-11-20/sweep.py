@@ -4,11 +4,15 @@ NOTHING HERE GOES ONLINE, and the sweep checks it. Before the first page it enga
 through the app's own endpoint and reads it back, and the browser aborts every request that is not
 to this loopback server.
 
-Two passes against one seeded plaintext state (``scripts/ui_clickthrough_seed.py``, state C):
+Three passes against one seeded plaintext state (``scripts/ui_clickthrough_seed.py``, state C):
 
 1. ALL axe rules, in the default theme (Ink), on every surface at 1440x900, 768x1024 and 390x844.
-2. The colour-contrast rule alone, in every other selectable theme, on every surface at 1440x900.
-   Contrast is the only axe rule a theme changes, so pass 1 covers the rest for every theme.
+2. The two axe rules that measure colour (``color-contrast`` and ``link-in-text-block``), in every
+   other selectable theme, on every surface at 1440x900.
+3. The article reader again, all rules at the three widths, with the browser in DARK colour scheme.
+   The reader does not take the app theme: it has its own palette, dark by default and light under
+   ``prefers-color-scheme: light``. Playwright's default scheme is light, so passes 1 and 2 measured
+   the reader's light palette only; this pass measures the dark one.
 
 The surfaces are the 13 sidebar tabs (each on its default subtab), Settings, the task-manager
 window (``/tasks``) and the article reader (``/api/articles/{id}/view``).
@@ -51,6 +55,7 @@ async (only) => {
     nodes: v.nodes.length,
     targets: v.nodes.slice(0, 25).map(n => n.target.join(' ')),
     sample: (v.nodes[0] && v.nodes[0].failureSummary || '').split('\\n').slice(0, 3).join(' | ').slice(0, 300),
+    per_node: v.nodes.slice(0, 25).map(n => (n.failureSummary || '').split('\\n').slice(1, 2).join('').trim().slice(0, 240)),
   }));
 }
 """
@@ -100,7 +105,7 @@ def visit(pg, how, theme):
         settle(pg)
     else:
         pg.goto(BASE + target, wait_until="domcontentloaded")
-        # the standalone pages read the theme from the same stored ui settings the SPA writes
+        # /tasks reads the app theme from the stored ui settings (taskmanager.js); the reader does not (pass 3)
         settle(pg, 1200)
     ensure_axe(pg)
 
@@ -130,7 +135,7 @@ def main():
         pg.on("pageerror", lambda e: errors.append(str(e)[:200]))
         open_spa(pg, DEFAULT_THEME)
 
-        def one(label, how, theme, width, height, only):
+        def one(label, how, theme, width, height, only, scheme="light"):
             pg.set_viewport_size({"width": width, "height": height})
             t0 = time.time()
             try:
@@ -140,11 +145,11 @@ def main():
             except Exception as e:  # recorded, never swallowed: a surface the sweep could not audit is a finding too
                 vio, err = [], str(e)[:300]
             report["runs"].append({"surface": label, "theme": theme, "width": width, "height": height,
-                                   "rules": "color-contrast" if only else "all", "violations": vio,
+                                   "rules": ",".join(only) if only else "all", "scheme": scheme, "violations": vio,
                                    "error": err, "seconds": round(time.time() - t0, 1),
                                    "page_errors": errors[:]})
             errors.clear()
-            print(f"{label:12s} {theme:10s} {width:5d} {'contrast' if only else 'all':8s} "
+            print(f"{label:12s} {theme:10s} {width:5d} {'colour' if only else 'all':8s} "
                   f"{len(vio)} rules, {sum(v['nodes'] for v in vio)} nodes{' ERR ' + err if err else ''}", flush=True)
 
         for width, height in WIDTHS:
@@ -153,8 +158,12 @@ def main():
         for theme in OTHER_THEMES:
             open_spa(pg, theme)
             for label, how in surfaces(article_id):
-                one(label, how, theme, 1440, 900, ["color-contrast"])
+                one(label, how, theme, 1440, 900, ["color-contrast", "link-in-text-block"])
             open_spa(pg, DEFAULT_THEME)
+        pg.emulate_media(color_scheme="dark")
+        for width, height in WIDTHS:
+            one("reader", ("url", f"/api/articles/{article_id}/view"), "own-dark", width, height, None, "dark")
+        pg.emulate_media(color_scheme="light")
         br.close()
     report["airplane_after"] = api("/api/system/network").get("online") is False
     (OUT / "report.json").write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")

@@ -53,30 +53,10 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
-   "violations": [
-    {
-     "rule": "link-in-text-block",
-     "impact": "serious",
-     "help": "Links must be distinguishable without relying on color",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
-     "wcag": [
-      "wcag2a",
-      "wcag141"
-     ],
-     "nodes": 6,
-     "targets": [
-      "#home-recent > .home-recent-row:nth-child(1) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
-      "#home-recent > .home-recent-row:nth-child(2) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
-      "#home-recent > .home-recent-row:nth-child(3) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
-      "#home-recent > .home-recent-row:nth-child(4) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
-      "#home-recent > .home-recent-row:nth-child(5) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
-      "#home-recent > .home-recent-row:nth-child(8) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]"
-     ],
-     "sample": "Fix any of the following: |   The link has insufficient color contrast of 2.41:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #e8ebf0) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
-    }
-   ],
+   "scheme": "light",
+   "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -85,9 +65,10 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.5,
+   "seconds": 1.7,
    "page_errors": []
   },
   {
@@ -96,6 +77,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "empty-table-header",
@@ -109,11 +91,14 @@
      "targets": [
       "th:nth-child(5)"
      ],
-     "sample": "Fix any of the following: |   Element does not have text that is visible to screen readers"
+     "sample": "Fix any of the following: |   Element does not have text that is visible to screen readers",
+     "per_node": [
+      "Element does not have text that is visible to screen readers"
+     ]
     }
    ],
    "error": null,
-   "seconds": 2.5,
+   "seconds": 2.4,
    "page_errors": []
   },
   {
@@ -122,6 +107,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "nested-interactive",
@@ -138,11 +124,16 @@
       "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
       "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
      ],
-     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them."
+     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them.",
+     "per_node": [
+      "Element has focusable descendants. Move them outside of the element, or remove them.",
+      "Element has focusable descendants. Move them outside of the element, or remove them.",
+      "Element has focusable descendants. Move them outside of the element, or remove them."
+     ]
     }
    ],
    "error": null,
-   "seconds": 2.1,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -151,6 +142,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.3,
@@ -162,6 +154,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "link-in-text-block",
@@ -176,7 +169,10 @@
      "targets": [
       "a[data-on-click=\"openSettingsOsm();return false\"]"
      ],
-     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6)"
+     ]
     },
     {
      "rule": "scrollable-region-focusable",
@@ -192,11 +188,14 @@
      "targets": [
       ".oomap-rank > div:nth-child(2)"
      ],
-     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable"
+     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable",
+     "per_node": [
+      "Element should have focusable content"
+     ]
     }
    ],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.5,
    "page_errors": []
   },
   {
@@ -205,9 +204,10 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.2,
+   "seconds": 2.4,
    "page_errors": []
   },
   {
@@ -216,6 +216,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.3,
@@ -227,6 +228,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.2,
@@ -238,9 +240,10 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.2,
+   "seconds": 2.4,
    "page_errors": []
   },
   {
@@ -249,9 +252,10 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.3,
+   "seconds": 2.4,
    "page_errors": []
   },
   {
@@ -260,6 +264,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.3,
@@ -271,6 +276,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.4,
@@ -282,6 +288,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.3,
@@ -293,6 +300,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -304,6 +312,7 @@
    "width": 1440,
    "height": 900,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "heading-order",
@@ -317,7 +326,10 @@
      "targets": [
       ".mgrp:nth-child(1) > h3"
      ],
-     "sample": "Fix any of the following: |   Heading order invalid"
+     "sample": "Fix any of the following: |   Heading order invalid",
+     "per_node": [
+      "Heading order invalid"
+     ]
     },
     {
      "rule": "landmark-one-main",
@@ -331,7 +343,10 @@
      "targets": [
       "html"
      ],
-     "sample": "Fix all of the following: |   Document does not have a main landmark"
+     "sample": "Fix all of the following: |   Document does not have a main landmark",
+     "per_node": [
+      "Document does not have a main landmark"
+     ]
     },
     {
      "rule": "region",
@@ -348,11 +363,17 @@
       "nav",
       "#rp-read"
      ],
-     "sample": "Fix any of the following: |   Some page content is not contained by landmarks"
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks",
+     "per_node": [
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks"
+     ]
     }
    ],
    "error": null,
-   "seconds": 2.2,
+   "seconds": 1.7,
    "page_errors": []
   },
   {
@@ -361,6 +382,336 @@
    "width": 768,
    "height": 1024,
    "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 4.5,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "empty-table-header",
+     "impact": "minor",
+     "help": "Table header text should not be empty",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/empty-table-header?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "th:nth-child(5)"
+     ],
+     "sample": "Fix any of the following: |   Element does not have text that is visible to screen readers",
+     "per_node": [
+      "Element does not have text that is visible to screen readers"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "nested-interactive",
+     "impact": "serious",
+     "help": "Interactive controls must not be nested",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/nested-interactive?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag412"
+     ],
+     "nodes": 3,
+     "targets": [
+      "button[data-on-click=\"pickTerm(\\\"transport\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
+     ],
+     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them.",
+     "per_node": [
+      "Element has focusable descendants. Move them outside of the element, or remove them.",
+      "Element has focusable descendants. Move them outside of the element, or remove them.",
+      "Element has focusable descendants. Move them outside of the element, or remove them."
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6)"
+     ]
+    },
+    {
+     "rule": "scrollable-region-focusable",
+     "impact": "serious",
+     "help": "Scrollable region must have keyboard access",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/scrollable-region-focusable?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag211",
+      "wcag213"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".oomap-rank > div:nth-child(2)"
+     ],
+     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable",
+     "per_node": [
+      "Element should have focusable content"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.5,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.6,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.6,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid",
+     "per_node": [
+      "Heading order invalid"
+     ]
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark",
+     "per_node": [
+      "Document does not have a main landmark"
+     ]
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks",
+     "per_node": [
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 4.4,
@@ -369,46 +720,34 @@
   {
    "surface": "feed",
    "theme": "ink",
-   "width": 768,
-   "height": 1024,
+   "width": 390,
+   "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
    "surface": "explore",
    "theme": "ink",
-   "width": 768,
-   "height": 1024,
+   "width": 390,
+   "height": 844,
    "rules": "all",
-   "violations": [
-    {
-     "rule": "empty-table-header",
-     "impact": "minor",
-     "help": "Table header text should not be empty",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/empty-table-header?application=axeAPI",
-     "wcag": [
-      "best-practice"
-     ],
-     "nodes": 1,
-     "targets": [
-      "th:nth-child(5)"
-     ],
-     "sample": "Fix any of the following: |   Element does not have text that is visible to screen readers"
-    }
-   ],
+   "scheme": "light",
+   "violations": [],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.8,
    "page_errors": []
   },
   {
    "surface": "insights",
    "theme": "ink",
-   "width": 768,
-   "height": 1024,
+   "width": 390,
+   "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "nested-interactive",
@@ -425,7 +764,12 @@
       "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
       "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
      ],
-     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them."
+     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them.",
+     "per_node": [
+      "Element has focusable descendants. Move them outside of the element, or remove them.",
+      "Element has focusable descendants. Move them outside of the element, or remove them.",
+      "Element has focusable descendants. Move them outside of the element, or remove them."
+     ]
     }
    ],
    "error": null,
@@ -435,20 +779,22 @@
   {
    "surface": "observatory",
    "theme": "ink",
-   "width": 768,
-   "height": 1024,
+   "width": 390,
+   "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.2,
    "page_errors": []
   },
   {
    "surface": "timemap",
    "theme": "ink",
-   "width": 768,
-   "height": 1024,
+   "width": 390,
+   "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "link-in-text-block",
@@ -463,7 +809,10 @@
      "targets": [
       "a[data-on-click=\"openSettingsOsm();return false\"]"
      ],
-     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6)"
+     ]
     },
     {
      "rule": "scrollable-region-focusable",
@@ -479,279 +828,10 @@
      "targets": [
       ".oomap-rank > div:nth-child(2)"
      ],
-     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable"
-    }
-   ],
-   "error": null,
-   "seconds": 2.6,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.5,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.4,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.4,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.2,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.5,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.4,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.6,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.5,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "ink",
-   "width": 768,
-   "height": 1024,
-   "rules": "all",
-   "violations": [
-    {
-     "rule": "heading-order",
-     "impact": "moderate",
-     "help": "Heading levels should only increase by one",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
-     "wcag": [
-      "best-practice"
-     ],
-     "nodes": 1,
-     "targets": [
-      ".mgrp:nth-child(1) > h3"
-     ],
-     "sample": "Fix any of the following: |   Heading order invalid"
-    },
-    {
-     "rule": "landmark-one-main",
-     "impact": "moderate",
-     "help": "Document should have one main landmark",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
-     "wcag": [
-      "best-practice"
-     ],
-     "nodes": 1,
-     "targets": [
-      "html"
-     ],
-     "sample": "Fix all of the following: |   Document does not have a main landmark"
-    },
-    {
-     "rule": "region",
-     "impact": "moderate",
-     "help": "All page content should be contained by landmarks",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
-     "wcag": [
-      "best-practice"
-     ],
-     "nodes": 4,
-     "targets": [
-      ".crumb",
-      "h1",
-      "nav",
-      "#rp-read"
-     ],
-     "sample": "Fix any of the following: |   Some page content is not contained by landmarks"
-    }
-   ],
-   "error": null,
-   "seconds": 1.7,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "ink",
-   "width": 390,
-   "height": 844,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 4.3,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "ink",
-   "width": 390,
-   "height": 844,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 1.7,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "ink",
-   "width": 390,
-   "height": 844,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.6,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "ink",
-   "width": 390,
-   "height": 844,
-   "rules": "all",
-   "violations": [
-    {
-     "rule": "nested-interactive",
-     "impact": "serious",
-     "help": "Interactive controls must not be nested",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/nested-interactive?application=axeAPI",
-     "wcag": [
-      "wcag2a",
-      "wcag412"
-     ],
-     "nodes": 3,
-     "targets": [
-      "button[data-on-click=\"pickTerm(\\\"transport\\\")\"]",
-      "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
-      "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
-     ],
-     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them."
-    }
-   ],
-   "error": null,
-   "seconds": 2.2,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "ink",
-   "width": 390,
-   "height": 844,
-   "rules": "all",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "ink",
-   "width": 390,
-   "height": 844,
-   "rules": "all",
-   "violations": [
-    {
-     "rule": "link-in-text-block",
-     "impact": "serious",
-     "help": "Links must be distinguishable without relying on color",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
-     "wcag": [
-      "wcag2a",
-      "wcag141"
-     ],
-     "nodes": 1,
-     "targets": [
-      "a[data-on-click=\"openSettingsOsm();return false\"]"
-     ],
-     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
-    },
-    {
-     "rule": "scrollable-region-focusable",
-     "impact": "serious",
-     "help": "Scrollable region must have keyboard access",
-     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/scrollable-region-focusable?application=axeAPI",
-     "wcag": [
-      "wcag2a",
-      "wcag211",
-      "wcag213"
-     ],
-     "nodes": 1,
-     "targets": [
-      ".oomap-rank > div:nth-child(2)"
-     ],
-     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable"
+     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable",
+     "per_node": [
+      "Element should have focusable content"
+     ]
     }
    ],
    "error": null,
@@ -764,9 +844,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.1,
+   "seconds": 2.2,
    "page_errors": []
   },
   {
@@ -775,9 +856,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.3,
    "page_errors": []
   },
   {
@@ -786,6 +868,7 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.2,
@@ -797,9 +880,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.3,
+   "seconds": 2.4,
    "page_errors": []
   },
   {
@@ -808,9 +892,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.5,
    "page_errors": []
   },
   {
@@ -819,9 +904,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.3,
    "page_errors": []
   },
   {
@@ -830,9 +916,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.4,
+   "seconds": 2.3,
    "page_errors": []
   },
   {
@@ -841,9 +928,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.6,
+   "seconds": 2.3,
    "page_errors": []
   },
   {
@@ -852,9 +940,10 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.6,
+   "seconds": 2.2,
    "page_errors": []
   },
   {
@@ -863,6 +952,7 @@
    "width": 390,
    "height": 844,
    "rules": "all",
+   "scheme": "light",
    "violations": [
     {
      "rule": "heading-order",
@@ -876,7 +966,10 @@
      "targets": [
       ".mgrp:nth-child(1) > h3"
      ],
-     "sample": "Fix any of the following: |   Heading order invalid"
+     "sample": "Fix any of the following: |   Heading order invalid",
+     "per_node": [
+      "Heading order invalid"
+     ]
     },
     {
      "rule": "landmark-one-main",
@@ -890,7 +983,10 @@
      "targets": [
       "html"
      ],
-     "sample": "Fix all of the following: |   Document does not have a main landmark"
+     "sample": "Fix all of the following: |   Document does not have a main landmark",
+     "per_node": [
+      "Document does not have a main landmark"
+     ]
     },
     {
      "rule": "region",
@@ -907,7 +1003,13 @@
       "nav",
       "#rp-read"
      ],
-     "sample": "Fix any of the following: |   Some page content is not contained by landmarks"
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks",
+     "per_node": [
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks"
+     ]
     }
    ],
    "error": null,
@@ -919,7 +1021,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.7,
@@ -930,7 +1033,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -941,7 +1045,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -952,7 +1057,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.8,
@@ -963,10 +1069,11 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
@@ -974,8 +1081,28 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.05:1 with the surrounding text. (Minimum contrast is 3:1, link text: #8b7dff, surrounding text: #8a90c0) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.05:1 with the surrounding text. (Minimum contrast is 3:1, link text: #8b7dff, surrounding text: #8a90c0)"
+     ]
+    }
+   ],
    "error": null,
    "seconds": 2.2,
    "page_errors": []
@@ -985,7 +1112,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -996,7 +1124,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -1007,10 +1136,11 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -1018,10 +1148,11 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
@@ -1029,10 +1160,11 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
@@ -1040,10 +1172,11 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.1,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -1051,10 +1184,11 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -1062,7 +1196,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -1073,7 +1208,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -1084,7 +1220,8 @@
    "theme": "midnight",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -1095,10 +1232,11 @@
    "theme": "cyber",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.6,
+   "seconds": 1.7,
    "page_errors": []
   },
   {
@@ -1106,711 +1244,8 @@
    "theme": "cyber",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "cyber",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "forest",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.2,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.2,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "aubergine",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.3,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "garnet",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "solar",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "solar",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.5,
@@ -1818,10 +1253,855 @@
   },
   {
    "surface": "explore",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.95:1 with the surrounding text. (Minimum contrast is 3:1, link text: #22d3ee, surrounding text: #7787b8) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.95:1 with the surrounding text. (Minimum contrast is 3:1, link text: #22d3ee, surrounding text: #7787b8)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.44:1 with the surrounding text. (Minimum contrast is 3:1, link text: #6fbf73, surrounding text: #7e957f) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.44:1 with the surrounding text. (Minimum contrast is 3:1, link text: #6fbf73, surrounding text: #7e957f)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.17:1 with the surrounding text. (Minimum contrast is 3:1, link text: #c084fc, surrounding text: #9a8cb4) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.17:1 with the surrounding text. (Minimum contrast is 3:1, link text: #c084fc, surrounding text: #9a8cb4)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.06:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d96c7f, surrounding text: #a88b96) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.06:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d96c7f, surrounding text: #a88b96)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -1832,10 +2112,11 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.7,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
@@ -1843,7 +2124,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -1854,8 +2136,28 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.01:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d7c280, surrounding text: #c2c6bc) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.01:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d7c280, surrounding text: #c2c6bc)"
+     ]
+    }
+   ],
    "error": null,
    "seconds": 2.0,
    "page_errors": []
@@ -1865,7 +2167,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -1876,7 +2179,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -1891,7 +2195,10 @@
      "targets": [
       ".today > .ag-dn"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.05 (foreground color: #b58900, background color: #073642, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.05 (foreground color: #b58900, background color: #073642, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 4.05 (foreground color: #b58900, background color: #073642, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -1903,7 +2210,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -1914,10 +2222,11 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
@@ -1925,7 +2234,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -1936,7 +2246,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -1947,10 +2258,11 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.1,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -1958,10 +2270,11 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -1969,7 +2282,8 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -1987,7 +2301,13 @@
       ".tm-metric:nth-child(4) > .ml",
       ".tm-metric:nth-child(5) > .ml"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -1999,10 +2319,11 @@
    "theme": "solar",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.7,
+   "seconds": 1.6,
    "page_errors": []
   },
   {
@@ -2010,7 +2331,8 @@
    "theme": "sepia",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.7,
@@ -2021,7 +2343,641 @@
    "theme": "sepia",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.29:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d8a657, surrounding text: #a8967c) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.29:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d8a657, surrounding text: #a8967c)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 2.07:1 with the surrounding text. (Minimum contrast is 3:1, link text: #36d97a, surrounding text: #5f8c72) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 2.07:1 with the surrounding text. (Minimum contrast is 3:1, link text: #36d97a, surrounding text: #5f8c72)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.08:1 with the surrounding text. (Minimum contrast is 3:1, link text: #ffd400, surrounding text: #cfcfcf) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.08:1 with the surrounding text. (Minimum contrast is 3:1, link text: #ffd400, surrounding text: #cfcfcf)"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.5,
@@ -2029,582 +2985,78 @@
   },
   {
    "surface": "explore",
-   "theme": "sepia",
+   "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.13:1 with the surrounding text. (Minimum contrast is 3:1, link text: #2f6fb3, surrounding text: #5c6573) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.13:1 with the surrounding text. (Minimum contrast is 3:1, link text: #2f6fb3, surrounding text: #5c6573)"
+     ]
+    }
+   ],
    "error": null,
    "seconds": 2.2,
    "page_errors": []
   },
   {
-   "surface": "insights",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "sepia",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.5,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "terminal",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "law",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "agenda",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "climate",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "indices",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.8,
-   "page_errors": []
-  },
-  {
-   "surface": "markets",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.0,
-   "page_errors": []
-  },
-  {
-   "surface": "living",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "library",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.2,
-   "page_errors": []
-  },
-  {
-   "surface": "settings",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "tasks",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "reader",
-   "theme": "contrast",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "home",
-   "theme": "light",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.7,
-   "page_errors": []
-  },
-  {
-   "surface": "feed",
-   "theme": "light",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.6,
-   "page_errors": []
-  },
-  {
-   "surface": "explore",
-   "theme": "light",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
-   "surface": "insights",
-   "theme": "light",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.7,
-   "page_errors": []
-  },
-  {
-   "surface": "observatory",
-   "theme": "light",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 1.9,
-   "page_errors": []
-  },
-  {
-   "surface": "timemap",
-   "theme": "light",
-   "width": 1440,
-   "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
-   "error": null,
-   "seconds": 2.1,
-   "page_errors": []
-  },
-  {
    "surface": "law",
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -2615,7 +3067,8 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -2626,10 +3079,11 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -2637,10 +3091,11 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -2648,7 +3103,8 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -2659,7 +3115,8 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -2670,10 +3127,11 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.2,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -2681,10 +3139,11 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -2692,7 +3151,8 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -2716,11 +3176,23 @@
       "button[data-panel=\"ledger\"]",
       "#tm-foot"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.37 (foreground color: #76797d, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.37 (foreground color: #76797d, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.37 (foreground color: #76797d, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.37 (foreground color: #76797d, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4.37 (foreground color: #76797d, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.63 (foreground color: #7a7d84, background color: #eef1f5, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
-   "seconds": 1.6,
+   "seconds": 1.7,
    "page_errors": []
   },
   {
@@ -2728,7 +3200,8 @@
    "theme": "light",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -2739,7 +3212,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -2754,7 +3228,10 @@
      "targets": [
       ".ov-item:nth-child(2) > .cards > .bk-undertold.card[data-card=\"363c789afeca8d73\"] > .card-inner > .card-back.card-face > .acts > .lead-open.oo-tip-target"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.49 (foreground color: #575279, background color: #d9c5de, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.49 (foreground color: #575279, background color: #d9c5de, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 4.49 (foreground color: #575279, background color: #d9c5de, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -2766,7 +3243,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.5,
@@ -2777,7 +3255,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -2788,10 +3267,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -2799,10 +3279,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -2810,7 +3291,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -2821,10 +3303,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -2832,7 +3315,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -2847,11 +3331,14 @@
      "targets": [
       ".today > .ag-dn"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.03 (foreground color: #b4637a, background color: #fffaf3, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.03 (foreground color: #b4637a, background color: #fffaf3, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 4.03 (foreground color: #b4637a, background color: #fffaf3, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -2859,10 +3346,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -2870,10 +3358,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -2881,7 +3370,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -2892,10 +3382,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -2903,7 +3394,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.1,
@@ -2914,10 +3406,11 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -2925,7 +3418,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -2949,7 +3443,19 @@
       "button[data-panel=\"ledger\"]",
       "#tm-foot"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.78 (foreground color: #9a95aa, background color: #fffaf3, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.78 (foreground color: #9a95aa, background color: #fffaf3, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.78 (foreground color: #9a95aa, background color: #fffaf3, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.78 (foreground color: #9a95aa, background color: #fffaf3, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.78 (foreground color: #9a95aa, background color: #fffaf3, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 2.46 (foreground color: #a09bad, background color: #faf4ed, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -2961,7 +3467,8 @@
    "theme": "dawn",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -2972,7 +3479,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.7,
@@ -2983,10 +3491,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.6,
+   "seconds": 1.5,
    "page_errors": []
   },
   {
@@ -2994,10 +3503,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.1,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -3005,10 +3515,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 1.8,
    "page_errors": []
   },
   {
@@ -3016,7 +3527,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3027,10 +3539,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -3038,7 +3551,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3049,10 +3563,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -3060,7 +3575,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3071,7 +3587,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3082,10 +3599,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -3093,7 +3611,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3104,10 +3623,11 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -3115,7 +3635,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -3126,7 +3647,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -3150,7 +3672,19 @@
       "button[data-panel=\"ledger\"]",
       "#tm-foot"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4 (foreground color: #767e78, background color: #f8fbf8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4 (foreground color: #767e78, background color: #f8fbf8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4 (foreground color: #767e78, background color: #f8fbf8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4 (foreground color: #767e78, background color: #f8fbf8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 4 (foreground color: #767e78, background color: #f8fbf8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.41 (foreground color: #7c847e, background color: #edf3ee, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -3162,7 +3696,8 @@
    "theme": "mint",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.6,
@@ -3173,10 +3708,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.6,
+   "seconds": 1.7,
    "page_errors": []
   },
   {
@@ -3184,10 +3720,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.5,
+   "seconds": 1.6,
    "page_errors": []
   },
   {
@@ -3195,10 +3732,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -3206,10 +3744,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.8,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -3217,10 +3756,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -3228,10 +3768,30 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
-   "violations": [],
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.02:1 with the surrounding text. (Minimum contrast is 3:1, link text: #735329, surrounding text: #5e5747) |   The link has no styling (such as underline) to distinguish it from the surrounding text",
+     "per_node": [
+      "The link has insufficient color contrast of 1.02:1 with the surrounding text. (Minimum contrast is 3:1, link text: #735329, surrounding text: #5e5747)"
+     ]
+    }
+   ],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -3239,10 +3799,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.0,
+   "seconds": 1.9,
    "page_errors": []
   },
   {
@@ -3250,7 +3811,8 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -3265,7 +3827,10 @@
      "targets": [
       ".today > .ag-dn"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.42 (foreground color: #9a6a2f, background color: #fbf8f1, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.42 (foreground color: #9a6a2f, background color: #fbf8f1, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 4.42 (foreground color: #9a6a2f, background color: #fbf8f1, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -3277,7 +3842,8 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3288,10 +3854,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -3299,7 +3866,8 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 2.0,
@@ -3310,7 +3878,8 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
    "seconds": 1.9,
@@ -3321,10 +3890,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 2.1,
+   "seconds": 2.0,
    "page_errors": []
   },
   {
@@ -3332,10 +3902,11 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
    "error": null,
-   "seconds": 1.9,
+   "seconds": 2.1,
    "page_errors": []
   },
   {
@@ -3343,7 +3914,8 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [
     {
      "rule": "color-contrast",
@@ -3367,7 +3939,19 @@
       "button[data-panel=\"ledger\"]",
       "#tm-foot"
      ],
-     "sample": "Fix any of the following: |   Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "per_node": [
+      "Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.98 (foreground color: #7e7b73, background color: #fbf8f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.98 (foreground color: #7e7b73, background color: #fbf8f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.98 (foreground color: #7e7b73, background color: #fbf8f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.98 (foreground color: #7e7b73, background color: #fbf8f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.98 (foreground color: #7e7b73, background color: #fbf8f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "Element has insufficient color contrast of 3.35 (foreground color: #858178, background color: #f2eee4, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     ]
     }
    ],
    "error": null,
@@ -3379,8 +3963,219 @@
    "theme": "paper",
    "width": 1440,
    "height": 900,
-   "rules": "color-contrast",
+   "rules": "color-contrast,link-in-text-block",
+   "scheme": "light",
    "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "own-dark",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "scheme": "dark",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid",
+     "per_node": [
+      "Heading order invalid"
+     ]
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark",
+     "per_node": [
+      "Document does not have a main landmark"
+     ]
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks",
+     "per_node": [
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "own-dark",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "scheme": "dark",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid",
+     "per_node": [
+      "Heading order invalid"
+     ]
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark",
+     "per_node": [
+      "Document does not have a main landmark"
+     ]
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks",
+     "per_node": [
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks"
+     ]
+    }
+   ],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "own-dark",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "scheme": "dark",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid",
+     "per_node": [
+      "Heading order invalid"
+     ]
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark",
+     "per_node": [
+      "Document does not have a main landmark"
+     ]
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks",
+     "per_node": [
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks",
+      "Some page content is not contained by landmarks"
+     ]
+    }
+   ],
    "error": null,
    "seconds": 1.7,
    "page_errors": []

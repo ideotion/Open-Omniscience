@@ -1,0 +1,3392 @@
+{
+ "base": "loopback",
+ "axe": "axe v4.14.0",
+ "airplane_before": true,
+ "widths": [
+  [
+   1440,
+   900
+  ],
+  [
+   768,
+   1024
+  ],
+  [
+   390,
+   844
+  ]
+ ],
+ "tabs": [
+  "home",
+  "feed",
+  "explore",
+  "insights",
+  "observatory",
+  "timemap",
+  "law",
+  "agenda",
+  "climate",
+  "indices",
+  "markets",
+  "living",
+  "library"
+ ],
+ "themes_contrast": [
+  "midnight",
+  "cyber",
+  "forest",
+  "aubergine",
+  "garnet",
+  "solar",
+  "sepia",
+  "terminal",
+  "contrast",
+  "light",
+  "dawn",
+  "mint",
+  "paper"
+ ],
+ "runs": [
+  {
+   "surface": "home",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 6,
+     "targets": [
+      "#home-recent > .home-recent-row:nth-child(1) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
+      "#home-recent > .home-recent-row:nth-child(2) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
+      "#home-recent > .home-recent-row:nth-child(3) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
+      "#home-recent > .home-recent-row:nth-child(4) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
+      "#home-recent > .home-recent-row:nth-child(5) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]",
+      "#home-recent > .home-recent-row:nth-child(8) > a[href$=\"view\"][target=\"_blank\"][title=\"offline stored copy\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 2.41:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #e8ebf0) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
+    }
+   ],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 1.5,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "empty-table-header",
+     "impact": "minor",
+     "help": "Table header text should not be empty",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/empty-table-header?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "th:nth-child(5)"
+     ],
+     "sample": "Fix any of the following: |   Element does not have text that is visible to screen readers"
+    }
+   ],
+   "error": null,
+   "seconds": 2.5,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "nested-interactive",
+     "impact": "serious",
+     "help": "Interactive controls must not be nested",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/nested-interactive?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag412"
+     ],
+     "nodes": 3,
+     "targets": [
+      "button[data-on-click=\"pickTerm(\\\"transport\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
+     ],
+     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them."
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
+    },
+    {
+     "rule": "scrollable-region-focusable",
+     "impact": "serious",
+     "help": "Scrollable region must have keyboard access",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/scrollable-region-focusable?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag211",
+      "wcag213"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".oomap-rank > div:nth-child(2)"
+     ],
+     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable"
+    }
+   ],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "ink",
+   "width": 1440,
+   "height": 900,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid"
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark"
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks"
+    }
+   ],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 4.4,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "empty-table-header",
+     "impact": "minor",
+     "help": "Table header text should not be empty",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/empty-table-header?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "th:nth-child(5)"
+     ],
+     "sample": "Fix any of the following: |   Element does not have text that is visible to screen readers"
+    }
+   ],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "nested-interactive",
+     "impact": "serious",
+     "help": "Interactive controls must not be nested",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/nested-interactive?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag412"
+     ],
+     "nodes": 3,
+     "targets": [
+      "button[data-on-click=\"pickTerm(\\\"transport\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
+     ],
+     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them."
+    }
+   ],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
+    },
+    {
+     "rule": "scrollable-region-focusable",
+     "impact": "serious",
+     "help": "Scrollable region must have keyboard access",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/scrollable-region-focusable?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag211",
+      "wcag213"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".oomap-rank > div:nth-child(2)"
+     ],
+     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable"
+    }
+   ],
+   "error": null,
+   "seconds": 2.6,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.5,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.5,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.6,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.5,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "ink",
+   "width": 768,
+   "height": 1024,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid"
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark"
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks"
+    }
+   ],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 4.3,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.6,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "nested-interactive",
+     "impact": "serious",
+     "help": "Interactive controls must not be nested",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/nested-interactive?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag412"
+     ],
+     "nodes": 3,
+     "targets": [
+      "button[data-on-click=\"pickTerm(\\\"transport\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"budget\\\")\"]",
+      "button[data-on-click=\"pickTerm(\\\"voting\\\")\"]"
+     ],
+     "sample": "Fix any of the following: |   Element has focusable descendants. Move them outside of the element, or remove them."
+    }
+   ],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "link-in-text-block",
+     "impact": "serious",
+     "help": "Links must be distinguishable without relying on color",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-in-text-block?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag141"
+     ],
+     "nodes": 1,
+     "targets": [
+      "a[data-on-click=\"openSettingsOsm();return false\"]"
+     ],
+     "sample": "Fix any of the following: |   The link has insufficient color contrast of 1.04:1 with the surrounding text. (Minimum contrast is 3:1, link text: #5b9dd9, surrounding text: #8c95a6) |   The link has no styling (such as underline) to distinguish it from the surrounding text"
+    },
+    {
+     "rule": "scrollable-region-focusable",
+     "impact": "serious",
+     "help": "Scrollable region must have keyboard access",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/scrollable-region-focusable?application=axeAPI",
+     "wcag": [
+      "wcag2a",
+      "wcag211",
+      "wcag213"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".oomap-rank > div:nth-child(2)"
+     ],
+     "sample": "Fix any of the following: |   Element should have focusable content |   Element should be focusable"
+    }
+   ],
+   "error": null,
+   "seconds": 2.7,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.4,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 2.6,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "ink",
+   "width": 390,
+   "height": 844,
+   "rules": "all",
+   "violations": [
+    {
+     "rule": "heading-order",
+     "impact": "moderate",
+     "help": "Heading levels should only increase by one",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".mgrp:nth-child(1) > h3"
+     ],
+     "sample": "Fix any of the following: |   Heading order invalid"
+    },
+    {
+     "rule": "landmark-one-main",
+     "impact": "moderate",
+     "help": "Document should have one main landmark",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 1,
+     "targets": [
+      "html"
+     ],
+     "sample": "Fix all of the following: |   Document does not have a main landmark"
+    },
+    {
+     "rule": "region",
+     "impact": "moderate",
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "wcag": [
+      "best-practice"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".crumb",
+      "h1",
+      "nav",
+      "#rp-read"
+     ],
+     "sample": "Fix any of the following: |   Some page content is not contained by landmarks"
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "midnight",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "cyber",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "forest",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "aubergine",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.3,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "garnet",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.5,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".today > .ag-dn"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.05 (foreground color: #b58900, background color: #073642, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 4,
+     "targets": [
+      ".tm-metric:nth-child(2) > .ml",
+      ".tm-metric:nth-child(3) > .ml",
+      ".tm-metric:nth-child(4) > .ml",
+      ".tm-metric:nth-child(5) > .ml"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.31 (foreground color: #93a5a0, background color: #0a4150, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "solar",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.5,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "sepia",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.5,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "terminal",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "contrast",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.2,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 10,
+     "targets": [
+      ".tm-metric:nth-child(2) > .ml",
+      ".tm-metric:nth-child(3) > .ml",
+      ".tm-metric:nth-child(4) > .ml",
+      ".tm-metric:nth-child(5) > .ml",
+      "button[data-panel=\"performance\"]",
+      "button[data-panel=\"queue\"]",
+      "button[data-panel=\"schedule\"]",
+      "button[data-panel=\"history\"]",
+      "button[data-panel=\"ledger\"]",
+      "#tm-foot"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.24 (foreground color: #71757b, background color: #f3f5f9, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "light",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".ov-item:nth-child(2) > .cards > .bk-undertold.card[data-card=\"363c789afeca8d73\"] > .card-inner > .card-back.card-face > .acts > .lead-open.oo-tip-target"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.49 (foreground color: #575279, background color: #d9c5de, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.5,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".today > .ag-dn"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.03 (foreground color: #b4637a, background color: #fffaf3, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 10,
+     "targets": [
+      ".tm-metric:nth-child(2) > .ml",
+      ".tm-metric:nth-child(3) > .ml",
+      ".tm-metric:nth-child(4) > .ml",
+      ".tm-metric:nth-child(5) > .ml",
+      "button[data-panel=\"performance\"]",
+      "button[data-panel=\"queue\"]",
+      "button[data-panel=\"schedule\"]",
+      "button[data-panel=\"history\"]",
+      "button[data-panel=\"ledger\"]",
+      "#tm-foot"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 2.62 (foreground color: #958ea3, background color: #f2e9e1, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "dawn",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 10,
+     "targets": [
+      ".tm-metric:nth-child(2) > .ml",
+      ".tm-metric:nth-child(3) > .ml",
+      ".tm-metric:nth-child(4) > .ml",
+      ".tm-metric:nth-child(5) > .ml",
+      "button[data-panel=\"performance\"]",
+      "button[data-panel=\"queue\"]",
+      "button[data-panel=\"schedule\"]",
+      "button[data-panel=\"history\"]",
+      "button[data-panel=\"ledger\"]",
+      "#tm-foot"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 3.9 (foreground color: #717a74, background color: #ecf2ed, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "mint",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "home",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "feed",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.5,
+   "page_errors": []
+  },
+  {
+   "surface": "explore",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "insights",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.8,
+   "page_errors": []
+  },
+  {
+   "surface": "observatory",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "timemap",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "law",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "agenda",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 1,
+     "targets": [
+      ".today > .ag-dn"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 4.42 (foreground color: #9a6a2f, background color: #fbf8f1, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "climate",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "indices",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "markets",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.0,
+   "page_errors": []
+  },
+  {
+   "surface": "living",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "library",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 2.1,
+   "page_errors": []
+  },
+  {
+   "surface": "settings",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.9,
+   "page_errors": []
+  },
+  {
+   "surface": "tasks",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [
+    {
+     "rule": "color-contrast",
+     "impact": "serious",
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "wcag": [
+      "wcag2aa",
+      "wcag143"
+     ],
+     "nodes": 10,
+     "targets": [
+      ".tm-metric:nth-child(2) > .ml",
+      ".tm-metric:nth-child(3) > .ml",
+      ".tm-metric:nth-child(4) > .ml",
+      ".tm-metric:nth-child(5) > .ml",
+      "button[data-panel=\"performance\"]",
+      "button[data-panel=\"queue\"]",
+      "button[data-panel=\"schedule\"]",
+      "button[data-panel=\"history\"]",
+      "button[data-panel=\"ledger\"]",
+      "#tm-foot"
+     ],
+     "sample": "Fix any of the following: |   Element has insufficient color contrast of 3.85 (foreground color: #7a756b, background color: #f1ebdc, font size: 7.5pt (10px), font weight: normal). Expected contrast ratio of 4.5:1"
+    }
+   ],
+   "error": null,
+   "seconds": 1.6,
+   "page_errors": []
+  },
+  {
+   "surface": "reader",
+   "theme": "paper",
+   "width": 1440,
+   "height": 900,
+   "rules": "color-contrast",
+   "violations": [],
+   "error": null,
+   "seconds": 1.7,
+   "page_errors": []
+  }
+ ],
+ "blocked": [],
+ "reader_article_id": 453,
+ "airplane_after": true
+}
