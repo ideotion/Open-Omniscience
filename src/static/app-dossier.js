@@ -164,7 +164,7 @@
           + `</li>`;
       }).join("") + `</ul>`
         + (total > items.length ? `<div class="muted small">${esc(tf("{shown} of {n} shown", {shown: items.length, n: total}))}`
-          + ` · ${esc(t("Open them all in the analysis window with the button below."))}</div>` : "");
+          + ` · ${esc(t("The button below opens every joined article, all rails together."))}</div>` : "");
     }
 
     function _dossierRailBody(r, d, t, tf) {

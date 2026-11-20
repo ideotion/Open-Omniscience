@@ -69,3 +69,19 @@ def test_the_list_is_bounded_newest_first_undated_last_and_the_count_stays_whole
 def test_an_empty_dossier_lists_nothing_rather_than_failing(db, rings, lanes):  # noqa: F811
     d = DO.qid_dossier(db, "Q999999555", "en")
     assert all(_rail(d, k)["items"] == [] for k in ("news", "wikipedia", "law"))
+
+
+def test_the_signed_export_lists_only_rows_its_root_covers(db, seeded, lanes, monkeypatch):  # noqa: F811
+    """Review of row 200: the rail lists its NEWEST rows, the bundle its first ids up to a bound. A listed
+    row outside the bundle would read as signed evidence the Merkle root does not cover."""
+    from src.reporting import dossier_evidence as DE
+
+    # bound the bundle to one article, the oldest id (a1); the rails still list a2 and a3
+    monkeypatch.setattr(DO, "IDS_FOR_ANALYSIS", 1)
+    d = DO.qid_dossier(db, ZED, "en")
+    assert d["article_ids"] == [seeded["a1"]] and _rail(d, "law")["items"], "the page keeps its rows"
+    sel = DE.dossier_selection(db, ZED, "en")
+    assert sel.article_ids == [seeded["a1"]]
+    carried = {r["key"]: [a["id"] for a in r.get("items", [])] for r in sel.block["rails"]}
+    assert carried["news"] == [seeded["a1"]]
+    assert carried["wikipedia"] == [] and carried["law"] == [], "a row the bundle does not carry is not in the file"
