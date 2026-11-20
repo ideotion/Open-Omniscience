@@ -12,7 +12,8 @@ WHAT MUST NOT REGRESS, one test each:
    smaller of its own deadline and the time left, and a scan that never starts is NAMED
    (``skipped-budget``, its estimate, the reason) -- in the member entry, in the archive and in
    the manifest's ``scans`` block -- and makes ``complete_profile`` False.
-3. Thorough has no shared budget: every scan runs under its own deadline, as before.
+3. Thorough runs every scan under its own deadline and, since R757, under a default shared budget of 30 minutes
+   (``OO_DIAG_THOROUGH_BUDGET_S`` for the install, ``budget_min`` for one run); a scan a limit ends says so in words.
 4. Nothing a mode does is silent: a machine refusal still wins over a budget skip, a cut scan says
    the budget cut it, an unrecognised mode is Thorough (never a smaller build than asked for).
 """
@@ -341,7 +342,7 @@ def test_a_scan_the_budget_cuts_gets_the_time_left_and_says_the_budget_set_it(mo
     assert all(r["budget_cut"] is True for r in results)
 
 
-def test_thorough_gives_every_scan_its_own_deadline_and_no_budget(monkeypatch):
+def test_thorough_gives_every_scan_its_own_deadline_inside_its_default_budget(monkeypatch):
     clock, window = _Clock(), _Window()
     monkeypatch.setattr(B, "_mono", clock)
     seen: list[float] = []
@@ -357,9 +358,10 @@ def test_thorough_gives_every_scan_its_own_deadline_and_no_budget(monkeypatch):
     results, man, _, _ = _build(members, mode="thorough", scan_window=window)
     assert seen == [300.0, 300.0, 300.0]
     assert all(r["outcome"] == "ok" and "budget_cut" not in r for r in results)
-    assert man["mode"] == "thorough" and man["scan_budget_s"] is None
-    assert man["scans"]["skipped"] == [] and man["scans"]["scan_budget_s"] is None
-    assert man["scans"]["cut_by_budget"] == [], "Thorough has no budget to cut by"
+    assert man["mode"] == "thorough" and man["scan_budget_s"] == plan.THOROUGH_BUDGET_S == 1800.0
+    assert man["scan_budget_set_by"] == "default"
+    assert man["scans"]["skipped"] == [] and man["scans"]["scan_budget_s"] == 1800.0
+    assert man["scans"]["cut_by_budget"] == [], "1200 s of scans fit inside the 1800 s default"
     assert man["profile"]["complete_profile"] is True
 
 
@@ -402,7 +404,7 @@ def test_a_non_database_scan_abandoned_at_the_budget_names_the_budget_in_its_mar
     results, _, names, read = _build([("s-tiny.json", lambda: {})], mode="quick", scan_window=window)
     assert results[0]["outcome"] == "skipped-deadline" and results[0]["budget_cut"] is True
     text = read("s-tiny.json.skipped-deadline.txt").decode()
-    assert "100s" in text and "Quick scan budget" in text
+    assert "100s" in text and "the time the scan budget had left" in text
     # the thread that was reading it is not stopped (a thread cannot be): the marker and the entry both say so
     assert "can still be running" in text and results[0]["abandoned_running"] is True
 
@@ -489,7 +491,8 @@ def test_a_database_scan_stopped_at_the_budget_says_the_budget_set_its_time(monk
     assert results[0]["outcome"] == "skipped-deadline"
     text = read("s-tiny.json.skipped-deadline.txt").decode()
     assert "read exceeded its deadline" in text
-    assert ("Quick scan budget" in text) is says
+    assert ("the time the scan budget had left" in text) is says
+    assert (plan.STATUS_BUDGET_REACHED in text) is says
     if says:
         assert "the 100 s deadline" in text
     assert "abandoned_running" not in results[0], "a statement deadline stops the read itself: nothing was left running"
@@ -515,7 +518,7 @@ def test_a_scan_that_chained_the_timeout_into_a_503_gets_the_same_budget_note(mo
 
     results, _, _, read = _build([("s-tiny.json", run)], mode="quick", scan_window=window, db=object())
     assert results[0]["outcome"] == "skipped-deadline"
-    assert "Quick scan budget" in read("s-tiny.json.skipped-deadline.txt").decode()
+    assert "the time the scan budget had left" in read("s-tiny.json.skipped-deadline.txt").decode()
 
 
 def test_a_refusal_by_the_machine_is_reported_as_the_machine_s_even_when_the_budget_is_spent(monkeypatch):
@@ -626,12 +629,13 @@ def test_thorough_with_an_operator_budget_skips_and_names_what_it_did_not_reach(
     assert man["profile"]["complete_profile"] is False and "longer budget" in man["profile"]["note"]
 
 
-def test_thorough_without_a_budget_is_unchanged(monkeypatch):
+def test_thorough_without_an_operator_budget_runs_under_the_default(monkeypatch):
     clock, window, seen = _Clock(), _Window(), []
     monkeypatch.setattr(B, "_mono", clock)
+    monkeypatch.delenv(plan.THOROUGH_BUDGET_ENV, raising=False)
     members = _members(clock, window, seen, costs={"s-tiny.json": 400.0})
     _, man, _, _ = _build(members, mode="thorough", scan_window=window)
-    assert man["scan_budget_s"] is None and man["scan_budget_set_by"] is None and man["scans"]["skipped"] == []
+    assert man["scan_budget_s"] == 1800.0 and man["scan_budget_set_by"] == "default" and man["scans"]["skipped"] == []
 
 
 def test_quick_keeps_its_own_budget_whatever_the_operator_passed(monkeypatch):
@@ -673,3 +677,91 @@ def test_the_panel_offers_the_budget_beside_thorough_only_and_never_remembers_it
     assert 'budgetWrap.hidden = !box.checked' in js
     assert 'budgetEl.value = ""' in js, "empty each time the panel opens"
     assert '"&budget_min=" + encodeURIComponent(budgetRaw)' in js and 'mode === "thorough"' in js
+
+
+# ---- R757 (row 209): the Thorough build's default budget, its header, and what a limit says -----------------------
+def test_the_thorough_default_is_thirty_minutes_and_the_install_may_change_it():
+    assert plan.thorough_default_budget_s({}) == (1800.0, "default")
+    assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: "3600"}) == (3600.0, "environment")
+    assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: " 90.5 "}) == (90.5, "environment")
+
+
+@pytest.mark.parametrize("bad", ["", "0", "-5", "abc", "nan", "inf", "none"])
+def test_an_unreadable_install_budget_is_the_default_never_no_limit(bad):
+    """R757 asks for a stated cap: a typo in the environment must not lift it."""
+    assert plan.thorough_default_budget_s({plan.THOROUGH_BUDGET_ENV: bad}) == (1800.0, "default")
+
+
+def test_the_thorough_default_stops_starting_scans_and_names_each_as_not_started(monkeypatch):
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    monkeypatch.setenv(plan.THOROUGH_BUDGET_ENV, "100")
+    members = _members(clock, window, seen, costs={"s-tiny.json": 40.0, "s-fast.json": 40.0})
+    results, man, names, _ = _build(members, mode="thorough", scan_window=window)
+    by = {r["file"]: r for r in results}
+    for skipped in ("s-mid.json", "s-slow.json"):
+        assert by[skipped]["outcome"] == "skipped-budget" and by[skipped]["status_text"] == plan.STATUS_NOT_STARTED
+        assert plan.THOROUGH_BUDGET_ENV in by[skipped]["skipped_reason"]
+        assert skipped + ".skipped-budget.txt" in names
+    assert man["scan_budget_s"] == 100.0 and man["scan_budget_set_by"] == "environment"
+    assert [s["file"] for s in man["scans"]["skipped"]] == ["s-mid.json", "s-slow.json"]
+    assert "status_text" not in by["s-tiny.json"], "a scan that finished carries no limit status"
+
+
+def test_a_scan_the_thorough_budget_cuts_reads_not_finished_budget_reached(monkeypatch):
+    clock, window = _Clock(), _Window()
+    monkeypatch.setattr(B, "_mono", clock)
+    monkeypatch.setattr(B, "_all_diag_nondb_member_deadline_s", lambda: 300.0)
+    monkeypatch.setattr(B, "_run_nondb_member_bounded", lambda fn, budget: B._ALL_DIAG_DEADLINE_SENTINEL)
+    results, man, _, read = _build([("s-tiny.json", lambda: {})], mode="thorough", scan_window=window, thorough_budget_s=100.0)
+    entry = results[0]
+    assert entry["outcome"] == "skipped-deadline" and entry["budget_cut"] is True
+    assert entry["status_text"] == plan.STATUS_BUDGET_REACHED == "not finished, budget reached"
+    assert plan.STATUS_BUDGET_REACHED in read("s-tiny.json.skipped-deadline.txt").decode()
+    assert entry["ok"] is False and "pass" not in entry["status_text"] and "fail" not in entry["status_text"]
+
+
+def test_a_scan_its_own_cap_stopped_is_told_apart_from_the_budget():
+    assert plan.scan_status_text("partial-deadline", False) == plan.STATUS_CAP_REACHED
+    assert plan.scan_status_text("partial-deadline", True) == plan.STATUS_BUDGET_REACHED
+    assert plan.scan_status_text("ok", True) is None and plan.scan_status_text("error", False) is None
+
+
+@pytest.mark.parametrize(
+    "mode, given, env, total, by",
+    [
+        ("quick", None, None, 100.0, "product"),
+        ("thorough", None, None, 1800.0, "default"),
+        ("thorough", None, "2400", 2400.0, "environment"),
+        ("thorough", 600.0, "2400", 600.0, "operator"),
+    ],
+)
+def test_the_manifest_opens_with_the_limits_it_ran_under_and_where_each_is_changed(monkeypatch, mode, given, env, total, by):
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    if env is None:
+        monkeypatch.delenv(plan.THOROUGH_BUDGET_ENV, raising=False)
+    else:
+        monkeypatch.setenv(plan.THOROUGH_BUDGET_ENV, env)
+    monkeypatch.setattr(B, "_all_diag_db_member_deadline_s", lambda: 300.0)
+    monkeypatch.setattr(B, "_all_diag_nondb_member_deadline_s", lambda: 240.0)
+    _, man, _, _ = _build(_members(clock, window, seen), mode=mode, scan_window=window, thorough_budget_s=given)
+    keys = list(man)
+    assert keys.index("scan_limits") < keys.index("generated_at"), "at the head of the file"
+    lim = man["scan_limits"]
+    assert lim["total_s"] == total == man["scan_budget_s"] and lim["total_set_by"] == by == man["scan_budget_set_by"]
+    assert lim["per_scan_cap_s"] == {"database": 300.0, "other": 240.0}
+    assert plan.THOROUGH_BUDGET_ENV in lim["override"]["thorough_total"] and "budget_min" in lim["override"]["thorough_total"]
+    assert "OO_ALL_DIAG_DB_MEMBER_DEADLINE_S" in lim["override"]["per_scan_cap"]
+    assert plan.STATUS_BUDGET_REACHED in lim["at_limit"]
+
+
+def test_the_estimate_states_the_thorough_default_and_the_panel_note_uses_it(monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.delenv(plan.THOROUGH_BUDGET_ENV, raising=False)
+    monkeypatch.setattr(scan_estimate, "_mention_rows", lambda: None)
+    body = json.loads(bytes(scan_estimate.all_diagnostics_estimate().body))
+    assert body["thorough"]["budget_s"] == 1800.0 and body["thorough"]["budget_set_by"] == "default"
+    js = (Path(__file__).resolve().parent.parent / "src" / "static" / "app-diagnostics.js").read_text(encoding="utf-8")
+    assert "th.budget_s" in js and "its default limit" in js

@@ -235,6 +235,15 @@
           {limit: Math.max(1, Math.round(limitMin))}
         );
       }
+      // R757: with no limit of the operator's, Thorough stops starting scans at its default budget; when that is shorter than the
+      // estimate (or there is no estimate), the default is the pause the person will see, and the note says so.
+      const defMin = th && typeof th.budget_s === "number" && th.budget_s > 0 ? th.budget_s / 60 : 0;
+      if (!(limitMin > 0) && defMin > 0 && (!known || defMin < th.est_s / 60)) {
+        return tf(
+          "Thorough pauses collection for at most about {limit} min, its default limit, plus up to 15 s while a stopped scan saves its place; scans not reached are named in the file.",
+          {limit: Math.max(1, Math.round(defMin))}
+        );
+      }
       if (!th || typeof th.est_s !== "number" || !(th.scans > 0)) {
         return t("Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.");
       }
