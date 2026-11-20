@@ -115,7 +115,8 @@ def test_the_ui_answers_keep_r637s_form():
 def test_address_secrets_add_the_query_values():
     secrets = address_secrets("https://alice:hunter2@a.example/x?token=abcdef")
     assert secrets[:4] == ("alice:hunter2", "alice", "hunter2", "abcdef")
-    assert {"token=abcdef", "?token=abcdef", "&token=abcdef"} <= set(secrets)  # row 107: the value in its context too
+    assert {"token=abcdef", "?token=abcdef"} <= set(secrets)  # row 107: the value in its context too
+    assert "&token=abcdef" not in secrets, "only the separator this address writes before the item"
 
 
 # ---------------------------------------------------------------------------------------------------------------- row 107
@@ -168,9 +169,43 @@ def test_a_harmless_short_value_stays_and_an_unrelated_number_is_not_cut():
 def test_a_query_too_short_for_any_context_withholds_the_text_rather_than_leak_it():
     from src.monitoring.secret_scrub import UNREADABLE_TEXT
 
-    text = _recorded("https://news.example/rss?7")
-    assert "?7" not in text
-    assert text.endswith(UNREADABLE_TEXT) or UNREADABLE_TEXT in text or "withheld" in text.lower(), text
+    assert UNREADABLE_TEXT  # the scrub's own words for a text it cannot check; record_text names the class instead
+    for url in ("https://news.example/rss?7", "https://news.example/a;b/rss?k=12"):
+        assert _recorded(url) == "ConnectionError: its text is withheld", url
+
+
+def test_a_name_with_no_value_hides_nothing_and_withholds_nothing():
+    text = _recorded("https://news.example/rss?q=&pin=123")
+    assert "Max retries exceeded" in text and "123" not in text
+
+
+def test_a_value_that_is_a_bare_question_mark_does_not_withhold_every_text():
+    text = _recorded("https://news.example/rss?next=?&pin=123")
+    assert "Max retries exceeded" in text and "123" not in text
+
+
+@pytest.mark.parametrize(
+    "url, secret",
+    [
+        ("https://x.org/rss?token=ab%2fcd9f&q=50%", "cd9f"),  # first security read on row 107: urllib3 upper-cases the escape,
+        ("https://x.org/rss?sig=%2f&discount=50%", "sig=%25"),  # then requests quotes every "%" again for the stray one
+    ],
+)
+def test_a_lower_case_escape_beside_a_stray_percent_is_still_taken_out(url, secret):
+    import requests
+
+    from src.monitoring.secret_scrub import record_text
+
+    written = requests.Request("GET", url).prepare().path_url
+    assert "%252F" in written, "the spelling the read found"
+    text = record_text(ConnectionError(f"Max retries exceeded with url: {written} (Caused by x)"), *address_secrets(url))
+    assert secret not in text and "%252F" not in text, text
+    assert "Max retries exceeded" in text
+
+
+def test_the_needles_stay_few_for_a_long_query():
+    url = "https://news.example/rss?" + "&".join(f"k{i}=v{i}x" for i in range(50))
+    assert len(address_secrets(url)) < 1500
 
 
 @pytest.mark.parametrize(
