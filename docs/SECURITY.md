@@ -774,9 +774,9 @@ imply a protection we cannot deliver.
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).
 - **Protected fetch mode** (`src/safety/settings.py`, `fetcher.py`): routes the app's web
-  fetches through a proxy you run (the newsletter mailbox pull and OpenTimestamps anchoring
-  connect directly, as the consent popup's transport lines above say; the local-AI downloads would too, so they are
-  refused while protected mode is on, R763) and sends
+  fetches through a proxy you run (the newsletter mailbox pull, OpenTimestamps anchoring and the
+  local-AI downloads connect directly, as the consent popup's transport lines above say, which is why the local-AI
+  downloads are refused while protected mode is on, R763) and sends
   a generic User-Agent that does not name the tool, with ONE User-Agent exception (R657): an https request from a guarded session (the API clients built on
   `guarded_session`/`following_session`) to one of the Wikimedia hosts the app's Wikipedia, Wikidata
   and dump features call (any `*.wikipedia.org` edition, `www.wikidata.org`, `query.wikidata.org`,
