@@ -21,7 +21,13 @@ from pathlib import Path
 # Allow running from a checkout without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.reporting.console_text import console_field, console_safe  # noqa: E402
 from src.reporting.evidence import verify_bundle  # noqa: E402
+
+
+def _say(line: object, *, file=None) -> None:
+    """Every line goes out through console_safe: a bundle's own text can never draw a second verdict (row 199)."""
+    print(console_safe(line), file=file if file is not None else sys.stdout)
 
 
 def main(argv: list[str]) -> int:
@@ -30,11 +36,11 @@ def main(argv: list[str]) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="backslashreplace")
     if len(argv) not in (2, 3):
-        print(
+        _say(
             "usage: python scripts/verify_evidence.py <bundle.json> [trusted_public_key_hex]",
             file=sys.stderr,
         )
-        print(
+        _say(
             "  Pass the signer's known public key to prove provenance (not just integrity).",
             file=sys.stderr,
         )
@@ -44,13 +50,13 @@ def main(argv: list[str]) -> int:
     trusted = argv[2] if len(argv) == 3 else None
     ok, reason = verify_bundle(bundle, trusted_public_key=trusted)
     manifest = bundle.get("manifest", {})
-    print(f"bundle_version : {manifest.get('bundle_version')}")
-    print(f"case_name      : {manifest.get('case_name')}")
-    print(f"generated_at   : {manifest.get('generated_at')}")
-    print(f"item_count     : {manifest.get('item_count')}")
-    print(f"merkle_root    : {manifest.get('merkle_root')}")
-    print(f"public_key     : {bundle.get('public_key')}")
-    print(f"VERIFIED       : {ok}  ({reason})")
+    _say(f"bundle_version : {console_field(manifest.get('bundle_version'))}")
+    _say(f"case_name      : {console_field(manifest.get('case_name'))}")
+    _say(f"generated_at   : {console_field(manifest.get('generated_at'))}")
+    _say(f"item_count     : {console_field(manifest.get('item_count'))}")
+    _say(f"merkle_root    : {console_field(manifest.get('merkle_root'))}")
+    _say(f"public_key     : {console_field(bundle.get('public_key'))}")
+    _say(f"VERIFIED       : {ok}  ({reason})")
     return 0 if ok else 1
 
 

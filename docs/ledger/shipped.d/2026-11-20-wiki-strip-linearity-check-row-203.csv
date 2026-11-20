@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,tests,"The wiki-strip linearity check grows its input 16x against a bar of 48, so a shared runner's slow sample no longer reads as the quadratic scan",SHIPPED,PR #2175; row 203,tests/test_markup_blocks.py,"At 4x the bar of 8 sat 2x from both linear and quadratic and macOS measured 8.2 on linear code. At 16x linear measures 12.9-16.5 (80 runs, thread and wall clock) and a deliberately quadratic ref pattern 276-289; the large input stays 200,000 characters. Test only, no user-facing change."
