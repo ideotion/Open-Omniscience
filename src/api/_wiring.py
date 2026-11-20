@@ -62,6 +62,7 @@ def wire(app) -> None:
     from src.api.living import router as living_router
     from src.api.llm import router as llm_router
     from src.api.markets import router as markets_router
+    from src.api.medical import router as medical_router
     from src.api.monitoring import router as monitoring_router
     from src.api.osm_lane import router as osm_lane_router
     from src.api.personality import router as personality_router
@@ -139,6 +140,7 @@ def wire(app) -> None:
         living_router,
         entities_router,
         ipcc_router,
+        medical_router,
         climate_router,
         claims_router,
         osm_lane_router,

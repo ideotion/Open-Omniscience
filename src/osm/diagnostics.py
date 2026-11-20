@@ -13,6 +13,10 @@ A figure this build did not measure is ``null`` with its reason, never ``0``: a 
 different fact from a free one. Counts, times, sizes, labels and the fixed words of the code only: no object, no tag, no path, no URL, no
 text of an exception.
 
+Beside the countries, ``street_view`` carries the street view's frame budget on this machine (``src/osm/frame_budget.py``, row 187): the
+milliseconds per frame at the published caps from the last recorded run of ``scripts/osm_street_frame_budget.py``, or ``not measured``
+with its reason. It is never cut: under 0.5 KB measured, about 0.2 KB not.
+
 The slot row (``src/api/diagnostics_slots.py``) and the plan table are the diagnostics owner's; this module is the producer.
 """
 
@@ -198,6 +202,30 @@ def _cut_to_fit(out: dict[str, Any], budget: int) -> bool:
         est -= lost
 
 
+def _record_k13(rows: list[dict[str, Any]] | None) -> None:
+    """Hand K13's OSM block (row 184, R751(a)) the lane's counts, from the rows this member just read, before any cut to fit.
+
+    Counts and one time only: no country code leaves here, since which countries an operator follows is theirs. ``None`` is the
+    absent lane. Best-effort: a failed record never touches the member.
+    """
+    try:
+        from src.monitoring.kpi import record_osm_lane
+
+        record_osm_lane(rows)
+    except Exception:  # noqa: BLE001 - a side record never breaks a bundle member
+        pass
+
+
+def _street_view() -> dict[str, Any]:
+    """The street view's recorded frame budget (``src/osm/frame_budget.py``); never raises, never a 0 for an unmeasured frame."""
+    try:
+        from src.osm.frame_budget import member_slot
+
+        return member_slot()
+    except Exception as exc:  # noqa: BLE001 - one slot never breaks the member
+        return {"state": "unreadable", "reason": "the frame budget record could not be read", "error": type(exc).__name__}
+
+
 def _build() -> dict[str, Any]:
     from src.osm.lane_models import OsmCountry
     from src.versioned import store
@@ -213,14 +241,18 @@ def _build() -> dict[str, Any]:
         "countries_without_updates_not_shown": 0,
         "countries_not_shown": 0,
         "dropped_to_fit": {"runs": 0, "gaps": 0},
+        # The street view's frame budget at the caps, on this machine (S07-02 S3, row 187): "not measured" until a run is recorded.
+        "street_view": _street_view(),
     }
     if not store.lane_exists("osm"):
         out["lane"] = "absent"
         out["reason"] = "no OpenStreetMap country has been cut on this install"
+        _record_k13(None)
         return out
     with store.lane_session("osm") as s:
         have = _tables(s)
         rows = [_country(s, c, have) for c in s.query(OsmCountry).order_by(OsmCountry.alpha3)]
+    _record_k13(rows)
     # A country no change file or gap has touched has nothing to report beyond its position, so it is listed by code and the rows are
     # the countries the daily files have actually done something to, newest first (a gap's time counts as much as a file's).
     # A table the lane lacks (``None``) leaves the question unanswered, so that country stays listed with its position rather than being
@@ -254,7 +286,8 @@ def diagnostics_member(max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
     cursor row) is about 4.0 KB, so SIX of them are 24,398 bytes whole and 20,000 cuts the 26 oldest runs of the heaviest to 19,953; a
     country the files have not touched costs a code (6 bytes). 20,000 is therefore not a guess about a typical install: it is the size at
     which a sixth fully-populated country starts to cost the oldest runs, and ``test_the_member_is_cut_to_its_budget...`` holds a
-    60-run country to it. The slot row states the number the bundle gives it.
+    60-run country to it. The slot row states the number the bundle gives it. (Measured before ``street_view`` existed; that slot adds about
+    0.2 KB unmeasured and 0.5 KB measured to the fixed part, 2026-11-19, which costs the sixth country a few more of its oldest runs.)
     """
     try:
         budget = int(max_bytes)

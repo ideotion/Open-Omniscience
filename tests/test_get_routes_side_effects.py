@@ -170,6 +170,22 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/diagnostics/source-audit": (
         frozenset({"source-audit-status.json"}), frozenset(), "writes K8's status-count record (R706)",
     ),
+    "/api/diagnostics/law-coverage": (
+        frozenset({"lane-law-coverage.json"}), frozenset(), "writes K13's law-lane count record (row 184, R751(a))",
+    ),
+    # The wiki per-edition coverage report writes K13's wiki-lane count record wherever it runs over an existing lane (row 184).
+    "/api/living/overview": (
+        frozenset({"lane-wiki.json"}), frozenset(), "writes K13's wiki-lane count record (row 184, R751(a)); counts, no edition code",
+    ),
+    "/api/wiki/lane/counters": (
+        frozenset({"lane-wiki.json"}), frozenset(), "writes K13's wiki-lane count record (row 184, R751(a)); counts, no edition code",
+    ),
+    "/api/diagnostics/soak-window": (
+        frozenset({"lane-wiki.json"}), frozenset(), "writes K13's wiki-lane count record (row 184, R751(a)); counts, no edition code",
+    ),
+    "/api/osm/change-files": (
+        frozenset({"lane-osm.json"}), frozenset(), "writes K13's OSM-lane count record (row 184, R751(a)); counts, no country code",
+    ),
 }
 # Routes allowed to attempt a LOOPBACK connect (the local model servers: Ollama 11434, vLLM 8001). Nothing else may open a socket,
 # and no route may reach a non-loopback address with the kill switch engaged.

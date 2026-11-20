@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-19,medical,"PubMed update-file fetch, consent-gated, gap shown (R750 a)",SHIPPED,PR #2148; row 173,src/medical/fetch.py; src/api/medical.py; src/static/app-medical.js,"One click reads NLM's update directory (guarded session held to ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/), checks each file's md5 under byte and inflate caps, keeps only cited or named records (R745), and shows how many cited identifiers are not found yet under a visible caveat (R750); files apply strictly in NLM order."

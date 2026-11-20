@@ -45,7 +45,9 @@ of stability (``scripts/kpi_diff.py`` classifies that pair ``same-measurement``,
 from __future__ import annotations
 
 import json
+import math
 import os
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -113,10 +115,15 @@ _SPECS: tuple[dict, ...] = (
      "direction": "up", "target": "100% at 1.0 + human UX pass",
      "source_endpoint": "R3 (AppVM ui_walk)",
      "nm": "awaits R3 — the flagged-surface inventory does not exist in-process yet"},
+    # R751(d): the target names the open bar instead of a pass condition no ruling has set (Q1017 = a: bars are set from
+    # recorded values, S08-02 S2), so a recorded vertical reads measured-no-bar, never green on an unruled freshness.
     {"id": "K13", "name": "Vertical coverage", "direction": "exact",
-     "target": "first slice ingested + freshness green, per §4 vertical",
-     "source_endpoint": "/api/diagnostics/freshness",
-     "nm": "per-vertical coverage diagnostics await the §4 vertical builds"},
+     "target": "pending-ruling-V1-6 (per vertical: first slice ingested + freshness; bars by S08-02 S2)",
+     "source_endpoint": ("/api/climate/fetch · /api/diagnostics/elections-floor · /api/diagnostics/law-coverage · "
+                         "diagnostics bundle (osm-change-files.json) · /api/living/overview (wiki coverage)"),
+     "nm": "no vertical or lane has a first measurement on this machine yet (no climate fetch recorded, no Wikidata "
+           "election snapshot on disk, no law, OSM or wiki coverage read recorded); nothing is fetched or "
+           "scanned on this GET"},
     {"id": "K14", "name": "Development health (suite · mypy ratchet · open P0s)",
      "direction": "exact", "target": "suite green · mypy ≤ baseline · open data-loss P0s = 0",
      "source_endpoint": "CI",
@@ -413,7 +420,7 @@ def _age_days(iso: str | None) -> float | None:
         return None
     try:
         then = datetime.fromisoformat(iso)
-    except ValueError:
+    except (TypeError, ValueError):  # a hand-edited record may hold a number or a list here
         return None
     if then.tzinfo is None:
         then = then.replace(tzinfo=UTC)
@@ -510,14 +517,15 @@ _DATES_FILE, _DATES_SCHEMA = "date-extraction-coverage.json", "oo-date-extractio
 _SOURCES_FILE, _SOURCES_SCHEMA = "source-audit-status.json", "oo-source-audit-status-1"
 
 
-def _write_record(name: str, schema: str, fields: dict) -> dict | None:
+def _write_record(name: str, schema: str, fields: dict, *, fsync: bool = True) -> dict | None:
     """Persist one instrument's measurement beside K6's record. Best-effort: a failed write records nothing (the KPI then says
     no run recorded one) and never breaks the diagnostic that measured it."""
     record = {"schema": schema, "measured_at": _now(), **fields}
     try:
         from src.safety.file_lock import atomic_replace
 
-        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_replace(_coverage_path().with_name(name), json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8",
+                       fsync=fsync)
     except Exception:  # noqa: BLE001 - a diagnostic side-record never breaks the diagnostic
         return None
     return record
@@ -695,7 +703,463 @@ def _k8_sources(spec: dict) -> dict:
     return entry
 
 
-_RESOLVERS = {"K2": _k2_latency, "K5": _k5_noise, "K6": _k6_coverage, "K7": _k7_dates, "K8": _k8_sources, "K11": _k11_i18n}
+# --------------------------------------------------------------------------- K13, the verticals (row 183, R751)
+# The R706 channel again for climate: a fetch writes down what it stored where it stores it, and K13 only reads that file.
+# The elections block reads its two files directly instead, the way K11 reads the locale files: the shipped catalogue and
+# the Wikidata snapshot the operator's networked run left on disk ARE the persisted measurement, cheap to read (one YAML,
+# one JSON, cached by the snapshot's own stamp), and a copy of them written by the diagnostic would only go stale.
+# Lane blocks (law, OSM, wiki) and the 0.7/0.8 verticals join the same ``verticals`` list (R751(a)): blocks under K13,
+# no new K id.
+_CLIMATE_FILE, _CLIMATE_SCHEMA = "vertical-climate.json", "oo-vertical-climate-1"
+_CLIMATE_LOCK = threading.Lock()  # two fetches finishing together must not drop each other's dataset
+
+
+def record_climate_fetch(record: dict) -> dict | None:
+    """Write down one climate fetch (K13). Called by the climate fetch job once its session committed, never by the KPI GET.
+
+    Kept per DATASET, the last fetch of each: its time, how many figures the source gave, and how many were new or revised.
+    The unit fetched (a region, a GHCN station) is NOT written: this file is plaintext beside the encrypted library, and
+    which station someone reads is theirs. ``figures`` 0 is kept as 0: the source answered with nothing, a fact of its own.
+    A fetch is one UNIT (a region, a station) while the entry is per dataset, so the last fetch that DID bring figures is
+    kept beside the last fetch: an empty answer for one station never erases the figures another station's fetch stored."""
+    if not isinstance(record, dict):
+        return None
+    dataset = record.get("dataset")
+    try:
+        from src.stats.climate import DATASETS
+    except Exception:  # noqa: BLE001 - without the dataset list nothing can be checked, so nothing is written
+        return None
+    if not isinstance(dataset, str) or dataset not in DATASETS:
+        return None
+    raw_tally = record.get("tally")
+    tally: dict = raw_tally if isinstance(raw_tally, dict) else {}
+    entry: dict = {
+        "fetched_at": str(record.get("fetched_at") or _now()),
+        "figures": _int_or_none(record.get("figures")),
+        "new": _int_or_none(tally.get("new")),
+        "revised": _int_or_none(tally.get("revised")),
+    }
+    with _CLIMATE_LOCK:
+        prev: dict = _read_record(_CLIMATE_FILE, _CLIMATE_SCHEMA) or {}
+        held = prev.get("datasets")
+        datasets: dict = {k: v for k, v in held.items() if k in DATASETS and isinstance(v, dict)} if isinstance(held, dict) else {}
+        earlier = datasets.get(dataset) or {}
+        if isinstance(entry["figures"], int) and entry["figures"] > 0:
+            entry["last_with_figures"] = {"fetched_at": entry["fetched_at"], "figures": entry["figures"]}
+        elif isinstance(earlier.get("last_with_figures"), dict):
+            entry["last_with_figures"] = earlier["last_with_figures"]
+        datasets[dataset] = entry
+        return _write_record(_CLIMATE_FILE, _CLIMATE_SCHEMA, {"datasets": dict(sorted(datasets.items()))})
+
+
+def read_climate_fetches() -> dict | None:
+    return _read_record(_CLIMATE_FILE, _CLIMATE_SCHEMA)
+
+
+def _climate_block() -> dict:
+    rec = read_climate_fetches()
+    try:
+        from src.stats.climate import DATASETS
+
+        listed = len(DATASETS)
+    except Exception:  # noqa: BLE001 - the count is a label; the block still reads without it
+        listed = None
+    datasets = (rec or {}).get("datasets")
+    if rec is None or not isinstance(datasets, dict) or not datasets:
+        return {"vertical": "climate", "state": "not-measured", "first_slice": False,
+                "reason": "no climate fetch has been recorded on this machine (the Climate tab's Fetch button records one)"}
+    rows = []
+    for name, d in sorted(datasets.items()):
+        if not isinstance(d, dict):
+            continue
+        figures, new, revised = d.get("figures"), d.get("new"), d.get("revised")
+        kept = d.get("last_with_figures") if isinstance(d.get("last_with_figures"), dict) else None
+        if figures == 0:
+            outcome = "source gave no figures"
+        elif not isinstance(new, int) or not isinstance(revised, int):
+            outcome = "fetched, what it stored was not recorded"  # never claim new figures the record does not show
+        elif new == 0 and revised == 0:
+            # A fetch that stored nothing new is a fetch: the source had nothing new, never "not read".
+            outcome = "fetched, nothing new"
+        else:
+            outcome = "fetched, stored new or revised figures"
+        rows.append({
+            "dataset": name, "fetched_at": d.get("fetched_at"), "age_days": _age_days(d.get("fetched_at")),
+            "figures": figures, "new": new, "revised": revised, "outcome": outcome,
+            "last_fetch_with_figures_at": kept.get("fetched_at") if kept else None,
+            "has_figures": (isinstance(figures, int) and figures > 0) or kept is not None,
+        })
+    if not rows:
+        return {"vertical": "climate", "state": "not-measured", "first_slice": False,
+                "reason": "the climate fetch record holds no readable dataset entry"}
+    with_figures = sum(1 for r in rows if r["has_figures"])
+    return {
+        "vertical": "climate", "state": "recorded", "first_slice": with_figures > 0, "as_of": rec.get("measured_at"),
+        "datasets_fetched": len(rows), "datasets_listed": listed, "datasets": rows,
+        "method": (f"the last recorded fetch of each climate dataset: {len(rows)} of "
+                   f"{listed if listed is not None else 'the'} datasets fetched on this machine, {with_figures} of them "
+                   "with figures from the source at some fetch. Each age is the fetch's own; no "
+                   "freshness bar is set (S08-02 S2), so no dataset is called fresh or stale."),
+    }
+
+
+def _elections_block() -> dict:
+    """The elections floor, read from the shipped catalogue and the snapshot file on disk (no fetch, no scan)."""
+    from datetime import date
+
+    from src.civic.coverage_floor import floor_coverage
+    from src.events.catalog import layered_events
+
+    today = date.today()
+    events, snap = layered_events(today)  # one read, so the snapshot line and the counts agree
+    rep = floor_coverage(today, events=events)
+    rows = snap.get("rows")
+    present = snap.get("state") == "present"
+    loaded = present and isinstance(rows, int) and rows > 0
+    # A snapshot on disk is a measurement even when it holds no rows (the run found nothing), the same as a climate fetch
+    # whose source gave no figures: recorded, but no first slice. Only an absent or unreadable snapshot is "not measured".
+    block = {
+        "vertical": "elections", "state": "recorded" if present else "not-measured", "first_slice": loaded,
+        "as_of": snap.get("as_of") if present else None,
+        "floor_countries": rep.get("floor_countries"), "covered": rep.get("covered_n"),
+        "only_passed_projection": rep.get("only_passed_projection_n"),
+        "present_but_dateless": rep.get("present_but_dateless_n"), "missing": rep.get("missing_n"),
+        "floor_as_of": rep.get("as_of"),
+        "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
+        "snapshot_age_days": _age_days(snap.get("as_of")), "snapshot_rows": rows,
+        "method": ("the elections floor diagnostic's own counts over the shipped catalogue layered with the Wikidata "
+                   "snapshot on disk, each state apart (covered, only a passed projection, present but dateless, "
+                   "missing). The first slice is the snapshot, so the vertical counts as ingested only when a snapshot "
+                   "with rows is present; the shipped catalogue alone is not an ingest. Read from files, never fetched."),
+    }
+    if not present:
+        block["reason"] = (f"no readable Wikidata election snapshot on this machine (state: {snap.get('state')}); the "
+                           "operator's networked run writes one")
+    elif not loaded:
+        block["reason"] = "the Wikidata election snapshot on this machine holds no rows, so there is no first slice"
+    return block
+
+
+# --------------------------------------------------------------------------- K13, the law lane (row 184, R751(a))
+# The law coverage report is computed on demand over every tracked document, so it is never run on the GET: the route that
+# makes it (the /law-coverage diagnostic, which the all-diagnostics bundle also calls) writes down its counts here.
+_LAW_FILE, _LAW_SCHEMA = "lane-law-coverage.json", "oo-lane-law-coverage-1"
+
+
+def record_law_coverage(report: dict) -> dict | None:
+    """Write down what a law coverage report counted (K13's law block). Called by the route that makes it, never by the
+    KPI GET. Counts only: no jurisdiction, country or document is named, and nothing is divided."""
+    if not isinstance(report, dict) or "documents" not in report:
+        return None
+    raw_rows = report.get("jurisdictions")
+    rows = [j for j in raw_rows if isinstance(j, dict)] if isinstance(raw_rows, list) else []
+    def _hours(v) -> float | None:  # a finite, real number of hours; a check stamped in the future (clock skew) is age 0
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            return None
+        return max(float(v), 0.0)
+
+    olds = [h for j in rows if (h := _hours(j.get("oldest_check_age_hours"))) is not None]
+    news = [h for j in rows if (h := _hours(j.get("newest_check_age_hours"))) is not None]
+    raw_floor = report.get("floor")
+    floor: dict = raw_floor if isinstance(raw_floor, dict) else {}
+    by_state = floor.get("by_state") if isinstance(floor.get("by_state"), dict) else None
+    floor_state = floor.get("state") if isinstance(floor.get("state"), str) else None
+    counts: dict | None = None
+    if by_state is not None:
+        counts = {str(k): len(v) for k, v in by_state.items() if isinstance(v, list)}
+        if floor_state == "unchecked":
+            # The catalogue could not be read, so the states that need it were never looked up: unknown, never 0.
+            # Only what the database says (tracked) and the unchecked bucket itself are counts.
+            counts = {k: (v if k in ("tracked", "unchecked") else None) for k, v in counts.items()}
+    raw_catalog = report.get("catalog")
+    catalog: dict = raw_catalog if isinstance(raw_catalog, dict) else {}
+    return _write_record(_LAW_FILE, _LAW_SCHEMA, {
+        "documents": _int_or_none(report.get("documents")),
+        "baselined": _int_or_none(report.get("baselined")),
+        "jurisdictions": len(rows),
+        "never_checked": sum(j["never_checked"] for j in rows if _int_or_none(j.get("never_checked")) is not None),
+        # Hours since a document was last checked, across jurisdictions: the most-neglected and the most-recent, each apart.
+        "oldest_check_age_hours": max(olds) if olds else None,
+        "newest_check_age_hours": min(news) if news else None,
+        "catalog_readable": catalog.get("readable") if isinstance(catalog.get("readable"), bool) else None,
+        "floor_state": floor_state,
+        "floor_by_state": counts,
+    })
+
+
+def read_law_coverage() -> dict | None:
+    return _read_record(_LAW_FILE, _LAW_SCHEMA)
+
+
+def _law_block() -> dict:
+    rec = read_law_coverage()
+    if rec is None:
+        return {"vertical": "law", "kind": "lane", "state": "not-measured", "first_slice": False,
+                "reason": "no law coverage report has run on this machine (run the law coverage diagnostic, or take an "
+                          "all-diagnostics bundle)"}
+    docs = rec.get("documents")
+    floor = rec.get("floor_by_state")
+    floor_n = sum(v for v in floor.values() if isinstance(v, int)) if isinstance(floor, dict) else None
+    tracked = floor.get("tracked") if isinstance(floor, dict) else None
+    unchecked = rec.get("floor_state") == "unchecked"
+    block = {
+        "vertical": "law", "kind": "lane", "state": "recorded",
+        "first_slice": isinstance(docs, int) and docs > 0, "as_of": rec.get("measured_at"),
+        "documents": docs, "baselined": rec.get("baselined"), "jurisdictions": rec.get("jurisdictions"),
+        "never_checked": rec.get("never_checked"),
+        "oldest_check_age_hours": rec.get("oldest_check_age_hours"),
+        "newest_check_age_hours": rec.get("newest_check_age_hours"),
+        "catalog_readable": rec.get("catalog_readable"), "floor_state": rec.get("floor_state"),
+        "floor_by_state": floor,
+        "method": (f"the last law coverage report's own counts: {docs} tracked documents in {rec.get('jurisdictions')} "
+                   f"jurisdictions; of the {floor_n if floor_n is not None else 'unknown number of'} countries on the "
+                   f"language floor, {tracked if tracked is not None else 'an unknown number'} are tracked, "
+                   + ("and the other states are unknown: the law catalogue could not be read, so they were never looked "
+                      "up. " if unchecked else "each other state counted apart. ")
+                   + "A tracked-document count is an entry point, never a coverage claim, and nothing "
+                   "is divided. The check ages are the report's own, from when it ran."),
+    }
+    if not block["first_slice"]:
+        block["reason"] = "the last law coverage report counted no tracked document"
+    return block
+
+
+# --------------------------------------------------------------------------- K13, the OSM lane (row 184, R751(a))
+# The OSM change-file member reads the lane store on demand when a diagnostics bundle is built; it writes its counts here as it
+# reads them. Never a country code: which countries an operator follows is theirs, so only how many.
+_OSM_FILE, _OSM_SCHEMA = "lane-osm.json", "oo-lane-osm-1"
+
+
+def record_osm_lane(rows: list | None) -> dict | None:
+    """Write down what the OSM change-file member counted (K13's OSM block). ``rows`` is the member's per-country rows, or
+    ``None`` when no OSM lane exists on this install. Counts and the newest applied time only; nothing is divided."""
+    if rows is None:
+        return _write_record(_OSM_FILE, _OSM_SCHEMA, {"lane": "absent", "countries": 0})
+    if not isinstance(rows, list):
+        return None
+    rs = [r for r in rows if isinstance(r, dict)]
+
+    def _known(key: str) -> tuple[int | None, int]:
+        # (sum over the countries whose table answered, the countries whose table did not). When none answered, the sum is
+        # unknown (None), never 0: an old lane that cannot say is not a lane with no change file.
+        vals = [_int_or_none(r.get(key)) for r in rs]
+        known = [v for v in vals if v is not None]
+        return (sum(known) if known or not rs else None), len(vals) - len(known)
+
+    diffs, diffs_unknown = _known("diffs_recorded")
+    gaps, gaps_unknown = _known("gaps_total")
+    statuses: dict = {}
+    for r in rs:
+        st = r.get("status") if isinstance(r.get("status"), str) else "unknown"
+        statuses[st] = statuses.get(st, 0) + 1
+    applied = [(age, a) for r in rs if isinstance(a := r.get("last_applied_at"), str) and (age := _age_days(a)) is not None]
+    return _write_record(_OSM_FILE, _OSM_SCHEMA, {
+        "lane": "present",
+        "countries": len(rs),
+        "countries_by_status": dict(sorted(statuses.items())),
+        "countries_with_change_files": sum(1 for r in rs if (_int_or_none(r.get("diffs_recorded")) or 0) > 0),
+        "change_files_recorded": diffs,
+        "countries_change_files_unknown": diffs_unknown,
+        "gaps_total": gaps,
+        "countries_gaps_unknown": gaps_unknown,
+        "newest_change_file_applied_at": min(applied, key=lambda p: p[0])[1] if applied else None,
+    })
+
+
+def read_osm_lane() -> dict | None:
+    return _read_record(_OSM_FILE, _OSM_SCHEMA)
+
+
+def _osm_method(rec: dict, complete_n: int) -> str:
+    def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
+        v = _int_or_none(rec.get(key))
+        return str(v) if v is not None else "an unknown number of"
+
+    unknown = []
+    for key, what in (("countries_change_files_unknown", "change files"), ("countries_gaps_unknown", "gaps")):
+        k = _int_or_none(rec.get(key))
+        if k:
+            unknown.append(f"{k} countries' lane predates the table of {what}, so their {what} are unknown, never 0")
+    return (f"the OSM change-file member's own counts, from its last read of the lane store: {n('countries')} countries "
+            f"listed, {complete_n} of them cut to completion; {n('change_files_recorded')} daily change files recorded over "
+            f"{n('countries_with_change_files')} countries, {n('gaps_total')} gaps"
+            + (f" ({'; '.join(unknown)})" if unknown else "")
+            + ". A first slice is one country cut to completion. No country is named; nothing is divided.")
+
+
+def _osm_block() -> dict:
+    rec = read_osm_lane()
+    if rec is None:
+        return {"vertical": "osm", "kind": "lane", "state": "not-measured", "first_slice": False,
+                "reason": "no OpenStreetMap change-file record has been read on this machine (take an all-diagnostics bundle)"}
+    if rec.get("lane") == "absent":
+        return {"vertical": "osm", "kind": "lane", "state": "recorded", "first_slice": False, "as_of": rec.get("measured_at"),
+                "lane": "absent", "countries": 0,
+                "method": "the OSM change-file member's own read of the lane store: no OSM lane exists on this install.",
+                "reason": "no OpenStreetMap country has been cut on this install"}
+    raw_status = rec.get("countries_by_status")
+    by_status: dict = raw_status if isinstance(raw_status, dict) else {}
+    complete_n: int = _int_or_none(by_status.get("complete")) or 0
+    countries = rec.get("countries")
+    block = {
+        "vertical": "osm", "kind": "lane", "state": "recorded", "first_slice": complete_n > 0,
+        "as_of": rec.get("measured_at"), "lane": "present",
+        "countries": countries, "countries_by_status": by_status,
+        "countries_with_change_files": rec.get("countries_with_change_files"),
+        "change_files_recorded": rec.get("change_files_recorded"),
+        "countries_change_files_unknown": rec.get("countries_change_files_unknown"),
+        "gaps_total": rec.get("gaps_total"), "countries_gaps_unknown": rec.get("countries_gaps_unknown"),
+        "newest_change_file_applied_at": rec.get("newest_change_file_applied_at"),
+        "method": _osm_method(rec, complete_n),
+    }
+    if not block["first_slice"]:
+        block["reason"] = "no OpenStreetMap country has been cut to completion"
+    return block
+
+
+# --------------------------------------------------------------------------- K13, the wiki lane (row 184, R751(a))
+# The per-edition coverage report reads the wiki lane on demand (Living sources, the lane counters, the soak and release runs, the
+# diagnostics bundle); it writes its counts here as it makes them. Never an edition code: only how many.
+_WIKI_FILE, _WIKI_SCHEMA = "lane-wiki.json", "oo-lane-wiki-1"
+
+
+def record_wiki_coverage(rows: list | None, measured: bool) -> dict | None:
+    """Write down what a per-edition wiki coverage report counted (K13's wiki block). ``rows`` are the report's per-edition rows
+    (before any compact trim); ``measured`` is the report's own. Counts and the newest event time only; nothing is divided."""
+    if not isinstance(rows, list) or not isinstance(measured, bool):
+        return None
+    rs = [r for r in rows if isinstance(r, dict)]
+
+    def _count(r: dict, key: str) -> int | None:
+        return _int_or_none(r.get(key))
+
+    def _text(r: dict, key: str) -> int | None:
+        ft = r.get("full_text")
+        return _int_or_none(ft.get(key)) if isinstance(ft, dict) else None
+
+    def _sum(vals: list) -> int | None:  # the sum of what is known; when nothing is (or no edition ran), unknown (None), never 0
+        known = [v for v in vals if v is not None]
+        return sum(known) if known else None
+
+    def _sum_all(vals: list) -> int | None:  # an UPPER bound is only one when every part is known: a partial sum may sit below the lower
+        return sum(vals) if vals and all(v is not None for v in vals) else None
+
+    ran = [r for r in rs if r.get("has_run") is True]
+    pages = [_count(r, "pages_seen") for r in ran]
+    hot = [_text(r, "hot_pages_with_text") for r in ran]
+    warm = [_text(r, "warm_pages_with_text") for r in ran]
+    totals = [_count(r, "edition_articles") for r in ran]
+    gaps = [_int_or_none(r["gaps"].get("total")) if isinstance(r.get("gaps"), dict) else None for r in ran]
+    events = [(age, e) for r in ran if isinstance(e := r.get("last_event_recorded_at"), str) and (age := _age_days(e)) is not None]
+    return _write_record(_WIKI_FILE, _WIKI_SCHEMA, {
+        "measured": measured,
+        "editions_listed": len(rs),
+        "editions_with_a_run": len(ran),
+        "editions_with_pages_seen": sum(1 for v in pages if v),
+        "editions_with_text": sum(1 for h, w in zip(hot, warm, strict=True) if h or w),
+        "editions_walk_complete": sum(1 for r in ran if r.get("walk_complete") is True),
+        "pages_seen": _sum(pages),
+        "editions_pages_unknown": sum(1 for v in pages if v is None),
+        "edition_articles": _sum(totals),
+        "editions_without_total": sum(1 for v in totals if v is None),
+        # HOT and WARM may both hold one page (a promotion keeps its WARM row): the report's own two bounds, summed per edition.
+        "pages_with_text_lower_bound": _sum([max(h or 0, w or 0) if (h is not None or w is not None) else None
+                                             for h, w in zip(hot, warm, strict=True)]),
+        "pages_with_text_upper_bound": _sum_all([h + w if h is not None and w is not None else None
+                                                 for h, w in zip(hot, warm, strict=True)]),
+        "editions_text_bound_unknown": sum(1 for h, w in zip(hot, warm, strict=True) if h is None or w is None),
+        "gaps_total": _sum(gaps),
+        "newest_event_recorded_at": min(events, key=lambda p: p[0])[1] if events else None,
+        # The stream's last events could not be read for these: their newest event is unknown, not "none".
+        "editions_event_unreadable": sum(1 for r in ran if r.get("last_event_unreadable") is True),
+    }, fsync=False)  # rebuilt by the next report (every Living sources poll reads one): never worth a flush on a GET
+
+
+def read_wiki_coverage() -> dict | None:
+    return _read_record(_WIKI_FILE, _WIKI_SCHEMA)
+
+
+def _wiki_method(rec: dict) -> str:
+    def n(key: str) -> str:  # a count as recorded, or "an unknown number of" for anything a hand edit left that is not one
+        v = _int_or_none(rec.get(key))
+        return str(v) if v is not None else "an unknown number of"
+
+    unknown = []
+    for key, what in (("editions_pages_unknown", "pages seen"), ("editions_without_total", "own article count"),
+                      ("editions_text_bound_unknown", "text count in one tier")):
+        k = _int_or_none(rec.get(key))
+        if k:
+            unknown.append(f"{k} editions' {what} unknown, never 0")
+    k = _int_or_none(rec.get("editions_event_unreadable"))
+    if k:
+        unknown.append(f"{k} editions' last event could not be read, which is not the same as none")
+    lo, up = _int_or_none(rec.get("pages_with_text_lower_bound")), _int_or_none(rec.get("pages_with_text_upper_bound"))
+    if lo is not None and up is not None and up >= lo:
+        text = f"between {lo} and {up} pages with a text (a page promoted from WARM to HOT may be counted twice)"
+    elif lo is not None:
+        text = f"at least {lo} pages with a text (the upper bound is unknown while an edition's WARM count is)"
+    else:
+        text = "an unknown number of pages with a text"
+    return (f"the per-edition wiki coverage report's own counts, from its last read of the lane: {n('editions_with_a_run')} of "
+            f"{n('editions_listed')} editions listed have run; {n('editions_with_pages_seen')} have pages seen and "
+            f"{n('editions_with_text')} hold a text; {n('pages_seen')} pages seen, {text}, "
+            f"{n('gaps_total')} gaps"
+            + (f" ({'; '.join(unknown)})" if unknown else "")
+            + ". A first slice is one edition with pages seen or a stored text. No edition is named; nothing is divided.")
+
+
+def _wiki_block() -> dict:
+    rec = read_wiki_coverage()
+    if rec is None:
+        return {"vertical": "wiki", "kind": "lane", "state": "not-measured", "first_slice": False,
+                "reason": "no wiki coverage report has read a wiki lane on this machine (the lane has never run, or no report "
+                          "has been taken since: Living sources, the lane counters or an all-diagnostics bundle make one)"}
+    pages_n = _int_or_none(rec.get("editions_with_pages_seen")) or 0
+    text_n = _int_or_none(rec.get("editions_with_text")) or 0
+    keys = ("measured", "editions_listed", "editions_with_a_run", "editions_with_pages_seen", "editions_with_text",
+            "editions_walk_complete", "pages_seen", "editions_pages_unknown", "edition_articles", "editions_without_total",
+            "pages_with_text_lower_bound", "pages_with_text_upper_bound", "editions_text_bound_unknown", "gaps_total",
+            "newest_event_recorded_at", "editions_event_unreadable")
+    block = {"vertical": "wiki", "kind": "lane", "state": "recorded", "first_slice": pages_n > 0 or text_n > 0,
+             "as_of": rec.get("measured_at"), **{k: rec.get(k) for k in keys}, "method": _wiki_method(rec)}
+    if not block["first_slice"]:
+        block["reason"] = "the last wiki coverage report counted no edition with pages seen or a stored text"
+    return block
+
+
+def _k13_verticals(spec: dict) -> dict:
+    """K13: one block per vertical and per lane (R751(a)), read from what each recorded. The value is a COUNT (blocks whose
+    first slice is in), with n = the blocks listed; never a share, never a blend of their figures."""
+    blocks = []
+    for name, build in (("climate", _climate_block), ("elections", _elections_block), ("law", _law_block), ("osm", _osm_block),
+                        ("wiki", _wiki_block)):
+        try:
+            blocks.append(build())
+        except Exception as exc:  # noqa: BLE001 - one vertical's fault never hides the others
+            blocks.append({"vertical": name, "state": "not-measured", "first_slice": False,
+                           "reason": f"its block could not be read ({type(exc).__name__})"})
+    recorded = [b for b in blocks if b["state"] == "recorded"]
+    if not recorded:
+        entry = _entry(spec)
+        entry["verticals"] = blocks
+        return entry
+    ingested = [b["vertical"] for b in blocks if b["first_slice"]]
+    # The newest of the blocks' own dates (a fetch time, a snapshot date): compared by age, since the two are not one format.
+    # A date in the future (clock skew) is not "newer" than today's: its age counts as 0.
+    dated = [(max(age, 0.0), b.get("as_of")) for b in recorded if (age := _age_days(b.get("as_of"))) is not None]
+    as_of = min(dated, key=lambda pair: pair[0])[1] if dated else None
+    entry = _entry(spec, value=len(ingested), n=len(blocks), as_of=as_of, verdict=_NO_BAR, method=(
+        f"{len(ingested)} of the {len(blocks)} verticals and lanes listed have a first slice in "
+        f"({', '.join(ingested) if ingested else 'none'}); each block below carries its own figures, date and "
+        "method, read from what it recorded where it measured. A count, not a score: the blocks are never blended. A "
+        "persisted measurement, never fetched or re-run here. The bar is open (Q1017 = a, S08-02 S2), so no verdict is given."
+    ))
+    entry["verticals"] = blocks
+    return entry
+
+
+_RESOLVERS = {"K2": _k2_latency, "K5": _k5_noise, "K6": _k6_coverage, "K7": _k7_dates, "K8": _k8_sources, "K11": _k11_i18n,
+              "K13": _k13_verticals}
 
 
 def kpi_snapshot(session=None) -> dict:  # noqa: ARG001 - session accepted for the endpoint contract

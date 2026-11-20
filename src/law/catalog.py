@@ -428,6 +428,23 @@ def _doc_language(d: dict) -> str | None:
     return None
 
 
+def _previous_urls(d: dict) -> list[str]:
+    """The addresses a catalogue document was registered under before, as the row states them.
+
+    A store that registered the document under one of them keeps THAT row: it is the same act,
+    so a second row would track it twice, and re-pointing the old row at the new address would
+    make the next poll compare text read one way against text read another and record the
+    difference as an amendment. Moving such a row is a migration with its own rules, not a
+    side effect of registration. A malformed value is ignored rather than raised: this runs on
+    the boot path."""
+    raw = d.get("previous_urls")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    return [u.strip() for u in raw if isinstance(u, str) and u.strip()]
+
+
 def register_documents(
     session: Session, path: Path | None = None, generated_path: Path | None = None
 ) -> dict[str, int]:
@@ -458,6 +475,15 @@ def register_documents(
     for d in docs:
         key = (d["jurisdiction"], d["url"])
         row = existing_rows.get(key)
+        if row is None:
+            # The same act under the address the catalogue USED to give it: that row IS this
+            # document, so it is healed and kept, never joined by a second copy of the act.
+            # It is deliberately not re-pointed either (see ``_previous_urls``).
+            row = next(
+                (existing_rows[(d["jurisdiction"], old)] for old in _previous_urls(d)
+                 if (d["jurisdiction"], old) in existing_rows),
+                None,
+            )
         if row is not None:
             changed = False
             lang = _doc_language(d)

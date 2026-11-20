@@ -115,6 +115,12 @@ def _document_text(result, *, retrieved_on: str | None = None) -> tuple[str | No
     from the URL: a host allow-list would send the site's own HTML pages into an
     XML parser and would miss the same markup served from anywhere else.
 
+    A gesetze-im-internet act (``/<abbr>/xml.zip``, or the XML inside it) is read by
+    ``src/law/adapters/gii.py`` the same way, with status ``"gii"``. Its archive is
+    recognised on the RAW bytes, because the text decode has already destroyed them, and
+    an archive the adapter refuses is NOT sent to the HTML path: compressed bytes decoded
+    as text are not a page, and storing them as the law would fabricate a body.
+
     The status is ``"clml"``, deliberately NOT ``"ok"``. The caller uses
     ``reason == "ok"`` to decide whether it holds HTML worth re-checking for an
     extractor change; XML has no chrome to strip, so claiming "ok" here would
@@ -129,6 +135,36 @@ def _document_text(result, *, retrieved_on: str | None = None) -> tuple[str | No
 
         pdf_text, pdf_reason = extract_pdf_text(raw)
         return pdf_text, pdf_reason, None
+
+    # A gesetze-im-internet act (Q925 = a's second adapter): its ``xml.zip`` arrives as
+    # bytes the text decode has already destroyed, so it is recognised on the RAW bytes,
+    # and the same act's bare XML by ``<dokumente`` as its first element. Unlike CLML's, a
+    # refusal here does NOT fall through to the HTML path (see the except clause below).
+    from src.law.adapters.gii import ZIP_MAGIC, looks_like_gii
+
+    is_zip = isinstance(raw, bytes | bytearray) and bytes(raw[:4]) == ZIP_MAGIC
+    gii_body = raw if is_zip else result.content
+    if gii_body is not None and looks_like_gii(gii_body):
+        from src.law.adapters import AdapterRefusal
+        from src.law.adapters.gii import parse_gii
+
+        try:
+            parsed = parse_gii(gii_body, retrieved_on=retrieved_on)
+        except AdapterRefusal as exc:
+            # Stored as nothing, with the adapter's own reason, in both shapes. An archive
+            # has no HTML reading to fall back to (its decoded "text" is compressed bytes).
+            # A body whose first element IS <dokumente> (the pre-check asks exactly that) is
+            # not a web page either: read as HTML it would be stored with its footnotes and
+            # table of contents as "ok", and the day the adapter read it again that change
+            # of reading would be recorded as an amendment.
+            shape = "zip archive" if is_zip else "XML"
+            return None, f"gesetze-im-internet {shape} refused: {record_text(exc, limit=150)}", None
+        except Exception as exc:  # noqa: BLE001 - an adapter must never break tracking
+            log_failure(_LOG, "law: gii adapter raised; falling back", exc, level=logging.WARNING)
+            if is_zip:
+                return None, "zip archive could not be read by the gesetze-im-internet adapter", None
+        else:
+            return parsed.text, "gii", parsed
 
     body = result.content
     if _looks_like_xml(body, content_type=content_type):

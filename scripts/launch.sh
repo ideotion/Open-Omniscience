@@ -141,10 +141,39 @@ oo_pid_alive() {
 # as its parent and a second launcher would take the lock over the moment the parent exited. A simple command with a redirect is forked by this very shell
 # (not by a command substitution, which has a subshell of its own), so the sh it starts sees the pid of this shell as its PPID. noclobber is set for the
 # one redirect and put back as it was.
+# R749 (row 182) part A: where the filesystem has hard links the pid is first written to a temp file beside FILE and then LINKED to FILE (link(2) refuses an
+# existing name, in GNU, uutils and BSD alike), so FILE never exists without its pid in it: no claimer killed between the create and the write (bash 3.2's
+# window is a fork of sh, milliseconds) can leave it empty. The temp file goes whatever happens. A failed link with FILE present lost the claim; with FILE
+# absent the drive has no hard links (or the lock was released meanwhile, and then the create below fails on the gone directory), and the noclobber
+# create below is the claim, as is a temp file that could not be written (a full disk).
 _oo_rec_claim() {
-    local c=0 r=0
+    local c=0 r=0 t w=0 k=""
     case $- in *C*) c=1 ;; esac
     set -C
+    # the temp file is made O_EXCL too, then written by append: a name another claimer picked as well (bash 3.2's $$ is the launcher's in every subshell)
+    # is never truncated under it, and only a temp file this call made is ever removed
+    t="$1.t$$.${RANDOM:-0}${RANDOM:-0}"
+    if { :; } 2>/dev/null > "$t"; then
+        w=1
+        if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" >> "$t"; } 2>/dev/null || :
+        else { sh -c 'echo $PPID' >> "$t"; } 2>/dev/null || :
+        fi
+    fi
+    if [ "$w" = 1 ] && [ -s "$t" ]; then
+        if ln "$t" "$1" 2>/dev/null; then
+            # ln onto a name that is a directory, or a link to one, puts the link INSIDE it and succeeds (GNU and BSD; BSD has no -T): that is no
+            # claim, and the link it made goes (security read, 19 Nov). Only FILE being this very temp file is.
+            if [ "$1" -ef "$t" ]; then k=won; else k=lost; [ ! "$1/${t##*/}" -ef "$t" ] || rm -f "$1/${t##*/}" 2>/dev/null || :; fi
+        elif [ -e "$1" ] || [ -L "$1" ]; then
+            k=lost
+        fi
+    fi
+    [ "$w" != 1 ] || rm -f "$t" 2>/dev/null || :
+    if [ -n "$k" ]; then
+        [ "$c" = 1 ] || set +C
+        if [ "$k" = won ]; then return 0; fi
+        return 1
+    fi
     # r=1: the file was there already (or could not be made), not ours. A pid that could not be WRITTEN into a file this shell did create (a full disk)
     # still leaves the claim this shell's, as an unwritten pid always has: the lock is held and released as usual rather than left for nobody to take.
     if [ -n "${BASHPID:-}" ]; then { printf '%s\n' "$BASHPID" || :; } 2>/dev/null > "$1" || r=1
@@ -223,13 +252,25 @@ _oo_rec_reap_dir() {
     if mv "$mk" "$d/reapd.gone.$tok" 2>/dev/null; then rm -rf "$d/reapd.gone.$tok" 2>/dev/null || true; fi
 }
 
-# _oo_rec_nopid_seen DIR: whether the lock DIR, which has NO pid file, has been seen so by THIS waiter at every look for a minute of its own clock (bash's
+# _oo_rec_pidstate DIR: what DIR's pid file says about an owner: "none" (no pid file), "empty:INODE" (a regular file with nothing in it) or "set" (anything
+# else, judged by the dead-owner rules). Only the first two can be taken over by _oo_rec_nopid_seen's minute.
+_oo_rec_pidstate() {
+    if [ ! -e "$1/pid" ] && [ ! -L "$1/pid" ]; then echo none; return 0; fi
+    if [ -f "$1/pid" ] && [ ! -L "$1/pid" ] && [ ! -s "$1/pid" ]; then echo "empty:$(ls -di "$1/pid" 2>/dev/null | awk '{print $1}' || true)"; return 0; fi
+    echo set
+}
+
+# _oo_rec_nopid_seen DIR STATE: whether the lock DIR, whose pid file is in STATE ("none" or "empty:INODE", _oo_rec_pidstate), has been seen so by THIS waiter at every look for a minute of its own clock (bash's
 # SECONDS), the same rule as a directory mark left with no pid (_oo_rec_reap_dir), AND its own mtime is more than a minute old too (R744: a lock being made
 # right now is never taken, whatever the waiter's clock says). Row 172: a lock directory with no pid file was waited for and never taken over (it reads as a
 # launcher between its mkdir and its pid create, a few instructions), so one left so (a launcher killed at that instant, the release's rm -rf fallback
-# meeting a taker's temp mark, a pid file removed by hand) deferred every later row to a child that waited for ever, one more per row. A lock WITH a pid
-# file, even an empty one, is never taken over this way (R744). The record is "lock#inode first-look last-look": another directory under the same name
-# starts the minute again, and so does a gap of more than 2 s between looks (the waiter was elsewhere, so it did not see). The mtime is a second condition,
+# meeting a taker's temp mark, a pid file removed by hand) deferred every later row to a child that waited for ever, one more per row. R749 (row 182,
+# amending R744 #3) adds a pid file that EXISTS and is EMPTY: a claimer killed between its create and its write (bash 3.2 forks an sh for the write, a window
+# of milliseconds; _oo_rec_claim now links a written file into place wherever links work, so this is left to drives without links and to older builds), and
+# its pid file's mtime must be over a minute old too. A pid file with anything in it is never taken over this way. RESIDUAL (R749, stated): a LIVE holder on
+# a full disk keeps a claim whose pid it could not write, and if its append and trim then stall for over a minute (they take milliseconds and fail fast on a
+# full disk) it is taken over and two hold the lock; the alternative, no lock at all on a full disk, was ruled worse. The record is "lock#inode#STATE
+# first-look last-look": another directory under the same name, or another pid file, starts the minute again, and so does a gap of more than 2 s between looks (the waiter was elsewhere, so it did not see). The mtime is a second condition,
 # never the only one: a server clock ahead of this one (SMB) delays the takeover by its skew. Once seen old for this lock#inode it stays so (_OO_LOCK_OLD):
 # the waiter's own temp mark made inside the lock changes that mtime, and a test made again after it would push the takeover a minute further at every
 # attempt, for ever where a pid-less directory mark has to be cleared first (no hard links; the reads of 18 Nov). Both records are dropped by a takeover,
@@ -238,7 +279,7 @@ _oo_rec_reap_dir() {
 # launcher is then stopped (not slow) for a second between its mkdir and its pid create: the second look under the mark is its last guard.
 _oo_rec_nopid_seen() {
     local tok r first
-    tok="$1#$(ls -di "$1" 2>/dev/null | awk '{print $1}' || true)"
+    tok="$1#$(ls -di "$1" 2>/dev/null | awk '{print $1}' || true)#$2"
     r="${_OO_LOCK_NOPID:-}"; r="${r% *}"
     first="${r##* }"
     case "$first" in ''|*[!0-9]*) first="" ;; esac
@@ -249,17 +290,21 @@ _oo_rec_nopid_seen() {
     [ $(( ${SECONDS:-0} - first )) -ge 60 ] || return 1
     [ "${_OO_LOCK_OLD:-}" != "$tok" ] || return 0
     [ -n "$(find "$1" -prune -mmin +1 2>/dev/null || true)" ] || return 1
+    [ "$2" = none ] || [ -n "$(find "$1/pid" -prune -mmin +1 2>/dev/null || true)" ] || return 1
     _OO_LOCK_OLD="$tok"
 }
 
-# _oo_rec_still_nopid DIR: called by a taker holding its mark in DIR, a minute after DIR was first seen with no pid file: DIR still has none now AND a
-# second later, the re-check made just before the lock is renamed away (R744). The pause is what tells a lock left so from a live launcher between its mkdir and its pid create (a few instructions): the name can be freed
+# _oo_rec_still_nopid DIR: called by a taker holding its mark in DIR, a minute after DIR was first seen with no pid file or an empty one (_OO_LOCK_ST, set
+# with the "-" owner): DIR's pid file is in that same state, the same empty file by its inode, now AND a second later, the re-check made just before the lock
+# is renamed away (R744, R749). The pause is what tells a lock left so from a live launcher between its mkdir and its pid create (a few instructions): the name can be freed
 # and made again by such a launcher between this taker's last look and its mark (an inode freed by a removal can be reused at once), and that launcher's
 # pid is in its lock long before the second is over. Only a launcher frozen for that second at that instant (stopped, not merely slow) is not told apart.
 _oo_rec_still_nopid() {
-    [ ! -e "$1/pid" ] && [ ! -L "$1/pid" ] || return 1
+    local want="${_OO_LOCK_ST:-}"
+    case "$want" in none|empty:*) ;; *) return 1 ;; esac
+    [ "$(_oo_rec_pidstate "$1")" = "$want" ] || return 1
     sleep 1 2>/dev/null || :
-    [ ! -e "$1/pid" ] && [ ! -L "$1/pid" ]
+    [ "$(_oo_rec_pidstate "$1")" = "$want" ]
 }
 
 # _oo_rec_nopid_cleared LOCK: the one visible line for a lock taken over this way (R744), on stderr and in LOCK.cleared beside it (one line, replaced each
@@ -319,8 +364,10 @@ oo_rec_locked() {
         owner="$(cat "$d/pid" 2>/dev/null || true)"
         case "$owner" in ''|*[!0-9]*) owner="" ;; esac
         # a lock this waiter has seen with no owner pid for a minute is taken over like a dead owner's ("-" names that owner): row 172, _oo_rec_nopid_seen
-        if [ -z "$owner" ] && [ -d "$d" ] && [ ! -e "$d/pid" ] && [ ! -L "$d/pid" ]; then
-            if _oo_rec_nopid_seen "$d"; then owner="-"; fi
+        _OO_LOCK_ST=""
+        if [ -z "$owner" ] && [ -d "$d" ]; then _OO_LOCK_ST="$(_oo_rec_pidstate "$d")"; fi
+        if [ "$_OO_LOCK_ST" = none ] || [ "${_OO_LOCK_ST#empty:}" != "$_OO_LOCK_ST" ]; then
+            if _oo_rec_nopid_seen "$d" "$_OO_LOCK_ST"; then owner="-"; fi
         else
             _OO_LOCK_NOPID=""; _OO_LOCK_OLD=""
         fi
@@ -452,7 +499,7 @@ oo_rec_append_stdin() {
 }
 # The text of the helpers, for the filter: awk starts the appending shell itself, and a function exported through the environment does not reach it under
 # every awk and sh (measured: the one-true-awk lost every row, silently, with a close status of 0), so the shell is handed the definitions to eval.
-oo_rec_lib() { declare -f oo_pid_alive _oo_rec_claim _oo_rec_take _oo_rec_reap_dir _oo_rec_nopid_seen _oo_rec_still_nopid _oo_rec_nopid_cleared oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
+oo_rec_lib() { declare -f oo_pid_alive _oo_rec_claim _oo_rec_take _oo_rec_reap_dir _oo_rec_pidstate _oo_rec_nopid_seen _oo_rec_still_nopid _oo_rec_nopid_cleared oo_rec_locked _oo_rec_append_trim _oo_rec_trim _oo_rec_defer oo_rec_append oo_rec_append_stdin; }
 # --- end of the evidence file helpers ------------------------------------------------------------------------------------------------------
 
 # How the server ended when this launcher did not stop it (2026-09-26, the daily-crash

@@ -25,6 +25,13 @@ def _fake_client(list_installed):
 
 
 def _reset(job):
+    # A worker an earlier test left running is stopped and joined first (row 155, as row 147 did for its sibling): blanking ``_thread``
+    # under a live worker let a second one start beside it, and the first wrote its own state over the second's when it ended.
+    t = job._thread
+    if t is not None and t.is_alive():
+        job.cancel()
+        t.join(30)
+        assert not t.is_alive(), f"a {job.kind} worker from an earlier test did not stop within 30 s"
     with job._lock:
         job._state = "idle"
         job._result = None
@@ -274,7 +281,11 @@ def test_keyword_triage_job_status_reports_a_genuine_error_after_a_permanent_out
     are shrunk via monkeypatch so this test runs in milliseconds, not minutes."""
     from contextlib import contextmanager
 
-    from src.ai_layer import triage_job as triage_job_mod
+    import importlib
+
+    # The module the worker imports (sys.modules), never a package attribute that could name an older copy: the constants below must
+    # be the ones the running job reads (row 155, as row 147).
+    triage_job_mod = importlib.import_module("src.ai_layer.triage_job")
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -324,10 +335,15 @@ def test_keyword_triage_job_status_reports_a_genuine_error_after_a_permanent_out
     d._KEYWORD_TRIAGE_JOB.start(
         model="stub:test", min_articles=0, batch_size=5, client=RaisingClient()
     )
-    d._KEYWORD_TRIAGE_JOB._thread.join(5)
+    worker = d._KEYWORD_TRIAGE_JOB._thread
+    assert worker is not None
+    # Two short backoffs end this run in well under a second here; the bound is for a slow runner (5 s was not enough on the Windows
+    # leg), and a worker still alive after it is named with what it was doing rather than read as a wrong state.
+    worker.join(60)
 
     st = d.keyword_triage_status()
     body = json.loads(bytes(st.body))
+    assert not worker.is_alive(), f"the worker was still running after 60 s: {body!r}"
     assert body["state"] == "error", (
         "the outer BackgroundJob state must genuinely read 'error' once the retry "
         "budget is exhausted -- never a benign-looking 'done' the generic "
