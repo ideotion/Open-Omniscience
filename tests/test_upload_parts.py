@@ -71,10 +71,14 @@ def test_names_carry_position_and_total_and_sort_in_order():
 
 
 def test_the_cap_is_the_users_number_with_a_margin_under_what_they_stated():
-    """R119 (2026-10-06): "less than 4 MB each" (R115 had 1 MB, after uploads of about 1.2 MB failed).
-    4,000,000 and not 4 * 2**20 keeps a margin under either reading of "4 MB"."""
-    assert up.UPLOAD_PART_BYTES == 4_000_000
-    assert up.UPLOAD_PART_BYTES < 4 * 2**20
+    """The user's 2026-11-15 rule: every file sent back weighs at most 200 KB (row 212; R119 had
+    4,000,000, R115 1,000,000). 200,000 and not 200 * 1024 keeps a margin under either reading of
+    "200 KB", and the keyword parts share the Diagnostics parts' number."""
+    from src.api.diagnostics_volumes import DIAG_PART_BYTES
+
+    assert up.UPLOAD_PART_BYTES == 200_000
+    assert up.UPLOAD_PART_BYTES <= 200 * 1024
+    assert up.UPLOAD_PART_BYTES == DIAG_PART_BYTES
 
 
 # --------------------------------------------------------------- the bound
@@ -317,7 +321,7 @@ def test_parts_are_filled_to_the_cap_at_the_real_cap(tmp_path):
     rnd = random.Random(22)
     cap = up.UPLOAD_PART_BYTES
     # 36,000 dense records made three parts at a megabyte; the same three parts at the real cap
-    _w, manifest = _write(tmp_path, {"en": _records(rnd, 36_000 * (cap // 1_000_000), dense=True)}, cap=cap)
+    _w, manifest = _write(tmp_path, {"en": _records(rnd, 36_000 * cap // 1_000_000, dense=True)}, cap=cap)
     sizes = [p["bytes"] for p in manifest["parts"]]
     assert len(sizes) >= 3
     assert max(sizes) <= cap

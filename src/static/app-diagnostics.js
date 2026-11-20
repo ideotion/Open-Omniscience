@@ -1071,7 +1071,7 @@
       }
       const cap = Number((listing && (listing.part_max_bytes || listing.volume_max_bytes)) || 0);
       // A cap under 1 MB (an operator's OO_DIAG_VOLUME_MAX_MB below 1) reads «0.02», never «0 MB each».
-      const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "4");
+      const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "0.2");
       _partsStatus(tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
                       {n: set.files.length, mb, m: set.mcount, parts: set.pcount})
         + " " + t("Your browser may ask once to allow several downloads: allow them."));
