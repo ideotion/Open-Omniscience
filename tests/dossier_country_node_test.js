@@ -33,7 +33,7 @@ function extract(name) {
 }
 
 const FNS = ["_dossierChannel", "_dossierRailName", "_dossierNotJoinedReason", "_dossierLaneAbsence",
-             "passportLine", "_dossierRailRow", "dossierHtml"];
+             "passportLine", "_dossierRailBody", "_dossierRailSource", "_dossierTabsHtml", "_dossierRailPanel", "dossierHtml"];
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
   "function ooCountryCode(c) { return String(c).toUpperCase(); }\n" +

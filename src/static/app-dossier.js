@@ -21,6 +21,7 @@
     let _dossierLast = null;    // the last payload, so a language switch re-reads it
     let _dossierSeq = 0;
     let _dossierWired = false;
+    let _dossierTab = "overview";  // the open subtab, kept across a language switch's repaint
 
     function _dossierT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
     function _dossierTf() {
@@ -112,8 +113,25 @@
         + `</div>`;
     }
 
-    function _dossierRailRow(r, d, t, tf) {
-      const name = _dossierRailName(r.key, t);
+    // Where each rail's rows come from, VISIBLE at the top of its panel (row 178, PR 5: the planner's
+    // "each rail's provenance and caveat stay visible by default"). Keyed; an unknown rail says nothing.
+    function _dossierRailSource(key, t) {
+      const L = {
+        news: () => t("From the corpus articles that name this item, split by their source's channel."),
+        wikipedia: () => t("From the corpus articles on Wikipedia sources, and the pages the Wikipedia lane holds for this item."),
+        law: () => t("From the corpus articles on legal sources that name this item."),
+        places: () => t("From the Places on this machine that carry this item."),
+        map: () => t("From the OpenStreetMap lane's objects tagged with this item."),
+        stats: () => t("From the statistics series stored for this country: names, periods and dates, never a value."),
+        climate: () => t("From the climate series stored for this country, each with its publisher's licence."),
+        agenda: () => t("From the agenda catalogue's events for this country."),
+        elections: () => t("From the agenda catalogue's elections for this country; each date keeps its confidence."),
+      };
+      return L[key] ? L[key]() : "";
+    }
+
+    // One rail's rows, as the body of its panel.
+    function _dossierRailBody(r, d, t, tf) {
       let what = "";
       if (r.key === "news") {
         const ch = Object.keys(r.by_channel || {});
@@ -195,7 +213,30 @@
             + (r.count > es.length ? `<div class="muted small">${esc(tf("{shown} of {n} shown", {shown: es.length, n: r.count}))}</div>` : "");
         }
       }
-      return `<tr><th scope="row">${esc(name)}</th><td>${what}</td></tr>`;
+      return what;
+    }
+
+    // THE RAILS AS SUBTABS (row 178, PR 5; invariant #18): one <nav class="tabs"> of data-tab buttons
+    // driven by ooSubtabs, Overview first, then the rails in the server's order (the planner kept it).
+    // A rail without rows keeps its tab and says so on it: a gap is a gap, never hidden.
+    function _dossierTabsHtml(d, t) {
+      const withRows = new Set(((d.availability || {}).rails_with_rows) || []);
+      const btn = (key, label, gap, active) => `<button type="button" data-tab="${esc(key)}"`
+        + (active ? ` class="active"` : "")
+        + (gap ? ` title="${esc(t("No rows on this machine for this item"))}"` : "") + `>${esc(label)}`
+        + (gap ? ` <span class="muted small">${esc(t("none here"))}</span>` : "") + `</button>`;
+      return `<nav class="tabs dossier-tabs" id="dossier-tabs" style="position:static;padding:0;border:0;margin-top:8px">`
+        + btn("overview", t("Overview"), false, true)
+        + (d.rails || []).map((r) => btn(r.key, _dossierRailName(r.key, t), !withRows.has(r.key), false)).join("")
+        + `</nav>`;
+    }
+
+    function _dossierRailPanel(r, d, t, tf) {
+      const src = _dossierRailSource(r.key, t);
+      return `<div class="dossier-panel" data-panel="${esc(r.key)}" hidden>`
+        + `<div class="vsect">${esc(_dossierRailName(r.key, t))}</div>`
+        + (src ? `<p class="muted small dossier-source">${esc(src)}</p>` : "")
+        + _dossierRailBody(r, d, t, tf) + `</div>`;
     }
 
     function dossierHtml(d, t, tf) {
@@ -217,7 +258,8 @@
         return `<li>${esc(label)}: ${esc(tf("{n} articles", {n: r.articles || 0}))}`
           + (on ? ` <span class="muted small" dir="auto">(${esc(on)})</span>` : "") + `</li>`;
       };
-      html += `<div class="vsect">${esc(t("How articles join this item"))}</div><ul class="dossier-list">`
+      html += _dossierTabsHtml(d, t);
+      let overview = `<div class="vsect">${esc(t("How articles join this item"))}</div><ul class="dossier-list">`
         + routeRow("entities", t("A person or organisation they mention"))
         + routeRow("keywords", t("A keyword that is a name of this item"))
         + routeRow("places", t("A place they mention"))
@@ -225,15 +267,16 @@
       // S3: how many joined rails had rows here. A rail without rows is a gap, not a zero.
       const av = d.availability;
       if (av) {
-        html += `<div class="muted small dossier-availability" title="${esc(t("A rail without rows has nothing on this machine for this item; that does not mean nothing exists."))}">`
+        overview += `<div class="muted small dossier-availability" title="${esc(t("A rail without rows has nothing on this machine for this item; that does not mean nothing exists."))}">`
           + `${esc(tf("{n} of {total} joined rails have rows on this machine", {n: av.with_rows, total: av.joined}))}</div>`;
       }
-      html += `<div class="vsect">${esc(t("Joined on this page"))}</div><table class="data dossier-rails"><tbody>`
-        + (d.rails || []).map((r) => _dossierRailRow(r, d, t, tf)).join("") + `</tbody></table>`;
-      html += `<div class="vsect">${esc(t("Not joined yet"))}</div><ul class="dossier-list">`
+      overview += `<div class="vsect">${esc(t("Not joined yet"))}</div><ul class="dossier-list">`
         + (d.not_joined || []).map((r) =>
           `<li><strong>${esc(_dossierRailName(r.key, t))}</strong> <span class="muted">${esc(_dossierNotJoinedReason(r, t))}</span></li>`).join("")
         + `</ul>`;
+      html += `<div class="dossier-panel" data-panel="overview">${overview}</div>`
+        + (d.rails || []).map((r) => _dossierRailPanel(r, d, t, tf)).join("");
+      // Below the panels, whatever subtab is open: the actions, the method and the caveat.
       const n = (d.passport || {}).articles || 0;
       if (n) {
         const k = (d.article_ids || []).length;
@@ -260,7 +303,18 @@
       const item = d.item || {};
       $("dossier-title").textContent = item.label || d.qid;
       $("dossier-qid").textContent = d.qid;
-      $("dossier-body").innerHTML = dossierHtml(d, t, tf);
+      const body = $("dossier-body");
+      body.innerHTML = dossierHtml(d, t, tf);
+      // Invariant #18: ONE subtab component. Without it every panel stays visible, never none.
+      const panels = Array.prototype.slice.call(body.querySelectorAll(".dossier-panel"));
+      const show = (key) => {
+        _dossierTab = key;
+        panels.forEach((p) => { p.hidden = p.getAttribute("data-panel") !== key; });
+      };
+      const nav = $("dossier-tabs");
+      const tabs = (nav && typeof ooSubtabs === "function") ? ooSubtabs(nav, show) : null;
+      if (!tabs) { panels.forEach((p) => { p.hidden = false; }); return; }
+      if (!tabs.select(_dossierTab)) tabs.select("overview");
     }
 
     function _dossierWire() {
@@ -307,6 +361,7 @@
       _dossierWire();
       const t = _dossierT();
       const seq = ++_dossierSeq;
+      if (!_dossierLast || _dossierLast.qid !== qid) _dossierTab = "overview";
       $("dossier-title").textContent = qid;
       $("dossier-qid").textContent = qid;
       $("dossier-body").innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
