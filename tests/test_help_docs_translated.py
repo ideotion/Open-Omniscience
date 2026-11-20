@@ -40,7 +40,7 @@ TRANCHES: dict[int, tuple[str, ...]] = {
 #: translation would be out of date on arrival. In no tranche, and no draft of them may exist (it would never be served).
 ENGLISH_ONLY: tuple[str, ...] = ("security", "roadmap", "changes")
 #: COMPLETE (slug, lang) drafts per tranche that must always exist. Raise it with the drafts; lowering it needs a ruling.
-FLOOR: dict[int, int] = {1: 22, 2: 22, 3: 0}
+FLOOR: dict[int, int] = {1: 22, 2: 44, 3: 11}
 #: Drafts that exist and are served but are NOT complete: the reason is the measurement, never a judgement of the translation.
 PARTIAL: dict[tuple[str, str], str] = {}
 
