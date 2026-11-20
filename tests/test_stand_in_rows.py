@@ -2220,12 +2220,12 @@ def test_the_stand_in_question_of_the_backlog_read_starts_from_the_hash_range_wh
 
     con = _backlog_plan_fixture(tmp_path, analysed)
     assert bool(con.execute("SELECT count(*) FROM sqlite_master WHERE name = 'sqlite_stat1'").fetchone()[0]) is analysed
-    plan = [str(r[-1]) for r in con.execute("EXPLAIN QUERY PLAN " + _BACKLOG_LOST_SQL.replace(":engine", "'e0'").replace(":www_engine", "'w0'"))]
+    plan = [str(r[-1]) for r in con.execute("EXPLAIN QUERY PLAN " + _BACKLOG_LOST_SQL.replace(":engine", "'e0'").replace(":kw_legacy", "'e0'").replace(":www_engine", "'w0'"))]
     assert plan[0].startswith("SEARCH a USING COVERING INDEX idx_article_hash"), plan  # the outer loop is the hash range, no article row read
     assert any(line.startswith("SEARCH m USING INDEX ix_merged_rows_lookup") for line in plan), plan
     assert not any(line.startswith(("SCAN", "SEARCH a USING INTEGER PRIMARY KEY")) for line in plan), plan  # no scan, no article row fetched by id
     # and it answers: 20 stand-ins (ids 30, 60, ... 600), 6 or 7 to a batch
-    lost = {int(b): int(n) for b, n in con.execute(_BACKLOG_LOST_SQL, {"engine": "e0", "www_engine": "w0"})}
+    lost = {int(b): int(n) for b, n in con.execute(_BACKLOG_LOST_SQL, {"engine": "e0", "kw_legacy": "e0", "www_engine": "w0"})}
     assert lost == {1: 6, 2: 7, 3: 7}, lost
     con.close()
 

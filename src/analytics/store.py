@@ -641,9 +641,12 @@ def _stamp_index_engine(
     from src.database.models import ArticleIndexStamp
 
     try:
-        from src.analytics.engine_identity import engine_id
+        from src.analytics.engine_identity import accepted_engine_ids
 
-        current = engine_id(extractor)
+        # R758: the canonical id is the one written; a stamp naming the pre-R758 Windows id of the SAME engine (same bytes, other file
+        # names) still vouches for the earlier pass's rows, so the conditional delete below keeps it.
+        accepted = accepted_engine_ids(extractor)
+        current = accepted[0]
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the engine identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleIndexStamp).where(ArticleIndexStamp.article_id == article.id))
@@ -666,7 +669,7 @@ def _stamp_index_engine(
         session.execute(
             delete(ArticleIndexStamp).where(
                 ArticleIndexStamp.article_id == article.id,
-                not_(and_(ArticleIndexStamp.engine == current, ArticleIndexStamp.inputs == inputs)),
+                not_(and_(ArticleIndexStamp.engine.in_(accepted), ArticleIndexStamp.inputs == inputs)),
             )
         )
 

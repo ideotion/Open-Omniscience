@@ -165,7 +165,7 @@ class VolumeRoomError(VolumeError):
 #: THE DIAGNOSTICS PART SIZE: 200,000 bytes (row 211). The user's rule of 2026-11-15 («every file I send back must be
 #: at most 200 KB», measured: about half the 4 MB field parts would not upload, every one that did was under 175 KB) is
 #: later than R119's 4,000,000 and takes precedence. ``OO_DIAG_VOLUME_MAX_MB`` still overrides it. Only the diagnostics
-#: volumes: the keyword export's parts keep ``UPLOAD_PART_BYTES``.
+#: volumes: the keyword export now uses the same number as ``UPLOAD_PART_BYTES`` (row 212), with no env override.
 DIAG_PART_BYTES = 200_000
 
 

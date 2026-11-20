@@ -305,7 +305,7 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     await api.downloadKeywordParts({disabled: false}, "default");
     await old;
     assert.ok(page.clicked.length < 31, "the old loop stopped: " + page.clicked.length);
-    assert.ok(/^4 files of at most 4 MB each are ready \(manifest: 1, numbered parts: 3\)\./.test(page.els["parts-status"].textContent),
+    assert.ok(/^4 files of at most 0\.2 MB each are ready \(manifest: 1, numbered parts: 3\)\./.test(page.els["parts-status"].textContent),
       page.els["parts-status"].textContent);
     assert.strictEqual(api.state().files.length, 4);
   }
@@ -386,7 +386,7 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     await api.downloadKeywordParts(btn, "default");
     assert.strictEqual(calls[0], "/api/diagnostics/keywords?format=parts");
     assert.strictEqual(page.clicked.length, 0, "a build spent the click: nothing is saved until the person clicks again");
-    assert.ok(/^13 files of at most 4 MB each are ready \(manifest: 1, numbered parts: 12\)\./.test(page.els["parts-status"].textContent),
+    assert.ok(/^13 files of at most 0\.2 MB each are ready \(manifest: 1, numbered parts: 12\)\./.test(page.els["parts-status"].textContent),
       page.els["parts-status"].textContent);
     assert.strictEqual(page.els["parts-next"].textContent, "Save the first 5");
     assert.strictEqual(btn.disabled, false, "the button is usable again");
@@ -995,7 +995,7 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     const six = makePage(); const a6 = load(six, {api: finishedBuild(listing(5, 1))});
     await a6.runAllDiagnostics({disabled: false});
     assert.strictEqual(six.clicked.length, 0, "six files are two clicks: nothing is handed over without the person");
-    assert.ok(/^6 files of at most 4 MB each are ready \(manifest: 1, numbered parts: 5\)\./.test(six.els["parts-status"].textContent),
+    assert.ok(/^6 files of at most 0\.2 MB each are ready \(manifest: 1, numbered parts: 5\)\./.test(six.els["parts-status"].textContent),
       six.els["parts-status"].textContent);
     assert.strictEqual(six.els["parts-next"].textContent, "Save the first 5", "and the button under the buttons says what one click does");
   }
@@ -1088,7 +1088,7 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     assert.ok(!/Could not split/.test(page.els["all-diag-status"].textContent), page.els["all-diag-status"].textContent);
     assert.strictEqual(page.els["parts-bar"].hidden, false, "the bar and its set are still there");
     assert.strictEqual(api.state().kind, "diagnostics");
-    assert.ok(/^2 files of at most 4 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
+    assert.ok(/^2 files of at most 0\.2 MB each are ready/.test(page.els["parts-status"].textContent), page.els["parts-status"].textContent);
     assert.strictEqual(btn.disabled, false, "the button is released");
   }
   {
