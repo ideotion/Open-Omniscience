@@ -581,6 +581,30 @@ def test_the_lookup_is_by_the_rows_own_jurisdiction_and_url_and_nothing_looser()
     assert declared_for({}, jurisdiction="INT", url="https://treaties.zzz.test/x") is None
 
 
+def test_a_row_kept_under_its_PREVIOUS_address_still_gets_the_declaration():
+    """Row 186 follow-up 2. ``register_documents`` keeps a stored row registered under an
+    address the catalogue has moved away from (``previous_urls``); the declaration must
+    reach that row too, or the day the moved row declares an identity the kept one
+    silently loses it."""
+    moved = _row(url="https://treaties.zzz.test/x.zip", previous_urls=["https://treaties.zzz.test/x"])
+    catalog = {"documents": [moved]}
+    assert declared_for(catalog, jurisdiction="INT", url="https://treaties.zzz.test/x").value == _VALUE
+    assert declared_for(catalog, jurisdiction="INT", url="https://treaties.zzz.test/x.zip").value == _VALUE
+    # Only in the row's own jurisdiction, and never a neighbour of the old address.
+    assert declared_for(catalog, jurisdiction="ZZZ", url="https://treaties.zzz.test/x") is None
+    assert declared_for(catalog, jurisdiction="INT", url="https://treaties.zzz.test/x/") is None
+
+
+def test_an_exact_row_beats_a_previous_address_and_a_contested_one_declares_nothing():
+    exact = _row(url="https://treaties.zzz.test/x", identity={"scheme": "act-number", "value": "exact"})
+    moved = _row(url="https://treaties.zzz.test/x.zip", previous_urls=["https://treaties.zzz.test/x"])
+    assert declared_for({"documents": [moved, exact]}, jurisdiction="INT",
+                        url="https://treaties.zzz.test/x").value == "exact"
+    other = _row(url="https://treaties.zzz.test/y.zip", previous_urls="https://treaties.zzz.test/x",
+                 identity={"scheme": "act-number", "value": "other"})
+    assert declared_for({"documents": [moved, other]}, jurisdiction="INT", url="https://treaties.zzz.test/x") is None
+
+
 def test_rows_declaring_one_law_must_agree_about_it():
     base = _row()
     assert consistency_problems([base, _row(url="u2", translation_kind="official")]) == []

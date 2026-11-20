@@ -235,6 +235,9 @@ def dossier(
     out = qid_dossier(db, qid.strip().upper(), lang)
     if out is None:
         raise HTTPException(status_code=400, detail="not a Wikidata id")
+    from src.entities import dossier_diagnostics
+
+    dossier_diagnostics.record(out)  # S3: which rails had rows, never the id (the module says why)
     return out
 
 

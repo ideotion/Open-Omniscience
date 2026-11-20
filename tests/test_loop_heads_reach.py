@@ -66,6 +66,7 @@ _LISTED: dict[str, tuple[frozenset[str], str]] = {
     "src/monitoring/forensics.py::_filesystem_type": (frozenset({"script", "event-loop"}), "the lifespan's data_dir_persistence (event loop, R165) and the migration evidence script"),
     "src/monitoring/secret_scrub.py::scrubbed_copy": (frozenset({"script"}), "the migration evidence and scale bench scripts (dev tools)"),
     "src/stats/fetch.py::_bounded_get": (frozenset({"script"}), "operator scripts (enrich_sources_wikidata, generate_wikidata_rings, verify_worldbank_indicators) reach it only through a by-name collision on getter: the loop reads one response in chunks and ends at the size cap; no script calls the climate fetchers"),
+    "src/law/adapters/gii.py::unpack_zip": (frozenset({"script"}), "the release run's law probe (an operator tool) parses one fetched act; the loop lists the archive's members, already bounded by MAX_MEMBERS, and ends"),
     "src/osm/history.py::ingest_history": (frozenset({"script"}), "scripts/osm_history_ingest.py, an operator tool that ingests one history file and exits"),
     "src/osm/pbf.py::_records": (frozenset({"script"}), "scripts/build_admin_boundaries.py, scripts/osm_history_ingest.py (ingest_history) and scripts/osm_ingest.py (ingest_country) read a .pbf through the reader and exit"),
     "src/osm/places.py::build_search_index": (frozenset({"script"}), "scripts/osm_ingest.py, an operator tool that ingests one country and exits"),
