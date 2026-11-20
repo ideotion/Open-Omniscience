@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,climate/elections,"Climate and Agenda state what they leave out (rows 193, 194)",SHIPPED,PR #2173,src/static/index.html;src/civic/calendar_report.py;src/static/app-agenda.js;scripts/elections_coverage_report.py,"The Climate tab says fire detections (NASA FIRMS) and air quality (OpenAQ) are not included because both need an account key; the elections coverage report gains a gap field (snap elections appear only once the catalogue lists them), drawn in the Agenda coverage view and the offline report. Both x12."
