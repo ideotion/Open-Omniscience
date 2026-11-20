@@ -876,14 +876,132 @@ def test_a_merge_killed_by_the_timeout_clears_its_stale_lock_and_puts_the_tree_b
             return subprocess.CompletedProcess([], 124, "", "timeout")
         return h._git(root, *args, **k)
 
-    if os.name == "nt":
-        # Windows: a killed Git for Windows wrapper can leave the real git running and holding the lock, so apply_update leaves the lock
-        # alone, the reset cannot run, and it says rollback_incomplete without moving HEAD (its own comment; row 155).
-        assert h.apply(_plan(inst, sha), git=git)[0] == "rollback_incomplete"
-        assert (inst / ".git" / "index.lock").exists() and _g(inst, "rev-parse", "HEAD") == old
-        return
-    assert h.apply(_plan(inst, sha), git=git)[0] == "not_a_fast_forward"
+    # The POSIX path on every OS (the Windows one is pinned by the R748 tests below, with its waits injected).
+    assert h.apply(_plan(inst, sha), git=git, windows=False)[0] == "not_a_fast_forward"
     assert not (inst / ".git" / "index.lock").exists() and _g(inst, "status", "--porcelain") == "" and _g(inst, "rev-parse", "HEAD") == old
+
+
+def _killed_merge(inst, h, *, finish=False, sha=None):
+    """A merge the timeout killed on Windows: it wrote a file and the lock, and (``finish``) the real git it left behind went on to move
+    HEAD to the new commit, as an ff merge does last."""
+
+    def git(root, *args, **k):
+        if args[:1] == ("merge",):
+            (inst / "a.txt").write_text("half-written", encoding="utf-8")
+            (inst / ".git" / "index.lock").write_text("", encoding="utf-8")
+            if finish:
+                h._git(root, "update-ref", "refs/heads/main", sha)
+            return subprocess.CompletedProcess([], 124, "", "timeout")
+        return h._git(root, *args, **k)
+
+    return git
+
+
+def _clock():
+    now = [0.0]
+    return now, (lambda: now[0]), (lambda s: now.__setitem__(0, now[0] + s))
+
+
+def test_r748_a_lock_the_holder_lets_go_within_the_bound_is_a_full_rollback(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+    lock = inst / ".git" / "index.lock"
+    now, clock, advance = _clock()
+
+    def sleep(s):
+        advance(s)
+        if now[0] >= 30:  # the git its killed wrapper left behind ends after 30 s and removes its lock, as git does
+            lock.unlink(missing_ok=True)
+
+    def lock_wait(root):
+        return h.wait_for_index_lock(root, sleep=sleep, clock=clock, git_running=lambda: True)
+
+    for finish in (False, True):  # that git stopped mid-checkout, or it finished and moved HEAD to the new commit
+        status = h.apply(_plan(inst, sha), git=_killed_merge(inst, h, finish=finish, sha=sha), windows=True, sleep=lambda s: None,
+                         lock_wait=lock_wait)[0]
+        assert status == "not_a_fast_forward", finish
+        assert not lock.exists() and _g(inst, "status", "--porcelain") == "" and _g(inst, "rev-parse", "HEAD") == old
+        assert now[0] < h.LOCK_RELEASE_WAIT_S
+        now[0] = 0.0
+
+
+def test_r748_a_lock_still_held_after_the_bound_is_left_alone_and_said(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+    now, clock, advance = _clock()
+
+    for running in (True, None):  # a git runs, or that cannot be told: either way the lock may be held, so it is never removed
+        def lock_wait(root, running=running):
+            return h.wait_for_index_lock(root, sleep=advance, clock=clock, git_running=lambda: running)
+
+        status = h.apply(_plan(inst, sha), git=_killed_merge(inst, h), windows=True, sleep=lambda s: None, lock_wait=lock_wait)[0]
+        assert status == "rollback_incomplete", running
+        assert (inst / ".git" / "index.lock").exists(), "a lock a live git may hold is never removed"
+        assert _g(inst, "rev-parse", "HEAD") == old and now[0] >= h.LOCK_RELEASE_WAIT_S
+        (inst / ".git" / "index.lock").unlink()
+        h._git(inst, "reset", "--hard", old)
+        now[0] = 0.0
+
+
+def test_r748_no_holder_at_all_is_rolled_back_at_once(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+    now, clock, advance = _clock()
+
+    def lock_wait(root):
+        return h.wait_for_index_lock(root, sleep=advance, clock=clock, git_running=lambda: False)
+
+    # a stale lock with no git process on the machine: the killed git died before it could remove it, so it is removed and the tree put back
+    status = h.apply(_plan(inst, sha), git=_killed_merge(inst, h), windows=True, sleep=lambda s: None, lock_wait=lock_wait)[0]
+    assert status == "not_a_fast_forward" and now[0] == 0.0, "nothing to wait for"
+    assert not (inst / ".git" / "index.lock").exists() and _g(inst, "status", "--porcelain") == "" and _g(inst, "rev-parse", "HEAD") == old
+
+    def git(root, *args, **k):  # and no lock at all: the timeout came before git took one
+        if args[:1] == ("merge",):
+            (inst / "a.txt").write_text("half-written", encoding="utf-8")
+            return subprocess.CompletedProcess([], 124, "", "timeout")
+        return h._git(root, *args, **k)
+
+    waited = []
+    status = h.apply(_plan(inst, sha), git=git, windows=True, sleep=lambda s: None,
+                     lock_wait=lambda root: waited.append(1) or h.wait_for_index_lock(root, sleep=advance, clock=clock,
+                                                                                    git_running=lambda: True))[0]
+    assert status == "not_a_fast_forward" and now[0] == 0.0 and _g(inst, "status", "--porcelain") == ""
+
+
+def test_r748_a_stale_lock_whose_removal_is_refused_is_held_after_all(repos):
+    """Windows refuses to remove a file another process has open: then something holds it, whatever the process list said."""
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+
+    def lock_wait(root):
+        raise PermissionError(13, "the file is open")
+
+    status = h.apply(_plan(inst, sha), git=_killed_merge(inst, h), windows=True, sleep=lambda s: None, lock_wait=lock_wait)[0]
+    assert status == "rollback_incomplete" and (inst / ".git" / "index.lock").exists() and _g(inst, "rev-parse", "HEAD") == old
+    (inst / ".git" / "index.lock").unlink()
+    h._git(inst, "reset", "--hard", old)
+
+
+def test_r748_the_process_probe_counts_any_git_and_cannot_tell_without_psutil(monkeypatch):
+    import sys as _sys
+    import types
+
+    h = _helper()
+    procs = [types.SimpleNamespace(info={"name": "python.exe"}), types.SimpleNamespace(info={"name": "Git.exe"})]
+    fake = types.SimpleNamespace(process_iter=lambda attrs: iter(procs))
+    monkeypatch.setitem(_sys.modules, "psutil", fake)
+    assert h.git_processes_running() is True
+    procs.pop()
+    assert h.git_processes_running() is False
+    fake.process_iter = lambda attrs: (_ for _ in ()).throw(OSError("denied"))
+    assert h.git_processes_running() is None
+    monkeypatch.setitem(_sys.modules, "psutil", None)  # import fails
+    assert h.git_processes_running() is None
 
 
 def test_a_failure_after_the_swap_keeps_the_result_it_already_wrote(tmp_path, monkeypatch):
@@ -966,6 +1084,13 @@ def test_a_timed_out_merge_lock_is_left_alone_on_windows():
     tree = ast.parse(src)
     guarded = [
         n for n in ast.walk(tree)
-        if isinstance(n, ast.If) and "index.lock" in ast.get_source_segment(src, n) and 'os.name != "nt"' in ast.get_source_segment(src, n.test)
+        if isinstance(n, ast.If) and "index.lock" in ast.get_source_segment(src, n) and "not windows" in ast.get_source_segment(src, n.test)
     ]
-    assert guarded, "the stale-lock removal must not run on Windows"
+    assert guarded, "the immediate stale-lock removal must not run on Windows"
+    # R748: on Windows the only removal is inside wait_for_index_lock, and only after the process probe answered a plain False
+    wait = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "wait_for_index_lock")
+    body = ast.get_source_segment(src, wait)
+    assert "if git_running() is False:" in body and body.index("if git_running() is False:") < body.index("lock.unlink()")
+    apply_fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "apply")
+    unlinks = [n for f in (wait, apply_fn) for n in ast.walk(f) if isinstance(n, ast.Attribute) and n.attr == "unlink"]
+    assert len(unlinks) == 2, "a new index.lock removal must be read against R748 first"
