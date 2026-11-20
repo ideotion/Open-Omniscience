@@ -421,4 +421,9 @@ def country_tier_report(
             "A projected date is a prompt to check the official source, not a date. "
             "A stated date that has gone by stays as the source gave it and is never moved to a later year."
         ),
+        # Row 194: the calendar carries no early-call feed (V1-3 removed ElectionGuide), so the gap is said.
+        "gap": (
+            "Snap and early elections are a known gap: an election called at short notice appears here "
+            "only once the catalogue lists it, so its absence is not a sign that none is coming."
+        ),
     }

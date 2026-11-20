@@ -3,7 +3,7 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-WHAT THIS IS. ``wiki.db``, ``law.db`` and ``osm.db`` sit beside the corpus (Q719); the
+WHAT THIS IS. ``wiki.db``, ``law.db``, ``osm.db`` and ``medical.db`` sit beside the corpus (Q719); the
 backup dialog's «Living sources» row now carries them INSIDE the encrypted volume set,
 each as a ``lanes/<kind>.db`` member snapshotted with its own encryption kept
 (``stream_backup.collect_lane_members``). This module puts one back: it ATTACHes the
@@ -31,6 +31,11 @@ THE RULES (R729, ruled 2026-11-16; design /mnt/project-files/living-sources-back
     (``lane_meta``, ``versioned_cursors``/``gaps``/``size_samples``/``disclosures``, the walk's
     cursors and samples, ``wiki_lane_hourly``, ``wiki_warm_editions``/``scan``); the lane's
     search index is derived and its own triggers queue every merged text for indexing.
+
+  * R746 (the medical store) a PubMed record (PMID, version) only the backup holds is copied
+    with its class history; one both hold keeps this machine's row whole; the ids the user
+    named join this machine's list; which NLM files this machine read, and what its own
+    corpus cites, stay behind. See ``_merge_medical``.
 
   * L6b (R739, the maps store) the COUNTRY is the unit: a finished country this machine
     lacks is copied whole -- objects, country row with its diff cursor, change records,
@@ -69,7 +74,7 @@ from typing import Any
 _LOG = logging.getLogger("backup.lane_merge")
 
 #: The lanes this build both exports and merges.
-MERGEABLE_KINDS: tuple[str, ...] = ("wiki", "law", "osm")
+MERGEABLE_KINDS: tuple[str, ...] = ("wiki", "law", "osm", "medical")
 
 #: Member-name prefix inside the volume set. A namespace of its own, like ``blobs/``.
 LANE_PREFIX = "lanes"
@@ -251,6 +256,9 @@ _READ_TABLES = frozenset(
         "law_provisions",
         "versioned_gaps",
         *_OSM_TABLES_READ,
+        "medical_papers",
+        "medical_class_changes",
+        "medical_wanted",
     }
 )
 
@@ -1553,11 +1561,324 @@ def _after_osm(out: dict[str, Any]) -> None:
             log_failure(_LOG, f"the {alpha3} history summary after the backup import failed", exc, level=logging.WARNING)
 
 
+# --------------------------------------------------------------------------- #
+#  The medical lane (R746): PubMed records the corpus cited or the user named
+# --------------------------------------------------------------------------- #
+#: An NLM file name as the app writes it (``src.medical.store.FILE_NAME``), as a SQL test, from a
+#: release year no later than next year (``:med_yy``). The year matters: a record's newest file
+#: decides which later files may restate it (``store._last_word``), so a name from a year NLM has
+#: not reached would stop every real update to that record here. Within an accepted year a file
+#: number is not checked against NLM's listing (this build never reads it offline).
+_MED_FILE = (
+    "(typeof({v}) = 'text' AND ({v} GLOB 'pubmed[0-9][0-9]n[0-9][0-9][0-9][0-9].xml' "
+    "OR {v} GLOB 'pubmed[0-9][0-9]n[0-9][0-9][0-9][0-9].xml.gz') AND CAST(substr({v}, 7, 2) AS INTEGER) <= :med_yy)"
+)
+#: A whole number in a range, stored as one (SQLite keeps whatever type a row was given).
+_MED_INT = "(typeof({v}) = 'integer' AND {v} BETWEEN {lo} AND {hi})"
+#: A timestamp no later than the merge's horizon (its shape is checked by ``_refuse_unsafe_inc``).
+_MED_WHEN = "(typeof({v}) = 'text' AND {v} <= :horizon)"
+#: Free text within the column's own length (SQLite does not enforce ``String(n)``).
+_MED_TEXT = "({v} IS NULL OR (typeof({v}) = 'text' AND length({v}) <= {n}))"
+#: A JSON list of short texts, as the languages, publication types, MeSH and keyword columns hold.
+_MED_LIST = (
+    "(typeof({v}) = 'text' AND json_valid({v}) AND json_type({v}) = 'array' "
+    "AND NOT EXISTS (SELECT 1 FROM json_each({v}) e WHERE e.type != 'text' OR length(e.value) > 1000))"
+)
+#: The status links: a JSON list of ``[ref_type, pmid or null, source text or null]``.
+_MED_LINKS = (
+    "(typeof({v}) = 'text' AND json_valid({v}) AND json_type({v}) = 'array' "
+    "AND NOT EXISTS (SELECT 1 FROM json_each({v}) e WHERE e.type != 'array' OR json_array_length(e.value) != 3 "
+    "OR NOT coalesce({refs}, 0) OR json_type(e.value, '$[1]') NOT IN ('integer', 'null') "
+    "OR json_type(e.value, '$[2]') NOT IN ('text', 'null') OR length(json_extract(e.value, '$[2]')) > 1000))"
+)
+#: An abstract is stored compressed. The backup's bytes are never copied: each is decompressed
+#: with a bound before the lock, checked to be the JSON the app writes, and compressed again here.
+_MED_ABSTRACT_MAX = 1_000_000
+#: What an abstract may decompress to; a stated or real size above it refuses the row.
+_MED_ABSTRACT_TEXT_MAX = 2_000_000
+_MED_IDS = {
+    "pmid": "({v} GLOB '[1-9]*' AND {v} NOT GLOB '*[^0-9]*' AND length({v}) <= 10)",
+    "pmcid": "({v} GLOB 'PMC[1-9]*' AND substr({v}, 4) NOT GLOB '*[^0-9]*' AND length({v}) <= 13)",
+    # Printable ASCII with no space, lower-cased: the only spelling ``normalise_id`` keeps of a DOI the
+    # corpus cites. A DOI in other scripts is refused rather than stored in a spelling the app never writes.
+    "doi": "({v} GLOB '10.*/*' AND {v} = lower({v}) AND length({v}) <= 300 AND {v} NOT GLOB '*[^!-~]*')",
+}
+
+
+def _med_params() -> dict[str, Any]:
+    """The bound values every medical check reads: the timestamp horizon and the latest NLM release year."""
+    return {"horizon": _horizon(), "med_yy": (datetime.now(UTC).year + 1) % 100}
+
+
+def _med_paper_ok(alias: str, params: dict[str, Any]) -> str:
+    """Every test a backup's ``medical_papers`` row must pass to be copied. A row that fails is skipped whole."""
+    from src.medical.pubmed_xml import _NOTICE_TYPES, CLASSES, STATUS_LINKS
+
+    a = alias
+
+    def col(c: str) -> str:
+        return f'{a}."{c}"'
+
+    tests = [
+        _MED_INT.format(v=col("pmid"), lo=1, hi=9_999_999_999),
+        _MED_INT.format(v=col("version"), lo=1, hi=999),
+        _law_in(col("provenance_class"), "mcls", CLASSES, params),
+        f"({col('notice_kind')} IS NULL OR {_law_in(col('notice_kind'), 'mntc', sorted(set(_NOTICE_TYPES.values())), params)})",
+        _MED_FILE.format(v=col("source_file")),
+        f"({col('withdrawn_in_file')} IS NULL OR {_MED_FILE.format(v=col('withdrawn_in_file'))})",
+        f"(({col('withdrawn_at')} IS NULL) = ({col('withdrawn_in_file')} IS NULL))",
+        _MED_WHEN.format(v=col("first_seen_at")),
+        _MED_WHEN.format(v=col("last_seen_at")),
+        f"({col('withdrawn_at')} IS NULL OR {_MED_WHEN.format(v=col('withdrawn_at'))})",
+        f"({col('doi')} IS NULL OR (typeof({col('doi')}) = 'text' AND {_MED_IDS['doi'].format(v=col('doi'))}))",
+        f"({col('pmcid')} IS NULL OR (typeof({col('pmcid')}) = 'text' AND {_MED_IDS['pmcid'].format(v=col('pmcid'))}))",
+        f"({col('abstract_json')} IS NULL OR (typeof({col('abstract_json')}) = 'blob' "
+        f"AND length({col('abstract_json')}) <= {_MED_ABSTRACT_MAX}))",
+        f"({col('text_truncated')} IN (0, 1))",
+        f"({col('pub_date')} IS NULL OR (typeof({col('pub_date')}) = 'text' AND ({col('pub_date')} GLOB '[0-9][0-9][0-9][0-9]' "
+        f"OR {col('pub_date')} GLOB '[0-9][0-9][0-9][0-9]-[01][0-9]' "
+        f"OR {col('pub_date')} GLOB '[0-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]')))",
+    ]
+    for c, n in (("citation_status", 32), ("title", 100_000), ("vernacular_title", 100_000),
+                 ("abstract_copyright", 10_000), ("journal", 512), ("pub_date_text", 128)):
+        tests.append(_MED_TEXT.format(v=col(c), n=n))
+    for c in ("languages_json", "publication_types_json", "mesh_json", "keywords_json"):
+        tests.append(_MED_LIST.format(v=col(c)))
+    tests.append(_MED_LINKS.format(v=col("status_links_json"), refs=_law_in("json_extract(e.value, '$[0]')", "mlnk", sorted(STATUS_LINKS), params)))
+    return " AND ".join(tests)
+
+
+#: The columns a copied paper row must carry; a backup from a build without one of them is not merged.
+_MED_PAPER_COLS = (
+    "pmid", "version", "citation_status", "title", "vernacular_title", "abstract_json", "abstract_copyright",
+    "journal", "pub_date", "pub_date_text", "languages_json", "publication_types_json", "mesh_json",
+    "keywords_json", "doi", "pmcid", "provenance_class", "notice_kind", "status_links_json", "text_truncated",
+    "source_file", "first_seen_at", "last_seen_at", "withdrawn_at", "withdrawn_in_file",
+)
+
+
+def _med_require_rowid(conn: Any, table: str) -> None:
+    """Refuse a member table whose rows cannot be named by their own ``rowid``.
+
+    The merge tests a row and later copies it by its key in the backup file. That key is the
+    ROWID, never the ``id`` column: a backup may declare ``id`` so it holds NULL or repeats
+    (``INTEGER PRIMARY KEY DESC`` is not a rowid alias), and the copy would then pick an untested
+    row. The rowid is unique and never NULL in a rowid table; a ``WITHOUT ROWID`` table, or one
+    with a column named like the rowid (which would shadow it), is refused.
+    """
+    row = conn.execute("SELECT sql FROM inc.sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()
+    shadow = {str(r[1]).lower() for r in conn.execute(f'PRAGMA inc.table_info("{table}")').fetchall()} & {"rowid", "oid", "_rowid_"}
+    if row is None or "WITHOUT ROWID" in " ".join(str(row[0] or "").upper().split()) or shadow:
+        raise LaneMergeError("the medical member's tables are not stored the way this build writes them; refusing to merge it")
+
+
+def _med_abstract(blob: Any) -> bytes | None:
+    """The backup's stored abstract, compressed again by this build, or ``None`` when it is not one.
+
+    Never the backup's bytes: the header is read, only the codecs this build writes are accepted,
+    the text is decompressed with a bound (a stated size is never trusted to limit the work), its
+    size and hash are checked, and it must be the JSON the app writes (``[[label, text], ...]``).
+    """
+    import struct
+    import zlib
+
+    from src.utils.compression import (
+        COMPRESSION_MAGIC,
+        HEADER_SIZE,
+        CompressionAlgorithm,
+        CompressionConfig,
+        database_compressor,
+    )
+
+    if not isinstance(blob, bytes) or not HEADER_SIZE < len(blob) <= _MED_ABSTRACT_MAX:
+        return None
+    magic, algo_id, _level, _reserved, size, digest = struct.unpack("<4sBBHQ32s", blob[:HEADER_SIZE])
+    if magic != COMPRESSION_MAGIC or size > _MED_ABSTRACT_TEXT_MAX:
+        return None
+    from src.utils.compression import _ID_ALGOS
+
+    algo = _ID_ALGOS.get(algo_id)
+    body = blob[HEADER_SIZE:]
+    try:
+        if algo == CompressionAlgorithm.ZLIB:
+            d = zlib.decompressobj(CompressionConfig(algorithm=algo).zlib_wbits)
+            raw = d.decompress(body, _MED_ABSTRACT_TEXT_MAX + 1)
+        elif algo == CompressionAlgorithm.ZSTANDARD:
+            import io
+
+            import zstandard
+
+            raw = zstandard.ZstdDecompressor(max_window_size=1 << 23).stream_reader(io.BytesIO(body)).read(_MED_ABSTRACT_TEXT_MAX + 1)
+        else:
+            return None
+        if len(raw) != size or hashlib.sha256(raw).digest() != digest:
+            return None
+        sections = json.loads(raw.decode("utf-8"))
+        if not isinstance(sections, list) or not all(
+            isinstance(x, list) and len(x) == 2 and (x[0] is None or isinstance(x[0], str)) and isinstance(x[1], str)
+            for x in sections
+        ):
+            return None
+        # A JSON escape can spell a lone surrogate, which no UTF-8 text holds: compressing raises, and the row is refused.
+        return database_compressor.compress_text_for_storage(json.dumps(sections, ensure_ascii=False))
+    except Exception:  # noqa: BLE001 - any codec, decode, parse or encode failure means "not an abstract this build wrote"
+        return None
+
+
+def _medical_prepare(conn: Any, out: dict[str, Any]) -> None:
+    """Every read and test of the backup's rows, BEFORE the lane's write lock is taken.
+
+    The result is two temp tables of keys this machine lacks: ``lm_med_papers`` (pmid, version,
+    and the backup's row id) and ``lm_med_wanted`` (the backup's row id). The step under the lock
+    only re-checks them against this machine's rows and copies.
+    """
+    from src.medical.lane_models import WANTED_KINDS
+
+    for name in ("lm_med_papers", "lm_med_wanted", "lm_med_changes", "lm_med_abstract"):
+        conn.execute(f"DROP TABLE IF EXISTS temp.{name}")
+    conn.execute("CREATE TEMP TABLE lm_med_papers (inc_id INTEGER PRIMARY KEY, pmid INTEGER NOT NULL, version INTEGER NOT NULL)")
+    conn.execute("CREATE TEMP TABLE lm_med_wanted (inc_id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE lm_med_changes (inc_id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TEMP TABLE lm_med_abstract (inc_id INTEGER PRIMARY KEY, abstract BLOB NOT NULL)")
+    for table in ("medical_papers", "medical_wanted", "medical_class_changes"):
+        if _has(conn, "inc", table):
+            _med_require_rowid(conn, table)
+    counts = out.setdefault("medical", {"papers_refused": 0, "wanted_refused": 0, "papers_backup_newer": 0})
+    params: dict[str, Any] = _med_params()
+    if _has(conn, "inc", "medical_papers"):
+        inc_cols = set(_columns(conn, "inc", "medical_papers"))
+        if not set(_MED_PAPER_COLS) <= inc_cols:
+            raise LaneMergeError("the medical member's paper table lacks columns this build reads; refusing to merge it")
+        ok = _med_paper_ok("p", params)
+        # The key is written as the integer this machine computes from the checked value.
+        conn.execute(
+            "INSERT INTO temp.lm_med_papers (inc_id, pmid, version) "
+            "SELECT min(p.rowid), CAST(p.pmid AS INTEGER), CAST(p.version AS INTEGER) FROM inc.medical_papers p "  # noqa: S608  # nosec B608 # module literals; values bound
+            f"WHERE {ok} AND NOT EXISTS (SELECT 1 FROM main.medical_papers m WHERE m.pmid = p.pmid AND m.version = p.version) "
+            "GROUP BY p.pmid, p.version",
+            params,
+        )
+        total = int(conn.execute("SELECT count(*) FROM inc.medical_papers").fetchone()[0])
+        good = int(conn.execute(f"SELECT count(*) FROM inc.medical_papers p WHERE {ok}", params).fetchone()[0])  # noqa: S608  # nosec B608 # module literals
+        # The abstracts of the rows to copy, rebuilt here; a row whose abstract is not one is refused.
+        bad_abstract = []
+        for inc_id, blob in conn.execute(
+            "SELECT k.inc_id, p.abstract_json FROM temp.lm_med_papers k JOIN inc.medical_papers p ON p.rowid = k.inc_id "
+            "WHERE p.abstract_json IS NOT NULL"
+        ).fetchall():
+            rebuilt = _med_abstract(blob)
+            if rebuilt is None:
+                bad_abstract.append((inc_id,))
+            else:
+                conn.execute("INSERT INTO temp.lm_med_abstract (inc_id, abstract) VALUES (?, ?)", (inc_id, rebuilt))
+        conn.executemany("DELETE FROM temp.lm_med_papers WHERE inc_id = ?", bad_abstract)
+        counts["papers_refused"] = total - good + len(bad_abstract)
+        if _has(conn, "inc", "medical_class_changes"):
+            from src.medical.pubmed_xml import CLASSES
+
+            cparams: dict[str, Any] = dict(params)  # carries :horizon and :med_yy
+            cok = " AND ".join(
+                [
+                    _law_in("c.from_class", "mcf", CLASSES, cparams),
+                    _law_in("c.to_class", "mct", CLASSES, cparams),
+                    "c.from_class != c.to_class",
+                    _MED_FILE.format(v="c.source_file"),
+                    _MED_WHEN.format(v="c.recorded_at"),
+                ]
+            )
+            conn.execute(
+                "INSERT INTO temp.lm_med_changes (inc_id) SELECT c.rowid FROM temp.lm_med_papers k "  # noqa: S608  # nosec B608 # module literals; values bound
+                f"JOIN inc.medical_class_changes c ON c.pmid = k.pmid AND c.version = k.version WHERE {cok}",
+                cparams,
+            )
+        # A paper both hold keeps this machine's copy whole; the report says when the backup's
+        # was stated by a later NLM file, which this machine's own next fetch reads anyway.
+        both = conn.execute(
+            "SELECT m.source_file, p.source_file FROM main.medical_papers m JOIN inc.medical_papers p "  # noqa: S608  # nosec B608 # module literals
+            f"ON p.pmid = m.pmid AND p.version = m.version WHERE {ok}",
+            params,
+        ).fetchall()
+        from src.medical.store import file_sequence
+
+        counts["papers_backup_newer"] = sum(1 for mine, theirs in both if file_sequence(theirs) > file_sequence(mine))
+    if _has(conn, "inc", "medical_wanted"):
+        wparams: dict[str, Any] = dict(params)
+        kind_ok = _law_in("w.id_kind", "mwk", WANTED_KINDS, wparams)
+        value_ok = " OR ".join(f"(w.id_kind = '{k}' AND {_MED_IDS[k].format(v='w.value')})" for k in WANTED_KINDS)
+        wok = f"typeof(w.value) = 'text' AND {kind_ok} AND ({value_ok}) AND {_MED_WHEN.format(v='w.added_at')}"
+        conn.execute(
+            "INSERT INTO temp.lm_med_wanted (inc_id) SELECT min(w.rowid) FROM inc.medical_wanted w "  # noqa: S608  # nosec B608 # module literals
+            f"WHERE {wok} AND NOT EXISTS (SELECT 1 FROM main.medical_wanted m WHERE m.id_kind = w.id_kind AND m.value = w.value) "
+            "GROUP BY w.id_kind, w.value",
+            wparams,
+        )
+        total = int(conn.execute("SELECT count(*) FROM inc.medical_wanted").fetchone()[0])
+        good = int(conn.execute(f"SELECT count(*) FROM inc.medical_wanted w WHERE {wok}", wparams).fetchone()[0])  # noqa: S608  # nosec B608 # module literals
+        counts["wanted_refused"] = total - good
+
+
+def _merge_medical(conn: Any, out: dict[str, Any]) -> None:
+    """R746: add what only the backup holds. A paper or a named id both hold keeps this machine's row whole.
+
+    * ``medical_papers``: a (PMID, version) this machine lacks is copied, with its class, its
+      notices and its withdrawal mark as the backup's file stated them. One both hold is never
+      touched: this machine's next fetch reads NLM's newer files itself, and an older file
+      never overwrites a newer one there (``store.apply_file``).
+    * ``medical_class_changes``: copied for the papers copied here only, so a class history
+      always belongs to the row it describes.
+    * ``medical_wanted``: an id the user named on the other machine joins this one's list.
+    * STAYS BEHIND (this machine's own): ``medical_files`` (which NLM files THIS machine read,
+      so its fetch still reads every file against its own corpus) and ``medical_cited`` (a
+      snapshot of THIS corpus's citations, rebuilt by each fetch).
+    """
+    tables: dict[str, dict[str, int]] = out["tables"]
+    if not _has(conn, "temp", "lm_med_papers"):
+        _medical_prepare(conn, out)
+    # A local fetch may have added a key since the keys were read: it wins.
+    conn.execute(
+        "DELETE FROM temp.lm_med_papers WHERE EXISTS (SELECT 1 FROM main.medical_papers m "
+        "WHERE m.pmid = lm_med_papers.pmid AND m.version = lm_med_papers.version)"
+    )
+    if _has(conn, "inc", "medical_wanted"):
+        conn.execute(
+            "DELETE FROM temp.lm_med_wanted WHERE EXISTS (SELECT 1 FROM inc.medical_wanted w JOIN main.medical_wanted m "
+            "ON m.id_kind = w.id_kind AND m.value = w.value WHERE w.rowid = lm_med_wanted.inc_id)"
+        )
+    if _has(conn, "inc", "medical_papers"):
+        cols = [c for c in _MED_PAPER_COLS if c not in ("pmid", "version", "abstract_json")]
+        names = ", ".join(f'"{c}"' for c in cols)
+        exprs = ", ".join(f'p."{c}"' for c in cols)
+        # The abstract is the one this build compressed again, never the backup's bytes.
+        conn.execute(
+            f'INSERT INTO main.medical_papers ("pmid", "version", "abstract_json", {names}) '  # noqa: S608  # nosec B608 # module literals
+            f"SELECT k.pmid, k.version, a.abstract, {exprs} FROM temp.lm_med_papers k "
+            "JOIN inc.medical_papers p ON p.rowid = k.inc_id AND p.pmid = k.pmid AND p.version = k.version "
+            "LEFT JOIN temp.lm_med_abstract a ON a.inc_id = k.inc_id"
+        )
+        tables["medical_papers"] = {"inserted": _changes(conn)}
+        if _has(conn, "inc", "medical_class_changes"):
+            conn.execute(
+                "INSERT INTO main.medical_class_changes (pmid, version, from_class, to_class, source_file, recorded_at) "
+                "SELECT k.pmid, k.version, c.from_class, c.to_class, c.source_file, c.recorded_at "
+                "FROM temp.lm_med_changes x JOIN inc.medical_class_changes c ON c.rowid = x.inc_id "
+                "JOIN temp.lm_med_papers k ON k.pmid = c.pmid AND k.version = c.version ORDER BY c.id"
+            )
+            tables["medical_class_changes"] = {"inserted": _changes(conn)}
+    if _has(conn, "inc", "medical_wanted"):
+        conn.execute(
+            "INSERT INTO main.medical_wanted (id_kind, value, added_at) "
+            "SELECT w.id_kind, w.value, w.added_at FROM temp.lm_med_wanted k JOIN inc.medical_wanted w ON w.rowid = k.inc_id"
+        )
+        tables["medical_wanted"] = {"inserted": _changes(conn)}
+
+
 _STEPS = {
     "wiki": (_merge_shared, _merge_walk, _merge_warm),
     "law": (_merge_shared, _merge_law),
     # The maps lane is never merged row by row: each country is its own transaction (R739).
     "osm": (_merge_osm,),
+    # PubMed's kept records (R746): read and tested before the lock, copied under it.
+    "medical": (_merge_medical,),
 }
 
 #: Lanes whose step opens one transaction per unit itself, instead of one for the store.
@@ -1617,6 +1938,9 @@ def _merge_into(kind: str, path: Path, keys: Iterable[str | None], out: dict[str
                 # Read before the lane's write lock is taken, so a law poller is not held
                 # behind a corpus read; a link added meanwhile only waits for a re-import.
                 _corpus_law_links(conn)
+            if kind == "medical":
+                # Every test of the backup's rows runs here, before the write lock (R746).
+                _medical_prepare(conn, out)
             if kind in _OWN_TRANSACTIONS:
                 for step in _STEPS[kind]:
                     step(conn, out)
