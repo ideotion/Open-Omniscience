@@ -583,23 +583,43 @@ def _engine_file_bytes(rel: str, data: bytes) -> bytes:
     return data if digest is None else b"\x00narrowed:" + digest.encode()
 
 
-def _expand(globs: tuple[str, ...]) -> list[str]:
-    out: set[str] = set()
+def _expand(globs: tuple[str, ...], *, legacy: bool = False) -> list[str]:
+    """The repo-relative names the globs match, in POSIX form on every OS (R758, row 210): the names are hashed, so a separator that
+    followed the OS made the same data a different engine on Windows and on Linux, and a backup never carried between them.
+
+    ``legacy=True`` gives the names as Windows wrote them before R758 -- a glob match with backslashes, a literal name as written -- so
+    :func:`accepted_engine_ids` can recognise a stamp an older Windows install wrote. Only names, never bytes: the files read are the same."""
+    return sorted(_expand_reads(globs, legacy=legacy))
+
+
+def _expand_reads(globs: tuple[str, ...], *, legacy: bool = False) -> dict[str, str]:
+    """``{hashed name: the POSIX path it is read from}``. The two are the same string except for a legacy name, which is HASHED with
+    backslashes and READ by the path it was made from -- never by turning backslashes back into slashes, which on POSIX would read a
+    file whose real name holds a backslash as absent and hash two different contents alike (security read, row 210)."""
+    out: dict[str, str] = {}
     for pattern in globs:
         if any(ch in pattern for ch in "*?["):
-            out.update(str(p.relative_to(_REPO)) for p in _REPO.glob(pattern) if p.is_file())
+            for p in _REPO.glob(pattern):
+                if p.is_file():
+                    rel = p.relative_to(_REPO).as_posix()
+                    out[rel.replace("/", "\\") if legacy else rel] = rel
         else:
-            out.add(pattern)
-    return sorted(out)
+            out[pattern] = pattern
+    return out
 
 
-def _data_files() -> list[str]:
+def _data_files(*, legacy: bool = False) -> list[str]:
     """Every data file either engine reads."""
-    return _expand(ENGINE_DATA_GLOBS)
+    return _expand(ENGINE_DATA_GLOBS, legacy=legacy)
 
 
-def _kw_data_files() -> list[str]:
-    return sorted(set(_data_files()) - set(_expand(WWW_DATA_GLOBS)))
+def _kw_data_reads(*, legacy: bool = False) -> dict[str, str]:
+    www = _expand_reads(WWW_DATA_GLOBS, legacy=legacy)
+    return {name: path for name, path in _expand_reads(ENGINE_DATA_GLOBS, legacy=legacy).items() if name not in www}
+
+
+def _kw_data_files(*, legacy: bool = False) -> list[str]:
+    return sorted(_kw_data_reads(legacy=legacy))
 
 
 def _kw_modules() -> list[str]:
@@ -610,13 +630,14 @@ def _www_modules() -> list[str]:
     return sorted(set(WWW_ONLY_MODULES) | set(WWW_SHARED_MODULES))
 
 
-def _digest_of(files: list[str], *, narrow: bool) -> str:
+def _digest_of(files: list[str], *, narrow: bool, read_as: dict[str, str] | None = None) -> str:
     """sha256 over (path, bytes) of ``files``. A MISSING file contributes its name and an explicit absence marker rather than nothing,
     so "absent" and "empty" are different and a deleted gazetteer cannot hash like an untouched one. Line endings are normalised
     (``\\r\\n`` to ``\\n``): a Windows checkout with autocrlf must not hash differently from the same commit on Linux."""
     h = hashlib.sha256()
     for rel in files:
-        data = _read(rel)
+        # ``read_as`` maps a legacy (pre-R758 Windows) name to the path it was made from: HASHED as written, READ from that file.
+        data = _read(read_as.get(rel, rel) if read_as else rel)
         h.update(rel.encode())
         h.update(b"\x00")
         if data is None:
@@ -650,11 +671,13 @@ def www_code_digest() -> str:
     return _digest_of(_www_modules(), narrow=False)
 
 
-@lru_cache(maxsize=1)
-def data_digest() -> str:
+@lru_cache(maxsize=2)
+def data_digest(legacy: bool = False) -> str:
     """The hash of the KEYWORD engine's DATA files (stoplists, rings), computed at runtime on every install and part of the identity: a
-    data file can differ per install, so it cannot be versioned by hand. The gazetteers belong to the www engine (:func:`www_data_digest`)."""
-    return _digest_of(_kw_data_files(), narrow=False)
+    data file can differ per install, so it cannot be versioned by hand. The gazetteers belong to the www engine (:func:`www_data_digest`).
+    ``legacy`` hashes the same bytes under the names a pre-R758 Windows install used (see :func:`_expand`)."""
+    reads = _kw_data_reads(legacy=legacy)
+    return _digest_of(sorted(reads), narrow=False, read_as=reads)
 
 
 @lru_cache(maxsize=1)
@@ -704,16 +727,16 @@ def _gazetteer_digest(extractor) -> str | None:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
-def engine_components(extractor=None, *, extractor_name: str | None = None) -> dict:
+def engine_components(extractor=None, *, extractor_name: str | None = None, legacy: bool = False) -> dict:
     """The inputs the stamp is a hash of, readable -- for a diagnostic that has to say
-    WHY two stamps differ, not only that they do."""
+    WHY two stamps differ, not only that they do. ``legacy`` changes only the data file NAMES hashed (R758)."""
     name = extractor_name or getattr(extractor, "name", None) or "baseline"
     return {
         "schema": IDENTITY_SCHEMA,
         "extractor": name,
         "gazetteer": _gazetteer_digest(extractor) if extractor is not None else None,
         "indexer": INDEXER_VERSION,
-        "data": data_digest(),
+        "data": data_digest(legacy),
         "distributions": {d: _dist_version(d) for d in ENGINE_DISTRIBUTIONS},
         "switches": _switches(),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",
@@ -726,19 +749,37 @@ def _stamp_for(blob: str) -> str:
     return STAMP_PREFIX + hashlib.sha256(blob.encode()).hexdigest()[:32]
 
 
-def engine_id(extractor=None, *, extractor_name: str | None = None) -> str:
-    """The stamp for the engine that would run with ``extractor`` right now."""
+def engine_id(extractor=None, *, extractor_name: str | None = None, legacy: bool = False) -> str:
+    """The stamp for the engine that would run with ``extractor`` right now. The only one ever WRITTEN is ``legacy=False`` (R758)."""
     blob = json.dumps(
-        engine_components(extractor, extractor_name=extractor_name),
+        engine_components(extractor, extractor_name=extractor_name, legacy=legacy),
         sort_keys=True,
         separators=(",", ":"),
     )
     return _stamp_for(blob)
 
 
+def accepted_engine_ids(extractor=None, *, extractor_name: str | None = None) -> tuple[str, ...]:
+    """Every stamp that names the engine that would run right now (R758, row 210): the canonical id FIRST -- the one written -- then the
+    id a pre-R758 Windows install computed for the same engine, which hashed the same data files' bytes under backslash names. The two
+    differ ONLY in those names, so a stamp equal to either was produced from exactly the bytes this engine reads; any other difference
+    (a file's bytes, the indexer version, a switch, a distribution) changes both. Accepted on every OS, so a backup carries between
+    Windows and Linux in both directions and no install re-indexes. One element when no data file name holds a separator."""
+    canonical = engine_id(extractor, extractor_name=extractor_name)
+    legacy = engine_id(extractor, extractor_name=extractor_name, legacy=True)
+    return (canonical,) if legacy == canonical else (canonical, legacy)
+
+
 def baseline_engine_id() -> str:
     """The identity a post-merge re-index would stamp -- what a carry must match."""
     return engine_id(extractor_name="baseline")
+
+
+def baseline_engine_ids() -> tuple[str, ...]:
+    """:func:`accepted_engine_ids` for the baseline extractor: what a carry and the re-index backlog accept as current."""
+    canonical = baseline_engine_id()
+    legacy = engine_id(extractor_name="baseline", legacy=True)
+    return (canonical,) if legacy == canonical else (canonical, legacy)
 
 
 #: The www stage's own format and stamp prefix (``w1-`` + 32 hex digits = 35 characters, inside ``article_www_stamps.engine``).

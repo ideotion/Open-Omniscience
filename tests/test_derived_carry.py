@@ -597,7 +597,7 @@ def test_a_partly_carried_batch_stays_merged_and_the_backlog_counts_only_what_is
         status = con.execute("SELECT status FROM merge_batches WHERE id = ?", (batch_id,)).fetchone()[0]
         row = con.execute(
             _BACKLOG_SQL,
-            {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "www_engine": www_engine_id()},
+            {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "kw_legacy": baseline_engine_id(), "www_engine": www_engine_id()},
         ).fetchone()
         inserted = con.execute(
             "SELECT COUNT(*) FROM merged_rows WHERE batch_id = ? AND table_name = 'articles'",
@@ -1068,7 +1068,7 @@ def test_a_batch_carried_for_one_half_stays_merged_and_owes_the_other(backup, tm
     con = sqlite3.connect(working)
     try:
         row = con.execute(
-            _BACKLOG_SQL, {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "www_engine": www_engine_id()}
+            _BACKLOG_SQL, {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "kw_legacy": baseline_engine_id(), "www_engine": www_engine_id()}
         ).fetchone()
     finally:
         con.close()
@@ -1093,10 +1093,10 @@ def test_a_fully_carried_batch_is_certified_by_both_stamps_in_the_backlog(backup
     con = sqlite3.connect(working)
     try:
         row = con.execute(
-            _BACKLOG_SQL, {"s": _STATUS_REINDEXED, "engine": baseline_engine_id(), "www_engine": www_engine_id()}
+            _BACKLOG_SQL, {"s": _STATUS_REINDEXED, "engine": baseline_engine_id(), "kw_legacy": baseline_engine_id(), "www_engine": www_engine_id()}
         ).fetchone()
         other = con.execute(
-            _BACKLOG_SQL, {"s": _STATUS_REINDEXED, "engine": baseline_engine_id(), "www_engine": "w1-" + "0" * 32}
+            _BACKLOG_SQL, {"s": _STATUS_REINDEXED, "engine": baseline_engine_id(), "kw_legacy": baseline_engine_id(), "www_engine": "w1-" + "0" * 32}
         ).fetchone()
     finally:
         con.close()
@@ -1241,7 +1241,7 @@ def test_each_stamp_table_is_read_once_in_pages_whatever_the_other_one_holds(bac
     assert len(kw) == (1 if mismatch == "keyword" else full_walk), kw
     assert len(www) == (1 if mismatch == "www" else full_walk), www
     for pages in (kw, www):
-        cursors = [p[1] for p in pages]
+        cursors = [p[-2] for p in pages]  # (*engines, cursor, limit): R758 binds one or two engines first
         assert cursors == sorted(set(cursors)), f"a page did not move the cursor past the one before: {cursors}"
     plan = counts["_derived_carry"]
     # The mismatched half is declined in the report and the matching half still carries, whichever it is.
@@ -1377,3 +1377,78 @@ def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monke
     assert row[0] != hidden_id, "the hidden word became the carried article's top keyword"
     assert row == (expected, top, tied), "the top is the lowest local id among the remaining words, as top_keyword_of"
     assert carried_hidden == (top + 5,), "the mention row itself is carried unchanged"
+
+
+# --- R758 (row 210): a stamp written by a pre-R758 Windows install ---------- #
+
+def _legacy_id() -> str:
+    import src.analytics.engine_identity as ei
+
+    ids = ei.baseline_engine_ids()
+    assert len(ids) == 2, "this repo's stoplists are matched by globs, so the pre-R758 Windows id must differ"
+    assert ids[0] == baseline_engine_id()
+    return ids[1]
+
+
+def _restamped(src: Path, dst: Path, engine: str) -> Path:
+    shutil.copyfile(src, dst)
+    con = sqlite3.connect(dst)
+    con.execute("UPDATE article_index_stamps SET engine = ?", (engine,))
+    con.commit()
+    con.close()
+    return dst
+
+
+def test_a_backup_stamped_by_the_pre_r758_windows_id_carries_and_is_restamped_canonical(backup, tmp_path, monkeypatch):
+    """The same engine on the same bytes, named the old Windows way: it carries everything (no re-index), the stamps the carry
+    writes name the CANONICAL id only, and the backlog counts a legacy-stamped article as certified."""
+    windows = _restamped(backup, tmp_path / "windows.db", _legacy_id())
+    target = tmp_path / "t.db"
+    _schema(target)
+    out = _restore(windows, target, tmp_path / "w.db", carry=True, monkeypatch=monkeypatch)
+    plan = out["counts"]["_derived_carry"]
+    assert plan["stamped"] == len(_ARTICLES) and plan["carried"]["articles"] == len(_ARTICLES), plan
+    assert plan["engine"] == baseline_engine_id() and plan["engine_also_accepted"] == [_legacy_id()]
+    assert out["reindexed"] == [] and out["status"] == _STATUS_REINDEXED
+    con = sqlite3.connect(tmp_path / "w.db")
+    try:
+        assert {r[0] for r in con.execute("SELECT engine FROM article_index_stamps")} == {baseline_engine_id()}
+        # The backlog read accepts a stamp naming either id: put the legacy one back and nothing is owed.
+        con.execute("UPDATE article_index_stamps SET engine = ?", (_legacy_id(),))
+        con.execute("UPDATE merge_batches SET status = ?", (_STATUS_MERGED,))
+        row = con.execute(
+            _BACKLOG_SQL,
+            {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "kw_legacy": _legacy_id(), "www_engine": www_engine_id()},
+        ).fetchone()
+        assert row[2] == row[3] == len(_ARTICLES), row
+    finally:
+        con.close()
+
+
+def test_a_legacy_named_id_of_different_bytes_carries_nothing(backup, tmp_path, monkeypatch):
+    """The legacy acceptance is the old NAMES of the same BYTES: a stoplist that differs by one word changes the legacy id too, so a
+    backup stamped by that engine is foreign whatever its names."""
+    import src.analytics.engine_identity as ei
+
+    real = ei._read
+
+    def _edited(rel):
+        data = real(rel)
+        return (data or b"") + b"\nzzzextra" if rel == "configs/stopwords_iso/de.txt" else data
+
+    monkeypatch.setattr(ei, "_read", _edited)
+    ei.data_digest.cache_clear()
+    ei._stamp_for.cache_clear()
+    try:
+        other = ei.engine_id(extractor_name="baseline", legacy=True)
+    finally:
+        monkeypatch.setattr(ei, "_read", real)
+        ei.data_digest.cache_clear()
+        ei._stamp_for.cache_clear()
+    assert other not in ei.baseline_engine_ids()
+    foreign = _restamped(backup, tmp_path / "foreign.db", other)
+    target = tmp_path / "t.db"
+    _schema(target)
+    out = _restore(foreign, target, tmp_path / "w.db", carry=True, monkeypatch=monkeypatch)
+    assert out["counts"]["_derived_carry"]["stamped"] == 0
+    assert out["counts"]["keyword_mentions"]["new"] == 0
