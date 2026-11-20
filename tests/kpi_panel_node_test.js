@@ -39,7 +39,7 @@ function constDecl(name) {
 }
 
 const src = ["_KPI_VERDICT", "_KPI_VERTICAL", "_KPI_FIGURES"].map(constDecl).join("\n")
-  + extract("kpiPanelHtml") + extract("_kpiBlockHtml") + "\nreturn kpiPanelHtml;";
+  + extract("kpiFramesText") + extract("kpiPanelHtml") + extract("_kpiBlockHtml") + "\nreturn kpiPanelHtml;";
 const kpiPanelHtml = new Function(src)();
 
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -109,5 +109,45 @@ for (const safe of ["&lt;img src=x onerror=1&gt;", "&lt;b&gt;", "&lt;t&gt;", "&q
   assert.ok(html.includes(safe), safe + " " + html);
 // A value that is not a finite number is not printed as one.
 assert.ok(text(html).includes("value: unknown"));
+
+// 6. Row 201: the method and a block's reason render from their keyed frames in the UI language. The template translates,
+// the data does not, a `tr` var's word translates while a number passes through, and the pieces join with nothing between
+// them. A snapshot without frames still shows its English.
+const FR = {
+  "{n} of the {total} verticals and lanes listed have a first slice in ({names}); ":
+    "{n} des {total} verticales et voies listées ont une première tranche ({names}) ; ",
+  "each block below carries its own figures.": "chaque bloc ci-dessous porte ses propres chiffres.",
+  "the last law coverage report counted no tracked document": "le dernier rapport n'a compté aucun document suivi",
+  "{gaps} gaps": "{gaps} lacunes", "an unknown number of": "un nombre inconnu de",
+  "Vertical coverage": "Couverture des verticales", "< 2 s": "< 2 s",
+};
+const tFr = s => (FR[s] != null ? FR[s] : s);
+const HFR = Object.assign({}, H, {
+  t: tFr,
+  tf: (s, v) => tFr(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m),
+});
+const framed = {id: "K13", name: "Vertical coverage", value: 1, n: 6, verdict: "measured-no-bar", target: "pending",
+  method: "1 of the 6 verticals and lanes listed have a first slice in (law); each block below carries its own figures.",
+  method_i18n: [
+    {t: "{n} of the {total} verticals and lanes listed have a first slice in ({names}); ",
+      v: {n: "1", total: "6", names: "law"}},
+    {t: "each block below carries its own figures.", v: {}},
+  ],
+  verticals: [{vertical: "law", kind: "lane", state: "recorded", first_slice: false,
+    method: "x", method_i18n: [{t: "{gaps} gaps", v: {gaps: "an unknown number of"}, tr: ["gaps"]}],
+    reason: "the last law coverage report counted no tracked document",
+    reason_i18n: [{t: "the last law coverage report counted no tracked document", v: {}}]},
+    {vertical: "wiki", kind: "lane", state: "recorded", first_slice: true,
+      method: "7 gaps", method_i18n: [{t: "{gaps} gaps", v: {gaps: "7"}, tr: ["gaps"]}]}]};
+html = kpiPanelHtml({metrics: [framed]}, HFR);
+assert.ok(html.includes('title="1 des 6 verticales et voies listées ont une première tranche (law) ; chaque bloc ci-dessous porte ses propres chiffres."'), html);
+assert.ok(html.includes('title="un nombre inconnu de lacunes"'), "a tr word translates");
+assert.ok(html.includes('title="7 lacunes"'), "a number in a tr var passes through");
+assert.ok(text(html).includes("le dernier rapport n&#39;a compté aucun document suivi"), "the reason renders from its frames");
+assert.ok(text(html).includes("Couverture des verticales"), "the measure's name is keyed");
+assert.ok(!html.includes("each block below"), "no English left where a frame translates");
+// An older snapshot with no frames keeps its English method.
+html = kpiPanelHtml({metrics: [{id: "K1", name: "x", verdict: "not-measurable-here", target: "t", method: "plain english"}]}, HFR);
+assert.ok(html.includes('title="plain english"'));
 
 console.log("kpi panel: all assertions passed");
