@@ -3093,6 +3093,49 @@ class LawRevision(Base):
         return f"<LawRevision(doc={self.document_id} d={self.delta_bytes})>"
 
 
+class LawFormatChange(Base):
+    """A tracked document's move from one published FORMAT to another (R753, 2026-11-19).
+
+    Not an amendment, and never counted as one: the act did not change, the way it is read
+    did (the German federal acts move from the portal's HTML page to its own XML). The row is
+    the permanent, visible entry in the document's history that says so -- when, from which
+    address to which, and the hash of the text on each side -- and it KEEPS the last HTML
+    reading (baseline and latest text with their hashes), so the move can be audited and
+    undone: a migration deletes nothing.
+
+    One row per (document, from_url, to_url). ``src/backup/merge.py`` reads it to map a
+    backup taken before the move onto the moved document (and the reverse), so a restore
+    never brings the old address back as a second copy of the same act.
+    """
+
+    __tablename__ = "law_format_changes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("law_documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    from_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    to_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    from_format: Mapped[str] = mapped_column(String(40), nullable=False)  # "html"
+    to_format: Mapped[str] = mapped_column(String(40), nullable=False)  # the adapter that read it: "gii"
+    from_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # the HTML reading, = last_hash then
+    to_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # the first XML reading
+    # What the move replaced on the document, kept whole (condition 2).
+    from_baseline_hash: Mapped[str | None] = mapped_column(String(64))
+    from_baseline_text: Mapped[str | None] = mapped_column(CompressedText)
+    from_latest_text: Mapped[str | None] = mapped_column(CompressedText)
+    from_latest_text_revid: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(String(255))
+
+    __table_args__ = (
+        Index("ix_lawfmt_doc_from_to", "document_id", "from_url", "to_url", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LawFormatChange(document_id={self.document_id}, {self.from_format}->{self.to_format})>"
+
+
 class LawRevisionSummary(Base):
     """An AI-generated plain-language summary of ONE law change (2026-07-24
     field-feedback Session A §3: "AI change summaries" -- ruled).

@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,tests/llm,Row 190: release-under-a-run test race fixed,SHIPPED,PR #2165,tests/test_model_and_pause_controls.py,"The test released the model right after article 1 was stored, before article 2's model call had started; a release in that gap rightly frees at once. Reproduced with a widened window; the test now waits for the call to be in flight. No retry, no skip, no product change."

@@ -134,8 +134,9 @@ documents:
 # to strip and carries the provision tree and the signing date. The human-facing
 # official_url stays on the TOC. `previous_urls` names the "Gesamtausgabe" HTML a
 # store registered before: such a store keeps tracking that row and is NOT given
-# a second copy of the same act (moving it onto the XML would record the change
-# of format as an amendment; that migration is its own piece of work).
+# a second copy of the same act. Such a row MOVES onto the XML under R753
+# (src/law/track.py::_move_format): only on a poll whose HTML reading equals the
+# stored text, with no amendment recorded and the move kept in law_format_changes.
 - {jurisdiction: DEU, title: "Grundgesetz (Basic Law) — consolidated", category: legislation, consolidated: true, country: DEU, language: de, url: "https://www.gesetze-im-internet.de/gg/xml.zip", official_url: "https://www.gesetze-im-internet.de/gg/", previous_urls: ["https://www.gesetze-im-internet.de/gg/BJNR000010949.html"]}
 - {jurisdiction: DEU, title: "Bundesdatenschutzgesetz (BDSG 2018)", category: legislation, consolidated: true, country: DEU, language: de, url: "https://www.gesetze-im-internet.de/bdsg_2018/xml.zip", official_url: "https://www.gesetze-im-internet.de/bdsg_2018/", previous_urls: ["https://www.gesetze-im-internet.de/bdsg_2018/BJNR209710017.html"]}
 - {jurisdiction: CAN, title: "Canadian Charter of Rights and Freedoms", category: legislation, consolidated: true, country: CAN, language: en, url: "https://laws-lois.justice.gc.ca/eng/const/page-12.html", official_url: "https://laws-lois.justice.gc.ca/eng/const/"}
