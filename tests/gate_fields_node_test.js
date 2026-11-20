@@ -98,6 +98,10 @@ const src = [
   // B18 R2/R14: the label frame, the number formatter and the unit isolate -- shipped.
   functionSource(APP, "ooLabelHtml"),
   functionSource(APP, "ooLabelText"),
+  // row 206: a server caveat or method goes through the shared helpers
+  functionSource(APP, "_ooSaidFramed"),
+  functionSource(APP, "ooSaidText"),
+  functionSource(APP, "ooSaidHtml"),
   functionSource(APP, "fmtNum"),
   functionSource(APP, "_diagIso"),
   functionSource(APP, "_renderAiCheck"),

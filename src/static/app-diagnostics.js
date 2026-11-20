@@ -643,8 +643,8 @@
         ph += '<div class="muted">' + ooLabelHtml(esc(t("Last recorded memory")),
               (smp.rss_mb != null ? esc(_mib(smp.rss_mb)) + " RSS" : "—") +
               (smp.mem_avail_mb != null ? " · " + esc(_tf("{size} available", { size: _mib(smp.mem_avail_mb) })) : "")) + "</div>";
-      if (prev.method) ph += '<div class="card-caveat">' + esc(prev.method) + "</div>";  // verbatim inference
-      if (prev.note) ph += '<div class="muted">' + esc(prev.note) + "</div>";
+      if (prev.method) ph += '<div class="card-caveat">' + ooSaidHtml(prev, "method") + "</div>";  // verbatim inference
+      if (prev.note) ph += '<div class="muted">' + ooSaidHtml(prev, "note") + "</div>";
       parts.push('<div style="margin-top:6px">' + ph + "</div>");
 
       // 2) Last unlock timing (why unlock was slow — one-time migrations / index / WAL recovery).
@@ -660,7 +660,7 @@
         if (Array.isArray(u.phases) && u.phases.length)
           uh += '<div class="muted">' + ooLabelHtml(esc(t("phases")),
                 u.phases.map((p) => esc(p.phase) + " (" + esc(_diagIso(_tf("{n} ms", { n: fmtNum(Math.round(p.ms), 0) }))) + ")").join(" · ")) + "</div>";
-        if (u.method) uh += '<div class="card-caveat">' + esc(u.method) + "</div>";  // verbatim method
+        if (u.method) uh += '<div class="card-caveat">' + ooSaidHtml(u, "method") + "</div>";  // verbatim method
         parts.push('<div style="margin-top:8px">' + uh + "</div>");
       }
 
@@ -689,8 +689,8 @@
               ent.map((e) => esc(e.name) + ' <span class="pill">' + esc(e.kind) + "</span> " + esc(humanBytes(e.bytes || 0)) +
                 (e.files ? " · " + esc(e.files === 1 ? _tf("{n} file", { n: fmtNum(1, 0) })
                   : _tf("{n} files", { n: fmtNum(e.files, 0) })) : "")).join("<br>") + "</div>";
-      if (inv.method) ih += '<div class="card-caveat">' + esc(inv.method) + "</div>";  // verbatim method
-      if (inv.note) ih += '<div class="muted">' + esc(inv.note) + "</div>";
+      if (inv.method) ih += '<div class="card-caveat">' + ooSaidHtml(inv, "method") + "</div>";  // verbatim method
+      if (inv.note) ih += '<div class="muted">' + ooSaidHtml(inv, "note") + "</div>";
       parts.push('<div style="margin-top:8px">' + ih + "</div>");
 
       return parts.join("");
@@ -830,7 +830,7 @@
         const dlg = $("chart-enlarge"); if (!dlg) { toast(t("Could not open the chart.")); return; }
         const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = t("Keyword-growth curve");
         const note = $("chart-enlarge-note");
-        if (note) { note.textContent = d.caveat || ""; note.style.display = d.caveat ? "" : "none"; }
+        if (note) { note.textContent = ooSaidText(d, "caveat"); note.style.display = d.caveat ? "" : "none"; }
         const body = $("chart-enlarge-body"); if (!body) return;
         const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
         // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
@@ -1532,7 +1532,7 @@
         const v = c.verdict || "?";
         const color = v === "pass" ? "var(--ok)" : (v === "fail" ? "var(--err)" : "var(--caveat)");
         rows += '<div><span style="color:' + color + ';font-weight:600">[' + esc(v.toUpperCase())
-          + ']</span> ' + esc(label) + ' — ' + esc(c.reason || "") + '</div>';
+          + ']</span> ' + esc(label) + ' — ' + ooSaidHtml(c, "reason") + '</div>';
       });
       const sum = rep.summary || {};
       out.innerHTML = rows
@@ -2317,7 +2317,7 @@
           : measured === false
             ? t("refused: the harness failed this language")
             : t("refused: never measured"));
-        return '<label class="row" style="gap:6px;align-items:center" title="' + esc(e.reason || "") + '">'
+        return '<label class="row" style="gap:6px;align-items:center" title="' + esc(ooSaidText(e, "reason")) + '">'
           + '<input type="checkbox" data-pe-lang="' + esc(l) + '"' + (on ? " checked" : "")
           + (cleared ? "" : " disabled") + "> <span>" + esc(name(l)) + " <span class=\"muted\">("
           + esc(numbers) + ")</span>" + esc(why) + "</span></label>";
@@ -2485,7 +2485,7 @@
     function _aiRateLine(r, unit) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!r || r.measurable !== true) {
-        return `<div class="muted">${esc(t("Rate:"))} ${esc((r && r.reason) || t("not measurable yet"))}</div>`;
+        return `<div class="muted">${esc(t("Rate:"))} ${(r && r.reason) ? ooSaidHtml(r, "reason") : esc(t("not measurable yet"))}</div>`;
       }
       const w = r.while_working_per_hour, c = r.wall_clock_per_hour;
       if (w === null && c === null) {
@@ -2556,15 +2556,15 @@
           kinds +
           (any ? `<div style="margin-top:6px"><strong>${esc(String(Math.round(total * 10) / 10))}</strong> ` +
                  `${esc(t("AI-layer rows per hour, all categories"))}</div>` : "") +
-          `<div class="card-caveat" style="margin-top:4px">${esc(sd.caveat || "")}</div>`;
+          `<div class="card-caveat" style="margin-top:4px">${ooSaidHtml(sd, "caveat")}</div>`;
       } else if (sd.reason) {
-        stored = `<div class="muted" style="margin-top:8px">${esc(sd.reason)}</div>`;
+        stored = `<div class="muted" style="margin-top:8px">${ooSaidHtml(sd, "reason")}</div>`;
       }
 
       const coord = (r.coordinator || {}).note
         ? `<div class="muted" style="margin-top:8px">${esc(r.coordinator.note)}</div>` : "";
       host.innerHTML = sweeps + stored + coord +
-        `<div class="card-caveat" style="margin-top:8px">${esc(r.caveat || "")}</div>`;
+        `<div class="card-caveat" style="margin-top:8px">${ooSaidHtml(r, "caveat")}</div>`;
     }
 
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
@@ -2618,7 +2618,7 @@
             `<div class="hint muted" style="margin-top:4px">OO_FAMILY_LEMMA is currently <b>${esc(state)}</b>. `
             + `Scanned top ${d.scanned_top_n} keywords → <b>${d.candidate_groups}</b> candidate merge groups, `
             + `<b>${d.keywords_that_would_merge}</b> keywords merge.${overlapNote} Review for precision; `
-            + `a WRONG merge is a note for the _MISLEMMA_DENYLIST, or set OO_FAMILY_LEMMA=0 to opt out. ${esc(d.method || "")}</div>`
+            + `a WRONG merge is a note for the _MISLEMMA_DENYLIST, or set OO_FAMILY_LEMMA=0 to opt out. ${ooSaidHtml(d, "method")}</div>`
             + (rows
               ? `<table class="data" style="margin-top:6px"><thead><tr><th>Lemma</th><th>Merges</th><th style="text-align:right">n</th></tr></thead><tbody>${rows}</tbody></table>`
               : `<div class="muted" style="margin-top:6px">No candidate merges among the top keywords.</div>`);
@@ -2720,7 +2720,7 @@
     function _mbRenderBatch(d) {
       const out = $("mb-batch"); if (!out) return;
       if (!d || d.available === false) {
-        out.innerHTML = `<span class="muted">${esc((d && d.reason) || "no frozen batch yet")}</span>`;
+        out.innerHTML = `<span class="muted">${(d && d.reason) ? ooSaidHtml(d, "reason") : esc("no frozen batch yet")}</span>`;
         return;
       }
       const strata = (d.keyword_strata || []).map((s) =>
@@ -2871,7 +2871,7 @@
       // name — and its roster key is the only thing that says WHICH model is absent.
       const skipped = (res.skipped || []).map((s) => {
         const who = s.model || s.roster_key || "";
-        return `${esc(s.backend)}${who ? " · " + esc(who) : ""} — ${esc(s.reason)}`;
+        return `${esc(s.backend)}${who ? " · " + esc(who) : ""} — ${ooSaidHtml(s, "reason")}`;
       }).join("<br>");
       out.innerHTML = rows
         + (res.pairs_pending && res.pairs_pending.length
@@ -2879,7 +2879,7 @@
         + (skipped ? `<div class="hint muted" style="margin-top:4px">${skipped}</div>` : "")
         + (res.anchors && res.anchors.available === false
           ? `<div class="card-caveat" style="margin-top:4px">No graded anchors: accuracy against a human grade is UNMEASURED. Models agreeing is not either being right.</div>` : "")
-        + `<div class="hint muted" style="margin-top:4px">${esc(res.caveat || "")}</div>`;
+        + `<div class="hint muted" style="margin-top:4px">${ooSaidHtml(res, "caveat")}</div>`;
       mbShowGates();
     }
 
@@ -2904,7 +2904,7 @@
             + (off.length ? ` · refused: ${esc(off.join(", "))}` : "")
             + (un.length ? ` · unmeasured: ${esc(un.join(", "))}` : "") + `</div>`;
         }).join("");
-        out.innerHTML = rows + `<div class="hint muted" style="margin-top:4px">${esc(d.caveat || "")}</div>`;
+        out.innerHTML = rows + `<div class="hint muted" style="margin-top:4px">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) { out.textContent = ""; }
     }
 
@@ -3036,7 +3036,7 @@
             + `${ooLabelHtml(esc(t("Refused fields")), `${esc(fmtNum(refusals.length, 0))} — ${shape}`)}</summary>`
             + refusals.map((rf) =>
               `<div class="card-caveat">${ooLangCell(rf.language)} · ${esc(rf.field)} — `
-              + `${esc(rf.reason || "")}</div>`).join("")
+              + `${ooSaidHtml(rf, "reason")}</div>`).join("")
             + `</details>`;
         }
         // "cleared" over-reads without this: a language here cleared at least one field.
@@ -3046,7 +3046,7 @@
           body += `<div class="hint">${ooLabelHtml(esc(t("Cleared for some fields only")), partly.join(", "))}</div>`;
         }
         if (g.no_field_verdicts) {
-          body += `<div class="hint">${esc(g.no_field_verdicts.reason || "")}</div>`;
+          body += `<div class="hint">${ooSaidHtml(g.no_field_verdicts, "reason")}</div>`;
         }
         rows.push(_aiCheckLine(t("Extraction gate"), body));
       }
@@ -3080,7 +3080,7 @@
       const sep = (res.not_run_here || []).map((n) =>
         `${esc(n.name)} — ${esc(n.why)} (${esc(n.where)})`).join("<br>");
       if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
-      if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${esc(res.caveat)}</div>`);
+      if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${ooSaidHtml(res, "caveat")}</div>`);
       out.innerHTML = rows.join("");
     }
 

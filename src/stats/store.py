@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from src.catalog.aggregates import aggregate_name
 from src.catalog.countries import classify_ref_area, to_iso2
 from src.database.models import StatFigure as StatFigureRow
+from src.shared_text import said
 from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
 from src.stats.series import _parse_period, to_chart_series
@@ -513,9 +514,10 @@ def triangulate(
             "Latest vintage of the literal series_id, grouped by area+period; producers "
             "side by side. Same series_id only — cross-agency equivalence is not inferred."
         ),
-        "caveat": (
+        **said(
+            "caveat",
             "Producers are shown SIDE BY SIDE, never averaged. A cell flagged not "
             "comparable mixes units / seasonal adjustment / base years — do not compare "
-            "those numbers directly. No score, no 'true' producer."
+            "those numbers directly. No score, no 'true' producer.",
         ),
     }

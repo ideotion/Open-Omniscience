@@ -495,8 +495,8 @@
     function _feedNote(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("feed-note"); if (!el) return;
-      let h = `<span class="muted">${esc(d.method || "")}</span>`;
-      if (d.caveat) h += `<div class="card-caveat">${esc(d.caveat)}</div>`;
+      let h = `<span class="muted">${ooSaidHtml(d, "method")}</span>`;
+      if (d.caveat) h += `<div class="card-caveat">${ooSaidHtml(d, "caveat")}</div>`;
       const held = _feedHeld;
       if (held && (held.quarantined || held.source_not_qualified)) {
         const bits = [];
@@ -693,7 +693,7 @@
             + (meta ? ` <span class="muted">— ${meta}</span>` : "")
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")
-          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
+          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
       }
     }
     // Populate a Latest facet <select> once (preserving the current selection), an "all"
@@ -978,7 +978,7 @@
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
-          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
+          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
         _renderOverviewTrends();   // the compact row folded into Overview (ruling 7a)
         _syncHomeSubtabs();
       } catch (e) {
@@ -1150,7 +1150,7 @@
         stale = `<span class="hint">${esc(t("No local hazard snapshot — silence is not safety."))}</span>`;
       }
       // Caveat VISIBLE by default (#23); the method rides the #oo-tip hover (the "how").
-      const caveat = d.caveat ? `<div class="card-caveat" title="${esc(d.method || "")}">${esc(d.caveat)}</div>` : "";
+      const caveat = d.caveat ? `<div class="card-caveat" title="${esc(ooSaidText(d, "method"))}">${ooSaidHtml(d, "caveat")}</div>` : "";
       box.innerHTML = `<div class="phead"><h2>${esc(t("Alerts"))}</h2><span class="sp"></span>${stale}</div>`
         + blocks + caveat;
     }
@@ -2232,7 +2232,7 @@
         if (d.wiki_page) rows.push(`<div>${esc(t("Watched Wikipedia page:"))} <b>${esc(d.wiki_page.title)}</b> <span class="muted">(${esc(d.wiki_page.wiki)})</span></div>`);
         if (d.keywords && d.keywords.length) rows.push(`<div class="muted small">${esc(t("Top keywords of the local copy:"))} ${d.keywords.map(esc).join(", ")}</div>`);
         if (!d.local_article && !d.known_source && !d.cited_by_articles && !d.furniture_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
-        rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(d.method || "")}">${esc(t("Built from your local database only — no network call."))}</div>`);
+        rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(ooSaidText(d, "method"))}">${esc(t("Built from your local database only — no network call."))}</div>`);
         body.innerHTML = rows.join("");
         out.innerHTML = `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>` +
           `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(d.url)}</a>`;
@@ -2462,7 +2462,7 @@
         if (!d.actors || !d.actors.length) {
           box.innerHTML = '<div class="muted">No coordinated near-duplicate clusters found in the recent window.</div>'; return;
         }
-        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.actors.map(a => {
+        box.innerHTML = `<p class="hint">${ooSaidHtml(d, "caveat")}</p>` + d.actors.map(a => {
           const members = a.sources.map(esc).join(", ");
           const btn = a.applied
             ? `<button class="secondary tiny" data-on-click="collapseAction(${esc(JSON.stringify(a.signature))}, false)">Expand (revert)</button>`
@@ -2586,7 +2586,7 @@
       try {
         const d = await api("/api/annotations/for?target=" + encodeURIComponent(target));
         if (!d.total_assertions) { box.innerHTML = '<div class="muted">No annotations for that source (from you or trusted authors).</div>'; return; }
-        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` +
+        box.innerHTML = `<p class="hint">${ooSaidHtml(d, "caveat")}</p>` +
           (d.dissent_kinds.length ? `<p class="hint"><b>Dissent on:</b> ${d.dissent_kinds.map(esc).join(", ")}</p>` : "") +
           d.claims.map(c => `<div class="draft-item"><div class="di-body"><span class="chip">${esc(c.kind)}</span> <b>${esc(c.value)}</b>
             <div class="hint">asserted by: ${c.asserted_by.map(a=>esc(a.author)).join(", ")}</div></div></div>`).join("");

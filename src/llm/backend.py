@@ -32,6 +32,7 @@ from typing import Protocol, runtime_checkable
 
 from src.llm.ollama import GenerationResult, reason_first, total_ram_gb
 from src.monitoring.secret_scrub import log_failure, record_text
+from src.shared_text import said
 
 _LOG = logging.getLogger(__name__)
 
@@ -285,8 +286,8 @@ def _capability(
         "vram_mb": vram_mb,
         "unified_ram_gb": unified_ram_gb,
         "reason": reason,
-        "method": _CAPABILITY_METHOD,
-        "caveat": _CAPABILITY_CAVEAT,
+        **said("method", _CAPABILITY_METHOD),
+        **said("caveat", _CAPABILITY_CAVEAT),
         "overridden": overridden,
         "override_requested": override_requested,
         "min_unified_ram_gb": APPLE_SILICON_MIN_UNIFIED_RAM_GB,

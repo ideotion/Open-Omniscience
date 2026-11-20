@@ -32,6 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from statistics import median
 
+from src.shared_text import said
 from src.stats.sdmx import StatFigure
 
 _MAD_TO_SIGMA = 1.4826  # consistency constant: MAD → σ for a normal distribution
@@ -159,14 +160,17 @@ def find_revision_anomalies(
         "count": len(items),
         "min_prior_revisions": min_prior_revisions,
         "z_min": z_min,
-        "method": (
+        **said(
+            "method",
             "Per observation (agency · series · area · period), compares the magnitude of the "
             "MOST RECENT revision (the change the newest vintage made to the previously-"
             "published value) against the robust spread (median ± MAD) of that observation's "
-            f"own EARLIER revisions. Flags at robust z >= {z_min} with >= {min_prior_revisions} "
+            "own EARLIER revisions. Flags at robust z >= {z_min} with >= {min_prior_revisions} "
             "earlier revisions of non-zero spread (a thin or uniform history degrades to "
             "silence). Retrospective only — it never predicts a future value; magnitude is "
-            "direction-agnostic (the from/to values show direction). Magnitudes only, no score."
+            "direction-agnostic (the from/to values show direction). Magnitudes only, no score.",
+            z_min=z_min,
+            min_prior_revisions=min_prior_revisions,
         ),
-        "caveat": _CAVEAT,
+        **said("caveat", _CAVEAT),
     }

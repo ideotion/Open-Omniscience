@@ -300,6 +300,11 @@ async function run() {
       ${extract("homeChannelLabel", null, HOME)}
       ${extract("_fillLatestFacet", null, HOME)}
       ${extract("ooFetchedOffSiteNote", null, CORE)}
+      ${extract("ooLabelHtml", null, CORE)}
+      ${extract("ooLabelText", null, CORE)}
+      ${extract("_ooSaidFramed", null, CORE)}
+      ${extract("ooSaidText", null, CORE)}
+      ${extract("ooSaidHtml", null, CORE)}
       ${extract("_renderHomeLatest", null, HOME)}
       this.render = _renderHomeLatest;
     `, { payload });
@@ -365,6 +370,11 @@ async function run() {
     ${extract("_feedControls", null, HOME)}
     ${extract("ooFetchedOffSiteNote", null, CORE)}
     ${extract("_feedCard", null, HOME)}
+    ${extract("ooLabelHtml", null, CORE)}
+    ${extract("ooLabelText", null, CORE)}
+    ${extract("_ooSaidFramed", null, CORE)}
+    ${extract("ooSaidText", null, CORE)}
+    ${extract("ooSaidHtml", null, CORE)}
     ${extract("_feedNote", null, HOME)}
     ${extract("_feedMoreHtml", null, HOME)}
     ${extract("_repaintFeed", null, HOME)}

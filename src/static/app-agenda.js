@@ -134,7 +134,7 @@
         const excl = agExcluded();
         const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
         const deduced = (ded.events || []).map(mapDeducedToAgenda).filter(e => !excl.has(e.calendar));
-        AG.events = ev.events.concat(imported, deduced); AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        AG.events = ev.events.concat(imported, deduced); AG.caveat = ev.caveat; AG.caveat_i18n = ev.caveat_i18n; AG.cals = fac.calendars;
         // Category chips = the REAL event kinds (holidays / religion / civic / …),
         // never a useless "imported" bucket (maintainer 2026-06-18). Imported events
         // each carry their feed's kind; deduced stays its own honest class. De-duped,
@@ -2126,7 +2126,7 @@
       // this slot stays for a caveat that says something the intro does not.
       const _agIntro = "A forward-looking agenda of major recurring events.";
       $("agenda-monthhint").textContent =
-        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? AG.caveat : "";
+        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? ooSaidText(AG, "caveat") : "";
       if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
       if (isMonth) {
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));
@@ -2147,7 +2147,7 @@
       const box = $("agenda-list");
       const groupBy = $("agenda-group").value;
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">${esc(tt("No events this month — adjust filters or subscribe to more calendars in Settings."))}</div>`; return; }
+      if (!rows.length) { box.innerHTML = `<p class="hint">${ooSaidHtml(AG, "caveat")}</p><div class="muted">${esc(tt("No events this month — adjust filters or subscribe to more calendars in Settings."))}</div>`; return; }
       const groups = {};
       for (const e of rows) {
         const k = groupBy === "month" ? (e.next_occurrence ? _agMonth(+e.next_occurrence.slice(5,7)-1) : (e.month ? _agMonth(e.month-1) : tt("Movable / no fixed date")))
@@ -2170,7 +2170,7 @@
       // the count is translated here, at render time, through the same
       // template-is-the-key rule the rest of this file uses (`_bulTf`), so the
       // numbers never pass through a translation table.
-      box.innerHTML = `<p class="hint"><span>${esc(AG.caveat)}</span> · <span>${
+      box.innerHTML = `<p class="hint"><span>${ooSaidHtml(AG, "caveat")}</span> · <span>${
         esc(_bulTf("showing {shown} of {total}", {shown: rows.length, total: AG.events.length}))}</span></p>` +
         Object.entries(groups).map(([k, list]) => {
           // Only the country grouping holds a code; month and calendar keys are

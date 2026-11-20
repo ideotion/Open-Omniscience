@@ -1676,7 +1676,7 @@
             (st.removable ? "" : ` — ${esc(t("kept"))}`) + `</div>`).join("") + `</div>`
         : "";
       box.innerHTML =
-        `<div>${esc(plan.method || "")}</div>` + rows + both + storeRows +
+        `<div>${ooSaidHtml(plan, "method")}</div>` + rows + both + storeRows +
         `<label class="small" style="display:block;margin-top:8px">` +
         `<input type="checkbox" id="ai-uninstall-models"> ` +
         esc(t("also delete the downloaded models in this app's folder")) + `</label>` +
@@ -1818,7 +1818,7 @@
       }).join("");
       box.innerHTML =
         `<div style="font-weight:600">${esc(t("Available models"))}</div>` +
-        `<div class="hint" style="margin:2px 0 6px">${esc(c.method || "")}</div>` +
+        `<div class="hint" style="margin:2px 0 6px">${ooSaidHtml(c, "method")}</div>` +
         rows +
         `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
         `<span id="mc-status" class="hint"></span></div>`;
@@ -1911,9 +1911,9 @@
             ? (hw.overridden
                 // Practical ONLY because the operator forced it: say so plainly, so
                 // an override is never mistaken for a hardware pass.
-                ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${esc(hw.reason)}</p>`
-                : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${esc(hw.reason)}</p>`)
-            : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${esc(hw.reason)}</p>`;
+                ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`
+                : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${ooSaidHtml(hw, "reason")}</p>`)
+            : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`;
           // RULING 15 (2026-07-31): the tier between "refused" and "fine" -- a
           // CPU-only machine, a thin-VRAM card, a small unified-memory Mac. These
           // are EXPECTATIONS, not refusals, and this is the ONE place on the tab
@@ -1929,10 +1929,10 @@
             ` data-on-change="setAllowImpracticalHw(this.checked)"> ` +
             `${esc(t("Run local AI anyway on this hardware"))}</label>` +
             ` <span class="muted">${esc(t("Your choice always wins — this is a default, never a block."))}</span></p>` +
-            `<p class="hint">${esc(hw.method)} ${esc(hw.caveat)}</p>`;
+            `<p class="hint">${ooSaidHtml(hw, "method")} ${ooSaidHtml(hw, "caveat")}</p>`;
         }
         box.innerHTML =
-          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
+          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${ooSaidHtml(b, "reason")}</span></p>` +
           // The GPU is named here only when there IS one -- its absence is stated
           // ONCE, in the hardware block below, with the consequence attached.
           // (Repeating "not detected" here made it the first of four identical
@@ -2394,7 +2394,7 @@
         // four columns of translated headers do not fit a 375 px phone in de or ru, and it
         // pushed the whole page sideways instead (the re-walk review of M-8).
         el.innerHTML = `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
-          <div class="hint">${esc(d.caveat||"")}</div>`;
+          <div class="hint">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) {
         el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";
       }
