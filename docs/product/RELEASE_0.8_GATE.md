@@ -72,7 +72,7 @@ declared additive. **Closes when** the KPI board shows each lane's bar beside it
 method on hover (premise, 2026-09-15: today the "board" is the JSON snapshot `/api/diagnostics/kpi` plus the bundle
 member — no static file reads it, grep-verified; WHERE the bar renders is a placement NOTE for the maintainer,
 `S08-02` §6, not a ruling), the Help coverage reads 12/12 on every document, and a written schema-freeze audit lists the
-tables and the migrations after which only additive ones follow (its facts are generated, 2026-11-19: `scripts/schema_audit.py` writes `docs/product/SCHEMA_FREEZE_INVENTORY.md` from the models, the Alembic chain, the raw DDL and the format identifiers, and `tests/test_schema_audit.py` reddens while the file and the code disagree; the freeze point and the additive declarations stay the audit's judgement). **Operator:** the runs whose values set the
+tables and the migrations after which only additive ones follow (its facts are generated, 2026-11-19: `scripts/schema_audit.py` writes `docs/product/SCHEMA_FREEZE_INVENTORY.md` from the models, the Alembic chain, the raw DDL and the format identifiers, and `tests/test_schema_audit.py` reddens while the file and the code disagree; the freeze point and the additive declarations stay the audit's judgement; that judgement is PROPOSED, not ruled, in `docs/product/SCHEMA_FREEZE_AUDIT.md`, 2026-11-20, whose list `tests/test_schema_freeze_audit.py` holds to the models by name). **Operator:** the runs whose values set the
 bars. Brief `S08-02`.
 
 ### Row C — The app-wide one-model decision · ruled 2026-09-15 (register D8) · PENDING before 0.8 opens
