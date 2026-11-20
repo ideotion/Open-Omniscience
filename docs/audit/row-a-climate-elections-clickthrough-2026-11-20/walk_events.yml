@@ -1,0 +1,6 @@
+# WALK-ONLY entries appended to configs/world_events.yml in a throwaway checkout for this walk, and
+# never committed there. No shipped entry carries a recurrence rule yet (the networked session of
+# S06-04 §5 step 1 writes them), so the PROJECTED tier needs two invented rules to be seen at all.
+# The titles say "Walk" and the source says "walk fixture" so no screenshot can be read as real.
+- {title: "Walk Portugal — legislative (invented rule)", calendar: elections, category: civic, country: PRT, region: europe, cadence: "every 4 years", official_url: "https://example.invalid/walk-prt", interval_years: 4, last_held: 2024-03-10, recurrence_rule_source: "walk fixture, not a real rule", tags: [elections], note: "Invented for the 0.6 row A walk."}
+- {title: "Walk Greece — legislative (invented rule)", calendar: elections, category: civic, country: GRC, region: europe, cadence: "every 5 years", official_url: "https://example.invalid/walk-grc", interval_years: 5, last_held: 2020-06-01, recurrence_rule_source: "walk fixture, not a real rule", tags: [elections], note: "Invented for the 0.6 row A walk."}

@@ -10,7 +10,7 @@ and a full CI run to clear it. A new PR now adds ONE new file, docs/ledger/shipp
 Convention (CLAUDE.md rule (5a)):
 
     python scripts/ledger_shipped.py new --date 2026-09-30 --area tests --item "..." \
-        --status "shipped (draft)" --refs "PR #1240" --key-paths "src/a.py; tests/b.py" \
+        --status "shipped" --refs "PR #1240" --key-paths "src/a.py; tests/b.py" \
         --summary "..."               # writes docs/ledger/shipped.d/2026-09-30-<slug>.csv
     python scripts/ledger_shipped.py check    # every fragment is well formed and unique
     python scripts/ledger_shipped.py fold     # append fragments to shipped.csv, delete them
@@ -76,13 +76,41 @@ def fragment_rows(csv_path: Path) -> list[list[str]]:
 REFS_PLACEHOLDER = re.compile(r"\bpending\b|#NNNN|#PRNUMBER\b", re.IGNORECASE)
 
 
+# Row 205 (2026-11-20): the release notes quote `date`, `status` and `refs` verbatim, so a row is only useful there
+# if it says when, what became of it, and which pull request carried it. From the v0.5.0 tag (2026-11-02) on, every
+# row names its PR (`#1234`) and none still reads "draft": a status written before the merge ("shipped (draft)",
+# "draft PR; CI pending") is a placeholder exactly like `PR pending`, and 27 such rows plus 5 with no PR number were
+# about to go into the 0.6 notes as drafts. Rows older than the floor are history and are left as written; every
+# row, old or new, must carry a date, because an undated row is in no release's range and so in no release's notes.
+ROW_RULES_FROM = "2026-11-02"
+_PR_NUMBER = re.compile(r"#\d+")
+_DRAFT = re.compile(r"\bdraft\b", re.IGNORECASE)
+
+
+def row_problems(row: list[str], where: str) -> list[str]:
+    """What is wrong with one ledger row (date, area, item, status, refs, ...), each message naming ``where``."""
+    date, status, refs = row[0], row[3], row[4]
+    if not _DAY.match(date):
+        return [f"{where}: the date must be YYYY-MM-DD, found {date!r}"]
+    if date < ROW_RULES_FROM:
+        return []
+    out: list[str] = []
+    if not _PR_NUMBER.search(refs):
+        out.append(f"{where}: refs name no pull request ({refs!r}); add its number, e.g. PR #1234")
+    if _DRAFT.search(status):
+        out.append(f"{where}: status still says draft ({status!r}); write what the merged work is, e.g. shipped")
+    return out
+
+
 def check(csv_path: Path = LEDGER / "shipped.csv") -> list[str]:
     problems: list[str] = []
     seen: set[tuple[str, str, str]] = set()
     if csv_path.exists():
-        for r in list(csv.reader(io.StringIO(csv_path.read_text(encoding="utf-8"), newline="")))[1:]:
+        for n, r in enumerate(list(csv.reader(io.StringIO(csv_path.read_text(encoding="utf-8"), newline="")))[1:], 2):
             if len(r) >= 3:
                 seen.add((r[0], r[1], r[2]))
+            if len(r) >= 5:
+                problems.extend(row_problems(r, f"{csv_path.name} record {n} ({r[2][:40]!r})"))
     for p in fragment_files(csv_path):
         try:
             rows = read_fragment(p)
@@ -90,6 +118,7 @@ def check(csv_path: Path = LEDGER / "shipped.csv") -> list[str]:
             problems.append(str(exc))
             continue
         key = (rows[0][0], rows[0][1], rows[0][2])
+        problems.extend(row_problems(rows[0], p.name))
         if REFS_PLACEHOLDER.search(rows[0][4]):
             problems.append(f"{p.name}: an unswept placeholder in refs ({rows[0][4]!r}); write the real PR number")
         if key in seen:

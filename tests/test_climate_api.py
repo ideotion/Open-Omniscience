@@ -388,6 +388,20 @@ def test_the_only_request_the_tab_makes_off_the_machine_goes_through_the_consent
                          for c in calls), calls
 
 
+def test_the_oni_header_is_the_documented_layout_not_a_refused_line(db):
+    """Found by the 0.6 row A walk: every real CPC file starts with its header, which the parser
+    refuses on purpose, and the Climate tab then said "1 lines refused by the parser as not
+    matching the documented layout" on every fetch. The header is counted apart; a genuinely
+    foreign line is still a refusal."""
+    record = climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(ONI_V1, "2026-11-01T00:00:00+00:00"))
+    assert record["diagnostics"]["refused_total"] == 0 and record["diagnostics"]["refused_sample"] == []
+    assert record["diagnostics"]["header_lines"] == 1
+    odd = ONI_V1 + "XYZ  1950 24.00 -1.00\n"
+    record = climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(odd, "2026-11-02T00:00:00+00:00"))
+    assert record["diagnostics"]["refused_total"] == 1
+    assert record["diagnostics"]["refused_sample"][0]["text"].startswith("XYZ")
+
+
 def test_the_two_keyed_services_left_out_are_named_on_the_tab_in_every_language():
     """Row 193 (S06-04 S2): FIRMS and OpenAQ need an account key, so they are out, and the tab says so
     in a visible line beside the caveat, never in a hover or behind a toggle."""
