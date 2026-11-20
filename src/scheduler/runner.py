@@ -1865,6 +1865,31 @@ def _log_pause_in_force() -> bool:
         return False
 
 
+class StartGate:
+    """What a gated collection thread waits on before it runs anything (R756): opened, or cancelled. The loop's and the one-off run's
+    threads take it as an argument (``_loop_recorded(gate)``, ``_do_run(gate=...)``), so their targets stay the methods themselves.
+
+    ``POST /api/scheduler/start`` and ``/run-now`` make the thread first and open the network after. When they then decline to open it (a
+    Stop engaged the switch while the thread was being made), they CANCEL the gate, and the thread returns without running its target: a
+    pass that would run with every fetch refused, and a loop left "running" under airplane mode, are what the cancel is for."""
+
+    def __init__(self) -> None:
+        self._decided = threading.Event()
+        self._go = False
+
+    def open(self) -> None:
+        self._go = True
+        self._decided.set()
+
+    def cancel(self) -> None:
+        self._decided.set()
+
+    def wait(self) -> bool:
+        """Block until opened or cancelled; True when opened."""
+        self._decided.wait()
+        return self._go
+
+
 class BackgroundScheduler:
     """Daemon-thread scheduler with explicit start/stop and non-overlapping run-now.
 
@@ -1970,8 +1995,13 @@ class BackgroundScheduler:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self) -> bool:
+    def start(self, gate: StartGate | None = None) -> bool:
         """Start the scheduling loop. Returns False if it was already running, or while an exclusive operation holds the machine.
+
+        ``gate`` (R756): when given, the loop's thread is made and started but waits on it before it runs anything, so a caller can open the
+        network only once the thread exists -- a start that cannot make its thread then never opened anything. The caller MUST open or
+        cancel it (``POST /api/scheduler/start`` does, in a ``finally``); a cancelled loop thread exits without running, so ``is_running()``
+        turns false again.
 
         The hold (R367, F5 of the read of #1607) is refused here exactly as :meth:`run_now` refuses it: the Start button, the network toggle going
         online and the unattended start would otherwise put the loop back in the middle of an import, whose dialog says collection is paused. A
@@ -1992,7 +2022,7 @@ class BackgroundScheduler:
             self._stop.clear()
             previous = (self._thread, self._started_at)
             self._started_at = datetime.now(UTC)
-            self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
+            self._thread = threading.Thread(target=self._loop_recorded, args=(gate,) if gate is not None else (), name="oo-scheduler", daemon=True)
             try:
                 self._thread.start()
             except Exception:
@@ -2014,7 +2044,7 @@ class BackgroundScheduler:
             deferred, self._start_deferred = self._start_deferred, False
         return deferred
 
-    def _loop_recorded(self) -> None:
+    def _loop_recorded(self, gate: StartGate | None = None) -> None:
         """The loop, bracketed by the two ledger events the chronology reads its bar from
         (RR-10, 2026-09-24): collection started, collection stopped. Recorded HERE, on
         the loop's own thread, because every way collection starts or stops passes
@@ -2024,6 +2054,8 @@ class BackgroundScheduler:
         bounded, and a pass deep in a write can outlive it by many minutes). A process
         that dies with the loop running records no stop; the chronology closes the
         stretch at the session's end instead."""
+        if gate is not None and not gate.wait():
+            return  # cancelled before it began (R756): no pass, no ledger pair, and is_running() turns false again
         _ledger_collection(True)
         failure: str | None = None
         try:
@@ -2048,8 +2080,8 @@ class BackgroundScheduler:
             self._next_run = None
         return True
 
-    def run_now(self) -> bool:
-        """Trigger an immediate one-off run in a worker thread.
+    def run_now(self, gate: StartGate | None = None) -> bool:
+        """Trigger an immediate one-off run in a worker thread (``gate``: as in :meth:`start`, R756).
 
         Returns False if a run (scheduled or manual) is already in progress, OR
         an exclusive operation currently holds the machine (see
@@ -2069,7 +2101,7 @@ class BackgroundScheduler:
             if self._active or self._exclusive_hold:
                 return False
         _ensure_storage_supervisor()
-        threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
+        threading.Thread(target=self._do_run, kwargs={"gate": gate} if gate is not None else {}, name="oo-scrape-now", daemon=True).start()
         return True
 
     def hold_exclusive(self, claim: list[bool] | None = None) -> None:
@@ -2282,7 +2314,10 @@ class BackgroundScheduler:
             # Guarded clear: never wipe a phase a just-started pass owns.
             _phase_set(None)
 
-    def _do_run(self) -> None:
+    def _do_run(self, gate: StartGate | None = None) -> None:
+        # A "Run now" thread waits for the route to open the network first, and returns without running if it declined (R756).
+        if gate is not None and not gate.wait():
+            return
         # Skip if another run holds the lock (manual + scheduled racing).
         if not self._run_lock.acquire(blocking=False):
             return

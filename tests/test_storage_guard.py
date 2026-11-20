@@ -1016,7 +1016,7 @@ def test_start_and_run_now_release_the_latch_as_a_retry(monkeypatch):
 
     g = _engaged("wal")
     monkeypatch.setattr(storage_guard, "storage_guard", g)
-    fake = type("S", (), {"start": lambda self: True, "run_now": lambda self: True})()
+    fake = type("S", (), {"start": lambda self, gate=None: True, "run_now": lambda self, gate=None: True})()
     monkeypatch.setattr(api_sched, "get_scheduler", lambda: fake)
     monkeypatch.setattr(api_sched, "_status_payload", lambda: {})
     api_sched.scheduler_start()

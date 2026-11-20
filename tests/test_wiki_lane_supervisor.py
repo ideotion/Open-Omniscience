@@ -564,11 +564,11 @@ def scheduler_client(monkeypatch):
     calls: list[str] = []
 
     class _FakeScheduler:
-        def start(self):
+        def start(self, gate=None):
             calls.append("scheduler.start")
             return True
 
-        def run_now(self):
+        def run_now(self, gate=None):
             calls.append("scheduler.run_now")
             return True
 
