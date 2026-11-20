@@ -1030,6 +1030,23 @@ zoom ＋/－, wheel-zoom, drag-pan, ⛶ enlarge, and the layer/measure pickers.
   proxy, not the server).
 - **Coastlines & borders are bundled:** the country/coastline geometry ships with the app
   (Natural Earth, coarsened) — nothing to build, no borders invented.
+- **OpenStreetMap data and streets, with published limits:** once you have downloaded a
+  country's OpenStreetMap data (in Settings), its objects appear on this map, drawn on this
+  computer from that data — no tile server, no other host. How much one view draws is capped,
+  and the caps are stated, not hidden:
+  - up to **8,000 objects** in one view are drawn one by one; more are drawn as **clusters**
+    on a 40 by 40 grid, each with its exact count;
+  - shapes are thinned to about one screen pixel, and above **60,000 vertices** in one view
+    every shape is drawn as its point;
+  - zoomed in to a view **0.2 degrees wide or less**, the map draws **streets** from the
+    downloaded roads under the same two caps (8,000 roads, 60,000 vertices). Above either,
+    the least important road classes are left out one whole class at a time (paths first,
+    motorways last), and the map's status line names each class left out.
+
+  The status line also says how many objects are in view and how many were drawn, with the
+  data's extract date and last applied daily update; its hover bubble repeats the caps in
+  force. The numbers may be revised after measurement on a modest reference machine; the
+  hover always shows the current ones.
 
 Dates a story is *about* also become **per-article date tags**: open an article's offline
 reader to see them listed, **confirm or reject** each candidate, or **extract** on demand;
