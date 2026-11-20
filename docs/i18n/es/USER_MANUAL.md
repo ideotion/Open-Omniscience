@@ -42,7 +42,7 @@ HTTP completa) y de la resolución de problemas.
      [Fuentes](#33-fuentes-en-ajustes--avanzado--fuentes) · [Biblioteca](#34-biblioteca) · [Mercados](#35-mercados) ·
      [Índices](#35a-índices) · [Perspectivas](#36-perspectivas) ·
      [Mapa del mundo](#36a-mapa-del-mundo) · [Agenda](#36b-agenda) ·
-     [Fuentes vivas](#36b-fuentes-vivas) · [Clima](#36c-clima) · [Observatorio](#36d-observatorio) ·
+     [Fuentes vivas](#36b-fuentes-vivas) · [Clima](#36c-clima) · [Observatorio](#36d-observatorio) · [Artículos médicos](#36e-artículos-médicos) ·
      [Wikipedia](#37-wikipedia-en-ajustes--wikipedia) ·
      [Evidencia y custodia](#38-pruebas-y-custodia) · [Ajustes](#39-ajustes) ·
      [Ayuda y documentación](#310-ayuda-y-documentación)
@@ -1210,6 +1210,42 @@ temáticos.
   palabras clave que no pertenecen a ninguna galaxia).
 - El mismo corpus dibuja siempre el mismo cielo, así que un cambio que usted vea es un cambio en sus
   datos. No hay ninguna puntuación compuesta.
+
+### 3.6e Artículos médicos
+
+**Para qué sirve:** leer los registros de PubMed de los artículos médicos y científicos
+a los que enlazan sus artículos, junto a las noticias y nunca mezclados con ellas. **Esta
+aplicación nunca da consejo médico:** un artículo listado aquí es uno que sus artículos
+citan, no una recomendación.
+
+**Dónde encontrarlo.** **Ajustes → Avanzado → Artículos médicos** muestra lo que se guarda y
+tiene el botón **Obtener de PubMed**. En un análisis (**Explorar**), la subpestaña
+**Artículos médicos** lista los artículos guardados a los que enlazan los artículos
+analizados, con cuántos artículos citan cada uno.
+
+**Cómo obtiene los datos.** No se descarga nada hasta que pulse **Obtener de PubMed**.
+Contacta un solo servidor, `ftp.ncbi.nlm.nih.gov`, y lee los *archivos de actualización* de
+PubMed de la NLM (7 por ejecución por defecto, 30 como máximo), de decenas de megabytes cada
+uno. Pasa por la misma ventana de consentimiento que cualquier otra acción de red, se
+rechaza mientras el modo avión está activo y se ejecuta en segundo plano; el administrador
+de tareas lo muestra. **Cancelar** allí termina la ejecución tras el archivo en curso;
+activar el modo avión termina una descarga al instante. Nunca se envía al NCBI
+ningún identificador de artículo.
+
+**Qué se guarda.** Cada archivo se lee entero y se comprueba con la suma de control de la
+NLM. Solo se guardan los registros que sus artículos citan (mediante un enlace de PubMed,
+PMC o DOI), en su propio archivo, `medical.db`; el resto se descarta y
+nunca se escribe en el disco. Una copia de seguridad incluye `medical.db`, y cada registro
+guardado también puede volver a obtenerse.
+
+**En qué puede confiar.** Cada artículo muestra la clase que indica su registro: **Registro
+de revista** (la revisión por pares es lo que afirma la revista; esta aplicación no la
+comprueba), **Preprint** (sin revisión por pares) o **Retractado**. Una fe de erratas, una
+expresión de preocupación, un aviso de retractación y un registro retirado de PubMed tienen
+cada uno su propia insignia. Los archivos de actualización solo contienen los artículos que
+la NLM revisó recientemente, así que la mayoría de los artículos que citan sus artículos
+**aún no se encontrarán**: se muestra cuántos son, y un artículo que no se encuentra aquí no
+falta por ello en PubMed.
 
 ### 3.7 Wikipedia *(en Ajustes → Wikipedia)*
 

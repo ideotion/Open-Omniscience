@@ -61,9 +61,12 @@ MAX_XML_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_FILES = 7
 MAX_FILES = 30
 
+#: It names only what a user can do today: the store also honours a list of NAMED ids (``store.add_wanted``), but no route
+#: or control fills it yet, so promising "or that you named" would describe a feature the app does not offer (row 216, R759;
+#: ``tests/test_medical_disclosure_claim.py`` turns the words back on when a caller appears).
 DISCLOSURE = (
     "Each PubMed update file is tens of megabytes. The app reads it whole and keeps only the papers "
-    "your articles cite or that you named; the rest is discarded, never stored."
+    "your articles cite; the rest is discarded, never stored."
 )
 GAP = (
     "Only papers NLM revised recently are in the update files, so most papers your articles cite "
