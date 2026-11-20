@@ -299,13 +299,24 @@ def _parts_in_order(data_dir: Path, listing: dict) -> list[tuple[str, int, int, 
 
 
 def _set_summary(data_dir: Path, listing: dict) -> dict:
-    """The ``summary.json`` ``data`` a numbered set carries (in one of its files)."""
+    """The ``summary.json`` ``data`` a numbered set carries: whole in one of its files, or (at the
+    200 KB part size, row 212) cut into ``summary.sNNN.json`` pieces that rejoin with the writer's own
+    :func:`~src.analytics.upload_parts.join_json_pieces`."""
+    from src.analytics.upload_parts import join_json_pieces
+
+    pieces: list[tuple[str, dict]] = []
     for f in listing["files"]:
         if f["kind"] != "part":
             continue
         with zipfile.ZipFile(data_dir / listing["set"] / f["name"]) as z:
             if "summary.json" in z.namelist():
                 return json.loads(z.read("summary.json"))["data"]
+            for member in z.namelist():
+                if re.fullmatch(r"summary\.s\d{3}\.json", member):
+                    doc = json.loads(z.read(member))
+                    pieces.append((member, {**doc["oo_part"], "value": doc["value"]}))
+    if pieces:
+        return join_json_pieces(p for _m, p in sorted(pieces, key=lambda mp: mp[0]))["data"]
     raise AssertionError("the numbered set carries no summary.json")
 
 
