@@ -239,3 +239,107 @@ def test_a_backup_carrying_the_medical_store_carries_the_pubmed_line():
     assert "National Library of Medicine" in lines[0]["text"] and lines[0]["because"] == "lane:medical"
     assert attribution_dicts({lane_signal("wiki")})[0]["key"] != "pubmed"
     assert "medical" in lane_merge.MERGEABLE_KINDS
+
+
+# --- hostile members (the security read of #2169) ------------------------------------------------
+
+
+def _edit_member(staging: Path, *sql: str, params: tuple = ()) -> None:
+    con = sqlite3.connect(staging / "lanes" / "medical.db")
+    try:
+        for stmt in sql:
+            con.execute(stmt, params) if "?" in stmt else con.execute(stmt)
+        con.commit()
+    finally:
+        con.close()
+
+
+def test_a_member_whose_id_is_not_the_rowid_key_is_refused(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    # A tested row and an untested one sharing an id: the copy must never pick the second.
+    _edit_member(
+        staging,
+        "CREATE TABLE w2 (id INTEGER, id_kind VARCHAR(8) NOT NULL, value VARCHAR(300) NOT NULL, added_at DATETIME NOT NULL)",
+        "INSERT INTO w2 SELECT id, id_kind, value, added_at FROM medical_wanted",
+        "INSERT INTO w2 VALUES (1, 'zzz', 'not an id', '2026-11-01 00:00:00.000000')",
+        "DROP TABLE medical_wanted",
+        "ALTER TABLE w2 RENAME TO medical_wanted",
+    )
+    _seed_a(a, use)
+    before = _state()
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["state"] == "failed"
+    assert _state() == before
+
+
+def test_an_abstract_is_rebuilt_here_and_a_bad_or_oversized_one_refuses_its_row(machines, tmp_path):
+    import bz2
+    import hashlib
+    import struct
+
+    from src.utils.compression import COMPRESSION_MAGIC
+
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    raw = b"x" * (5 * 1024 * 1024)
+    bomb = struct.pack("<4sBBHQ32s", COMPRESSION_MAGIC, 3, 9, 0, len(raw), hashlib.sha256(raw).digest()) + bz2.compress(raw)
+    _edit_member(staging, "UPDATE medical_papers SET abstract_json = X'00112233' WHERE pmid = 2")
+    con = sqlite3.connect(staging / "lanes" / "medical.db")
+    try:
+        con.execute("UPDATE medical_papers SET abstract_json = ? WHERE pmid = 3", (bomb,))
+        con.commit()
+    finally:
+        con.close()
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["medical"]["papers_refused"] == 2
+    assert rep["lanes"][0]["tables"]["medical_papers"] == {"inserted": 0}
+
+
+def test_a_copied_abstract_reads_back_as_the_same_sections(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    with store.lane_session(M.LANE) as s:
+        p = s.execute(select(MedicalPaper).where(MedicalPaper.pmid == 2)).scalar_one()
+        assert p.abstract_json == '[["", "An abstract."]]'
+
+
+def test_list_columns_must_hold_what_the_parser_writes(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    _edit_member(
+        staging,
+        "UPDATE medical_papers SET status_links_json = '[[[1]]]' WHERE pmid = 2",
+        "UPDATE medical_papers SET keywords_json = '[[\"nested\"]]' WHERE pmid = 3",
+    )
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["medical"]["papers_refused"] == 2
+
+
+def test_a_well_formed_status_link_is_copied(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    _edit_member(staging, "UPDATE medical_papers SET status_links_json = '[[\"RetractionIn\", 90000009, \"J Test 2025\"]]' WHERE pmid = 2")
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["medical"]["papers_refused"] == 0
+    with store.lane_session(M.LANE) as s:
+        out = M.papers_cited_by(s, {7: _wanted_pmids("2")})
+    assert out["papers"][0]["pmid"] == 2
+
+
+def test_a_named_doi_outside_printable_ascii_is_refused(machines, tmp_path):
+    a, b, use = machines
+    staging = _seed_b(b, use, tmp_path)
+    _edit_member(
+        staging,
+        "INSERT INTO medical_wanted (id_kind, value, added_at) VALUES ('doi', '10.1/é', '2026-11-01 00:00:00.000000')",
+        "INSERT INTO medical_wanted (id_kind, value, added_at) VALUES ('doi', '10.1/a' || char(11) || 'b', '2026-11-01 00:00:00.000000')",
+    )
+    _seed_a(a, use)
+    rep = lane_merge.merge_staged_lanes(staging, MEMBER, [None])
+    assert rep["lanes"][0]["medical"]["wanted_refused"] == 2
