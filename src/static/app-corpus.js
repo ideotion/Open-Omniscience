@@ -1107,13 +1107,17 @@
     // first"): never a bare outbound shortcut, even to Wikidata. It sits inside keyword
     // chips and rows that are clickable themselves, so the click STOPS here: without it
     // the preview opened AND the enclosing chip's own action ran behind it (M9).
-    function kwQidHtml(row) {
+    // opts.noDossier: the caller draws this INSIDE its own <button>, where a nested <button> would
+    // close the outer one at parse time (row 178 review); the QID link alone stays, as before.
+    function kwQidHtml(row, opts) {
       const qid = row && row.translation_qid;
       if (!qid) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const url = "https://www.wikidata.org/wiki/" + encodeURIComponent(qid);
       return ` <a href="#" class="kw-qid" data-i18n-dyn title="${esc(t("Open a local preview of this source first"))}"`
-        + ` data-on-click='ooStop(event);openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+        + ` data-on-click='ooStop(event);openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`
+        // Row 178: the keyword's own entry to the item's dossier (app-dossier.js), local reads only.
+        + ((opts && opts.noDossier) || typeof dossierButtonHtml !== "function" ? "" : dossierButtonHtml(qid));
     }
 
     // A keyword's KIND as chrome (re-walk M-6): the Resolved line's pill printed the stored
@@ -1162,7 +1166,7 @@
           + esc(p.tag) + `</span>`;
         if (p.tagClass === "kw-senses" && !(opts && opts.inButton)) html += kwSensePickerHtml(row);
       }
-      return html + ((opts && opts.inLink) ? "" : kwQidHtml(row));
+      return html + ((opts && opts.inLink) ? "" : kwQidHtml(row, {noDossier: !!(opts && opts.inButton)}));
     }
 
     // Q412 = a's picker. A refusal that names a choice and offers no way to make it is a

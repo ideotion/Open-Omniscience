@@ -783,7 +783,7 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     # ...less the 20,000 two members now prove below their plan figures: the machine record 20,000 -> 10,000 (its own test below) and the
     # release-run report 150,000 -> 140,000 (the bundle copy is capped, test_release_run.py)
     assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000 + 10_329 - 10_000 - 10_000
-    assert free == 1_502_415, "the comment on the table states the free room; move them together"
+    assert free == 1_500_015, "the comment on the table states the free room; move them together"
 
 
 def test_a_budget_raised_past_the_headroom_fails_the_pin(monkeypatch):

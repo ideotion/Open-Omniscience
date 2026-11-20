@@ -3032,6 +3032,10 @@
           // Q618: relevance is the default order for a query, and a ranked list is not a
           // sample -- so the order is stated here too, not only in the analysis window.
           + _anOrderingHtml(data.ordering) + _advDymHtml(data.did_you_mean);
+        // Row 178: when the words name exactly one Wikidata item, the count line offers its dossier.
+        if (typeof dossierSearchHint === "function") {
+          dossierSearchHint(p.get("query") || "", $("search-meta"), () => seq === _searchSeq);
+        }
         _advHistRecord(($("q").value || "").trim(), _advClean({
           source: ($("f-source").value || "").trim(), language: ($("f-lang").value || "").trim(),
           start_date: p.get("start_date") || "", end_date: p.get("end_date") || "",
