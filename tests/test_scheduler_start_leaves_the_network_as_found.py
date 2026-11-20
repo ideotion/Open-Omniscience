@@ -288,9 +288,27 @@ def test_a_cancelled_loop_thread_exits_without_running_and_the_scheduler_is_not_
     ran: list[str] = []
     scheduler = runner.BackgroundScheduler(run_once_fn=lambda: ran.append("pass") or {})
     monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: None)
-    monkeypatch.setattr(scheduler, "_loop_recorded", lambda: ran.append("loop"))
+    monkeypatch.setattr(scheduler, "_loop", lambda: ran.append("loop"))
+    monkeypatch.setattr(runner, "_ledger_collection", lambda *a, **k: ran.append("ledger"))
     gate = runner.StartGate()
     assert scheduler.start(gate=gate) is True
     gate.cancel()
     scheduler._thread.join(5)
     assert scheduler.is_running() is False and ran == []
+
+
+def test_the_same_patched_loop_does_run_when_the_gate_opens(monkeypatch):
+    """The control for the test above: with the same patches, an OPENED gate runs the loop and writes the ledger pair, so the empty
+    record there is the cancel's doing and not a patch that never ran."""
+    from src.scheduler import runner
+
+    ran: list[str] = []
+    scheduler = runner.BackgroundScheduler(run_once_fn=lambda: {})
+    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: None)
+    monkeypatch.setattr(scheduler, "_loop", lambda: ran.append("loop"))
+    monkeypatch.setattr(runner, "_ledger_collection", lambda *a, **k: ran.append("ledger"))
+    gate = runner.StartGate()
+    assert scheduler.start(gate=gate) is True
+    gate.open()
+    scheduler._thread.join(5)
+    assert ran == ["ledger", "loop", "ledger"]

@@ -2022,7 +2022,7 @@ class BackgroundScheduler:
             self._stop.clear()
             previous = (self._thread, self._started_at)
             self._started_at = datetime.now(UTC)
-            self._thread = threading.Thread(target=self._loop_recorded, args=(gate,), name="oo-scheduler", daemon=True)
+            self._thread = threading.Thread(target=self._loop_recorded, args=(gate,) if gate is not None else (), name="oo-scheduler", daemon=True)
             try:
                 self._thread.start()
             except Exception:
@@ -2101,7 +2101,7 @@ class BackgroundScheduler:
             if self._active or self._exclusive_hold:
                 return False
         _ensure_storage_supervisor()
-        threading.Thread(target=self._do_run, kwargs={"gate": gate}, name="oo-scrape-now", daemon=True).start()
+        threading.Thread(target=self._do_run, kwargs={"gate": gate} if gate is not None else {}, name="oo-scrape-now", daemon=True).start()
         return True
 
     def hold_exclusive(self, claim: list[bool] | None = None) -> None:
