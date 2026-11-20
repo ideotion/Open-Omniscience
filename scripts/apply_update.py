@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Apply a checked update after the app has exited, then start it again. Standard library only (it runs while the app's own environment is mid-swap).
+"""Apply a checked update after the app has exited, then start it again. Standard library only (it runs while the app's own environment is mid-swap), save
+one lazy ``psutil`` import on Windows (R748; a declared dependency, from the venv's site-packages, which the merge does not touch).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -247,16 +248,18 @@ def roll_back(root: Path, old: str, changed: list[str], py: str, *, new: str = "
 
 def git_processes_running() -> bool | None:
     """True if any process whose name starts with ``git`` runs on this machine, False if positively none, None when that cannot be told
-    (psutil missing or refusing). Deliberately broad: the git that holds a lock is not ours to name (its wrapper was killed), so ANY git
-    process counts as a possible holder, and only a machine with none at all lets a lock be called stale."""
+    (psutil missing or refusing, or a process whose name it cannot read). Deliberately broad: the git that holds a lock is not ours to
+    name (its wrapper was killed), so ANY git process counts as a possible holder, and only a machine with none at all is a False."""
     try:
         import psutil
     except ImportError:
         return None
     try:
         for proc in psutil.process_iter(["name"]):
-            name = (proc.info.get("name") or "").lower()
-            if name.startswith("git"):
+            name = proc.info.get("name")
+            if not isinstance(name, str):
+                return None  # AccessDenied or a zombie leaves the name unset: it could be the holder, so this cannot be told
+            if name.lower().startswith("git"):
                 return True
     except Exception:  # noqa: BLE001 - any failure to look is "cannot tell", which waits
         return None
@@ -265,20 +268,23 @@ def git_processes_running() -> bool | None:
 
 def wait_for_index_lock(root: Path, *, wait_s: float = LOCK_RELEASE_WAIT_S, poll_s: float = LOCK_POLL_S, sleep=time.sleep,
                         clock=time.monotonic, git_running=git_processes_running) -> bool:
-    """After a merge the timeout killed on Windows (R748, row 179): True once ``.git/index.lock`` is gone, so the tree can be put back.
+    """After a merge the timeout killed on Windows (R748, row 179): True once NO git process runs on this machine, so the tree can be put
+    back without a git still writing it.
 
-    A lock that disappears was let go by the git that held it. A lock that stays while NO git process runs on this machine is stale (the
-    killed git died before it could remove it) and is removed here, the one case where removing it cannot pull a lock from under a live
-    git. While any git process runs, or when that cannot be told, the lock is never touched; after ``wait_s`` the answer is False and the
-    caller leaves the tree for the installer, as before."""
+    The lock alone does not say that: the git its killed wrapper left behind may not have taken ``.git/index.lock`` yet, and an ff merge
+    lets the lock go BEFORE it moves HEAD, so a reset in that gap would be overtaken by the ref update (security and correctness reads of
+    #2160). So the answer waits for the process probe's plain False. A lock still there then is stale (that git died before it could
+    remove it) and is removed, the one case where removing it cannot pull a lock from under a live git. While any git process runs, or
+    when that cannot be told, nothing is touched; after ``wait_s`` the answer is False and the caller leaves the tree for the installer,
+    as before. (On Windows ``subprocess.run`` may itself wait for the real git before it reports the timeout, since that git holds the
+    output pipes: then this usually answers at once.)"""
     lock = root / ".git" / "index.lock"
     deadline = clock() + wait_s
     while True:
-        if not lock.exists():
-            return True
         if git_running() is False:
-            with contextlib.suppress(FileNotFoundError):
-                lock.unlink()  # a PermissionError here (Windows: the file is open) propagates as "held": see the caller
+            if lock.exists():
+                with contextlib.suppress(FileNotFoundError):
+                    lock.unlink()  # a PermissionError here (Windows: the file is open) propagates as "held": see the caller
             return True
         if clock() >= deadline:
             return False
