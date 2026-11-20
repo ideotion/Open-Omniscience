@@ -2128,7 +2128,12 @@
           : s.server_kind === "relay"
             ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
             : "";
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + kindNote + logBlock;
+        // R762: an address on another computer is refused by the same rule as every local-AI call, and the app
+        // does not contact it; said here, where the address is shown, instead of a silent "not running".
+        const refusedNote = (s.port_occupant && s.port_occupant.state === "refused")
+          ? `<p class="card-caveat">${esc(t("This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1."))}</p>`
+          : "";
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + refusedNote + kindNote + logBlock;
         if (!s.installed) {
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {

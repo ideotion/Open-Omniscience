@@ -6051,6 +6051,7 @@
   "This text is in force from": "Teks ini berlaku sejak",
   "This theme is taking up a bigger share of your corpus's daily coverage than its own recent history — worth a look, never proof of importance.": "Tema ini mengambil porsi liputan harian korpus Anda yang lebih besar daripada riwayat terbarunya sendiri — layak dilihat, tidak pernah bukti kepentingan.",
   "This title is not in the dump's index.": "Judul ini tidak ada dalam indeks dump.",
+  "This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1.": "Alamat vLLM ini tidak berada di komputer ini, jadi aplikasi tidak menghubunginya. AI lokal hanya berbicara dengan komputer ini: setel OO_VLLM_URL ke 127.0.0.1, localhost, atau ::1.",
   "This version cannot back up the living-source stores on this computer yet; a later version will.": "Versi ini belum dapat mencadangkan penyimpanan sumber hidup di komputer ini; versi berikutnya akan bisa.",
   "This version is already in your corpus.": "Versi ini sudah ada di korpus Anda.",
   "This version is no longer held on this machine.": "Versi ini tidak lagi disimpan di mesin ini.",

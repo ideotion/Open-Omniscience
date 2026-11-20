@@ -6051,6 +6051,7 @@
   "This text is in force from": "Este texto está em vigor desde",
   "This theme is taking up a bigger share of your corpus's daily coverage than its own recent history — worth a look, never proof of importance.": "Este tema ocupa uma parte maior da cobertura diária do seu corpus do que na sua própria história recente — merece um olhar, nunca é prova de importância.",
   "This title is not in the dump's index.": "Este título não está no índice do dump.",
+  "This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1.": "Este endereço do vLLM não está neste computador, por isso a aplicação não o contacta. A IA local só fala com este computador: defina OO_VLLM_URL como 127.0.0.1, localhost ou ::1.",
   "This version cannot back up the living-source stores on this computer yet; a later version will.": "Esta versão ainda não consegue fazer cópia dos armazenamentos de fontes vivas deste computador; uma versão posterior conseguirá.",
   "This version is already in your corpus.": "Esta versão já está no seu corpus.",
   "This version is no longer held on this machine.": "Esta versão já não está guardada nesta máquina.",
