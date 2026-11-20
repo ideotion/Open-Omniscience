@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+# Windows has no socket.sendmsg (row 150): the probes send one only where the method exists, and expect one more answer there.
+_HAS_SENDMSG = int(hasattr(socket.socket, "sendmsg"))
 
 _ASK = r"""
 import json
@@ -41,7 +44,7 @@ print(json.dumps({"divs": divs, "att": att, "cands": cands}, default=str))
 def _run(code_args: list[str], data_dir: Path) -> str:
     env = {**os.environ, "OO_DATA_DIR": str(data_dir), "OO_DB_PLAINTEXT": "1", "OO_AUTOSEED": "0", "OO_NO_SCHEDULER": "1"}
     env.pop("DATABASE_URL", None)  # it overrides OO_DATA_DIR
-    done = subprocess.run([sys.executable, *code_args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=300)
+    done = subprocess.run([sys.executable, *code_args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", timeout=300)
     assert done.returncode == 0, done.stderr[-2500:]
     return done.stdout
 
@@ -182,10 +185,10 @@ def test_the_tripwire_lets_exactly_the_loopback_through():
         "c = socket.socket(); attempt(lambda: c.connect(('127.0.0.1', port)))\n"
         "c2 = socket.socket(); attempt(lambda: c2.connect_ex(('127.0.0.1', port)))\n"
         "u = socket.socket(type=socket.SOCK_DGRAM); attempt(lambda: u.sendto(b'x', ('127.0.0.1', port)))\n"
-        "attempt(lambda: u.sendmsg([b'x'], [], 0, ('127.0.0.1', port)))\n"
+        + ("attempt(lambda: u.sendmsg([b'x'], [], 0, ('127.0.0.1', port)))\n" if _HAS_SENDMSG else "")
     )
     out = _probe(body)
-    assert out == ["ok"] * len(out) and len(out) == 11, out
+    assert out == ["ok"] * len(out) and len(out) == 10 + _HAS_SENDMSG, out
 
 
 def test_the_tripwire_refuses_everything_that_is_not_the_loopback():
@@ -209,13 +212,14 @@ def test_the_tripwire_refuses_everything_that_is_not_the_loopback():
         "attempt(lambda: socket.socket().connect(('93.184.216.34', 443)))\n"
         "attempt(lambda: socket.socket().connect_ex(('93.184.216.34', 443)))\n"
         "attempt(lambda: socket.socket(type=socket.SOCK_DGRAM).sendto(b'x', ('93.184.216.34', 53)))\n"
-        "attempt(lambda: socket.socket(type=socket.SOCK_DGRAM).sendmsg([b'x'], [], 0, ('93.184.216.34', 53)))\n"
-        "attempt(lambda: socket.create_connection(('example.org', 443), timeout=2))\n"
+        + ("attempt(lambda: socket.socket(type=socket.SOCK_DGRAM).sendmsg([b'x'], [], 0, ('93.184.216.34', 53)))\n" if _HAS_SENDMSG else "")
+        + "attempt(lambda: socket.create_connection(('example.org', 443), timeout=2))\n"
         "print(len(g.REFUSALS))\n"
     )
     out = _probe(body)
-    assert out[:-1] == ["refused"] * 16, out
-    assert int(out[-1]) >= 16, "the tripwire must count what it refused so the run can assert it is 0"
+    expected = 15 + _HAS_SENDMSG
+    assert out[:-1] == ["refused"] * expected, out
+    assert int(out[-1]) >= expected, "the tripwire must count what it refused so the run can assert it is 0"
 
 
 def test_the_run_fails_when_the_tripwire_refused_anything_even_if_the_app_swallowed_it():

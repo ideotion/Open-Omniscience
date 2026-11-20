@@ -180,7 +180,8 @@ def _run_server_text(messages: list[str], *, translate: bool = False) -> list[st
         function_source(js, "ooServerText"),
         "process.stdout.write(JSON.stringify(" + json.dumps(messages) + ".map(ooServerText)));",
     ])
-    proc = subprocess.run(["node", "-e", prog], capture_output=True, text=True, check=False)
+    # UTF-8, not the locale's code page: the sentences carry isolate marks a cp1252 reader cannot decode (Windows, row 155)
+    proc = subprocess.run(["node", "-e", prog], capture_output=True, text=True, encoding="utf-8", check=False)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 
