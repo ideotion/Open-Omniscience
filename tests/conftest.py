@@ -43,11 +43,16 @@ atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
 # failed on `logs/app_errors.jsonl: sha256 mismatch`, another worker having appended to it while a backup was being verified). The controller
 # records the directory it chose as ITS default; a worker that finds exactly that value replaces it with its own. A directory the operator chose
 # explicitly (CI, a specific scenario) is a different value and is left alone.
+# Row 218: the same holds for a pytest that a TEST starts in a child process (tests/test_search_advanced_fixture_order.py passes its whole
+# environment on). The mark was set by the controller only, so a worker's child found the WORKER's directory, not the mark, and ran the
+# app's boot on that worker's live database from a second process: eleven files appeared in it, the database among them, and on macOS the
+# worker's later tests failed with "disk I/O error" on every new connection. Every process now marks the directory it made its own, and
+# any process that inherits a marked directory takes its own, whether it is a worker or a child.
 _DEFAULT_MARK = "OO_TESTS_DEFAULT_DATA_DIR"
-if os.environ.get("PYTEST_XDIST_WORKER") and os.environ.get("OO_DATA_DIR") == os.environ.get(_DEFAULT_MARK):
+if os.environ.get("OO_DATA_DIR") and os.environ.get("OO_DATA_DIR") == os.environ.get(_DEFAULT_MARK):
     os.environ["OO_DATA_DIR"] = _ISOLATED
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
-if os.environ["OO_DATA_DIR"] == _ISOLATED and not os.environ.get("PYTEST_XDIST_WORKER"):
+if os.environ["OO_DATA_DIR"] == _ISOLATED:
     os.environ[_DEFAULT_MARK] = _ISOLATED
 # The directory this process was started on. ``src.database.session`` binds its engine to ``OO_DATA_DIR`` at its first import, so
 # ``_engine_binds_to_the_suite_directory`` below compares what it bound to against THIS, not against the variable (a test moves that).
