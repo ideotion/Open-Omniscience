@@ -4352,22 +4352,25 @@
        Every claim below is one the code actually enforces; the last paragraph is
        the limit, stated in the same breath rather than left to be inferred. -->
   <dialog id="ai-egress-consent" style="max-width:460px;padding:18px">
-    <h3 style="margin:0 0 8px">Let the AI install go online, without collecting?</h3>
+    <h3 class="ai-eg-off" style="margin:0 0 8px">Let the AI install go online, without collecting?</h3>
+    <h3 class="ai-eg-on" style="margin:0 0 8px" hidden>Start the AI install?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
       <div id="ai-egress-reason" style="margin-top:4px"><b></b></div></div>
-    <div class="hint" style="margin-bottom:8px">Collection stays stopped. The collector is not started, and every
-      other download in the app — sources, Wikipedia dumps, maps, statistics, discovery, mailbox — keeps
-      refusing while this is open.</div>
+    <div id="ai-egress-offline">
+      <div class="hint" style="margin-bottom:8px">Collection stays stopped. The collector is not started, and every
+        other download in the app — sources, Wikipedia dumps, maps, statistics, discovery, mailbox — keeps
+        refusing while this is open.</div>
+      <div class="hint" style="margin-bottom:8px">It closes on its own once the install finishes, fails or is
+        cancelled, and you can close it at any time from the bar at the top.</div>
+    </div>
     <div class="hint" style="margin-bottom:8px">This does not restrict which hosts the installer contacts. The
       download runs as a separate program (pip, Hugging Face, Ollama's own installer and daemon), so this app
       cannot see or limit where it connects, and cannot hide your address from it.</div>
-    <div class="hint" style="margin-bottom:8px">These downloads go over the clear internet — not through your
+    <div class="hint" style="margin-bottom:12px">These downloads go over the clear internet — not through your
       configured proxy or Tor.</div>
-    <div class="hint" style="margin-bottom:12px">It closes on its own once the install finishes, fails or is
-      cancelled, and you can close it at any time from the bar at the top.</div>
     <div class="row" style="justify-content:flex-end;gap:8px">
-      <button class="secondary" id="ai-egress-cancel">Stay offline</button>
-      <button id="ai-egress-ok">Allow the install online</button>
+      <button class="secondary" id="ai-egress-cancel"><span class="ai-eg-off">Stay offline</span><span class="ai-eg-on" hidden>Cancel</span></button>
+      <button id="ai-egress-ok"><span class="ai-eg-off">Allow the install online</span><span class="ai-eg-on" hidden>Start the install</span></button>
     </div>
   </dialog>
 

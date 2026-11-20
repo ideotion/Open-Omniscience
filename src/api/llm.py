@@ -847,6 +847,19 @@ def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_ollama_client
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
+
+def _refuse_protected_ai_install() -> None:
+    """R763: a 409 naming why, before any AI-install job starts, while protected mode is on (or the settings cannot be read).
+
+    Every AI-install download runs outside this process (the Ollama daemon, pip / uv, the Hugging Face snapshot), where the
+    protected-mode proxy does not reach, so it would leave over a direct connection. The update helper refuses the same way.
+    """
+    from src.llm.install_transport import AI_INSTALL_PROTECTED_REFUSAL, ai_install_protected
+
+    if ai_install_protected():
+        raise HTTPException(status_code=409, detail=AI_INSTALL_PROTECTED_REFUSAL)
+
+
 # Model-download QUEUE (§2.C1): pulls run one at a time, the rest queue, each
 # cancellable. The streaming /pull above stays for the single-pull path; the queue
 # is the multi-pull path surfaced in the task manager.
@@ -855,6 +868,8 @@ def llm_pull_queue(req: ModelRequest) -> dict:
     """Add a model to the pull queue (one active pull at a time). The frontend gates
     this through the ONE network consent first (clearnet egress via Ollama, Q9)."""
     from src.llm.pull_queue import get_pull_manager
+
+    _refuse_protected_ai_install()
 
     try:
         return get_pull_manager().enqueue(req.model)
@@ -1159,6 +1174,7 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
         st = job.status()
         st["started"] = False
         return st
+    _refuse_protected_ai_install()
     support = platform_support()
     if not support["supported"]:
         raise HTTPException(status_code=409, detail=support["reason"])
@@ -1431,6 +1447,7 @@ def default_model_install() -> dict:
     """
     from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
 
+    _refuse_protected_ai_install()
     if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,
@@ -1901,6 +1918,7 @@ def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
     from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
     from src.llm.model_catalog import identifiers_for
 
+    _refuse_protected_ai_install()
     if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,
@@ -2025,6 +2043,7 @@ def llm_pull_custom_model(req: CustomModelRequest) -> dict:
             "queued": [],
             "refused": [{"key": identifier, "label": identifier, "reason": REFUSAL}],
         }
+    _refuse_protected_ai_install()
     if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,

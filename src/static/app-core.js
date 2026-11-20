@@ -1758,20 +1758,34 @@
     // or the operator consented just now.
     async function ensureAiEgress(reason) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // R763: the dialog is shown EVERY time, online or not, because what it says (the download leaves outside this
+      // app, not through your proxy) is true either way. Only the go-online part of it depends on the state.
+      let online = false, windowOpen = false;
       try {
         const nm = await api("/api/system/network");
         _paintNetwork(nm.online);
-        if (nm.online) return true;   // no window needed; the app is simply online
-      } catch (_e) { /* fall through and ask -- never assume online */ }
+        online = !!nm.online;
+      } catch (_e) { /* never assume online */ }
       try {
         const st = await api("/api/system/egress-window");
         _paintEgressWindow(st);
-        if (st.open) return true;     // already allowed, still running
-      } catch (_e) { /* fall through and ask */ }
+        windowOpen = !!st.open;
+        // Refused before the dialog, as the update refuses protected mode before its consent popup: going online
+        // would not make a direct download go through the proxy, so asking would offer a choice that does not exist.
+        if (st.ai_install_blocked === "protected") {
+          toast(t("Protected mode is on, so the AI install did not start: it would download over a direct connection, not through your proxy. Switch to standard mode to install, or install by hand through your proxy."), "err");
+          return false;
+        }
+      } catch (_e) { /* fall through and ask; the server refuses protected mode on its own */ }
       const dlg = document.getElementById("ai-egress-consent");
       if (!dlg) return false;         // no dialog -> never silently proceed
+      const needsWindow = !online && !windowOpen;
       const slot = dlg.querySelector("#ai-egress-reason b");
       if (slot) slot.textContent = reason || t("Install the local AI");
+      const offlineOnly = dlg.querySelector("#ai-egress-offline");
+      if (offlineOnly) offlineOnly.hidden = !needsWindow;
+      for (const el of dlg.querySelectorAll(".ai-eg-off")) el.hidden = !needsWindow;
+      for (const el of dlg.querySelectorAll(".ai-eg-on")) el.hidden = needsWindow;
       return new Promise((resolve) => {
         const ok = document.getElementById("ai-egress-ok");
         const cancel = document.getElementById("ai-egress-cancel");
@@ -1780,9 +1794,9 @@
           ok.onclick = cancel.onclick = dlg.oncancel = null;
           resolve(val);
         };
-        ok.onclick = async () => done(await _openEgressWindow());
+        ok.onclick = async () => done(needsWindow ? await _openEgressWindow() : true);
         cancel.onclick = () => done(false);
-        dlg.oncancel = () => done(false);   // Esc = stay offline
+        dlg.oncancel = () => done(false);   // Esc = do nothing
         dlg.showModal();
       });
     }
