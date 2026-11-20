@@ -40,7 +40,8 @@ def test_a_release_while_a_run_is_in_flight_pauses_the_run_first_and_frees_the_m
     from src.api import llm as llm_api
 
     gate = threading.Semaphore(0)
-    _use(monkeypatch, _FakeLlm(gate))
+    fake = _FakeLlm(gate)
+    _use(monkeypatch, fake)
     released = threading.Event()
     order: list[str] = []
 
@@ -54,6 +55,10 @@ def test_a_release_while_a_run_is_in_flight_pauses_the_run_first_and_frees_the_m
     eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids, "skip_existing": False})["entry"]["id"]
     gate.release()
     assert _wait(lambda: _summaries(ids[0]) == 1)
+    # The premise of this test is a generation IN FLIGHT when the release comes. Article 1 being stored does not give that:
+    # the run then prepares article 2 and starts its model call, and a release landing in that gap (row 190, seen once under
+    # -n 4) rightly frees the model at once, since nothing is generating. Wait for article 2's call to be held at the gate.
+    assert _wait(lambda: fake.in_flight == 1), "the second article's model call never started"
 
     out = llm_api.ollama_release()
     assert out.get("deferred") is True and out.get("paused_runs") is True, out

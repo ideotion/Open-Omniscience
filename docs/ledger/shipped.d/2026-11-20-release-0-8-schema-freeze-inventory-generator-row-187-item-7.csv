@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,release/0.8,Schema-freeze inventory generator (row 187 item 7),SHIPPED,PR #2163,scripts/schema_audit.py;docs/product/SCHEMA_FREEZE_INVENTORY.md;tests/test_schema_audit.py,"Generates the facts the 0.8 schema-freeze audit judges: Alembic chain (84, one head), 61 main and 45 lane tables with columns, raw-DDL tables, oo- format identifiers; --check fails on drift; deterministic."

@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,docs/i18n,"Help x11 for ETHICS, ARCHITECTURE and DESIGN (row 187)",SHIPPED,PR #2164,docs/i18n/;tests/test_help_docs_translated.py,"33 AI-drafted translations (11 locales x 3 documents) with the English heading skeleton, AI banner and resolved anchors; FLOOR tranche 2 = 44, tranche 3 = 11: every translatable Help document is complete in 12 languages."
