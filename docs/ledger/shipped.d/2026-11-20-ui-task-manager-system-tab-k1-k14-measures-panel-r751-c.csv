@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,ui/task-manager,System tab: K1-K14 measures panel (R751(c)),SHIPPED,PR #2162,src/static/app-library.js;src/static/index.html;tests/kpi_panel_node_test.js,"The System tab lists the K1-K14 snapshot from GET /api/diagnostics/kpi: verdict in words, value, n, as-of, target, method on hover; unknown reads unknown never 0; no overall score; visible caveat; K13 five blocks with own counts and reason; 30 keys x12."
