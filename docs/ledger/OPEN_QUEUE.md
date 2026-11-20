@@ -17080,3 +17080,14 @@ well as Alembic. What stays open on this docket:
    plus a restore normaliser, never a boot rewrite.
 3. **The 0.9 guard (0.9 row A).** `tests/test_schema_freeze_audit.py` holds the audit's list to the models by name; it is
    not the freeze guard, which 0.9 row A builds and which must cover all four paths named in F4.
+
+## 2026-11-20 — R759: the Medical papers disclosure names only what a user can do (row 216)
+
+`R759` is added to `RULINGS_INDEX.md`. The coordinator chose option (a) on Lane O's finding: the disclosure said the app keeps
+the papers your articles cite "or that you named", and nothing lets a user name one. The clause is gone from the disclosure,
+the panel and the 12 locales, and a test ties it to whether code outside the store calls `add_wanted`. What stays open:
+
+1. **Option (b), a control to name papers.** Not chosen now. If it is built, the test above fails until the disclosure says
+   so again in all 12 locales, and the manual's section 3.6e gains the sentence.
+2. **The "You named {named} paper identifiers" status line** in `app-medical.js` draws only when the named count is above
+   zero, which nothing can make true today; it stays for when (b) lands.
