@@ -123,10 +123,6 @@ def _lane_member() -> dict:
         "breakdown": breakdown,
         "waiting": waiting,
     }
-    if "medical" in waiting:
-        # R746: the medical store is not carried yet, and the row says so in plain words,
-        # with why that costs little: every kept record can be fetched again from PubMed.
-        out["waiting_note"] = MEDICAL_WAITING
     if not breakdown:
         out["exportable"] = False
         out["not_exportable_reason"] = LANES_WAITING if waiting else LANES_ABSENT
@@ -141,11 +137,9 @@ LANES_ABSENT = "No living-source store on this computer yet."
 #: Since R739 this build carries every lane it knows, so LANES_WAITING is shown only for a
 #: store this build cannot merge back (a lane a later version adds), never for maps.
 LANES_WAITING = "This version cannot back up the living-source stores on this computer yet; a later version will."
-#: R746: shown on the row whenever a medical store exists, pinned by tests/test_medical_lane.py.
-MEDICAL_WAITING = "Backups do not include your medical papers yet. Every one can be fetched again from PubMed."
 LANES_NOTE = (
     "Living sources always travel inside the encrypted backup, so they need the corpus ticked. "
-    "They carry the Wikipedia, law and maps stores."
+    "They carry the Wikipedia, law, maps and medical papers stores."
 )
 
 

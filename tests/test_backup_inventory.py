@@ -171,7 +171,7 @@ def test_a_lane_this_build_cannot_carry_yet_is_named_with_its_size(db, monkeypat
         assert lanes["exportable"] is True and lanes["note"] == inv.LANES_NOTE
         assert set(lanes["breakdown"]) == {"wiki", "law", "osm"} and lanes["waiting"] == {}
         assert lanes["bytes"] == sum(lane_store.lane_file_bytes(k) for k in ("wiki", "law", "osm"))
-        assert lane_merge.MERGEABLE_KINDS == ("wiki", "law", "osm")
+        assert lane_merge.MERGEABLE_KINDS == ("wiki", "law", "osm", "medical")
     finally:
         lane_store.dispose_all()
 

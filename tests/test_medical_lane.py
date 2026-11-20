@@ -6,7 +6,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 Fixture only: the parser's invented NLM file. Checks are mostly negative space -- a record nobody
 cites is not kept (R745), a withdrawal marks and never deletes, a class change is recorded rather
 than overwritten, a failed pass leaves nothing half-applied, and the backup row says plainly that
-it does not carry this store yet (R746).
+it carries this store and merges it additively (R746).
 """
 
 from __future__ import annotations
@@ -239,28 +239,28 @@ def test_the_summary_counts_classes_and_withdrawals_from_the_store(medical):
     assert out["withdrawn"] == 0 and out["last_file"]["name"] == "pubmed25n1300.xml.gz"
 
 
-# --- R746: the backup row says it plainly -----------------------------------------------------
+# --- R746: the backup carries the store, and the row says so ------------------------------------
 
 
-def test_the_backup_row_says_plainly_that_medical_papers_are_not_carried(medical):
-    from src.backup.inventory import MEDICAL_WAITING, _lane_member
+def test_the_backup_row_carries_the_medical_store_and_names_it(medical):
+    from src.backup.inventory import LANES_NOTE, _lane_member
 
     row = _lane_member()
-    assert "medical" in row["waiting"] and "medical" not in row["breakdown"]
-    assert row["waiting_note"] == MEDICAL_WAITING
-    assert "not include your medical papers" in MEDICAL_WAITING and "fetched again" in MEDICAL_WAITING
+    assert "medical" in row["breakdown"] and "medical" not in row["waiting"]
+    assert "waiting_note" not in row and row["note"] == LANES_NOTE
+    assert "medical papers" in LANES_NOTE
 
 
-def test_the_waiting_note_is_translated_and_drawn_visibly_not_only_in_a_hover():
-    from src.backup.inventory import MEDICAL_WAITING
+def test_the_row_note_is_translated_and_the_lane_named():
+    from src.backup.inventory import LANES_NOTE
 
     root = Path(__file__).resolve().parents[1]
     for loc in sorted((root / "src" / "static" / "locales").glob("*.json")):
         data = json.loads(loc.read_text(encoding="utf-8"))
-        assert data.get(MEDICAL_WAITING), f"{loc.name} lacks the R746 note"
+        assert data.get(LANES_NOTE), f"{loc.name} lacks the Living sources note"
         assert data.get("Medical papers (PubMed)"), f"{loc.name} lacks the lane's name"
+        assert "Backups do not include your medical papers yet. Every one can be fetched again from PubMed." not in data
     js = (root / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
-    assert "d.waiting_note ? `<div" in js and "data-waiting-note" in js
     assert 'medical: t("Medical papers (PubMed)")' in js
 
 
