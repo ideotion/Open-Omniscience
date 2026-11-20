@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,database/schema,Schema-freeze audit carries R755; an old reader restores a new backup (row 202),SHIPPED,PR #2183,docs/product/SCHEMA_FREEZE_AUDIT.md;tests/test_schema_freeze_audit.py;tests/test_restore_future_member.py,"The audit records rulings F1-F8 and the frozen table and column list, cross-checked both ways against live metadata; a restore of a backup carrying an unknown signed member succeeds and leaves it unplaced."

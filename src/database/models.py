@@ -3183,7 +3183,9 @@ class MergeBatch(Base):
     imported_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), index=True
     )
-    artifact_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="oo-backup-2")
+    # The kind the restored artifact ACTUALLY carried (``StagedArtifact.kind``). A batch whose caller named none
+    # records "unknown", never a guessed format: this column is the operator's record of what they restored.
+    artifact_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     origin_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False, default="unsigned")
     app_version: Mapped[str | None] = mapped_column(String(20))  # from the manifest (legacy: None)
     alembic_rev: Mapped[str | None] = mapped_column(String(32))  # schema rev the artifact carried

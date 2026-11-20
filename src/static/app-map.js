@@ -4562,7 +4562,9 @@
         if (dp && dp.listed != null) {
           cov.textContent += " · " + _mapTf("News page verified for {n} of {m} (about {p} planned)",
             { n: fmtNum(dp.news_url_confirmed || 0, 0), m: fmtNum(dp.listed, 0), p: fmtNum(dp.planned_about || 0, 0) });
-          cov.title = [dp.method, dp.caveat].filter(Boolean).join(" ");
+          // The method and caveat are the server's fixed sentences, each a locale key, so the hover
+          // reads in the UI language (a caveat surface ships x12; the 0.6 row A walk found it English-only).
+          cov.title = [dp.method, dp.caveat].filter(Boolean).map((s) => t(s)).join(" ");
         } else cov.title = "";
       }
       if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
