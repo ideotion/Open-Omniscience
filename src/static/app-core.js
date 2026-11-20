@@ -3151,6 +3151,8 @@
       // The storage footprint is a recursive disk walk — measure it lazily when the System
       // tab is opened (cached; the vitals poll never triggers it), so opening the tab is snappy.
       if (key === "system") renderStorageFootprint("vitals-storage");
+      // The K1–K14 measures (R751(c)): one cheap GET, re-read each time the tab opens.
+      if (key === "system") renderKpiPanel("vitals-kpi");
     }
     // a11y focus management for the two non-native dialogs (palette, task manager)
     // -- the native <dialog>.showModal() modals trap focus implicitly (OO-D13-001).
