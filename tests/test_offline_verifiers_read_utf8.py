@@ -98,7 +98,9 @@ def test_a_non_ascii_custody_bundle_verifies_offline_under_a_non_utf8_locale(tmp
     path.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
     res = _run_non_utf8_locale("verify_custody.py", path)
     out = res.stdout.decode("ascii", "replace")
-    assert "VERIFIED       : True" in out, out + res.stderr.decode("ascii", "replace")
+    assert res.returncode == 0 and "VERIFIED       : True" in out, out + res.stderr.decode(
+        "ascii", "replace"
+    )
 
 
 def test_every_file_read_in_an_offline_verifier_names_its_encoding():
