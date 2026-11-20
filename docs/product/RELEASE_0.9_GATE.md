@@ -39,7 +39,7 @@ wording is read under that ruling (Gecko best-effort).
 | E | The security review: Tor-exit-resolve and `oo-netcut` / Stem (parked here by Q1138); the consented self-update check (Q1136); the no-telemetry re-check stated | session + operator | ruled (Q1136 = a, Q1138 = a) · `S09-01` | **OPEN** |
 | F | The storage rulings executed (Q1009 = a) | maintainer | the intake's 0.9 line; Q1009 ⛔ answered 2026-09-29 | **OPEN — unblocked 2026-09-29** (Q1009 = a, `y, OOENC2, y, y`) |
 | G | The Windows lane BLOCKING, with every lane that landed in the matrix | session | V1-5; ruled (Q1019 = a) · `S09-01` | **OPEN** |
-| H | `docs/product/POST_1.0_BACKLOG.md` created, each item citing its ruling | session | ruled (Q118 = a) · `S09-01` | **CLOSED 2026-11-20** — the file and `tests/test_post_1_0_backlog.py` (PR #NNNN) |
+| H | `docs/product/POST_1.0_BACKLOG.md` created, each item citing its ruling | session | ruled (Q118 = a) · `S09-01` | **CLOSED 2026-11-20** — the file and `tests/test_post_1_0_backlog.py` (PR #2190) |
 
 **The exit (Beta 1).** `v0.9.0-beta.1` is tagged when rows A, B, D, E, G, H are CLOSED on named artifacts,
 row C is WRITTEN with every V1 §8 item's state (green or named-open), row F is either executed or recorded as
