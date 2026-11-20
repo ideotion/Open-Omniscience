@@ -644,3 +644,43 @@ def test_a_pass_keeps_a_legacy_stamp_it_could_have_written_and_a_full_pass_write
     # A full pass stamps what it is: the canonical id, never the legacy one.
     index_article(s, a, extractor=ex, country=None)
     assert _stamp(s, a) == (ei.baseline_engine_id(), inputs)
+
+
+def test_the_legacy_names_on_this_repo_are_what_the_pre_r758_windows_code_built():
+    """The old algorithm, replayed with Windows paths over this repo's real globs (correctness read, row 210)."""
+    from pathlib import PureWindowsPath
+
+    def old_expand(globs):
+        out = set()
+        for pattern in globs:
+            if any(ch in pattern for ch in "*?["):
+                out.update(str(PureWindowsPath(p.relative_to(ei._REPO).as_posix())) for p in ei._REPO.glob(pattern) if p.is_file())
+            else:
+                out.add(pattern)
+        return sorted(out)
+
+    old = sorted(set(old_expand(ei.ENGINE_DATA_GLOBS)) - set(old_expand(ei.WWW_DATA_GLOBS)))
+    assert ei._kw_data_files(legacy=True) == old and len(old) > 10
+
+
+def test_a_canonical_name_holding_a_backslash_is_read_by_that_name(tmp_path, monkeypatch):
+    """Security read, row 210: on POSIX a backslash is a legal file name character. Reading a canonical name by turning its backslashes
+    into slashes hashed such a file as absent, so two different contents gave one id; each name is read by the path it came from."""
+    import os
+
+    if os.name == "nt":
+        pytest.skip("a Windows file name cannot hold a backslash")
+    extra = tmp_path / "configs" / "stopwords_extra"
+    extra.mkdir(parents=True)
+    f = extra / "x\\y.yml"
+    monkeypatch.setattr(ei, "_REPO", tmp_path)
+    monkeypatch.setattr(ei, "ENGINE_DATA_GLOBS", ("configs/stopwords_extra/*.yml",))
+    monkeypatch.setattr(ei, "WWW_DATA_GLOBS", ())
+    monkeypatch.setattr(ei, "_read", lambda rel: (tmp_path / rel).read_bytes() if (tmp_path / rel).is_file() else None)
+    digests = []
+    for words in ("[aaa]", "[bbb]"):
+        f.write_text(words)
+        ei.data_digest.cache_clear()
+        digests.append((ei.data_digest(), ei.data_digest(True)))
+    ei.data_digest.cache_clear()
+    assert digests[0][0] != digests[1][0] and digests[0][1] != digests[1][1]

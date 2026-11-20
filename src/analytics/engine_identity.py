@@ -589,16 +589,23 @@ def _expand(globs: tuple[str, ...], *, legacy: bool = False) -> list[str]:
 
     ``legacy=True`` gives the names as Windows wrote them before R758 -- a glob match with backslashes, a literal name as written -- so
     :func:`accepted_engine_ids` can recognise a stamp an older Windows install wrote. Only names, never bytes: the files read are the same."""
-    out: set[str] = set()
+    return sorted(_expand_reads(globs, legacy=legacy))
+
+
+def _expand_reads(globs: tuple[str, ...], *, legacy: bool = False) -> dict[str, str]:
+    """``{hashed name: the POSIX path it is read from}``. The two are the same string except for a legacy name, which is HASHED with
+    backslashes and READ by the path it was made from -- never by turning backslashes back into slashes, which on POSIX would read a
+    file whose real name holds a backslash as absent and hash two different contents alike (security read, row 210)."""
+    out: dict[str, str] = {}
     for pattern in globs:
         if any(ch in pattern for ch in "*?["):
             for p in _REPO.glob(pattern):
                 if p.is_file():
                     rel = p.relative_to(_REPO).as_posix()
-                    out.add(rel.replace("/", "\\") if legacy else rel)
+                    out[rel.replace("/", "\\") if legacy else rel] = rel
         else:
-            out.add(pattern)
-    return sorted(out)
+            out[pattern] = pattern
+    return out
 
 
 def _data_files(*, legacy: bool = False) -> list[str]:
@@ -606,8 +613,13 @@ def _data_files(*, legacy: bool = False) -> list[str]:
     return _expand(ENGINE_DATA_GLOBS, legacy=legacy)
 
 
+def _kw_data_reads(*, legacy: bool = False) -> dict[str, str]:
+    www = _expand_reads(WWW_DATA_GLOBS, legacy=legacy)
+    return {name: path for name, path in _expand_reads(ENGINE_DATA_GLOBS, legacy=legacy).items() if name not in www}
+
+
 def _kw_data_files(*, legacy: bool = False) -> list[str]:
-    return sorted(set(_data_files(legacy=legacy)) - set(_expand(WWW_DATA_GLOBS, legacy=legacy)))
+    return sorted(_kw_data_reads(legacy=legacy))
 
 
 def _kw_modules() -> list[str]:
@@ -618,14 +630,14 @@ def _www_modules() -> list[str]:
     return sorted(set(WWW_ONLY_MODULES) | set(WWW_SHARED_MODULES))
 
 
-def _digest_of(files: list[str], *, narrow: bool) -> str:
+def _digest_of(files: list[str], *, narrow: bool, read_as: dict[str, str] | None = None) -> str:
     """sha256 over (path, bytes) of ``files``. A MISSING file contributes its name and an explicit absence marker rather than nothing,
     so "absent" and "empty" are different and a deleted gazetteer cannot hash like an untouched one. Line endings are normalised
     (``\\r\\n`` to ``\\n``): a Windows checkout with autocrlf must not hash differently from the same commit on Linux."""
     h = hashlib.sha256()
     for rel in files:
-        # A legacy (pre-R758 Windows) name is HASHED as written but READ by its POSIX name: the same file, so the same bytes.
-        data = _read(rel.replace("\\", "/"))
+        # ``read_as`` maps a legacy (pre-R758 Windows) name to the path it was made from: HASHED as written, READ from that file.
+        data = _read(read_as.get(rel, rel) if read_as else rel)
         h.update(rel.encode())
         h.update(b"\x00")
         if data is None:
@@ -664,7 +676,8 @@ def data_digest(legacy: bool = False) -> str:
     """The hash of the KEYWORD engine's DATA files (stoplists, rings), computed at runtime on every install and part of the identity: a
     data file can differ per install, so it cannot be versioned by hand. The gazetteers belong to the www engine (:func:`www_data_digest`).
     ``legacy`` hashes the same bytes under the names a pre-R758 Windows install used (see :func:`_expand`)."""
-    return _digest_of(_kw_data_files(legacy=legacy), narrow=False)
+    reads = _kw_data_reads(legacy=legacy)
+    return _digest_of(sorted(reads), narrow=False, read_as=reads)
 
 
 @lru_cache(maxsize=1)
