@@ -32,7 +32,7 @@ function extract(name) {
 }
 
 const FNS = ["_dossierChannel", "_dossierRailName", "_dossierNotJoinedReason", "_dossierLaneAbsence", "passportLine",
-             "_dossierRailSource", "_dossierRailBody", "_dossierTabsHtml", "_dossierRailPanel", "dossierHtml", "_dossierPaint"];
+             "_dossierRailSource", "_dossierRailCount", "_dossierRailBody", "_dossierTabsHtml", "_dossierRailPanel", "dossierHtml", "_dossierPaint"];
 const harness = `
   let _dossierLast = null, _dossierTab = "overview";
   const EL = {};
@@ -60,7 +60,7 @@ function check(cond, msg) { assert.ok(cond, msg); n++; }
 const keys = ["news", "wikipedia", "law", "places", "map", "stats", "climate", "agenda", "elections"];
 const d = {
   qid: "Q142", item: {label: "France"}, routes: {}, passport: {articles: 0},
-  rails: keys.map((k) => ({key: k, joined: true, articles: 0, count: 0, lane: {available: true}, series: [], events: []})),
+  rails: keys.map((k) => ({key: k, joined: true, articles: 0, count: {places: 1, stats: 3}[k] || 0, lane: {available: true}, series: [], events: []})),
   not_joined: [{key: "markets", joined: false}],
   availability: {joined: 9, with_rows: 2, rails_with_rows: ["places", "stats"]},
   method: "THE-METHOD", caveat: "THE-CAVEAT", article_ids: [],
@@ -80,35 +80,63 @@ check(!tabOf("stats").includes("none here"), "a rail with rows does not");
 for (const k of keys) {
   const at = html.indexOf(`data-panel="${k}"`);
   const panel = html.slice(at, html.indexOf(`data-panel=`, at + 5) === -1 ? undefined : html.indexOf(`data-panel=`, at + 5));
-  check(at !== -1 && html.slice(at - 40, at).includes("hidden") === false, k + " panel present");
+  check(at !== -1 && html.slice(at, html.indexOf(">", at)) === `data-panel="${k}" hidden`, k + " panel present and hidden until chosen");
   check(/dossier-source">From /.test(panel), k + " panel opens with where its rows come from");
 }
 check(/data-panel="overview">/.test(html) && /data-panel="news" hidden>/.test(html), "only Overview shows at first");
+// the Overview keeps every rail's count on the first screen; a gap reads as one
+const ov = html.slice(html.indexOf('data-panel="overview"'), html.indexOf('data-panel="news"'));
+check(ov.includes('<strong>Statistics</strong> <span class="">{n} rows</span>'.replace("{n}", "3")) && ov.includes("dossier-summary"), "the overview lists every rail with its count");
+check((ov.match(/none here/g) || []).length === 7, "seven rails without rows read as none here in the overview");
+// an unknown rail still opens with a provenance line
+check(R._dossierRailSource("law_versions", t).startsWith("From "), "an unknown rail gets the generic line");
 // the method and the caveat sit after every panel, so no subtab can hide them
 const lastPanel = html.lastIndexOf("dossier-panel");
 check(html.indexOf("THE-CAVEAT") > html.indexOf("</div>", html.indexOf("data-panel=\"elections\"")), "the caveat is below the panels");
 check(html.indexOf("THE-METHOD") > lastPanel && html.indexOf("THE-CAVEAT") > lastPanel, "the method and caveat are outside every panel");
 
-// _dossierPaint: the subtab component drives the panels and keeps the open tab across a repaint
+// _dossierPaint with the REAL ooSubtabs (app-markets.js) over a minimal DOM: the component drives the
+// panels, keeps the open tab across a repaint, and falls back to Overview for a tab the item lacks.
+const MK = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app-markets.js"), "utf-8");
+const msrc = MK.slice(MK.indexOf("function ooSubtabs("));
+let dd = 0, e = msrc.indexOf("{");
+for (; e < msrc.length; e++) { if (msrc[e] === "{") dd++; else if (msrc[e] === "}") { dd--; if (dd === 0) { e++; break; } } }
+global.document = {activeElement: null};
+const realSubtabs = new Function(msrc.slice(0, e) + "; return ooSubtabs;")();
 function fakeDom() {
-  const panels = keys.concat(["overview"]).map((k) => ({k, hidden: true, getAttribute() { return k; }}));
+  const all = ["overview", ...keys];
+  const panels = all.map((k) => ({k, hidden: k !== "overview", getAttribute() { return k; }}));
+  const buttons = all.map((k, i) => {
+    const cls = new Set(i === 0 ? ["active"] : []);
+    return {dataset: {tab: k}, attrs: {}, tabIndex: 0, type: "button",
+      classList: {contains: (c) => cls.has(c), toggle: (c, on) => (on ? cls.add(c) : cls.delete(c))},
+      setAttribute(a, v) { this.attrs[a] = v; }, getAttribute(a) { return this.attrs[a] || (a === "type" ? "button" : null); },
+      focus() { global.document.activeElement = this; }, closest() { return this; }};
+  });
+  const nav = {listeners: {}, scrollWidth: 0, clientWidth: 0, querySelectorAll: () => buttons,
+    setAttribute() {}, addEventListener(type, fn) { this.listeners[type] = fn; }, contains: () => true};
   H.EL["dossier-title"] = {}; H.EL["dossier-qid"] = {};
-  H.EL["dossier-tabs"] = {nav: true};
+  H.EL["dossier-tabs"] = nav;
   H.EL["dossier-body"] = {set innerHTML(v) {}, querySelectorAll() { return panels; }};
-  return panels;
+  return {panels, buttons, nav};
 }
-let panels = fakeDom(), selected = [];
-const comp = (nav, onSelect) => ({select(k) { if (![...keys, "overview"].includes(k)) return false; selected.push(k); onSelect(k); return true; }});
-H.set(d, "stats", comp);
+const shown = (dom) => dom.panels.filter((p) => !p.hidden).map((p) => p.k).join();
+let dom = fakeDom();
+H.set(d, "stats", realSubtabs);
 R._dossierPaint();
-check(selected.join() === "stats", "the open tab survives a repaint");
-check(panels.filter((p) => !p.hidden).map((p) => p.k).join() === "stats", "exactly the chosen panel shows");
-panels = fakeDom(); selected = [];
-H.set(d, "gone", comp);
+check(shown(dom) === "stats", "the open tab survives a repaint: " + shown(dom));
+check(dom.buttons.find((b) => b.dataset.tab === "stats").attrs["aria-selected"] === "true", "the component marks the open tab");
+dom.nav.listeners.click({target: dom.buttons.find((b) => b.dataset.tab === "news")});
+check(shown(dom) === "news" && H.tab() === "news", "a click on a tab shows exactly its panel");
+global.document.activeElement = dom.buttons.find((b) => b.dataset.tab === "news");
+dom.nav.listeners.keydown({key: "End", preventDefault() {}});
+check(shown(dom) === "elections", "End reaches the last rail");
+dom = fakeDom();
+H.set(d, "gone", realSubtabs);
 R._dossierPaint();
-check(selected.join() === "overview" && H.tab() === "overview", "a tab the item does not have falls back to Overview");
-panels = fakeDom();
+check(shown(dom) === "overview" && H.tab() === "overview", "a tab the item does not have falls back to Overview");
+dom = fakeDom();
 H.set(d, "stats", undefined);
 R._dossierPaint();
-check(panels.every((p) => !p.hidden), "without the subtab component every panel shows, never none");
+check(dom.panels.every((p) => !p.hidden), "without the subtab component every panel shows, never none");
 console.log(n + " checks, all checks passed");

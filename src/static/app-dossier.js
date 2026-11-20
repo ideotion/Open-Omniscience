@@ -127,7 +127,22 @@
         agenda: () => t("From the agenda catalogue's events for this country."),
         elections: () => t("From the agenda catalogue's elections for this country; each date keeps its confidence."),
       };
-      return L[key] ? L[key]() : "";
+      return L[key] ? L[key]() : t("From this machine's own store for this rail.");
+    }
+
+    // How many rows a joined rail found here, in its own unit, or null for a gap (S3: a gap is a gap).
+    function _dossierRailCount(r, t, tf) {
+      if (r.key === "news" || r.key === "law") return r.articles ? tf("{n} articles", {n: r.articles}) : null;
+      if (r.key === "wikipedia") {
+        const pages = ((r.lane || {}).pages || []).length;
+        if (!r.articles && !pages) return null;
+        return tf("{n} corpus articles", {n: r.articles || 0}) + (pages ? " · " + tf("{n} pages", {n: pages}) : "");
+      }
+      if (r.key === "map") {
+        const k = ((r.lane || {}).objects || []).length;
+        return k ? tf("{n} objects", {n: k}) : null;
+      }
+      return r.count ? tf("{n} rows", {n: r.count}) : null;
     }
 
     // One rail's rows, as the body of its panel.
@@ -225,7 +240,7 @@
         + (active ? ` class="active"` : "")
         + (gap ? ` title="${esc(t("No rows on this machine for this item"))}"` : "") + `>${esc(label)}`
         + (gap ? ` <span class="muted small">${esc(t("none here"))}</span>` : "") + `</button>`;
-      return `<nav class="tabs dossier-tabs" id="dossier-tabs" style="position:static;padding:0;border:0;margin-top:8px">`
+      return `<nav class="tabs dossier-tabs" id="dossier-tabs">`
         + btn("overview", t("Overview"), false, true)
         + (d.rails || []).map((r) => btn(r.key, _dossierRailName(r.key, t), !withRows.has(r.key), false)).join("")
         + `</nav>`;
@@ -270,6 +285,13 @@
         overview += `<div class="muted small dossier-availability" title="${esc(t("A rail without rows has nothing on this machine for this item; that does not mean nothing exists."))}">`
           + `${esc(tf("{n} of {total} joined rails have rows on this machine", {n: av.with_rows, total: av.joined}))}</div>`;
       }
+      // Every rail's count on the first screen (review of PR 5): the tabs hold the rows, this holds the summary.
+      // Whether a rail had rows is the server's own answer (availability), the same one the tabs use.
+      const hasRows = new Set(((d.availability || {}).rails_with_rows) || []);
+      overview += `<ul class="dossier-list dossier-summary">` + (d.rails || []).map((r) => {
+        const c = hasRows.has(r.key) ? (_dossierRailCount(r, t, tf) || "") : null;
+        return `<li><strong>${esc(_dossierRailName(r.key, t))}</strong> <span class="${c === null ? "muted" : ""}">${esc(c === null ? t("none here") : c)}</span></li>`;
+      }).join("") + `</ul>`;
       overview += `<div class="vsect">${esc(t("Not joined yet"))}</div><ul class="dossier-list">`
         + (d.not_joined || []).map((r) =>
           `<li><strong>${esc(_dossierRailName(r.key, t))}</strong> <span class="muted">${esc(_dossierNotJoinedReason(r, t))}</span></li>`).join("")
