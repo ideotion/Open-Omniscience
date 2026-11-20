@@ -2753,7 +2753,7 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
 #  so no separate attested-checksum step is added here.
 # --------------------------------------------------------------------------- #
 def _check_online() -> None:
-    """Refuse the networked steps under airplane mode.
+    """Refuse the networked steps under airplane mode, and in protected mode (R763).
 
     Exempt only by an operator-consented EGRESS WINDOW, which permits the AI
     install WITHOUT starting the collector -- the kill switch stays engaged, so
@@ -2766,6 +2766,10 @@ def _check_online() -> None:
             "Network is OFF (airplane mode): refusing to install vLLM. "
             "Turn airplane mode off, or allow the AI install to go online on its own."
         )
+    # R763: pip/uv and the Hugging Face snapshot run as separate processes, outside the protected-mode proxy
+    from src.llm.install_transport import refuse_if_protected
+
+    refuse_if_protected(VllmLifecycleError)
 
 
 def platform_support() -> dict:

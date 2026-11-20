@@ -412,6 +412,10 @@ def run_installer(path: str) -> Iterator[str]:
     """
     p = _validate_staged(path)
     _check_online()
+    # R763: the script downloads the binary itself, outside the proxy protected mode routes this app through
+    from src.llm.install_transport import refuse_if_protected
+
+    refuse_if_protected(InstallerUnavailable)
     if _is_root():
         cmd = ["sh", str(p)]
     elif can_run_unattended():
