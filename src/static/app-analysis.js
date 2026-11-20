@@ -3242,7 +3242,7 @@
           ${r.truncated ? `<span class="chip" title="${esc(t("Only the bounded set was synthesized."))}">${esc(TF("top {n} of {total}", {n: r.max_articles, total: r.total_matched}))}</span>` : ""}
         </div>
         <div style="white-space:pre-wrap;line-height:1.55">${esc(r.result || "")}</div>
-        <div class="card-caveat" style="margin-top:10px">${esc(r.caveat || "")}</div>
+        <div class="card-caveat" style="margin-top:10px">${ooSaidHtml(r, "caveat")}</div>
         <h3 style="margin:16px 0 6px;font-size:14px">${esc(t("Synthesized corpus"))} (${(r.members || []).length})</h3>
         <ul style="list-style:none;padding:0;margin:0">${members}</ul>
         <div style="margin-top:12px"><button class="secondary tiny" data-on-click="_synthRenderSelect()">${esc(t("← Change selection"))}</button></div>`;
@@ -3273,7 +3273,7 @@
         + `<h1>${esc(t("Synthesis"))}</h1>`
         + `<p class="meta">${ooLabelHtml(esc(t("Local model")), esc(r.model || "?"))} · ${esc(_synthCountLabel(t, r.member_count))} · ${new Date().toISOString().slice(0, 10)}</p>`
         + `<pre>${esc(r.result || "")}</pre>`
-        + `<blockquote>${esc(r.caveat || "")}</blockquote>`
+        + `<blockquote>${ooSaidHtml(r, "caveat")}</blockquote>`
         + `<h2>${esc(t("Synthesized corpus"))}</h2><ul>${rows}</ul></body></html>`;
     }
     function _synthDownload(name, mime, text) {
@@ -3602,7 +3602,7 @@
               if (o.aborted && run.stopping && o.reason === _STOPPED_REASON) {
                 if (prog) prog.textContent = t("Cancelled.");
               } else if (o.aborted) {
-                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span>`;
+                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${ooSaidHtml(o, "reason")}</span>`;
               } else if (prog) {
                 const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
                   + `${o.skipped || 0} ${t("skipped")} · ${o.failed || 0} ${t("failed")}`;

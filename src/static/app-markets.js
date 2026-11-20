@@ -862,7 +862,7 @@
       // matches: the label "Method" and the sentence itself.
       if (env.method) {
         parts.push(`<span class="fig-method">${esc(t9("Method"))}:</span> ` +
-          `<span class="fig-method">${esc(env.method)}</span>`);
+          `<span class="fig-method">${ooSaidHtml(env, "method")}</span>`);
       }
       // n === 0 is a real measurement ("nothing matched") and must print; only an
       // absent n is omitted. `n == null` catches undefined too, and nothing else.
@@ -885,7 +885,7 @@
       let html = parts.length ? `<div class="fig-meta"><span class="fig-method">` +
         parts.join(` <span class="muted">·</span> `) + `</span></div>` : "";
       if (env.caveat) {
-        html += `<div class="fig-meta"><span class="fig-caveat">${esc(env.caveat)}</span></div>`;
+        html += `<div class="fig-meta"><span class="fig-caveat">${ooSaidHtml(env, "caveat")}</span></div>`;
       }
       return html;
     }
@@ -2739,7 +2739,7 @@
         }
         el.innerHTML =
           `<div style="margin:0 0 6px;font-size:13px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</div>` +
-          body + `<div class="hint" style="margin-top:6px">${esc(d.caveat || "")}</div>`;
+          body + `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) {
         el.innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
       }
