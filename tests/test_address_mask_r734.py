@@ -113,7 +113,99 @@ def test_the_ui_answers_keep_r637s_form():
 
 
 def test_address_secrets_add_the_query_values():
-    assert address_secrets("https://alice:hunter2@a.example/x?token=abcdef") == ("alice:hunter2", "alice", "hunter2", "abcdef")
+    secrets = address_secrets("https://alice:hunter2@a.example/x?token=abcdef")
+    assert secrets[:4] == ("alice:hunter2", "alice", "hunter2", "abcdef")
+    assert {"token=abcdef", "?token=abcdef"} <= set(secrets)  # row 107: the value in its context too
+    assert "&token=abcdef" not in secrets, "only the separator this address writes before the item"
+
+
+# ---------------------------------------------------------------------------------------------------------------- row 107
+def _requests_style(url: str) -> Exception:
+    """The words requests writes for a failed request: the path and query, re-quoted, inside its own sentence."""
+    from urllib.parse import urlsplit
+
+    from requests.utils import requote_uri
+
+    parts = urlsplit(requote_uri(url))
+    return ConnectionError(f"HTTPSConnectionPool(host='{parts.hostname}', port=443): Max retries exceeded with url: "
+                           f"{parts.path}?{parts.query} (Caused by NewConnectionError('Failed to establish a new connection'))")
+
+
+def _recorded(url: str) -> str:
+    from src.monitoring.secret_scrub import record_text
+
+    return record_text(_requests_style(url), *address_secrets(url))
+
+
+@pytest.mark.parametrize(
+    "url, secret",
+    [
+        ("https://news.example/rss?pin=123", "123"),  # red before: "123" is under the floor, so it was never handed to the scrub
+        ("https://news.example/rss?format=rss&pin=12", "12"),
+        ("https://news.example/rss?pin=1%7C2", "1%7C2"),  # the re-quoted spelling of a short value
+        ("https://news.example/rss?pin=1|2", "1%7C2"),  # ... written by requests itself
+        ("https://news.example/rss;s=9/x", ";s=9"),  # an R736 path parameter
+    ],
+)
+def test_a_SHORT_masked_value_leaves_the_exception_text_with_its_name(url, secret):
+    text = _recorded(url)
+    assert "Max retries exceeded" in text, "the sentence is kept: only the value and its name are taken out"
+    assert secret not in text, text
+
+
+def test_the_same_short_value_in_two_items_leaves_both_times():
+    text = _recorded("https://news.example/rss?a=12&b=12")
+    assert "12" not in text.split("url:", 1)[1].split("(Caused", 1)[0], text
+    assert "Max retries exceeded" in text
+
+
+def test_a_harmless_short_value_stays_and_an_unrelated_number_is_not_cut():
+    text = _recorded("https://news.example/rss?page=2&pin=123")
+    assert "page=2" in text, "an allowlisted value is not a secret"
+    assert "port=443" in text, "a number elsewhere in the sentence is untouched"
+    assert "123" not in text
+
+
+def test_a_query_too_short_for_any_context_withholds_the_text_rather_than_leak_it():
+    from src.monitoring.secret_scrub import UNREADABLE_TEXT
+
+    assert UNREADABLE_TEXT  # the scrub's own words for a text it cannot check; record_text names the class instead
+    for url in ("https://news.example/rss?7", "https://news.example/a;b/rss?k=12"):
+        assert _recorded(url) == "ConnectionError: its text is withheld", url
+
+
+def test_a_name_with_no_value_hides_nothing_and_withholds_nothing():
+    text = _recorded("https://news.example/rss?q=&pin=123")
+    assert "Max retries exceeded" in text and "123" not in text
+
+
+def test_a_value_that_is_a_bare_question_mark_does_not_withhold_every_text():
+    text = _recorded("https://news.example/rss?next=?&pin=123")
+    assert "Max retries exceeded" in text and "123" not in text
+
+
+@pytest.mark.parametrize(
+    "url, secret",
+    [
+        ("https://x.org/rss?token=ab%2fcd9f&q=50%", "cd9f"),  # first security read on row 107: urllib3 upper-cases the escape,
+        ("https://x.org/rss?sig=%2f&discount=50%", "sig=%25"),  # then requests quotes every "%" again for the stray one
+    ],
+)
+def test_a_lower_case_escape_beside_a_stray_percent_is_still_taken_out(url, secret):
+    import requests
+
+    from src.monitoring.secret_scrub import record_text
+
+    written = requests.Request("GET", url).prepare().path_url
+    assert "%252F" in written, "the spelling the read found"
+    text = record_text(ConnectionError(f"Max retries exceeded with url: {written} (Caused by x)"), *address_secrets(url))
+    assert secret not in text and "%252F" not in text, text
+    assert "Max retries exceeded" in text
+
+
+def test_the_needles_stay_few_for_a_long_query():
+    url = "https://news.example/rss?" + "&".join(f"k{i}=v{i}x" for i in range(50))
+    assert len(address_secrets(url)) < 1500
 
 
 @pytest.mark.parametrize(

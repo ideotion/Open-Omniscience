@@ -108,7 +108,8 @@
       "not-measurable-here": "not measurable here",
       "measured-no-bar": "measured, no target set yet",
     };
-    const _KPI_VERTICAL = {climate: "Climate", elections: "Elections", law: "Law", osm: "OpenStreetMap", wiki: "Wikipedia"};
+    const _KPI_VERTICAL = {climate: "Climate", elections: "Elections", law: "Law", medical: "Medical papers", osm: "OpenStreetMap",
+      wiki: "Wikipedia"};
     const _KPI_FIGURES = {
       climate: [["datasets_fetched", "datasets fetched"], ["datasets_listed", "datasets listed"]],
       elections: [["floor_countries", "countries on the floor"], ["covered", "countries covered"],
@@ -122,6 +123,19 @@
         ["editions_with_pages_seen", "editions with pages seen"], ["editions_with_text", "editions holding a text"],
         ["pages_seen", "pages seen"], ["gaps_total", "gaps"]],
     };
+    // Row 201: a method (and a block's reason) arrives as keyed FRAMES beside its English, [{t, v, tr}]: the template is a
+    // locale key, the vars are data and never translate, except a `tr` var, whose value is itself a key (a number passes
+    // t() unchanged). The pieces join with nothing between them, since each carries its own punctuation. A snapshot with
+    // no frames (an older one) shows its English as before.
+    function kpiFramesText(frames, english, h) {
+      if (!Array.isArray(frames) || !frames.length) return english || "";
+      const out = frames.filter(f => f && typeof f.t === "string").map(f => {
+        const v = Object.assign({}, f.v || {});
+        for (const k of (Array.isArray(f.tr) ? f.tr : [])) if (v[k] != null) v[k] = h.t(String(v[k]));
+        return h.tf(f.t, v);
+      }).join("");
+      return out || english || "";  // frames that render nothing (malformed) never hide the English
+    }
     function kpiPanelHtml(snap, h) {
       const t = h.t;
       const {tf, esc, fmt, label} = h;
@@ -129,7 +143,7 @@
       const shown = v => num(v) ?? t("unknown");
       const metrics = (snap && Array.isArray(snap.metrics)) ? snap.metrics : null;
       if (!metrics) return `<div class="muted">${esc(t("No measures could be read."))}</div>`;
-      const head = `<div class="card-caveat"${snap.caveat ? ` title="${esc(snap.caveat)}"` : ""}>`
+      const head = `<div class="card-caveat"${snap.caveat ? ` title="${esc(t(snap.caveat))}"` : ""}>`
         + esc(t("Each measure stands alone: there is no overall score. “Not measurable here” means its instrument has not run on this machine, not that it failed."))
         + `</div>`;
       const rows = metrics.map(m => {
@@ -137,9 +151,10 @@
         const bits = [label(esc(t("value")), `<b>${esc(shown(m.value))}</b>`)];
         if (m.n != null) bits.push(esc(tf("n = {n}", {n: shown(m.n)})));
         if (m.as_of) bits.push(label(esc(t("as of")), esc(h.date(m.as_of))));
-        bits.push(label(esc(t("target")), esc(String(m.target ?? t("unknown")))));
-        let body = `<div class="kpi-row" style="margin:6px 0"${m.method ? ` title="${esc(m.method)}"` : ""}>`
-          + `<div><b>${esc(m.id || "")}</b> ${esc(m.name || "")} <span class="muted">· ${esc(verdict)}</span></div>`
+        bits.push(label(esc(t("target")), esc(m.target != null ? t(String(m.target)) : t("unknown"))));
+        const method = kpiFramesText(m.method_i18n, m.method, h);
+        let body = `<div class="kpi-row" style="margin:6px 0"${method ? ` title="${esc(method)}"` : ""}>`
+          + `<div><b>${esc(m.id || "")}</b> ${esc(m.name ? t(m.name) : "")} <span class="muted">· ${esc(verdict)}</span></div>`
           + `<div class="muted" style="font-size:11.5px">${bits.join(" · ")}</div>`;
         if (Array.isArray(m.verticals)) body += m.verticals.map(b => _kpiBlockHtml(b, h, shown)).join("");
         return body + `</div>`;
@@ -155,10 +170,12 @@
       const figs = (_KPI_FIGURES[b.vertical] || []).filter(([k]) => k in b)
         .map(([k, l]) => label(esc(t(l)), esc(shown(b[k]))));
       const top = [state, slice].map(esc).concat(b.as_of ? [label(esc(t("as of")), esc(h.date(b.as_of)))] : []);
-      return `<div class="kpi-block" style="margin:3px 0 3px 14px;font-size:11.5px"${b.method ? ` title="${esc(b.method)}"` : ""}>`
+      const method = kpiFramesText(b.method_i18n, b.method, h);
+      const reason = kpiFramesText(b.reason_i18n, b.reason, h);
+      return `<div class="kpi-block" style="margin:3px 0 3px 14px;font-size:11.5px"${method ? ` title="${esc(method)}"` : ""}>`
         + `<div>${esc(name)} <span class="muted">· ${top.join(" · ")}</span></div>`
         + (figs.length ? `<div class="muted">${figs.join(" · ")}</div>` : "")
-        + (b.reason ? `<div class="muted">${esc(b.reason)}</div>` : "")
+        + (reason ? `<div class="muted">${esc(reason)}</div>` : "")
         + `</div>`;
     }
     async function renderKpiPanel(hostId) {

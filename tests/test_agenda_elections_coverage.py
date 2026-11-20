@@ -47,7 +47,7 @@ def test_it_reads_only_the_loopback_report_and_needs_no_consent_gate():
 
 def test_both_caveats_and_the_method_are_drawn_visibly_never_behind_a_toggle():
     fn = _render_fn()
-    for needle in ("floor.caveat", "rep.caveat", "rep.method"):
+    for needle in ("floor.caveat", "rep.caveat", "rep.gap", "rep.method"):
         assert needle in fn, needle
     assert "hidden" not in fn and "<details" not in fn
 
@@ -77,7 +77,7 @@ def test_the_servers_own_sentences_are_keyed_so_they_translate_too():
 
     out = elections_coverage_floor()
     rep = out["tier_report"]
-    served = {out["caveat"], rep["caveat"], rep["method"]}
+    served = {out["caveat"], rep["caveat"], rep["gap"], rep["method"]}
     served |= {r["reason"] for r in rep["countries"] if r["reason"]}
     served.add("every projection has passed; status unknown")
     for path in sorted((STATIC / "locales").glob("*.json")):

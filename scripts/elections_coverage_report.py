@@ -69,6 +69,8 @@ def build_report(today: date) -> str:
     out.append(f"- Method: {_cell(rep.get('method'))}")
     if rep.get("caveat"):
         out.append(f"- Caveat: {_cell(rep['caveat'])}")
+    if rep.get("gap"):
+        out.append(f"- Gap: {_cell(rep['gap'])}")
     out.append("")
     out.append("| State | Countries |")
     out.append("| --- | ---: |")

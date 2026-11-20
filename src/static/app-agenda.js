@@ -1827,7 +1827,8 @@
       box.innerHTML = `<h3 style="font-size:14px;margin:4px 0 6px">${esc(T("Elections coverage of the language floor"))}</h3>`
         + `<p class="muted" style="margin:0 0 6px">${esc(TF("{n} floor countries · country list as of {date}", { n: rep.floor_countries || 0, date: floor.as_of ? ooIsoDate(floor.as_of) : "?" }))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(floor.caveat || ""))}</p>`
-        + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.caveat || ""))}</p>`
+        + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(rep.caveat || ""))}</p>`
+        + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.gap || ""))}</p>`
         + `<p class="hint" style="margin:0 0 8px"><b>${esc(T("Method"))}</b> ${esc(T(rep.method || ""))}</p>`
         + `<p class="hint" style="margin:0 0 8px">${esc(agSnapshotLine(floor.snapshot, T, TF))}</p>`
         + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
