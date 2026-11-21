@@ -218,7 +218,7 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
                 continue
             try:
                 n = int(float(val))
-            except ValueError:
+            except (ValueError, OverflowError):  # row 252: "1e999" is a number no row can hold
                 errors.append(f"row {i}: {field} is not a number ({val!r})")
                 bad = True
                 break

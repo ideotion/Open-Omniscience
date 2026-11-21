@@ -1831,6 +1831,8 @@
         + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.gap || ""))}</p>`
         + `<p class="hint" style="margin:0 0 8px"><b>${esc(T("Method"))}</b> ${esc(T(rep.method || ""))}</p>`
         + `<p class="hint" style="margin:0 0 8px">${esc(agSnapshotLine(floor.snapshot, T, TF))}</p>`
+        + (agSnapshotStale(floor.snapshot, T, TF)
+          ? `<p style="color:var(--caveat);margin:0 0 8px">${esc(agSnapshotStale(floor.snapshot, T, TF))}</p>` : "")
         + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
         + (rows.length
           ? `<div style="overflow-x:auto;max-width:100%"><table class="data"><thead><tr><th>${esc(T("Country"))}</th><th>${esc(T("State"))}</th>`
@@ -1848,6 +1850,16 @@
       }
       if (st === "unreadable") return T("The Wikidata election snapshot on this install could not be read; only the hand-curated list is shown.");
       return T("No Wikidata election snapshot on this install yet: these dates come from the hand-curated list only.");
+    }
+    // An OLD snapshot says so beside its counts (row 258): elections called since its date, snap
+    // votes above all, are not in it. A date after today cannot be aged and is said as such.
+    function agSnapshotStale(sn, T, TF) {
+      if (!sn || sn.state !== "present" || !sn.stale) return "";
+      if (sn.age_days == null) {
+        return T("The Wikidata election snapshot is dated after today, so its age cannot be read: elections called recently may be missing. Run the snapshot again.");
+      }
+      return TF("The Wikidata election snapshot is {days} days old, past the {limit}-day limit: elections called since {date}, snap elections above all, are not in it. Run the snapshot again.",
+        {days: sn.age_days, limit: sn.stale_after_days, date: ooIsoDate(sn.as_of)});
     }
     function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;

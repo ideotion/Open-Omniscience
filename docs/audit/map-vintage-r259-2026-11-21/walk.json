@@ -1,0 +1,130 @@
+{
+ "ne": [
+  {
+   "name": "world-map",
+   "file": "ne-world-map.jpg",
+   "bytes": 71271,
+   "legend": "Borders: Natural Earth 50m",
+   "legend_hover": "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "natural-earth"
+   ]
+  },
+  {
+   "name": "library-world-coverage",
+   "file": "ne-library-world-coverage.jpg",
+   "bytes": 65147,
+   "legend": "Borders: Natural Earth 50m",
+   "legend_hover": "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "natural-earth"
+   ]
+  },
+  {
+   "name": "governments-map",
+   "file": "ne-governments-map.jpg",
+   "bytes": 63397,
+   "legend": "Borders: Natural Earth 50m",
+   "legend_hover": "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "natural-earth"
+   ]
+  },
+  {
+   "name": "living-law-map",
+   "file": "ne-living-law-map.jpg",
+   "bytes": 40386,
+   "legend": "Borders: Natural Earth 50m",
+   "legend_hover": "Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "natural-earth"
+   ]
+  }
+ ],
+ "ne_page_errors": [],
+ "osm": [
+  {
+   "name": "world-map",
+   "file": "osm-world-map.jpg",
+   "bytes": 77762,
+   "legend": "Borders: OpenStreetMap, as of 2026-10-15 · Natural Earth 50m elsewhere",
+   "offline_osm": null,
+   "legend_hover": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 5 countries from OpenStreetMap; every other country keeps its Natural Earth border.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "osm"
+   ]
+  },
+  {
+   "name": "world-map-offline-osm",
+   "file": "osm-world-map-offline-osm.jpg",
+   "bytes": 89483,
+   "legend": "Borders: OpenStreetMap, as of 2026-10-15 · Natural Earth 50m elsewhere · Offline OSM preview, as of 2026-09-21",
+   "offline_osm": "Offline OSM preview, as of 2026-09-21: 15 nodes · 5 ways · 1 country boundary",
+   "legend_hover": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 5 countries from OpenStreetMap; every other country keeps its Natural Earth border. 1 country drawn from the offline OSM preview, © OpenStreetMap contributors (ODbL 1.0).",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "osm"
+   ]
+  },
+  {
+   "name": "library-world-coverage",
+   "file": "osm-library-world-coverage.jpg",
+   "bytes": 76560,
+   "legend": "Borders: OpenStreetMap, as of 2026-10-15 · Natural Earth 50m elsewhere",
+   "offline_osm": null,
+   "legend_hover": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 5 countries from OpenStreetMap; every other country keeps its Natural Earth border.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "osm"
+   ]
+  },
+  {
+   "name": "governments-map",
+   "file": "osm-governments-map.jpg",
+   "bytes": 69981,
+   "legend": "Borders: OpenStreetMap, as of 2026-10-15 · Natural Earth 50m elsewhere",
+   "offline_osm": null,
+   "legend_hover": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 5 countries from OpenStreetMap; every other country keeps its Natural Earth border.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "osm"
+   ]
+  },
+  {
+   "name": "living-law-map",
+   "file": "osm-living-law-map.jpg",
+   "bytes": 43603,
+   "legend": "Borders: OpenStreetMap, as of 2026-10-15 · Natural Earth 50m elsewhere",
+   "offline_osm": null,
+   "legend_hover": "Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0). 5 countries from OpenStreetMap; every other country keeps its Natural Earth border.",
+   "disputed": 28,
+   "hatched": 28,
+   "attributed": 0,
+   "convention": [
+    "osm"
+   ]
+  }
+ ],
+ "osm_page_errors": []
+}
