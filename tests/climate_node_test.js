@@ -158,7 +158,7 @@ const unit = (over) => Object.assign({
   assert.ok(v.includes("Last failed attempt 2026-11-21"), "the failure is dated beside it: " + v);
   assert.ok(v.includes("refused by airplane mode; no request was sent"), "the kill switch is named as airplane mode: " + v);
   assert.ok(v.includes("Last fetch: 3 new"), "the success's tally still prints: " + v);
-  assert.ok(/class="card-caveat climate-failure-note">[^<]*the values shown are from the last successful fetch/.test(both), "the caveat is a visible line, not a hover");
+  assert.ok(/class="card-caveat climate-failure-note">[^<]*the values already stored are shown/.test(both), "the caveat is a visible line, not a hover");
   noJunk(both, "success + failure");
   assert.ok(!VERDICTS.test(v), "a verdict word crept in: " + v);
   const only = visible(R.climateFactsHtml(unit({ last_fetch: { last_failure: { failed_at: "2026-11-21T10:00:00+00:00", reason: "http_5xx" } } }), t, tf));

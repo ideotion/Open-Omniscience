@@ -161,7 +161,7 @@
       if (fail) {
         facts.push(_climateFact(t("Last failed attempt"),
           esc((fail.failed_at ? _climateWhen(fail.failed_at, t) + " · " : "") + climateFailureReason(fail.reason, t)),
-          t("The most recent fetch that did not complete. A failed attempt changes nothing that is stored.")));
+          t("The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.")));
       }
       if (st.stored_rows) {
         facts.push(_climateFact(t("Stored"), esc(tf("{rows} values from {vintages} fetches", {rows: fmtNum(st.stored_rows, 0), vintages: fmtNum(st.vintages, 0)})),
@@ -170,8 +170,8 @@
       facts.push(_climateFact(t("Shape documented"), esc(unit.documented_as_of),
         t("When the file layout was written down from the publisher's documentation. The first real download is the check; a file that does not match is refused, never guessed.")));
       // The caveat is visible by default (informed consent), not only in the hover.
-      const failNote = !fail ? "" : `<div class="card-caveat climate-failure-note">${esc((rec.fetched_at || st.stored_rows)
-        ? t("The latest attempt failed and changed nothing: the values shown are from the last successful fetch, kept as they were.")
+      const failNote = !fail ? "" : `<div class="card-caveat climate-failure-note">${esc(st.stored_rows
+        ? t("The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.")
         : t("The latest attempt failed, so nothing is stored for this yet."))}</div>`;
       return `<div class="climate-facts">${facts.join("")}</div>` + failNote + climateDiagnosticsHtml(unit, t, tf);
     }
