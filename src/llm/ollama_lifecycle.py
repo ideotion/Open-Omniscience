@@ -115,6 +115,56 @@ def refusal() -> str | None:
     return _loopback_refusal(configured_url(), setting="OO_OLLAMA_URL")
 
 
+def bind_address() -> str:
+    """The ``OLLAMA_HOST`` a daemon this app starts listens on: the configured loopback host and port (R771).
+
+    Exactly the address ``OllamaClient`` will connect to -- the port defaults the way an ``http(s)://`` URL does, because
+    that is the port the client uses -- so the daemon is reachable by the app and by nothing off this computer. An
+    inherited ``OLLAMA_HOST`` (``0.0.0.0`` would put the daemon on the local network) is never passed through.
+
+    Raises :class:`OllamaLifecycleError` for an address that is not on this computer, whose port cannot be read or is 0
+    (a random port the app would never find, so every Launch would orphan another daemon), or whose scheme is not
+    ``http`` (Ollama serves no TLS); the caller spawns nothing then. The alias names the loopback rule accepts besides
+    ``localhost`` are given as their literal address: the daemon would resolve a name itself, and on a machine whose hosts
+    file lacks it that goes to DNS, whose answer could be a network address (security read of R771). ``localhost`` itself
+    is passed as a name on purpose (Plan, 2026-11-21): the client resolves it too and R767 checks the connected address is
+    loopback, and pinning it to 127.0.0.1 could split the daemon from the client on a machine whose localhost is IPv6.
+    """
+    refused = refusal()
+    if refused is not None:
+        raise OllamaLifecycleError(refused)
+    bind, problem = _bind_or_problem()
+    if problem is not None:
+        raise OllamaLifecycleError(problem)
+    return bind
+
+
+def _bind_or_problem() -> tuple[str, str | None]:
+    """``(OLLAMA_HOST, None)``, or ``("", why it cannot be served)`` for an address that already passed the loopback rule.
+
+    Returns the reason rather than raising it, so :func:`launch_refusal` can say it without reusing an exception's text."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(configured_url())
+    try:
+        port = parsed.port
+    except ValueError:
+        return "", "OO_OLLAMA_URL has a port that is not a number from 0 to 65535, so Ollama was not started."
+    if parsed.scheme.lower() != "http":
+        return "", (
+            "OO_OLLAMA_URL must start with http:// for an Ollama this app starts (Ollama serves no TLS), so it was not started."
+        )
+    if port is None:
+        port = 80  # the port the client itself uses for an http:// address with none
+    if port == 0:
+        return "", (
+            "OO_OLLAMA_URL has port 0, which would start Ollama on a random port the app never finds, so it was not started."
+        )
+    host = parsed.hostname or "127.0.0.1"
+    host = {"localhost.localdomain": "127.0.0.1", "ip6-localhost": "::1"}.get(host, host)
+    return (f"[{host}]:{port}" if ":" in host else f"{host}:{port}"), None
+
+
 def is_running(*, timeout: float = 2.0) -> bool:
     """Live loopback probe of the daemon. Mirrors ``vllm_lifecycle.is_running``:
     never inferred from a tracked subprocess handle, because the daemon is usually
@@ -185,7 +235,10 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
 
     THE ADDRESS IS CHECKED FIRST (row 234). With ``OO_OLLAMA_URL`` naming another computer
     the app never talks to a local daemon, so spawning ``ollama serve`` here would start a
-    process nothing uses; the refusal is raised, with its reason, before anything runs.
+    process nothing uses; the refusal is raised, with its reason, before anything runs. The
+    address the daemon will listen on (R771, :func:`bind_address`) is read only once a daemon is
+    known to be needed: one that already answers is reported as running whatever the address
+    would need to start a new one.
     """
     refused = refusal()
     if refused is not None:
@@ -197,6 +250,7 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
         )
     if is_running():
         return {"started": False, "reason": "already running", "path": path}
+    bind = bind_address()  # an unreadable port, port 0 or a non-http scheme: nothing is spawned
 
     # Detached, output discarded. stdout/stderr go to DEVNULL rather than a pipe on
     # purpose: nothing reads them, and an unread pipe fills its buffer and wedges the
@@ -216,6 +270,11 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
     # operator's environment says, so a cloud model name cannot forward a prompt off this computer through it. A daemon the
     # operator runs keeps its own setting; OllamaClient refuses those models before any request either way.
     env["OLLAMA_NO_CLOUD"] = "1"
+    # R771: the daemon listens only where the app will talk to it, on this computer -- never an inherited OLLAMA_HOST.
+    env["OLLAMA_HOST"] = bind
+    # Nor an inherited OLLAMA_ORIGINS: "*" there would let any web page open in the browser call this daemon and read the
+    # answers (models, prompts, pulls, deletes). The app calls it from the server, so Ollama's own default is all it needs.
+    env.pop("OLLAMA_ORIGINS", None)
     try:
         popen_kwargs: dict = {
             "stdin": subprocess.DEVNULL,
@@ -254,8 +313,29 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
         "note": (
             f"launched, but the daemon did not answer within {timeout:.0f}s -- it may "
             "still be starting. Re-check in a moment."
+            + (
+                f" It was asked to listen on port {bind.rsplit(':', 1)[1]}, and a port below 1024 usually needs"
+                " administrator rights: give OO_OLLAMA_URL a port such as 11434."
+                if int(bind.rsplit(":", 1)[1]) < 1024
+                else ""
+            )
         ),
     }
+
+
+def launch_refusal() -> str | None:
+    """Why :func:`start` would refuse to launch a daemon, or ``None``: the row-234 refusal, else :func:`bind_address`'s
+    (an unreadable port, port 0, a non-http scheme) unless a daemon already answers, which ``start()`` reports as running.
+
+    For a caller that gives something up before it starts Ollama (``arbitration.hand_gpu_to`` releases vLLM's card), so
+    it can refuse before giving anything up rather than after."""
+    refused = refusal()
+    if refused is not None:
+        return refused
+    _bind, problem = _bind_or_problem()
+    if problem is None or is_running():
+        return None
+    return problem
 
 
 def release_vram(*, timeout: float = 8.0) -> dict:
@@ -277,11 +357,11 @@ def release_vram(*, timeout: float = 8.0) -> dict:
     uninstalled Ollama is a clean no-op with a stated reason, never an error: the
     post-condition wanted is "Ollama is not holding the card", and that already holds.
     """
+    refused = refusal()
+    if refused is not None:  # row 234: nothing on this computer to ask, and the reason is said -- before "not installed"
+        return {"released": [], "reason": refused, "attempted": False}
     if not is_installed():
         return {"released": [], "reason": "Ollama is not installed", "attempted": False}
-    refused = refusal()
-    if refused is not None:  # row 234: nothing on this computer to ask, and the reason is said
-        return {"released": [], "reason": refused, "attempted": False}
     try:
         from src.llm.ollama import OllamaClient
 
