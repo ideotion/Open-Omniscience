@@ -103,7 +103,8 @@ def _sha(path: Path) -> str:
 
 
 def _frozen(folder: Path) -> dict[str, str]:
-    return {p.name: _sha(p) for p in folder.iterdir() if p.is_file() and not p.name.endswith("-shm")}
+    # the app's own error log (written by a log handler an earlier test may have installed) is not a file the rebuild touches
+    return {p.name: _sha(p) for p in folder.iterdir() if p.is_file() and not p.name.endswith("-shm") and not p.name.startswith("app_errors")}
 
 
 # --------------------------------------------------------------------------- #

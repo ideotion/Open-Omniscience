@@ -90,8 +90,11 @@ _lock = threading.Lock()
 #: folded, a second name is given, the new file is moved in) and is refused by name after :data:`SWAP_WAIT_S`. A connection
 #: opened in that moment would bind the old file's log names to the new file, or keep the old file's log open under a name the
 #: new file then owns.
-_swapping: set[str] = set()
-_swap_cond = threading.Condition()
+_swapping: dict[str, object] = {}  # kind -> the token of the hold that has it (released only by that hold: R161's shape)
+#: The lock under ``_swap_cond``. Entered as ``with _swap_lock:``, never ``with _swap_lock:`` (R144: a Condition's own Python-level
+#: ``__enter__``/``__exit__`` can leave the lock held when an interrupt lands in them).
+_swap_lock = threading.RLock()
+_swap_cond = threading.Condition(_swap_lock)
 #: What each kind's engines have open on the lane file, kept per KIND (not per engine) so it survives an engine being disposed and
 #: forgotten, all under ``_swap_cond``:
 #:   * ``_opening``: creators that passed the not-switching check and have not yet handed a connection to the pool. Counted IN THE
@@ -112,7 +115,7 @@ _GEN_KEY = "oo_lane_generation"
 
 
 def _next_generation(kind: str) -> None:
-    with _swap_cond:
+    with _swap_lock:
         _gen[kind] = _gen.get(kind, 0) + 1
 #: How long a connection waits for a lane's switch to end before it is refused (seconds). Above the log fold's own retry budget
 #: (``repair.FOLD_RETRY_S``, 30 s) with a margin, so a hold that ends in time is never seen as a refusal by a reader that waited.
@@ -152,7 +155,7 @@ _open_gen = threading.local()
 def _begin_open(kind: str) -> None:
     """Called by a lane engine's creator before it opens the file: wait while this kind's file is being switched, then count the
     open as under way, in ONE locked step. After :data:`SWAP_WAIT_S` it is refused with :class:`LaneSwapping`."""
-    with _swap_cond:
+    with _swap_lock:
         if kind in _swapping and not _swap_cond.wait_for(lambda: kind not in _swapping, timeout=SWAP_WAIT_S):
             raise LaneSwapping(SWAPPING_WORDS)
         _opening[kind] = _opening.get(kind, 0) + 1
@@ -160,13 +163,13 @@ def _begin_open(kind: str) -> None:
 
 
 def _end_open(kind: str) -> None:
-    with _swap_cond:
+    with _swap_lock:
         _opening[kind] = max(0, _opening.get(kind, 0) - 1)
         _swap_cond.notify_all()
 
 
 def _note(kind: str, conn_id: int, *, live: bool | None = None, out: bool | None = None) -> None:
-    with _swap_cond:
+    with _swap_lock:
         if live is not None:
             (_live.setdefault(kind, set()).add if live else _live.setdefault(kind, set()).discard)(conn_id)
         if out is not None:
@@ -177,7 +180,7 @@ def _note(kind: str, conn_id: int, *, live: bool | None = None, out: bool | None
 def in_use(kind: str) -> int:
     """How many connections to this lane are handed out right now, or being opened (0 for a lane nobody opened). Idle connections
     in a pool are not counted: they hold nothing, and a hold closes them."""
-    with _swap_cond:
+    with _swap_lock:
         return len(_out.get(kind, ())) + _opening.get(kind, 0)
 
 
@@ -189,7 +192,7 @@ def _open_now(kind: str) -> int:
 def quiet(kind: str) -> bool:
     """Whether NOTHING of this process is open on the lane file, nor being opened. Read by the switch again right before it gives
     the old file its second name and moves the new one in."""
-    with _swap_cond:
+    with _swap_lock:
         return _open_now(kind) == 0
 
 
@@ -201,12 +204,13 @@ def held_for_swap(kind: str) -> Iterator[None]:
     :data:`HOLD_SETTLE_S` for the opens under way to land and the connections handed out to come back, disposing again as they do.
     If any is still open it is REFUSED with :class:`LaneInUse`: that connection would go on using the old file, and its log by a
     name the new file then owns. Not re-entrant (:class:`LaneAlreadyHeld`)."""
-    with _swap_cond:
-        if kind in _swapping:
-            raise LaneAlreadyHeld("this store is already held for a switch")
-        _swapping.add(kind)
-        _gen[kind] = _gen.get(kind, 0) + 1
+    token = object()
     try:
+        with _swap_lock:
+            if kind in _swapping:
+                raise LaneAlreadyHeld("this store is already held for a switch")
+            _swapping[kind] = token
+            _gen[kind] = _gen.get(kind, 0) + 1
         with _lock:
             # KEPT in the cache, not forgotten: a connection opened through one of them (a caller already holding its factory)
             # then lands in a pool the next pass of the loop below, and the next hold, can still reach and close.
@@ -215,7 +219,7 @@ def held_for_swap(kind: str) -> Iterator[None]:
         while True:
             for eng in engines:
                 eng.dispose()  # a connection that came back (or finished opening) since the last pass is idle now: closed here
-            with _swap_cond:
+            with _swap_lock:
                 left = _open_now(kind)
                 if not left:
                     break
@@ -225,8 +229,11 @@ def held_for_swap(kind: str) -> Iterator[None]:
                 _swap_cond.wait(timeout=min(0.05, remaining))
         yield
     finally:
-        with _swap_cond:
-            _swapping.discard(kind)
+        # Released by asking whose it is (R161): an interrupt anywhere above leaves no mark of THIS hold behind, and a refused
+        # second hold never takes away the first one's.
+        with _swap_lock:
+            if _swapping.get(kind) is token:
+                del _swapping[kind]
             _swap_cond.notify_all()
 
 
@@ -356,7 +363,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         # (``_lane_pragmas``: WAL on a locked file) closes it and forgets it itself. ``file_identity``'s stamp cannot raise (a
         # ``stat`` that fails is None). STATED LIMIT: a failure in the dialect's own connect handler, before this one, leaves the
         # open counted, which refuses this lane's later rebuilds until a restart (a refusal, never a loss).
-        with _swap_cond:
+        with _swap_lock:
             record.info[_GEN_KEY] = getattr(_open_gen, "value", _gen.get(spec.kind, 0))
         _note(spec.kind, id(dbapi_connection), live=True)
         _end_open(spec.kind)
@@ -391,7 +398,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         if dbapi_connection is None:
             return
         _note(spec.kind, id(dbapi_connection), out=False)
-        with _swap_cond:
+        with _swap_lock:
             stale = record.info.get(_GEN_KEY) != _gen.get(spec.kind, 0)
         if stale:
             record.invalidate()  # closed now (its ``close`` event forgets it), never left idle in a pool nothing reaches
