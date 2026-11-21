@@ -16,6 +16,9 @@ WHAT IS RECORDED (``metric`` / ``kind``):
 * ``walk`` / ``ok`` or a refusal token, per edition: requests, answer time, bytes, pages, the
   longest ``Retry-After`` seen and the latest detail (the walk's bookmark on ``ok``, the
   exception TYPE and HTTP status on a refusal, never a URL or a message);
+* ``walk_count`` / a refusal token, per edition: a refused read of the edition's article count
+  (``meta=siteinfo``), ALSO counted under ``walk``; kept apart so a later batch refusal never
+  stands in for it (row 257);
 * ``drain`` / ``ok`` or ``failed``: drains, their duration, revisions stored; ``drain_stage`` /
   ``hot-sets`` or ``feeds-wall``: the WALL time of each stage (``feeds-wall`` includes opening the
   lane, waiting for a connection and the HTTP text fetches between stores, so it is an upper bound
@@ -344,7 +347,8 @@ def snapshot(lane: Any, *, days: int = RETENTION_DAYS) -> dict:
         "long the corpus was occupied, not that figure); drain_gate rows are what the drain thread "
         "itself held of the corpus's single writer, per the gate's own accounting of that thread: "
         "for kind held the figure is sum_ms and n counts drains, for longest it is max_ms (its "
-        "sum_ms is a sum of maxima and means nothing), and for grants it is n."
+        "sum_ms is a sum of maxima and means nothing), and for grants it is n; walk_count rows are "
+        "refused article-count reads, each ALSO counted in the walk rows, so the two are never summed."
     )
     caveat = (
         f"Rows older than {RETENTION_DAYS} days are pruned. An hour with a restart in it holds the "
