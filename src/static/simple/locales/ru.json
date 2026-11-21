@@ -167,6 +167,8 @@
   "Latest attempt failed": "Последняя попытка не удалась",
   "Why": "Почему",
   "Stored": "Сохранено",
-  "Nothing stored was changed: the values counted here are kept as they were.": "Ничего из сохранённого не изменилось: учтённые здесь значения остаются прежними."
+  "Nothing stored was changed: the values counted here are kept as they were.": "Ничего из сохранённого не изменилось: учтённые здесь значения остаются прежними.",
+  "{n} of {m} series": "{n} из {m} рядов",
+  "Most recent failure": "Последний сбой"
  }
 }

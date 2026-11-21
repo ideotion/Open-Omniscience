@@ -167,6 +167,8 @@
   "Latest attempt failed": "पिछला प्रयास विफल",
   "Why": "क्यों",
   "Stored": "संग्रहीत",
-  "Nothing stored was changed: the values counted here are kept as they were.": "संग्रहीत कुछ भी नहीं बदला: यहाँ गिने गए मान जैसे थे वैसे ही रखे गए हैं।"
+  "Nothing stored was changed: the values counted here are kept as they were.": "संग्रहीत कुछ भी नहीं बदला: यहाँ गिने गए मान जैसे थे वैसे ही रखे गए हैं।",
+  "{n} of {m} series": "{m} में से {n} शृंखलाएँ",
+  "Most recent failure": "सबसे हाल की विफलता"
  }
 }

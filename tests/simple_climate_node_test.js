@@ -45,6 +45,10 @@ const otherSeries = { dataset: "gistemp", host: "data.giss.nasa.gov", stored: { 
   assert.strictEqual(by.gistemp.failed.at, "2026-11-21T10:00:00+00:00");
   assert.strictEqual(by.gistemp.last, "2026-11-20T09:00:00+00:00", "the success date stays, never replaced by the failure");
   assert.strictEqual(by.gistemp.stored, 15, "stored values are still counted");
+  assert.strictEqual(by.gistemp.failing, 1, "one series failing");
+  assert.strictEqual(by.gistemp.tried, 2, "of two series with a record");
+  assert.strictEqual(by.oni.failing, 0);
+  assert.strictEqual(R.climateRows([{ dataset: "owid", stored: {} }])[0].tried, 0, "a series never fetched is not counted as tried");
 }
 {
   // The newest of two failures is the one shown; a missing failed_at never wins over a dated one.

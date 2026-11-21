@@ -167,6 +167,8 @@
   "Latest attempt failed": "শেষ প্রচেষ্টা ব্যর্থ",
   "Why": "কেন",
   "Stored": "সংরক্ষিত",
-  "Nothing stored was changed: the values counted here are kept as they were.": "সংরক্ষিত কিছুই বদলায়নি: এখানে গোনা মানগুলি যেমন ছিল তেমনই রাখা আছে।"
+  "Nothing stored was changed: the values counted here are kept as they were.": "সংরক্ষিত কিছুই বদলায়নি: এখানে গোনা মানগুলি যেমন ছিল তেমনই রাখা আছে।",
+  "{n} of {m} series": "{m}টির মধ্যে {n}টি সিরিজ",
+  "Most recent failure": "সবচেয়ে সাম্প্রতিক ব্যর্থতা"
  }
 }

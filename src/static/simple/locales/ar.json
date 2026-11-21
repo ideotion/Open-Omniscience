@@ -167,6 +167,8 @@
   "Latest attempt failed": "فشلت المحاولة الأخيرة",
   "Why": "السبب",
   "Stored": "المخزَّن",
-  "Nothing stored was changed: the values counted here are kept as they were.": "لم يتغيّر شيء مما هو مخزَّن: القيم المعدودة هنا محفوظة كما كانت."
+  "Nothing stored was changed: the values counted here are kept as they were.": "لم يتغيّر شيء مما هو مخزَّن: القيم المعدودة هنا محفوظة كما كانت.",
+  "{n} of {m} series": "{n} من {m} سلاسل",
+  "Most recent failure": "أحدث إخفاق"
  }
 }

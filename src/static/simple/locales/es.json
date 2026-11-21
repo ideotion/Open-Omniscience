@@ -167,6 +167,8 @@
   "Latest attempt failed": "Último intento fallido",
   "Why": "Por qué",
   "Stored": "Almacenado",
-  "Nothing stored was changed: the values counted here are kept as they were.": "No cambió nada de lo almacenado: los valores contados aquí se conservan tal cual."
+  "Nothing stored was changed: the values counted here are kept as they were.": "No cambió nada de lo almacenado: los valores contados aquí se conservan tal cual.",
+  "{n} of {m} series": "{n} de {m} series",
+  "Most recent failure": "Fallo más reciente"
  }
 }

@@ -858,14 +858,16 @@
     var seen = {}, rows = [];
     (units || []).forEach(function (u) {
       var x = seen[u.dataset];
-      if (!x) { x = seen[u.dataset] = { dataset: u.dataset, host: u.host, stored: 0, last: null, failed: null }; rows.push(x); }
+      if (!x) { x = seen[u.dataset] = { dataset: u.dataset, host: u.host, stored: 0, last: null, failed: null, tried: 0, failing: 0 }; rows.push(x); }
       x.stored += (u.stored && u.stored.stored_rows) || 0;
       var rec = u.last_fetch || {};
+      if (u.last_fetch) x.tried += 1;   // a series with a record: fetched once, or failed
       var at = rec.fetched_at;
       if (at && (!x.last || at > x.last)) x.last = at;   // the newest fetch of any of its series
       var f = rec.last_failure;
-      if (f && typeof f === "object" && (!x.failed || (f.failed_at || "") > (x.failed.at || ""))) {
-        x.failed = { at: f.failed_at || null, reason: f.reason };
+      if (f && typeof f === "object") {
+        x.failing += 1;
+        if (!x.failed || (f.failed_at || "") > (x.failed.at || "")) x.failed = { at: f.failed_at || null, reason: f.reason };
       }
     });
     return rows;
@@ -896,15 +898,18 @@
     if (r.loading && !r.data) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
     var rows = climateRows(r.data && r.data.units);
+    // A dataset with nothing stored stays out of the list, failed or not: the empty line below and
+    // the full view (which shows each unit's failure) say so; there is no figure here to mark.
     var have = rows.filter(function (x) { return x.stored > 0; });
     return html`<div>
       ${have.length ? html`<ul class="s-nums">${have.map(function (x) {
-        return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("climate"); }}>
+        return html`<li class=${"s-num" + (x.failed ? " s-num-failed" : "")}><button type="button" class="s-num-btn" onClick=${function () { peekFull("climate"); }}>
           <span class="s-num-name">${x.dataset.toUpperCase()}</span>
           <b class="s-num-val">${t("{n} values", { n: fmtInt(x.stored) })}</b>
           <span class="s-meta">${x.last ? t("Fetched {d}", { d: fmtDate(x.last) }) : x.host}</span></button>
           ${x.failed ? html`<${Mark} kind="stale"/><${Details} what=${x.dataset.toUpperCase()}>
-            <${Row} k=${t("Latest attempt failed")} v=${x.failed.at ? fmtTime(x.failed.at) : "—"}/>
+            <${Row} k=${t("Latest attempt failed")} v=${t("{n} of {m} series", { n: fmtInt(x.failing), m: fmtInt(x.tried) })}/>
+            <${Row} k=${t("Most recent failure")} v=${x.failed.at ? fmtTime(x.failed.at) : "—"}/>
             <${Row} k=${t("Why")} v=${climateFailureWords(x.failed.reason)}/>
             <${Row} k=${t("Stored")} v=${t("Nothing stored was changed: the values counted here are kept as they were.")}/>
           <//>` : null}</li>`;

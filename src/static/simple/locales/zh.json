@@ -167,6 +167,8 @@
   "Latest attempt failed": "最近一次尝试失败",
   "Why": "原因",
   "Stored": "已存储",
-  "Nothing stored was changed: the values counted here are kept as they were.": "已存储的内容没有任何变化：这里计数的数值保持原样。"
+  "Nothing stored was changed: the values counted here are kept as they were.": "已存储的内容没有任何变化：这里计数的数值保持原样。",
+  "{n} of {m} series": "{m} 个系列中的 {n} 个",
+  "Most recent failure": "最近一次失败"
  }
 }

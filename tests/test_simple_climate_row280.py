@@ -43,7 +43,11 @@ def test_a_failed_dataset_is_marked_and_explained_beside_its_last_fetch():
     assert 't("Fetched {d}"' in climate, "the last success is still shown"
     assert "climateFailureWords(x.failed.reason)" in climate
     # The ⓘ is a sibling of the row's button, never nested inside it (a button in a button).
-    assert climate.index("</button>\n          ${x.failed") > 0
+    assert re.search(r"</button>\s*\$\{x\.failed \?", climate), "the mark and the i follow the button"
+    assert '" s-num-failed"' in climate
+    css = (_ROOT / "src" / "static" / "simple" / "simple.css").read_text(encoding="utf-8")
+    assert ".s-num-failed { display:flex; flex-wrap:wrap" in css, "the failed card lays its mark and i inside the card"
+    assert 't("{n} of {m} series"' in climate, "a dataset-level mark says how many series failed"
 
 
 def test_the_simple_view_names_each_failure_as_the_full_view_does():

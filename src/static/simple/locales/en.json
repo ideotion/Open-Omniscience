@@ -167,6 +167,8 @@
   "Latest attempt failed": "Latest attempt failed",
   "Why": "Why",
   "Stored": "Stored",
-  "Nothing stored was changed: the values counted here are kept as they were.": "Nothing stored was changed: the values counted here are kept as they were."
+  "Nothing stored was changed: the values counted here are kept as they were.": "Nothing stored was changed: the values counted here are kept as they were.",
+  "{n} of {m} series": "{n} of {m} series",
+  "Most recent failure": "Most recent failure"
  }
 }

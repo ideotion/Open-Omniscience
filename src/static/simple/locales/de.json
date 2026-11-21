@@ -167,6 +167,8 @@
   "Latest attempt failed": "Letzter Versuch fehlgeschlagen",
   "Why": "Warum",
   "Stored": "Gespeichert",
-  "Nothing stored was changed: the values counted here are kept as they were.": "Nichts Gespeichertes wurde geändert: Die hier gezählten Werte bleiben unverändert."
+  "Nothing stored was changed: the values counted here are kept as they were.": "Nichts Gespeichertes wurde geändert: Die hier gezählten Werte bleiben unverändert.",
+  "{n} of {m} series": "{n} von {m} Reihen",
+  "Most recent failure": "Jüngster Fehlschlag"
  }
 }

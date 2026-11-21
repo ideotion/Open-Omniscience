@@ -167,6 +167,8 @@
   "Latest attempt failed": "Percobaan terakhir gagal",
   "Why": "Mengapa",
   "Stored": "Tersimpan",
-  "Nothing stored was changed: the values counted here are kept as they were.": "Tidak ada yang tersimpan yang berubah: nilai yang dihitung di sini disimpan apa adanya."
+  "Nothing stored was changed: the values counted here are kept as they were.": "Tidak ada yang tersimpan yang berubah: nilai yang dihitung di sini disimpan apa adanya.",
+  "{n} of {m} series": "{n} dari {m} seri",
+  "Most recent failure": "Kegagalan terbaru"
  }
 }

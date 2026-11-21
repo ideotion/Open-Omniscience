@@ -167,6 +167,8 @@
   "Latest attempt failed": "直近の試行は失敗",
   "Why": "理由",
   "Stored": "保存済み",
-  "Nothing stored was changed: the values counted here are kept as they were.": "保存済みのものは何も変わっていません。ここで数えた値はそのまま保持されています。"
+  "Nothing stored was changed: the values counted here are kept as they were.": "保存済みのものは何も変わっていません。ここで数えた値はそのまま保持されています。",
+  "{n} of {m} series": "{m} 系列中 {n} 系列",
+  "Most recent failure": "直近の失敗"
  }
 }
