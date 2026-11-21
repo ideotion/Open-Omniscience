@@ -124,9 +124,9 @@ def bind_address() -> str:
 
     Raises :class:`OllamaLifecycleError` for an address that is not on this computer, whose port cannot be read or is 0
     (a random port the app would never find, so every Launch would orphan another daemon), or whose scheme is not
-    ``http`` (Ollama serves no TLS); the caller spawns nothing then. The alias names the loopback rule accepts besides
-    ``localhost`` are given as their literal address: the daemon would resolve a name itself, and on a machine whose hosts
-    file lacks it that goes to DNS, whose answer could be a network address (security read of R771). ``localhost`` itself
+    ``http`` (Ollama serves no TLS); the caller spawns nothing then. Alias names such as ``ip6-localhost`` never get
+    here: the loopback rule refuses them and names the literal to use (R767), so no daemon is started on a name the hosts
+    file may lack and DNS could answer with a network address (security read of R771). ``localhost`` itself
     is passed as a name on purpose (Plan, 2026-11-21): the client resolves it too and R767 checks the connected address is
     loopback, and pinning it to 127.0.0.1 could split the daemon from the client on a machine whose localhost is IPv6.
     """
@@ -161,7 +161,6 @@ def _bind_or_problem() -> tuple[str, str | None]:
             "OO_OLLAMA_URL has port 0, which would start Ollama on a random port the app never finds, so it was not started."
         )
     host = parsed.hostname or "127.0.0.1"
-    host = {"localhost.localdomain": "127.0.0.1", "ip6-localhost": "::1"}.get(host, host)
     return (f"[{host}]:{port}" if ":" in host else f"{host}:{port}"), None
 
 
