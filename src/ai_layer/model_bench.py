@@ -965,6 +965,9 @@ def _default_wake(backend: str) -> dict:
                 "woken": False,
                 "reason": "OO_LLM_AUTOSTART=0 — automatic backend starts are off on this machine",
             }
+        refused = ollama_lifecycle.refusal()  # row 234: the address is the reason, not a missing binary
+        if refused is not None:
+            return {"woken": False, "reason": refused}
         if not ollama_lifecycle.is_installed():
             return {"woken": False, "reason": "Ollama is not installed on this machine"}
         res = ollama_lifecycle.start()

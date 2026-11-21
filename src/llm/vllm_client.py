@@ -229,7 +229,10 @@ class VllmClient:
         # URL and never egress.
         if client is None:
             _require_loopback(self.base_url, setting="OO_VLLM_URL")
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
+        # trust_env=False (R770): the server is on this computer, so the connection is always direct. With trust_env left on,
+        # httpx routes even http://127.0.0.1 through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts and
+        # article text would reach that proxy.
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout, trust_env=False)
 
     # -- network kill switch ----------------------------------------------- #
 
