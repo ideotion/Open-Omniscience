@@ -113,20 +113,26 @@
       const frames = obj && obj[field + "_i18n"];
       if (Array.isArray(frames)) {
         let unkeyed = false;
-        const out = frames.filter(f => f && typeof f.t === "string").map(f => {
+        // One frame, and every frame nested in a hole (a reason that quotes what each probe said): each part reads in
+        // the page's language, and any part this locale does not hold marks the whole as English.
+        const one = (f, depth) => {
           // A template this page's locale does not hold (a newer server, a cached older page) fills in ENGLISH:
           // tf gives no sign of it, so ask t() -- and label the result rather than pass it off as translated.
           if (t(f.t) === f.t) unkeyed = true;
           const v = {}, src = (f.v && typeof f.v === "object") ? f.v : {};
           const tr = Array.isArray(f.tr) ? f.tr : [];
           Object.keys(src).forEach(k => {
-            if (src[k] == null) return;
-            if (tr.indexOf(k) !== -1) v[k] = t(String(src[k]));
-            else if (typeof src[k] === "number" && typeof fmtNum === "function") v[k] = fmtNum(src[k]);
-            else v[k] = String(src[k]);
+            const x = src[k];
+            if (x == null) return;
+            if (typeof x === "object" && typeof x.t === "string" && depth < 4) v[k] = one(x, depth + 1);
+            else if (typeof x === "object") return;
+            else if (tr.indexOf(k) !== -1) v[k] = t(String(x));
+            else if (typeof x === "number" && typeof fmtNum === "function") v[k] = fmtNum(x);
+            else v[k] = String(x);
           });
           return tf(f.t, v);
-        }).filter(Boolean).join(" ");
+        };
+        const out = frames.filter(f => f && typeof f.t === "string").map(f => one(f, 0)).filter(Boolean).join(" ");
         if (out) return {text: out, english: unkeyed && lang !== "en"};
       }
       const s = (obj && obj[field] != null) ? String(obj[field]) : "";
@@ -1559,6 +1565,8 @@
     // ship in twelve locales.
     function _laneHostTitle(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const parts = [];
       // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069). The bubble is
       // plain text in an RTL document under Arabic, so without it the bidi algorithm
@@ -1572,6 +1580,13 @@
                    t("the full list is in the security notes"));
       }
       if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
+      // R761 (row 224): a search lane also reaches every site the search RETURNS, which no
+      // table can name in advance. Say so, and name each feed address probed on each of
+      // them: `probePaths` is FEED_PROBE_PATHS exactly (a test ties the two).
+      if (lane.resultSites) {
+        parts.push(tf("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}. Any of these addresses that redirects leads to another site too, whose robots.txt is read first.",
+                      { paths: (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
+      }
       parts.push(_laneTransport(lane, kind));
       // A STEP, not only a host: part of this lane is programs the app starts, and the
       // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).
@@ -1595,7 +1610,10 @@
       // sibling `${n} ${t("sources")}` sites all render "1 sources" today. The
       // hover spells the number out in words, where the only lanes that reach it
       // are the two classes, whose counts are never 1.
-      const count = n ? ` <span class="muted">n=${n}</span>` : "";
+      const count = (n ? ` <span class="muted">n=${n}</span>` : "") +
+        // R761: visible on the row, not only in the hover -- the sites a search returns are
+        // contacted too, and the operator should see that before the click that goes online.
+        (lane.resultSites ? ` <span class="muted">${esc(t("+ each site the search returns"))}</span>` : "");
       // tabindex="0": the hosts live in the hover, and invariant #17 opens the bubble on
       // hover, KEYBOARD FOCUS or long-press. A plain span never takes focus, so Tab
       // skipped every lane and a keyboard user could not read one host (row H).

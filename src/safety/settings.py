@@ -258,6 +258,7 @@ def save_settings(updates: dict) -> SafetySettings:
     else:
         reset = []
     current = _settings_from(stored)
+    was_protected = _effective_protected()
     current.reset_fields = reset  # type: ignore[attr-defined]
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
@@ -290,8 +291,31 @@ def save_settings(updates: dict) -> SafetySettings:
     if not _use_kv():
         path = _path()
         atomic_replace(path, json.dumps(payload, indent=2, sort_keys=True), fsync=False)
-        return current
-    from src.config.kv_store import kv_set_json
+    else:
+        from src.config.kv_store import kv_set_json
 
-    kv_set_json(_KV_KEY, payload)
+        kv_set_json(_KV_KEY, payload)
+    current.stopped_ai_installs = []  # type: ignore[attr-defined]
+    if not was_protected and _effective_protected():  # the mode in force, which an OO_FETCH_MODE override decides
+        # R765: protected mode is written first, THEN any AI install still downloading over a direct connection is stopped.
+        current.stopped_ai_installs = _stop_ai_installs()  # type: ignore[attr-defined]
     return current
+
+
+def _effective_protected() -> bool:
+    """Whether the mode in force is protected. Settings that cannot be read count as protected, as everywhere (R117)."""
+    try:
+        s = load_settings()
+    except Exception:  # noqa: BLE001 - unreadable settings are protected
+        return True
+    return bool(s.is_protected or getattr(s, "read_failed", False))
+
+
+def _stop_ai_installs() -> list[str]:
+    """Ask every running AI-install step to stop, without waiting for it. Never raises: the switch does not depend on the install."""
+    try:
+        from src.llm.install_transport import stop_running_installs
+
+        return stop_running_installs()
+    except Exception:  # noqa: BLE001 - the mode is already saved; an install that could not be asked is still refused at its next step
+        return []

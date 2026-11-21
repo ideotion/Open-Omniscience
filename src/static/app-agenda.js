@@ -387,7 +387,7 @@
         return;
       }
       box.innerHTML = `<div style="overflow:auto"><table><tr>
-          <th>${esc(_bulT("Covers through"))}</th><th>${esc(_bulT("Period"))}</th><th></th></tr>` +
+          <th>${esc(_bulT("Covers through"))}</th><th>${esc(_bulT("Period"))}</th><th><span class="sr-only">${esc(_bulT("Actions"))}</span></th></tr>` +
         rows.map(r => `<tr>
           <td>${esc(r.covers_through || r.filename)}</td>
           <td>${esc(r.cadence ? _bulT(_BUL_CADENCE_LABEL[r.cadence] || r.cadence) : "—")}</td>

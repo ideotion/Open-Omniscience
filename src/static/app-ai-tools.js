@@ -25,7 +25,7 @@
         if (!panel || !list) return;
         if (!r.count) { panel.style.display = "none"; return; }
         panel.style.display = "";
-        list.innerHTML = "<table><tr><th>Domain</th><th>Channel</th><th>Evidence</th><th>First seen</th><th></th></tr>" +
+        list.innerHTML = "<table><tr><th>Domain</th><th>Channel</th><th>Evidence</th><th>First seen</th><th><span class='sr-only'>Actions</span></th></tr>" +
           r.candidates.map(c => {
             const ev = c.channel === "citation"
               ? `cited by ${esc(c.evidence.distinct_citing_articles)} of your articles`
@@ -1373,7 +1373,7 @@
               say(t("vLLM install failed:") + " " + (done.error || done.detail || ""));
               return;   // never carry on into steps that need the backend
             }
-            if (done.state === "cancelled") { say(t("Cancelled.")); return; }
+            if (done.state === "cancelled") { say(done.stopped_note ? t(done.stopped_note) : t("Cancelled.")); return; }
           } else if (step.id === "install-ollama") {
             // Ends in the "Install Ollama" box below: elevation is explicit and
             // may need a password this app must never pretend to have.
@@ -1393,7 +1393,7 @@
               say(t("Model download failed:") + " " + (done.error || done.detail || ""));
               return;
             }
-            if (done.state === "cancelled") { say(t("Cancelled.")); return; }
+            if (done.state === "cancelled") { say(done.stopped_note ? t(done.stopped_note) : t("Cancelled.")); return; }
             // "idle" means the queue was never asked for this artifact -- the install
             // call refused (a missing prerequisite, say) and reported that itself.
             // Carrying on would start a server against weights that are not coming and
@@ -1850,7 +1850,8 @@
           (m) => { if (status) status.textContent = m; });
         if (status) {
           status.textContent = st.state === "error"
-            ? (t("Download failed:") + " " + (st.detail || "")) : (st.detail || t("Done."));
+            ? (t("Download failed:") + " " + (st.detail || ""))
+            : (st.stopped_note ? t(st.stopped_note) : (st.detail || t("Done.")));
         }
         // Repaint so the finished row loses its button and the picker gains the model.
         loadModelCatalog();
@@ -2129,7 +2130,12 @@
           : s.server_kind === "relay"
             ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
             : "";
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + kindNote + logBlock;
+        // R762: an address on another computer is refused by the same rule as every local-AI call, and the app
+        // does not contact it; said here, where the address is shown, instead of a silent "not running".
+        const refusedNote = (s.port_occupant && s.port_occupant.state === "refused")
+          ? `<p class="card-caveat">${esc(t("This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1."))}</p>`
+          : "";
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + refusedNote + kindNote + logBlock;
         if (!s.installed) {
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {

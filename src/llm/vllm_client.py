@@ -228,7 +228,7 @@ class VllmClient:
         # injected client (tests) may use a MockTransport with a non-loopback nominal
         # URL and never egress.
         if client is None:
-            _require_loopback(self.base_url)
+            _require_loopback(self.base_url, setting="OO_VLLM_URL")
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
 
     # -- network kill switch ----------------------------------------------- #
