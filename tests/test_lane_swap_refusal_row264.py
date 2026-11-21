@@ -225,13 +225,14 @@ def test_a_connection_whose_pool_record_was_collected_is_not_counted():
         store._note("osm", id(conn), live=False, out=False)
 
 
-def test_a_record_that_now_holds_another_connection_drops_the_old_one():
+def test_a_record_seen_holding_another_connection_still_counts_the_old_one():
+    # fail closed: ``detach()`` hands the record back to its pool before its ``detach`` event fires, so for a moment the record
+    # may hold a new connection while the detached one is still open; a replaced connection leaves through ``close`` instead
     first, second = _Conn(), _Conn()
     rec = _Record(first)
     with _noted(first, rec, live=True):
-        assert not store.quiet("osm")
         rec.dbapi_connection = second
-        assert store.quiet("osm")
+        assert not store.quiet("osm")
 
 
 def test_what_cannot_be_read_still_counts_as_open():

@@ -211,18 +211,14 @@ def _note_detached(kind: str, conn_id: int) -> None:
 
 def _held(table: dict[str, dict[int, weakref.ref[Any]]], kind: str) -> int:
     """How many of ``table``'s entries for ``kind`` may still be open (call with ``_swap_lock``). FAILS CLOSED: an entry is dropped
-    only when its connection is POSITIVELY known gone -- the pool's record of it was collected (its pool with it; a sqlite
-    connection closes when it is freed), or the record now holds ANOTHER connection (the one named was replaced, which closes it).
-    A record that holds no connection right now is uncertain and still counts (a detached connection is counted separately,
-    :data:`_detached`)."""
+    only when its connection is POSITIVELY known gone: the pool's record of it was collected, its pool with it, and a sqlite
+    connection closes when it is freed (unless something outside the pool, such as a leaked cursor, still holds it). Every live
+    record still counts, whatever it holds right now: a replaced connection already left through the pool's ``close`` event, and a
+    record seen holding another connection may be one ``detach()`` handed back before its ``detach`` event fired (a detached
+    connection is counted separately, :data:`_detached`)."""
     entries = table.get(kind) or {}
     for conn_id, ref in list(entries.items()):
-        rec = ref()
-        if rec is None:
-            entries.pop(conn_id, None)
-            continue
-        conn = getattr(rec, "dbapi_connection", None)
-        if conn is not None and id(conn) != conn_id:
+        if ref() is None:
             entries.pop(conn_id, None)
     return len(entries)
 
