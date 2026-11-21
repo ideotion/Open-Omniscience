@@ -106,12 +106,21 @@ def elections_coverage_floor() -> dict:
     list of facts, never a score, and it carries its own caveat."""
     from src.civic.calendar_report import country_tier_report
     from src.civic.coverage_floor import floor_coverage, load_floor
-    from src.events.catalog import layered_events
+    from src.events.catalog import layered_read
 
     today = date.today()  # one clock for every half, so a request that spans midnight cannot split them
-    events, snapshot = layered_events(today)  # one read, so the snapshot line and the tables agree
-    out = floor_coverage(today, events=events)
-    out["tier_report"] = country_tier_report(events, set(load_floor()["countries"]), today)
+    events, snapshot, catalogue = layered_read(today)  # one read, so the snapshot line and the tables agree
+    out = floor_coverage(today, events=events, catalogue=catalogue, snapshot=snapshot)
+    floor = set(load_floor()["countries"])
+    if out.get("covered_n") is not None:
+        out["tier_report"] = country_tier_report(events, floor, today)
+        if "counts_from" in out:  # row 273 (R696): the curated catalogue was not read; these are the snapshot's alone
+            out["tier_report"].update(catalogue=dict(catalogue), counts_from=out["counts_from"])
+    else:
+        # Row 273: neither the curated catalogue nor a snapshot was read, so there are no per-country states to
+        # report; every count is None beside the catalogue's state, never 0 and never "missing".
+        out["tier_report"] = {"floor_countries": len(floor), "counts": None, "countries": None,
+                              "catalogue": dict(catalogue)}
     out["snapshot"] = snapshot
     return out
 

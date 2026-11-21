@@ -261,7 +261,7 @@ def test_the_floor_endpoint_builds_every_half_from_one_read():
 
     src = (Path(__file__).resolve().parents[1] / "src" / "api" / "diagnostics" / "system.py").read_text("utf-8")
     fn = python_function_source(src, "elections_coverage_floor")
-    assert "layered_events(today)" in fn and "events=events" in fn and "with_snapshot" not in fn
+    assert "layered_read(today)" in fn and "events=events" in fn and "with_snapshot" not in fn
 
 
 def test_every_agenda_grid_places_a_bounded_entry_only_inside_its_years():
