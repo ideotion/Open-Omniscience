@@ -372,7 +372,7 @@
       <h2 id="s-status-h" class="s-sr">${t("Your corpus")}</h2>
       <div class="s-figs">
         <div class="s-fig"><b>${fmtInt(c.articles)}</b><span>${t("articles")}</span></div>
-        <div class="s-fig"><b>${c.sources_qualified != null ? fmtInt(c.sources_qualified) : "—"}</b><span>${t("sources")}</span></div>
+        <div class="s-fig"><b>${c.sources_counted != null ? fmtInt(c.sources_counted) : "—"}</b><span>${t("sources")}</span></div>
         ${stale ? html`<${Mark} kind="stale"/>` : null}
         <${Details} what=${t("Your corpus")}>
           <${Row} k=${t("Counted")} v=${fmtTime(stats.as_of || stats.computed_at)}/>

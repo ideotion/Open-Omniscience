@@ -124,3 +124,47 @@ def test_the_candidate_line_ships_in_every_language(lang):
     assert main.get("Candidates not yet checked")
     if lang != "en":
         assert main[CANDIDATE_LINE] != CANDIDATE_LINE
+
+
+@pytest.fixture
+def full_db():
+    """Every table, so the endpoints' own live queries run against this world."""
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    with Session(eng) as s:
+        yield s
+
+
+def test_the_map_endpoint_itself_never_paints_a_candidate_only_country(full_db, monkeypatch):
+    """Pins the WIRING, not only the helper: remove the _count_sources_not_candidates call and this fails."""
+    import src.api.insights as ins
+    from src.analytics import map_serve
+
+    monkeypatch.setattr(ins, "_deadlined", lambda db, key, compute, **k: compute())
+    monkeypatch.setattr(map_serve, "map_coverage", lambda db: None)  # the live path, the one every miss takes
+    _world(full_db)
+    data = ins.insights_map_coverage(db=full_db)
+    rows = {r["country"]: r for r in data["by_country"]}
+    assert (rows["fi"]["sources"], rows["fi"]["candidates"]) == (2, 1)
+    assert (rows["jp"]["sources"], rows["jp"]["candidates"]) == (0, 2)
+    assert data["total_sources"] == 3 and data["candidates_not_checked"] == 3
+
+
+def test_stats_and_the_doctor_line_carry_the_r773_figures(full_db, monkeypatch):
+    import src.api.database as dbapi
+
+    monkeypatch.setattr(dbapi, "_cached", lambda key, compute, db: compute(db))
+    monkeypatch.setattr(dbapi, "engine", full_db.get_bind())
+    _world(full_db)
+    counts = dbapi.database_stats(db=full_db)["counts"]
+    assert counts["sources_counted"] == 3 and counts["candidates_not_checked"] == 3
+    assert counts["sources"] == 7, "the flat row count stays for backward compatibility"
+
+
+def test_the_map_draws_a_zero_source_country_as_no_data_and_shows_candidates():
+    js = (ROOT / "src/static/app-map.js").read_text(encoding="utf-8")
+    assert '!(dim.id === "sources" && v === 0)' in js
+    assert "_ooMapPayload.candidates_not_checked" in js and 'line(t("Candidates not yet checked"), row.candidates)' in js
+    assert "Catalogued sources based in each country" not in js
+    simple = (ROOT / "src/static/simple/simple.js").read_text(encoding="utf-8")
+    assert "c.sources_counted" in simple and "c.sources_qualified" not in simple, "Today and World count one way"

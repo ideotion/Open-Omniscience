@@ -177,10 +177,18 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
             )
             # R773 (row 39): the rows still waiting for a first verdict and never collected from -- the
             # figure shown as "candidates not yet checked" beside every source count.
-            from src.catalog.source_standing import unchecked_candidate_clause
+            from src.catalog.source_standing import (
+                counted_source_clause,
+                unchecked_candidate_clause,
+            )
 
             counts["candidates_not_checked"] = int(
                 db.query(func.count(Source.id)).filter(unchecked_candidate_clause()).scalar() or 0
+            )
+            # The R773 source count (collected from, or enabled and qualified): ONE figure for every surface that says
+            # "sources", so simple mode's Today and World never disagree.
+            counts["sources_counted"] = int(
+                db.query(func.count(Source.id)).filter(counted_source_clause()).scalar() or 0
             )
 
         backend = engine.url.get_backend_name()
