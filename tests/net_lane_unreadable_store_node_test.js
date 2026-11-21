@@ -46,6 +46,29 @@ for (const c of [null, undefined, {}, cfg(null), cfg({ kind: "proxy" }), cfg({ k
   assert.strictEqual(F._storeUnreadable(c), false, JSON.stringify(c));
 }
 
+// the other unreadable state (no environment proxy): the server says kind "unknown", reason "unreadable"
+assert.strictEqual(F._storeUnreadable(cfg({ kind: "unknown", reason: "unreadable" })), true);
+assert.strictEqual(F._storeUnreadable(cfg({ kind: "unknown" })), false);
+for (const id of ["ai", "update"]) {
+  const l = OO_NET_LANES.find((x) => x.id === id);
+  const line = F._laneTransport(l, "unknown", true);
+  assert.ok(/settings could not be read, so these fetches are refused/.test(line), id + ": " + line);
+  assert.ok(!/Mostly not through/.test(line), id + ": " + line);
+}
+for (const l of OO_NET_LANES.filter((x) => x.fetcher === false && !x.mixed)) {
+  assert.strictEqual(F._laneTransport(l, "unknown", true), F._laneTransport(l, "unknown"), l.id);
+}
+
+// --- the popup's renderer hands the flag to every line and to the hint ---------------- //
+{
+  const render = extract("_renderNetLanes");
+  assert.ok(/const unreadable = _storeUnreadable\(cfg\);/.test(render), "the renderer reads the mark");
+  assert.ok(render.includes("_laneLine(l, kind, unreadable)"), "each lane line gets the flag");
+  assert.ok(render.includes("_transportHint(kind, unreadable)"), "the hint gets the flag");
+  assert.ok(extract("_laneLine").includes("_laneHostTitle(lane, kind, unreadable)"), "each hover gets the flag");
+  assert.ok(extract("_laneHostTitle").includes("_laneTransport(lane, kind, unreadable)"), "the hover's transport gets the flag");
+}
+
 // --- unreadable: no line and no hint claims protected mode is on --------------------- //
 for (const kind of ["proxy", "pool", "refused"]) {
   for (const lane of OO_NET_LANES) {

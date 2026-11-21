@@ -1521,7 +1521,9 @@
     // marks it (transport_summary's "stored"); the popup then never says "protected mode is on".
     function _storeUnreadable(cfg) {
       const tr = cfg && cfg.safety && cfg.safety.transport;
-      return !!(tr && tr.stored === "unreadable");
+      // Also the other unreadable state: no environment proxy, so the server could not name a
+      // transport at all (transport_summary's {kind: "unknown", reason: "unreadable"}).
+      return !!(tr && (tr.stored === "unreadable" || (tr.kind === "unknown" && tr.reason === "unreadable")));
     }
 
     // One lane's transport line. A lane that does not use the ethical fetcher leaves on
@@ -1535,6 +1537,10 @@
         // A MIXED lane says so in every mode, not only with protected mode on: its
         // installer check IS a guarded fetch (docs/SECURITY.md's "Mixed." row), so
         // the plain "not through the fetcher" line would deny a path it takes (row H).
+        // Row 250: with the settings unreadable and no environment proxy, the install and the
+        // update are refused (R766) and so is every check the fetcher would make (R117): a mixed
+        // lane must not read as "mostly direct".
+        if (unreadable && kind === "unknown" && lane.mixed) return t("Transport: none — the settings could not be read, so these fetches are refused, never sent direct.");
         if (!protectedMode) {
           if (lane.mixed && lane.id === "update") return t("Mostly not through this app's fetcher or proxy — only the update check uses the fetcher.");
           return lane.mixed
