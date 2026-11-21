@@ -229,6 +229,13 @@ def test_an_alias_address_starts_no_daemon_at_all(url, monkeypatch, spawn_env):
     assert spawn_env == []
 
 
+def test_the_bind_keeps_no_alias_map_the_rule_has_made_unreachable():
+    """Plan, after R767: an alias never reaches the bind, so a map from alias to literal there is dead code that would read
+    as a supported path. The bind takes the host it is given."""
+    with open(life.__file__, encoding="utf-8") as fh:
+        src = fh.read()
+    assert '"localhost.localdomain":' not in src and '"ip6-localhost":' not in src
+
 def test_the_default_address_binds_loopback_even_with_no_setting(monkeypatch, spawn_env):
     monkeypatch.delenv("OO_OLLAMA_URL", raising=False)
     monkeypatch.setenv("OLLAMA_HOST", "0.0.0.0")

@@ -1527,10 +1527,10 @@
         ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))} · <span title="${esc(t("Addresses outside your OpenStreetMap countries are not located."))}">■ ${esc(t("address from an infobox"))}</span>${opts.wikiPlaces.addressesPartial ? ` <span class="card-caveat">${esc(t("(partial)"))}</span>` : ""}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
-        ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
+        ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a class="ext-link" href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
         ${opts.signalsOn ? `<span data-oomap-sigkinds>${_ooSigKindsHtml(sigKinds)}</span>` : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
-        ${opts.osmLane ? `<span class="muted" data-oomap-osmlane data-i18n-dyn>${esc(t("OpenStreetMap: reading the view…"))}</span> <span class="muted">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</span>` : ""}
+        ${opts.osmLane ? `<span class="muted" data-oomap-osmlane data-i18n-dyn>${esc(t("OpenStreetMap: reading the view…"))}</span> <span class="muted">© <a class="ext-link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(t("offline OSM")), esc(_ooOsmCounts(osm)))}</span>` : ""}
       </div>
       ${regionVals && !hasAdmin1 ? `<div class="card-caveat" style="margin-top:4px">${esc(t("This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."))}</div>` : ""}
@@ -3730,7 +3730,7 @@
     // ODbL 1.0 s. 4.3: every figure below is derived from OpenStreetMap, so each OSM panel carries the credit once, compact, at its foot.
     function _osmCredit() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return `<div class="hint" data-osm-credit style="margin-top:6px">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</div>`;
+      return `<div class="hint" data-osm-credit style="margin-top:6px">© <a class="ext-link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</div>`;
     }
     function _renderOsmCompleteness() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
