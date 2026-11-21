@@ -110,6 +110,11 @@ climate fetch now leaves a trace in the unit's own fetch record (one fixed token
 station), and `scripts/climate_readback.py` prints the six datasets as fetched, failed (and why) or not fetched yet, never an
 unread figure as 0. The run itself is still the operator's.
 
+**Progress 2026-11-21 (row 275, R696): the Climate tab now shows a unit's latest failed attempt; the row stays OPEN.** It
+sits beside "Last fetched" as "Last failed attempt" (its date and the reason in words), never in place of the last success,
+which stays shown with its values. A kill-switch refusal reads as airplane mode. A visible caveat line says that the failed
+attempt changed nothing stored, or that nothing is stored yet. 19 strings, 12 languages. Pinned by `tests/climate_node_test.js`.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if

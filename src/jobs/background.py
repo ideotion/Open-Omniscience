@@ -136,6 +136,30 @@ def _job_secrets(kwargs: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
+def _swapping_words(exc: BaseException) -> str | None:
+    """Row 264: the fixed words when ``exc`` is, or was raised from, a separate store's switch for its rebuilt copy
+    (``versioned.store.LaneSwapping``), else None. The chain is walked by ``__cause__``/``__context__`` only, at most eight links, and no
+    text is read. Never raises.
+
+    STATED TRADE-OFF: a ``__context__`` link counts (a worker that re-raises its own error while handling the refusal is still a
+    refusal), so a worker that caught the refusal, fell back, and then failed INSIDE that ``except`` for an unrelated reason is recorded
+    as the switch too. ``raise ... from None`` opts out, as it does for a printed traceback."""
+    try:
+        from src.versioned.store import SWAPPING_WORDS, LaneSwapping
+
+        cur: BaseException | None = exc
+        for _ in range(8):
+            if cur is None:
+                return None
+            if isinstance(cur, LaneSwapping):
+                return SWAPPING_WORDS
+            # Python's own rule for a traceback: ``__context__`` only when not suppressed (``raise ... from None``)
+            cur = cur.__cause__ if cur.__cause__ is not None else (None if cur.__suppress_context__ else cur.__context__)
+    except Exception:  # noqa: BLE001 - not known to be a switch: the ordinary record
+        return None
+    return None
+
+
 class BackgroundJob:
     """One named background job kind (a process-lifetime singleton per kind)."""
 
@@ -260,11 +284,12 @@ class BackgroundJob:
             # the secrets the job was started with (``_job_secrets``: a backup's passphrase, a mailbox's password), BEFORE the
             # cut, and withheld when it cannot be.
             name = type(exc).__name__
+            swapping = _swapping_words(exc)
             try:
                 secrets = _job_secrets(kwargs)
                 # ``exception_text``: scrubbed, then cut, and the class and a fixed note when a ``UnicodeError`` is in the chain
                 # or group (its text names a character and its offset, a piece of a key that no scrub knows).
-                error = record_text(exc, *secrets, limit=300, typed=True)
+                error = swapping or record_text(exc, *secrets, limit=300, typed=True)
             except Exception:  # noqa: BLE001 - the text could not be made or scrubbed: the class says what failed
                 secrets = None
                 error = f"{name}: its text is withheld"
@@ -284,7 +309,10 @@ class BackgroundJob:
         finally:
             with self._lock:
                 self._ended_at = time.time()
-        if failure is not None:
+        if failure is not None and _swapping_words(failure):
+            # Row 264: a refusal, not a crash: one line, no traceback (the job's error already says what happened).
+            _LOG.info("background job %s met a store switch and stopped (%s)", self.kind, type(failure).__name__)
+        elif failure is not None:
             # Written AFTER the handler, so that a record that cannot be written raises with no exception to chain: the thread's
             # excepthook prints what is raised and the exception it was raised while handling, as it made its message.
             self._log_failure(failure, secrets)
