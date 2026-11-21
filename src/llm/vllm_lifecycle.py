@@ -2963,8 +2963,30 @@ def _stop_probe(ctx) -> Callable[[], bool]:
 
     The runner cannot import the job chassis, and a BackgroundJob ctx is not the only
     thing that can drive an install, so the cancel signal crosses that boundary as a
-    plain predicate. A ctx without ``stopping`` never cancels rather than raising."""
-    return lambda: bool(getattr(ctx, "stopping", False))
+    plain predicate. A ctx without ``stopping`` never cancels rather than raising.
+
+    R765/R769: it also stops when the transport changes under the install (protected mode switched on, or the settings no longer
+    readable), through the one shared watch: the job is cancelled, so its worker returns at its next check, and the reason is
+    recorded for its status."""
+    from src.safety.transport_watch import TransportWatch
+
+    watch = TransportWatch()
+
+    def probe() -> bool:
+        if getattr(ctx, "stopping", False):
+            return True
+        reason = watch.stop_reason()
+        if reason is None:
+            return False
+        job = getattr(ctx, "_job", None)
+        if job is not None:
+            from src.llm.install_transport import record_stop
+
+            record_stop(job.kind, reason)
+            job.cancel()
+        return True
+
+    return probe
 
 
 def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None = None) -> dict:
