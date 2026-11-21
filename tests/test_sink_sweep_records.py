@@ -1087,7 +1087,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('OllamaClient.generate', 'if exc.response.status_code == 404:'): 1,
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
-        ('OllamaClient.pull', 'raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}")'): 1,
+        ('OllamaClient._pull_stream', 'raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}")'): 1,
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('OllamaClient.remove', 'if exc.response.status_code == 404:'): 1,
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
