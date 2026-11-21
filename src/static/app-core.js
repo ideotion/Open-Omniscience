@@ -2660,9 +2660,15 @@
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }
-      if (!_isDownloadKind(j.kind)) return "";
+      if (!_isDownloadKind(j.kind) && !(j.kind === "osm-update" && j.held_by)) return "";  // R772: a held daily update says why too
       let line = "";
-      if (j.state === "paused") {
+      if (j.state === "queued" && j.held_by) {
+        // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
+        line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
+          : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.")
+          : j.held_by === "proxy" ? t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.")
+          : j.held_by === "unverified" ? t("Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+      } else if (j.state === "paused") {
         if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
         else if (j.paused_by === "operator") line = t("Paused by you.");
         else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
@@ -2827,7 +2833,12 @@
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here."))}</div>`);
       }
       if (elQ) {
-        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
+        // R768: protected mode (or unreadable settings) HELD the queue; ONE control resumes it, in order, after the consent popup
+        const heldJob = queued.find(j => j.held_by);
+        const held = heldJob
+          ? `<div style="padding:2px 0 6px"><button class="tiny" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue(${esc(JSON.stringify(heldJob.resume_token || ""))})">${esc(_resumeQueueLabel(t, heldJob.resume_transport))}</button></div>`
+          : "";
+        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + held + (queued.length
           ? queued.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."))}</div>`);
         // Read-only "Up next" preview of the COLLECTION pass order. The download
@@ -2897,6 +2908,24 @@
         toast(r.detail ? t(r.detail) : t("Resumed."));
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
+    }
+    // R772: the queue's resume button says, BEFORE the click, which transport it resumes over (the server's reading).
+    function _resumeQueueLabel(t, transport) {
+      if (transport === "proxy") return t("Resume the queue through your proxy");
+      if (transport === "direct") return t("Resume the queue over the direct connection");
+      return t("Resume the queue");
+    }
+    // R768's queue ruling: the ONE control that resumes every held download, in queue order. It re-opens fetches, so the ONE
+    // consent popup comes first (invariant #14); each download then starts under the transport now in force and its own rules.
+    // ``token`` is the transport the button named (R772): the server refuses the click if the transport changed since.
+    async function jobResumeQueue(token) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume the queue"))) return;
+      try {
+        await api("/api/jobs/queue/resume", {method: "POST", body: JSON.stringify({transport: String(token || "")})});
+        toast(t("Resumed."));
+        _renderJobs();
+      } catch (e) { toast(t(e.message), "err"); _renderJobs(); }
     }
     async function jobMove(key, dir, kind) {
       const jobs = (_jobsData && _jobsData.jobs) || [];

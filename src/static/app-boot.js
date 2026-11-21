@@ -835,6 +835,13 @@
         sp.delete("resume");
         const qs = sp.toString();
         history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+        // "queue" is the queue's ONE resume (R768): the same jobResumeQueue the in-app Queue button runs, popup first.
+        // It carries the token of the transport the button there named (R772), so the server can refuse a changed one.
+        if (/^queue:[0-9a-f]{0,16}$/.test(id) && typeof jobResumeQueue === "function") {
+          const token = id.slice(6);
+          Promise.resolve(window.OOI18N && OOI18N.ready).then(() => jobResumeQueue(token), () => jobResumeQueue(token));
+          return;
+        }
         if (!/^(dump|osm):./.test(id) || typeof jobResume !== "function") return;
         Promise.resolve(window.OOI18N && OOI18N.ready).then(() => jobResume(id), () => jobResume(id));
       } catch (e) { /* a malformed deep link must never break boot */ }

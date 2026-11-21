@@ -17,6 +17,7 @@ stop the other — never a silent pile-up.
 from __future__ import annotations
 
 import functools
+import hmac
 import json
 import logging
 from pathlib import Path
@@ -156,6 +157,10 @@ def _dump_jobs() -> list[dict]:
                 "error": e.get("error"),
                 # Who paused it (airplane / operator / restart), only while paused.
                 "paused_by": e.get("paused_by"),
+                # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
+                "held_by": e.get("held_by"),
+                "resume_transport": e.get("resume_transport"),
+                "resume_token": e.get("resume_token"),
                 "actions": _dl_actions(state),
             }
         )
@@ -204,6 +209,10 @@ def _osm_jobs() -> list[dict]:
                 "error": e.get("error"),
                 # Who paused it (airplane / operator / restart), only while paused.
                 "paused_by": e.get("paused_by"),
+                # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
+                "held_by": e.get("held_by"),
+                "resume_transport": e.get("resume_transport"),
+                "resume_token": e.get("resume_token"),
                 "actions": _dl_actions(state),
             }
         )
@@ -245,6 +254,11 @@ def _osm_update_jobs() -> list[dict]:
             ),
             "actions": [],
         }
+        if j["state"] == "queued" and j.get("held_by"):
+            # R768/R772: held, named, with the transport "Resume the queue" would use and that transport's token (never the identity).
+            from src.safety.transport_watch import display_token, resume_transport
+
+            row.update(held_by=j["held_by"], resume_transport=resume_transport(), resume_token=display_token())
         if j["state"] == "done" and j.get("outcome") in OUTCOME_SENTENCES:
             row["detail"] = OUTCOME_SENTENCES[j["outcome"]]
         rows.append(row)
@@ -1123,6 +1137,41 @@ def reorder_dumps(body: ReorderBody) -> dict:
     from src.wiki.dumps import get_manager
 
     return {"queue_order": get_manager().reorder(body.keys)}
+
+
+class ResumeQueueBody(BaseModel):
+    #: The token of the transport the page named on the button (``resume_token``), sent back with the click (R772).
+    transport: str = ""
+
+
+#: R772: the transport changed between the page naming it and the click. Nothing is resumed; the page draws the button again.
+TRANSPORT_CHANGED = "The transport changed since this page was drawn, so nothing was resumed. Look at the button again, then resume."
+
+
+@router.post("/queue/resume")
+def resume_held_queue(body: ResumeQueueBody | None = None) -> dict:
+    """R768's queue ruling: the ONE control that resumes the whole download queue, in order, after protected mode came on (or the
+    settings could not be read) under it. Wikipedia dumps first, then map regions, each in its own queue order; every entry then
+    starts under the transport now in force and its own rules. The page asks the go-online consent before it calls this."""
+    from src.geo.osm_downloads import get_manager as osm_manager
+    from src.ingest import kill_switch_active
+    from src.safety.transport_watch import display_token, mode_now
+    from src.wiki.dumps import get_manager as dump_manager
+
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
+    # R772: the click resumes over the transport the button named, or not at all. A click with no token (an older page) is refused
+    # the same way: the page names the transport first, always.
+    # The entries are stamped with the identity the token was checked against, never one read again later: a change landing after
+    # this check holds them again at the pump, with its own reason.
+    tid = mode_now()
+    sent = (body.transport if body is not None else "") or ""
+    if not sent or not hmac.compare_digest(sent.encode("utf-8"), display_token(tid).encode("utf-8")):
+        raise HTTPException(status_code=409, detail=TRANSPORT_CHANGED)
+    from src.osm import update_job
+
+    held = dump_manager().resume_held(tid) + osm_manager().resume_held(tid) + update_job.resume_held(tid)
+    return {"resumed": held}
 
 
 @router.post("/osm/reorder")
