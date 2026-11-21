@@ -141,7 +141,9 @@ def floor_countries() -> set[str]:
     return set(load_floor()["countries"])
 
 
-def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def floor_coverage(
+    today: date | None = None, events: list[dict[str, Any]] | None = None, catalogue: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """What the shipped elections calendar covers of the ruled floor.
 
     Network-free and cheap (one config read, one catalog read), so it rides the
@@ -153,11 +155,15 @@ def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | Non
     named with the fields it lacks, so it is a worklist rather than a complaint), and
     ``missing`` (no entry at all).
     """
-    from src.events.catalog import load_events
+    from src.events.catalog import catalogue_state, load_events
 
     today = today or date.today()
     floor = load_floor()
     wanted = set(floor["countries"])
+    if events is None:
+        catalogue = catalogue_state()
+    if catalogue is not None and catalogue.get("state") != "present":
+        return _not_read(floor, wanted, catalogue)
 
     with_date: set[str] = set()
     live: set[str] = set()
@@ -231,4 +237,29 @@ def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | Non
         "covered_outside_floor": outside,
         "invalid_rows": floor["invalid"],
         "contested_rows": floor["contested"],
+        "catalogue": catalogue if catalogue is not None else {"state": "present"},
     }
+
+
+#: The per-state keys :func:`floor_coverage` fills; :func:`_not_read` gives each of them ``None``.
+_STATE_KEYS = ("covered", "only_passed_projection", "present_but_dateless", "missing")
+
+
+def _not_read(floor: dict[str, Any], wanted: set[str], catalogue: dict[str, Any]) -> dict[str, Any]:
+    """The floor when the curated catalogue was not read (row 273): the denominator is known, every count is
+    ``None`` and ``catalogue`` says why. Never 0 and never "missing": that would say the calendar holds no
+    entry for a country, which nobody looked up. An ``empty`` catalogue WAS read and holds nothing; its state
+    says exactly that."""
+    out: dict[str, Any] = {
+        "as_of": floor["as_of"],
+        "verification_status": floor["verification_status"],
+        "floor_countries": len(wanted),
+        "covered_outside_floor": None,
+        "invalid_rows": floor["invalid"],
+        "contested_rows": floor["contested"],
+        "catalogue": dict(catalogue),
+    }
+    for key in _STATE_KEYS:
+        out[key] = None
+        out[f"{key}_n"] = None
+    return out

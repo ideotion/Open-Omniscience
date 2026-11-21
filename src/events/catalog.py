@@ -29,11 +29,48 @@ CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_events.y
 _CATEGORIES = ("civic", "political", "economic", "technology")
 
 
+#: The curated catalogue's read state (row 273): ``present``, ``absent`` (no file), ``empty`` (read, holds no
+#: events) or ``unreadable`` (the error named by its class, never the path). An unread catalogue is never
+#: read as a catalogue with no events: the elections floor would call every country "missing".
+CATALOGUE_STATES = ("present", "absent", "empty", "unreadable")
+
+
 @lru_cache(maxsize=1)
-def _raw() -> dict:
+def _read_catalogue() -> tuple[dict, dict]:
+    """``(raw, state)`` from ONE read of the catalogue file. Never raises: a file that cannot be read or
+    parsed is ``unreadable`` with the exception's class, and the callers get an empty mapping."""
     if not CATALOG_PATH.exists():
-        return {}
-    return yaml.safe_load(CATALOG_PATH.read_text("utf-8")) or {}
+        return {}, {"state": "absent"}
+    try:
+        data = yaml.safe_load(CATALOG_PATH.read_text("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError, yaml.YAMLError) as exc:
+        return {}, {"state": "unreadable", "error": type(exc).__name__}
+    if data is None:
+        return {}, {"state": "empty"}
+    if not isinstance(data, dict):
+        return {}, {"state": "unreadable", "error": f"not a mapping ({type(data).__name__})"}
+    events = data.get("events")
+    if events is not None and not isinstance(events, list):
+        return {}, {"state": "unreadable", "error": f"events is not a list ({type(events).__name__})"}
+    if not events:
+        return data, {"state": "empty"}
+    if not any(isinstance(e, dict) and e.get("title") and e.get("official_url") for e in events):
+        # Rows are there but none is an event load_curated_events would keep: never read as a catalogue with
+        # events (every floor country would read "missing"), and not "empty" either, since the file holds rows.
+        return {}, {"state": "unreadable", "error": f"no usable event row ({len(events)} refused)"}
+    return data, {"state": "present"}
+
+
+def _raw() -> dict:
+    return _read_catalogue()[0]
+
+
+_raw.cache_clear = _read_catalogue.cache_clear  # type: ignore[attr-defined]  # callers (and tests) clear the read by this name
+
+
+def catalogue_state() -> dict:
+    """The curated catalogue's read state (a copy): see :data:`CATALOGUE_STATES`."""
+    return dict(_read_catalogue()[1])
 
 
 @lru_cache(maxsize=1)
@@ -80,16 +117,25 @@ def _snapshot_stamp() -> tuple[int, int] | None:
 
 
 @lru_cache(maxsize=4)
-def _layered(stamp: tuple[int, int] | None, today: date) -> tuple[list[dict], dict]:
+def _layered(stamp: tuple[int, int] | None, today: date) -> tuple[list[dict], dict, dict]:
     from src.civic.calendar_report import with_snapshot
 
     del stamp  # the cache key only
-    return with_snapshot(load_curated_events(), today)
+    events, info = with_snapshot(load_curated_events(), today)
+    return events, info, catalogue_state()
 
 
 def layered_events(today: date | None = None) -> tuple[list[dict], dict]:
     """``(events, snapshot_info)`` from ONE read, so a surface that shows both cannot disagree."""
-    return _layered(_snapshot_stamp(), today or date.today())
+    events, info, _cat = layered_read(today)
+    return events, info
+
+
+def layered_read(today: date | None = None) -> tuple[list[dict], dict, dict]:
+    """``(events, snapshot_info, catalogue_state)`` from ONE read (row 273): a surface that counts the
+    events also says whether the curated catalogue was read at all, so "no entry" and "not read" stay apart."""
+    events, info, cat = _layered(_snapshot_stamp(), today or date.today())
+    return events, info, dict(cat)
 
 
 def load_events() -> list[dict]:
@@ -98,7 +144,13 @@ def load_events() -> list[dict]:
     return layered_events()[0]
 
 
-load_events.cache_clear = _layered.cache_clear  # type: ignore[attr-defined]
+def _clear_caches() -> None:
+    _layered.cache_clear()
+    _read_catalogue.cache_clear()
+    load_calendars.cache_clear()
+
+
+load_events.cache_clear = _clear_caches  # type: ignore[attr-defined]
 
 
 def load_curated_events() -> list[dict]:
@@ -362,4 +414,5 @@ def facets() -> dict:
     tags = sorted({t for e in evs for t in e["tags"]})
     countries = sorted({e["country"] for e in evs if e["country"]})
     categories = sorted({e["category"] for e in evs})
-    return {"calendars": cals, "tags": tags, "countries": countries, "categories": categories}
+    return {"calendars": cals, "tags": tags, "countries": countries, "categories": categories,
+            "catalogue": catalogue_state()}

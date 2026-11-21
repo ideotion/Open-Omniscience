@@ -11,7 +11,8 @@ FILE is any of:
   * any one piece of a set the button cut (``...-part-001-of-002.json``): the set is joined in memory, and a missing
     piece is named rather than guessed at.
 
-Prints the snapshot's state, its date, its age and whether it is past the staleness limit, the rows it added, shadowed
+Prints the curated catalogue's read state when it was not read as a catalogue with events (row 273: absent, empty,
+or unreadable with the error's class), the snapshot's state, its date, its age and whether it is past the staleness limit, the rows it added, shadowed
 and refused; then the floor's four states and the per-country tier report's counts; then any cut the member records. A
 figure the file does not have is printed with its reason, never as 0. Counts and dates only: no verdict, no score.
 
@@ -143,12 +144,37 @@ def snapshot_lines(snap: Any) -> list[str]:
     return lines
 
 
+def catalogue_read(doc: dict[str, Any]) -> bool:
+    """Whether the curated catalogue was read as one with events. A file from before row 273 carries no
+    ``catalogue`` block; its counts are printed as recorded."""
+    cat = doc.get("catalogue")
+    return not isinstance(cat, dict) or cat.get("state") == "present"
+
+
+def catalogue_lines(doc: dict[str, Any]) -> list[str]:
+    cat = doc.get("catalogue")
+    if not isinstance(cat, dict) or cat.get("state") == "present":
+        return []
+    state = cat.get("state")
+    if state == "absent":
+        return ["catalogue: absent: no curated events catalogue on that machine, so the floor states were not counted"]
+    if state == "empty":
+        return ["catalogue: empty: the curated events catalogue was read and holds no events, so the floor states "
+                "were not counted"]
+    if state == "unreadable":
+        return [f"catalogue: unreadable ({cat.get('error') or 'no error named'}): the curated events catalogue could "
+                "not be read, so the floor states were not counted"]
+    return [f"catalogue: state {state!r} (unknown to this script), so the floor states are not printed"]
+
+
 def floor_lines(doc: dict[str, Any]) -> list[str]:
     total = _int(doc.get("floor_countries"))
     if total is None:
         return ["floor: no floor figures in this file"]
     lines = [f"floor: {total:,} countries (mapping as of {doc.get('as_of') or 'an undated mapping'}; "
              f"verification: {doc.get('verification_status') or 'not stated'})"]
+    if not catalogue_read(doc):
+        return lines + ["states: not counted (see the catalogue line)"]
     lines.append("states: " + " · ".join(_count(doc, k, w) for w, k in _FLOOR_STATES))
     outside = doc.get("covered_outside_floor")
     if isinstance(outside, list):
@@ -163,6 +189,9 @@ def floor_lines(doc: dict[str, Any]) -> list[str]:
 def tier_lines(rep: Any) -> list[str]:
     if not isinstance(rep, dict):
         return ["tier report: not recorded in this file"]
+    cat = rep.get("catalogue")
+    if isinstance(cat, dict) and cat.get("state") != "present":
+        return ["tier report: not counted (see the catalogue line)"]
     counts = rep.get("counts")
     if not isinstance(counts, dict) or not counts:
         return ["tier report: no state counts in this file"]
@@ -192,7 +221,7 @@ def report(doc: dict[str, Any]) -> list[str]:
         return [f"{MEMBER} was left out of the archive: {doc.get('reason') or 'no reason given'}"]
     if doc.get("available") is False:
         return [f"{MEMBER} could not be built on that machine: {doc.get('error') or doc.get('reason') or 'no reason given'}"]
-    return snapshot_lines(doc.get("snapshot")) + floor_lines(doc) + tier_lines(doc.get("tier_report")) + cut_lines(doc.get("cut"))
+    return catalogue_lines(doc) + snapshot_lines(doc.get("snapshot")) + floor_lines(doc) + tier_lines(doc.get("tier_report")) + cut_lines(doc.get("cut"))
 
 
 def main(argv: list[str] | None = None) -> int:
