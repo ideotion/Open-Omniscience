@@ -139,6 +139,8 @@ for (const lang of ["en", "fr"]) {
   const none = render({ inventory: { data_dir: "/d", totals: {}, unreadable: true } }, t);
   assert(none.includes(esc(t("not measured"))), "unlisted data folder not 'not measured': " + none);
   assert(!none.includes(">0 B") && !/ 0 B/.test(none), "unlisted data folder shows 0 B: " + none);
+  const fresh = render({ inventory: { data_dir: "/d", totals: {}, note: "data dir does not exist (fresh install / custom OO_DATA_DIR)" } }, t);
+  assert(!fresh.includes(esc(t("not measured"))) && fresh.includes("0 B"), "a fresh install's real 0 reads 'not measured': " + fresh);
   const part = render({ inventory: { data_dir: "/d", totals: { total_bytes: 30, db_bytes: 20, wal_bytes: 0, other_bytes: 10, unread_entries: 2 },
     entries: [{ name: "wiki_dumps", kind: "dir", bytes: 10, files: 1, unread_entries: 2 }] } }, t);
   assert(part.includes(esc(t("at least")) + " 30 B"), "partial total not 'at least': " + part);

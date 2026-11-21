@@ -631,12 +631,14 @@
     // Row 284: the data-folder total line of the forensics panel. A folder it could not list has no totals at
     // all ("not measured", never 0 B); refused folders or files make every figure a lower bound ("at least",
     // with the reason on screen).
-    function _invTotalHtml(tot, t) {
-      if (tot.total_bytes == null)
+    function _invTotalHtml(inv, t) {
+      const tot = inv.totals || {};
+      // A folder that does not exist yet (fresh install) holds 0 bytes for real; only a refused listing is "not measured".
+      if (inv.unreadable)
         return '<div class="muted">' + ooLabelHtml(esc(t("Total on disk")),
                '<span style="color:var(--caveat)">' + esc(t("not measured")) + "</span>") + "</div>";
       const low = tot.unread_entries ? esc(t("at least")) + " " : "";
-      return '<div class="muted">' + ooLabelHtml(esc(t("Total on disk")), low + esc(humanBytes(tot.total_bytes)) +
+      return '<div class="muted">' + ooLabelHtml(esc(t("Total on disk")), low + esc(humanBytes(tot.total_bytes || 0)) +
              " (" + esc(t("database")) + " " + low + esc(humanBytes(tot.db_bytes || 0)) +
              " · WAL " + low + esc(humanBytes(tot.wal_bytes || 0)) +
              " · " + esc(t("other")) + " " + low + esc(humanBytes(tot.other_bytes || 0)) + ")") + "</div>" +
@@ -692,7 +694,7 @@
       const inv = d.inventory || {};
       const tot = inv.totals || {};
       let ih = "<div><b>" + esc(t("Data folder")) + '</b> <span class="muted">' + esc(inv.data_dir || "") + "</span></div>";
-      ih += _invTotalHtml(tot, t);  // row 284: "not measured" / "at least", never a 0 it did not read
+      ih += _invTotalHtml(inv, t);  // row 284: "not measured" / "at least", never a 0 it did not read
       const stg = inv.suspect_staging || [];
       if (stg.length) {
         let sh = '<div class="note warn" style="margin-top:6px"><b>' + esc(t("Orphaned staging detected")) + "</b> " +
