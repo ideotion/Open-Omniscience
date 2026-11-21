@@ -222,6 +222,7 @@ class DumpDownloadManager:
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
+        self._seq = 0  # R768: launch order, so downloads stopped together re-queue in the order they ran
         self._save_lock = threading.Lock()  # state-file writes only (see _save)
         # PERF-09: owner-measured bytes-over-time, one sampler per key.
         # In-memory ONLY and deliberately not in _save(): a rate restored
@@ -298,7 +299,13 @@ class DumpDownloadManager:
         stop = threading.Event()
 
         def _run() -> None:
-            self._download(entry, stop)
+            from src.safety import transport_watch as tw
+
+            # R768: the whole download is ONE run, started on the transport the launch decision read; every session it builds
+            # (probe, size read, segments, the body) checks that one watch, so a switch in between stops it rather than moving it.
+            mode = getattr(entry, "_launch_mode", None)
+            with tw.run(tw.for_launch(mode)) if mode else contextlib.nullcontext():
+                self._download(entry, stop)
             self._pump()  # a finished/paused/errored slot frees the queue
 
         t = threading.Thread(target=_run, name=f"oo-dump-{entry.key}", daemon=True)
@@ -377,6 +384,9 @@ class DumpDownloadManager:
                     e.paused_by = "airplane"
                 else:
                     e.status = "downloading"  # claim the slot atomically
+                    e._launch_mode = "protected" if mode[0] else "direct"  # type: ignore[attr-defined]  # the reading this decision used
+                    self._seq += 1
+                    e._launch_seq = self._seq  # type: ignore[attr-defined]
                     to_launch.append(e)
                     free -= 1
                 claimed = True
@@ -422,6 +432,7 @@ class DumpDownloadManager:
                     held += 1
                 e.held_by = None
                 e.queued_mode = qmode
+                e._stopped_seq = None  # type: ignore[attr-defined]
             self._save()
         self._pump()
         return held
@@ -719,10 +730,21 @@ class DumpDownloadManager:
                 entry.error = None
                 entry.paused_by = None
                 entry.held_by = "protected" if exc.reason == "protected" else "settings"
+                mine = getattr(entry, "_launch_seq", 0) or 0
+                entry._stopped_seq = mine  # type: ignore[attr-defined]
                 with self._lock:
                     if entry.key in self._order:
                         self._order.remove(entry.key)
-                    self._order.insert(0, entry.key)  # first in the queue it heads: it was running before the ones waiting
+                    # At the head, after the downloads that were stopped with it and had started before it: the queue keeps the
+                    # order they were running in, ahead of the ones that were waiting.
+                    at = 0
+                    while at < len(self._order):
+                        other = self._entries.get(self._order[at])
+                        seq = getattr(other, "_stopped_seq", None) if other is not None else None
+                        if seq is None or seq > mine:
+                            break
+                        at += 1
+                    self._order.insert(at, entry.key)
                 stopped = True
             elif isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
                 # R617 (R320, R614): the Stop refused or cut this attempt, still engaged or cleared again before the failure
@@ -791,6 +813,7 @@ class DumpDownloadManager:
         qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
             entry.held_by = None  # a start is the operator's own click: it lifts a hold on this entry
+            entry._stopped_seq = None  # type: ignore[attr-defined]
             if self._downloading_now() >= self.max_concurrent:
                 # Capacity full: a visible, reorderable queue, never a competing
                 # thread (T9 arbitration). The excess waits its turn.
@@ -805,6 +828,9 @@ class DumpDownloadManager:
             # second start() cannot race past max_concurrent before the worker
             # thread marks it downloading.
             entry.status = "downloading"
+            entry._launch_mode = qmode  # type: ignore[attr-defined]  # the operator's click, read before the lock
+            self._seq += 1
+            entry._launch_seq = self._seq  # type: ignore[attr-defined]
             entry.error = None
             self._save()
         self._launch(entry)

@@ -3060,6 +3060,7 @@
             <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${held(e)}${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
             <td style="white-space:nowrap">
               ${e.status==='downloading'?`<button class="tiny secondary" data-on-click="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
+                held(e)?`<button class="tiny secondary" title="${esc(tr("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue()">${esc(tr("Resume the queue"))}</button>`:
                 (e.status!=='done'?`<button class="tiny secondary" data-on-click="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
               <button class="tiny danger" data-on-click="deleteDump(${esc(JSON.stringify(e.key))})">Delete</button>
             </td></tr>`).join("");

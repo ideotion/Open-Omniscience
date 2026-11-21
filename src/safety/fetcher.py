@@ -37,7 +37,7 @@ from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.ingest.ssrf_guard import BlockedConnectTarget, connect_scope
 from src.monitoring.secret_scrub import record_text
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
-from src.safety.transport_watch import TransportStopped, TransportWatch  # noqa: F401 - TransportStopped re-exported for the downloads
+from src.safety.transport_watch import TransportStopped, TransportWatch, current_run  # noqa: F401 - TransportStopped re-exported for the downloads
 
 # The SOCKS proxy schemes requests[socks]/PySocks understand. Shared by the
 # stream-isolation helper below and the C10 (2026-07-24 throughput brief)
@@ -699,7 +699,8 @@ def _session_for(
     s.allowed_hosts = _checked_hosts(allowed_hosts)  # before the early return below: the list holds in transparent mode too
     s.allowed_path_prefixes = _checked_path_prefixes(allowed_path_prefixes)  # likewise
     s.headers["User-Agent"] = user_agent
-    s.transport_watch = TransportWatch.for_settings(settings)  # R768/R769: the transport it was built on, checked as it goes
+    # R768/R769: the transport it was built on, checked as it goes; inside a download run, the run's ONE watch
+    s.transport_watch = current_run() or TransportWatch.for_settings(settings)
     if not settings.is_protected:
         return s
     # R657: protected mode names the app to Wikimedia's hosts only; send() picks the agent per request and per redirect hop.

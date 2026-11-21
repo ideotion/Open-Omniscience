@@ -363,6 +363,60 @@ def test_unreadable_settings_hold_even_a_download_queued_under_protected_mode(mo
     assert m.resume_held() == 1 and m._entries[k].held_by == "settings"  # resumed into the same reason: nothing is sent
 
 
+def test_a_launch_decided_direct_stops_if_the_switch_lands_before_its_session_is_built(monkeypatch):
+    from src.safety.fetcher import _session_for
+    from src.safety.settings import SafetySettings
+
+    st = _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)  # saved between the pump's reading and the session
+    with tw.run(tw.for_launch("direct")):
+        s = _session_for(st)
+        with pytest.raises(tw.TransportStopped) as exc:
+            s.get("https://dumps.example.org/big")  # refused before anything is sent
+    assert exc.value.reason == "protected"
+    with tw.run(tw.for_launch("protected")):
+        assert _session_for(st).transport_watch.stop_reason() is None  # decided protected: it goes on
+    assert _session_for(SafetySettings()).transport_watch is not None and tw.current_run() is None
+
+
+def test_every_segment_of_a_segmented_file_shares_the_runs_one_watch():
+    import hashlib
+
+    from src.ingest.segmented_download import segmented_fetch
+
+    seen: list[object] = []
+    body = b"x" * 4096
+
+    def fetch_segment(url, start, end):
+        seen.append(tw.current_run())
+        return body[start:end]
+
+    w = tw.TransportWatch(protected=False)
+    with tw.run(w):
+        segmented_fetch(
+            "https://dumps.example.org/f", total_bytes=len(body), expected_sha256=hashlib.sha256(body).hexdigest(),
+            fetch_segment=fetch_segment, n_segments=4, min_seg=1024,
+        )
+    assert len(seen) == 4 and all(x is w for x in seen)
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_downloads_stopped_together_requeue_in_the_order_they_ran(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch)
+    m = _manager(kind, tmp_path, http_get=lambda url, headers: _stopping_resp("protected"))
+    waiting = _entry(kind, m, "fr" if kind == "dump" else "andorra")
+    waiting.status = "queued"
+    m._order.append(waiting.key)
+    first = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    second = _entry(kind, m, "de" if kind == "dump" else "malta")
+    first._launch_seq, second._launch_seq = 1, 2
+    m._download(second)  # the later one's worker reaches the stop first
+    m._download(first)
+    assert m._order == [first.key, second.key, waiting.key]
+
+
 def test_the_queue_shows_why_and_one_control_resumes_it(monkeypatch):
     from src.api import jobs
 

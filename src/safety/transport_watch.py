@@ -29,8 +29,11 @@ directly, and a reader that did would bypass the watch.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import threading
 import time
+from collections.abc import Iterator
 
 #: How often a watch re-reads the stored settings when nothing has bumped (an unreadable store raises no bump).
 RECHECK_S = 1.0
@@ -112,6 +115,35 @@ def hold_reason(queued_mode: str | None, mode: tuple[bool, bool] | None = None) 
 def mode_now() -> tuple[bool, bool]:
     """``(protected, unreadable)`` of the settings in force (one reading for a whole queue)."""
     return _mode_now()
+
+
+_RUN: contextvars.ContextVar[TransportWatch | None] = contextvars.ContextVar("oo_transport_run", default=None)
+
+
+def current_run() -> TransportWatch | None:
+    """The watch of the download run this code is part of, if any: every session built inside it shares that ONE watch."""
+    return _RUN.get()
+
+
+@contextlib.contextmanager
+def run(watch: TransportWatch) -> Iterator[TransportWatch]:
+    """Every guarded session built inside this block (a mirror probe, a size read, each segment of a segmented file) checks
+    ``watch``: one download is one run, so a switch between two of its requests stops it rather than moving the rest to another
+    transport. A worker thread inherits it only through ``contextvars.copy_context()``."""
+    token = _RUN.set(watch)
+    try:
+        yield watch
+    finally:
+        _RUN.reset(token)
+
+
+def for_launch(mode: str) -> TransportWatch:
+    """The run watch of a download the queue launched under ``mode`` (``"protected"`` | ``"direct"``, the mode the launch decision
+    read). The decision, not a later reading, is what it started on: a switch saved between the decision and the session's own
+    settings read is caught at the first check, which re-reads."""
+    w = TransportWatch(protected=(mode == "protected"))
+    w._checked = float("-inf")
+    return w
 
 
 class TransportWatch:
