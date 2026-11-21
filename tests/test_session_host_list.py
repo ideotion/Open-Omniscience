@@ -324,11 +324,18 @@ def test_a_session_built_without_a_list_follows_redirects_as_before(transparent)
     assert wire.sent == ["https://en.wikipedia.org/a", "https://anywhere.test/b"]
 
 
+def _protected(monkeypatch, st):
+    """Protected mode for the session AND for the watch it carries (R768): the watch re-reads the settings store itself, so a test that
+    set the mode only where the session reads it would show a store saying direct, and the session would stop as "switched off"."""
+    import src.safety.settings as settings_mod
+
+    monkeypatch.setattr(fetcher_mod, "load_settings", lambda: st)
+    monkeypatch.setattr(settings_mod, "load_settings", lambda: st)
+
+
 def test_the_list_holds_in_protected_mode_too(monkeypatch):
     """``_session_for`` returns early for a transparent session; the list is set before that, and holds on the proxy path as well."""
-    monkeypatch.setattr(
-        fetcher_mod, "load_settings", lambda: SafetySettings(fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")
-    )
+    _protected(monkeypatch, SafetySettings(fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150"))
     s = guarded_session(allowed_hosts=HOSTS)
     wire = _Script()
     s.mount("https://", wire)
@@ -1123,7 +1130,7 @@ def test_each_fetch_of_the_install_asks_for_its_own_stream_isolation(installer_s
     from src.llm import installer
 
     plain = "socks5h://127.0.0.1:9150"
-    monkeypatch.setattr(fetcher_mod, "load_settings", lambda: SafetySettings(fetch_mode="protected", http_proxy=plain))
+    _protected(monkeypatch, SafetySettings(fetch_mode="protected", http_proxy=plain))
     installer._default_get_json(installer.GITHUB_LATEST_RELEASE)
     installer._default_get_bytes(RELEASE_DOWNLOAD_URL)
     proxies = [s.transport_proxy for s in installer_scripted.sessions]

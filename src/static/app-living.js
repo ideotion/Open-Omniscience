@@ -560,7 +560,7 @@
         // task manager's word for a failure (the manager itself writes "error").
         const why = typeof _jobWhy === "function"
           ? _jobWhy({ kind: "osm-map", state: d.status === "error" ? "failed" : d.status,
-            paused_by: d.paused_by, error: d.error }, t) : "";
+            paused_by: d.paused_by, held_by: d.held_by, error: d.error }, t) : "";
         return `<tr><td>${esc(t(d.name || d.key || "?"))}</td><td>${esc(state)}${why}</td><td>${esc(size)}</td></tr>`;
       }).join("");
       return `<table><thead><tr><th>${esc(t("Region"))}</th><th>${esc(t("State"))}</th>`

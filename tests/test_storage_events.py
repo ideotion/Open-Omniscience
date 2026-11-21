@@ -244,7 +244,9 @@ def test_the_writer_extends_the_history_in_the_file_and_never_replaces_it(journa
         encoding="utf-8",
     )
     se.record("guard", {"kind": "disk"})  # nothing has read the file yet: the writer must, before it writes
-    assert _wait_until(lambda: json.loads(journal.read_text(encoding="utf-8"))["kinds"]["guard"]["total"] == 8)
+    # Through _file_total, as every other poll here: a read that meets the writer's os.replace raises on Windows (row 237, run 44734791675:
+    # PermissionError from this line), where it is only "not yet".
+    assert _wait_until(lambda: _file_total(journal, "guard") == 8)
     data = json.loads(journal.read_text(encoding="utf-8"))
     assert data["since"] == "2026-10-01T00:00:00+00:00" and len(data["kinds"]["guard"]["events"]) == 4
 
@@ -2458,3 +2460,19 @@ def test_the_widest_journal_still_fits_its_row_when_the_onset_is_unknown_and_los
     for kind in se.ONSET_KINDS:
         assert (m["kinds"][kind]["first_seen_at"], m["kinds"][kind]["first_seen_unknown"]) == (None, why), kind
     assert len(_carrying(m)) == 20, "no split is lost to the reasons"
+
+
+def test_every_poll_of_the_journal_reads_it_through_the_helper_that_tolerates_a_replace():
+    """Row 237: a predicate handed to _wait_until that reads the journal itself raises when its read meets the writer's os.replace on
+    Windows (sharing violation), ending the poll with an error instead of "not yet". Polls read through _file_total."""
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    bare = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_wait_until" and node.args:
+            for inner in ast.walk(node.args[0]):
+                if isinstance(inner, ast.Attribute) and inner.attr in {"read_text", "read_bytes", "open"}:
+                    bare.append(node.lineno)
+    assert not bare, f"a _wait_until predicate reads a file directly at line(s) {sorted(set(bare))}: use _file_total"

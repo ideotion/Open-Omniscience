@@ -119,7 +119,12 @@ def update_settings(body: SettingsUpdate) -> dict:
     except safety_settings.SafetySettingsError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     # A damaged stored value was replaced by this save: the fields it did not supply are back at their defaults, and say so.
-    return {**_settings_payload(s), "reset": list(getattr(s, "reset_fields", []) or [])}
+    return {
+        **_settings_payload(s),
+        "reset": list(getattr(s, "reset_fields", []) or []),
+        # R765: the AI-install steps this switch to protected mode stopped (kinds only), so the page can say so.
+        "stopped_ai_installs": list(getattr(s, "stopped_ai_installs", []) or []),
+    }
 
 
 @router.post("/backup/encrypted")

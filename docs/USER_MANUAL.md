@@ -740,6 +740,15 @@ and *Discovered candidates* (still disabled — see below) — because blending 
 one number made a machine-grown discovery backlog of tens of thousands of candidates
 read as if the app were already gathering from all of them.
 
+**Sources and candidates, everywhere a count is shown (R773):** a *source* is a site the
+app has collected from, or one collection may take now (enabled **and** qualified). A
+*candidate not yet checked* is a site the app found or was given but has not judged yet: it
+is not collected from and is not counted as a source. Country coverage, the regional floors,
+the map, the per-country table, the simple view and the diagnostics files count sources only
+and show the candidates as their own figure beside them, so a country reached only by
+unchecked discovery finds reads as **not covered**. Sites judged and refused, or switched
+off, that never gave an article are in neither figure; the Library tiles list them.
+
 #### Re-verification — a stamp does not last forever
 
 A verdict is a measurement, and a measurement ages. **A qualified stamp is re-checked
@@ -3708,7 +3717,9 @@ default**, and gated behind Settings → Advanced → Safety (see below).
 ## External topic discovery is opt-in (Settings → Advanced → Safety)
 
 *Discover by topic* is the one feature that **sends a free-text search query to a search
-engine**: it sends your topic query to DuckDuckGo. (Other online actions — collection,
+engine**: it sends your topic query to DuckDuckGo, then visits each site the search returns (its
+robots.txt, the result page, the feed links it names and common feed addresses such as `/rss` and
+`/feed`, plus any site one of these addresses redirects to) to look for a feed, so each of those sites sees the visit too. (Other online actions — collection,
 market/stats fetches, Ollama pulls, OpenTimestamps — are each consented and named too;
 this is the one that transmits a query you typed.) It is **disabled by default** and
 refuses with an honest

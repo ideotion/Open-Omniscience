@@ -26,13 +26,17 @@ from src.jobs.background import BackgroundJob, register_job
 router = APIRouter(prefix="/api/medical", tags=["medical"])
 
 
-def _fetch_worker(ctx, *, files: int) -> dict:
+def _fetch_worker(ctx, *, files: int, mode: str | None = None) -> dict:
     from src.medical.fetch import run_fetch
+    from src.safety import transport_watch as tw
 
     def _progress(done: int, total: int, detail: str) -> None:
         ctx.set_progress(done=done, total=total, detail=detail)
 
-    result = run_fetch(files, progress=_progress, stopping=lambda: ctx.stopping)
+    # R768/R772: the run is bound to the transport of the consented click, not to the one in force when its first request goes out
+    # after the corpus scan: a change in between stops it, named, before anything is sent.
+    with tw.run(tw.for_launch(mode if mode is not None else tw.mode_now())):
+        result = run_fetch(files, progress=_progress, stopping=lambda: ctx.stopping)
     if result.get("listed") is not None:  # a run stopped before any request is no fetch, and is not recorded
         _record_for_k13(result)
     return result
@@ -139,7 +143,9 @@ def medical_fetch(body: _FetchBody | None = None) -> dict:
         )
     files = DEFAULT_FILES if body.files is None else max(1, min(int(body.files), MAX_FILES))
     try:
-        return {"started": True, "job": _FETCH_JOB.start(files=files)}
+        from src.safety.transport_watch import mode_now
+
+        return {"started": True, "job": _FETCH_JOB.start(files=files, mode=mode_now())}
     except RuntimeError:
         # Already running: the live status, not an error, so a double click is harmless.
         return {"started": False, "job": _FETCH_JOB.status()}

@@ -160,6 +160,14 @@ class DownloadEntry:
     # mode looked exactly like one the operator had stopped. ``to_dict`` reports it only
     # while the status is "paused", so a stale value never outlives the pause.
     paused_by: str | None = None
+    # R768's queue ruling: why a QUEUED download is HELD instead of started -- "protected" (protected mode came on and it was
+    # queued, or had started, over the direct connection), "unprotected" (R772: protected mode went off and it was queued, or
+    # had started, through the proxy), "proxy" (R772: the proxy was changed) or "settings" (the settings could not be read,
+    # R769) -- and the transport identity it was queued under (``transport_watch.transport_id``: "direct", "unknown" or
+    # "protected:<digest>", never an address). A held download keeps its place and waits for the operator's
+    # "Resume the queue", never for a mode change.
+    held_by: str | None = None
+    queued_mode: str | None = None
     # C11 (2026-07-24 throughput brief, S-C): operator/config-supplied acceleration
     # inputs — EMPTY for every real catalog entry today (no verified mirror list
     # or per-file checksum could be confirmed from this sandbox; see
@@ -168,9 +176,17 @@ class DownloadEntry:
     mirrors: list[str] = field(default_factory=list)
     expected_sha256: str = ""
 
+    def state_dict(self) -> dict:
+        """What the state file holds: the fields, with only the coarse transport kind (R772(b); never the keyed identity)."""
+        from src.safety.transport_watch import coarse
+
+        return {**asdict(self), "queued_mode": coarse(self.queued_mode)}
+
     def to_dict(self) -> dict:
         d = asdict(self)
+        d.pop("queued_mode", None)  # R772(b): what the transport was is the server's business; the page gets held_by and a token
         d["paused_by"] = self.paused_by if self.status == "paused" else None
+        d["held_by"] = self.held_by if self.status == "queued" else None
         d["percent"] = (
             round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
         )
@@ -215,6 +231,7 @@ class DumpDownloadManager:
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
+        self._seq = 0  # R768: launch order, so downloads stopped together re-queue in the order they ran
         self._save_lock = threading.Lock()  # state-file writes only (see _save)
         # PERF-09: owner-measured bytes-over-time, one sampler per key.
         # In-memory ONLY and deliberately not in _save(): a rate restored
@@ -254,6 +271,14 @@ class DumpDownloadManager:
         # block a parallel slot forever. Honest state after a restart; nothing
         # re-fetches here (zero-network boot stands).
         for e in self._entries.values():
+            # R772(b): the state file keeps only the KIND of transport. A download queued through a proxy (or by a build that
+            # recorded none) cannot be confirmed in this process, so it shows HELD from the first read, named; no settings are
+            # read here and nothing is fetched (zero-network boot stands). One queued while the settings could not be read too.
+            if e.status == "queued" and e.held_by is None and e.queued_mode in (None, "protected"):
+                e.held_by = "unverified"
+            elif e.status == "queued" and e.held_by is None and e.queued_mode == "unknown":
+                e.held_by = "settings"
+        for e in self._entries.values():
             if e.status == "downloading":
                 e.status = "paused"
                 e.paused_by = "restart"
@@ -269,7 +294,7 @@ class DumpDownloadManager:
             tmp.write_text(
                 json.dumps(
                     {
-                        "entries": {k: asdict(e) for k, e in self._entries.items()},
+                        "entries": {k: e.state_dict() for k, e in self._entries.items()},
                         "queue_order": list(self._order),
                     },
                     indent=2,
@@ -291,7 +316,13 @@ class DumpDownloadManager:
         stop = threading.Event()
 
         def _run() -> None:
-            self._download(entry, stop)
+            from src.safety import transport_watch as tw
+
+            # R768: the whole download is ONE run, started on the transport the launch decision read; every session it builds
+            # (probe, size read, segments, the body) checks that one watch, so a switch in between stops it rather than moving it.
+            mode = getattr(entry, "_launch_mode", None)
+            with tw.run(tw.for_launch(mode)) if mode else contextlib.nullcontext():
+                self._download(entry, stop)
             self._pump()  # a finished/paused/errored slot frees the queue
 
         t = threading.Thread(target=_run, name=f"oo-dump-{entry.key}", daemon=True)
@@ -335,7 +366,9 @@ class DumpDownloadManager:
         two concurrent pumps can never exceed the capacity; the launch itself runs
         outside the lock."""
         from src.ingest import kill_switch_active
+        from src.safety.transport_watch import hold_reason, mode_now
 
+        mode = mode_now()  # one reading of the transport identity for the whole queue, taken before the lock
         to_launch: list[DownloadEntry] = []
         with self._lock:
             # R617: a worker that airplane mode paused frees its slot and pumps. Under airplane mode EVERY queued entry is
@@ -345,12 +378,22 @@ class DumpDownloadManager:
             claimed = False
             free = self.max_concurrent - self._downloading_now()
             for k in list(self._order):
-                if free <= 0 and not offline:
-                    break
                 e = self._entries.get(k)
                 if e is None or e.status != "queued":
                     self._order.remove(k)
                     continue
+                if e.held_by is not None:
+                    continue  # R768: held in its place until the operator resumes the queue; a mode change starts nothing
+                if not offline:
+                    reason = hold_reason(e.queued_mode, mode)
+                    if reason is not None:
+                        # Queued under the direct connection and protected mode is now on, or the settings cannot be read: HELD,
+                        # never started over the protected transport without the operator's own click in that mode.
+                        e.held_by = reason
+                        claimed = True
+                        continue
+                    if free <= 0:
+                        continue  # waits its turn; the rest are still read, so every one that must be held is shown held
                 self._order.remove(k)
                 if offline:
                     e.status = "paused"
@@ -358,6 +401,9 @@ class DumpDownloadManager:
                     e.paused_by = "airplane"
                 else:
                     e.status = "downloading"  # claim the slot atomically
+                    e._launch_mode = mode  # type: ignore[attr-defined]  # the transport identity this decision read
+                    self._seq += 1
+                    e._launch_seq = self._seq  # type: ignore[attr-defined]
                     to_launch.append(e)
                     free -= 1
                 claimed = True
@@ -384,6 +430,30 @@ class DumpDownloadManager:
             self._save()
             return list(self._order)
 
+    def resume_held(self, mode: str | None = None) -> int:
+        """R768's queue ruling: the operator's ONE click that resumes the whole queue, in order, under the transport now in force.
+
+        Every queued entry is re-stamped with the mode of this click and its hold lifted; each then passes that mode's own rules as
+        it starts (the protected transport, or a refusal by name). Under unreadable settings the pump holds them again, with that
+        reason. Returns how many were held."""
+        from src.safety.transport_watch import queue_mode
+
+        qmode = queue_mode() if mode is None else mode
+        held = 0
+        with self._lock:
+            for k in self._order:
+                e = self._entries.get(k)
+                if e is None or e.status != "queued":
+                    continue
+                if e.held_by is not None:
+                    held += 1
+                e.held_by = None
+                e.queued_mode = qmode
+                e._stopped_seq = None  # type: ignore[attr-defined]
+            self._save()
+        self._pump()
+        return held
+
     def queue_order(self) -> list[str]:
         with self._lock:
             return [
@@ -395,6 +465,7 @@ class DumpDownloadManager:
         with self._lock:
             entries = list(self._entries.values())
         out = []
+        transport: tuple[str, str] | None = None
         for e in entries:
             d = e.to_dict()
             # PERF-09: the measurement rides BESIDE the byte counts, and
@@ -402,6 +473,15 @@ class DumpDownloadManager:
             d["rate"] = self._rates.snapshot(
                 e.key, total_bytes=e.total_bytes or None, done_bytes=e.downloaded_bytes
             )
+            if d.get("held_by"):
+                # R772: the panel says, before the click, which transport "Resume the queue" would use now, and sends its token
+                # back with the click, so a transport that changed in between is refused rather than used
+                if transport is None:
+                    from src.safety.transport_watch import display_token, mode_now, resume_transport
+
+                    tid = mode_now()
+                    transport = (resume_transport(tid), display_token(tid))
+                d["resume_transport"], d["resume_token"] = transport
             out.append(d)
         return out
 
@@ -667,7 +747,35 @@ class DumpDownloadManager:
             entry.status = "done"
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
-            if isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
+            from src.safety.transport_watch import TransportStopped
+
+            if isinstance(exc, TransportStopped):
+                # R768/R769: the session's watch stopped it (protected mode switched on under a direct download, or the settings
+                # no longer readable). HELD at the head of the queue with that reason and the partial file kept: it never goes on,
+                # on that transport or another, until the operator resumes the queue under the rules then in force.
+                entry.status = "queued"
+                entry.error = None
+                entry.paused_by = None
+                from src.safety.transport_watch import held_by_for, stop_reason_of
+
+                entry.held_by = held_by_for(stop_reason_of(exc))
+                mine = getattr(entry, "_launch_seq", 0) or 0
+                entry._stopped_seq = mine  # type: ignore[attr-defined]
+                with self._lock:
+                    if entry.key in self._order:
+                        self._order.remove(entry.key)
+                    # At the head, after the downloads that were stopped with it and had started before it: the queue keeps the
+                    # order they were running in, ahead of the ones that were waiting.
+                    at = 0
+                    while at < len(self._order):
+                        other = self._entries.get(self._order[at])
+                        seq = getattr(other, "_stopped_seq", None) if other is not None else None
+                        if seq is None or seq > mine:
+                            break
+                        at += 1
+                    self._order.insert(at, entry.key)
+                stopped = True
+            elif isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
                 # R617 (R320, R614): the Stop refused or cut this attempt, still engaged or cleared again before the failure
                 # arrived. ``NetworkBlocked`` is raised only by the switch, so it also covers a Stop that landed after start()'s
                 # check and before this worker opened its window. Stored as "error" the entry would wait for the operator; it is
@@ -711,12 +819,23 @@ class DumpDownloadManager:
         """
         if kind not in DUMP_KINDS:
             raise ValueError(f"unknown dump kind {kind!r}; use one of {DUMP_KINDS}")
+        with self._lock:
+            known = set(self._entries)
         entry = self._entry_for(wiki, kind, mirrors=mirrors, expected_sha256=expected_sha256)
+        fresh = entry.key not in known  # a first click approves the transport now in force; a later one is checked against it
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
+        with self._lock:
+            if entry.held_by is not None and entry.status in ("queued", "paused"):
+                # R772(b): a held download is resumed only by "Resume the queue", whose button names the transport first and whose
+                # click carries that transport's token. A Download or Resume click elsewhere puts it back in the queue, still held.
+                self._requeue_held(entry, entry.held_by)
+                return entry.to_dict()
         from src.ingest import kill_switch_active
+        from src.safety.transport_watch import queue_mode
 
         if kill_switch_active():
+            amode = queue_mode() if fresh else None  # read before the lock, like every settings read here
             # Airplane mode: never open a socket. Present as PAUSED (resumable), never a
             # cryptic "error" (field test 2026-06-19 #36/#41). The UI's resume re-prompts
             # the go-online consent (ensureOnline) before calling start() again.
@@ -726,14 +845,32 @@ class DumpDownloadManager:
                 entry.status = "paused"
                 entry.error = None
                 entry.paused_by = "airplane"
+                entry.held_by = None
+                if fresh:
+                    entry.queued_mode = amode  # R772(b): a first click approves the transport now in force, as on any path
                 self._save()
             return entry.to_dict()
+        from src.safety.transport_watch import hold_reason
+
+        qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
+            if entry.held_by is not None and entry.status in ("queued", "paused"):
+                self._requeue_held(entry, entry.held_by)  # held between the check above and this lock
+                return entry.to_dict()
+            if not fresh and entry.status in ("queued", "paused", "error"):
+                # R772(b): an entry approved earlier (queued, paused, failed, or queued before a restart) under another transport
+                # than the one in force -- or one whose transport cannot be confirmed -- is HELD, named, never started on this one.
+                reason = hold_reason(entry.queued_mode, qmode)
+                if reason is not None:
+                    self._requeue_held(entry, reason)
+                    return entry.to_dict()
+            entry._stopped_seq = None  # type: ignore[attr-defined]
             if self._downloading_now() >= self.max_concurrent:
                 # Capacity full: a visible, reorderable queue, never a competing
                 # thread (T9 arbitration). The excess waits its turn.
                 entry.status = "queued"
                 entry.error = None
+                entry.queued_mode = qmode
                 if entry.key not in self._order:
                     self._order.append(entry.key)
                 self._save()
@@ -742,10 +879,23 @@ class DumpDownloadManager:
             # second start() cannot race past max_concurrent before the worker
             # thread marks it downloading.
             entry.status = "downloading"
+            entry._launch_mode = qmode  # type: ignore[attr-defined]  # the operator's click, read before the lock
+            entry.queued_mode = qmode  # the transport this download was approved under, kept for a later Resume (R772(b))
+            self._seq += 1
+            entry._launch_seq = self._seq  # type: ignore[attr-defined]
             entry.error = None
             self._save()
         self._launch(entry)
         return entry.to_dict()
+
+    def _requeue_held(self, entry, reason: str) -> None:
+        """Put ``entry`` in the queue HELD with ``reason`` (R768/R772), keeping its place if it has one. Called with the lock held."""
+        entry.status = "queued"
+        entry.held_by = reason
+        entry.error = None
+        if entry.key not in self._order:
+            self._order.append(entry.key)
+        self._save()
 
     def pause(self, key: str) -> bool:
         with self._lock:
@@ -755,6 +905,9 @@ class DumpDownloadManager:
                     self._order.remove(key)
                 e.status = "paused"
                 e.paused_by = "operator"
+                # Cancel ends the hold with the queue place; the transport it was approved under stays, so a later per-job Resume
+                # under another one is HELD again, named, by start() (R772(b)), never started on it.
+                e.held_by = None
                 self._save()
                 return True
         stop = self._stops.get(key)
