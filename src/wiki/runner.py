@@ -50,6 +50,7 @@ from typing import Any
 
 from src.database import damage
 from src.monitoring.secret_scrub import log_failure
+from src.safety import transport_watch as tw
 from src.versioned.adapters.base import ReadBudget
 from src.versioned.pipeline import Admission, LaneTransactionLost, PassResult, run_feed_once
 from src.wiki.counters import record_size_sample
@@ -330,7 +331,8 @@ def drain_once(
                 attempts=attempts,
                 store_failures=store_failures,
             )
-        except LaneTransactionLost:
+        except (LaneTransactionLost, tw.TransportStopped):
+            # R772(a): a transport change ends the drain (the loop holds the lane), never one edition's failure.
             # The lane's transaction is gone: go on and a later feed's commit would hide the
             # rows an earlier feed lost. Fail the drain, loudly and counted.
             raise
@@ -370,6 +372,8 @@ class WikiLaneRunner:
         warm: Any | None = None,
         indexer: Any | None = None,
         max_connections: int | None = None,
+        transport_watch: tw.TransportWatch | None = None,
+        on_hold: Callable[[str], None] | None = None,
         drain_interval_s: float = DRAIN_INTERVAL_S,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
@@ -413,6 +417,17 @@ class WikiLaneRunner:
         #: forever otherwise, which is CORRECT behaviour and untestable behaviour at
         #: the same time.
         self._max_connections = max_connections
+        #: R772(a): the transport the operator approved this lane under (``transport_watch.for_launch``), and the ONE run every
+        #: request of the lane's two threads answers to (``GuardedSession._watches``). ``None`` for a runner a test drives
+        #: without one. A change of the transport HOLDS the lane: it is not a fault, nothing retries it, and nothing but the
+        #: operator's click on the stream button starts it again (``src.wiki.service.resume_held_lane``).
+        self._transport_watch = transport_watch
+        self._on_hold = on_hold
+        #: Why the lane is held (``"protected"``, ``"unprotected"``, ``"proxy"``, ``"settings"``), and since when; ``None``
+        #: while it is not. Set once: a held runner is never started again, the service builds a new one on resume.
+        self.held_by: str | None = None
+        self.held_at: str | None = None
+        self._hold_lock = threading.Lock()
         self._interval = drain_interval_s
         self._sleep = sleep
         self._monotonic = monotonic
@@ -616,10 +631,48 @@ class WikiLaneRunner:
             ),
         }
 
+    # -- the transport hold (R772(a)) ---------------------------------------- #
+    def _hold(self, reason: str) -> None:
+        """Hold the lane: the transport changed under it (``reason`` is a :class:`TransportStopped` reason). Both threads end at
+        their next check; nothing restarts them (``revive_stream`` refuses a held runner) until the operator resumes it."""
+        with self._hold_lock:
+            if self.held_by is not None:
+                return
+            self.held_by = tw.held_by_for(reason)
+            self.held_at = datetime.now(UTC).isoformat()
+        # The service records the hold BEFORE this runner reads as stopped: a start that saw a stopped runner and no recorded hold
+        # would tear it down and build a new lane over the new transport (the second security read's race).
+        if self._on_hold is not None:
+            try:
+                self._on_hold(self.held_by)
+            except Exception as exc:  # noqa: BLE001 - the hold is in force on this runner whatever the record says
+                log_failure(_LOG, "could not record the Wikipedia lane's hold", exc, level=logging.WARNING)
+        self._stop.set()
+        _LOG.warning(
+            "the Wikipedia lane is held (%s): the transport it was approved under changed; it does not reconnect, and the stream "
+            "button starts it again", self.held_by,
+        )
+
+    def _transport_held(self) -> bool:
+        """Whether the lane is held, asking the watch (cheap: it re-reads the settings only after a save bumped it, or once a
+        second). Read BEFORE the operator's state, and never cached: a transport change is seen at the next event."""
+        if self.held_by is not None:
+            return True
+        watch = self._transport_watch
+        if watch is None:
+            return False
+        reason = watch.stop_reason()
+        if reason is None:
+            return False
+        self._hold(reason)
+        return True
+
     # -- the stream half ---------------------------------------------------- #
     def _should_stop(self) -> bool:
-        """True when the operator's setting no longer says ``running``, or we were told to stop."""
+        """True when the operator's setting no longer says ``running``, or we were told to stop, or the transport changed."""
         if self._stop.is_set():
+            return True
+        if self._transport_held():
             return True
         try:
             return self._state_of() != "running"
@@ -647,6 +700,8 @@ class WikiLaneRunner:
         before."""
         if self._stop.is_set():
             return True
+        if self._transport_held():
+            return True  # never behind the TTL below: a transport change ends the stream at the next event
         now = self._monotonic()
         if self._state_ok_until is not None and now < self._state_ok_until:
             return False
@@ -671,13 +726,19 @@ class WikiLaneRunner:
                 log_failure(_LOG, "could not read the stored stream position", exc, level=logging.WARNING)
                 resume = None
         try:
-            self._stream.run(
-                self._adapter.offer,
-                should_stop=self._stream_should_stop,
-                max_connections=self._max_connections,
-                resume_from=resume,
-                on_position=self._adapter.note_position,
-            )
+            with self._run_context():
+                self._stream.run(
+                    self._adapter.offer,
+                    should_stop=self._stream_should_stop,
+                    max_connections=self._max_connections,
+                    resume_from=resume,
+                    on_position=self._adapter.note_position,
+                )
+        except tw.TransportStopped as exc:
+            # R772(a): the transport changed. Not a fault and not retried: the lane is held, by name, until the operator's click.
+            self.last_stream_end = "TransportStopped"
+            self.last_stream_end_at = datetime.now(UTC).isoformat()
+            self._hold(tw.stop_reason_of(exc))
         except Exception as exc:  # noqa: BLE001 - including the kill switch's refusal
             # The kill switch raises ``StreamStopped`` with its own named message; it
             # is logged as the ordinary end it is, not as a crash. Anything else is a
@@ -691,9 +752,18 @@ class WikiLaneRunner:
             else:
                 log_failure(_LOG, "the Wikipedia stream ended unexpectedly", exc, level=logging.WARNING)
 
+    def _run_context(self):
+        """The lane's run (R772(a)) for the calling thread: every guarded request made inside it answers to the approved
+        transport, through whichever session it goes."""
+        import contextlib
+
+        return tw.run(self._transport_watch) if self._transport_watch is not None else contextlib.nullcontext()
+
     def start(self) -> bool:
-        """Start the stream thread. ``False`` when the setting does not say ``running``."""
+        """Start the stream thread. ``False`` when the setting does not say ``running`` or the lane is held."""
         with self._start_lock:
+            if self.held_by is not None:
+                return False  # R772(a): only the operator's resume starts a held lane, and it builds a new runner
             if self._thread is not None and self._thread.is_alive():
                 return True
             if self._state_of() != "running":
@@ -727,7 +797,7 @@ class WikiLaneRunner:
         if self._max_connections is not None:
             return False
         with self._start_lock:
-            if self._stop.is_set() or self._thread is None or self.streaming:
+            if self._stop.is_set() or self.held_by is not None or self._thread is None or self.streaming:
                 return False
             try:
                 if self._state_of() != "running" or kill_switch_active():
@@ -920,6 +990,9 @@ class WikiLaneRunner:
             return None
         try:
             return self._pageviews()
+        except tw.TransportStopped as exc:
+            self._hold(tw.stop_reason_of(exc))  # R772(a): not a failed top-up
+            return None
         except Exception as exc:  # noqa: BLE001 - an attention signal must not end a drain
             log_failure(_LOG, "the daily pageview top-up failed", exc, level=logging.WARNING)
             return None
@@ -956,6 +1029,8 @@ class WikiLaneRunner:
                     max(0.0, min(left(), seconds * INDEX_SHARE)), should_stop=self._writing_stopped
                 )
                 self.last_index = index_report.as_dict()
+            except tw.TransportStopped as exc:
+                self._hold(tw.stop_reason_of(exc))
             except Exception as exc:  # noqa: BLE001 - the index must not end the lane
                 log_failure(_LOG, "the Wikipedia lane search index window failed", exc, level=logging.WARNING)
                 self.last_index = {"error": f"{type(exc).__name__}"}
@@ -970,6 +1045,8 @@ class WikiLaneRunner:
             try:
                 warm_report = self._warm.warm_for(warm_window, should_stop=self._writing_stopped)
                 self.last_warm = warm_report.as_dict()
+            except tw.TransportStopped as exc:
+                self._hold(tw.stop_reason_of(exc))  # R772(a): a hold, never WARM's error
             except Exception as exc:  # noqa: BLE001 - WARM must not end the lane
                 log_failure(_LOG, "the Wikipedia window for fetching other changed pages failed", exc, level=logging.WARNING)
                 self.last_warm = {"error": f"{type(exc).__name__}"}
@@ -979,6 +1056,8 @@ class WikiLaneRunner:
             try:
                 report = self._walker.walk_for(left(), should_stop=self._writing_stopped)
                 self.last_walk = report.as_dict()
+            except tw.TransportStopped as exc:
+                self._hold(tw.stop_reason_of(exc))  # R772(a): a hold, never the walk's error
             except Exception as exc:  # noqa: BLE001 - the walk must not end the lane
                 log_failure(_LOG, "the Wikipedia walk window failed", exc, level=logging.WARNING)
                 self.last_walk = {"error": f"{type(exc).__name__}"}
@@ -1059,6 +1138,10 @@ class WikiLaneRunner:
         ``max_drains`` is for tests and for a caller that wants one tick; ``None``
         means "until told to stop", which is what the scheduler passes.
         """
+        with self._run_context():
+            return self._run_until_stopped(max_drains)
+
+    def _run_until_stopped(self, max_drains: int | None) -> int:
         done = 0
         while not self._should_stop():
             if max_drains is not None and done >= max_drains:
@@ -1085,6 +1168,11 @@ class WikiLaneRunner:
                 self.consecutive_failures = 0
                 self._retry_wait_s = None
                 self._retry_due_at = None
+            except tw.TransportStopped as exc:
+                # R772(a): the transport changed under the drain. Not a failed drain (no count, no backoff): the lane is held.
+                self._hold(tw.stop_reason_of(exc))
+                self._close_tick()
+                break
             except Exception as exc:  # noqa: BLE001 - one bad drain must not end the lane
                 # A LOOP THAT LETS ONE FAILURE END THE THREAD stops collecting for the
                 # rest of the process with no record anywhere -- measured: an absent

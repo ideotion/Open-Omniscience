@@ -51,6 +51,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.monitoring.secret_scrub import log_failure
+from src.safety.transport_watch import TransportStopped
 from src.versioned import feed as feedmod
 from src.versioned import revisions as revmod
 from src.versioned.adapters.base import FetchedVersion, ReadBudget, VersionedAdapter
@@ -498,6 +499,14 @@ def run_feed_once(
         epoch = kill_switch_epoch()  # this fetch's window (R617, R614): a Stop pressed and cleared again inside it is a Stop
         try:
             version = adapter.fetch_version(external_id)
+        except TransportStopped:
+            # R772(a): the run's transport changed. Not this page's failure, exactly as for a Stop (below): the attempt is forgotten,
+            # it is not counted as an error, and the pass stops fetching (every later fetch would be refused the same way). What the
+            # pass already holds is still stored; the caller sees the stopped run at its next check and holds the lane.
+            _LOG.info("fetching %s was stopped: the transport changed", external_id)
+            if attempts is not None:
+                attempts.pop(entity.id, None)
+            break
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
             if kill_switch_engaged_since(epoch):
                 # R617: the Stop's failure, not the page's. The attempt is forgotten (the catch-up would hold the page back for

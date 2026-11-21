@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import WikiPage, WikiRevision
 from src.monitoring.secret_scrub import log_failure
+from src.safety.transport_watch import TransportStopped
 from src.wiki.flagging import flag_revision
 from src.wiki.mediawiki import diff_summary
 
@@ -72,6 +73,15 @@ def _refuse_if_stopped(session: Session, epoch: int) -> None:
 
         session.rollback()
         raise NetworkBlocked(KILL_SWITCH_REFUSAL)
+    # R772(a): the same for a transport change inside the page's window. The enrichment fetches fail open, so a text, diff or score
+    # fetch the change stopped would otherwise be stored as missing and ``last_revid`` moved past it; the page is asked again next time.
+    from src.safety.transport_watch import current_run
+
+    run = current_run()
+    reason = run.stop_reason() if run is not None else None
+    if reason is not None:
+        session.rollback()
+        raise TransportStopped(reason)
 
 
 def update_page(
@@ -117,6 +127,8 @@ def update_page(
                 cats = client.fetch_categories(page.wiki, page.title)
                 if cats:
                     page.wiki_categories = json.dumps(cats[:50], ensure_ascii=False)
+            except TransportStopped:
+                raise  # R772(a): a transport change ends the page (rolled back by the caller), never a missing enrichment
             except Exception as exc:  # noqa: BLE001
                 log_failure(_LOG, f"category fetch failed for {page.title}", exc, level=logging.WARNING)
         _refuse_if_stopped(session, epoch)  # R617: a baseline a Stop cut short is not stored
@@ -139,6 +151,8 @@ def update_page(
             texts_by_revid = client.fetch_revision_texts(
                 page.wiki, [r["revid"] for r in new]
             )
+        except TransportStopped:
+            raise  # R772(a): a transport change ends the page (rolled back by the caller), never a missing enrichment
         except Exception as exc:  # noqa: BLE001 - text enrichment must not drop revisions
             log_failure(_LOG, f"revision-text fetch failed for {page.title}", exc, level=logging.WARNING)
 
@@ -159,6 +173,8 @@ def update_page(
                 diff_text = diff_summary(d.get("added", ""), d.get("removed", ""))
                 if delta is None:
                     delta = d.get("added_bytes", 0) - d.get("removed_bytes", 0)
+            except TransportStopped:
+                raise  # R772(a): a transport change ends the page (rolled back by the caller), never a missing enrichment
             except Exception as exc:  # noqa: BLE001 - a missing diff must not drop the revision
                 log_failure(_LOG, f"compare failed for {page.title} rev {r['revid']}", exc, level=logging.WARNING)
 
@@ -166,6 +182,8 @@ def update_page(
         if ores_client:
             try:
                 sc = ores_client.score(page.wiki, [r["revid"]]).get(r["revid"])
+            except TransportStopped:
+                raise  # R772(a): a transport change ends the page (rolled back by the caller), never a missing enrichment
             except Exception as exc:  # noqa: BLE001 - ORES is optional and MUST fail-open (it's often down/deprecated)
                 log_failure(_LOG, f"ORES scoring failed for {page.title} rev {r['revid']}", exc, level=logging.WARNING)
                 sc = None
@@ -226,6 +244,8 @@ def update_page(
                 if cur.get("revid") and cur.get("text"):
                     page.latest_text = cur["text"]
                     page.latest_text_revid = cur["revid"]
+            except TransportStopped:
+                raise  # R772(a): a transport change ends the page (rolled back by the caller), never a missing enrichment
             except Exception as exc:  # noqa: BLE001 - latest-text refresh must not drop the revisions
                 log_failure(_LOG, f"latest-text refresh failed for {page.title}", exc, level=logging.WARNING)
 
@@ -245,7 +265,6 @@ def track_watched(
     that means "nothing was fetched" must be told apart from "nothing changed" (invariant #14e's corollary).
     """
     from src.database.query import capped
-    from src.safety.fetcher import NetworkBlocked
 
     pages = capped(
         session.query(WikiPage)
@@ -253,7 +272,20 @@ def track_watched(
         .order_by(WikiPage.last_checked_at.is_(None).desc(), WikiPage.last_checked_at.asc()),
         limit_pages,  # 0 = every watched page (no cap)
     ).all()
+    from src.safety import transport_watch as tw
+
+    # R772(a): ONE batch is one run, approved over the transport in force when it was asked for (the caller's run when it has one):
+    # a change during it stops it at the next request, whichever session that request goes through.
+    with tw.run(tw.current_run() or tw.for_launch(tw.mode_now())):
+        return _track_pages(session, client, pages, ores_client=ores_client, max_new=max_new)
+
+
+def _track_pages(session: Session, client, pages, *, ores_client, max_new: int) -> dict:
+    from src.safety.fetcher import NetworkBlocked
+    from src.safety.transport_watch import held_by_for, stop_reason_of
+
     total_new = total_flagged = pages_done = skipped_offline = 0
+    stopped_by: str | None = None
     for page in pages:
         try:
             res = update_page(session, client, page, ores_client=ores_client, max_new=max_new)
@@ -271,13 +303,21 @@ def track_watched(
                 except Exception as exc:  # noqa: BLE001
                     session.rollback()
                     log_failure(_LOG, f"corpus sync failed for {page.title}", exc, level=logging.WARNING)
+        except TransportStopped as exc:
+            # R772(a): the transport changed during the batch. It stops here, by name: the rest of the pages are not asked over the
+            # new transport, and nothing is retried. The page is clicked again to go on over the transport then in force.
+            session.rollback()
+            stopped_by = held_by_for(stop_reason_of(exc))
+            break
         except Exception as exc:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
             if isinstance(exc, NetworkBlocked):
                 skipped_offline += 1
                 continue
             log_failure(_LOG, f"wiki tracking failed for {page.wiki}:{page.title}", exc, level=logging.WARNING)
-    out = {"pages": pages_done, "new_revisions": total_new, "flagged": total_flagged}
+    out: dict[str, int | str] = {"pages": pages_done, "new_revisions": total_new, "flagged": total_flagged}
     if skipped_offline:
         out["skipped_offline"] = skipped_offline
+    if stopped_by is not None:
+        out["stopped_by"] = stopped_by  # present ONLY when a transport change stopped the batch
     return out

@@ -394,9 +394,22 @@ class GuardedSession(requests.Session):
                 return self._send(method, url, *args, **kwargs)
         return self._send(method, url, *args, **kwargs)
 
+    def _watches(self) -> tuple[TransportWatch, ...]:
+        """The watches a request through this session answers to: the session's own, and (R772(a)) the run of the CALLER.
+
+        A long-lived session (``following_session``) is shared: the Wikipedia lane's stream and drain, a click that tracks a page
+        and the walk all use the one session of ``session/wiki``. Its own watch says only whether the session must be rebuilt; the
+        caller's run says whether THIS activity may go on, so a lane approved over one transport stops at its next request after
+        the transport changed, even through a session rebuilt under the new one."""
+        own = self.transport_watch
+        run = current_run()
+        if run is None or run is own:
+            return (own,) if own is not None else ()
+        return (own, run) if own is not None else (run,)
+
     def send(self, request, **kwargs) -> requests.Response:  # type: ignore[override]
-        if self.transport_watch is not None:
-            self.transport_watch.check()  # every redirect hop too: ``requests`` sends each through here
+        for watch in self._watches():
+            watch.check()  # every redirect hop too: ``requests`` sends each through here
         if self.allowed_hosts is not None:
             refuse_unlisted_host(request.url or "", self.allowed_hosts)
         if self.allowed_path_prefixes is not None:
@@ -440,17 +453,19 @@ class GuardedSession(requests.Session):
                 kwargs["proxies"] = _pool_proxies(url, self.proxy_pool, self.isolation_token)
             elif self.transport_proxy:
                 kwargs["proxies"] = {"http": self.transport_proxy, "https": self.transport_proxy}
-        watch = self.transport_watch
-        if watch is None:
+        watches = self._watches()
+        if not watches:
             return super().request(method, url, *args, **kwargs)
-        watch.check()
+        for watch in watches:
+            watch.check()
         # R768: the body is read through the watch, chunk by chunk, whether or not the caller streams: a caller that did not ask
         # for a stream gets the whole body read here, as ``requests`` would have read it, but stopped at the first chunk after
         # the transport changed rather than after the last.
         wanted_stream = bool(kwargs.get("stream"))
         kwargs["stream"] = True
         resp = super().request(method, url, *args, **kwargs)
-        _read_through_watch(resp, watch)
+        for watch in watches:
+            _read_through_watch(resp, watch)
         if not wanted_stream:
             try:
                 resp.content  # noqa: B018 - reads the body now, through the watch

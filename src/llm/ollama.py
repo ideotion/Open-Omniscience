@@ -14,10 +14,8 @@ model is not installed, raise -- never return a fabricated "analysis".
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 import httpx
 
@@ -468,25 +466,16 @@ def reason_first(message: str, room: int) -> str:
 
 
 def _is_loopback_url(url: str) -> bool:
-    """True if url's hostname is loopback (127.0.0.0/8, ::1, or the localhost family).
+    """True if url's host is a loopback literal (127.0.0.0/8, ::1) or exactly ``localhost`` (R767).
 
-    Uses ``ipaddress`` for the numeric case (never a string prefix match — a bare
-    ``.startswith("127.")`` would wrongly accept a crafted DNS name like
-    ``127.0.0.1.evil.example``, which resolves to whatever IP the attacker's DNS
-    returns, not loopback). A bare hostname is only treated as local via an exact
-    match against the localhost aliases; anything else that fails IP parsing is
-    treated as remote.
+    Uses ``ipaddress`` for the numeric case (never a string prefix match -- ``127.0.0.1.evil.example`` resolves to
+    whatever the attacker's DNS returns). The aliases ``ip6-localhost``, ``ip6-loopback`` and ``localhost.localdomain``
+    are NOT accepted any more: they are local only when the hosts file says so. ``localhost``'s own answer is checked
+    on the socket (:mod:`src.llm.loopback`). THE rule lives in :mod:`src.llm.loopback`; this name stays for its callers.
     """
-    try:
-        host = (urlparse(url).hostname or "").lower()
-    except ValueError:  # e.g. an unclosed "[" -- not an address on this computer (row 234)
-        return False
-    if host in {"localhost", "ip6-localhost", "localhost.localdomain"}:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False  # a remote (or unparsable) hostname
+    from src.llm.loopback import is_loopback_url
+
+    return is_loopback_url(url)
 
 
 def _require_loopback(url: str, *, setting: str = "OO_OLLAMA_URL") -> None:
@@ -508,26 +497,18 @@ def _loopback_refusal(url: str, *, setting: str = "OO_OLLAMA_URL") -> str | None
     """The reason ``url`` is refused by :func:`_require_loopback`, or ``None`` when it is on this computer.
 
     The same rule as a sentence, for a caller that must ANSWER with the refusal rather than raise it (the vLLM port
-    probe, R762). One rule, two shapes: ``_require_loopback`` raises exactly this text.
+    probe, R762). One rule, two shapes: ``_require_loopback`` raises exactly this text. An alias names the literal to
+    use instead (R767).
     """
-    if _is_loopback_url(url):
-        return None
-    try:
-        host: str | None = (urlparse(url).hostname or "").lower()
-    except ValueError:  # malformed: fail closed, and say so rather than raise (row 234)
-        host = None
-    if host is None:
-        got = "an address that could not be read"
-    elif "@" in url:
-        # Sign-in details in the address: urlparse can take part of them for the host (an unencoded "/", "?" or "#" ends the
-        # authority early), so nothing of it is quoted -- the setting's name is enough to find it (row 234 security read).
-        got = "an address with sign-in details (not shown)"
-    else:
-        got = repr(host)
-    return (
-        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {got}. "
-        "The local LLM never talks to a remote host."
-    )
+    from src.llm.loopback import loopback_refusal
+
+    return loopback_refusal(url, setting=setting)
+
+
+def _loopback_transport() -> httpx.HTTPTransport:
+    from src.llm.loopback import LoopbackTransport
+
+    return LoopbackTransport()
 
 
 @dataclass
@@ -570,10 +551,10 @@ class OllamaClient:
             _require_loopback(self.base_url)
         # ``connect_timeout`` caps the connect alone (the liveness probe's, row 141); the reply keeps the whole ``timeout``.
         limits = timeout if connect_timeout is None else httpx.Timeout(timeout, connect=min(timeout, connect_timeout))
-        # trust_env=False (R770): the daemon is on this computer, so the connection is always direct. With trust_env left on,
-        # httpx routes even http://127.0.0.1 through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts and
-        # article text would reach that proxy.
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits, trust_env=False)
+        # trust_env=False (R770): the connection is always direct; with trust_env on, httpx routes even http://127.0.0.1
+        # through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts would reach that proxy.
+        # R767: every request runs inside the loopback-only scope, so ``localhost``'s answer is checked on the socket.
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits, transport=_loopback_transport(), trust_env=False)
 
     # -- network kill switch ----------------------------------------------- #
 

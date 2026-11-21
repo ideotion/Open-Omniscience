@@ -91,7 +91,19 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   same way, even when an environment proxy keeps the transport usable. A stopped session is
   never reopened; the long-lived Wikipedia and ORES clients get a new one, built under the
   rules then in force, once the settings read again (R768, R769; `src/safety/transport_watch.py`;
-  `tests/test_transport_watch.py`). (`src/safety/fetcher.py`; `tests/test_transport_follows_setting.py`.)
+  `tests/test_transport_watch.py`). That new session does not carry on what was running (R772(a)):
+  the Wikipedia lane (its change stream, and the drain, page walk, WARM fetches and pageviews
+  beside it) is one run approved under the transport in force when it started, and every request
+  it makes answers to that run, through whichever session it goes. A change of the transport HOLDS
+  the lane with its reason; it is not counted as a connection failure, nothing backs off or
+  reconnects, and going online, Start, Run-now or a settings write do not lift it. Only a click on
+  the Wikipedia stream button starts it again, after a dialog that names the reason and the
+  transport it would use, and the server refuses (409) a click whose transport changed since. A
+  "Track now" batch, and the ORES scores inside it, stops at the change by name: the page in hand
+  is not stored half-scored, and the rest are not asked over the new transport. The hold is kept
+  in memory: the app starts offline after a restart, and going online again is a new approval
+  under the transport then in force (`src/wiki/runner.py`, `src/wiki/service.py`;
+  `tests/test_wiki_lane_transport_hold.py`). (`src/safety/fetcher.py`; `tests/test_transport_follows_setting.py`.)
 
   **The hover says how each lane leaves (S04-08's S5).** Every lane in the consent popup's
   hover carries one transport line, taken from the server's reading of the fetch path
