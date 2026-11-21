@@ -78,8 +78,12 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # to count a refused country; the exception carries no text from the backup, and nothing is logged or stored but that name
     "src/backup/lane_merge.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
     # Row 256 (R702 part 2): SQLAlchemy's pool record's own ``info`` dict, holding the lane's generation number for the open (stamped
-    # at connect, compared at checkin); it carries an int, never words, and nothing is logged
-    "src/versioned/store.py": {"pool_entry.info is kept as a name, a log call the scan cannot read": 2},
+    # at connect, compared at checkin); it carries an int, never words, and nothing is logged. Row 271: the same dict holds the
+    # (device, inode) of the file the open reached (stamped at connect, read at checkout and detach): two ints, never words
+    "src/versioned/store.py": {
+        "pool_entry.info is kept as a name, a log call the scan cannot read": 4,
+        "record.info is kept as a name, a log call the scan cannot read": 1,
+    },
     "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     # R695: ``_deadline_stopped(exc)`` answers whether a caught error is a statement deadline's stop: an isinstance test, then the
     # driver text compared to the one fixed word ``interrupted``; it stores nothing and logs nothing, and the two callers only re-raise
@@ -1069,6 +1073,9 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/jobs/background.py': {
         # kept to be re-raised on the caller's side: not written
         ('BackgroundJob._run', 'failure = exc'): 1,
+        # row 264: the chain is walked for the store switch's class (isinstance only); what is kept is the fixed SWAPPING_WORDS
+        ('BackgroundJob._run', 'swapping = _swapping_words(exc)'): 1,
+        ('_swapping_words', 'cur: BaseException | None = exc'): 1,
     },
     'src/jobs/llm_bulk_queue.py': {
         # the status code chooses between a fixed phrase and the scrubbed detail (http_detail): the selection's words are never kept
