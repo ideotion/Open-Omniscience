@@ -1175,8 +1175,7 @@
         `<line stroke="var(--border)" stroke-width="${w}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}"`
         + ` x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"></line>`;
       const label = (x, y, text, size, weight, col, title) =>
-        `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})">`
-        + (title ? `<title>${esc(title)}</title>` : "")
+        `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"${title ? ` title="${esc(title)}"` : ""}>`
         + `<text text-anchor="middle" dominant-baseline="central" font-size="${size.toFixed(1)}"`
         + ` font-weight="${weight}" fill="${col}">${esc(text)}</text></g>`;
       const step = (2 * Math.PI) / arms.length;
@@ -1400,7 +1399,7 @@
         const fam = (n.members || []).length > 1;
         const tip = [lp.tag ? lp.tag + " — " + lp.hover : "", fam ? (n.members || []).join(", ") : ""]
           .filter(Boolean).join(" — ");
-        const title = tip ? `<title>${esc(tip)}</title>` : "";
+        const title = tip ? ` title="${esc(tip)}"` : "";
         const fs = fsOf(n);
         const tag = lp.tag
           ? `<text text-anchor="middle" dominant-baseline="central" y="${(fs * 0.95).toFixed(1)}"`
@@ -1412,7 +1411,7 @@
           ? `<circle r="2.5" fill="var(--accent)"></circle>` : "";
         const tagA = tag && anc !== "middle"
           ? tag.replace('text-anchor="middle"', `text-anchor="${anc}" x="${dx}"`) : tag;
-        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn>${title}${dot}`
+        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn${title}>${dot}`
           + `<text text-anchor="${anc}" x="${dx}" dominant-baseline="central" font-size="${fs.toFixed(1)}"`
           + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(lp.shown || n.label || n.id)}</text>`
           + `${tagA}</g>`;

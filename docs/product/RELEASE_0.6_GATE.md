@@ -73,6 +73,18 @@ acquisitions (G2's elections session, §5 step 1). The empty-until-it-runs claus
 not weakened here. No new board row; the placement is what was assumed. Reversed by writing a letter at
 `ANSWER RC08.4`.
 
+**Progress 2026-11-21 (rows 258 and 266; the row stays OPEN).** The read-back path for the operator's Wikidata election
+snapshot run is on main. The snapshot states its age, and one past 90 days, or dated after today, is called stale in the
+Agenda, the coverage report and the external-artifact registry (row 258). One press of the Field data button saves
+`oo-field-*-elections-floor.json`, the `/api/diagnostics/elections-floor` answer with the snapshot layered in: country
+codes, counts, dates, entry titles and the reasons a date is absent, no path or address. The Diagnostics zip carries the
+same answer as `elections-floor.json` again, held to 200,000 bytes: it names what it cut when a large snapshot pushes it
+over (the per-country entry lists first), and says so with the size written if even that does not fit.
+`python3 scripts/elections_readback.py <file>` prints the snapshot's state, date, age, staleness and counts, the floor's
+four states and the tier report's counts; an absent figure gives its reason, never 0. K13 reads the same age. Pinned by
+`tests/test_elections_snapshot_freshness.py` and `tests/test_elections_readback_row266.py`. **Still owed (operator):** the
+networked snapshot run itself, read back from the file it sends.
+
 **Progress 2026-11-13 (PR #1935, R661 + R662): the climate half has its surface; the row stays OPEN.** The six keyless
 series now have one Climate main tab, a subtab each, fetched only through the consent gate and read back offline, with
 source, licence, last fetch, gaps and parse diagnostics shown per series. A re-fetch keeps every vintage (R662). Still
@@ -250,6 +262,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Exit text, two rows proven (row 259): the OSM vintage stated on every map; a contested border rendering as contested.** One renderer (`ooMap`) draws every world map and its border-source legend unconditionally, pinned by `tests/test_map_vintage_r259.py`; the legend's text for every source and the contested hatch under the default worldview run as real code in `tests/map_vintage_r259_node_test.js`. Two OSM layers drew undated and were fixed in the same PR: the lane's object and cluster views (now dated per country in view) and the downloaded-region preview (its borders were credited to Natural Earth; now "Offline OSM preview, as of {date}" from the file's own header). Chromium walk, both with and without an OSM border file: `docs/audit/map-vintage-r259-2026-11-21/` (four surfaces, 28 of 28 disputed areas hatched and none attributed on each). | session (row 259) · Lane I |
 | 2026-11-21 | **Row D, a located address's provenance reaches a touch reader (row 268).** The infobox-address square's hover (address, field, page and edition, OSM object, extract date or "the extract states no date") rode an SVG `<title>` child, which only a mouse reaches; on a phone, a long-press on the square showed a country's bubble instead. Every marker `app-map.js` draws (wiki pages and addresses, mentioned places, server IPs, signals, the Insights cities map) now carries its hover in a `title` attribute, so the #oo-tip bubble (invariant #17) opens on long-press too (walked in Chromium for the page and address markers; the other markers are run by the node test); `tests/map_marker_titles_r268_node_test.js` and `tests/wiki_map_layer_node_test.js` run each marker and fail on a `<title>` child. Chromium walk, desktop hover and phone long-press, before and after: `docs/audit/map-marker-titles-r268-2026-11-21/`. | session (row 268) · Lane I |
 | 2026-11-21 | **Row C: the coverage report comes back through Field data; no row changed status.** The button saves `/api/diagnostics/law-coverage` and `scripts/law_coverage_readback.py` prints every floor country by state with the twelve-language tally (row 267). | session (Lane O) |
+| 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
 
 ---
 

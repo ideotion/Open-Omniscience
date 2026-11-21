@@ -224,15 +224,15 @@ test("each panel names its first and last real dates", () => {
 
 test("every drawn mark answers a hover with its date and count, in both modes", () => {
   const bars = smallMultiplesSvg([{label: "en", points: dense([3, 0, 5])}]);
-  assert(/<rect[^>]*><title>2026-07-03 · 5<\/title><\/rect>/.test(bars), bars);
+  assert(/<rect[^>]* title="2026-07-03 · 5"><\/rect>/.test(bars), bars);
   const line = smallMultiplesSvg([{label: "en", points: dense([...run(SPARSE - 1, 2), 9])}]);
-  const titles = (line.match(/<title>/g) || []).length;
+  const titles = (line.match(/<circle [^>]* title="/g) || []).length;
   assert(titles === SPARSE, `a dense panel needs a hover target per real point (${SPARSE}), got ${titles}`);
 });
 
 test("a measured zero's 2px cap answers the hover too (the main bar is 0 px tall)", () => {
   const svg = smallMultiplesSvg([{label: "en", points: dense([3, 0, 5])}]);
-  assert(/height="2"[^>]*><title>2026-07-02 · 0<\/title><\/rect>/.test(svg), svg);
+  assert(/height="2"[^>]* title="2026-07-02 · 0"><\/rect>/.test(svg), svg);
 });
 
 test("the panel svg keeps a left-to-right axis under an rtl page (Arabic)", () => {
