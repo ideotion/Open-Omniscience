@@ -1899,9 +1899,12 @@
         // renders truthfully rather than claiming "not installed".
         const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available,
                                  can_launch: false};
-        const ollTxt = oll.installed
-          ? (oll.running ? t("installed, running") : t("installed, not running"))
-          : t("not installed");
+        // Row 234: a refused address was never contacted, so "not running" would be a claim nobody measured.
+        const ollTxt = oll.refused
+          ? (oll.installed ? t("installed, not contacted") : t("not installed, not contacted"))
+          : oll.installed
+            ? (oll.running ? t("installed, running") : t("installed, not running"))
+            : t("not installed");
         // HARDWARE SUITABILITY (2026-07-30). `hw` may be absent from an older
         // server payload — render nothing then, rather than claiming a verdict.
         const hw = b.hardware;
@@ -1942,6 +1945,11 @@
           `vLLM: ${vllm.installed ? "installed" : "not installed"}` +
           `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
           ` &middot; Ollama: ${esc(ollTxt)}</p>` +
+          // Row 234: an OO_OLLAMA_URL on another computer is refused by the rule every local-AI call obeys; the app
+          // neither contacts it nor starts a local Ollama for it, and says so here instead of a silent "not running".
+          (oll.refused
+            ? `<p class="card-caveat">${esc(t("This Ollama address is not on this computer, so the app does not contact it and does not start Ollama for it. The local AI only talks to this computer: set OO_OLLAMA_URL to 127.0.0.1, localhost or ::1."))}</p>`
+            : "") +
           // A LAUNCH control, offered precisely when the software is present but not
           // answering (maintainer 2026-07-29). Shown only when it is honest to show:
           // `can_launch` is decided server-side so the rule lives in one place, and a

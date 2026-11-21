@@ -117,6 +117,8 @@ def _candidates() -> dict:
         out["ollama"] = {
             "installed": bool(ollama_lifecycle.is_installed()),
             "running": bool(ollama_lifecycle.is_running()),
+            # Row 234: an OO_OLLAMA_URL on another computer, with the reason; _plan_for blocks on it.
+            "refused": ollama_lifecycle.refusal(),
         }
     except Exception as exc:  # noqa: BLE001
         out["ollama"] = {"installed": False, "running": False, "probe_error": record_text(exc)}
@@ -262,6 +264,12 @@ def _plan_for(
 
     if out["running"]:
         out["blocker"] = None
+        return out
+
+    if mine.get("refused"):
+        # Row 234: the address is on another computer, so there is nothing here to start for it -- and installing would
+        # not help either, so this comes before the installed check, as it does in ollama_lifecycle.start().
+        out["blocker"] = str(mine["refused"])
         return out
 
     if not mine.get("installed"):

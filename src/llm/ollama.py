@@ -477,7 +477,10 @@ def _is_loopback_url(url: str) -> bool:
     match against the localhost aliases; anything else that fails IP parsing is
     treated as remote.
     """
-    host = (urlparse(url).hostname or "").lower()
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:  # e.g. an unclosed "[" -- not an address on this computer (row 234)
+        return False
     if host in {"localhost", "ip6-localhost", "localhost.localdomain"}:
         return True
     try:
@@ -509,9 +512,20 @@ def _loopback_refusal(url: str, *, setting: str = "OO_OLLAMA_URL") -> str | None
     """
     if _is_loopback_url(url):
         return None
-    host = (urlparse(url).hostname or "").lower()
+    try:
+        host: str | None = (urlparse(url).hostname or "").lower()
+    except ValueError:  # malformed: fail closed, and say so rather than raise (row 234)
+        host = None
+    if host is None:
+        got = "an address that could not be read"
+    elif "@" in url:
+        # Sign-in details in the address: urlparse can take part of them for the host (an unencoded "/", "?" or "#" ends the
+        # authority early), so nothing of it is quoted -- the setting's name is enough to find it (row 234 security read).
+        got = "an address with sign-in details (not shown)"
+    else:
+        got = repr(host)
     return (
-        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {host!r}. "
+        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {got}. "
         "The local LLM never talks to a remote host."
     )
 

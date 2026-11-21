@@ -649,6 +649,26 @@ def _ollama_available() -> bool:
         return False
 
 
+def _ollama_refusal() -> str | None:
+    """Why ``OO_OLLAMA_URL`` is refused, or None when it is on this computer (row 234).
+
+    ``_ollama_available()`` answers False for a refused address exactly as for a stopped
+    daemon; this is the half that tells them apart, so a reason never says "not reachable"
+    about an address the app chose not to contact. No network: a URL parse.
+    """
+    try:
+        from src.llm.ollama_lifecycle import refusal
+
+        return refusal()
+    except Exception:  # noqa: BLE001 - a probe must never crash the resolver
+        return None
+
+
+def _ollama_down(refused: str | None) -> str:
+    """The clause every reason uses for an Ollama that is not answering: with the refusal named when there is one."""
+    return "Ollama is NOT reachable" if refused is None else f"Ollama is NOT contacted: {refused}"
+
+
 def _ollama_installed() -> bool:
     """Is the ``ollama`` BINARY present? Cheap (``shutil.which``), no network, and --
     crucially -- truthful while the daemon is stopped."""
@@ -669,6 +689,7 @@ def _result(
     gpu: dict,
     vllm: dict,
     ollama_ok: bool,
+    ollama_refused: str | None = None,
 ) -> dict:
     """Build the resolution payload. ONE builder for EVERY branch, so a field can
     never be present in three returns and silently missing from the fourth (the
@@ -702,7 +723,9 @@ def _result(
         "ollama": {
             "installed": ollama_installed,
             "running": ollama_ok,
-            "can_launch": ollama_installed and not ollama_ok,
+            # Row 234: an OO_OLLAMA_URL on another computer, with the reason; never launchable.
+            "refused": ollama_refused,
+            "can_launch": ollama_installed and not ollama_ok and ollama_refused is None,
         },
         "vllm_can_launch": bool(vllm.get("installed")) and not vllm_running,
     }
@@ -754,10 +777,11 @@ def resolve_backend(*, override: str | None = None) -> dict:
     HONESTY: ``available`` is never assumed true. Both probes return False when
     they fail OR error, so False means "not observed reachable", never "known
     dead" -- the conservative direction; neither can report an unreachable
-    backend as reachable. Two known conflations ride along, named not hidden:
-    ``_ollama_available()`` cannot distinguish a stopped daemon from a
-    misconfigured non-loopback ``OO_OLLAMA_URL``, and ``_vllm_status()``'s
-    ImportError fallback reports ``running: False`` without probing.
+    backend as reachable. ``_ollama_available()`` alone cannot tell a stopped daemon
+    from a non-loopback ``OO_OLLAMA_URL``; ``_ollama_refusal()`` does (row 234), so the
+    reason names the refusal and ``ollama.refused`` carries it. One conflation rides
+    along, named not hidden: ``_vllm_status()``'s ImportError fallback reports
+    ``running: False`` without probing.
 
     Precedence: an explicit ``override``, then ``OO_LLM_BACKEND``, then the operator's
     STORED ``llm_backend`` setting -- any of them naming "ollama"/"vllm" wins (an
@@ -788,6 +812,8 @@ def resolve_backend(*, override: str | None = None) -> dict:
     gpu = detect_gpu()
     vllm = _vllm_status()
     ollama_ok = _ollama_available()
+    ollama_refused = None if ollama_ok else _ollama_refusal()
+    down = _ollama_down(ollama_refused)
     vllm_running = bool(vllm.get("running"))
 
     if chosen_override == "ollama":
@@ -795,13 +821,13 @@ def resolve_backend(*, override: str | None = None) -> dict:
             reason = "explicit override (ollama) -- Ollama is reachable"
         elif vllm_running:
             reason = (
-                "explicit override (ollama), but Ollama is NOT reachable "
+                f"explicit override (ollama), but {down} "
                 "-- vLLM's server IS running; start Ollama, or clear the override "
                 "to use the vLLM that is already up"
             )
         else:
             reason = (
-                f"explicit override (ollama), but Ollama is NOT reachable -- {NO_BACKEND_REASON}"
+                f"explicit override (ollama), but {down} -- {NO_BACKEND_REASON}"
             )
         return _result(
             backend="ollama",
@@ -810,6 +836,7 @@ def resolve_backend(*, override: str | None = None) -> dict:
             gpu=gpu,
             vllm=vllm,
             ollama_ok=ollama_ok,
+            ollama_refused=ollama_refused,
         )
 
     if chosen_override == "vllm":
@@ -833,6 +860,7 @@ def resolve_backend(*, override: str | None = None) -> dict:
             gpu=gpu,
             vllm=vllm,
             ollama_ok=ollama_ok,
+            ollama_refused=ollama_refused,
         )
 
     # auto: vLLM only when a GPU is present AND vLLM is installed AND running.
@@ -844,6 +872,7 @@ def resolve_backend(*, override: str | None = None) -> dict:
             gpu=gpu,
             vllm=vllm,
             ollama_ok=ollama_ok,
+            ollama_refused=ollama_refused,
         )
 
     # Every remaining branch FALLS BACK to Ollama -- so the reason must state
@@ -866,11 +895,15 @@ def resolve_backend(*, override: str | None = None) -> dict:
         # detects "a server started by another means entirely"): a backend IS
         # reachable, so this must NOT read as no_backend.
         reason = (
-            f"{selection}, and Ollama is NOT reachable -- vLLM's server IS running "
+            f"{selection}, and {down} -- vLLM's server IS running "
             "but was not auto-selected (that needs a detected GPU and an installed vLLM)"
         )
     else:
-        reason = f"{selection}, and Ollama is NOT reachable either -- {NO_BACKEND_REASON}"
+        reason = (
+            f"{selection}, and Ollama is NOT reachable either -- {NO_BACKEND_REASON}"
+            if ollama_refused is None
+            else f"{selection}, and {down} -- {NO_BACKEND_REASON}"
+        )
     return _result(
         backend="ollama",
         reason=reason,
@@ -878,6 +911,7 @@ def resolve_backend(*, override: str | None = None) -> dict:
         gpu=gpu,
         vllm=vllm,
         ollama_ok=ollama_ok,
+        ollama_refused=ollama_refused,
     )
 
 
@@ -974,7 +1008,12 @@ def provisioning_backend(r: dict) -> dict:
     elif vllm_installed:
         chosen, why = "vllm", "vLLM is installed here (its server is simply not running yet)"
     elif ollama_installed:
-        chosen, why = "ollama", "Ollama is installed here (its daemon is simply not running yet)"
+        refused = (r.get("ollama") or {}).get("refused")
+        chosen, why = "ollama", (
+            f"Ollama is installed here, but its address is refused: {refused}"  # row 234: never contacted, not "not running"
+            if refused
+            else "Ollama is installed here (its daemon is simply not running yet)"
+        )
     else:
         chosen = hardware_pick
         why = "neither backend is installed yet; this is the one this hardware can use"
