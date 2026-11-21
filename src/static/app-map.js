@@ -758,7 +758,7 @@
         : "";
       return `<details class="oomap-rank" open style="margin-top:8px">
         <summary style="cursor:pointer;font-size:12px" title="${esc(t("The full data behind the map: every area with a value, ranked, none left out. The colours are a picture of this table."))}">${esc(sorted.length === 1 ? t("Ranked table · 1 area with data") : tfr("Ranked table · {n} areas with data", { n: fmtNum(sorted.length, 0) }))}</summary>
-        <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px">
+        <div tabindex="0" role="region" aria-label="${esc(t("Ranked table"))}" style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px">
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr><th scope="col" style="text-align:end;padding:2px 8px">${esc(t("Rank"))}</th>
               <th scope="col" style="text-align:start;padding:2px 8px">${esc(t("Area"))}</th>
