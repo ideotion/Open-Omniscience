@@ -1516,22 +1516,44 @@
       return (k === "direct" || k === "proxy" || k === "pool" || k === "refused") ? k : "unknown";
     }
 
+    // Row 250 (R766): the stored choice could not be read, yet the environment names a
+    // proxy, so the transport above is real but nobody CHOSE protected mode. The server
+    // marks it (transport_summary's "stored"); the popup then never says "protected mode is on".
+    function _storeUnreadable(cfg) {
+      const tr = cfg && cfg.safety && cfg.safety.transport;
+      // Also the other unreadable state: no environment proxy, so the server could not name a
+      // transport at all (transport_summary's {kind: "unknown", reason: "unreadable"}).
+      return !!(tr && (tr.stored === "unreadable" || (tr.kind === "unknown" && tr.reason === "unreadable")));
+    }
+
     // One lane's transport line. A lane that does not use the ethical fetcher leaves on
     // its own connection whatever the mode, so its line depends on the mode only in
     // how loudly it says so: with protected mode on, "direct" is the fact an operator
     // relying on Tor most needs to see before going online.
-    function _laneTransport(lane, kind) {
+    function _laneTransport(lane, kind, unreadable) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const protectedMode = kind === "proxy" || kind === "pool" || kind === "refused";
       if (lane.fetcher === false) {
         // A MIXED lane says so in every mode, not only with protected mode on: its
         // installer check IS a guarded fetch (docs/SECURITY.md's "Mixed." row), so
         // the plain "not through the fetcher" line would deny a path it takes (row H).
+        // Row 250: with the settings unreadable and no environment proxy, the install and the
+        // update are refused (R766) and so is every check the fetcher would make (R117): a mixed
+        // lane must not read as "mostly direct".
+        if (unreadable && kind === "unknown" && lane.mixed) return t("Transport: none — the settings could not be read, so these fetches are refused, never sent direct.");
         if (!protectedMode) {
           if (lane.mixed && lane.id === "update") return t("Mostly not through this app's fetcher or proxy — only the update check uses the fetcher.");
           return lane.mixed
             ? t("Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.")
             : t("Not through this app's fetcher or proxy.");
+        }
+        // Row 250 (R766): settings that could not be read are treated as protected mode, but
+        // nobody chose it, so these lines never say "protected mode is on". The install and the
+        // update themselves are refused outright then (R766), so a mixed lane says that.
+        if (unreadable) {
+          if (lane.mixed && kind !== "refused") return t("Transport: the install or update itself is refused while the settings cannot be read; any check that runs goes through the proxy named in this computer's environment.");
+          if (lane.mixed) return t("Transport: none — the settings could not be read, so these fetches are refused, never sent direct.");
+          return t("Transport: direct, even though the unreadable settings are treated as protected mode — this lane does not use a proxy, so these hosts see your address.");
         }
         // With no usable proxy the installer check is refused, not proxied, so the
         // "mostly direct" line would overclaim; the plain direct line is the true one.
@@ -1545,13 +1567,17 @@
       if (kind === "direct") return t("Transport: direct — protected mode is off, so these hosts see your address.");
       if (kind === "proxy") return t("Transport: through your proxy.");
       if (kind === "pool") return t("Transport: through your proxy pool, one member per host.");
+      if ((kind === "refused" || kind === "unknown") && unreadable) return t("Transport: none — the settings could not be read, so these fetches are refused, never sent direct.");
       if (kind === "refused") return t("Transport: none — protected mode is on with no usable proxy, so these fetches are refused, never sent direct.");
       return t("Transport: unknown — the safety settings could not be read.");
     }
 
     // The line under the list, for the lanes that DO use the fetcher.
-    function _transportHint(kind) {
+    function _transportHint(kind, unreadable) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (unreadable && (kind === "proxy" || kind === "pool")) return t("The settings could not be read, so protected mode is assumed: fetches ride the proxy named in this computer's environment, and a lane never falls back to the clear internet on its own.");
+      if (unreadable && kind === "unknown") return t("The settings could not be read and no proxy is named in this computer's environment, so fetches are refused rather than sent direct.");
+      if (unreadable && kind === "refused") return t("The settings could not be read, so fetches are refused as if protected mode were on: the proxy named in this computer's environment cannot be used.");
       if (kind === "proxy") return t("Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.");
       if (kind === "pool") return t("Fetches ride your proxy pool, one member per host; a lane never falls back to the clear internet on its own.");
       if (kind === "refused") return t("Protected mode is on but no usable proxy is set, so fetches are refused rather than sent direct.");
@@ -1563,7 +1589,7 @@
     // Host names are literal tokens and stay verbatim; every word around them is
     // translated, because a hover is a caveat surface and this project's caveats
     // ship in twelve locales.
-    function _laneHostTitle(lane, kind) {
+    function _laneHostTitle(lane, kind, unreadable) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
@@ -1594,7 +1620,7 @@
         parts.push(tf("then, to judge each candidate it found, on that candidate's own site only: its robots.txt, its home page, at most {n} feed links that page names, a few articles those feeds list, and otherwise its sitemap (the one its robots.txt names, or {paths}) and a few articles it lists. No link to another site is followed, but an article or feed address that redirects can lead to another site, whose robots.txt is read first.",
                       { n: String(lane.trialFeedLinks), paths: (lane.sitemapPaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
       }
-      parts.push(_laneTransport(lane, kind));
+      parts.push(_laneTransport(lane, kind, unreadable));
       // A STEP, not only a host: part of this lane is programs the app starts, and the
       // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).
       if (lane.spawned) {
@@ -1609,7 +1635,7 @@
       return parts.join(" — ");
     }
 
-    function _laneLine(lane, kind) {
+    function _laneLine(lane, kind, unreadable) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const n = (lane.hosts && lane.hosts.length) || lane.hostCount || 0;
       // "n=" rather than "N hosts": the house convention for a count (invariant
@@ -1624,7 +1650,7 @@
       // tabindex="0": the hosts live in the hover, and invariant #17 opens the bubble on
       // hover, KEYBOARD FOCUS or long-press. A plain span never takes focus, so Tab
       // skipped every lane and a keyboard user could not read one host (row H).
-      return `<div><span tabindex="0" title="${esc(_laneHostTitle(lane, kind))}">${esc(t(lane.label))}</span>${count}</div>`;
+      return `<div><span tabindex="0" title="${esc(_laneHostTitle(lane, kind, unreadable))}">${esc(t(lane.label))}</span>${count}</div>`;
     }
 
     function _renderNetLanes(cfg, enabling) {
@@ -1639,7 +1665,8 @@
       const by = {on: [], ask: [], off: [], unknown: []};
       lanes.forEach((l) => by[_laneState(l, cfg, enabling)].push(l));
       const kind = _transportKind(cfg);
-      const line = (l) => _laneLine(l, kind);
+      const unreadable = _storeUnreadable(cfg);
+      const line = (l) => _laneLine(l, kind, unreadable);
       const out = [];
       if (by.on.length) {
         out.push(`<div class="muted" style="margin-top:2px">${esc(t("Runs on every collection pass:"))}</div>`);
@@ -1657,7 +1684,7 @@
         out.push(`<div class="muted" style="margin-top:6px">${esc(t("Could not read whether these are on:"))}</div>`);
         out.push(by.unknown.map(line).join(""));
       }
-      out.push(`<div class="hint" style="margin-top:6px">` + esc(_transportHint(kind)) + `</div>`);
+      out.push(`<div class="hint" style="margin-top:6px">` + esc(_transportHint(kind, unreadable)) + `</div>`);
       box.innerHTML = out.join("");
       // No marking call is needed: app-boot.js's MutationObserver adds
       // .oo-tip-target to every [title] that enters the DOM, which is exactly
