@@ -60,6 +60,10 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # R769: the pull worker compares the exception's text with the two fixed install notes and keeps it only when it IS one of them,
     # so what is stored is always one of those fixed sentences
     "src/llm/pull_queue.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
+    # Row 239 (R696): ``_is_libyaml_nesting_limit(exc)`` compares libyaml's ``problem`` with one fixed string to tell its own nesting
+    # limit (PyYAML 6.0.4, libyaml 0.2.6) from a malformed document, at the helper and its two call sites; the refusal raised is a fixed
+    # sentence, nothing of the exception or the document is stored, served or logged
+    "src/utils/safe_yaml.py": {"the caught exception 'exc' is used outside a scrubbing call": 3},
     # R689 (1): ``_await_unless_stopped`` hands a queued generation's exception from its thread to the waiting caller, which
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
