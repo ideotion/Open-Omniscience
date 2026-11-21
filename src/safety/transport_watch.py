@@ -69,6 +69,9 @@ UNKNOWN = "unknown"
 ANY_PROXY = "protected:*"  # a watch told only "protected" (no proxy known): any proxy matches it
 
 _DISPLAY_KEY = secrets.token_bytes(16)  # per process: the page gets a token of the identity, never the digest itself
+# Per process, and never written anywhere: the identity is KEYED, so no digest of a proxy address can be checked against a guess
+# (``socks5h://127.0.0.1:9050``) by anyone holding a file or a response. A state file keeps only :func:`coarse` of it.
+_ID_KEY = secrets.token_bytes(32)
 
 
 class TransportStopped(RuntimeError):
@@ -106,9 +109,19 @@ def transport_id(settings) -> str:
         return UNKNOWN
     if not bool(settings.is_protected):
         return DIRECT
-    pool = sorted(str(p).strip() for p in (getattr(settings, "http_proxies", None) or []))
-    material = json.dumps([str(getattr(settings, "http_proxy", "") or "").strip(), pool])
-    return "protected:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+    # What the fetcher actually sends through: the pool when it has members (in its configured order, which decides the member
+    # each host is sharded to), else the one proxy. A proxy left set beside a pool is not used, so it is not part of the identity.
+    pool = [str(p).strip() for p in (getattr(settings, "http_proxies", None) or []) if str(p).strip()]
+    material = json.dumps(["pool", pool] if pool else ["proxy", str(getattr(settings, "http_proxy", "") or "").strip()])
+    return "protected:" + hmac.new(_ID_KEY, material.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def coarse(tid: str | None) -> str | None:
+    """What a STATE FILE keeps of an identity: ``"direct"``, ``"unknown"`` or ``"protected"``, never the keyed digest (it is
+    per process, so a later process could not read it anyway, and a file is the wrong place for anything about the proxy)."""
+    if tid is None:
+        return None
+    return "protected" if tid.startswith("protected") else tid
 
 
 def _id_now() -> str:
@@ -156,7 +169,14 @@ def hold_reason(queued_mode: str | None, mode: str | None = None) -> str | None:
     """Why a queued download must be HELD instead of started (R768's queue ruling, R769, R772), or ``None`` when it may start:
     :func:`change_reason` between the transport it was queued under and the one in force, with ``"settings"`` for unreadable.
     ``mode`` is a reading taken once for a whole queue."""
-    reason = change_reason(queued_mode, mode if mode is not None else _id_now())
+    now = mode if mode is not None else _id_now()
+    if now != UNKNOWN and now != DIRECT and queued_mode in (None, "protected", ANY_PROXY):
+        # Queued through a proxy this process cannot name (before a restart: the file keeps only "protected"), or by a build that
+        # recorded no transport at all: nothing proves the proxy now set is the one approved, so it waits for the click.
+        return "unverified"
+    if queued_mode is None and now == DIRECT:
+        return "unverified"  # queued by a build that recorded no transport: it may have been approved through a proxy
+    reason = change_reason(queued_mode, now)
     return "settings" if reason == "unreadable" else reason
 
 

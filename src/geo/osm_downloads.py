@@ -145,10 +145,13 @@ class OsmDownloadEntry:
 
     def state_dict(self) -> dict:
         """What the state file holds for this entry: the fields this build declares, and every key a newer build added."""
-        return {**self._extra, **asdict(self)}
+        from src.safety.transport_watch import coarse
+
+        return {**self._extra, **asdict(self), "queued_mode": coarse(self.queued_mode)}  # R772(b): never the keyed identity
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        d.pop("queued_mode", None)  # R772(b): what the transport was is the server's business; the page gets held_by and a token
         if self._unchecked_error is not None and self.error == self._unchecked_error:
             # The words on disk were written by an earlier build and cannot be checked for a passphrase now: the page gets the
             # marker, the file keeps the words (they come back readable once what the process holds can be read again).
@@ -781,6 +784,11 @@ class OsmDownloadManager:
         entry = self._entry_for(code, name, mirrors=mirrors, expected_sha256=expected_sha256)
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
+        with self._lock:
+            if entry.status == "queued" and entry.held_by is not None:
+                # R772(b): a held download is resumed only by "Resume the queue", whose button names the transport first and whose
+                # click carries that transport's token. A Download or Resume click elsewhere leaves it held, in its place.
+                return entry.to_dict()
         from src.ingest import kill_switch_active
 
         if kill_switch_active():
@@ -799,7 +807,6 @@ class OsmDownloadManager:
 
         qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
-            entry.held_by = None  # a start is the operator's own click: it lifts a hold on this entry
             entry._stopped_seq = None  # type: ignore[attr-defined]
             if self._downloading_now() >= self.max_concurrent:
                 entry.status = "queued"

@@ -2644,13 +2644,14 @@
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }
-      if (!_isDownloadKind(j.kind)) return "";
+      if (!_isDownloadKind(j.kind) && !(j.kind === "osm-update" && j.held_by)) return "";  // R772: a held daily update says why too
       let line = "";
       if (j.state === "queued" && j.held_by) {
         // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
         line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
           : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.")
-          : j.held_by === "proxy" ? t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+          : j.held_by === "proxy" ? t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.")
+          : j.held_by === "unverified" ? t("Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
       } else if (j.state === "paused") {
         if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
         else if (j.paused_by === "operator") line = t("Paused by you.");

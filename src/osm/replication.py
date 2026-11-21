@@ -257,9 +257,13 @@ class GuardedDiffSource:
 
     def fetch_state(self, sequence: int | None = None) -> str:
         url = f"{self.base}/state.txt" if sequence is None else f"{self.base}/{sequence_path(sequence)}.state.txt"
+        from src.safety.transport_watch import TransportStopped
+
         resp = self._get(url)
         try:
-            return resp.text
+            return resp.text  # read through the run's watch, chunk by chunk
+        except TransportStopped as exc:
+            raise DiffRefused(str(exc)) from None  # R768/R769: named here too, never a bare "failed"
         finally:
             resp.close()
 

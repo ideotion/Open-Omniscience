@@ -254,6 +254,11 @@ def _osm_update_jobs() -> list[dict]:
             ),
             "actions": [],
         }
+        if j["state"] == "queued" and j.get("held_by"):
+            # R768/R772: held, named, with the transport "Resume the queue" would use and that transport's token (never the identity).
+            from src.safety.transport_watch import display_token, resume_transport
+
+            row.update(held_by=j["held_by"], resume_transport=resume_transport(), resume_token=display_token())
         if j["state"] == "done" and j.get("outcome") in OUTCOME_SENTENCES:
             row["detail"] = OUTCOME_SENTENCES[j["outcome"]]
         rows.append(row)
@@ -1160,9 +1165,12 @@ def resume_held_queue(body: ResumeQueueBody | None = None) -> dict:
     # The entries are stamped with the identity the token was checked against, never one read again later: a change landing after
     # this check holds them again at the pump, with its own reason.
     tid = mode_now()
-    if body is None or not body.transport or not hmac.compare_digest(body.transport, display_token(tid)):
+    sent = (body.transport if body is not None else "") or ""
+    if not sent or not hmac.compare_digest(sent.encode("utf-8"), display_token(tid).encode("utf-8")):
         raise HTTPException(status_code=409, detail=TRANSPORT_CHANGED)
-    held = dump_manager().resume_held(tid) + osm_manager().resume_held(tid)
+    from src.osm import update_job
+
+    held = dump_manager().resume_held(tid) + osm_manager().resume_held(tid) + update_job.resume_held(tid)
     return {"resumed": held}
 
 

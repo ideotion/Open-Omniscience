@@ -729,9 +729,211 @@ def test_every_panel_names_the_two_reasons_in_every_language():
         "Resume every held download, in queue order, through the transport now in force.",
         tw.PROTECTED_STOP, tw.UNREADABLE_STOP, tw.PROXY_STOP, "Held: the proxy was changed",
         "Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to "
-        "download it through the proxy now set.", TRANSPORT_CHANGED, it.AI_INSTALL_UNREADABLE_NOTE, it.AI_INSTALLER_UNREADABLE_NOTE,
+        "download it through the proxy now set.", TRANSPORT_CHANGED,
+        "Held because the app cannot confirm the transport this download was queued under: it was queued before the app was "
+        "restarted or updated. Resume the queue to download it through the transport now in force.",
+        "Held: queued before a restart", "Held: the transport changed. Resume the queue in the task manager.", it.AI_INSTALL_UNREADABLE_NOTE, it.AI_INSTALLER_UNREADABLE_NOTE,
     ]
     for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
         data = json.loads((_ROOT / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
         for key in keys:
             assert data.get(key), (lang, key[:40])
+
+
+# --------------------------------------------------------------------------- the second reads (R772(b))
+
+
+def _no_switch():
+    return False
+
+
+def test_the_daily_map_update_queue_is_held_by_a_transport_change_and_resumed_only_by_the_click(monkeypatch):
+    """R768/R772 for the OSM daily-update queue: a country queued under one transport never starts under another unasked."""
+    import types
+
+    from src.osm import update_job as U
+
+    U._reset_for_tests()
+    started, release = [], threading.Event()
+
+    def runner(alpha3, **kw):
+        started.append(alpha3)
+        if alpha3 == "ZZZ":
+            release.wait(10)
+        return types.SimpleNamespace(outcome="current", reason="x", from_sequence=1, to_sequence=1, owed_remaining=None)
+
+    _settings(monkeypatch)
+    try:
+        U.request_update("ZZ", consent=True, kill_switch=_no_switch, run=runner)
+        deadline = time.monotonic() + 5
+        while started != ["ZZZ"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        U.request_update("FR", consent=True, kill_switch=_no_switch, run=runner)  # queued over the direct connection
+        _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    finally:
+        release.set()
+    assert U.wait_idle(5) and started == ["ZZZ"]
+    (fra,) = [j for j in U.jobs() if j["alpha3"] == "FRA"]
+    assert fra["state"] == "queued" and fra["held_by"] == "protected" and "_queued_mode" not in fra
+    from src.api.jobs import _osm_update_jobs
+
+    (row,) = [r for r in _osm_update_jobs() if r["id"] == "osm-update:FRA"]
+    assert row["held_by"] == "protected" and row["resume_transport"] == "proxy" and row["resume_token"] == tw.display_token()
+    assert U.resume_held(tw.mode_now()) == 1
+    assert U.wait_idle(5) and started == ["ZZZ", "FRA"]
+    U._reset_for_tests()
+
+
+def test_a_daily_update_stopped_by_a_transport_change_goes_back_to_the_head_held(monkeypatch):
+    from src.osm import update_job as U
+
+    U._reset_for_tests()
+
+    def runner(alpha3, **kw):
+        tw.current_run().bind_transport(tw.DIRECT)  # the run was approved through the proxy; protected mode went off
+        raise RuntimeError("stopped")
+
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    U.request_update("FR", consent=True, kill_switch=_no_switch, run=runner)
+    assert U.wait_idle(5)
+    (fra,) = U.jobs()
+    assert fra["state"] == "queued" and fra["held_by"] == "unprotected"
+    U._reset_for_tests()
+
+
+def test_a_medical_run_is_bound_to_the_transport_of_the_consented_click(monkeypatch):
+    """The corpus scan runs before the first request: a change during it stops the run, named, before anything is sent."""
+    import src.medical.fetch as F
+    from src.api import medical
+
+    seen: list[str | None] = []
+
+    def fake_run_fetch(files, **kw):
+        seen.append(tw.current_run().stop_reason())
+        return {"listed": None}
+
+    monkeypatch.setattr(F, "run_fetch", fake_run_fetch)
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")  # changed after the click
+    ctx = types_ns(stopping=False, set_progress=lambda **kw: None)
+    medical._fetch_worker(ctx, files=1, mode=tw.transport_id(_settings_obj(fetch_mode="protected", http_proxy=_PROXY)))
+    assert seen == ["proxy"]
+    src = (_ROOT / "src" / "api" / "medical.py").read_text(encoding="utf-8")
+    assert "_FETCH_JOB.start(files=files, mode=mode_now())" in src
+
+
+def types_ns(**kw):
+    import types
+
+    return types.SimpleNamespace(**kw)
+
+
+def _settings_obj(**kw):
+    from src.safety.settings import SafetySettings
+
+    return SafetySettings(**kw)
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_the_state_file_and_the_page_never_hold_the_transport_identity(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    monkeypatch.setattr(m, "_launch", lambda e: None)
+    busy = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    busy.status = "downloading"
+    row = m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    assert "queued_mode" not in row and all("queued_mode" not in d for d in m.list())
+    (k,) = m._order
+    assert m._entries[k].queued_mode.startswith("protected:")
+    m._save()
+    stored = json.loads(m.state_path.read_text(encoding="utf-8"))["entries"][k]
+    assert stored["queued_mode"] == "protected"  # the kind only: no digest of the proxy at rest
+    assert tw.transport_id(_settings_obj(fetch_mode="protected", http_proxy=_PROXY))[10:] not in m.state_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+@pytest.mark.parametrize(("stored", "now", "held"), [
+    ("protected", "protected", "unverified"),  # queued through a proxy before a restart: which one cannot be confirmed
+    ("protected", "direct", "unprotected"),
+    (None, "direct", "unverified"),  # queued by a build that recorded no transport
+    (None, "protected", "unverified"),
+    ("direct", "protected", "protected"),
+    ("direct", "direct", None),
+])
+def test_after_a_restart_a_queue_entry_starts_only_when_its_transport_is_certain(monkeypatch, tmp_path, kind, stored, now, held):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    if now == "protected":
+        _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    else:
+        _settings(monkeypatch)
+    m = _manager(kind, tmp_path)
+    launched: list[str] = []
+    monkeypatch.setattr(m, "_launch", lambda e: launched.append(e.key))
+    e = _entry(kind, m, "de" if kind == "dump" else "andorra")
+    e.status, e.queued_mode = "queued", stored
+    m._order.append(e.key)
+    m._pump()
+    assert m._entries[e.key].held_by == held and launched == ([] if held else [e.key])
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_a_download_click_on_a_held_entry_leaves_it_held(monkeypatch, tmp_path, kind):
+    """Only "Resume the queue", whose button names the transport and whose click carries its token, lifts a hold."""
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    monkeypatch.setattr(m, "_launch", lambda e: pytest.fail("a held entry started without the token click"))
+    e = _entry(kind, m, "de" if kind == "dump" else "andorra")
+    e.status, e.held_by, e.queued_mode = "queued", "protected", tw.DIRECT
+    m._order.append(e.key)
+    row = m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    assert row["status"] == "queued" and row["held_by"] == "protected"
+    assert m.resume(e.key)["held_by"] == "protected"
+
+
+def test_the_pool_order_is_part_of_the_transport_and_an_unused_single_proxy_is_not(monkeypatch):
+    a, b = "socks5h://127.0.0.1:9050", "socks5h://127.0.0.1:9150"
+    ab = tw.transport_id(_settings_obj(fetch_mode="protected", http_proxies=[a, b]))
+    assert ab != tw.transport_id(_settings_obj(fetch_mode="protected", http_proxies=[b, a]))  # each host is sharded by the order
+    assert ab == tw.transport_id(_settings_obj(fetch_mode="protected", http_proxies=[a, b], http_proxy=b))
+    assert tw.transport_id(_settings_obj(fetch_mode="protected", http_proxy=a)) != tw.transport_id(
+        _settings_obj(fetch_mode="protected", http_proxy=b))
+
+
+def test_a_stop_while_reading_the_replication_state_is_named(monkeypatch):
+    from src.osm import replication as rep
+
+    class _Resp:
+        status_code = 200
+
+        @property
+        def text(self):
+            raise tw.TransportStopped("unreadable")
+
+        def close(self):
+            pass
+
+    src = rep.GuardedDiffSource("europe", session_factory=lambda url: None)
+    monkeypatch.setattr(src, "_get", lambda url: _Resp())
+    with pytest.raises(rep.DiffRefused) as exc:
+        src.fetch_state()
+    assert str(exc.value) == tw.UNREADABLE_STOP
+
+
+def test_a_token_that_is_not_ascii_is_refused_by_name_not_a_crash(monkeypatch):
+    from fastapi import HTTPException
+
+    import src.ingest as ingest
+    from src.api import jobs
+
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
+    _settings(monkeypatch)
+    with pytest.raises(HTTPException) as exc:
+        jobs.resume_held_queue(jobs.ResumeQueueBody(transport="é" * 16))
+    assert exc.value.status_code == 409 and exc.value.detail == jobs.TRANSPORT_CHANGED

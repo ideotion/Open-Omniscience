@@ -3049,7 +3049,7 @@
         const t = $("dump-table");
         const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         // R768/R769: a download HELD by a transport change says why (the reason on hover); the queue's ONE control resumes it
-        const heldWhy = {settings: ["Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.", "Held: the settings could not be read"], unprotected: ["Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.", "Held: protected mode was switched off"], proxy: ["Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.", "Held: the proxy was changed"]};
+        const heldWhy = {settings: ["Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.", "Held: the settings could not be read"], unprotected: ["Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.", "Held: protected mode was switched off"], proxy: ["Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.", "Held: the proxy was changed"], unverified: ["Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.", "Held: queued before a restart"]};
         const held = (e) => {
           if (e.status !== "queued" || !e.held_by) return "";
           const [long, short] = heldWhy[e.held_by] || ["Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.", "Held: protected mode was switched on"];
@@ -3410,6 +3410,7 @@
       if (d.status === "queued" && d.held_by === "settings") return `<span class="pill warn" title="${esc(t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read."))}">${esc(t("Held: the settings could not be read"))}</span> ${heldBtn}`;
       if (d.status === "queued" && d.held_by === "unprotected") return `<span class="pill warn" title="${esc(t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue."))}">${esc(t("Held: protected mode was switched off"))}</span> ${heldBtn}`;
       if (d.status === "queued" && d.held_by === "proxy") return `<span class="pill warn" title="${esc(t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set."))}">${esc(t("Held: the proxy was changed"))}</span> ${heldBtn}`;
+      if (d.status === "queued" && d.held_by === "unverified") return `<span class="pill warn" title="${esc(t("Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force."))}">${esc(t("Held: queued before a restart"))}</span> ${heldBtn}`;
       if (d.status === "queued" && d.held_by) return `<span class="pill warn" title="${esc(t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy."))}">${esc(t("Held: protected mode was switched on"))}</span> ${heldBtn}`;
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span>`;
       if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${btn("Resume", "resumeOsm")}`;
@@ -3592,7 +3593,8 @@
         for (const j of (d && d.jobs) || []) _osmUpdates[j.alpha3] = j;
       } catch (e) { _osmUpdates = {}; }
     }
-    function _osmUpdLive() { return Object.values(_osmUpdates).some((j) => j.state === "queued" || j.state === "running"); }
+    // A HELD update (R768/R772) waits for "Resume the queue" in the task manager, not for this poll.
+    function _osmUpdLive() { return Object.values(_osmUpdates).some((j) => (j.state === "queued" && !j.held_by) || j.state === "running"); }
     function _osmUpdInner(c) {
       const lane = c.lane;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3602,7 +3604,8 @@
         ? osmCompTf("Daily change files applied through {date}.", { date: ooIsoDate(lane.diff_timestamp) })
         : t("No daily change file has been applied to this country yet.");
       let status = "";
-      if (j && j.state === "queued") status = t("Waiting for its turn.");
+      if (j && j.state === "queued" && j.held_by) status = t("Held: the transport changed. Resume the queue in the task manager.");
+      else if (j && j.state === "queued") status = t("Waiting for its turn.");
       else if (j && j.state === "running") {
         status = j.owed
           ? osmCompTf("Applying change file {done} of {n}…", { done: fmtNum(Math.min((j.applied || 0) + 1, j.owed), 0), n: fmtNum(j.owed, 0) })
@@ -4480,6 +4483,7 @@
       if (d.status === "queued" && d.held_by === "settings") return `<span class="pill warn" title="${esc(t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read."))}">${esc(t("Held: the settings could not be read"))}</span> ${heldBtn}`;
       if (d.status === "queued" && d.held_by === "unprotected") return `<span class="pill warn" title="${esc(t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue."))}">${esc(t("Held: protected mode was switched off"))}</span> ${heldBtn}`;
       if (d.status === "queued" && d.held_by === "proxy") return `<span class="pill warn" title="${esc(t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set."))}">${esc(t("Held: the proxy was changed"))}</span> ${heldBtn}`;
+      if (d.status === "queued" && d.held_by === "unverified") return `<span class="pill warn" title="${esc(t("Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force."))}">${esc(t("Held: queued before a restart"))}</span> ${heldBtn}`;
       if (d.status === "queued" && d.held_by) return `<span class="pill warn" title="${esc(t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy."))}">${esc(t("Held: protected mode was switched on"))}</span> ${heldBtn}`;
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span> <button class="tiny secondary" data-on-click="deleteOsm(${c})">${esc(t("Cancel"))}</button>`;
       const resume = `<button class="tiny secondary" data-on-click="resumeOsm(${c}, this)">${esc(t("Resume"))}</button> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;

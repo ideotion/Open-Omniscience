@@ -176,8 +176,15 @@ class DownloadEntry:
     mirrors: list[str] = field(default_factory=list)
     expected_sha256: str = ""
 
+    def state_dict(self) -> dict:
+        """What the state file holds: the fields, with only the coarse transport kind (R772(b); never the keyed identity)."""
+        from src.safety.transport_watch import coarse
+
+        return {**asdict(self), "queued_mode": coarse(self.queued_mode)}
+
     def to_dict(self) -> dict:
         d = asdict(self)
+        d.pop("queued_mode", None)  # R772(b): what the transport was is the server's business; the page gets held_by and a token
         d["paused_by"] = self.paused_by if self.status == "paused" else None
         d["held_by"] = self.held_by if self.status == "queued" else None
         d["percent"] = (
@@ -279,7 +286,7 @@ class DumpDownloadManager:
             tmp.write_text(
                 json.dumps(
                     {
-                        "entries": {k: asdict(e) for k, e in self._entries.items()},
+                        "entries": {k: e.state_dict() for k, e in self._entries.items()},
                         "queue_order": list(self._order),
                     },
                     indent=2,
@@ -807,6 +814,11 @@ class DumpDownloadManager:
         entry = self._entry_for(wiki, kind, mirrors=mirrors, expected_sha256=expected_sha256)
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
+        with self._lock:
+            if entry.status == "queued" and entry.held_by is not None:
+                # R772(b): a held download is resumed only by "Resume the queue", whose button names the transport first and whose
+                # click carries that transport's token. A Download or Resume click elsewhere leaves it held, in its place.
+                return entry.to_dict()
         from src.ingest import kill_switch_active
 
         if kill_switch_active():
@@ -826,7 +838,6 @@ class DumpDownloadManager:
 
         qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
-            entry.held_by = None  # a start is the operator's own click: it lifts a hold on this entry
             entry._stopped_seq = None  # type: ignore[attr-defined]
             if self._downloading_now() >= self.max_concurrent:
                 # Capacity full: a visible, reorderable queue, never a competing
