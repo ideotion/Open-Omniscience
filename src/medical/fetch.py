@@ -226,6 +226,10 @@ def _record_failure(name: str, error_class: str) -> None:
         s.commit()
 
 
+#: R768/R769/R772: a run stopped by a transport change, by its reason (anything else is the settings that could not be read).
+_TRANSPORT_ERRORS = {"protected": "protected_mode", "unprotected": "protected_mode_off", "proxy": "proxy_changed"}
+
+
 def run_fetch(
     files: int = DEFAULT_FILES,
     *,
@@ -267,7 +271,16 @@ def run_fetch(
         wanted._set(kind).update(cited._set(kind) | named._set(kind))
 
     http = session if session is not None else _session()
-    listed = list_update_files(http)
+    from src.safety.transport_watch import TransportStopped
+
+    try:
+        listed = list_update_files(http)
+    except TransportStopped as exc:
+        # R768/R772: the transport changed between the consented click and the first request (the corpus scan runs first). Named
+        # the same way as a stop between files; nothing was sent, so no fetch is recorded.
+        return {"cited_ids": n_cited, "named_ids": len(named), "listed": None, "remaining": None, "applied": [],
+                "failed": {"file": None, "error": _TRANSPORT_ERRORS.get(exc.reason, "settings_unreadable"), "reason": str(exc)},
+                "failed_files": 0, "stopped": False, "coverage": None}
     done = _done_files()
     todo = [n for n in listed if n not in done][:files]
     applied: list[dict] = []
@@ -286,8 +299,7 @@ def run_fetch(
             if isinstance(exc, TransportStopped):
                 # R768/R769: protected mode was switched on under a direct run, or the settings could not be read. Named, and not
                 # charged to the file; the run never goes on, on that transport or another, until the operator starts it again.
-                errors = {"protected": "protected_mode", "unprotected": "protected_mode_off", "proxy": "proxy_changed"}
-                failed = {"file": name, "error": errors.get(exc.reason, "settings_unreadable"),
+                failed = {"file": name, "error": _TRANSPORT_ERRORS.get(exc.reason, "settings_unreadable"),
                           "reason": str(exc)}
                 break
             if kill_switch_active():

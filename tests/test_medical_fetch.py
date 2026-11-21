@@ -305,6 +305,19 @@ def test_a_transport_change_mid_run_is_named_and_not_charged_to_the_file(medical
         assert s.execute(select(MedicalFile)).first() is None, "a stop by a transport change is not the file's failure"
 
 
+def test_a_transport_change_before_the_listing_is_named_and_is_no_fetch(medical, no_corpus, monkeypatch):
+    """R772(b): the corpus scan runs before the first request; a change in between ends the run named, with nothing listed."""
+    from src.safety.transport_watch import TransportStopped, stop_message
+
+    def _listing(http):
+        raise TransportStopped("proxy")
+
+    monkeypatch.setattr(F, "list_update_files", _listing)
+    out = F.run_fetch(1, session=_site())
+    assert out["listed"] is None and out["applied"] == []
+    assert out["failed"]["error"] == "proxy_changed" and out["failed"]["reason"] == stop_message("proxy")
+
+
 def test_the_session_is_held_to_nlm_and_its_update_directory(monkeypatch):
     seen = {}
     monkeypatch.setattr("src.safety.fetcher.guarded_session", lambda **kw: seen.update(kw) or object())

@@ -937,3 +937,69 @@ def test_a_token_that_is_not_ascii_is_refused_by_name_not_a_crash(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         jobs.resume_held_queue(jobs.ResumeQueueBody(transport="é" * 16))
     assert exc.value.status_code == 409 and exc.value.detail == jobs.TRANSPORT_CHANGED
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_cancel_then_resume_puts_a_held_download_back_in_the_queue_still_held(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    monkeypatch.setattr(m, "_launch", lambda e: pytest.fail("a held entry started without the token click"))
+    e = _entry(kind, m, "de" if kind == "dump" else "andorra")
+    e.status, e.held_by, e.queued_mode = "queued", "proxy", tw.DIRECT
+    m._order.append(e.key)
+    assert m.pause(e.key) and m._entries[e.key].status == "paused"
+    row = m.resume(e.key)
+    assert row["status"] == "queued" and row["held_by"] == "proxy" and e.key in m._order
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_a_paused_download_resumed_under_another_transport_is_held_not_continued(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    approved = tw.mode_now()
+    m = _manager(kind, tmp_path)
+    launched: list[str] = []
+    monkeypatch.setattr(m, "_launch", lambda e: launched.append(e.key))
+    e = _entry(kind, m, "de" if kind == "dump" else "andorra")
+    e.status, e.paused_by, e.queued_mode = "paused", "operator", approved
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")
+    row = m.resume(e.key)
+    assert row["status"] == "queued" and row["held_by"] == "proxy" and launched == []
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)  # the approved transport again: it simply goes on
+    e.status, e.held_by = "paused", None
+    m.resume(e.key)
+    assert launched == [e.key]
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_a_first_click_records_the_transport_even_when_a_slot_is_free(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    monkeypatch.setattr(m, "_launch", lambda e: None)
+    row = m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    assert row["status"] == "downloading" and m._entries[row["key"]].queued_mode == tw.mode_now()
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+@pytest.mark.parametrize(("stored", "held"), [("protected", "unverified"), (None, "unverified"), ("unknown", "settings"), ("direct", None)])
+def test_a_queue_read_back_after_a_restart_shows_what_it_cannot_confirm_as_held(monkeypatch, tmp_path, kind, stored, held):
+    """No pump runs at boot, and none is needed: the hold is set by the read itself, with no settings read and nothing fetched."""
+    m = _manager(kind, tmp_path)
+    e = _entry(kind, m, "de" if kind == "dump" else "andorra")
+    e.status, e.queued_mode = "queued", stored
+    m._order.append(e.key)
+    m._save()
+    import src.safety.settings as settings
+
+    monkeypatch.setattr(settings, "load_settings", lambda: pytest.fail("the read of a state file reads no settings"))
+    again = _manager(kind, tmp_path)
+    assert again._entries[e.key].held_by == held
+

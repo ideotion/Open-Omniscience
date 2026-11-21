@@ -241,6 +241,14 @@ class OsmDownloadManager:
         # "downloading" status is stale -- demote it to "paused" (the partial file
         # is kept and resumable) rather than leaving a phantom blocking a slot.
         for e in self._entries.values():
+            # R772(b): the state file keeps only the KIND of transport. A download queued through a proxy (or by a build that
+            # recorded none) cannot be confirmed in this process, so it shows HELD from the first read, named; no settings are
+            # read here and nothing is fetched (zero-network boot stands). One queued while the settings could not be read too.
+            if e.status == "queued" and e.held_by is None and e.queued_mode in (None, "protected"):
+                e.held_by = "unverified"
+            elif e.status == "queued" and e.held_by is None and e.queued_mode == "unknown":
+                e.held_by = "settings"
+        for e in self._entries.values():
             if e.status == "downloading":
                 e.status = "paused"
                 e.paused_by = "restart"
@@ -781,13 +789,17 @@ class OsmDownloadManager:
         ``mirrors``/``expected_sha256`` (C11, keyword-only, both default empty —
         byte-identical to today) are ONLY applied when a NEW entry is created.
         """
+        with self._lock:
+            known = set(self._entries)
         entry = self._entry_for(code, name, mirrors=mirrors, expected_sha256=expected_sha256)
+        fresh = entry.key not in known  # a first click approves the transport now in force; a later one is checked against it
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
         with self._lock:
-            if entry.status == "queued" and entry.held_by is not None:
+            if entry.held_by is not None and entry.status in ("queued", "paused"):
                 # R772(b): a held download is resumed only by "Resume the queue", whose button names the transport first and whose
-                # click carries that transport's token. A Download or Resume click elsewhere leaves it held, in its place.
+                # click carries that transport's token. A Download or Resume click elsewhere puts it back in the queue, still held.
+                self._requeue_held(entry, entry.held_by)
                 return entry.to_dict()
         from src.ingest import kill_switch_active
 
@@ -803,10 +815,20 @@ class OsmDownloadManager:
                 entry.held_by = None
                 self._save()
             return entry.to_dict()
-        from src.safety.transport_watch import queue_mode
+        from src.safety.transport_watch import hold_reason, queue_mode
 
         qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
+            if entry.held_by is not None and entry.status in ("queued", "paused"):
+                self._requeue_held(entry, entry.held_by)  # held between the check above and this lock
+                return entry.to_dict()
+            if not fresh and entry.status in ("queued", "paused", "error"):
+                # R772(b): an entry approved earlier (queued, paused, failed, or queued before a restart) under another transport
+                # than the one in force -- or one whose transport cannot be confirmed -- is HELD, named, never started on this one.
+                reason = hold_reason(entry.queued_mode, qmode)
+                if reason is not None:
+                    self._requeue_held(entry, reason)
+                    return entry.to_dict()
             entry._stopped_seq = None  # type: ignore[attr-defined]
             if self._downloading_now() >= self.max_concurrent:
                 entry.status = "queued"
@@ -818,12 +840,22 @@ class OsmDownloadManager:
                 return entry.to_dict()
             entry.status = "downloading"  # claim the slot atomically
             entry._launch_mode = qmode  # type: ignore[attr-defined]  # the operator's click, read before the lock
+            entry.queued_mode = qmode  # the transport this download was approved under, kept for a later Resume (R772(b))
             self._seq += 1
             entry._launch_seq = self._seq  # type: ignore[attr-defined]
             entry.error = None
             self._save()
         self._launch(entry)
         return entry.to_dict()
+
+    def _requeue_held(self, entry, reason: str) -> None:
+        """Put ``entry`` in the queue HELD with ``reason`` (R768/R772), keeping its place if it has one. Called with the lock held."""
+        entry.status = "queued"
+        entry.held_by = reason
+        entry.error = None
+        if entry.key not in self._order:
+            self._order.append(entry.key)
+        self._save()
 
     def pause(self, key: str) -> bool:
         key = (key or "").strip().lower()
@@ -834,7 +866,8 @@ class OsmDownloadManager:
                     self._order.remove(key)
                 e.status = "paused"
                 e.paused_by = "operator"
-                e.held_by = None
+                # R772(b): a held entry keeps its hold through Cancel, so a later per-job Resume puts it back in the queue HELD (the
+                # transport named on the "Resume the queue" button first) rather than starting it on the transport now in force.
                 self._save()
                 return True
         stop = self._stops.get(key)

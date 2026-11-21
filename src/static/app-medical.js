@@ -79,6 +79,11 @@
         if (statusEl) statusEl.textContent = _t("Stopped before the end, as asked.");
         return;
       }
+      if (r.listed == null && r.failed && r.failed.reason) {
+        // R772(b): stopped by a transport change before the listing: nothing was asked of NLM, and the server's sentence says why
+        if (statusEl) statusEl.textContent = _t(r.failed.reason);
+        return;
+      }
       const applied = (r.applied || []).length;
       let msg = _tf("Applied {applied} files; {remaining} listed files not applied yet.",
         {applied: applied, remaining: r.remaining || 0});
