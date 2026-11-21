@@ -143,7 +143,10 @@ def performance_report(
     _status = _get_scheduler().status()
     collection = last_pass_figures(_status.get("last_result"), _status.get("last_error"))
     collection.update({
-        "fetch_failed_reasons": _ff_reasons(_status.get("last_result") or {}),
+        # null beside a null count: an empty map there would read as "no failures".
+        "fetch_failed_reasons": (
+            _ff_reasons(_status.get("last_result") or {}) if collection["last_pass_measured"] else None
+        ),
         "method": (
             "The last scrape pass's fetch failures bucketed by cause (per-reason "
             "counts sum to fetch_failed). http_403 is typically the Tor-block "

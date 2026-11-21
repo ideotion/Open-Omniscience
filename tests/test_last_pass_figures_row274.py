@@ -99,4 +99,4 @@ def test_the_report_on_a_fresh_process_says_no_pass(client):
     assert col["last_pass_fetch_failed"] is None
     assert col["last_pass_measured"] is False
     assert col["last_pass_absent_reason"] == LAST_PASS_NO_PASS
-    assert col["fetch_failed_reasons"] == {}
+    assert col["fetch_failed_reasons"] is None
