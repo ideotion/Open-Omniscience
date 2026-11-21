@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,audit/a11y,"Accessibility sweep at three widths, axe report only (0.9 row D S4, row 222)",shipped,PR #2192,docs/audit/a11y-sweep-2026-11-20/,"Vendored axe 4.14.0 offline on seeded state C: 259 runs (all rules in Ink at 1440/768/390 on 16 surfaces; both colour rules in 13 more themes; reader dark palette). 9 surfaces clean; 11 findings from 8 rules, none waived; 7 fix rows proposed, ranked by node count."
