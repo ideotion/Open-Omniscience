@@ -81,6 +81,17 @@ const { project, layer } = build();
   for (const piece of ["2 Rue Fixture, Paris", "adresse", "Salle Fixture", "(fr)", "way/42", "2026-10-01"]) {
     assert.ok(out.markup.includes(piece), "the hover lost its provenance piece " + piece + ": " + out.markup);
   }
+  // Row 268 (invariant #17): the provenance rides a title ATTRIBUTE of the square, the one
+  // #oo-tip opens on hover AND touch long-press -- an SVG <title> child only
+  // ever reached a mouse, so a touch or keyboard reader never saw where the address came from.
+  const attr = /<rect [^>]*title="([^"]*)"[^>]*>/.exec(out.markup);
+  assert.ok(attr, "the square's provenance is not in a title attribute: " + out.markup);
+  for (const piece of ["2 Rue Fixture, Paris", "adresse", "Salle Fixture", "(fr)", "way/42", "2026-10-01"]) {
+    assert.ok(attr[1].includes(piece), "the title attribute lost " + piece + ": " + attr[1]);
+  }
+  assert.ok(!/<title>/.test(out.markup), "a <title> child came back (mouse-only): " + out.markup);
+  const undated = layer({ measured: true, points: [], addresses: [Object.assign({}, addr, { osm_vintage: null })] });
+  assert.ok(/<rect [^>]*title="[^"]*the extract states no date\."/.test(undated.markup), undated.markup);
   assert.strictEqual(out.n, 1);
   const bad = layer({ measured: true, points: [], addresses: [{ address: "x" }, null] });
   assert.ok(!/<rect/.test(bad.markup), "an address with no point was drawn: " + bad.markup);
@@ -182,7 +193,9 @@ const { project, layer } = build();
 // --------------------------------------------------------------------------- //
 (function theTitleNamesThePageAndItsEdition() {
   const out = layer({ measured: true, points: [{ external_id: "en:p1", title: "Rome", edition: "en", lat: 41.9, lon: 12.5, joinable: true }] });
-  assert.ok(/<title>Rome \(en\)<\/title>/.test(out.markup), out.markup);
+  // A title ATTRIBUTE (row 268, invariant #17), so touch and keyboard reach it too.
+  assert.ok(/<circle [^>]*title="Rome \(en\)"[^>]*>/.test(out.markup), out.markup);
+  assert.ok(!/<title>/.test(out.markup), "a <title> child came back (mouse-only): " + out.markup);
 })();
 
 console.log("wiki map layer: all checks passed");
