@@ -1571,7 +1571,11 @@ def _lane_step_hazards(session, fetcher, settings: SchedulerSettings) -> dict:
 def _lane_step_world_discovery(session, fetcher, settings: SchedulerSettings) -> dict:
     from src.catalog.discover_job import advance_world_discovery
 
-    return advance_world_discovery(per_pass=settings.world_discovery_per_pass)
+    return advance_world_discovery(
+        per_pass=settings.world_discovery_per_pass,
+        backlog_bound=settings.world_discovery_backlog_bound,  # R773 (2)
+        country_backlog_bound=settings.world_discovery_country_backlog_bound,
+    )
 
 
 def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> dict:

@@ -1016,7 +1016,7 @@ jobs:
 
       # The file list is written inside the workspace (shard.args), not under $RUNNER_TEMP: on Windows that is a drive-lettered backslash path.
       - name: Plan this shard (which test files it runs)
-        run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/6 --out shard.args
+        run: python scripts/ci_shard.py --table configs/ci_shard_costs_windows.json plan --shard ${{ matrix.shard }}/6 --out shard.args
 
       # One process (row 163: four workers gained nothing here, the cost is I/O serialized below the tests). `-rsfE` as on macOS. The junit report (row 238)
       # is written in the workspace, like shard.args, and is the Windows legs' own per-module seconds: the Linux table under-predicts them (shard 1).
