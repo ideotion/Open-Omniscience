@@ -64,12 +64,12 @@ def _read_catalogue() -> tuple[dict, dict]:
     return data, {"state": "present"}
 
 
-def _usable_row(e: object) -> bool:
+def _usable_row(row: object) -> bool:
     """A row :func:`load_curated_events` keeps: a mapping with a title and an official address, and tags (when given)
     as a list. Anything else is refused, so a malformed row cannot raise out of agenda() or facets() later."""
-    if not (isinstance(e, dict) and e.get("title") and e.get("official_url")):
+    if not (isinstance(row, dict) and row.get("title") and row.get("official_url")):
         return False
-    return e.get("tags") is None or isinstance(e.get("tags"), list)
+    return row.get("tags") is None or isinstance(row.get("tags"), list)
 
 
 def _raw() -> dict:
