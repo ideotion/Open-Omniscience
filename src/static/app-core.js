@@ -1587,6 +1587,13 @@
         parts.push(tf("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}. Any of these addresses that redirects leads to another site too, whose robots.txt is read first.",
                       { paths: (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
       }
+      // R773 (3), row 249: a candidate discovery found is then JUDGED, and the trial reaches the candidate's own
+      // site only. `trialFeedLinks` is TRIAL_FEED_LINKS_MAX and `sitemapPaths` the conventional sitemap
+      // addresses, exactly (tests/test_qualification_trial_disclosure_r773.py ties the three).
+      if (lane.candidateTrial) {
+        parts.push(tf("then, to judge each candidate it found, on that candidate's own site only: its robots.txt, its home page, at most {n} feed links that page names, a few articles those feeds list, and otherwise its sitemap (the one its robots.txt names, or {paths}) and a few articles it lists. No link to another site is followed, but an article or feed address that redirects can lead to another site, whose robots.txt is read first.",
+                      { n: String(lane.trialFeedLinks), paths: (lane.sitemapPaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
+      }
       parts.push(_laneTransport(lane, kind));
       // A STEP, not only a host: part of this lane is programs the app starts, and the
       // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).

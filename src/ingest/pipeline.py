@@ -692,8 +692,14 @@ def ingest_source(
     *,
     fetcher: EthicalFetcher,
     max_items: int = 50,
+    entry_site: str | None = None,
 ) -> dict[str, int]:
     """Ingest a source's RSS/Atom feed (the feed is fetched through the ethical path).
+
+    ``entry_site`` (R773 (3), a candidate's qualification trial on a feed its own page named): only entries whose
+    address is on that site (the domain or a subdomain) are fetched; the others are counted in ``off_site_entries``
+    and never asked for, so a trial reaches the candidate and nothing else. None (every collection pass) changes
+    nothing.
 
     Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline: 1``
     is present ONLY when the kill switch (airplane mode) refused the feed fetch, so an all-zero tally
@@ -756,7 +762,15 @@ def ingest_source(
         return tally
 
     parsed = feedparser.parse(feed_resp.content)
-    links = [e.link for e in parsed.entries if getattr(e, "link", None)][:max_items]
+    links = [e.link for e in parsed.entries if getattr(e, "link", None)]
+    if entry_site:
+        from src.ingest.feed_find import same_site
+
+        kept = [link for link in links if same_site(link, entry_site)]
+        if len(kept) < len(links):
+            tally["off_site_entries"] = len(links) - len(kept)
+        links = kept
+    links = links[:max_items]
     tally["entries"] = len(links)
 
     # P1.8 collector write batching: buffer stores across this feed's items so

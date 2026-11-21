@@ -417,6 +417,43 @@
     // GET /api/sources/qualification/queue, which reads the SAME selectors the pass calls,
     // so this cannot describe an order the pass does not follow. Counts and domains only;
     // the one date is when the next qualified source JOINS the line, never a judging ETA.
+    // R773 (2) and (4), row 249: whether world discovery is waiting for the line above, by the
+    // numbers the ride-along itself reads, and how fast the line has actually moved. The
+    // estimate is the MEASURED pace only: no first verdict in the window means no date, said so.
+    function _qualDiscoveryRows(dg, pc, n, t, tf) {
+      if (!dg || dg.backlog === undefined) return "";   // an older server: say nothing rather than guess
+      const out = [];
+      const state = !dg.ride_along_on
+        ? t("Switched off in the scheduler settings.")
+        : dg.paused
+          ? tf("Paused: {n} sources wait for a first verdict, at or above the bound of {bound}. It resumes by itself once fewer wait.",
+               {n: n(dg.backlog), bound: n(dg.bound)})
+          : (Number(dg.bound) > 0
+            ? tf("Running: {n} sources wait for a first verdict; it pauses at {bound}.", {n: n(dg.backlog), bound: n(dg.bound)})
+            : t("Running, with no bound on the sources waiting."));
+      out.push(`<div>` + ooLabelHtml(esc(t("World discovery")), esc(state)) + `</div>`);
+      const held = dg.held_countries || [];
+      if (dg.ride_along_on && held.length) {
+        // Country CODES with the name in the hover (Q302, ooCountryCell); the count is its own waiting line.
+        const shown = held.slice(0, 20).map((h) => `${ooCountryCell(h.country)} (${n(h.unjudged)})`);
+        const more = held.length > 20 ? " " + esc(tf("and {n} more", {n: n(held.length - 20)})) : "";
+        out.push(`<div class="muted">` + ooLabelHtml(
+          `<span title="${esc(tf("A country with {bound} or more sources waiting is skipped until its line is shorter, then asked again.", {bound: n(dg.country_bound)}))}">${esc(t("Passed over until their line is shorter"))}</span>`,
+          shown.join(", ") + more) + `</div>`);
+      }
+      if (pc && pc.days) {
+        const est = (pc.eta_days === null || pc.eta_days === undefined)
+          ? tf("No source got a first verdict in the last {days} days, so there is no estimate.", {days: n(pc.days)})
+          : tf("{judged} sources got a first verdict in the last {days} days, about {per_day} a day: the {n} waiting would take about {eta} days.",
+               {judged: n(pc.judged), days: n(pc.days), per_day: fmtNum(Number(pc.per_day) || 0, 1),
+                n: n(dg.backlog), eta: fmtNum(Number(pc.eta_days) || 0, 0)});
+        out.push(`<div>` + ooLabelHtml(
+          `<span title="${esc(t("Counted from the qualification records: sources whose first verdict, qualified or disqualified, fell in the window. The time is the waiting count divided by that daily rate, and assumes the pace stays as it was."))}">${esc(t("At the current pace"))}</span>`,
+          esc(est)) + `</div>`);
+      }
+      return out.join("");
+    }
+
     async function loadQualQueue() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = _qualTf;
@@ -425,6 +462,7 @@
       try {
         const d = await api("/api/sources/qualification/queue");
         const nw = d.new || {}, rc = d.rechecks || {}, wt = d.waiting || {}, pp = d.per_pass || {};
+        const dg = d.discovery || {}, pc = d.pace || {};
         const n = (x) => fmtNum(Number(x) || 0, 0);
         // Each domain is ONE unit: inline-block keeps a name together where the line wraps (at the
         // commas, not mid-hostname at a hyphen -- which read as two names in a right-to-left
@@ -438,6 +476,7 @@
             + `</div>`,
           (nw.next && nw.next.length)
             ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(nw.next)) + `</div>` : "",
+          _qualDiscoveryRows(dg, pc, n, t, tf),
           `<div>` + ooLabelHtml(esc(t("2. Due to be checked again")),
             esc(rc.qualified_rechecks_on === false
               ? tf("{d} disqualified (re-checks of qualified sources are switched off)", {d: dqDue})
