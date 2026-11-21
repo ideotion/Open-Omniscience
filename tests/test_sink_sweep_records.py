@@ -357,9 +357,6 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # carries (an int, never words).
         ('_switch_lane_held', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
         ('_switch_lane', 'f"{held.count} connection(s) to this store were still open when the switch was to begin, so nothing was switched; "'): 1,
-        # row 271: the log names the THREADS a refused hold counted (thread names and a fixed state word, built by the store): no
-        # path, no value, no words of an error
-        ('_switch_lane', '_LOG.info("database rebuild: the %s store\'s switch was refused; still open: %s", kind, "; ".join(held.holders) or "(not known)")'): 1,
     },
     # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
     'src/database/encrypt_tool.py': {

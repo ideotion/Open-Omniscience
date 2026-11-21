@@ -789,8 +789,6 @@ def _switch_lane(kind: str, target: Path, finished: Path, kept: Path, watch: Any
     except lane_store.LaneAlreadyHeld:
         raise Declined("running", "this store is already being switched, so nothing was switched") from None
     except lane_store.LaneInUse as held:  # raised only as the hold begins, before anything was changed
-        # row 271: which threads held the store, for whoever reads the log (thread names only: no path, no value, no secret)
-        _LOG.info("database rebuild: the %s store's switch was refused; still open: %s", kind, "; ".join(held.holders) or "(not known)")
         raise Declined(
             "store-in-use",
             f"{held.count} connection(s) to this store were still open when the switch was to begin, so nothing was switched; "

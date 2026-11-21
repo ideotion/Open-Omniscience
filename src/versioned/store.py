@@ -348,7 +348,11 @@ def held_for_swap(kind: str) -> Iterator[None]:
                     break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise LaneInUse(left, _holders(kind, where))
+                    holders = _holders(kind, where)
+                    # Row 271: WHO kept the switch from starting, for whoever reads the log: thread names and fixed state words only
+                    # (no path, no value, no words of an error), so the next refusal anywhere names its holder.
+                    _LOG.info("lane %s: the switch was refused; still open: %s", kind, "; ".join(holders) or "(not known)")
+                    raise LaneInUse(left, holders)
                 _swap_cond.wait(timeout=min(0.05, remaining))
         yield
     finally:

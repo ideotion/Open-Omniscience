@@ -363,7 +363,7 @@ def test_a_file_system_with_no_inode_numbers_gives_an_unknown_identity():
     assert store._known((5, 0)) is None and store._known(None) is None and store._known((5, 7)) == (5, 7)
 
 
-def test_a_refused_hold_names_the_thread_that_holds_each_connection(data_dir):
+def test_a_refused_hold_names_the_thread_that_holds_each_connection(data_dir, caplog):
     # row 271: a refusal says WHO kept the switch from starting, for the log (thread names and states only)
     eng = _real_engine(data_dir)
     done, release = threading.Event(), threading.Event()
@@ -373,6 +373,7 @@ def test_a_refused_hold_names_the_thread_that_holds_each_connection(data_dir):
             done.set()
             release.wait(10)
 
+    caplog.set_level(logging.INFO, logger="versioned.store")
     t = threading.Thread(target=holder, name="row271-holder")
     t.start()
     try:
@@ -381,6 +382,7 @@ def test_a_refused_hold_names_the_thread_that_holds_each_connection(data_dir):
             pass
         assert refused.value.count == 1
         assert refused.value.holders == ("row271-holder (checked out)",)
+        assert any(r.getMessage() == "lane osm: the switch was refused; still open: row271-holder (checked out)" for r in caplog.records)
     finally:
         release.set()
         t.join(10)
