@@ -1559,6 +1559,8 @@
     // ship in twelve locales.
     function _laneHostTitle(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const parts = [];
       // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069). The bubble is
       // plain text in an RTL document under Arabic, so without it the bidi algorithm
@@ -1576,8 +1578,8 @@
       // table can name in advance. Say so, and name each feed address probed on each of
       // them: `probePaths` is FEED_PROBE_PATHS exactly (a test ties the two).
       if (lane.resultSites) {
-        parts.push(t("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:") +
-                   " " + (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · "));
+        parts.push(tf("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}",
+                      { paths: (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
       }
       parts.push(_laneTransport(lane, kind));
       // A STEP, not only a host: part of this lane is programs the app starts, and the

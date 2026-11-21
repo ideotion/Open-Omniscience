@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); मापा गया, प्रति-प्रक्रिया रिज़र्वॉयर, केवल गिनती, कोई स्कोर नहीं",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {interactive} इंटरैक्टिव रूटों में से {breaching} मानदंड से ऊपर हैं",
   "+ Add to draft": "+ ड्राफ़्ट में जोड़ें",
+  "+ each site the search returns": "+ खोज से लौटी हर साइट",
   "+ {n} more (not shown)": "+ {n} और (नहीं दिखाए गए)",
   "+ {n} more keyword not shown.": "+ {n} और कीवर्ड नहीं दिखाया गया।",
   "+ {n} more keywords not shown.": "+ {n} और कीवर्ड नहीं दिखाए गए।",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "स्रोत इस तारीख का केवल एक हिस्सा बताता है",
   "the sources those articles came from": "वे स्रोत जिनसे ये लेख आए",
   "the trail as drawn here": "यहाँ दिखाया गया निशान",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "फिर खोज से लौटी हर साइट: उसकी robots.txt, उसका पेज, उसमें बताए गए फ़ीड लिंक (जो किसी दूसरी साइट पर हो सकते हैं), और उस पर ये फ़ीड पते: {paths}",
   "then return here — the rest is one click.": "फिर यहाँ लौटें — बाक़ी बस एक क्लिक है।",
   "these days {w}; the 1991-2020 values {b}": "ये दिन {w}; 1991-2020 के मान {b}",
   "thin (<{n})": "कम कवरेज (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "फिर खोज से लौटी हर साइट: उसकी robots.txt, उसका पेज, उसमें बताए गए फ़ीड लिंक (जो किसी दूसरी साइट पर हो सकते हैं), और उस पर ये फ़ीड पते:",
-  "+ each site the search returns": "+ खोज से लौटी हर साइट"
+  "🛒 Draft (": "🛒 ड्राफ़्ट ("
 }

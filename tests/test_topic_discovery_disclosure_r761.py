@@ -30,14 +30,14 @@ from urllib.parse import urlsplit
 import pytest
 
 from src.services import duckduckgo as ddg
-from tests.js_source_helper import array_literal
+from tests.js_source_helper import array_literal, function_body
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "static"
 
 HOVER = (
     "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on "
-    "another site), and these feed addresses on it:"
+    "another site), and these feed addresses on it: {paths}"
 )
 ROW = "+ each site the search returns"
 SETTINGS = (
@@ -139,10 +139,10 @@ def test_the_security_row_names_every_probe_and_the_result_sites():
 
 def test_the_hover_and_the_visible_row_say_it_before_the_click():
     core = (STATIC / "app-core.js").read_text(encoding="utf-8")
-    title = core[core.index("function _laneHostTitle(") : core.index("function _laneLine(")]
+    title = function_body(core, "_laneHostTitle")
     assert "lane.resultSites" in title and "lane.probePaths" in title
-    assert 't("' + HOVER + '")' in title
-    line = core[core.index("function _laneLine(") : core.index("function _renderNetLanes(")]
+    assert 'tf("' + HOVER + '"' in title
+    line = function_body(core, "_laneLine")
     assert "lane.resultSites" in line and 't("' + ROW + '")' in line
 
 

@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": ")؛ مقيس، خزان عينات لكل عملية، أعداد فقط، بلا درجة",
   "); {breaching} of {interactive} interactive routes are over the bar": ")؛ {breaching} من {interactive} من المسارات التفاعلية تتجاوز العتبة",
   "+ Add to draft": "+ أضف إلى المسودة",
+  "+ each site the search returns": "+ كل موقع تُعيده نتائج البحث",
   "+ {n} more (not shown)": "+ {n} أخرى (غير معروضة)",
   "+ {n} more keyword not shown.": "[zero]+ {n} كلمة مفتاحية أخرى غير معروضة.[one]+ {n} كلمة مفتاحية أخرى غير معروضة.[two]+ {n} كلمتان مفتاحيتان أخريان غير معروضتين.[few]+ {n} كلمات مفتاحية أخرى غير معروضة.[many]+ {n} كلمة مفتاحية أخرى غير معروضة.[other]+ {n} كلمة مفتاحية أخرى غير معروضة.",
   "+ {n} more keywords not shown.": "+ كلمات مفتاحية أخرى غير معروضة: {n}.",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "لا يذكر المصدر سوى جزء من هذا التاريخ",
   "the sources those articles came from": "المصادر التي جاءت منها تلك المقالات",
   "the trail as drawn here": "الأثر كما يظهر هنا",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "ثم كل موقع تُعيده نتائج البحث: ملف robots.txt الخاص به، وصفحته، وروابط الخلاصات التي تذكرها (وقد تكون على موقع آخر)، وعناوين الخلاصات هذه عليه: {paths}",
   "then return here — the rest is one click.": "ثم عد إلى هنا — البقية نقرة واحدة.",
   "these days {w}; the 1991-2020 values {b}": "هذه الأيام {w}؛ قيم 1991-2020 {b}",
   "thin (<{n})": "تغطية ضعيفة (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "ثم كل موقع تُعيده نتائج البحث: ملف robots.txt الخاص به، وصفحته، وروابط الخلاصات التي تذكرها (وقد تكون على موقع آخر)، وعناوين الخلاصات هذه عليه:",
-  "+ each site the search returns": "+ كل موقع تُعيده نتائج البحث"
+  "🛒 Draft (": "🛒 المسودة ("
 }

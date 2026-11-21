@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); измерено, резервуар на процесс, только подсчёты, без оценки",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {breaching} из {interactive} интерактивных маршрутов превышают порог",
   "+ Add to draft": "+ В черновик",
+  "+ each site the search returns": "+ каждый сайт из результатов поиска",
   "+ {n} more (not shown)": "+ ещё {n} (не показаны)",
   "+ {n} more keyword not shown.": "[one]+ ещё {n} ключевое слово не показано.[few]+ ещё {n} ключевых слова не показаны.[many]+ ещё {n} ключевых слов не показано.[other]+ ещё {n} ключевого слова не показано.",
   "+ {n} more keywords not shown.": "+ не показано ещё ключевых слов: {n}.",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "источник указывает только часть этой даты",
   "the sources those articles came from": "источники, из которых взяты эти статьи",
   "the trail as drawn here": "след в том виде, как он показан здесь",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "затем каждый сайт из результатов поиска: его robots.txt, его страница, указанные на ней ссылки на ленты (они могут быть на другом сайте) и эти адреса лент на нём: {paths}",
   "then return here — the rest is one click.": "затем вернитесь сюда — остальное в один клик.",
   "these days {w}; the 1991-2020 values {b}": "эти дни {w}; значения 1991-2020 {b}",
   "thin (<{n})": "слабо охвачены (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "затем каждый сайт из результатов поиска: его robots.txt, его страница, указанные на ней ссылки на ленты (они могут быть на другом сайте) и эти адреса лент на нём:",
-  "+ each site the search returns": "+ каждый сайт из результатов поиска"
+  "🛒 Draft (": "🛒 Черновик ("
 }

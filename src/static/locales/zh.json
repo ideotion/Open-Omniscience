@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); 测量值，按进程的蓄水池抽样，仅计数，无评分",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {interactive} 个交互式路由中有 {breaching} 个超出标准",
   "+ Add to draft": "+ 加入草稿",
+  "+ each site the search returns": "+ 搜索返回的每个网站",
   "+ {n} more (not shown)": "另有 {n} 个（未显示）",
   "+ {n} more keyword not shown.": "+ 另有 {n} 个关键词未显示。",
   "+ {n} more keywords not shown.": "+ 另有 {n} 个关键词未显示。",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "来源仅载明此日期的一部分",
   "the sources those articles came from": "这些文章的来源",
   "the trail as drawn here": "此处显示的轨迹",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "然后是搜索返回的每个网站：其 robots.txt、页面、页面列出的订阅源链接（可能位于另一个网站），以及该网站上的以下订阅源地址： {paths}",
   "then return here — the rest is one click.": "然后回到这里 — 剩下的只需一次点击。",
   "these days {w}; the 1991-2020 values {b}": "这些日子 {w}；1991-2020 数值 {b}",
   "thin (<{n})": "覆盖薄弱（<{n}）",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "然后是搜索返回的每个网站：其 robots.txt、页面、页面列出的订阅源链接（可能位于另一个网站），以及该网站上的以下订阅源地址：",
-  "+ each site the search returns": "+ 搜索返回的每个网站"
+  "🛒 Draft (": "🛒 草稿 ("
 }

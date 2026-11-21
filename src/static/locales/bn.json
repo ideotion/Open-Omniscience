@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); পরিমাপিত, প্রতি-প্রসেস রিজার্ভয়ার, শুধু গণনা, কোনো স্কোর নয়",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {interactive}টি ইন্টারঅ্যাক্টিভ রুটের মধ্যে {breaching}টি মানদণ্ডের উপরে",
   "+ Add to draft": "+ খসড়ায় যোগ করুন",
+  "+ each site the search returns": "+ অনুসন্ধানে ফেরত আসা প্রতিটি সাইট",
   "+ {n} more (not shown)": "+ আরও {n}টি (দেখানো হয়নি)",
   "+ {n} more keyword not shown.": "+ আরও {n}টি কীওয়ার্ড দেখানো হয়নি।",
   "+ {n} more keywords not shown.": "+ আরও {n}টি কীওয়ার্ড দেখানো হয়নি।",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "উৎস এই তারিখের কেবল একটি অংশ উল্লেখ করে",
   "the sources those articles came from": "যেসব উৎস থেকে এই নিবন্ধগুলো এসেছে",
   "the trail as drawn here": "এখানে দেখানো চিহ্নরেখা",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "তারপর অনুসন্ধানে ফেরত আসা প্রতিটি সাইট: তার robots.txt, তার পাতা, পাতায় উল্লিখিত ফিড লিঙ্ক (যা অন্য সাইটে থাকতে পারে), এবং তার উপর এই ফিড ঠিকানাগুলি: {paths}",
   "then return here — the rest is one click.": "তারপর এখানে ফিরে আসুন — বাকিটা মাত্র এক ক্লিক।",
   "these days {w}; the 1991-2020 values {b}": "এই দিনগুলো {w}; 1991-2020 মান {b}",
   "thin (<{n})": "কম কভারেজ (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "তারপর অনুসন্ধানে ফেরত আসা প্রতিটি সাইট: তার robots.txt, তার পাতা, পাতায় উল্লিখিত ফিড লিঙ্ক (যা অন্য সাইটে থাকতে পারে), এবং তার উপর এই ফিড ঠিকানাগুলি:",
-  "+ each site the search returns": "+ অনুসন্ধানে ফেরত আসা প্রতিটি সাইট"
+  "🛒 Draft (": "🛒 খসড়া ("
 }

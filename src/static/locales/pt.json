@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); medido, reservatório por processo, apenas contagens, sem pontuação",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {breaching} de {interactive} rotas interativas estão acima do limiar",
   "+ Add to draft": "+ Adicionar ao rascunho",
+  "+ each site the search returns": "+ cada site que a busca retorna",
   "+ {n} more (not shown)": "+ {n} mais (não exibidos)",
   "+ {n} more keyword not shown.": "+ {n} palavra-chave a mais não exibida.",
   "+ {n} more keywords not shown.": "+ {n} palavras-chave a mais não exibidas.",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "a fonte indica apenas parte desta data",
   "the sources those articles came from": "as fontes de onde vieram esses artigos",
   "the trail as drawn here": "o rastro como mostrado aqui",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "depois, cada site que a busca retorna: o seu robots.txt, a sua página, os links de feed que ela cita (que podem estar em outro site) e estes endereços de feed nele: {paths}",
   "then return here — the rest is one click.": "depois volte aqui — o resto é um clique.",
   "these days {w}; the 1991-2020 values {b}": "estes dias {w}; os valores 1991-2020 {b}",
   "thin (<{n})": "pouco cobertos (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "depois, cada site que a busca retorna: o seu robots.txt, a sua página, os links de feed que ela cita (que podem estar em outro site) e estes endereços de feed nele:",
-  "+ each site the search returns": "+ cada site que a busca retorna"
+  "🛒 Draft (": "🛒 Rascunho ("
 }

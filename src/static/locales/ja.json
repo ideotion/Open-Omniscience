@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); 測定値、プロセスごとのリザーバ、件数のみ、スコアなし",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {interactive} 件の対話型ルートのうち {breaching} 件が基準を超えている",
   "+ Add to draft": "+ 下書きに追加",
+  "+ each site the search returns": "+ 検索結果の各サイト",
   "+ {n} more (not shown)": "他 {n} 件（非表示）",
   "+ {n} more keyword not shown.": "+ 他 {n} 件のキーワードは非表示です。",
   "+ {n} more keywords not shown.": "+ 他 {n} 件のキーワードは非表示です。",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "ソースはこの日付の一部しか記載していません",
   "the sources those articles came from": "それらの記事の情報源",
   "the trail as drawn here": "ここに表示された跡",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "続いて検索結果の各サイト：その robots.txt、ページ、ページが示すフィードリンク（別のサイトにある場合があります）、そしてそのサイト上の次のフィードアドレス： {paths}",
   "then return here — the rest is one click.": "その後ここに戻ってください — 残りはワンクリックです。",
   "these days {w}; the 1991-2020 values {b}": "この期間 {w}、1991-2020 の値 {b}",
   "thin (<{n})": "手薄（<{n}）",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "続いて検索結果の各サイト：その robots.txt、ページ、ページが示すフィードリンク（別のサイトにある場合があります）、そしてそのサイト上の次のフィードアドレス：",
-  "+ each site the search returns": "+ 検索結果の各サイト"
+  "🛒 Draft (": "🛒 草稿 ("
 }

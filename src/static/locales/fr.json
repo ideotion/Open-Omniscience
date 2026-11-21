@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": ") ; mesuré, réservoir par processus, comptages uniquement, aucun score",
   "); {breaching} of {interactive} interactive routes are over the bar": ") ; {breaching} des {interactive} routes interactives dépassent le seuil",
   "+ Add to draft": "+ Ajouter au brouillon",
+  "+ each site the search returns": "+ chaque site renvoyé par la recherche",
   "+ {n} more (not shown)": "+ {n} de plus (non affichés)",
   "+ {n} more keyword not shown.": "+ {n} autre mot-clé non affiché.",
   "+ {n} more keywords not shown.": "+ {n} autres mots-clés non affichés.",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "la source n'indique qu'une partie de cette date",
   "the sources those articles came from": "les sources d'où viennent ces articles",
   "the trail as drawn here": "le fil tel qu'affiché ici",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "puis chaque site renvoyé par la recherche : son robots.txt, sa page, les liens de flux qu'elle cite (qui peuvent se trouver sur un autre site) et ces adresses de flux sur ce site : {paths}",
   "then return here — the rest is one click.": "puis revenez ici — le reste tient en un clic.",
   "these days {w}; the 1991-2020 values {b}": "ces jours {w} ; les valeurs 1991-2020 {b}",
   "thin (<{n})": "peu couverts (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "puis chaque site renvoyé par la recherche : son robots.txt, sa page, les liens de flux qu'elle cite (qui peuvent se trouver sur un autre site) et ces adresses de flux sur ce site :",
-  "+ each site the search returns": "+ chaque site renvoyé par la recherche"
+  "🛒 Draft (": "🛒 Brouillon ("
 }

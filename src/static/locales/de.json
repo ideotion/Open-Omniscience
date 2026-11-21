@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); gemessen, Reservoir pro Prozess, nur Zählungen, kein Score",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {breaching} von {interactive} interaktiven Routen liegen über der Schwelle",
   "+ Add to draft": "+ Zum Entwurf",
+  "+ each site the search returns": "+ jede Website, die die Suche liefert",
   "+ {n} more (not shown)": "+ {n} weitere (nicht angezeigt)",
   "+ {n} more keyword not shown.": "+ {n} weiteres Schlüsselwort nicht angezeigt.",
   "+ {n} more keywords not shown.": "+ {n} weitere Schlüsselwörter nicht angezeigt.",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "die Quelle gibt nur einen Teil dieses Datums an",
   "the sources those articles came from": "die Quellen, aus denen diese Artikel stammen",
   "the trail as drawn here": "die Belegkette wie hier gezeigt",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "danach jede Website, die die Suche liefert: ihre robots.txt, ihre Seite, die dort genannten Feed-Links (die auf einer anderen Website liegen können) und diese Feed-Adressen darauf: {paths}",
   "then return here — the rest is one click.": "dann kehren Sie hierher zurück — der Rest ist ein Klick.",
   "these days {w}; the 1991-2020 values {b}": "diese Tage {w}; die Werte 1991-2020 {b}",
   "thin (<{n})": "dünn abgedeckt (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ Zoom",
   "－ zoom": "－ Zoom",
   "📍 places": "📍 Orte",
-  "🛒 Draft (": "🛒 Entwurf (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "danach jede Website, die die Suche liefert: ihre robots.txt, ihre Seite, die dort genannten Feed-Links (die auf einer anderen Website liegen können) und diese Feed-Adressen darauf:",
-  "+ each site the search returns": "+ jede Website, die die Suche liefert"
+  "🛒 Draft (": "🛒 Entwurf ("
 }

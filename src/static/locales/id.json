@@ -63,6 +63,7 @@
   "); measured, per-process reservoir, counts only, no score": "); terukur, reservoir per proses, hanya hitungan, tanpa skor",
   "); {breaching} of {interactive} interactive routes are over the bar": "); {breaching} dari {interactive} rute interaktif melewati ambang batas",
   "+ Add to draft": "+ Tambah ke draf",
+  "+ each site the search returns": "+ setiap situs yang dikembalikan pencarian",
   "+ {n} more (not shown)": "+ {n} lagi (tak ditampilkan)",
   "+ {n} more keyword not shown.": "+ {n} kata kunci lain tidak ditampilkan.",
   "+ {n} more keywords not shown.": "+ {n} kata kunci lain tidak ditampilkan.",
@@ -7838,6 +7839,7 @@
   "the source states only part of this date": "sumber hanya menyatakan sebagian dari tanggal ini",
   "the sources those articles came from": "sumber asal artikel-artikel itu",
   "the trail as drawn here": "jejak seperti yang tampil di sini",
+  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}": "lalu setiap situs yang dikembalikan pencarian: robots.txt-nya, halamannya, tautan feed yang disebutkannya (yang mungkin ada di situs lain), dan alamat feed berikut di situs itu: {paths}",
   "then return here — the rest is one click.": "lalu kembali ke sini — sisanya tinggal satu klik.",
   "these days {w}; the 1991-2020 values {b}": "hari-hari ini {w}; nilai 1991-2020 {b}",
   "thin (<{n})": "cakupan tipis (<{n})",
@@ -8518,7 +8520,5 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf (",
-  "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it:": "lalu setiap situs yang dikembalikan pencarian: robots.txt-nya, halamannya, tautan feed yang disebutkannya (yang mungkin ada di situs lain), dan alamat feed berikut di situs itu:",
-  "+ each site the search returns": "+ setiap situs yang dikembalikan pencarian"
+  "🛒 Draft (": "🛒 Draf ("
 }
