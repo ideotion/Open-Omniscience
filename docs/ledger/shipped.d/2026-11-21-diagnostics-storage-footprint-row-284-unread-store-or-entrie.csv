@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,diagnostics/storage-footprint,"row 284: unread store or entries are not measured, never 0",shipped,PR #2245,src/monitoring/forensics.py; src/static/app-library.js; tests/test_storage_footprint_r284.py,"A protected Ollama store gets its own line with bytes null and a reason (never sized another way); refused folders/files mark a line partial; totals.complete false + not_counted; the panel shows not measured, at least and a visible caveat; x12."
