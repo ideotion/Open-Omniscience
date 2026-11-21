@@ -945,43 +945,63 @@ def base_url() -> str:
     return os.getenv("OO_VLLM_URL") or default_vllm_url()
 
 
-def bind_address() -> tuple[str, int]:
+def _listen_target_or_problem(url: str) -> tuple[tuple[str, int] | None, str | None]:
+    """``((host, port), None)`` a loopback ``url`` names, as the server listens on it and the status probe looks at it
+    (row 247), or ``(None, sentence)`` when no server could listen there.
+
+    ONE rule for both, so the probe can never look somewhere the server is not. The port defaults as the client's own
+    URL does (``http`` 80, ``https`` 443); the alias names the loopback rule accepts besides ``localhost`` become their
+    literal address (``localhost`` itself stays the name, as for Ollama under R771). Refused, with a sentence of our
+    own words (never an exception's text): an address that cannot be read, port 0, or an IPv6 address with a zone
+    (``%``), which no server binds as written. The caller has already applied the loopback rule."""
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        return None, (
+            "OO_VLLM_URL cannot be read as an address (a port that is not a number from 0 to 65535, or a broken IPv6"
+            " address), so nothing was started or contacted."
+        )
+    if port is None:
+        port = {"http": 80, "https": 443}.get(parsed.scheme.lower(), 0)
+    if port == 0:
+        return None, (
+            "OO_VLLM_URL has port 0 (or none the app can work out), which would start vLLM on a random port the app"
+            " never finds, so nothing was started or contacted."
+        )
+    host = parsed.hostname or DEFAULT_HOST
+    if "%" in host:
+        return None, "OO_VLLM_URL names an IPv6 address with a zone (%), which vLLM cannot listen on as written; use [::1]."
+    return ({"localhost.localdomain": "127.0.0.1", "ip6-localhost": "::1"}.get(host, host), port), None
+
+
+def bind_address(url: str | None = None) -> tuple[str, int]:
     """``(host, port)`` the vLLM server this app starts listens on: the configured loopback address (row 247, R771's rules).
 
     The server listened on the fixed 127.0.0.1 and ``default_vllm_port()`` whatever ``OO_VLLM_URL`` named, so an address
     on another port, or on ``[::1]``, started a server the client never reached. Now it listens exactly where
-    :func:`base_url` points (the port defaults as the client's own ``http://`` URL does). Raises
-    :class:`VllmLifecycleError`, and nothing is started, for an address not on this computer (R762), whose port cannot be
-    read or is 0, or whose scheme is not ``http`` (the server is started without TLS). The alias names the loopback rule
-    accepts besides ``localhost`` are given as their literal address, so the server never resolves them through DNS.
+    ``url`` (default :func:`base_url`) points, through :func:`_listen_target_or_problem`, the rule the status probe uses too.
+    Raises :class:`VllmLifecycleError`, and nothing is started, for an address not on this computer (R762), one
+    :func:`_listen_target_or_problem` refuses, or whose scheme is not ``http`` (the server is started without TLS).
     """
     from urllib.parse import urlparse
 
     from src.llm.ollama import _loopback_refusal
 
-    url = base_url()
+    url = base_url() if url is None else url
     refused = _loopback_refusal(url, setting="OO_VLLM_URL")
     if refused is not None:
         raise VllmLifecycleError(refused)
-    parsed = urlparse(url)
-    try:
-        port = parsed.port
-    except ValueError:
-        raise VllmLifecycleError(
-            "OO_VLLM_URL has a port that is not a number from 0 to 65535, so vLLM was not started."
-        ) from None
-    if parsed.scheme.lower() != "http":
+    target, problem = _listen_target_or_problem(url)
+    if target is None:
+        raise VllmLifecycleError(problem)
+    if urlparse(url).scheme.lower() != "http":
         raise VllmLifecycleError(
             "OO_VLLM_URL must start with http:// for a vLLM this app starts (it is started without TLS), so it was not started."
         )
-    if port is None:
-        port = 80  # the port the client itself uses for an http:// address with none
-    if port == 0:
-        raise VllmLifecycleError(
-            "OO_VLLM_URL has port 0, which would start vLLM on a random port the app never finds, so it was not started."
-        )
-    host = parsed.hostname or DEFAULT_HOST
-    return {"localhost.localdomain": "127.0.0.1", "ip6-localhost": "::1"}.get(host, host), port
+    return target
 
 
 def shown_address(url: str) -> str:
@@ -1008,7 +1028,7 @@ def is_running(*, timeout: float = 2.0) -> bool:
         return False
 
 
-def port_occupant(*, timeout: float = 2.0) -> dict:
+def port_occupant(*, timeout: float = 2.0, url: str | None = None) -> dict:
     """WHO is on vLLM's port -- ``{"state": ..., "port": int, "detail": str}``.
 
     ``is_running()`` collapses every failure to False, which is right for "is it
@@ -1037,20 +1057,19 @@ def port_occupant(*, timeout: float = 2.0) -> dict:
     from src.llm.ollama import _loopback_refusal
     from src.llm.vllm_client import VllmClient
 
-    url = base_url()
-    parsed = urlparse(url)
-    try:
-        # An address with no port is probed where the client and the server use it (row 247): http's 80, https's 443.
-        port = parsed.port or {"http": 80, "https": 443}.get(parsed.scheme.lower(), 0)
-    except ValueError:  # a malformed port in OO_VLLM_URL: say so, never raise, never connect
-        return {
-            "state": "unknown",
-            "port": 0,
-            "detail": "OO_VLLM_URL has a port that is not a number from 0 to 65535, so nothing was contacted.",
-        }
-    refused = _loopback_refusal(url, setting="OO_VLLM_URL")
+    url = base_url() if url is None else url
+    refused = _loopback_refusal(url, setting="OO_VLLM_URL")  # first: it also fails closed on an address it cannot read
     if refused is not None:
+        try:
+            port = urlparse(url).port or 0
+        except ValueError:
+            port = 0
         return {"state": "refused", "port": port, "detail": refused}
+    # Where the server this app starts listens (row 247): the same rule, so the two never look at different places.
+    target, problem = _listen_target_or_problem(url)
+    if target is None:  # never raise, never connect
+        return {"state": "unknown", "port": 0, "detail": problem}
+    host, port = target
     try:
         if VllmClient(timeout=timeout).is_available():
             return {"state": "vllm", "port": port, "detail": f"a vLLM server is answering at {shown_address(url)}."}
@@ -1058,7 +1077,6 @@ def port_occupant(*, timeout: float = 2.0) -> dict:
         pass
     # Nothing vLLM-shaped answered. Is ANYTHING listening?
     try:
-        host = parsed.hostname or "127.0.0.1"
         family = _socket.AF_INET6 if ":" in host else _socket.AF_INET  # an IPv6 literal ([::1]) needs an IPv6 socket
         with _socket.socket(family) as s:
             s.settimeout(timeout)
@@ -2396,7 +2414,8 @@ def start(
     # R762: an address on another computer is refused BEFORE the GPU is touched (clearing it
     # would unload Ollama's models for a server this app will never start or contact). The same
     # step reads where the server will listen (row 247): the configured address, never a fixed one.
-    bind_host, bind_port = bind_address()
+    url = base_url()  # read ONCE: the bind, the occupancy probe and the answer all name this same address
+    bind_host, bind_port = bind_address(url)
     gpu = detect_gpu()
     if not gpu.get("available"):
         raise VllmUnsupportedError(
@@ -2404,7 +2423,7 @@ def start(
             "Ollama is the CPU-first backend; use it instead."
         )
     if process_alive() or is_running():
-        return {"started": False, "reason": "already running", "base_url": shown_address(base_url())}
+        return {"started": False, "reason": "already running", "base_url": shown_address(url)}
     # Refuse a model whose WEIGHTS alone exceed the card, with the numbers, instead of
     # letting it CUDA-OOM into a silent death (field report 2026-07-29). Acknowledgeable
     # rather than absolute -- the estimate reads the model NAME, so a quantised repo
@@ -2493,7 +2512,7 @@ def start(
     # anywhere was "running: false". A doomed launch should be an honest,
     # actionable refusal, not a subprocess that disappears -- the same principle
     # platform_support() already applies to a doomed install.
-    occupant = port_occupant()
+    occupant = port_occupant(url=url)
     if occupant["state"] == "refused":
         # Not on this computer: nothing to start here, and nothing was contacted (R762).
         raise VllmLifecycleError(occupant["detail"])
@@ -2557,7 +2576,7 @@ def start(
         # What the card looked like at the moment of the attempt, and what the other
         # backend gave back to make it look that way.
         "vram_release": release,
-        "base_url": shown_address(base_url()),
+        "base_url": shown_address(url),
         "log_path": str(server_log_path()) if log_fh is not None else None,
         "note": "starting (model load takes tens of seconds) -- poll is_running() before use",
     }

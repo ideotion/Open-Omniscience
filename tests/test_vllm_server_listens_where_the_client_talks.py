@@ -101,6 +101,10 @@ def test_the_address_is_read_when_asked_not_frozen_at_import(monkeypatch):
         ("http://127.0.0.1:port", "port"),
         ("http://127.0.0.1:0", "port 0"),  # a random port the app never finds
         ("https://127.0.0.1:8001", "http://"),  # started without TLS
+        ("http://0.0.0.0:8001", "must be loopback"),  # every interface: never "local"
+        ("http://[::]:8001", "must be loopback"),
+        ("http://[::1%25lo]:8001", "zone"),  # no server binds a scoped address as written
+        ("http://[::1:8001", "OO_VLLM_URL"),  # a broken IPv6 address: a sentence, never a ValueError
     ],
 )
 def test_an_address_the_server_cannot_serve_starts_nothing(url, said, monkeypatch, spawned):
@@ -179,12 +183,22 @@ def test_an_address_with_no_port_is_probed_on_the_port_the_server_uses(monkeypat
     assert seen == [("127.0.0.1", 80)]
 
 
-@pytest.mark.parametrize(("url", "ipv6"), [("http://[::1]:9002", True), ("http://127.0.0.1:9002", False)])
-def test_the_probe_opens_the_socket_family_of_the_address(url, ipv6, monkeypatch):
-    """Runs where IPv6 is absent too: an IPv6 literal gets an AF_INET6 socket, an IPv4 one AF_INET."""
+@pytest.mark.parametrize(
+    ("url", "ipv6", "address"),
+    [
+        ("http://[::1]:9002", True, ("::1", 9002)),
+        ("http://127.0.0.1:9002", False, ("127.0.0.1", 9002)),
+        ("http://ip6-localhost:9004", True, ("::1", 9004)),  # probed at the literal the server listens on, not the name
+        ("http://localhost.localdomain:9003", False, ("127.0.0.1", 9003)),
+    ],
+)
+def test_the_probe_opens_the_socket_family_of_the_address(url, ipv6, address, monkeypatch):
+    """Runs where IPv6 is absent too: an IPv6 literal gets an AF_INET6 socket, an IPv4 one AF_INET, at the very address
+    the server is started on (``bind_address``)."""
     import socket
 
     families: list[int] = []
+    addresses: list[tuple] = []
     real_family6, real_family4 = socket.AF_INET6, socket.AF_INET
 
     class _Sock:
@@ -201,9 +215,39 @@ def test_the_probe_opens_the_socket_family_of_the_address(url, ipv6, monkeypatch
             pass
 
         def connect_ex(self, address):
+            addresses.append(address)
             return 111
 
     monkeypatch.setattr(socket, "socket", _Sock)
     monkeypatch.setenv("OO_VLLM_URL", url)
     _REAL_PORT_OCCUPANT(timeout=0.2)
     assert families[-1] == (real_family6 if ipv6 else real_family4)  # the raw probe (the httpx check opens its own first)
+    assert addresses == [address] == [V.bind_address()]
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:0", "http://[::1:8001", "http://[::1%25lo]:8001"])
+def test_the_probe_answers_an_address_it_cannot_use_without_contacting_anything(url, monkeypatch):
+    """Port 0 is never probed as 80; a broken or scoped IPv6 address is a sentence, never a ValueError or a connect."""
+    import socket
+
+    def no_socket(*a, **k):
+        raise AssertionError("a socket was opened for an address the server could not listen on")
+
+    monkeypatch.setattr(socket, "socket", no_socket)
+    monkeypatch.setattr(socket, "create_connection", no_socket)
+    monkeypatch.setenv("OO_VLLM_URL", url)
+    occ = _REAL_PORT_OCCUPANT(timeout=0.2)
+    assert occ["state"] in {"unknown", "refused"} and occ["port"] == 0 and occ["detail"], occ
+
+
+def test_a_start_reads_the_address_once(monkeypatch, spawned):
+    """The bind, the occupancy check and the answer name ONE address, even if the setting changes during the start."""
+    argvs, popen = spawned
+    urls = iter(["http://127.0.0.1:9101", "http://127.0.0.1:9999", "http://127.0.0.1:9999", "http://127.0.0.1:9999"])
+    monkeypatch.setattr(V, "base_url", lambda: next(urls))
+    probed: list[str | None] = []
+    monkeypatch.setattr(V, "port_occupant", lambda **kw: probed.append(kw.get("url")) or {"state": "free", "port": 0, "detail": ""})
+    out = V.start("my/model", popen=popen)
+    assert _flag(argvs[0], "--port") == "9101"
+    assert probed == ["http://127.0.0.1:9101"]
+    assert "9101" in out["base_url"]
