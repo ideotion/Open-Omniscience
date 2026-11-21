@@ -103,4 +103,55 @@ const evil = { caveat: "<img src=x onerror=alert(1)>", caveat_i18n: [{ t: "skipp
 check(!fr.ooSaidHtml(evil, "caveat").includes("<b>"), "a frame value is escaped");
 check(!fr.ooSaidHtml({ caveat: evil.caveat }, "caveat").includes("<img"), "the English fallback is escaped");
 
+// a frame nested in a hole (a hardware reason quoting each probe) renders each part in the page's language
+FR["{short}, and no accelerator ({probe})."] = "{short}, et aucun accélérateur ({probe}).";
+FR["{n} cores, below {need}"] = "{n} cœurs, sous {need}";
+const nested = {
+  reason: "2 cores, below 4, and no accelerator (nvidia-smi timed out).",
+  reason_i18n: [{ t: "{short}, and no accelerator ({probe}).",
+                  v: { short: { t: "{n} cores, below {need}", v: { n: 2, need: 4 } }, probe: "nvidia-smi timed out" } }],
+};
+check(fr.ooSaidText(nested, "reason") === "N2 cœurs, sous N4, et aucun accélérateur (nvidia-smi timed out).", "a nested frame renders inside its hole");
+check(en.ooSaidText(nested, "reason") === "N2 cores, below N4, and no accelerator (nvidia-smi timed out).", "and on the English page");
+const halfKnown = { reason: "x", reason_i18n: [{ t: "{short}, and no accelerator ({probe}).", v: { short: { t: "Unknown {n}", v: { n: 1 } }, probe: "p" } }] };
+check(fr.ooSaidText(halfKnown, "reason").startsWith("Texte du serveur, en anglais"), "an unknown nested template labels the whole as English");
+const objValue = { reason: "x", reason_i18n: [{ t: "skipped: {why}", v: { why: { notAFrame: 1 } } }] };
+check(!fr.ooSaidText(objValue, "reason").includes("[object"), "an object that is not a frame is never printed");
+// two frames read one after the other
+const two = { reason: "a b", reason_i18n: [{ t: "Stored with care.", v: {} }, { t: "scanned", v: {} }] };
+check(fr.ooSaidText(two, "reason") === "Conservé avec soin. numérisé", "frames join with a space");
+
+// THE READER PAGE'S PORT (reader.js has no app-core.js): rdSaidHtml gives the same answer as ooSaidHtml on every case.
+const READER = require("fs").readFileSync(require("path").join(__dirname, "..", "src", "static", "reader.js"), "utf8");
+function extractFrom(SRC, name) {
+  const at = SRC.indexOf("function " + name + "(");
+  assert.ok(at !== -1, name + " not found in reader.js -- was it renamed?");
+  const open = SRC.indexOf("{", SRC.indexOf(")", at));
+  let d = 0, j = open;
+  for (; j < SRC.length; j++) { if (SRC[j] === "{") d++; else if (SRC[j] === "}") { d--; if (d === 0) { j++; break; } } }
+  return SRC.slice(at, j);
+}
+function makeReader(lang, table) {
+  const OOI18N = {
+    current: () => lang,
+    t: (s) => (table[s] != null ? table[s] : s),
+    tf: (s, v) => String(table[s] != null ? table[s] : s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)),
+  };
+  const src =
+    "const esc = (s) => (s == null ? '' : String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c])));\n" +
+    "function fmtNum(v) { return 'N' + v; }\n" +
+    ["T", "TF", "uiLang", "rdSaid", "rdSaidHtml"].map((f) => extractFrom(READER, f)).join("\n") +
+    "\nreturn { rdSaidHtml };";
+  return new Function("window", "localStorage", src)({ OOI18N }, { getItem: () => null });
+}
+const rfr = makeReader("fr", FR), ren = makeReader("en", {}), rar = makeReader("ar", {});
+const CASES = [framed, reason, newer, { caveat: "Stored with care." }, raw, nested, halfKnown, two, evil, { caveat: evil.caveat }, {}];
+for (const c of CASES) {
+  for (const f of ["method", "reason", "caveat"]) {
+    check(rfr.rdSaidHtml(c, f) === fr.ooSaidHtml(c, f), "reader.js agrees with app-core.js (fr, " + f + "): " + JSON.stringify(c).slice(0, 60));
+    check(ren.rdSaidHtml(c, f) === en.ooSaidHtml(c, f), "reader.js agrees with app-core.js (en, " + f + ")");
+    check(rar.rdSaidHtml(c, f) === ar.ooSaidHtml(c, f), "reader.js agrees with app-core.js (ar, " + f + ")");
+  }
+}
+
 console.log(n + " checks, all checks passed");

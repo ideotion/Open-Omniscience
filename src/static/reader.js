@@ -60,6 +60,47 @@
       .replace("\u0001", function () { return String(label); })
       .replace("\u0002", function () { return String(value == null ? "" : value); });
   }
+  // A SENTENCE THE SERVER WROTE (row 206), the SPA's ooSaidHtml ported: this page has no app-core.js, so the logic
+  // is copied, not imported; KEEP THE TWO IN STEP -- tests/server_text_node_test.js runs both over the same cases.
+  // The keyed frames render in the page's language (a frame nested in a hole too); a keyed constant is looked up;
+  // anything else is English, shown behind the visible "Server text, in English" label and never passed off as
+  // translated. A frame's value is data, unless the frame names it in `tr`.
+  function rdSaid(d, field) {
+    var lang = uiLang();
+    var frames = d && d[field + "_i18n"];
+    if (Array.isArray(frames)) {
+      var unkeyed = false;
+      var one = function (f, depth) {
+        if (T(f.t) === f.t) unkeyed = true;
+        var v = {}, src = (f.v && typeof f.v === "object") ? f.v : {};
+        var tr = Array.isArray(f.tr) ? f.tr : [];
+        Object.keys(src).forEach(function (k) {
+          var x = src[k];
+          if (x == null) return;
+          if (typeof x === "object" && typeof x.t === "string" && depth < 4) v[k] = one(x, depth + 1);
+          else if (typeof x === "object") return;
+          else if (tr.indexOf(k) !== -1) v[k] = T(String(x));
+          else if (typeof x === "number") v[k] = fmtNum(x);
+          else v[k] = String(x);
+        });
+        return TF(f.t, v);
+      };
+      var out = frames.filter(function (f) { return f && typeof f.t === "string"; })
+        .map(function (f) { return one(f, 0); }).filter(Boolean).join(" ");
+      if (out) return { text: out, english: unkeyed && lang !== "en" };
+    }
+    var s = (d && d[field] != null) ? String(d[field]) : "";
+    if (!s) return { text: "", english: false };
+    var tr2 = T(s);
+    return { text: tr2, english: tr2 === s && lang !== "en" };
+  }
+  function rdSaidHtml(d, field) {
+    var r = rdSaid(d, field);
+    if (!r.english) return esc(r.text);
+    return esc(TF("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" }))
+      .replace("\u0001", function () { return esc(T("Server text, in English")); })
+      .replace("\u0002", function () { return '<span lang="en" dir="ltr">' + esc(r.text) + "</span>"; });
+  }
   function uiLang() {
     try {
       return (window.OOI18N && window.OOI18N.current && window.OOI18N.current())
@@ -493,7 +534,7 @@
   });
 
   function renderSentiment(pane, d) {
-    var caveat = '<p class="r-caveat">' + esc((d && d.caveat) || "") + "</p>";
+    var caveat = '<p class="r-caveat">' + rdSaidHtml(d, "caveat") + "</p>";
     if (!d || !d.n_scored) {
       pane.innerHTML = '<p class="r-muted">No tone score is stored for this article.</p>' + caveat;
       return;
@@ -512,7 +553,7 @@
       + '<span class="r-muted">(−1 negative … +1 positive)</span></p>'
       + (chips ? "<p>" + chips + "</p>" : "")
       + english
-      + '<p class="r-method">' + esc(d.method || "") + "</p>"
+      + '<p class="r-method">' + rdSaidHtml(d, "method") + "</p>"
       + caveat;
   }
 
@@ -562,8 +603,8 @@
   // count; counts only, never a score. Data: /api/insights/graph?article_ids=.
   function renderMindmap(pane, d) {
     var nodes = (d && d.nodes) || [];
-    var method = '<p class="r-method">' + esc((d && d.method) || "") + "</p>";
-    var caveat = '<p class="r-caveat">' + esc((d && d.caveat) || "") + "</p>";
+    var method = '<p class="r-method">' + rdSaidHtml(d, "method") + "</p>";
+    var caveat = '<p class="r-caveat">' + rdSaidHtml(d, "caveat") + "</p>";
     if (!nodes.length) {
       pane.innerHTML = '<h2 class="r-h2">Mindmap</h2>'
         + '<p class="r-muted">Not enough keywords indexed to draw a map yet.</p>' + method + caveat;

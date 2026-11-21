@@ -36,6 +36,7 @@ from src.database.models import (
     Source,
 )
 from src.database.stand_in import not_a_stand_in_article_id
+from src.shared_text import said
 
 # Chunk size for id IN(...) queries -- stay under SQLite's historical ~999
 # bound-variable ceiling, the same repo-wide invariant as latest.py:_SQL_IN_CHUNK
@@ -1587,21 +1588,19 @@ def article_graph(
     )
     terms = kw.get("terms", [])
     n_articles = kw.get("n_articles", 0)
-    method = (
-        "Keywords of the selected article(s), sized by mention count, radiating "
-        "from the most-mentioned term (deterministic, always outward)."
-    )
+    method = said("method", _ARTICLE_MAP_METHOD)
     if not terms:
         empty = {
             "level": "article", "nodes": [], "edges": [], "n_articles": n_articles,
-            "method": method,
-            "caveat": "Too few keywords indexed for this selection to draw a map yet.",
+            **method,
+            **said("caveat", "Too few keywords indexed for this selection to draw a map yet."),
         }
         # If the emptiness is because the set is in an unsegmented language, say so
         # (the honest "why", not a bare empty map).
         if kw.get("unsegmented"):
             empty["unsegmented"] = kw["unsegmented"]
             empty["caveat"] = kw["unsegmented"]["note"]
+            empty.pop("caveat_i18n", None)  # the note is what the caveat says now, not the keyed sentence
         return empty
     def _label(tdat: dict) -> dict:
         return {k: tdat[k] for k in _LABEL_FIELDS if tdat.get(k) not in (None, "", [], {})}
@@ -1628,8 +1627,8 @@ def article_graph(
     graph = {
         "level": "article", "term": center["term"],
         "nodes": nodes, "edges": edges, "n_articles": n_articles,
-        "method": method,
-        "caveat": "A concept map of the keywords present, not a co-occurrence network; not causation.",
+        **method,
+        **said("caveat", "A concept map of the keywords present, not a co-occurrence network; not causation."),
     }
     if kw.get("unsegmented"):  # a mixed-language set: keep the map but disclose the gap
         graph["unsegmented"] = kw["unsegmented"]
@@ -2052,6 +2051,10 @@ def corpus_source_language_facets(session, *, article_ids: list[int]) -> dict:
     return {"sources": sources, "languages": languages}
 
 
+_ARTICLE_MAP_METHOD = (
+    "Keywords of the selected article(s), sized by mention count, radiating "
+    "from the most-mentioned term (deterministic, always outward)."
+)
 _SENTIMENT_CAVEAT = (
     "Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English "
     "articles are unreliable (see the English share). Counts only, never a verdict."
@@ -2067,7 +2070,7 @@ def corpus_sentiment(session, *, article_ids: list[int]) -> dict:
 
     if not article_ids:
         return {"n_articles": 0, "n_scored": 0, "labels": {}, "mean_score": None,
-                "english_scored": 0, "caveat": _SENTIMENT_CAVEAT}
+                "english_scored": 0, **said("caveat", _SENTIMENT_CAVEAT)}
     rows = (
         session.query(Article.sentiment_label, Article.sentiment_score, Article.language)
         .filter(Article.id.in_(article_ids))
@@ -2090,8 +2093,8 @@ def corpus_sentiment(session, *, article_ids: list[int]) -> dict:
         "labels": dict(labels),
         "mean_score": round(sum(scores) / n, 3) if n else None,
         "english_scored": english_scored,
-        "method": "Per-article VADER valence (stored at ingest), aggregated over the matched set.",
-        "caveat": _SENTIMENT_CAVEAT,
+        **said("method", "Per-article VADER valence (stored at ingest), aggregated over the matched set."),
+        **said("caveat", _SENTIMENT_CAVEAT),
     }
 
 

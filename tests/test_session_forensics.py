@@ -181,7 +181,8 @@ def test_wal_state_before_open_separates_absent_from_unreadable(dd):
 
     (dd / "open_omniscience.db-wal").write_bytes(b"w" * 777)
     present = forensics.wal_state_before_open()
-    assert present == {"bytes": 777, "state": "present", "reason": present["reason"]}
+    assert present == {"bytes": 777, "state": "present", "reason": present["reason"],
+                       "reason_i18n": present["reason_i18n"]}
     assert present["state"] == "present" and present["bytes"] == 777
 
     # The third state stays honestly unmeasured -- never coerced to 0, which would

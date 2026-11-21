@@ -32,7 +32,7 @@ from typing import Protocol, runtime_checkable
 
 from src.llm.ollama import GenerationResult, reason_first, total_ram_gb
 from src.monitoring.secret_scrub import log_failure, record_text
-from src.shared_text import said
+from src.shared_text import frame, frame_of, said, said_frames
 
 _LOG = logging.getLogger(__name__)
 
@@ -100,9 +100,9 @@ def detect_gpu() -> dict:
             timeout=5,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return {"available": False, "reason": "nvidia-smi not found or timed out"}
+        return {"available": False, **said("reason", "nvidia-smi not found or timed out")}
     if out.returncode != 0 or not out.stdout.strip():
-        return {"available": False, "reason": "nvidia-smi returned no GPU"}
+        return {"available": False, **said("reason", "nvidia-smi returned no GPU")}
     line = out.stdout.strip().splitlines()[0]
     parts = [p.strip() for p in line.split(",")]
     name = parts[0] if parts else None
@@ -197,6 +197,44 @@ IMPRACTICAL_CONSEQUENCE = (
     "hours, and run the machine into sustained thermal throttling"
 )
 
+_NOT_ARM64 = (
+    "macOS, but Python reports architecture {machine} rather than arm64 -- either an Intel Mac (no unified "
+    "memory) or an x86_64 interpreter running under Rosetta; install an arm64 Python to use Apple Silicon here"
+)
+# The capability's reason is one or two keyed frames (src/shared_text.py, row 206): what was measured, then, where
+# AI features are off or overridden, what that means. The probes' own reasons sit in its holes as frames.
+_OVERRIDE_ON = "Enabled anyway by the operator override."
+_OVERRIDE_OFF = "AI features default to off; the override turns them on."
+_UNREAD_FLOOR = (
+    "No usable accelerator was detected ({probe}), and this machine's {missing} could not be read, so the "
+    "{cores}-core / {ram} GB floor could not be checked either."
+)
+_BELOW_FLOOR = "{short}, and no usable accelerator ({probe}) -- {consequence}."
+_CORES_SHORT = "{cores} CPU core(s), below the {need} needed"
+_RAM_SHORT = "{ram} GB RAM, below the {need} GB needed"
+_BOTH_SHORT = "{first} and {second}"
+_NVIDIA_OK = "a dedicated NVIDIA GPU is present -- local inference is practical here"
+_APPLE_UNREAD = (
+    "Apple Silicon detected, but its unified memory could not be read, so the {floor} GB floor could not be checked."
+)
+_APPLE_OK = (
+    "Apple Silicon with {ram} GB unified memory (>= the {floor} GB floor) -- unified memory is well suited to "
+    "local inference"
+)
+_APPLE_LOW = (
+    "Apple Silicon with {ram} GB unified memory -- practical, though below the {floor} GB that fits an 8B-class "
+    "model alongside the app with headroom"
+)
+_CPU_OK = (
+    "{cores} CPU cores and {ram} GB RAM clear the {need_cores}-core / {need_ram} GB floor -- local inference is "
+    "practical here, on the CPU"
+)
+
+
+def _override_said(requested: bool) -> dict:
+    return frame(_OVERRIDE_ON) if requested else frame(_OVERRIDE_OFF)
+
+
 _CAPABILITY_METHOD = (
     "nvidia-smi probe for a dedicated NVIDIA GPU; platform.system()/machine() "
     "plus total system RAM for Apple Silicon unified memory. Read-only, no network."
@@ -232,11 +270,11 @@ def detect_apple_silicon() -> dict:
         # The reason rides the capability dict into the edition's gate record, the backup and the diagnostics bundle: the class
         # only. The failure's own words are in the scrubbed log line.
         log_failure(_LOG, "backend: the platform probe failed", exc, level=logging.WARNING)
-        return {"available": False, "reason": f"platform probe failed ({type(exc).__name__})"}
+        return {"available": False, **said("reason", "platform probe failed ({error})", error=type(exc).__name__)}
     if system != "Darwin":
         return {
             "available": False,
-            "reason": f"not macOS (platform.system() = {system or 'unknown'!r})",
+            **said("reason", "not macOS (platform.system() = {system})", system=repr(system or "unknown")),
         }
     if machine.lower() not in ("arm64", "aarch64"):
         # Named specifically, because "not Apple Silicon" on a Mac is a different
@@ -248,12 +286,7 @@ def detect_apple_silicon() -> dict:
         # reports -- so that is what the sentence says.
         return {
             "available": False,
-            "reason": (
-                f"macOS, but Python reports architecture {machine or 'unknown'!r} rather "
-                "than arm64 -- either an Intel Mac (no unified memory) or an x86_64 "
-                "interpreter running under Rosetta; install an arm64 Python to use "
-                "Apple Silicon here"
-            ),
+            **said("reason", _NOT_ARM64, machine=repr(machine or "unknown")),
         }
     return {
         "available": True,
@@ -267,7 +300,7 @@ def _capability(
     practical: bool,
     kind: str | None,
     name: str | None,
-    reason: str,
+    reason: dict,
     overridden: bool,
     override_requested: bool,
     vram_mb: int | None = None,
@@ -285,7 +318,7 @@ def _capability(
         "name": name,
         "vram_mb": vram_mb,
         "unified_ram_gb": unified_ram_gb,
-        "reason": reason,
+        **reason,
         **said("method", _CAPABILITY_METHOD),
         **said("caveat", _CAPABILITY_CAVEAT),
         "overridden": overridden,
@@ -403,12 +436,12 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
             gpu = detect_gpu()
         except Exception as exc:  # noqa: BLE001 - a failed probe is never a "no GPU"
             log_failure(_LOG, "backend: the GPU probe failed", exc, level=logging.WARNING)
-            gpu = {"available": False, "reason": f"GPU probe failed ({type(exc).__name__})"}
+            gpu = {"available": False, **said("reason", "GPU probe failed ({error})", error=type(exc).__name__)}
     try:
         apple = detect_apple_silicon()
     except Exception as exc:  # noqa: BLE001 - likewise; degrade, never crash
         log_failure(_LOG, "backend: the Apple Silicon probe failed", exc, level=logging.WARNING)
-        apple = {"available": False, "reason": f"Apple Silicon probe failed ({type(exc).__name__})"}
+        apple = {"available": False, **said("reason", "Apple Silicon probe failed ({error})", error=type(exc).__name__)}
 
     # ---- ruling 15's HARD floor, applied where it actually decides something.
     #
@@ -432,22 +465,19 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
         # machine has no GPU" are different claims, and only one of them was
         # measured -- collapsing them is the fabrication the probe-failure tests
         # exist to catch.
-        probe_why = f"{gpu.get('reason') or 'no dedicated NVIDIA GPU detected'}; {apple.get('reason')}"
+        probe_why = frame("{gpu}; {apple}", gpu=frame_of(gpu) or frame("no dedicated NVIDIA GPU detected"),
+                          apple=frame_of(apple))
         if cores is None or ram_gb is None:
             missing = "CPU core count" if cores is None else "total system RAM"
             return _capability(
                 practical=bool(requested),
                 kind=None,
                 name=None,
-                reason=(
-                    f"no usable accelerator was detected ({probe_why}), and this "
-                    f"machine's {missing} could not be read, so the {MIN_CPU_CORES}-core / "
-                    f"{MIN_SYSTEM_RAM_GB:g} GB floor could not be checked either"
-                    + (
-                        " -- enabled anyway by the operator override."
-                        if requested
-                        else ". AI features default to off; the override turns them on."
-                    )
+                reason=said_frames(
+                    "reason",
+                    frame(_UNREAD_FLOOR, tr=["missing"], probe=probe_why, missing=missing, cores=MIN_CPU_CORES,
+                          ram=f"{MIN_SYSTEM_RAM_GB:g}"),
+                    _override_said(requested),
                 ),
                 overridden=bool(requested),
                 override_requested=requested,
@@ -457,21 +487,18 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
         if cores < MIN_CPU_CORES or ram_gb < MIN_SYSTEM_RAM_GB:
             short = []
             if cores < MIN_CPU_CORES:
-                short.append(f"{cores} CPU core(s), below the {MIN_CPU_CORES} needed")
+                short.append(frame(_CORES_SHORT, cores=cores, need=MIN_CPU_CORES))
             if ram_gb < MIN_SYSTEM_RAM_GB:
-                short.append(f"{ram_gb:g} GB RAM, below the {MIN_SYSTEM_RAM_GB:g} GB needed")
+                short.append(frame(_RAM_SHORT, ram=f"{ram_gb:g}", need=f"{MIN_SYSTEM_RAM_GB:g}"))
+            shortfall = short[0] if len(short) == 1 else frame(_BOTH_SHORT, first=short[0], second=short[1])
             return _capability(
                 practical=bool(requested),
                 kind=None,
                 name=None,
-                reason=(
-                    f"{' and '.join(short)}, and no usable accelerator ({probe_why}) "
-                    f"-- {IMPRACTICAL_CONSEQUENCE}"
-                    + (
-                        ". Enabled anyway by the operator override."
-                        if requested
-                        else ". AI features default to off; the override turns them on."
-                    )
+                reason=said_frames(
+                    "reason",
+                    frame(_BELOW_FLOOR, short=shortfall, probe=probe_why, consequence=frame(IMPRACTICAL_CONSEQUENCE)),
+                    _override_said(requested),
                 ),
                 overridden=bool(requested),
                 override_requested=requested,
@@ -487,7 +514,7 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
             kind="nvidia",
             name=gpu.get("name"),
             vram_mb=gpu.get("vram_mb"),
-            reason="a dedicated NVIDIA GPU is present -- local inference is practical here",
+            reason=said("reason", _NVIDIA_OK),
             overridden=False,
             override_requested=requested,
             warnings=_vram_warnings(gpu.get("vram_mb")),
@@ -517,15 +544,10 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
                 kind="apple-silicon",
                 name=apple.get("name"),
                 unified_ram_gb=None,
-                reason=(
-                    "Apple Silicon detected, but its unified memory could not be read, "
-                    f"so the {APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB floor could not be "
-                    "checked"
-                    + (
-                        " -- enabled anyway by the operator override."
-                        if requested
-                        else ". AI features default to off; the override turns them on."
-                    )
+                reason=said_frames(
+                    "reason",
+                    frame(_APPLE_UNREAD, floor=f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g}"),
+                    _override_said(requested),
                 ),
                 overridden=bool(requested),
                 override_requested=requested,
@@ -541,11 +563,7 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
                 kind="apple-silicon",
                 name=apple.get("name"),
                 unified_ram_gb=ram,
-                reason=(
-                    f"Apple Silicon with {ram:g} GB unified memory (>= the "
-                    f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB floor) -- unified memory is "
-                    "well suited to local inference"
-                ),
+                reason=said("reason", _APPLE_OK, ram=f"{ram:g}", floor=f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g}"),
                 overridden=False,
                 override_requested=requested,
                 cpu_cores=cores,
@@ -556,11 +574,7 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
             kind="apple-silicon",
             name=apple.get("name"),
             unified_ram_gb=ram,
-            reason=(
-                f"Apple Silicon with {ram:g} GB unified memory -- practical, though "
-                f"below the {APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB that fits an "
-                "8B-class model alongside the app with headroom"
-            ),
+            reason=said("reason", _APPLE_LOW, ram=f"{ram:g}", floor=f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g}"),
             overridden=False,
             override_requested=requested,
             warnings=[
@@ -582,11 +596,8 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
         practical=True,
         kind=None,
         name=None,
-        reason=(
-            f"{cores} CPU cores and {ram_gb:g} GB RAM clear the "
-            f"{MIN_CPU_CORES}-core / {MIN_SYSTEM_RAM_GB:g} GB floor -- local inference is "
-            "practical here, on the CPU"
-        ),  # both figures are readable here: the floor above returned otherwise
+        reason=said("reason", _CPU_OK, cores=cores, ram=f"{ram_gb:g}", need_cores=MIN_CPU_CORES,
+                    need_ram=f"{MIN_SYSTEM_RAM_GB:g}"),  # both figures are readable here: the floor above returned otherwise
         overridden=False,
         override_requested=requested,
         warnings=[
