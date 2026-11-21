@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,library,"row 277: unread download and model counts show not read, never 0",shipped,PR #2237,src/api/library.py;src/static/app-library.js;tests/test_library_unread_tiles_r277.py,"The Library overview's Wikipedia dumps, OpenStreetMap regions and local AI models tiles read 0 when a download list could not be read or Ollama's models sat in a protected store; the server now sends a null count with available false and a fixed reason, and the tile shows a dash, a visible not read and the reason on hover (x12)."

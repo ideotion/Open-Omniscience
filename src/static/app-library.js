@@ -432,19 +432,26 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const num = v => (v == null ? "—" : fmtNum(v));
       const sz = v => (v == null || !v) ? "—" : _fmtBytes(v);
-      const tile = (n, k, title) => `<div class="stat"${title ? ` title="${esc(title)}"` : ""}><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
+      const tile = (n, k, title, note) => `<div class="stat"${title ? ` title="${esc(title)}"` : ""}><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div>${note ? `<div class="k stat-unread">${esc(note)}</div>` : ""}</div>`;
       const dl = d.downloaded || {}, der = d.derived || {};
+      // Row 277: a count the server could not read is "—" with a VISIBLE "not read", and the reason in the
+      // hover and long-press (#17) -- never "0", which reads as "nothing downloaded".
+      const countTile = (o, k) => {
+        const v = o || {};
+        if (v.available === false) return tile("—", k, t(v.reason || "This count could not be read."), t("not read"));
+        return tile(`${num(v.count)} · ${sz(v.total_bytes)}`, k);
+      };
       const wiki = dl.wikipedia || {}, maps = dl.maps || {}, laws = dl.laws || {};
       const dlTiles = [
         tile(num(wiki.tracked_pages), t("Wikipedia pages tracked")),
         tile(num(wiki.revisions), t("Wikipedia revisions")),
-        tile(`${num((wiki.dumps || {}).count)} · ${sz((wiki.dumps || {}).total_bytes)}`, t("Wikipedia dumps")),
-        tile(`${num((maps.osm_regions || {}).count)} · ${sz((maps.osm_regions || {}).total_bytes)}`, t("OpenStreetMap regions")),
+        countTile(wiki.dumps, t("Wikipedia dumps")),
+        countTile(maps.osm_regions, t("OpenStreetMap regions")),
         tile(num((dl.markets || {}).commodity_prices), t("Market price points")),
         tile(num(laws.documents), t("Law documents")),
         tile(num(laws.revisions), t("Law revisions")),
         tile(num((dl.statistics || {}).figures), t("Official statistics figures")),
-        tile(`${num((dl.models || {}).count)} · ${sz((dl.models || {}).total_bytes)}`, t("Local AI models")),
+        countTile(dl.models, t("Local AI models")),
       ].join("");
       // EXTRAPOLATED: each AI-analysis kind shown by name (nothing hidden) + AI keywords + watches.
       const KIND_LABELS = { summary: t("AI summaries"), translation: t("AI translations"),
