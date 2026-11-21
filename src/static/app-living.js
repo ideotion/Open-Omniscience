@@ -107,8 +107,11 @@
       const word = _LIVING_WALK_STATE[stateKey] ? t(_LIVING_WALK_STATE[stateKey]) : String(stateKey);
       // The reader's own separator (ooLabelText): a welded ": " reads wrong in a locale
       // whose colon is full-width (2026-09-27 re-walk O-5).
-      const value = w.reason && _LIVING_WALK_WHY[w.reason]
-        ? ooLabelText(word, t(_LIVING_WALK_WHY[w.reason])) : word;
+      // Row 254 (R766): settings that could not be read are not a protected mode anyone chose.
+      const why = (w.reason === "transport_unavailable" && w.stored === "unreadable")
+        ? "The settings could not be read, so the walk is refused as if protected mode were on, and never goes direct."
+        : _LIVING_WALK_WHY[w.reason];
+      const value = w.reason && why ? ooLabelText(word, t(why)) : word;
       // "State", never the group's own title again (the repeated-title defect the
       // 2026-09-25 Chromium walk found on "Pages you track").
       const facts = [{
@@ -261,8 +264,11 @@
       const w = src.warm || {};
       const stateKey = w.enabled === false ? "off" : (w.state || "not_running");
       const word = _LIVING_WARM_STATE[stateKey] ? t(_LIVING_WARM_STATE[stateKey]) : String(stateKey);
-      const value = w.reason && _LIVING_WARM_WHY[w.reason]
-        ? ooLabelText(word, t(_LIVING_WARM_WHY[w.reason])) : word;
+      // Row 254 (R766): as for the walk above.
+      const why = (w.reason === "transport_unavailable" && w.stored === "unreadable")
+        ? "The settings could not be read, so the lane is refused as if protected mode were on, and never goes direct."
+        : _LIVING_WARM_WHY[w.reason];
+      const value = w.reason && why ? ooLabelText(word, t(why)) : word;
       const facts = [{
         label: t("State"), value,
         hover: w.enabled === false
