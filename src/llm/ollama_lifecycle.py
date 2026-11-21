@@ -93,10 +93,37 @@ def is_installed() -> bool:
     return binary_path() is not None
 
 
+def configured_url() -> str:
+    """The address the app talks to Ollama at: ``OO_OLLAMA_URL``, else the loopback default.
+
+    Read exactly the way ``OllamaClient`` reads it, so the lifecycle and the client never judge
+    two different addresses (a set-but-empty value is refused by both).
+    """
+    return os.getenv("OO_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+
+
+def refusal() -> str | None:
+    """Why the configured Ollama address is refused, or ``None`` when it is on this computer (row 234).
+
+    The SAME rule every local-AI call obeys (``src.llm.ollama._loopback_refusal``, which
+    ``_require_loopback`` raises), as a sentence a caller can show. Without it, an
+    ``OO_OLLAMA_URL`` naming another computer read as "not running", and the Launch button
+    started a local ``ollama serve`` that the app would then never talk to.
+    """
+    from src.llm.ollama import _loopback_refusal
+
+    return _loopback_refusal(configured_url(), setting="OO_OLLAMA_URL")
+
+
 def is_running(*, timeout: float = 2.0) -> bool:
     """Live loopback probe of the daemon. Mirrors ``vllm_lifecycle.is_running``:
     never inferred from a tracked subprocess handle, because the daemon is usually
-    NOT ours (systemd/launchd, or a terminal the operator opened)."""
+    NOT ours (systemd/launchd, or a terminal the operator opened).
+
+    An address on another computer is answered False WITHOUT building a client (row 234):
+    nothing is contacted, and :func:`refusal` says why, so the False is never the only word."""
+    if refusal() is not None:
+        return False
     try:
         from src.llm.ollama import OllamaClient
 
@@ -126,12 +153,16 @@ def state() -> dict:
     the frontend so the rule lives in one place.
     """
     installed = is_installed()
+    refused = refusal()
     running = is_running()
     return {
         "installed": installed,
         "running": running,
         "path": binary_path(),
-        "can_launch": installed and not running,
+        # Row 234: an OO_OLLAMA_URL on another computer is refused, said with its reason, and is
+        # never launchable -- a local daemon would serve an address the app does not use.
+        "refused": refused,
+        "can_launch": installed and not running and refused is None,
         # OURS to stop, or the machine's? Published because it is the difference
         # between a control that will work and one that will honestly refuse, and a
         # caller that has to try the call to find out will show a button that does
@@ -150,8 +181,15 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
     ownership flag would be wrong more often than right.
 
     Returns a dict; raises :class:`OllamaLifecycleError` only when the launch could
-    not be ATTEMPTED (binary absent, or the spawn itself failed).
+    not be ATTEMPTED (address refused, binary absent, or the spawn itself failed).
+
+    THE ADDRESS IS CHECKED FIRST (row 234). With ``OO_OLLAMA_URL`` naming another computer
+    the app never talks to a local daemon, so spawning ``ollama serve`` here would start a
+    process nothing uses; the refusal is raised, with its reason, before anything runs.
     """
+    refused = refusal()
+    if refused is not None:
+        raise OllamaLifecycleError(refused)
     path = binary_path()
     if path is None:
         raise OllamaLifecycleError(
@@ -241,6 +279,9 @@ def release_vram(*, timeout: float = 8.0) -> dict:
     """
     if not is_installed():
         return {"released": [], "reason": "Ollama is not installed", "attempted": False}
+    refused = refusal()
+    if refused is not None:  # row 234: nothing on this computer to ask, and the reason is said
+        return {"released": [], "reason": refused, "attempted": False}
     try:
         from src.llm.ollama import OllamaClient
 
@@ -287,6 +328,9 @@ def stop(*, timeout: float = 10.0) -> dict:
     """
     global _proc
     if not owns_daemon():
+        refused = refusal()
+        if refused is not None:  # row 234: nothing was contacted, so "not running" would be a claim never measured
+            return {"stopped": False, "owned": False, "running": False, "refused": refused, "reason": refused}
         running = is_running()
         return {
             "stopped": False,

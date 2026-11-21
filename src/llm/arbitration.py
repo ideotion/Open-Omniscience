@@ -193,6 +193,22 @@ def hand_gpu_to(
     lifecycle's own tri-state says the server EXITED, so a dead start is reported in
     seconds rather than waited out.
     """
+    if backend == "ollama" and start:
+        # Row 234: an OO_OLLAMA_URL on another computer is refused BEFORE anything is released -- tearing down a working
+        # vLLM for an Ollama the app will never start or contact would only lose the card -- and the refusal is the reason.
+        from src.llm.ollama_lifecycle import refusal
+
+        refused_addr = refusal()
+        if refused_addr is not None:
+            return {
+                "backend": backend,
+                "model": model,
+                "released": [],
+                "free_mb_before_start": free_vram_mb(),
+                "started": {"error": refused_addr},
+                "ready": False,
+                "reason": refused_addr,
+            }
     steps: list[dict] = []
     for other in others:
         if other == backend:
@@ -432,8 +448,11 @@ def _why_not_ready(backend: str, model: str | None = None) -> str:
             pass
         return "the vLLM server is not answering yet"
     if backend == "ollama":
-        from src.llm.ollama_lifecycle import is_installed
+        from src.llm.ollama_lifecycle import is_installed, refusal
 
+        refused_addr = refusal()
+        if refused_addr is not None:  # row 234: not contacted, which is not "not answering"
+            return refused_addr
         if not is_installed():
             return "Ollama is not installed on this machine"
         return "the Ollama daemon is not answering yet"
