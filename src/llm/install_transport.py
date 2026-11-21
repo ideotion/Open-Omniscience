@@ -30,7 +30,8 @@ AI_INSTALL_PROTECTED_REFUSAL = (
 #: R766: the refusal when the settings could not be read. Refused all the same (R117), but never said to be protected mode.
 AI_INSTALL_SETTINGS_UNREADABLE_REFUSAL = (
     "The settings could not be read, so the AI install did not start: network actions are refused as if protected mode were "
-    "on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."
+    "on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in "
+    "Settings and save. Then try again."
 )
 
 

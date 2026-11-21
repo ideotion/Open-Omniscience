@@ -1777,7 +1777,7 @@
           return false;
         }
         if (st.ai_install_blocked === "settings_unreadable") {  // R766: refused the same, said as what it is
-          toast(t("The settings could not be read, so the AI install did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."), "err");
+          toast(t("The settings could not be read, so the AI install did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again."), "err");
           return false;
         }
       } catch (_e) { /* fall through and ask; the server refuses protected mode on its own */ }

@@ -25,11 +25,13 @@ from tests.test_self_update import SHA_B, _checked_for_apply
 ROOT = Path(__file__).resolve().parents[1]
 UPDATE_UI = (
     "The settings could not be read, so the update did not start: network actions are refused as if protected mode were "
-    "on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."
+    "on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in "
+    "Settings and save. Then try again."
 )
 AI_UI = (
     "The settings could not be read, so the AI install did not start: network actions are refused as if protected mode "
-    "were on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."
+    "were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again "
+    "in Settings and save. Then try again."
 )
 
 
@@ -114,10 +116,20 @@ def test_a_mode_the_environment_names_is_not_unknown(monkeypatch):
     assert su.protected_reason() == "protected"
 
 
-def test_mode_unknown_is_never_saved_or_served():
-    from src.safety.settings import SafetySettings
+def test_mode_unknown_is_never_saved_or_served(monkeypatch):
+    """Checked on settings that really carry it: the dict a save writes and the safety endpoint serves leave it out."""
+    from src.safety import settings
 
-    assert "mode_unknown" not in SafetySettings().to_dict()
+    _read_fails(monkeypatch)
+    st = settings.load_settings()
+    assert st.mode_unknown is True
+    assert "mode_unknown" not in st.to_dict()
+    monkeypatch.setattr(settings, "load_settings", lambda: st)
+    import src.api.safety as safety_api
+
+    monkeypatch.setattr(safety_api, "load_settings", lambda: st, raising=False)
+    served = _client().get("/api/safety/settings").json()
+    assert "mode_unknown" not in served
 
 
 # -- the update ------------------------------------------------------------------------------------------------------ #

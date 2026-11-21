@@ -2326,7 +2326,7 @@
       if (!_updCheck || !_updCheck.update_available) return;
       const protectedSay = t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
       // R766: settings that could not be read are refused as protected, but said as what they are.
-      const unreadableSay = t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again.");
+      const unreadableSay = t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.");
       // Protected mode is refused by the server anyway: say so BEFORE the consent popup, which would otherwise take the app online for nothing.
       try {
         const st = await api("/api/system/update/status", { polled: true });

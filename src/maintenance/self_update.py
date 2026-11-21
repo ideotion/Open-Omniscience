@@ -335,7 +335,8 @@ PROTECTED_REFUSAL = (
 #: protected); what it SAYS does, because "Protected mode is on" would be a claim about a choice nobody can read.
 SETTINGS_UNREADABLE_REFUSAL = (
     "The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. "
-    "Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."
+    "Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings "
+    "and save. Then try again."
 )
 
 #: The two reason codes :func:`protected_reason` answers, shared with the endpoints and the UI.
@@ -351,11 +352,11 @@ def protected_reason() -> str | None:
         from src.safety.settings import load_settings
 
         st = load_settings()
+        if getattr(st, "mode_unknown", False) or getattr(st, "read_failed", False):
+            return BLOCKED_SETTINGS_UNREADABLE
+        return BLOCKED_PROTECTED if st.is_protected else None
     except Exception:  # noqa: BLE001 - unreadable settings: refused, never assume a direct connection is allowed
         return BLOCKED_SETTINGS_UNREADABLE
-    if getattr(st, "mode_unknown", False) or getattr(st, "read_failed", False):
-        return BLOCKED_SETTINGS_UNREADABLE
-    return BLOCKED_PROTECTED if st.is_protected else None
 
 
 def protected_mode_chosen() -> bool:
