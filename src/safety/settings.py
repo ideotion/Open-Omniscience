@@ -82,6 +82,8 @@ class SafetySettings:
     #: no fetcher or session turns into a direct connection (``TransportUnavailable`` / a transport refusal): offline, as the app
     #: starts (R117), until the store reads again.
     read_failed = False
+    #: R769: the stored choice could not be read (even when an environment proxy keeps the transport usable): a running download stops.
+    store_unreadable = False
 
 
 # The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
@@ -205,6 +207,7 @@ def load_settings() -> SafetySettings:
         if os.getenv("OO_FETCH_MODE") not in VALID_MODES:
             s.fetch_mode = "protected"
             s.read_failed = not (s.http_proxy or s.http_proxies)
+            s.store_unreadable = True
         return s
     return _settings_from(raw)
 
@@ -253,6 +256,7 @@ def save_settings(updates: dict) -> SafetySettings:
         reset = []
     current = _settings_from(stored)
     was_protected = _effective_protected()
+    was_transport = _effective_transport()
     current.reset_fields = reset  # type: ignore[attr-defined]
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
@@ -293,6 +297,12 @@ def save_settings(updates: dict) -> SafetySettings:
     if not was_protected and _effective_protected():  # the mode in force, which an OO_FETCH_MODE override decides
         # R765: protected mode is written first, THEN any AI install still downloading over a direct connection is stopped.
         current.stopped_ai_installs = _stop_ai_installs()  # type: ignore[attr-defined]
+    elif was_transport != _effective_transport():
+        # R772: switched OFF, or another proxy while protected mode stays on. Every download approved under the old transport sees
+        # it at its next boundary and is held; none goes on over another transport without the operator's click.
+        from src.safety.transport_watch import bump
+
+        bump()
     return current
 
 
@@ -303,6 +313,16 @@ def _effective_protected() -> bool:
     except Exception:  # noqa: BLE001 - unreadable settings are protected
         return True
     return bool(s.is_protected or getattr(s, "read_failed", False))
+
+
+def _effective_transport() -> str:
+    """The identity of the transport in force (R772): the mode plus a digest of the proxy configuration."""
+    from src.safety.transport_watch import UNKNOWN, transport_id
+
+    try:
+        return transport_id(load_settings())
+    except Exception:  # noqa: BLE001 - unreadable settings are their own identity
+        return UNKNOWN
 
 
 def _stop_ai_installs() -> list[str]:

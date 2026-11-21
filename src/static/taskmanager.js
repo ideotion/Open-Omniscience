@@ -256,9 +256,15 @@
   // page is where the top-bar task-manager button lands, so a cause drawn only there
   // would leave the operator's own window as silent as before.
   function jobWhy(j) {
-    if (!isDl(j.kind)) return "";
+    if (!isDl(j.kind) && !(j.kind === "osm-update" && j.held_by)) return "";  // R772: a held daily update says why too
     var line = "";
-    if (j.state === "paused") {
+    if (j.state === "queued" && j.held_by) {
+      // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
+      line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
+        : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.")
+        : j.held_by === "proxy" ? t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.")
+          : j.held_by === "unverified" ? t("Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+    } else if (j.state === "paused") {
       if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
       else if (j.paused_by === "operator") line = t("Paused by you.");
       else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
@@ -367,7 +373,15 @@
                      .sort(function (a, b) { return (a.queue_position || 0) - (b.queue_position || 0); });
     var queuedKeysByKind = {};
     queued.forEach(function (j) { if (isDl(j.kind)) (queuedKeysByKind[j.kind] = queuedKeysByKind[j.kind] || []).push(dlKey(j)); });
-    var qHtml = '<div class="vsect">' + esc(t("Queue")) + "</div>" + (queued.length
+    // R768: protected mode (or unreadable settings) HELD the queue; ONE control resumes it, in order, after the consent popup
+    // R772: the button says, BEFORE the click, which transport it resumes over (the server's reading)
+    var heldJob = queued.filter(function (j) { return j.held_by; })[0];
+    var heldLabel = !heldJob ? "" : heldJob.resume_transport === "proxy" ? t("Resume the queue through your proxy")
+      : heldJob.resume_transport === "direct" ? t("Resume the queue over the direct connection") : t("Resume the queue");
+    var held = heldJob
+      ? '<div style="padding:2px 0 6px"><button class="tbtn" data-tm="resume-queue" data-token="' + esc(heldJob.resume_token || "") + '" title="' + esc(t("Resume every held download, in queue order, through the transport now in force.")) + '">' + esc(heldLabel) + "</button></div>"
+      : "";
+    var qHtml = '<div class="vsect">' + esc(t("Queue")) + "</div>" + held + (queued.length
       ? queued.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")
       : '<div class="muted" style="padding:4px 0">' + esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.")) + "</div>");
     // Read-only "Up next" preview of the COLLECTION order (NOT a reorderable queue:
@@ -753,6 +767,16 @@
       try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail ? t(r.detail) : t("Resumed.")); }
       catch (e) { toast(e.message, "err"); }
     },
+    // The queue's ONE resume (R768): it re-opens fetches, so offline -- or when the state cannot be read -- it is handed over
+    // to the app as "/?resume=queue", where the consent popup asks first, as a single download's resume is.
+    // ``token`` is the transport the button named (R772); the server refuses the click if it changed since.
+    resumeQueue: async function (token) {
+      var online = null;
+      try { online = (await api("/api/system/network")).online === true; } catch (e) { online = null; }
+      if (online !== true) { location.href = "/?resume=" + encodeURIComponent("queue:" + token); return; }
+      try { await api("/api/jobs/queue/resume", { method: "POST", body: JSON.stringify({ transport: token }) }); toast(t("Resumed.")); }
+      catch (e) { toast(t(e.message), "err"); }
+    },
     // The storage guard's "Resume anyway" (R112): the operator's OVERRIDE. The server grants it
     // within its bounds or refuses with a sentence frame, which is shown with the sizes through
     // this page's formatter (see app-core.js storageGuardResume).
@@ -803,6 +827,7 @@
     var act = b.getAttribute("data-tm"), id = b.getAttribute("data-id");
     if (act === "cancel") window.TM.cancel(id);
     else if (act === "resume") window.TM.resume(id, b.getAttribute("data-local") === "1");
+    else if (act === "resume-queue") window.TM.resumeQueue(b.getAttribute("data-token") || "");
     else if (act === "storage-resume") window.TM.storageResume();
     else if (act === "memory-resume") window.TM.memoryResume();
     else if (act === "move") window.TM.move(b.getAttribute("data-key"), Number(b.getAttribute("data-dir")), b.getAttribute("data-kind"));
