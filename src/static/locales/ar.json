@@ -6094,6 +6094,7 @@
   "This text is in force from": "هذا النص نافذ اعتباراً من",
   "This theme is taking up a bigger share of your corpus's daily coverage than its own recent history — worth a look, never proof of importance.": "يستحوذ هذا الموضوع على حصة من التغطية اليومية لمجموعتك أكبر من تاريخه القريب نفسه — يستحق النظر، وليس أبدًا دليلًا على الأهمية.",
   "This title is not in the dump's index.": "هذا العنوان غير موجود في فهرس التفريغ.",
+  "This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1.": "عنوان vLLM هذا ليس على هذا الحاسوب، لذلك لا يتصل به التطبيق. الذكاء الاصطناعي المحلي يتحدث مع هذا الحاسوب فقط: اضبط OO_VLLM_URL على 127.0.0.1 أو localhost أو ::1.",
   "This version cannot back up the living-source stores on this computer yet; a later version will.": "لا يستطيع هذا الإصدار بعدُ نسخ مخازن المصادر الحية الموجودة على هذا الحاسوب احتياطيًا؛ سيفعل ذلك إصدار لاحق.",
   "This version is already in your corpus.": "هذه النسخة موجودة بالفعل في مجموعتك.",
   "This version is no longer held on this machine.": "لم تعد هذه النسخة محفوظة على هذا الجهاز.",

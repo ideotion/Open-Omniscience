@@ -6094,6 +6094,7 @@
   "This text is in force from": "এই পাঠ্য কার্যকর",
   "This theme is taking up a bigger share of your corpus's daily coverage than its own recent history — worth a look, never proof of importance.": "এই বিষয়টি আপনার কর্পাসের দৈনিক কভারেজে তার নিজের সাম্প্রতিক ইতিহাসের চেয়ে বড় অংশ নিচ্ছে — দেখার মতো, কিন্তু কখনোই গুরুত্বের প্রমাণ নয়।",
   "This title is not in the dump's index.": "এই শিরোনামটি ডাম্পের সূচিতে নেই।",
+  "This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1.": "এই vLLM ঠিকানাটি এই কম্পিউটারে নেই, তাই অ্যাপটি এর সঙ্গে যোগাযোগ করে না। স্থানীয় AI শুধু এই কম্পিউটারের সঙ্গেই কথা বলে: OO_VLLM_URL-কে 127.0.0.1, localhost বা ::1-এ সেট করুন।",
   "This version cannot back up the living-source stores on this computer yet; a later version will.": "এই সংস্করণ এখনও এই কম্পিউটারের জীবন্ত উৎসের ভান্ডারগুলোর ব্যাকআপ নিতে পারে না; পরের কোনো সংস্করণ পারবে।",
   "This version is already in your corpus.": "এই সংস্করণটি ইতিমধ্যে আপনার কর্পাসে আছে।",
   "This version is no longer held on this machine.": "এই সংস্করণটি আর এই যন্ত্রে রাখা নেই।",

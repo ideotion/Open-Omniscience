@@ -6094,6 +6094,7 @@
   "This text is in force from": "本文本自此生效",
   "This theme is taking up a bigger share of your corpus's daily coverage than its own recent history — worth a look, never proof of importance.": "这个主题在您语料库每日报道中所占的比例高于它自身近期的历史水平——值得一看，但绝不是重要性的证明。",
   "This title is not in the dump's index.": "该标题不在转储索引中。",
+  "This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1.": "此 vLLM 地址不在这台计算机上，因此应用不会连接它。本地 AI 只与这台计算机通信：请将 OO_VLLM_URL 设为 127.0.0.1、localhost 或 ::1。",
   "This version cannot back up the living-source stores on this computer yet; a later version will.": "此版本尚不能备份这台电脑上的活来源存储；后续版本将可以。",
   "This version is already in your corpus.": "此版本已在你的语料库中。",
   "This version is no longer held on this machine.": "本机已不再保存此版本。",

@@ -468,7 +468,7 @@
           total: fmtNum(Math.max(1, Math.ceil(d.total / SRC.limit)), 0)});
         t.innerHTML = "<tr>" + srcTh("Name","name") + srcTh("Domain","domain") + srcTh("Type","source_type") +
           srcTh("Country","country") + srcTh("Lang","language") + srcTh("Pri","priority") +
-          srcTh("Articles","articles") + "<th>Enabled</th><th></th></tr>" +
+          srcTh("Articles","articles") + "<th>Enabled</th><th><span class='sr-only'>Actions</span></th></tr>" +
           (d.sources.length ? d.sources.map(s => sourceRow(s)).join("")
             : `<tr><td colspan="9" class="muted">No sources match. Adjust filters, add one, or seed the starter set.</td></tr>`);
       } catch (e) { toast(_failMsg("Could not load sources: {error}", e), "err"); }
