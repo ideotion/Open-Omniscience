@@ -18,7 +18,7 @@ from tests.test_gates_survive_an_interrupt import _uncovered_loop_heads
 _SITES = (
     ("src/database/source_identity.py", "upgrade_sources_to_composite_key", "finally that turns foreign-key enforcement back on"),
     ("src/database/damage.py", "confirmed_damage", "with self._lock"),
-    ("src/versioned/store.py", "lane_engine", "with _lock"),
+    ("src/versioned/store.py", "_engine_and_factory", "with _lock"),  # lane_engine's body since row 256
     ("src/versioned/store.py", "dispose_lane", "with _lock"),  # reached by encrypt_tool.encrypt_all through an aliased import
 )
 

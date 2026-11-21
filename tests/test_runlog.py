@@ -209,17 +209,25 @@ def test_the_counter_keys_are_the_ones_the_app_actually_publishes():
     assert runlog._counter_of(None) == (None, None, None)
 
 
-def test_the_beat_carries_child_cpu_because_the_parent_alone_cannot_answer():
+def test_the_beat_carries_child_cpu_because_the_parent_alone_cannot_answer(monkeypatch):
     """During the re-index the work runs in a process pool, so a HEALTHY parent
     is also near-idle -- identical to the deadlocked case. Only the children's
     cumulative CPU discriminates, and the delta must be precomputed: making a
-    human subtract two of 1,700 lines is the manual ps sampling this replaces."""
-    rl = runlog.begin("import", label="x")
+    human subtract two of 1,700 lines is the manual ps sampling this replaces.
+
+    The walk's cost is pinned (row 262, as row 174 did for the walk-cost tests): the real walker scans the whole
+    process table, and on a loaded runner one walk can pass ``_CHILD_WALK_BUDGET_MS``, which makes the next beat a
+    backoff beat with no ``d_kids_cpu_s`` (macOS shard 3, run 44910111659). The backoff has its own tests below; this
+    one is about the fields a measuring beat carries, so its beats always measure. The background sampler is off for
+    the same reason: its beats share ``_child_walk_skip``."""
+    monkeypatch.setattr(runlog, "_sample_children", lambda proc, limit=24: _CHEAP_WALK)
+    rl = _begin_unsampled(kind="import", label="x")
     b1 = rl._beat({})
     b2 = rl._beat(b1)
     assert "cpu_s" in b1 and "kids_cpu_s" in b1 and "kids_n" in b1
     assert "d_cpu_s" in b2 and "d_kids_cpu_s" in b2
     assert "bc_ms" in b1, "the beat's own cost is measured, never assumed"
+    assert b2["d_kids_cpu_s"] == 0.0 and b2.get("child_walk") is None
 
 
 def test_an_unmeasurable_field_is_omitted_with_a_reason_never_zeroed(monkeypatch):

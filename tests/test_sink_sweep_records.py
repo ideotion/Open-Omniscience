@@ -72,6 +72,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # R739: the maps merge reads ``_OsmRefused.reason``, one of the module's own fixed counter names (``refused_unreadable`` ...),
     # to count a refused country; the exception carries no text from the backup, and nothing is logged or stored but that name
     "src/backup/lane_merge.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
+    # Row 256 (R702 part 2): SQLAlchemy's pool record's own ``info`` dict, holding the lane's generation number for the open (stamped
+    # at connect, compared at checkin); it carries an int, never words, and nothing is logged
+    "src/versioned/store.py": {"pool_entry.info is kept as a name, a log call the scan cannot read": 2},
     "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     # R695: ``_deadline_stopped(exc)`` answers whether a caught error is a statement deadline's stop: an isinstance test, then the
     # driver text compared to the one fixed word ``interrupted``; it stores nothing and logs nothing, and the two callers only re-raise
@@ -346,6 +349,10 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_run', 'code = refusal.code'): 1,
         ('_run', 'report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))'): 1,
         ('_switch', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
+        # row 256: the lane's switch reads the same two things: the repair's refusal code from the log fold, and the COUNT a refused hold
+        # carries (an int, never words).
+        ('_switch_lane_held', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
+        ('_switch_lane', 'f"{held.count} connection(s) to this store were still open when the switch was to begin, so nothing was switched; "'): 1,
     },
     # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
     'src/database/encrypt_tool.py': {
