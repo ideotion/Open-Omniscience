@@ -1578,7 +1578,7 @@
       // table can name in advance. Say so, and name each feed address probed on each of
       // them: `probePaths` is FEED_PROBE_PATHS exactly (a test ties the two).
       if (lane.resultSites) {
-        parts.push(tf("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}",
+        parts.push(tf("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}. Any of these addresses that redirects leads to another site too, whose robots.txt is read first.",
                       { paths: (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
       }
       parts.push(_laneTransport(lane, kind));

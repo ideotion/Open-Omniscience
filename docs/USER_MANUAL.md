@@ -3710,7 +3710,7 @@ default**, and gated behind Settings → Advanced → Safety (see below).
 *Discover by topic* is the one feature that **sends a free-text search query to a search
 engine**: it sends your topic query to DuckDuckGo, then visits each site the search returns (its
 robots.txt, the result page, the feed links it names and common feed addresses such as `/rss` and
-`/feed`) to look for a feed, so each of those sites sees the visit too. (Other online actions — collection,
+`/feed`, plus any site one of these addresses redirects to) to look for a feed, so each of those sites sees the visit too. (Other online actions — collection,
 market/stats fetches, Ollama pulls, OpenTimestamps — are each consented and named too;
 this is the one that transmits a query you typed.) It is **disabled by default** and
 refuses with an honest

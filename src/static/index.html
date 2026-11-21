@@ -3741,7 +3741,7 @@
 
       <hr>
       <h3 style="margin-bottom:6px">External topic discovery</h3>
-      <p class="muted" style="margin-top:0"><span>External topic discovery is the one feature that sends a free-text search query to an external service: it sends your topic query to DuckDuckGo to find candidate outlets, then visits each site the search returns (its robots.txt, its page, the feed links it names and common feed addresses such as /rss and /feed) to look for a feed.</span>
+      <p class="muted" style="margin-top:0"><span>External topic discovery is the one feature that sends a free-text search query to an external service: it sends your topic query to DuckDuckGo to find candidate outlets, then visits each site the search returns (its robots.txt, its page, the feed links it names and common feed addresses such as /rss and /feed, plus any site one of these addresses redirects to) to look for a feed.</span>
         <strong>Your query leaves this machine, and each of those sites sees your visit.</strong>
         <span>Off by default; everything else works without it. (Discovering RSS feeds for sources you added yourself stays local-path and is not affected.)</span></p>
       <div class="row">

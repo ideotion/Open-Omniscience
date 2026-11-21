@@ -37,14 +37,15 @@ STATIC = ROOT / "src" / "static"
 
 HOVER = (
     "then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on "
-    "another site), and these feed addresses on it: {paths}"
+    "another site), and these feed addresses on it: {paths}. Any of these addresses that redirects leads to another "
+    "site too, whose robots.txt is read first."
 )
 ROW = "+ each site the search returns"
 SETTINGS = (
     "External topic discovery is the one feature that sends a free-text search query to an external service: it "
     "sends your topic query to DuckDuckGo to find candidate outlets, then visits each site the search returns (its "
-    "robots.txt, its page, the feed links it names and common feed addresses such as /rss and /feed) to look for a "
-    "feed."
+    "robots.txt, its page, the feed links it names and common feed addresses such as /rss and /feed, plus any site one "
+    "of these addresses redirects to) to look for a feed."
 )
 STRONG = "Your query leaves this machine, and each of those sites sees your visit."
 CHECKBOX = "Allow topic-discovery queries to DuckDuckGo and visits to the sites it returns"
@@ -168,3 +169,19 @@ def test_every_disclosure_string_is_keyed_and_translated(path: Path):
             assert "DuckDuckGo" in d[k] or k in (HOVER, ROW), (path.stem, k)
         assert "robots.txt" in d[HOVER] and "robots.txt" in d[SETTINGS]
         assert "/rss" in d[SETTINGS] and "/feed" in d[SETTINGS]
+
+
+def test_the_redirects_the_fetcher_follows_are_named_too():
+    """The ethical fetcher follows redirects, and a hop to another host is a request to that host (its robots.txt
+    first). The recording fetcher above cannot show that, so the disclosure is tied to the fetcher's own bound."""
+    from src.ingest import _MAX_REDIRECTS
+
+    assert _MAX_REDIRECTS > 0, "no redirect is followed any more: drop the redirect clause from the disclosure"
+    assert "redirects" in HOVER and "redirects to" in SETTINGS
+    text = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    (row,) = [ln for ln in text.splitlines() if ln.startswith("| **Discover by topic** |")]
+    assert f"(up to {['zero', 'one', 'two', 'three', 'four', 'five', 'six'][_MAX_REDIRECTS]} hops, `_MAX_REDIRECTS`)" in row
+    assert "never more than the 50 results the search asks for" in row
+    for loc in sorted((STATIC / "locales").glob("*.json")):
+        d = json.loads(loc.read_text(encoding="utf-8"))
+        assert d[HOVER].count("{paths}") == 1, loc.name
