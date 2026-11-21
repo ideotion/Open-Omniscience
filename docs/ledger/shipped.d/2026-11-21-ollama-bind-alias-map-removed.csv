@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,llm,"Ollama bind: the alias-to-literal map R767 made unreachable is removed, and a test keeps it out",shipped,PR #2214; R767; R771; row 235,src/llm/ollama_lifecycle.py; tests/test_local_ai_direct_and_bound.py,"Release note: no change you can see; an internal cleanup after the local AI started refusing host-file aliases (PR #2208)."
