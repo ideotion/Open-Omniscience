@@ -100,6 +100,10 @@ WAIT_REFUSED = "request_refused"
 #: One edition waits: the answer could not be read as a walk batch.
 WAIT_MALFORMED = "malformed_response"
 
+#: The history metric of a refused article-count read (row 257), apart from ``walk``: a batch
+#: refusal recorded later must never stand in for, or overwrite, the count read's own failure.
+COUNT_READ_METRIC = "walk_count"
+
 GLOBAL_PAUSES: tuple[str, ...] = (PAUSED_NETWORK_OFF, PAUSED_TRANSPORT_UNAVAILABLE, PAUSED_BUDGET)
 EDITION_WAITS: tuple[str, ...] = (WAIT_CONNECTION, WAIT_SERVICE_BUSY, WAIT_REFUSED, WAIT_MALFORMED)
 
@@ -432,7 +436,9 @@ class WikiWalker:
         try:
             stats = self._client.fetch_edition_statistics(edition)
         except Exception as exc:  # noqa: BLE001 - classified, never swallowed
-            return self._refused(edition, state, refusal_token(exc, since=epoch), refusal_detail(exc))
+            return self._refused(
+                edition, state, refusal_token(exc, since=epoch), refusal_detail(exc), count_read=True
+            )
         self._note_request()
         with self._lane_session() as lane:
             row = lane.get(WikiWalkCursor, edition) or self._cursor_row(lane, edition)
@@ -590,9 +596,15 @@ class WikiWalker:
 
     def _refused(
         self, edition: str, state: dict, token: str, detail: Any, *,
-        busy_ms: int = 0, retry_after_s: int | None = None,
+        busy_ms: int = 0, retry_after_s: int | None = None, count_read: bool = False,
     ) -> dict:
-        """Name a refusal. A global one holds the walk; an edition's is written on its bookmark."""
+        """Name a refusal. A global one holds the walk; an edition's is written on its bookmark.
+
+        ``count_read`` marks a refusal of the edition's article-count read (``meta=siteinfo``). It is
+        ALSO recorded under its own metric, :data:`COUNT_READ_METRIC` (row 257): the bookmark keeps only
+        the LAST refusal, so the next batch's 503 would overwrite the fact that the TOTAL was never read.
+        A global pause writes nothing here either; the walk's own state names it while it lasts.
+        """
         from src.wiki.lane_models import WikiWalkCursor
 
         self.last_detail = f"{edition}: {detail}"[:300]
@@ -618,6 +630,8 @@ class WikiWalker:
                 lane, "walk", edition=edition, kind=token, ms=busy_ms,
                 retry_after_s=retry_after_s, detail=str(detail), at=at,
             )
+            if count_read:
+                _record(lane, COUNT_READ_METRIC, edition=edition, kind=token, detail=str(detail), at=at)
         return {"refused": token}
 
     # -- for a status surface ------------------------------------------------- #
