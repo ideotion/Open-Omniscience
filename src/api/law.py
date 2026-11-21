@@ -96,6 +96,34 @@ def _verdict_of(last_status: str | None) -> str:
     return "other"
 
 
+def _robots_hop_host(last_status: str | None) -> str | None:
+    """Row 290: the HOST whose robots.txt refused a redirect hop, read from the stored refusal; ``None`` otherwise.
+
+    A redirect can carry a document to another site, and that site's robots.txt can refuse it; "blocked by the site's
+    robots.txt" then names the wrong site. The fetcher's own sentence says which address it refused and ends with
+    "(reached by a redirect)" (``src.ingest._REDIRECT_HOP_NOTE``), so the host is read back from it: the host only, never the
+    full address (R734), and only for a hop, since a direct refusal's site is the document's own. A label over the stored text,
+    like :func:`_verdict_of`; nothing is fetched, and a sentence it cannot read gives ``None`` (the generic words stay)."""
+    from urllib.parse import urlsplit
+
+    from src.ingest import _REDIRECT_HOP_NOTE
+
+    if not last_status or f"({_REDIRECT_HOP_NOTE})" not in last_status:
+        return None
+    if _verdict_of(last_status) not in ("robots_blocked", "robots_unread"):
+        return None
+    for head in ("robots.txt disallows ", "robots.txt for "):
+        at = last_status.find(head)
+        if at != -1:
+            token = last_status[at + len(head):].split(None, 1)[0] if last_status[at + len(head):].strip() else ""
+            try:
+                host = urlsplit(token).hostname
+            except ValueError:
+                return None
+            return host or None
+    return None
+
+
 def _latest_summaries_by_revision(
     db: Session, revision_ids: list[int]
 ) -> dict[int, LawRevisionSummary]:
@@ -152,6 +180,8 @@ def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict
         "last_checked_at": doc.last_checked_at.isoformat() if doc.last_checked_at else None,
         "last_status": doc.last_status,
         "verdict": _verdict_of(doc.last_status),
+        # Row 290: the refusing host when a redirect hop's robots.txt refused it (host only, R734); absent otherwise.
+        "robots_host": _robots_hop_host(doc.last_status),
         "revisions": revisions,
         "flagged": flagged,
     }
