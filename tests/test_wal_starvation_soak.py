@@ -187,7 +187,9 @@ def _make_scan_producer(first_chunk_at: list[float], scan_done_at: list[float] |
 
     ``phase`` (row 255) is the same window as a SEQUENCE the checkpointer reads, not a clock it compares: ``chunks`` counts the chunks
     delivered and ``done`` turns True before the producer leaves its loop, so "inside the scan" is ``chunks >= 1 and not done``, read on the
-    checkpointer's own thread at the moment it calls and again the moment it returns."""
+    checkpointer's own thread at the moment it calls and again the moment it returns. ``writes_at_pin`` is the writer's commit count read
+    when the first chunk is delivered, AFTER the snapshot opened (so a commit it misses is counted as older, the safe direction), and it is
+    set before ``chunks`` first moves, so no attempt can see the scan as started without it."""
 
     def _slow_scan_producer(session):
         result = session.execute(text("SELECT x FROM t"))
@@ -198,6 +200,8 @@ def _make_scan_producer(first_chunk_at: list[float], scan_done_at: list[float] |
             if not chunk:
                 break
             if phase is not None:
+                if phase["chunks"] == 0:
+                    phase["writes_at_pin"] = phase["writes"]()
                 phase["chunks"] += 1
             time.sleep(0.1)
         if phase is not None:
@@ -227,21 +231,23 @@ def _evidence_attempts(attempts: list[dict]) -> list[dict]:
 
     An attempt is evidence when the scan was inside its loop both when the checkpoint was called and when it returned (``in_scan_at_call``,
     ``in_scan_at_end``: read from the producer's own counter on the checkpointer's thread, so no two threads' clocks are compared), and when
-    the log held frames to checkpoint: ``wal_bytes_before``, the log file's size the checkpoint measured before its call (every reset here is
-    a TRUNCATE, so a non-empty file means frames written since the last one; ``log_frames`` cannot say it, because a TRUNCATE that succeeds
-    reports the log it left, 0). A checkpoint of an EMPTY log answers busy=0 under any reader (measured: a TRUNCATE with a reader holding
-    its snapshot and nothing written since the last reset returns (0, 0, 0)), so on a runner whose writer had not committed yet it was
-    counted as a cleared checkpoint inside a scan that never released: the macOS failure of both mutant tests. Such an answer says nothing
-    either way and is not counted, as a clear nor as an attempt that answered."""
+    the writer had COMMITTED SINCE THE SCAN'S SNAPSHOT OPENED (``newer_frames``: its commit count at the call is above the count read at the
+    first chunk). Only then can a held snapshot stop the checkpoint. A reader that opens when every frame of the log is already copied into
+    the database takes SQLite's read-mark slot 0, which TRUNCATE and RESTART do not wait for, so with no newer frame the checkpoint answers
+    busy=0 under a snapshot that is still held (measured: (0, 0, 0) on an empty log, and (0, 0, 0) on a 655 kB log a PASSIVE had fully
+    copied; one commit later the same call answers busy=1). On a runner whose writer had not committed yet, the clock window counted those
+    answers as cleared checkpoints inside a scan that never released: the macOS failure of both mutant tests. Such an answer says nothing
+    either way and is not counted, as a clear nor as an attempt that answered. (The log's size cannot stand in for this: the PASSIVE case
+    leaves a full file, and a TRUNCATE that succeeds reports ``log_frames`` 0.)"""
     return [
         a for a in attempts
-        if a["busy"] is not None and a["in_scan_at_call"] and a["in_scan_at_end"] and (a["wal_bytes_before"] or 0) > 0
+        if a["busy"] is not None and a["in_scan_at_call"] and a["in_scan_at_end"] and a["newer_frames"]
     ]
 
 
 def _run_one_round(
     tmp_path: Path, round_i: int, monkeypatch, *, attempt_delay_s: float = 0.0, after_scan_delay_s: float = 0.0,
-    writer_holds_s: float = 0.0,
+    writer_holds_s: float = 0.0, pre_scan_checkpoint: str | None = None,
 ) -> dict:
     """One full round: a slow scanning producer races a background writer and
     a background checkpointer on its OWN fresh database, mirroring
@@ -278,7 +284,8 @@ def _run_one_round(
     monkeypatch.setattr(registry, "_release_transaction", _counting_release)
     first_chunk_at: list[float] = []
     scan_done_at: list[float] = []
-    phase = {"chunks": 0, "done": False}
+    rows_written = [0]
+    phase = {"chunks": 0, "done": False, "writes_at_pin": None, "writes": lambda: rows_written[0]}
     registry.register("slow_scan", _make_scan_producer(first_chunk_at, scan_done_at, phase))
 
     def _in_scan() -> bool:
@@ -287,15 +294,17 @@ def _run_one_round(
     db_path = tmp_path / f"wal_soak_round_{round_i}.db"
     eng = _wal_engine(db_path, seed_rows=_SEED_ROWS, monkeypatch=monkeypatch)
     wal_path = Path(str(db_path) + "-wal")
-    if writer_holds_s:
-        with eng.connect() as c:  # row 255: start the scan on an EMPTY log, as after a checkpoint that just succeeded
-            c.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+    if pre_scan_checkpoint is not None:
+        # row 255: start the scan on a log whose every frame is copied -- emptied (TRUNCATE) or left full (PASSIVE), as after a checkpoint
+        # that copied everything and then lost the reset to a writer, or after SQLite's own automatic checkpoint
+        assert pre_scan_checkpoint in ("TRUNCATE", "PASSIVE")
+        with eng.connect() as c:
+            c.exec_driver_sql(f"PRAGMA wal_checkpoint({pre_scan_checkpoint})")
     seed_wal_bytes = wal_path.stat().st_size if wal_path.exists() else 0  # measured, not estimated: the log the seeding itself left
     Session = sessionmaker(bind=eng, future=True)
 
     stop_writer = threading.Event()
     write_errors: list[str] = []
-    rows_written = [0]
 
     def _writer():
         if writer_holds_s:
@@ -323,12 +332,14 @@ def _run_one_round(
             if attempt_delay_s:
                 time.sleep(attempt_delay_s)
             in_scan_at_call = _in_scan()
+            pin = phase["writes_at_pin"]
+            newer_frames = in_scan_at_call and pin is not None and rows_written[0] > pin
             called = time.monotonic()
             errs: list[str] = []
             rec = checkpoint_wal(engine=eng, force=True, busy_timeout_ms=50, errors=errs)
             in_scan_at_end = _in_scan()
             attempts.append({"began": began, "called": called, "ended": time.monotonic(), "busy": None if rec is None else rec.get("busy"),
-                             "wal_bytes_before": None if rec is None else rec.get("wal_bytes_before"),
+                             "wal_bytes_before": None if rec is None else rec.get("wal_bytes_before"), "newer_frames": newer_frames,
                              "in_scan_at_call": in_scan_at_call, "in_scan_at_end": in_scan_at_end,
                              "error": errs[0] if errs else None})
             if rec is not None:
@@ -368,8 +379,8 @@ def _run_one_round(
         "longest_attempt_s": max((a["ended"] - a["began"] for a in attempts), default=0.0),
         "longest_attempt_in_scan_s": longest_in_scan,
         "in_scan_success": any(a["busy"] == 0 for a in in_scan),
-        "empty_log_answers_in_scan": sum(1 for a in attempts if a["in_scan_at_call"] and a["in_scan_at_end"] and a["busy"] is not None
-                                         and not (a["wal_bytes_before"] or 0)),
+        "no_newer_frame_answers_in_scan": sum(1 for a in attempts if a["in_scan_at_call"] and a["in_scan_at_end"] and a["busy"] is not None
+                                              and not a["newer_frames"]),
         "any_checkpoint_succeeded": any(rec["busy"] == 0 for rec in ckpt_results),
         "checkpoint_attempts": len(ckpt_results),
         "attempts_began": len(attempts),
@@ -706,36 +717,45 @@ def test_which_attempts_are_evidence_and_how_much_of_a_slow_one_is_inside_the_sc
     assert _in_scan_attempts([at(2.1, 2.1, 2.2, 0)], first_chunk=1.0, scan_ended=2.0) == ([], 0.0)
 
 
-def test_which_attempts_are_evidence_is_decided_by_sequence_and_an_empty_log_is_no_evidence():
+
+def test_which_attempts_are_evidence_is_decided_by_sequence_and_a_commit_after_the_pin():
     """Row 255, on synthetic records: evidence is an answered attempt that was inside the scan's loop when it was called AND when it returned,
-    on a log that held frames. The clock fields are absent on purpose: they decide nothing here."""
+    with a commit since the snapshot opened. The clock and the log's size are absent or contrary on purpose: they decide nothing here."""
 
-    def a(busy, wal_bytes, at_call=True, at_end=True):
-        return {"busy": busy, "wal_bytes_before": wal_bytes, "in_scan_at_call": at_call, "in_scan_at_end": at_end}
+    def a(busy, newer, wal_bytes=655_112, at_call=True, at_end=True):
+        return {"busy": busy, "newer_frames": newer, "wal_bytes_before": wal_bytes, "in_scan_at_call": at_call, "in_scan_at_end": at_end}
 
-    cleared = a(0, 270_000)
-    pinned = a(1, 1_100_000)
-    empty_log = a(0, 0)  # what a TRUNCATE answers under any reader when nothing was written since the last reset
-    before_first_chunk = a(0, 270_000, at_call=False)
-    returned_after_the_loop = a(0, 270_000, at_end=False)
-    unanswered = a(None, None)
-    got = _evidence_attempts([cleared, pinned, empty_log, before_first_chunk, returned_after_the_loop, unanswered])
+    cleared = a(0, True)
+    pinned = a(1, True)
+    copied_log = a(0, False)  # a full log every frame of which was copied: TRUNCATE answers busy=0 under the held snapshot (slot 0)
+    empty_log = a(0, False, wal_bytes=0)
+    before_first_chunk = a(0, True, at_call=False)
+    returned_after_the_loop = a(0, True, at_end=False)
+    unanswered = a(None, True)
+    got = _evidence_attempts([cleared, pinned, copied_log, empty_log, before_first_chunk, returned_after_the_loop, unanswered])
     assert got == [cleared, pinned]
-    assert _evidence_attempts([empty_log] * 10) == [], "ten empty-log answers are not ten attempts that answered"
+    assert _evidence_attempts([copied_log, empty_log] * 5) == [], "ten answers with no newer frame are not ten attempts that answered"
 
 
-def test_a_checkpoint_of_an_empty_log_answers_clear_under_a_reader_that_holds_its_snapshot(tmp_path):
-    """The SQLite fact row 255's filter rests on, measured rather than assumed: with a reader mid-scan, TRUNCATE on an empty log answers
-    busy=0 with no frames, and the first committed frame turns the same call busy. A clear answer is evidence only when the log had frames."""
+@pytest.mark.parametrize("pre", ["TRUNCATE", "PASSIVE"], ids=["emptied-log", "fully-copied-log"])
+def test_a_reset_answers_clear_under_a_held_snapshot_until_a_newer_frame_exists(tmp_path, pre):
+    """The SQLite fact row 255's rule rests on, measured rather than assumed: a reader that opens when every frame is already copied takes
+    read-mark slot 0, which TRUNCATE does not wait for, so with a reader mid-scan TRUNCATE answers busy=0 -- on an emptied log AND on a full
+    one a PASSIVE copied. The first frame committed after the reader opened turns the same call busy. A clear answer is therefore evidence
+    only when a commit landed after the snapshot opened; the log's size cannot say it (the PASSIVE case leaves a full file)."""
     import sqlite3
 
-    db = str(tmp_path / "empty_log.db")
+    db = str(tmp_path / "slot0.db")
     w = sqlite3.connect(db, isolation_level=None)
     w.execute("PRAGMA journal_mode=WAL")
     w.execute("CREATE TABLE t(x)")
     for _ in range(50):
         w.execute("INSERT INTO t VALUES (randomblob(4096))")
-    assert w.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
+    busy, frames, copied = w.execute(f"PRAGMA wal_checkpoint({pre})").fetchone()
+    assert busy == 0 and frames == copied
+    wal = Path(db + "-wal")
+    size_before = wal.stat().st_size if wal.exists() else 0
+    assert (size_before > 0) == (pre == "PASSIVE"), size_before
     r = sqlite3.connect(db)
     cur = r.execute("SELECT x FROM t")
     assert len(cur.fetchmany(3)) == 3  # the reader now holds its snapshot
@@ -743,7 +763,7 @@ def test_a_checkpoint_of_an_empty_log_answers_clear_under_a_reader_that_holds_it
     try:
         assert tuple(c.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()) == (0, 0, 0)
         w.execute("INSERT INTO t VALUES (randomblob(4096))")
-        busy, frames, _done = c.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        busy, frames, _copied = c.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
         assert busy == 1 and frames > 0
     finally:
         cur.close()
@@ -753,9 +773,11 @@ def test_a_checkpoint_of_an_empty_log_answers_clear_under_a_reader_that_holds_it
 
 @pytest.mark.parametrize("commit", [False, True], ids=["never-closes", "commit-without-close"])
 def test_a_mutant_whose_writer_has_not_committed_is_never_green(tmp_path, monkeypatch, commit):
-    """Row 255, the macOS failure made deterministic: the writer holds its first commit past the whole scan, so every checkpoint inside it
-    meets an empty log and answers busy=0 although the mutant never releases its snapshot. Counted by the clock alone (the old window), those
-    answers made the mutant green; by sequence and the log's measured size, they are no evidence and the round is inconclusive."""
+    """Row 255, the macOS failure made deterministic: the scan opens on an emptied log and the writer holds its first commit past the whole
+    scan, so every checkpoint inside it answers busy=0 although the mutant never releases its snapshot. Counted by the clock alone (the old
+    window), those answers made the mutant green; with no commit after the pin they are no evidence and the round is inconclusive. (The
+    full-log form of the same trap, a log a PASSIVE copied, is pinned at the SQLite level above: in a round the checkpointer, which starts
+    before the scan, empties such a log first, so a round cannot hold it there.)"""
     monkeypatch.setattr(registry._WalGuardResult, "fetchmany", _unclosed_fetchmany(commit))
     seen: dict = {}
     real = _evidence_attempts
@@ -765,12 +787,12 @@ def test_a_mutant_whose_writer_has_not_committed_is_never_green(tmp_path, monkey
         return real(attempts)
 
     monkeypatch.setattr(sys.modules[__name__], "_evidence_attempts", spy)
-    r = _run_one_round(tmp_path, 0, monkeypatch, writer_holds_s=5.0)
+    r = _run_one_round(tmp_path, 0, monkeypatch, writer_holds_s=5.0, pre_scan_checkpoint="TRUNCATE")
     inside = [a for a in seen["attempts"] if a["in_scan_at_call"] and a["in_scan_at_end"] and a["busy"] is not None]
-    empty = [a for a in inside if not a["wal_bytes_before"]]
-    assert all(a["busy"] == 0 for a in empty), ("an empty log can never be busy", empty)
-    assert r["empty_log_answers_in_scan"] == len(empty) and r["attempts_in_scan"] == len(inside) - len(empty), r
+    assert not any(a["newer_frames"] for a in inside), ("the writer was held, yet an attempt saw a commit after the pin", inside)
+    assert r["no_newer_frame_answers_in_scan"] == len(inside) and r["attempts_in_scan"] == 0, r
     assert not r["in_scan_success"], ("a mutant whose writer had not committed was judged to have cleared a checkpoint inside the scan", r)
-    if commit is False:
-        # never-closes opens its snapshot on the log the pre-scan checkpoint emptied, and writes nothing: the trap forms every time
-        assert empty, ("the trap this test exists for did not form: no empty-log answer inside the scan", inside)
+    assert not _round_verdict(r)["property_conclusive"], r
+    if commit is False and inside:
+        # the trap itself: under the held snapshot these answers came back CLEAR, which is what the old rules counted
+        assert all(a["busy"] == 0 for a in inside), inside
