@@ -354,6 +354,7 @@ def test_a_script_that_failed_on_its_own_reports_its_own_failure(monkeypatch, tm
     assert not it._interrupted_marker().exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the scripted Ollama install runs on Linux only (installer.platform_support); its reader selects on a pipe, which Windows refuses")
 def test_a_crlf_split_across_two_reads_makes_one_line_end():
     import src.llm.installer as inst
 

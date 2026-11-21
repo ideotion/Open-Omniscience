@@ -13,6 +13,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import hashlib
+import sys
 
 import pytest
 
@@ -147,6 +148,7 @@ def test_run_refuses_when_no_unattended_elevation(monkeypatch):
     assert "terminal" in str(ei.value).lower()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the scripted Ollama install runs on Linux only (installer.platform_support); its reader selects on a pipe, which Windows refuses")
 def test_run_executes_as_root_and_reports_exit(monkeypatch):
     # As "root" we run the staged script directly (sh <path>); a trivially-true
     # script exits 0 and the generator reports it.
@@ -166,3 +168,19 @@ def test_platform_support_linux_is_scripted():
 
     if _p.system().lower() == "linux":
         assert installer.platform_support()["scripted"] is True
+
+
+def test_windows_is_offered_no_scripted_install(monkeypatch):
+    """THE GUARD FOR THE WIN32 SKIPS. Three tests that run the scripted install skip on Windows, whose pipes cannot be
+    selected on, because ``platform_support`` never offers that install there. If Windows is ever offered it, this fails,
+    and those skips (``grep -rn "installer.platform_support" tests``) must be revisited before the path ships."""
+    import platform as _p
+
+    monkeypatch.setattr(_p, "system", lambda: "Windows")
+    assert installer.platform_support()["scripted"] is False
+    for path in ("tests/test_ollama_installer.py", "tests/test_child_env_passphrase.py",
+                 "tests/test_ai_install_protected_switch.py"):
+        from pathlib import Path
+
+        text = (Path(__file__).resolve().parent.parent / path).read_text(encoding="utf-8")
+        assert "installer.platform_support" in text, f"{path}: a win32 skip that does not cite its reason"
