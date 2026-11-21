@@ -110,6 +110,9 @@ def _clean_targets(data: dict) -> tuple[dict, dict, list[dict]]:
             refused.append({"region": name, "key": None, "refused": "not_a_mapping"})
             continue
         kept: dict = {}
+        for key in row:
+            if key not in _REGION_KEYS:
+                refused.append({"region": name, "key": str(key), "refused": "unknown_key"})
         for key in _REGION_KEYS:
             if row.get(key) is None:
                 continue
@@ -126,6 +129,9 @@ def _clean_targets(data: dict) -> tuple[dict, dict, list[dict]]:
         refused.append({"region": None, "key": "concentration", "refused": "not_a_mapping"})
     if not isinstance(raw_conc, dict):
         raw_conc = {}
+    for key in raw_conc:
+        if key not in _SHARE_KEYS:
+            refused.append({"region": None, "key": str(key), "refused": "unknown_key"})
     for key in _SHARE_KEYS:
         if raw_conc.get(key) is None:
             continue
@@ -151,14 +157,16 @@ def load_targets(path: Path | None = None) -> dict:
     """Read the per-region balance targets (user-editable aspirational floors), with the read's state. Never raises.
 
     Returns ``{"regions", "concentration", "read", "refused"}``. Read on every call, never cached here, so a file the
-    operator fixes is seen by the next report (the coverage route's own cache holds a payload for its TTL only).
+    operator fixes is seen by the next compute. The coverage route's cache re-stamps an entry while nothing is written to
+    the database, so a payload whose targets were not read whole carries its own TTL there (``__ttl_s__``) and is
+    recomputed once that ends, written to or not.
     """
     p = path or _TARGETS_PATH
     empty: dict = {"regions": {}, "concentration": {}, "refused": []}
-    if not p.exists():
-        return {**empty, "read": {"state": "absent"}}
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {**empty, "read": {"state": "absent"}}
     except (OSError, UnicodeDecodeError, ValueError, RecursionError, yaml.YAMLError) as exc:
         return {**empty, "read": {"state": "unreadable", "error": type(exc).__name__}}
     if data is None:
@@ -176,7 +184,7 @@ def _normalised_targets(targets: dict) -> dict:
     """A targets dict as :func:`load_targets` returns it. A hand-built one (no ``read`` block) is cleaned the same
     way and judged by what survives, so a bad value never raises out of the report."""
     if isinstance(targets.get("read"), dict):
-        return targets
+        return {"refused": [], **targets}
     regions, concentration, refused = _clean_targets(targets)
     read = _judge(regions, concentration, refused, {"state": "present"})
     return {"regions": regions, "concentration": concentration, "refused": refused, "read": read}

@@ -33,6 +33,7 @@ CASES = {
     "only refused values": ("regions: {Africa: {min_sources: lots}}\nconcentration: {max_country_share_pct: 400}\n",
                             {"state": "unreadable", "error": "no usable target (2 refused)"}),
     "regions a list": ("regions: [1]\n", {"state": "unreadable", "error": "no usable target (1 refused)"}),
+    "a misspelt key": ("regions: {Europe: {min_source: 5}}\n", {"state": "unreadable", "error": "no usable target (1 refused)"}),
 }
 
 UNREAD = [c for c, (_, want) in CASES.items() if want["state"] != "present"]
@@ -81,8 +82,8 @@ def test_a_bad_value_is_refused_by_row_and_the_good_ones_still_compare(tmp_path)
         "  Africa: {min_sources: -1, min_countries: true}\n"
         "  Atlantis: {min_sources: 3}\n"
         "  Asia: 7\n"
-        "  Oceania: {min_sources: 2.0}\n"
-        "concentration: {max_country_share_pct: 50, min_located_share_pct: '70'}\n"))
+        "  Oceania: {min_sources: 2.0, min_soruces: 9}\n"
+        "concentration: {max_country_share_pct: 50, min_located_share_pct: '70', max_share: 3}\n"))
     targets = load_targets(path)
     assert targets["read"] == {"state": "present"}
     assert targets["regions"] == {"Europe": {"min_countries": 2}, "Oceania": {"min_sources": 2}}
@@ -93,6 +94,8 @@ def test_a_bad_value_is_refused_by_row_and_the_good_ones_still_compare(tmp_path)
         {"region": "Africa", "key": "min_countries", "refused": "not_a_whole_number"},
         {"region": "Atlantis", "key": None, "refused": "not_a_region"},
         {"region": "Asia", "key": None, "refused": "not_a_mapping"},
+        {"region": "Oceania", "key": "min_soruces", "refused": "unknown_key"},
+        {"region": None, "key": "max_share", "refused": "unknown_key"},
         {"region": None, "key": "min_located_share_pct", "refused": "not_a_percentage"},
     ]
     rep = regional_report({"fr": 3, "de": 1}, targets=targets, total_sources=4)
@@ -100,7 +103,7 @@ def test_a_bad_value_is_refused_by_row_and_the_good_ones_still_compare(tmp_path)
     assert europe["sources_met"] is None and europe["countries_met"] is True
     africa = next(r for r in rep["regions"] if r["region"] == "Africa")
     assert africa["sources_met"] is None, "a refused floor is never coerced to 0 and then met"
-    assert len(rep["targets_refused"]) == 6
+    assert len(rep["targets_refused"]) == 8
 
 
 def test_a_hand_built_targets_dict_is_cleaned_the_same_way():
@@ -110,6 +113,8 @@ def test_a_hand_built_targets_dict_is_cleaned_the_same_way():
     assert rep["targets"] == {"state": "unreadable", "error": "no usable target (1 refused)"}
     rep = regional_report({"fr": 3}, targets={"regions": {"Europe": {"min_sources": 2}}})
     assert rep["targets"] == {"state": "present"} and rep["targets_refused"] == []
+    rep = regional_report({"fr": 3}, targets={"regions": {}, "read": {"state": "present"}})
+    assert rep["targets_refused"] == [], "a read block without a refused list never raises"
 
 
 def test_the_targets_are_read_on_every_call_so_a_fixed_file_is_seen(tmp_path):
@@ -133,10 +138,9 @@ def db():
         yield s
 
 
-@pytest.mark.parametrize("case", ["absent", "unparsable", "not a mapping", "only refused values", "regions a list"])
-def test_the_coverage_route_answers_with_the_state_and_shows_a_fixed_file_after_its_cache(db, tmp_path, monkeypatch,
-                                                                                          case):
-    from src.api import served_cache
+@pytest.mark.parametrize("case", ["absent", "unparsable", "not a mapping", "only refused values", "a misspelt key"])
+def test_the_coverage_route_answers_with_the_state_and_recomputes_after_its_own_ttl(db, tmp_path, monkeypatch, case):
+    from src.api import database, served_cache
     from src.api.database import country_coverage
     from src.catalog import coverage
 
@@ -148,13 +152,24 @@ def test_the_coverage_route_answers_with_the_state_and_shows_a_fixed_file_after_
         reg = country_coverage(db)["regional"]
         assert reg["targets"] == want
         assert next(r for r in reg["regions"] if r["region"] == "Europe")["sources"] == 1
-        # The operator fixes the file. The route caches a PAYLOAD for its TTL, never the failed read: once that entry
-        # goes (its TTL, here an invalidate), the next answer reads the file again and is present.
+        # A fixed file is not a database write, so the change probe cannot see it and a verified entry would only be
+        # re-stamped. This entry carries its own TTL instead: once that ends, the next read starts a recompute even when
+        # the probe still vouches for the payload.
+        entry = served_cache._CACHE["db:coverage"]
+        assert entry["ttl_s"] == database._CACHE_TTL_S
+        kicked: list[str] = []
+        monkeypatch.setattr(served_cache, "change_probe", lambda: 7)  # nothing written since: the probe vouches
+        entry["probe"] = 7
+        monkeypatch.setattr(served_cache, "_kick_background_refresh", lambda key, compute: kicked.append(key))
+        entry["checked_at"] -= database._CACHE_TTL_S + 1
+        country_coverage(db)
+        assert kicked == ["db:coverage"]
         path.write_text("regions: {Europe: {min_sources: 1}}\n", encoding="utf-8")
         served_cache.invalidate("db:coverage")
         reg = country_coverage(db)["regional"]
         assert reg["targets"] == {"state": "present"}
         assert next(r for r in reg["regions"] if r["region"] == "Europe")["sources_met"] is True
+        assert served_cache._CACHE["db:coverage"]["ttl_s"] is None, "a whole read keeps the route's usual cache"
     finally:
         served_cache.invalidate("db:coverage")
 
@@ -196,6 +211,7 @@ def test_the_panel_draws_the_state_line_in_every_language():
     keys = [ln.split('t("', 1)[1].rsplit('")', 1)[0] for ln in body.splitlines() if 'return t("' in ln]
     keys += [ln.split('tf("', 1)[1].split('", {', 1)[0] for ln in body.splitlines() if 'return tf("' in ln]
     assert len(set(keys)) == 4
+    assert body.index("refused.length) return") < body.index('st === "unreadable"'), "every value refused is said as such"
     assert "covTargetsLine(reg, t, tf)" in function_body(js, "renderCoverageRegions")
     for loc in sorted((ROOT / "src/static/locales").glob("*.json")):
         data = json.loads(loc.read_text("utf-8"))

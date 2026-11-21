@@ -194,8 +194,9 @@
       const refused = (reg && reg.targets_refused) || [];
       if (st === "absent") return t("The regional targets file was not found on this install, so no region is compared with a floor.");
       if (st === "empty") return t("The regional targets file on this install was read and sets no floor.");
-      if (st === "unreadable") return t("The regional targets file on this install could not be read, so no region is compared with a floor.");
+      // Every value refused also reads as unreadable on the server: here the refusal is the accurate sentence.
       if (refused.length) return tf("{n} values in the regional targets file were refused and are not compared.", {n: refused.length});
+      if (st === "unreadable") return t("The regional targets file on this install could not be read, so no region is compared with a floor.");
       return "";
     }
 
