@@ -1047,7 +1047,8 @@ def record_law_coverage(report: dict) -> dict | None:
     floor_state = floor.get("state") if isinstance(floor.get("state"), str) else None
     counts: dict | None = None
     if by_state is not None:
-        counts = {str(k): len(v) for k, v in by_state.items() if isinstance(v, list)}
+        # A null state is one the report did not look up (row 272: an unread catalogue): kept as null, never dropped or 0.
+        counts = {str(k): (len(v) if isinstance(v, list) else None) for k, v in by_state.items() if isinstance(v, list) or v is None}
         if floor_state == "unchecked":
             # The catalogue could not be read, so the states that need it were never looked up: unknown, never 0.
             # Only what the database says (tracked) and the unchecked bucket itself are counts.

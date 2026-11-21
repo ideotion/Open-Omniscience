@@ -983,11 +983,13 @@
     }
     // The states a payload carries, in the known order and then any this build does not know, in the order sent: a state the
     // client cannot name is still a state, and dropping it would leave counts that no longer add up to the countries.
-    // ``unchecked`` is shown only when something is in it (it exists only when the catalogue could not be read).
+    // ``unchecked`` is shown only when something is in it (it exists only when the catalogue could not be read). A state sent as
+    // null was never looked up (row 272: the catalogue could not be read): it is left out, never drawn as 0 -- its countries are
+    // all counted under "Not looked up", and the caveat above the tally says why.
     function lawFloorStatesIn(sizes) {
       if (!sizes || typeof sizes !== "object") return [];
-      const known = _LAW_FLOOR_ORDER.filter((st) => st in sizes && (sizes[st] > 0 || st !== "unchecked"));
-      return known.concat(Object.keys(sizes).filter((st) => !_LAW_FLOOR_ORDER.includes(st)));
+      const known = _LAW_FLOOR_ORDER.filter((st) => st in sizes && sizes[st] !== null && (sizes[st] > 0 || st !== "unchecked"));
+      return known.concat(Object.keys(sizes).filter((st) => !_LAW_FLOOR_ORDER.includes(st) && sizes[st] !== null));
     }
     function lawFloorCountsHtml(counts, t) {
       return lawFloorStatesIn(counts)
@@ -1010,6 +1012,7 @@
       const stateOf = {};
       const sizes = {};
       for (const st of Object.keys(f.by_state)) {
+        if (f.by_state[st] === null) { sizes[st] = null; continue; } // never looked up: absent, not an empty state
         const members = Array.isArray(f.by_state[st]) ? f.by_state[st] : [];
         sizes[st] = members.length;
         for (const cc of members) stateOf[cc] = st;

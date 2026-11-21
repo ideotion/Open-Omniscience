@@ -75,7 +75,7 @@ def _doc(jurisdiction, country, language=None, category="legislation"):
 
 
 def _states(report):
-    return {cc: st for st, ccs in report["by_state"].items() for cc in ccs}
+    return {cc: st for st, ccs in report["by_state"].items() for cc in (ccs or [])}
 
 
 # --- the four states -------------------------------------------------------------------------------------------------------
@@ -240,7 +240,7 @@ def test_an_unreadable_catalogue_is_unchecked_never_no_source():
     rep = floor_report([_doc("aa", "aa")], None, floor, reason="LawCatalogUnreadable: boom")
     assert rep["state"] == "unchecked" and rep["reason"] == "LawCatalogUnreadable: boom"
     assert _states(rep) == {"aa": FLOOR_TRACKED, "bb": FLOOR_UNCHECKED}
-    assert rep["by_state"][FLOOR_NO_SOURCE] == [], "nobody is read as having no source for a lookup that never happened"
+    assert rep["by_state"][FLOOR_NO_SOURCE] is None, "nobody is read as having no source for a lookup that never happened"
     assert rep["by_state"][FLOOR_UNCHECKED] == ["bb"] and rep["many_country_sources"] is None
 
 
@@ -340,7 +340,7 @@ def test_the_report_with_an_unreadable_catalogue_keeps_what_the_database_knows_a
     floor = law_coverage_report(s)["floor"]
     assert floor["state"] == "unchecked" and "PermissionError" in floor["reason"]
     assert "fr" in floor["by_state"][FLOOR_TRACKED], "the database half is still true"
-    assert floor["by_state"][FLOOR_NO_SOURCE] == [] and floor["by_state"][FLOOR_UNCHECKED], "no lookup, so no 'no source'"
+    assert floor["by_state"][FLOOR_NO_SOURCE] is None and floor["by_state"][FLOOR_UNCHECKED], "no lookup, so no 'no source'"
 
 
 def test_the_real_floor_lists_every_country_once_with_a_state_and_the_floor_files_own_status():
