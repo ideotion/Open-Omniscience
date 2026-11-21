@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "fa03695a69597f665054b1c2b8cb406064b07a4e32de3fde0c853d6bf633aac0",
+  "digest": "444c8e86970caef6f1053d9eecb45d3224d274cc1a554d02eb55b9e2d131c387",
   "log": [
     {
       "version": 1,
@@ -49,6 +49,12 @@
       "digest": "fa03695a69597f665054b1c2b8cb406064b07a4e32de3fde0c853d6bf633aac0",
       "kind": "same",
       "note": "The serial precompute no longer skips www for an article whose keyword half failed; the apply redoes that article inline whole, so the precomputed result is unused and the rows index_article writes are identical."
+    },
+    {
+      "version": 1,
+      "digest": "444c8e86970caef6f1053d9eecb45d3224d274cc1a554d02eb55b9e2d131c387",
+      "kind": "same",
+      "note": "row 239: safe_yaml maps libyaml 0.2.6's own nesting error (PyYAML 6.0.4) to the same YAMLDepthError; a document that parsed before parses to the same value, and a refused one is refused as before, so the rows an article gets are identical"
     }
   ]
 }

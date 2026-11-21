@@ -60,4 +60,7 @@ def test_the_same_file_crashes_the_pre_guard_loader(hostile_local_rings):
         "yaml.load(open(sys.argv[1], encoding='utf-8').read(), Loader=yaml.CSafeLoader)\n"
     )
     done = subprocess.run([sys.executable, "-I", "-c", code, str(hostile_local_rings)], capture_output=True, text=True, timeout=120)
-    assert done.returncode != 0, "the C loader no longer crashes on this file: re-measure the bound before keeping this test"
+    # below libyaml 0.2.6 a crash, from 0.2.6 (PyYAML 6.0.4) its own nesting error (row 239): the shared rule says which
+    from tests.test_safe_yaml_depth_guard import assert_the_unguarded_c_loader_fails_on_it
+
+    assert_the_unguarded_c_loader_fails_on_it(done)

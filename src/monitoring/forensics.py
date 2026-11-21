@@ -44,6 +44,7 @@ from typing import Any
 from src.monitoring.secret_scrub import log_failure
 from src.paths import data_dir
 from src.safety.file_lock import atomic_replace
+from src.shared_text import said
 
 _LOG = logging.getLogger(__name__)
 
@@ -163,7 +164,7 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
         "suspect_staging": [],
         "pre_restore_snapshots": [],
         "totals": {},
-        "method": (
+        **said("method", (
             "Recursive on-disk sizes of the data folder's top-level entries, symlinks "
             "never followed, file contents never read. suspect_staging lists orphaned "
             "backup/restore temp dirs by the exact name patterns the backup code uses "
@@ -175,7 +176,7 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
             "which are retained on purpose and are never counted as orphaned staging nor "
             "folded into other_bytes — see pre_restore_policy. Local "
             "diagnostics only; nothing is transmitted."
-        ),
+        )),
     }
     if not root.is_dir():
         out["note"] = "data dir does not exist (fresh install / custom OO_DATA_DIR)"
@@ -462,10 +463,10 @@ def session_uptime() -> dict[str, Any]:
             "measured": False,
             "started_at": None,
             "seconds": None,
-            "reason": (
+            **said("reason", (
                 "this process never called record_session_start(), so it has no start "
                 "of its own to measure from"
-            ),
+            )),
         }
     return {
         "measured": True,
@@ -913,32 +914,29 @@ def wal_state_before_open(path: Path | None = None) -> dict[str, Any]:
         return {
             "bytes": p.stat().st_size,
             "state": "present",
-            "reason": (
+            **said("reason", (
                 "a -wal file was present — its frames are replayed inside the next "
                 "connection, so that recovery is part of whatever this reading times. "
                 "Read AT BOOT it also means the previous session's last SQLite "
                 "connection was never cleanly closed"
-            ),
+            )),
         }
     except FileNotFoundError:
         return {
             "bytes": 0,
             "state": "absent",
-            "reason": (
+            **said("reason", (
                 "no -wal file at this moment, so there is no WAL recovery in this "
                 "timing. NOTHING can be concluded about how the previous session "
                 "ended: a clean close, a wrong-passphrase attempt, an earlier probe "
                 "and a fresh store all leave the file absent"
-            ),
+            )),
         }
     except OSError as exc:
         return {
             "bytes": None,
             "state": "unreadable",
-            "reason": (
-                f"the -wal size could not be read ({type(exc).__name__}) — "
-                "unmeasured, never reported as zero"
-            ),
+            **said("reason", "the -wal size could not be read ({error}) — unmeasured, never reported as zero", error=type(exc).__name__),
         }
 
 
@@ -948,7 +946,7 @@ def previous_session_report() -> dict[str, Any]:
     prev = _PREV_AT_BOOT if _PREV_LOADED else _read_state()
     out: dict[str, Any] = {
         "generated_at": _now(),
-        "method": (
+        **said("method", (
             "A clean-shutdown sentinel (session_state.json stamped 'running' at boot, "
             "'clean' at shutdown), the PREVIOUS session's own high-water memory marks, "
             "and the -wal state read at this boot before any connection existed. An "
@@ -958,7 +956,7 @@ def previous_session_report() -> dict[str, Any]:
             "the app CANNOT tell apart from its own data: an OOM kill, a host reset, a "
             "SIGHUP from a closed terminal and a native fatal all leave this same "
             "record."
-        ),
+        )),
     }
     # What the PREVIOUS session left on disk, measured at THIS boot before any
     # connection could exist (S0.1). Reported for EVERY verdict — including the
@@ -1208,7 +1206,7 @@ def start_kernel_evidence_read(prev: dict[str, Any] | None) -> None:
     if prev is None:
         _KERNEL_EVIDENCE = {
             "verdict": "not-applicable",
-            "reason": "no previous session recorded, so there is nothing to look up",
+            **said("reason", "no previous session recorded, so there is nothing to look up"),
         }
         return
 
@@ -1227,7 +1225,7 @@ def start_kernel_evidence_read(prev: dict[str, Any] | None) -> None:
         except Exception as exc:  # noqa: BLE001 - a forensic read never raises upward
             _KERNEL_EVIDENCE = {
                 "verdict": "unavailable",
-                "reason": f"the kernel-log read failed ({type(exc).__name__})",
+                **said("reason", "the kernel-log read failed ({error})", error=type(exc).__name__),
             }
         # The user-space killers log to the ordinary journal, not the kernel's
         # (2026-09-26): read only for a session that did not end cleanly, since a clean
@@ -1245,7 +1243,7 @@ def start_kernel_evidence_read(prev: dict[str, Any] | None) -> None:
         except Exception as exc:  # noqa: BLE001 - a forensic read never raises upward
             got["userspace_killers"] = {
                 "verdict": "unavailable",
-                "reason": f"the journal read failed ({type(exc).__name__})",
+                **said("reason", "the journal read failed ({error})", error=type(exc).__name__),
             }
         _JOURNAL_EXIT_EVIDENCE = got
 
@@ -1260,10 +1258,10 @@ def kernel_evidence() -> dict[str, Any]:
         return _KERNEL_EVIDENCE
     return {
         "verdict": "not-read",
-        "reason": (
+        **said("reason", (
             "the background kernel-log read has not completed (or was never started, "
             "e.g. outside the app's own boot path) — unmeasured, not 'clean'"
-        ),
+        )),
     }
 
 
@@ -1298,10 +1296,10 @@ def _exit_evidence_report(prev: dict[str, Any]) -> dict[str, Any]:
     else:
         out["userspace_killers"] = {
             "verdict": "not-read",
-            "reason": (
+            **said("reason", (
                 "the background journal read has not completed (or was never started) — "
                 "unmeasured, not 'clean'"
-            ),
+            )),
         }
     return out
 
@@ -1333,7 +1331,7 @@ def pass_tail_journal() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
         return {
             "available": False,
-            "reason": f"the pass journal could not be read ({type(exc).__name__})",
+            **said("reason", "the pass journal could not be read ({error})", error=type(exc).__name__),
         }
 
 
@@ -1413,13 +1411,13 @@ def storage_footprint() -> dict[str, Any]:
             "ollama_models_bytes": ollama_bytes,
             "grand_total_bytes": grand_total,
         },
-        "method": (
+        **said("method", (
             "Recursive on-disk sizes of every app store, itemized per component. The database "
             "triple + wiki_dumps + osm_regions + staging live in the data folder; the Ollama "
             "model store lives OUTSIDE it (so it was missing from any data-dir-only total). "
             "grand_total_bytes is the true on-disk footprint. Symlinks never followed, file "
             "contents never read, counts/bytes only — no score. Best-effort per component."
-        ),
+        )),
     }
 
 
@@ -1608,12 +1606,12 @@ def data_dir_persistence() -> dict[str, Any]:
             "Set OO_DATA_DIR=/path/on/a/persistent/or/bind-mounted/volume before launching "
             "(the installer accepts it too); the corpus, keys and custody log then live there."
         ),
-        "method": (
+        **said("method", (
             "tmpfs/ramfs data folder = provably volatile; a Qubes VM is recognised by its marker file "
             "or its kernel name, and its persistence read from qubesdb (disposable = volatile; an "
             "AppVM keeps /home, /rw and /usr/local only); otherwise honest 'unknown'. Local read-only "
             "checks; no network, no score."
-        ),
+        )),
     }
 
 
@@ -2312,7 +2310,7 @@ def _expedition_digest() -> dict[str, Any]:
 
         return expedition.digest()
     except Exception as exc:  # noqa: BLE001 - the forensics block must survive a broken sidecar
-        return {"available": False, "reason": f"the expedition log could not be read ({type(exc).__name__})"}
+        return {"available": False, **said("reason", "the expedition log could not be read ({error})", error=type(exc).__name__)}
 
 
 def session_forensics() -> dict[str, Any]:

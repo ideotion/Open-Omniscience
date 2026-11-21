@@ -3043,7 +3043,7 @@
           start_date: p.get("start_date") || "", end_date: p.get("end_date") || "",
         }));
         const t = $("results");
-        t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>" +
+        t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th><span class='sr-only'>Actions</span></th></tr>" +
           (data.results.length ? data.results.map(a =>
             `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>${_approxTitleHtml(a)}
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
@@ -3095,7 +3095,7 @@
         const msg = _articleFailureMessage(e);
         const meta = $("search-meta"); if (meta) meta.textContent = msg;
         const t = $("results");
-        if (t) t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>"
+        if (t) t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th><span class='sr-only'>Actions</span></th></tr>"
           + `<tr><td colspan="5" class="note err">${esc(msg)}</td></tr>`;
         toast(_failMsg("Search failed: {error}", e), "err");
       }

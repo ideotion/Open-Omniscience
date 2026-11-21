@@ -1790,7 +1790,9 @@ def discover_sources_by_topic(
     Discover new sources for a specific topic.
 
     This is the ONE feature that contacts an external service (DuckDuckGo) —
-    the topic query leaves the machine. Gated OFF by default behind
+    the topic query leaves the machine — and then each site the search returns
+    (``discover_rss_feeds``: robots.txt, the page, the feed links it names and
+    ``FEED_PROBE_PATHS``), all through the ethical fetcher (R761). Gated OFF by default behind
     Settings → Safety → "External topic discovery" (audit finding ETH-02 /
     roadmap RM-03); refuses honestly when disabled.
 
@@ -1806,7 +1808,8 @@ def discover_sources_by_topic(
             status_code=403,
             detail=(
                 "External topic discovery is disabled (the default). It sends your "
-                "topic query to DuckDuckGo, an external service. Enable it knowingly "
+                "topic query to DuckDuckGo, an external service, then visits each site "
+                "the search returns to look for a feed. Enable it knowingly "
                 "in Settings → Safety → External topic discovery."
             ),
         )

@@ -34,6 +34,12 @@ YAML_LOADER = SAFE_YAML_LOADERS[0]
 # (400 parse, 500 raise, measured). The deepest real file under ``configs/`` nests 5 levels. 256 is 51x above that, 5.8x below the
 # inferred 512 KB crash depth and 93x below the measured 8 MiB one. A document past it is refused, never parsed.
 MAX_NESTING = 256
+# PyYAML 6.0.4 (2026-11-20) ships a libyaml with a nesting limit of its own: its SCANNER raises a ScannerError, problem "exceeded
+# maximum nesting depth", past 1,000 levels (measured 2026-11-21: flow sequences and mappings parse to 1,000 and raise at 1,001,
+# block mappings raise at 1,000), so the composer can no longer be driven to a crash. The scanner reads a flow document ahead of the
+# parser (every "[" may open a simple key), so on a document past that limit the error can reach the event pass above before its
+# 257th opener does. It is the same refusal: mapped to YAMLDepthError on both versions, never let through as a malformed document.
+LIBYAML_NESTING_PROBLEM = "exceeded maximum nesting depth"
 
 
 # What the pure path says for a RecursionError. INFERRED, not known: a RecursionError carries no depth, so it can be this document or a
@@ -56,6 +62,10 @@ _CLOSERS = (yaml.MappingEndEvent, yaml.SequenceEndEvent)
 def _uses_libyaml() -> bool:
     c_loader = getattr(yaml, "CSafeLoader", None)
     return c_loader is not None and issubclass(YAML_LOADER, c_loader)
+
+
+def _is_libyaml_nesting_limit(exc: yaml.YAMLError) -> bool:
+    return isinstance(exc, yaml.MarkedYAMLError) and exc.problem == LIBYAML_NESTING_PROBLEM
 
 
 def _require_within_bound(depth: int) -> None:
@@ -82,6 +92,10 @@ def refuse_if_too_deep(text: str) -> None:
             event = loader.get_event()
             depth += int(isinstance(event, _OPENERS)) - int(isinstance(event, _CLOSERS))
             _require_within_bound(depth)
+    except yaml.MarkedYAMLError as exc:
+        if _is_libyaml_nesting_limit(exc):  # libyaml's own limit (PyYAML >= 6.0.4) met before the count reached the bound
+            raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels") from None
+        raise
     finally:
         loader.dispose()
 
@@ -99,5 +113,9 @@ def load_safe_yaml(text: str):
     except RecursionError:
         # the pure loader's own limit (about 500 levels), not the bound above: said without a number
         raise YAMLDepthError(PURE_RECURSION_MESSAGE) from None
+    except yaml.MarkedYAMLError as exc:
+        if _is_libyaml_nesting_limit(exc):  # a caller that skipped the pre-pass still gets the one refusal
+            raise YAMLDepthError(f"the document nests deeper than {MAX_NESTING} levels") from None
+        raise
     finally:
         loader.dispose()

@@ -72,6 +72,15 @@
  *              check reaches api.github.com through it while the downloads do not. The
  *              hover's transport line then says "mostly direct" rather than claiming
  *              no part of the lane uses the proxy (S04-08's S5, 2026-09-25)
+ *   resultSites true when the lane ALSO reaches sites it cannot name in advance: the
+ *              ones a search returns. Discover by topic is the one: after the search on
+ *              html.duckduckgo.com it visits each result site (its robots.txt, the page,
+ *              the feed links the page names) through the ethical fetcher. The row then
+ *              says so visibly and the hover names the probes (row 224, R761)
+ *   probePaths the feed addresses probed on each of those sites, EXACTLY
+ *              src/services/duckduckgo.py:FEED_PROBE_PATHS, pinned by
+ *              tests/test_topic_discovery_disclosure_r761.py so the hover cannot drift
+ *              from what the code fetches
  *   spawned    true when part of the lane's reach belongs to a PROGRAM this app starts
  *              rather than to a request it makes: the AI lane runs pip, the Hugging Face
  *              downloader and Ollama's own install.sh, whose download of the Ollama
@@ -220,6 +229,8 @@
       "id": "topic-discovery",
       "label": "Discover by topic",
       "hosts": ["html.duckduckgo.com"],
+      "resultSites": true,
+      "probePaths": ["/rss", "/rss.xml", "/rss2.xml", "/rss2.0.xml", "/feed", "/feed.xml", "/atom.xml", "/rdf.xml", "/news/rss", "/rss/news", "/rss/feed", "/feed/rss", "/index.rss", "/index.xml", "/index.atom", "/blog/rss", "/blog/feed", "/posts/rss", "/articles/rss"],
       "trigger": "opt-in",
       "setting": "discovery_external_enabled",
       "settingFrom": "safety",

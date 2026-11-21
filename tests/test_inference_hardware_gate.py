@@ -538,7 +538,7 @@ def test_only_the_exact_env_value_1_enables(monkeypatch):
 #  Payload shape + cost.
 # --------------------------------------------------------------------------- #
 _KEYS = {
-    "practical", "kind", "name", "vram_mb", "unified_ram_gb", "reason",
+    "practical", "kind", "name", "vram_mb", "unified_ram_gb", "reason", "reason_i18n",
     "method", "method_i18n", "caveat", "caveat_i18n", "overridden", "override_requested", "min_unified_ram_gb",
     # Ruling 15 (2026-07-31): the tiers, reported so no caller re-derives them.
     # "warnings" is in EVERY branch on purpose -- an absent key would read as

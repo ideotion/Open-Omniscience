@@ -206,7 +206,7 @@ _PROMPTS = (
     "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.",
     "Encrypt the corpus with this passphrase? It will be required at every start and there is no recovery.",
     "Send every fetch through this proxy? You must run and trust the proxy yourself; protected mode cannot guarantee anonymity.",
-    "Send your topic-discovery queries to DuckDuckGo? Your query leaves this machine.",
+    "Send your topic-discovery queries to DuckDuckGo and visit each site it returns? Your query leaves this machine, and each of those sites sees your visit.",
     # R443: the four removals that lost the old gesture-only cover and now ask first
     "Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back.",
     "Remove this annotation? This cannot be undone.",
