@@ -3173,6 +3173,10 @@
       // soak-window.json read them -- counts, dates, edition codes and reason tokens, no title, text or address -- so the report for
       // the twelve editions can be read back from a real run (scripts/wiki_coverage_readback.py).
       {kind: "file", url: "/api/wiki/lane/counters", name: "oo-field-{press}-wiki-coverage.json"},
+      // Climate fetches per dataset (row 265, 0.6 gate row A): the last fetch and the last failure of each of the six, times, counts
+      // and fixed reason tokens only (kill_switch, robots, http_403, ...), never an address or a station, so the operator's real-host
+      // run can be read back dataset by dataset (scripts/climate_readback.py). A few kilobytes.
+      {kind: "file", url: "/api/climate/fetch-record", name: "oo-field-{press}-climate-fetches.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte
