@@ -5405,12 +5405,19 @@
         const r = await api(`/api/wiki/track-now?ores=${_ores()}`, {method:"POST"});
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
         const off = r.skipped_offline || 0;     // pages the kill switch refused: not "0 new edits" (invariant #14e's corollary)
+        // R772(a): the transport changed during the batch, and it stopped there rather than going on over the new one.
+        const moved = !r.stopped_by ? ""
+          : " " + (r.stopped_by === "settings"
+            ? t("Stopped: the safety settings could not be read during tracking, so nothing more was fetched. Click Track now again once they can be read.")
+            : t("Stopped: the transport changed during tracking. Click Track now again to go on over the transport now in force."));
         if (off && !r.pages) {
           $("wiki-progress").textContent = t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.");
           toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); loadWiki(); return;
         }
         $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`
-          + (off ? " " + ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("{n} not fetched (airplane mode)", {n: off}) : off + " not fetched (airplane mode)") : "");
+          + (off ? " " + ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("{n} not fetched (airplane mode)", {n: off}) : off + " not fetched (airplane mode)") : "")
+          + moved;
+        if (moved) { toast(moved.trim(), "warn"); loadWiki(); return; }
         toast("Tracking complete."); loadWiki();
       } catch (e) { $("wiki-progress").textContent=""; toast(_failMsg("Track now failed: {error}", e), "err"); }
     }

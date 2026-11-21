@@ -1389,6 +1389,22 @@
       if (why && why.reason === "transport-waiting") return "waiting";
       return "live";
     }
+    // R772(a): why a held stream is held, and what a click would start it over, both from the status (never a proxy address).
+    function _wikiLaneHoldLines(held) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!held) return null;
+      const why = held.by === "protected"
+        ? t9("Held: protected mode was switched on after this stream started over a direct connection. It does not reconnect on its own.")
+        : held.by === "unprotected"
+        ? t9("Held: protected mode was switched off after this stream started through your proxy. It does not reconnect on its own.")
+        : held.by === "proxy"
+        ? t9("Held: the proxy was changed after this stream started through another proxy. It does not reconnect on its own.")
+        : t9("Held: the safety settings could not be read while this stream ran. It does not reconnect on its own.");
+      const over = held.transport === "proxy" ? t9("A click starts it again through your proxy.")
+        : held.transport === "direct" ? t9("A click starts it again over the direct connection.")
+        : t9("The safety settings cannot be read now, so a click cannot start it.");
+      return {why: why, over: over};
+    }
     function _wikiLaneHeading(state, active, why) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (state === "halted") return t9("Wikipedia stream: paused");
@@ -1451,7 +1467,9 @@
       // A stream whose connections keep failing is WAITING, and the hover names on
       // what: the failure verbatim (an error message, not translated prose) inside a
       // translated sentence that says it retries and never goes direct.
-      const detail = (running && why.reason === "transport-waiting")
+      const holdLines = _wikiLaneHoldLines(why.held);
+      const detail = holdLines ? holdLines.why + " " + holdLines.over
+        : (running && why.reason === "transport-waiting")
         ? t9("Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.")
             .replace("{why}", why.waitingOn || t9("no reason was reported"))
         : (running && !_wikiLaneActive)
@@ -1466,7 +1484,8 @@
       const heading = _wikiLaneHeading(state, _wikiLaneActive, why);
       const held = _wikiLaneHeld(state, _wikiLaneActive, why);
       // What a click DOES: a held stream is started, a live or waiting one is paused.
-      const action = (running && !held) ? t9("Pause the Wikipedia stream")
+      const action = holdLines ? t9("Start the Wikipedia stream")
+                   : (running && !held) ? t9("Pause the Wikipedia stream")
                              : halted ? t9("Resume the Wikipedia stream")
                                       : t9("Start the Wikipedia stream");
       btn.setAttribute("data-wiki", _wikiLaneShape(state, _wikiLaneActive, why));
@@ -1523,9 +1542,14 @@
         // already refuses everything, so "live" under airplane mode would be a claim the app
         // does not have. The server's own ``online`` (the kill switch) decides.
         const offline = !!st && st.online === false;
-        _wikiLaneWhy = {reason: (offline && (lane.state || "running") === "running")
+        // R772(a): a stream HELD by a transport change stays held whatever airplane mode says (going online does not lift it),
+        // so its reason wins, and the click resumes it over the transport the status names.
+        _wikiLaneWhy = {reason: lane.reason === "transport-held" ? "transport-held"
+                          : (offline && (lane.state || "running") === "running")
                           ? "airplane-mode" : (lane.reason || null),
-                        waitingOn: lane.waiting_on || null, walk: _wikiWalkOf(lane)};
+                        waitingOn: lane.waiting_on || null, walk: _wikiWalkOf(lane),
+                        held: lane.held_by ? {by: lane.held_by, transport: lane.resume_transport || "settings",
+                                              token: lane.resume_token || ""} : null};
         // A WAITING stream is registered but delivers nothing, so it is not drawn
         // as live: the breathing accent means "happening now".
         _paintWikiLane(lane.state || "running",
@@ -1565,6 +1589,9 @@
       // started in this session) is STARTED by a click, not paused: pausing something
       // that is not running looked like "nothing happens".
       const held = _wikiLaneHeld(from, _wikiLaneActive, _wikiLaneWhy);
+      // R772(a): a stream held by a transport change is started again only here, over the transport the hover named. Shift+click
+      // still stops it (wikiLaneClick); a halted held stream is resumed the same way.
+      if (_wikiLaneWhy && _wikiLaneWhy.held) { await resumeHeldWikiLane(); return; }
       const next = (from === "running" && !held) ? "halted" : "running";
       if (next === "running") {
         // GOING TO RUNNING IS AN EGRESS. Invariant #14: every offline -> online
@@ -1593,6 +1620,28 @@
         if (now === "running") setTimeout(loadWikiLane, 2500);
       } catch (e) {
         toast(_failMsg("Update failed: {error}", e), "err");
+      }
+    }
+
+    async function resumeHeldWikiLane() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const held = _wikiLaneWhy && _wikiLaneWhy.held;
+      const lines = _wikiLaneHoldLines(held);
+      if (!lines) return;
+      if (held.transport === "settings") { toast(lines.why + " " + lines.over, "warn"); return; }
+      // The reason and the transport the click starts it over, said BEFORE it: the stream does not go on over a transport the
+      // operator was not shown. The server refuses (409) when the transport changed after this was drawn.
+      if (!confirm(lines.why + "\n\n" + lines.over + "\n\n" + t9("Start the Wikipedia stream again?"))) return;
+      if (!await ensureOnline(t9("Start the Wikipedia stream"), {enabling: "wikipedia"})) return;
+      try {
+        await api("/api/scheduler/wiki-lane/resume",
+          {method: "POST", body: JSON.stringify({transport: held.token || ""})});
+        await loadWikiLane();
+        toast(_wikiLaneHeading(_wikiLaneState || "running", _wikiLaneActive, _wikiLaneWhy));
+        setTimeout(loadWikiLane, 2500);
+      } catch (e) {
+        toast(_failMsg("Update failed: {error}", e), "err");
+        loadWikiLane();
       }
     }
 

@@ -51,7 +51,7 @@ const WALK_WORDS = (function () {
   return m[0];
 })();
 const PAINTER_HELPERS = WALK_WORDS + "\n"
-  + ["_wikiLaneHeld", "_wikiLaneShape", "_wikiLaneHeading", "_wikiWalkLine"]
+  + ["_wikiLaneHeld", "_wikiLaneShape", "_wikiLaneHoldLines", "_wikiLaneHeading", "_wikiWalkLine"]
   .map((n) => extract(n)).join("\n") + "\n";
 
 // -- a fake DOM, just enough ------------------------------------------------- //
