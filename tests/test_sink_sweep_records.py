@@ -29,8 +29,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
          "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption",
          "stop_reason_of", "stop_text_of",
-         # row 236: the local-AI clients' error text -- record_text, or httpx's own status line, with the request's address masked
-         "error_text", "_raw_url_masked"}
+         # row 236: the local-AI clients' error text -- record_text with every address in it masked (its other call sites are classified)
+         "error_text"}
 #: Packages the earlier slices named one by one; every OTHER package of ``src/`` and the top-level modules are read by slice 5's glob (the
 #: sweep reads the whole program). ``static`` holds no Python; a module added to any package is read from its first commit.
 _SWEEP_DONE = {"scheduler", "wiki", "backup", "ingest", "database", "monitoring", "api", "static", "__pycache__"}
@@ -1115,9 +1115,16 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
         ('_http_reason', 'raw = exc.response.text or ""'): 1,
         # _status_line: httpx's HTTPStatusError status line and URL with the explainer line cut off; no driver and no key
-        ('_status_line', 'text = _raw_url_masked(str(exc), exc)'): 1,
+        ('_status_line', 'text = _raw_url_masked(str(exc), exc)'): 2,  # the text, and the exception handed over for its request's address
+        # row 236: record_text's words (the scrub) with every address in them masked; the exception goes in for its request's address
+        ('error_text', 'return _raw_url_masked(record_text(exc), exc)'): 1,
+        ('bounded_error', 'return head + reason_first(_raw_url_masked(record_text(exc, typed=False), exc), max(1, limit - len(head)))'): 1,
         # row 236: reads the REQUEST's address (the one httpx quotes in its own text) to mask it there; no text of the exception is written
-        ('_raw_url_masked', 'url = str(exc.request.url)  # type: ignore[attr-defined]  # httpx.HTTPError; RuntimeError when it has none'): 1,
+        # row 236: reads the REQUEST's address (the one httpx quotes in its own text) to mask it there; no text of the exception is written
+        ('_raw_url_masked', 'url = str(exc.request.url) if exc is not None else ""  # type: ignore[attr-defined]  # httpx.HTTPError'): 2,
+        # row 236 (security read): httpx's own status text with every address masked, written back INTO the exception so a chained
+        # traceback cannot quote the raw address; the type, request and response stay httpx's
+        ('raise_for_status', 'exc.args = (_raw_url_masked(str(exc), exc), *exc.args[1:])'): 4,
         # a parameter named error holding a text its caller made through record_text; not an exception here
         ('is_context_overflow', 'if error is None:'): 1,
         # read for a keyword to CLASSIFY the failure (callers pass the caught exception, triage_job and source_tags_job among them); the variable is followed by test_a_classification_read_of_the_exceptions_text_only_searches_it

@@ -41,6 +41,7 @@ from src.llm.ollama import (
     _is_loopback_url,
     _require_loopback,
     error_text,
+    raise_for_status,
     shown_address,
 )
 
@@ -273,7 +274,7 @@ class VllmClient:
         self._check_kill_switch()
         try:
             resp = self._client.get("/v1/models")
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
                 f"vLLM not reachable at {self.shown_url}: {error_text(exc)}. Is the vllm server running?"
@@ -299,7 +300,7 @@ class VllmClient:
         self._check_kill_switch()
         try:
             resp = self._client.get("/v1/models")
-            resp.raise_for_status()
+            raise_for_status(resp)
             for m in resp.json().get("data") or []:
                 n = m.get("max_model_len")
                 if isinstance(n, int) and n > 0:
@@ -315,7 +316,7 @@ class VllmClient:
         self._check_kill_switch()
         try:
             resp = self._client.get("/v1/models")
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPError as exc:
             raise LLMUnavailable(f"vLLM not reachable at {self.shown_url}: {error_text(exc)}") from exc
         return [
@@ -385,7 +386,7 @@ class VllmClient:
         if resp.status_code >= 500:
             raise LLMUnavailable(f"The server at {self.shown_url} failed to list its models, so no text is sent to it.")
         try:
-            resp.raise_for_status()  # a 404 or 401 (vLLM started with --api-key) leaves the server unidentified
+            raise_for_status(resp)  # a 404 or 401 (vLLM started with --api-key) leaves the server unidentified
             cards = resp.json().get("data")
         except (httpx.HTTPError, ValueError, AttributeError):
             return "other", []
@@ -497,7 +498,7 @@ class VllmClient:
         try:
             with generating(model, backend="vllm"):
                 resp = self._client.post("/v1/chat/completions", json=payload)
-                resp.raise_for_status()
+                raise_for_status(resp)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise LLMUnavailable(

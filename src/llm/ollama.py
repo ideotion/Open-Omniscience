@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -357,15 +358,39 @@ def _http_reason(exc: httpx.HTTPStatusError) -> str:
 REASON_SEP = " — "
 
 
-def _raw_url_masked(text: str, exc: BaseException) -> str:
-    """``text`` with the request's address, wherever httpx quoted it ("... for url 'http://user:pw@...'"), written as
-    :func:`shown_address` shows it (row 236, R734). Any other text is returned unchanged. NEVER raises."""
+#: Any ``scheme://...`` run of text, as an error quotes an address: up to whitespace or a quote.
+_URL_IN_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^\s'\"<>]+")
+
+
+def _raw_url_masked(text: str, exc: BaseException | None = None) -> str:
+    """``text`` with every address in it written as :func:`shown_address` shows it (row 236, R734): the request's own
+    address wherever httpx quoted it ("... for url 'http://user:pw@...'"), a redirect's ``Location`` httpx adds after it,
+    and any address an exception with no request quotes. Text that is not an address is returned unchanged. NEVER raises;
+    an address that cannot be shown is withheld."""
     try:
-        url = str(exc.request.url)  # type: ignore[attr-defined]  # httpx.HTTPError; RuntimeError when it has none
-    except Exception:  # noqa: BLE001 - not an httpx error, or one with no request: nothing of ours to mask
-        return text
-    shown = shown_address(url)
-    return text.replace(url, shown) if url and shown != url else text
+        try:
+            url = str(exc.request.url) if exc is not None else ""  # type: ignore[attr-defined]  # httpx.HTTPError
+        except Exception:  # noqa: BLE001 - not an httpx error, or one with no request: the pass below still runs
+            url = ""
+        if url:
+            text = text.replace(url, shown_address(url))
+        return _URL_IN_TEXT.sub(lambda m: shown_address(m.group(0)), text)
+    except Exception:  # noqa: BLE001 - a text that cannot be checked is not shown
+        return "(a message quoting an address that could not be shown)"
+
+
+def raise_for_status(resp: httpx.Response) -> None:
+    """``resp.raise_for_status()``, the error's OWN words already masked (row 236, security read).
+
+    httpx's status text quotes the request's full address, password and query included. The clients raise their own
+    sentence ``from`` it, so a log of that sentence prints this exception too (``log_failure`` renders the whole chain), and a
+    masked outer sentence alone left the raw address in the traceback. Masking the words where the exception is made covers
+    every reader of the chain. Only the text changes: the response, the request and the type are httpx's own."""
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        exc.args = (_raw_url_masked(str(exc), exc), *exc.args[1:])
+        raise
 
 
 def error_text(exc: BaseException) -> str:
@@ -526,8 +551,14 @@ def shown_address(url: str) -> str:
     every query value but an allowlisted harmless one masked, the fragment dropped -- ``fetch_verdict.reported_url``, the
     rule every report and log line already follows. The request itself still uses the address as written. NEVER raises."""
     try:
+        from urllib.parse import urlsplit
+
         from src.ingest.fetch_verdict import reported_url
 
+        if "@" in url and "@" not in urlsplit(url).netloc:
+            # An "@" past the address's authority: a password holding "/", "?" or "#" ends the authority early, so the parse
+            # sees no userinfo and would show the password as a path or a query (security read of row 236).
+            return "(an address with sign-in details, not shown)"
         return reported_url(url) or ""
     except Exception:  # noqa: BLE001 - written from inside answers and failures; an address that cannot be read is withheld
         return "(an address that could not be shown)"
@@ -664,7 +695,7 @@ class OllamaClient:
         self._check_kill_switch()
         try:
             resp = self._client.get("/api/tags")
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
                 f"Ollama not reachable at {self.shown_url}: {error_text(exc)}. Is the ollama service running?"
@@ -684,7 +715,7 @@ class OllamaClient:
         self._check_kill_switch()
         try:
             resp = self._client.get("/api/tags")
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
                 f"Ollama not reachable at {self.shown_url}: {error_text(exc)}. Is the ollama service running?"
@@ -729,7 +760,7 @@ class OllamaClient:
             raise refuse()
         try:
             resp = self._client.get("/api/tags")
-            resp.raise_for_status()
+            raise_for_status(resp)
             models = (resp.json() or {}).get("models") or []
         except (httpx.HTTPError, ValueError, AttributeError) as exc:
             raise LLMUnavailable(
@@ -775,7 +806,7 @@ class OllamaClient:
         try:
             with generating(model, backend="ollama"):
                 resp = self._client.post("/api/generate", json=payload)
-                resp.raise_for_status()
+                raise_for_status(resp)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise LLMUnavailable(
@@ -813,7 +844,7 @@ class OllamaClient:
         self._check_kill_switch()
         try:
             resp = self._client.get("/api/ps")
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPError:
             return []
         out: list[dict] = []
@@ -854,7 +885,7 @@ class OllamaClient:
             resp = self._client.post(
                 "/api/generate", json={"model": model, "prompt": "", "keep_alive": 0}
             )
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPError:
             return False
         return True
@@ -903,7 +934,7 @@ class OllamaClient:
             with self._client.stream(
                 "POST", "/api/pull", json={"model": model, "stream": True}
             ) as resp:
-                resp.raise_for_status()
+                raise_for_status(resp)
                 for line in resp.iter_lines():
                     # R765/R769: protected mode was switched on, or the settings can no longer be read. Leaving the stream closes
                     # the request, which is what stops the daemon's download; the daemon keeps no unfinished model as installed.
@@ -927,7 +958,7 @@ class OllamaClient:
         self._check_kill_switch(clearnet=True)
         try:
             resp = self._client.request("DELETE", "/api/delete", json={"model": model})
-            resp.raise_for_status()
+            raise_for_status(resp)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise LLMUnavailable(f"Model {model!r} is not installed.") from exc
