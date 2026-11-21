@@ -2130,6 +2130,16 @@
       content: ""; position: absolute; top: 3px; inset-inline-end: 3px; width: 4px; height: 4px;
       border-radius: 50%; background: var(--accent); opacity: .55; pointer-events: none; }
     button.oo-tip-target:hover::after, .icon-btn.oo-tip-target:hover::after { opacity: 1; }
+    /* a11y row 229 (axe link-in-text-block, WCAG 1.4.1): a link that sits in a line of
+       text must not be told apart by colour alone. The rule above takes the decoration off
+       every titled link, and it comes later than a.ext-link at the same specificity, so a
+       titled ext-link lost the underline that class exists to give. Measured on the a11y
+       sweep: the Time map's OpenStreetMap credit (Ink and 11 of 13 themes) and Home's
+       "Most recent" titles (20 nodes). This restores a solid underline for those links,
+       titled or not, and nowhere else. */
+    a.ext-link, a.ext-link.oo-tip-target, .home-recent-row > a, .home-recent-row > a.oo-tip-target {
+      text-decoration-line: underline; text-decoration-style: solid;
+      text-decoration-color: currentColor; text-underline-offset: 2px; }
     #oo-tip { position: fixed; z-index: 400; max-width: 330px; background: var(--panel);
       color: var(--fg); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
       border-radius: 9px; padding: 8px 11px; font-size: 12.5px; line-height: 1.45;

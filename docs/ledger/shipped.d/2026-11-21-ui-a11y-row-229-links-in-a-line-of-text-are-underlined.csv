@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,ui/a11y,Row 229: links in a line of text are underlined,shipped,PR #2213,src/static/app.css src/static/app-map.js tests/test_a11y_links_in_text_row229.py,"axe link-in-text-block: the hover rule a.oo-tip-target removed the underline from every titled link, overriding a.ext-link; a later rule restores it for ext-links and Home recent rows, and the OSM and DB-IP credits take ext-link."
