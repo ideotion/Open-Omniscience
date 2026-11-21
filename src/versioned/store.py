@@ -357,14 +357,14 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     )
 
     @event.listens_for(eng, "connect")
-    def _lane_opened(dbapi_connection, record) -> None:
+    def _lane_opened(dbapi_connection, pool_entry) -> None:
         # The FIRST of this module's connect listeners: the open under way becomes a live connection. SQLAlchemy does NOT close a
         # connection whose later connect listener raised (no ``close`` event fires), so the one of ours that can fail
         # (``_lane_pragmas``: WAL on a locked file) closes it and forgets it itself. ``file_identity``'s stamp cannot raise (a
         # ``stat`` that fails is None). STATED LIMIT: a failure in the dialect's own connect handler, before this one, leaves the
         # open counted, which refuses this lane's later rebuilds until a restart (a refusal, never a loss).
         with _swap_lock:
-            record.info[_GEN_KEY] = getattr(_open_gen, "value", _gen.get(spec.kind, 0))
+            pool_entry.info[_GEN_KEY] = getattr(_open_gen, "value", _gen.get(spec.kind, 0))
         _note(spec.kind, id(dbapi_connection), live=True)
         _end_open(spec.kind)
 
@@ -394,14 +394,14 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         _note(spec.kind, id(dbapi_connection), out=True)
 
     @event.listens_for(eng, "checkin")
-    def _lane_checked_in(dbapi_connection, record) -> None:
+    def _lane_checked_in(dbapi_connection, pool_entry) -> None:
         if dbapi_connection is None:
             return
         _note(spec.kind, id(dbapi_connection), out=False)
         with _swap_lock:
-            stale = record.info.get(_GEN_KEY) != _gen.get(spec.kind, 0)
+            stale = pool_entry.info.get(_GEN_KEY) != _gen.get(spec.kind, 0)
         if stale:
-            record.invalidate()  # closed now (its ``close`` event forgets it), never left idle in a pool nothing reaches
+            pool_entry.invalidate()  # closed now (its ``close`` event forgets it), never left idle in a pool nothing reaches
 
     @event.listens_for(eng, "close")
     def _lane_closed(dbapi_connection, _record) -> None:

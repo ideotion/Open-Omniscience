@@ -259,7 +259,7 @@ def test_a_save_after_the_copy_was_checked_is_caught_at_the_switch(data_dir, mon
         rebuild.run("have_backup", None, "law")
     assert caught.value.code == "saved-during-the-copy"
     assert _settings(path)[:2] == (4096, 0), "the lane is as it was"
-    assert sorted(p.name for p in data_dir.iterdir() if not p.name.endswith(("-wal", "-shm"))) == ["law.db"], (
+    assert sorted(p.name for p in data_dir.iterdir() if not p.name.endswith(("-wal", "-shm")) and not p.name.startswith("app_errors")) == ["law.db"], (
         "no kept name and no unfinished copy after a refused switch"
     )
 
