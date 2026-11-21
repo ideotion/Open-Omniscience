@@ -5523,6 +5523,8 @@
   "The PubMed records your analysed articles link to, kept in medical.db, shown beside the news and never mixed into it. Each carries the class its record states (journal, preprint, retracted). This app never gives medical advice.": "所分析文章链接到的 PubMed 记录，保存在 medical.db 中，显示在新闻旁边，从不与新闻混合。每条记录都带有其记录所述的类别（期刊、预印本、已撤稿）。本应用从不提供医疗建议。",
   "The Search tab's grammar: AND, OR, NOT, \"phrases\" and brackets. Blank takes the claim's content words and joins them with OR.": "“搜索”标签页的语法：AND、OR、NOT、\"短语\"和括号。留空则取主张中的实词并以 OR 连接。",
   "The USGS ComCat catalogue through its FDSN event service: the service's own count for the window first, then every event of type earthquake at or above magnitude 6.0, counted by origin time in UTC.": "USGS ComCat 目录，经其 FDSN 事件服务获取：先取该服务对时间窗口的计数，再取每个 6.0 级及以上的地震类事件，按 UTC 发震时间计数。",
+  "The Wikidata election snapshot is dated after today, so its age cannot be read: elections called recently may be missing. Run the snapshot again.": "维基数据选举快照的日期晚于今天，因此无法判断其新旧：最近宣布的选举可能缺失。请重新生成快照。",
+  "The Wikidata election snapshot is {days} days old, past the {limit}-day limit: elections called since {date}, snap elections above all, are not in it. Run the snapshot again.": "维基数据选举快照已有 {days} 天，超过 {limit} 天的上限：自 {date} 以来宣布的选举（尤其是提前选举）不在其中。请重新生成快照。",
   "The Wikidata election snapshot on this install could not be read; only the hand-curated list is shown.": "无法读取本安装上的 Wikidata 选举快照；仅显示人工整理的名单。",
   "The Wikipedia lane could not be read just now.": "维基百科通道此刻无法读取。",
   "The Wikipedia lane has not run on this machine yet.": "维基百科通道尚未在本机运行过。",

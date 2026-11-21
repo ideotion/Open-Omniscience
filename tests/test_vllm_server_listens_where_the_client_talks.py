@@ -132,24 +132,29 @@ def _listener(family: int, host: str):
 
     s = socket.socket(family)
     s.bind((host, 0))
-    s.listen(1)
+    # A backlog with room: the probe's own HTTP check connects first and is never accepted, and with a
+    # backlog of 1 macOS then refused the raw probe's connect, so a listener read as "free" (CI, macOS).
+    s.listen(64)
     return s
 
 
-def test_the_status_probe_looks_where_the_server_listens(monkeypatch):
+@pytest.mark.parametrize(("v6", "host", "shown"), [(True, "::1", "[::1]"), (False, "127.0.0.1", "127.0.0.1")])
+def test_the_status_probe_looks_where_the_server_listens(monkeypatch, v6, host, shown):
     """The probe and the server agree: an IPv6 literal is probed with an IPv6 socket, so a listener there is seen."""
     import socket
 
-    if not socket.has_ipv6:
+    if v6 and not socket.has_ipv6:
         pytest.skip("no IPv6 on this machine")
     try:
-        srv = _listener(socket.AF_INET6, "::1")
+        srv = _listener(socket.AF_INET6 if v6 else socket.AF_INET, host)
     except OSError:
-        pytest.skip("::1 cannot be bound here")
+        pytest.skip(f"{host} cannot be bound here")
     with srv:
         port = srv.getsockname()[1]
-        monkeypatch.setenv("OO_VLLM_URL", f"http://[::1]:{port}")
-        assert V.bind_address() == ("::1", port)
+        monkeypatch.setenv("OO_VLLM_URL", f"http://{shown}:{port}")
+        # This test is about the RAW probe; the HTTP check before it would only fill the queue.
+        monkeypatch.setattr("src.llm.vllm_client.VllmClient.is_available", lambda self: False)
+        assert V.bind_address() == (host, port)
         occ = _REAL_PORT_OCCUPANT(timeout=1.0)
     assert occ["port"] == port and occ["state"] == "foreign", occ
 

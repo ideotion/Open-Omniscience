@@ -61,6 +61,13 @@ def build_report(today: date) -> str:
     if snap.get("state") == "present":
         out.append(f"- Wikidata snapshot as of {snap['as_of']}: {snap['added']} entries added, {snap['shadowed']} already "
                    f"in the hand-curated list, {snap['refused'] + snap['generator_refused']} refused.")
+        if snap.get("stale"):  # row 258: an old snapshot says so here too
+            age = snap.get("age_days")
+            out.append(
+                f"- Snapshot STALE: {age} days old, past the {snap.get('stale_after_days')}-day limit; elections called "
+                "since, snap elections above all, are not in it." if age is not None else
+                "- Snapshot STALE: dated after the report's day, so its age cannot be read; recent elections may be missing."
+            )
     elif snap.get("state") == "unreadable":
         out.append("- Wikidata snapshot: present but unreadable; only the hand-curated list is counted.")
     else:

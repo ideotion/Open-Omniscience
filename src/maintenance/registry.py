@@ -75,6 +75,23 @@ def age_months(as_of: str, *, today: date | None = None) -> int | None:
     return (today.year - y) * 12 + (today.month - mo)
 
 
+def _iso_day(stamp: str) -> date | None:
+    """A ``YYYY-MM-DD`` stamp as a date, or None."""
+    try:
+        return date.fromisoformat(str(stamp).strip()) if re.match(r"^\d{4}-\d{2}-\d{2}$", str(stamp).strip()) else None
+    except ValueError:
+        return None
+
+
+def age_days(stamp: str, *, today: date | None = None) -> int | None:
+    """Whole days from a ``YYYY-MM-DD`` stamp to today; None if it is not a day or lies after today."""
+    d = _iso_day(stamp)
+    if d is None:
+        return None
+    n = ((today or date.today()) - d).days
+    return n if n >= 0 else None
+
+
 def read_json_key(path_rel: str, key: str) -> str | None:
     """A top-level string value of a JSON artifact (e.g. its ``vintage``), or None."""
     import json
@@ -161,7 +178,25 @@ def evaluate(today: date | None = None) -> list[dict[str, Any]]:
                 rec["as_of"] = vintage
                 v_age = age_months(vintage, today=today) if vintage else None
                 v_limit = fresh.get("max_age_months")
-                if vintage is None or v_age is None:
+                d_limit = fresh.get("max_age_days")
+                d_age = age_days(vintage, today=today) if vintage and d_limit is not None else None
+                if d_limit is not None:
+                    # A window in DAYS, for a file the app itself ages in days (row 258: the
+                    # elections snapshot), so the registry and the app give one verdict. A
+                    # vintage after today cannot be aged and is never read as fresh.
+                    if d_age is None:
+                        rec["status"] = "stale" if vintage and _iso_day(vintage) else "unknown"
+                        rec["detail"] = (
+                            f"{pin['path']} is dated after today ({vintage}); refresh: {a.get('refresh', '')}"
+                            if rec["status"] == "stale" else f"{pin['path']} carries no usable {pin['vintage_key']!r}"
+                        )
+                    elif d_age > int(d_limit):
+                        rec["status"] = "stale"
+                        rec["detail"] = f"{d_age} days old (limit {d_limit}); refresh: {a.get('refresh', '')}"
+                    else:
+                        rec["status"] = "ok" if expected else "info"
+                        rec["detail"] = f"{d_age}/{d_limit} days"
+                elif vintage is None or v_age is None:
                     rec["status"] = "unknown"
                     rec["detail"] = f"{pin['path']} carries no usable {pin['vintage_key']!r}"
                 elif v_limit is not None and v_age > int(v_limit):
