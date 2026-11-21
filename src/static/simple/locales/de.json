@@ -148,6 +148,27 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Die Zahlen beruhen auf der Sprache, die jede Quelle angibt, und nur auf den neuesten Artikeln. Der Filter findet auch Artikel, deren Sprache aus dem Text erkannt wurde, daher kann eine Zahl von den Ergebnissen abweichen.",
   "Articles counted": "Gezählte Artikel",
   "candidates not yet checked": "noch nicht geprüfte Kandidaten",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Ein Kandidat ist eine Website, die die App gefunden oder erhalten, aber noch nicht geprüft hat. Von ihr wird nicht gesammelt, und sie zählt nicht als Quelle."
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Ein Kandidat ist eine Website, die die App gefunden oder erhalten, aber noch nicht geprüft hat. Von ihr wird nicht gesammelt, und sie zählt nicht als Quelle.",
+  "refused by airplane mode; no request was sent": "vom Flugmodus abgelehnt; keine Anfrage wurde gesendet",
+  "the site's robots.txt disallows it": "die robots.txt der Website verbietet es",
+  "the site's robots.txt could not be read, so nothing was fetched": "die robots.txt der Website konnte nicht gelesen werden, daher wurde nichts abgerufen",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "die Adresse oder eine Weiterleitung wurde abgelehnt (außerhalb der Website des Herausgebers oder nicht öffentlich)",
+  "stopped because the network mode changed during the fetch": "angehalten, weil sich der Netzwerkmodus während des Abrufs geändert hat",
+  "the answer was larger than this table allows": "die Antwort war größer, als diese Tabelle erlaubt",
+  "the publisher answered 403 (forbidden)": "der Herausgeber antwortete 403 (verboten)",
+  "the publisher answered 404 (not found)": "der Herausgeber antwortete 404 (nicht gefunden)",
+  "the publisher answered 429 (too many requests)": "der Herausgeber antwortete 429 (zu viele Anfragen)",
+  "the publisher refused the request (another 4xx status)": "der Herausgeber lehnte die Anfrage ab (anderer 4xx-Status)",
+  "the publisher's server failed (a 5xx status)": "der Server des Herausgebers ist ausgefallen (ein 5xx-Status)",
+  "the publisher did not answer in time": "der Herausgeber antwortete nicht rechtzeitig",
+  "no connection could be made": "es konnte keine Verbindung hergestellt werden",
+  "an answer came, but not the documented table": "eine Antwort kam, aber nicht die dokumentierte Tabelle",
+  "another error, not recognised": "anderer Fehler, nicht erkannt",
+  "Latest attempt failed": "Letzter Versuch fehlgeschlagen",
+  "Why": "Warum",
+  "Stored": "Gespeichert",
+  "Nothing stored was changed: the values counted here are kept as they were.": "Nichts Gespeichertes wurde geändert: Die hier gezählten Werte bleiben unverändert.",
+  "{n} of {m} series": "{n} von {m} Reihen",
+  "Most recent failure": "Jüngster Fehlschlag"
  }
 }

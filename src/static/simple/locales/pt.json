@@ -148,6 +148,27 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Os números usam a língua que cada fonte declara, apenas sobre os artigos mais recentes. O filtro também encontra artigos cuja língua foi detetada no texto, por isso um número pode diferir dos resultados.",
   "Articles counted": "Artigos contados",
   "candidates not yet checked": "candidatos ainda não verificados",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Um candidato é um site que o aplicativo encontrou ou recebeu, mas ainda não verificou. Nada é coletado dele e ele não conta como fonte."
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Um candidato é um site que o aplicativo encontrou ou recebeu, mas ainda não verificou. Nada é coletado dele e ele não conta como fonte.",
+  "refused by airplane mode; no request was sent": "recusado pelo modo avião; nenhum pedido foi enviado",
+  "the site's robots.txt disallows it": "o robots.txt do site proíbe-o",
+  "the site's robots.txt could not be read, so nothing was fetched": "não foi possível ler o robots.txt do site, por isso nada foi transferido",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "o endereço ou um redirecionamento foi recusado (fora do site do editor, ou não público)",
+  "stopped because the network mode changed during the fetch": "parado porque o modo de rede mudou durante a transferência",
+  "the answer was larger than this table allows": "a resposta era maior do que esta tabela permite",
+  "the publisher answered 403 (forbidden)": "o editor respondeu 403 (proibido)",
+  "the publisher answered 404 (not found)": "o editor respondeu 404 (não encontrado)",
+  "the publisher answered 429 (too many requests)": "o editor respondeu 429 (pedidos a mais)",
+  "the publisher refused the request (another 4xx status)": "o editor recusou o pedido (outro estado 4xx)",
+  "the publisher's server failed (a 5xx status)": "o servidor do editor falhou (um estado 5xx)",
+  "the publisher did not answer in time": "o editor não respondeu a tempo",
+  "no connection could be made": "não foi possível estabelecer ligação",
+  "an answer came, but not the documented table": "chegou uma resposta, mas não a tabela documentada",
+  "another error, not recognised": "outro erro, não reconhecido",
+  "Latest attempt failed": "Última tentativa falhada",
+  "Why": "Porquê",
+  "Stored": "Guardado",
+  "Nothing stored was changed: the values counted here are kept as they were.": "Nada do que está guardado foi alterado: os valores contados aqui mantêm-se como estavam.",
+  "{n} of {m} series": "{n} de {m} séries",
+  "Most recent failure": "Falha mais recente"
  }
 }

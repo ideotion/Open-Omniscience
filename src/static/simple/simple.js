@@ -851,26 +851,68 @@
         <span class="s-sr">${t("{n} values stored", { n: fmtInt(x.points) })}</span></button></li>`;
     })}</ul>`;
   }
+  // One row per dataset from the per-unit records: values stored, the newest successful fetch, and
+  // the newest FAILED attempt (row 280, the simple-view twin of row 275). A unit's record carries
+  // last_failure only while its latest outcome failed; the success date is kept beside it, never replaced.
+  function climateRows(units) {
+    var seen = {}, rows = [];
+    (units || []).forEach(function (u) {
+      var x = seen[u.dataset];
+      if (!x) { x = seen[u.dataset] = { dataset: u.dataset, host: u.host, stored: 0, last: null, failed: null, tried: 0, failing: 0 }; rows.push(x); }
+      x.stored += (u.stored && u.stored.stored_rows) || 0;
+      var rec = u.last_fetch || {};
+      if (u.last_fetch) x.tried += 1;   // a series with a record: fetched once, or failed
+      var at = rec.fetched_at;
+      if (at && (!x.last || at > x.last)) x.last = at;   // the newest fetch of any of its series
+      var f = rec.last_failure;
+      if (f && typeof f === "object") {
+        x.failing += 1;
+        if (!x.failed || (f.failed_at || "") > (x.failed.at || "")) x.failed = { at: f.failed_at || null, reason: f.reason };
+      }
+    });
+    return rows;
+  }
+  // One failure token (src/stats/climate.py FAILURE_REASONS) in words; the kill switch is airplane
+  // mode, the reader's own setting. An unknown token is never echoed: it reads "another error".
+  function climateFailureWords(reason) {
+    switch (reason) {
+      case "kill_switch": return t("refused by airplane mode; no request was sent");
+      case "robots": return t("the site's robots.txt disallows it");
+      case "robots_unreadable": return t("the site's robots.txt could not be read, so nothing was fetched");
+      case "redirect_refused": return t("the address or a redirect was refused (off the publisher's site, or not public)");
+      case "transport_stopped": return t("stopped because the network mode changed during the fetch");
+      case "too_large": return t("the answer was larger than this table allows");
+      case "http_403": return t("the publisher answered 403 (forbidden)");
+      case "http_404": return t("the publisher answered 404 (not found)");
+      case "http_429": return t("the publisher answered 429 (too many requests)");
+      case "http_4xx": return t("the publisher refused the request (another 4xx status)");
+      case "http_5xx": return t("the publisher's server failed (a 5xx status)");
+      case "timeout": return t("the publisher did not answer in time");
+      case "connect": return t("no connection could be made");
+      case "unreadable_answer": return t("an answer came, but not the documented table");
+      default: return t("another error, not recognised");
+    }
+  }
   function Climate() {
     var r = useLoad(function () { return apiCall("/api/climate/datasets"); }, []);
     if (r.loading && !r.data) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
-    var units = (r.data && r.data.units) || [];
-    var seen = {}, rows = [];
-    units.forEach(function (u) {
-      var x = seen[u.dataset];
-      if (!x) { x = seen[u.dataset] = { dataset: u.dataset, host: u.host, stored: 0, last: null }; rows.push(x); }
-      x.stored += (u.stored && u.stored.stored_rows) || 0;
-      var at = u.last_fetch && u.last_fetch.fetched_at;
-      if (at && (!x.last || at > x.last)) x.last = at;   // the newest fetch of any of its series
-    });
+    var rows = climateRows(r.data && r.data.units);
+    // A dataset with nothing stored stays out of the list, failed or not: the empty line below and
+    // the full view (which shows each unit's failure) say so; there is no figure here to mark.
     var have = rows.filter(function (x) { return x.stored > 0; });
     return html`<div>
       ${have.length ? html`<ul class="s-nums">${have.map(function (x) {
-        return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("climate"); }}>
+        return html`<li class=${"s-num" + (x.failed ? " s-num-failed" : "")}><button type="button" class="s-num-btn" onClick=${function () { peekFull("climate"); }}>
           <span class="s-num-name">${x.dataset.toUpperCase()}</span>
           <b class="s-num-val">${t("{n} values", { n: fmtInt(x.stored) })}</b>
-          <span class="s-meta">${x.last ? t("Fetched {d}", { d: fmtDate(x.last) }) : x.host}</span></button></li>`;
+          <span class="s-meta">${x.last ? t("Fetched {d}", { d: fmtDate(x.last) }) : x.host}</span></button>
+          ${x.failed ? html`<${Mark} kind="stale"/><${Details} what=${x.dataset.toUpperCase()}>
+            <${Row} k=${t("Latest attempt failed")} v=${t("{n} of {m} series", { n: fmtInt(x.failing), m: fmtInt(x.tried) })}/>
+            <${Row} k=${t("Most recent failure")} v=${x.failed.at ? fmtTime(x.failed.at) : "—"}/>
+            <${Row} k=${t("Why")} v=${climateFailureWords(x.failed.reason)}/>
+            <${Row} k=${t("Stored")} v=${t("Nothing stored was changed: the values counted here are kept as they were.")}/>
+          <//>` : null}</li>`;
       })}</ul>` : html`<${Empty}>${t("No climate record is stored yet. Each one is fetched, with your consent, in the full view.")}<//>`}
       <button type="button" class="s-link" onClick=${function () { peekFull("climate"); }}>${t("Climate records in the full view")}</button>
     </div>`;
