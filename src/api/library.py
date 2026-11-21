@@ -74,6 +74,23 @@ def _cached(key: str, compute, db: Session) -> dict:
     return served_cache.cached(f"library:{key}", compute, db, ttl_s=_CACHE_TTL_S)
 
 
+#: Row 277: why a downloaded-layer tile has no count. Fixed sentences, each a locale key (the tile's hover).
+UNREAD_DOWNLOADS = "The list of finished downloads could not be read, so nothing is counted."
+UNREAD_MODELS = "The local AI model store could not be read, so nothing is counted."
+PROTECTED_MODELS = (
+    "Ollama's models are in a protected location this app cannot read (on Linux, the service install), "
+    "so they are not counted."
+)
+
+
+def _models_tile(st: dict) -> dict:
+    """The "Local AI models" figures from ``store_status``: a protected store with nothing readable is unread, not 0."""
+    models = st.get("models") or []
+    if not models and st.get("protected_store"):
+        return {"count": None, "total_bytes": None, "available": False, "reason": PROTECTED_MODELS}
+    return {"count": len(models), "total_bytes": int(st.get("total_bytes") or 0)}
+
+
 def _downloads_done(get_manager) -> dict:
     """Count + total bytes of FINISHED downloads from a download manager (wiki dumps
     or OSM regions). Best-effort: a manager that isn't ready degrades to unavailable,
@@ -86,7 +103,8 @@ def _downloads_done(get_manager) -> dict:
             "total_bytes": sum(int((e.get("total_bytes") or 0)) for e in done),
         }
     except Exception:  # noqa: BLE001 - a missing/uninitialised manager must not break the view
-        return {"count": 0, "total_bytes": 0, "available": False}
+        # Row 277: a list that could not be read is no count at all, never 0 downloads.
+        return {"count": None, "total_bytes": None, "available": False, "reason": UNREAD_DOWNLOADS}
 
 
 @router.get("/overview")
@@ -131,17 +149,13 @@ def library_overview(db: Session = Depends(get_db)) -> dict:
         from src.geo.osm_downloads import get_manager as osm_manager
         from src.wiki.dumps import get_manager as wiki_dumps_manager
 
-        ollama = {"count": 0, "total_bytes": 0}
+        ollama: dict = {"count": 0, "total_bytes": 0}
         try:
             from src.backup.ollama_models import store_status
 
-            st = store_status()
-            ollama = {
-                "count": len(st.get("models") or []),
-                "total_bytes": int(st.get("total_bytes") or 0),
-            }
+            ollama = _models_tile(store_status())
         except Exception:  # noqa: BLE001 - an unreadable/absent Ollama store is honest "unavailable"
-            ollama = {"count": 0, "total_bytes": 0, "available": False}
+            ollama = {"count": None, "total_bytes": None, "available": False, "reason": UNREAD_MODELS}
 
         return {
             # the corpus core (real COUNT(*), reused from the cached Database stats).

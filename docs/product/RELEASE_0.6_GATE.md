@@ -115,6 +115,11 @@ sits beside "Last fetched" as "Last failed attempt" (its date and the reason in 
 which stays shown with its values. A kill-switch refusal reads as airplane mode. A visible caveat line says that the failed
 attempt changed nothing stored, or that nothing is stored yet. 19 strings, 12 languages. Pinned by `tests/climate_node_test.js`.
 
+**Progress 2026-11-21 (row 280, R696): the simple view's Climate list marks it too; the row stays OPEN.** A dataset whose latest
+attempt failed keeps its "Fetched" date and gains the stale mark (◷); its ⓘ gives the failed attempt's time and the reason in
+the full view's own words (airplane mode named), and says nothing stored changed. 19 strings, 12 languages. Pinned by
+`tests/simple_climate_node_test.js` and `tests/test_simple_climate_row280.py`.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if
@@ -149,6 +154,14 @@ per country the daily files have touched, the files applied and what they cost: 
 n files measured, total, mean per file and largest. It also reads a piece set, the member out of a Diagnostics zip or the zip itself.
 An absent figure prints its reason, never 0, and only counts, country codes, sequence numbers and dates are printed. Pinned by
 `tests/test_osm_change_files_readback_row263.py`, including a fixture that holds reasons and no figures.
+
+**Progress 2026-11-21 (rows 276 and 278; the row stays OPEN on the same two operator items).** The same file now carries what each
+applied daily file did to tags, for the closing artifact "a real day-over-day tag change ... from an applied diff": per file and for
+the country, the count of tag rows added, removed and modified and of objects created, deleted, leaving their class or with tags
+changed, joined on the file's own time (row 276, PR #2238). The read-back prints them; a key, a value or an object id never reaches
+the file. And the Settings OSM picker shows, once a chosen country has applied files, the size measured here (median compressed bytes
+per file, how many, through which date) beside the from-memory estimate, which it replaces as the lead figure; its cadence text no
+longer says the daily apply "arrives in 0.6" (row 278, PR #2239, Q824).
 
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 
@@ -223,7 +236,8 @@ diagnostics bundle as a member (trimmed per R413), every figure read from rows t
 ran reporting `measured: false` with its reason; the located addresses are `src/wiki/located.py` (S2, R678, PR #1948),
 drawn on the map layer with their provenance in the hover (`app-map.js`). Under R678 (d), addresses in ARTICLE bodies stay
 a recorded gap with its reason, so they are not owed by this row. **Still owed (operator):** the report for all twelve
-editions from a real lane run, read back from a bundle; and one located infobox address hovered on the map.
+editions from a real lane run, read back from a bundle; and ~~one located infobox address hovered on the map~~ (amended
+2026-11-21, row 282: no screenshot is owed; see the row 282 note below for what this half rests on).
 
 **Progress 2026-11-21 (rows 257 and 260; the row stays OPEN on the same two operator runs).** The read-back path the
 first operator run needs is on main. One press of the Field data button saves `oo-field-*-wiki-coverage.json`, the lane's
@@ -233,6 +247,19 @@ from it, or from `soak-window.json` out of a Diagnostics zip. A total that was n
 walk is off", or read earlier and "no longer refreshed"), a sum over editions with no figure is never printed as 0, and a
 missing piece is named rather than guessed. Pinned by `tests/test_wiki_coverage_readback_row260.py` and
 `tests/test_wiki_total_reason_row257.py`.
+
+**Amended 2026-11-21 (row 282, coordinator ruling on the row 281 operator checklist; the row stays OPEN on ONE operator run).** The
+operator's part of this row is one press of the Field data button after a real lane run, and nothing else: no screenshot is
+owed. The hover half of the closing condition rests on two pieces of evidence, said here so neither is read as more than it is.
+(1) From the real run: the located-address counts per edition in `oo-field-*-wiki-coverage.json`, printed by
+`scripts/wiki_coverage_readback.py` as "located addresses: N of M found addresses located"; N above 0 shows that an infobox
+address was located on the operator's machine. (2) From a fixture, not the real run: the hover carries the provenance
+(address, field, page and edition, OSM object, extract date or "the extract states no date") on desktop hover and phone
+long-press, shown by row 268's Chromium walk (`docs/audit/map-marker-titles-r268-2026-11-21/`) and pinned by
+`tests/map_marker_titles_r268_node_test.js`. No picture of the hover on the operator's own data is part of the evidence. **Still
+owed (operator):** that one run, read back: the twelve-edition report and a located count above 0. A count of 0, or a count
+the file does not carry, leaves the row OPEN with that reason written beside it; it is never recorded as met. Nothing here
+says the hover was checked on the operator's own data, and no release wording may say so.
 
 ### Row E — Help's body ×12, the first tranche · ruled (Q1122 = b); *proposed staging* · CLOSED (R721)
 
@@ -277,6 +304,8 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
 | 2026-11-21 | **Row A: a catalogue that was not read is said, never counted as "every country missing" (row 273); no row changed status.** The curated `configs/world_events.yml` is read with a state (present, absent, empty, or unreadable with the error's class and no path). When it is not present, the floor's counts, the tier report and K13 give null beside that state, `/api/events` and its facets carry it, the Agenda says it in one line, and `scripts/elections_readback.py` prints it; an unparsable file no longer raises out of its callers. | session (Lane U) |
 | 2026-11-21 | **Rows A and C: a language floor that was not read is said, never counted as an empty floor (row 279); no row changed status.** `configs/language_countries.yml` is read with a state (present, absent, empty, or unreadable with the error's class and no path) and never raises. When it is not present, the elections floor, its tier report, K13 and `scripts/elections_readback.py` give no floor figure beside that state (it read "0 floor countries, 0 missing"), the law floor and world reports name it, and the OSM picker and the Agenda's coverage view say it in one line ×12. | session (Lane U) |
+| 2026-11-21 | **Row D: the hover screenshot is no longer owed (row 282); no row changed status.** The operator's part is one Field data press after a real lane run. The hover half of the closing condition now rests on (a) the real-run located-address counts per edition read back by `scripts/wiki_coverage_readback.py` (`located_lines`), and (b) row 268's fixture Chromium walk (`docs/audit/map-marker-titles-r268-2026-11-21/`) and `tests/map_marker_titles_r268_node_test.js`. A located count of 0 keeps the row open with that reason; nothing says the hover was verified on the operator's real run. | coordinator ruling on the row 281 checklist · Lane F (row 282) |
+| 2026-11-21 | **Row B: the Field data file counts each applied file's tag changes, and the picker shows the measured daily cost; no row changed status.** Rows 276 (PR #2238) and 278 (PR #2239): counts only, never a key, value or object id; the picker's measured figure leads once files are applied, the estimate stays in the hover. | session (Lane O) |
 
 ---
 

@@ -3442,6 +3442,29 @@
       const hover = `${t(d.method || "")} ${t(d.caveat || "")}`.trim();
       return `~${humanBytes(bytes)} ${esc(t("a day"))} <span class="muted" title="${esc(hover)}">${esc(t("estimate"))}</span>`;
     }
+    // Row 278 (Q824): once daily change files are applied for a chosen country, the size measured here leads and the estimate
+    // moves to the hover; without a measurement the estimate stays as it was, and the reason it is not measured is in the hover.
+    // A missing figure is never drawn as 0.
+    function _osmDiffCell(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const d = (_osmPicker || {}).diff || {};
+      const m = r && r.diff_measured;
+      const estimate = r && r.diff_daily_estimate_bytes != null
+        ? osmTf("Before the first daily update: about {size} a day (estimate).", { size: humanBytes(r.diff_daily_estimate_bytes) })
+          + ` ${t(d.method || "")} ${t(d.caveat || "")}`
+        : "";
+      if (!m || m.median_bytes == null) {
+        const cell = _osmDiffEstimate(r ? r.diff_daily_estimate_bytes : null);
+        const why = r && r.diff_measured_reason ? t(r.diff_measured_reason) : "";
+        return why ? `${cell} <span class="muted" title="${esc(why)}">${esc(t("not measured yet"))}</span>` : cell;
+      }
+      const label = m.through
+        ? osmTf("measured here: {n} files, through {date}", { n: m.files_measured, date: ooIsoDate(m.through) })
+        : osmTf("measured here: {n} files", { n: m.files_measured });
+      const hover = `${t(m.method || "")} ${estimate}`.trim();
+      return `${humanBytes(m.median_bytes)} ${esc(t("a file"))} <span class="muted" title="${esc(hover)}">${esc(label)}</span>`;
+    }
     function _osmPickDownloadCell(r) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!r.extract) return `<span class="muted">${esc(t(r.extract_reason || ""))}</span>`;
@@ -3486,7 +3509,7 @@
           const rows = p.selected.map((r) => `<tr>
               <td><strong>${esc(_osmPickLabel(r.cc, r.name))}</strong></td>
               <td>${r.extract ? `${esc(t(r.extract.name))} · ${_osmSizeEstimate(r.extract.size_estimate_bytes)}` : `<span class="muted">—</span>`}</td>
-              <td>${_osmDiffEstimate(r.diff_daily_estimate_bytes)}</td>
+              <td>${_osmDiffCell(r)}</td>
               <td>${_osmPickDownloadCell(r)}</td>
               <td>${_osmPickLaneCell(r)}</td>
               <td><button class="tiny secondary" data-on-click="osmPickRemove(${esc(JSON.stringify(r.cc))})">${esc(t("Remove"))}</button></td>

@@ -148,6 +148,27 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Angkanya memakai bahasa yang dinyatakan setiap sumber, hanya atas artikel terbaru. Filter juga menemukan artikel yang bahasanya terdeteksi dari teksnya, jadi angka bisa berbeda dari hasil.",
   "Articles counted": "Artikel yang dihitung",
   "candidates not yet checked": "kandidat yang belum diperiksa",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Kandidat adalah situs yang ditemukan atau diberikan kepada aplikasi tetapi belum diperiksa. Tidak ada yang dikumpulkan darinya dan tidak dihitung sebagai sumber."
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Kandidat adalah situs yang ditemukan atau diberikan kepada aplikasi tetapi belum diperiksa. Tidak ada yang dikumpulkan darinya dan tidak dihitung sebagai sumber.",
+  "refused by airplane mode; no request was sent": "ditolak oleh mode pesawat; tidak ada permintaan yang dikirim",
+  "the site's robots.txt disallows it": "robots.txt situs melarangnya",
+  "the site's robots.txt could not be read, so nothing was fetched": "robots.txt situs tidak dapat dibaca, jadi tidak ada yang diambil",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "alamat atau sebuah pengalihan ditolak (di luar situs penerbit, atau tidak publik)",
+  "stopped because the network mode changed during the fetch": "dihentikan karena mode jaringan berubah selama pengambilan",
+  "the answer was larger than this table allows": "jawabannya lebih besar dari yang diizinkan tabel ini",
+  "the publisher answered 403 (forbidden)": "penerbit menjawab 403 (dilarang)",
+  "the publisher answered 404 (not found)": "penerbit menjawab 404 (tidak ditemukan)",
+  "the publisher answered 429 (too many requests)": "penerbit menjawab 429 (terlalu banyak permintaan)",
+  "the publisher refused the request (another 4xx status)": "penerbit menolak permintaan (status 4xx lain)",
+  "the publisher's server failed (a 5xx status)": "server penerbit gagal (status 5xx)",
+  "the publisher did not answer in time": "penerbit tidak menjawab tepat waktu",
+  "no connection could be made": "tidak ada koneksi yang dapat dibuat",
+  "an answer came, but not the documented table": "sebuah jawaban datang, tetapi bukan tabel yang terdokumentasi",
+  "another error, not recognised": "kesalahan lain, tidak dikenali",
+  "Latest attempt failed": "Percobaan terakhir gagal",
+  "Why": "Mengapa",
+  "Stored": "Tersimpan",
+  "Nothing stored was changed: the values counted here are kept as they were.": "Tidak ada yang tersimpan yang berubah: nilai yang dihitung di sini disimpan apa adanya.",
+  "{n} of {m} series": "{n} dari {m} seri",
+  "Most recent failure": "Kegagalan terbaru"
  }
 }
