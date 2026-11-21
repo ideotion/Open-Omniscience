@@ -463,6 +463,11 @@ def start_wiki_lane(*, _approved: str | None = None) -> bool:
                         return False
                 _finish(*_detach_locked(), 5.0)
             approved = _approved if _approved is not None else tw.mode_now()
+            if approved == tw.UNKNOWN:
+                # The settings cannot be read: nothing is built, and nothing is held either (a hold would outlive the read failure
+                # and name it after it ended); the next start, once they read again, is checked against the last approval.
+                _LOG.info("the Wikipedia lane is not started: the safety settings cannot be read")
+                return False
             if _approved is None and _APPROVED is not None:
                 changed = tw.change_reason(_APPROVED, approved)
                 if changed is not None:

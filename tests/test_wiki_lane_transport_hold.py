@@ -509,3 +509,13 @@ def test_a_page_whose_text_fetch_met_the_change_is_rolled_back_not_stored_withou
     assert db.query(WikiRevision).count() == 0
     db.refresh(page)
     assert page.last_revid == 100
+
+
+def test_a_start_while_the_settings_cannot_be_read_builds_nothing_and_leaves_no_sticky_hold(monkeypatch, _service):
+    import src.safety.settings as settings
+
+    built: list = []
+    monkeypatch.setattr(_service, "_build", lambda *a: built.append(a))
+    monkeypatch.setattr(settings, "load_settings", lambda: (_ for _ in ()).throw(RuntimeError("locked")))
+    assert _service.start_wiki_lane() is False
+    assert built == [] and _service.lane_hold() is None and _service._APPROVED is None
