@@ -40,8 +40,9 @@ from src.llm.ollama import (
     _http_error_text,
     _is_loopback_url,
     _require_loopback,
+    error_text,
+    shown_address,
 )
-from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -223,6 +224,8 @@ class VllmClient:
         # up probing a different address than the one the server was told to bind.
         resolved_url: str = base_url or os.getenv("OO_VLLM_URL") or default_vllm_url()
         self.base_url = resolved_url.rstrip("/")
+        # What answers and error sentences show (row 236, R734): sign-in details and query values masked.
+        self.shown_url = shown_address(self.base_url)
         self.timeout = timeout
         # Enforce loopback only when WE open the socket (mirrors OllamaClient) — an
         # injected client (tests) may use a MockTransport with a non-loopback nominal
@@ -273,7 +276,7 @@ class VllmClient:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
-                f"vLLM not reachable at {self.base_url}: {record_text(exc)}. Is the vllm server running?"
+                f"vLLM not reachable at {self.shown_url}: {error_text(exc)}. Is the vllm server running?"
             ) from exc
         data = resp.json()
         return [m["id"] for m in (data.get("data") or []) if m.get("id")]
@@ -314,7 +317,7 @@ class VllmClient:
             resp = self._client.get("/v1/models")
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {record_text(exc)}") from exc
+            raise LLMUnavailable(f"vLLM not reachable at {self.shown_url}: {error_text(exc)}") from exc
         return [
             {"tag": m["id"], "size_gb": None, "modified": None}
             for m in (resp.json().get("data") or [])
@@ -343,7 +346,7 @@ class VllmClient:
         try:
             tags = self._client.get("/api/tags")
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {record_text(exc)}. Is the vllm server running?") from exc
+            raise LLMUnavailable(f"vLLM not reachable at {self.shown_url}: {error_text(exc)}. Is the vllm server running?") from exc
         if tags.is_success:
             try:
                 body = tags.json()
@@ -367,20 +370,20 @@ class VllmClient:
                     return "ollama", listed
                 # JSON on Ollama's own path that is not Ollama's shape: whatever answers there is imitating it, and
                 # passing it as "other" would let a shim in front of a daemon carry a cloud model through.
-                raise LLMUnavailable(f"The server at {self.base_url} answered its model list in a shape this app cannot read, so no text is sent to it.")
+                raise LLMUnavailable(f"The server at {self.shown_url} answered its model list in a shape this app cannot read, so no text is sent to it.")
         elif tags.status_code >= 500:
             # Something serves that path and failed: an Ollama daemon mid-restart reads this way, and passing it as
             # "other" would send text to the one server known to forward cloud models. vLLM and the local servers
             # answer 404 there.
-            raise LLMUnavailable(f"The server at {self.base_url} failed to list its models, so no text is sent to it.")
+            raise LLMUnavailable(f"The server at {self.shown_url} failed to list its models, so no text is sent to it.")
         try:
             resp = self._client.get("/v1/models")
         except httpx.HTTPError as exc:
             # A server that answered /api/tags and then cannot answer its own model list is failing, not identified:
             # a proxy whose upstream is down reads this way while its chat route still works.
-            raise LLMUnavailable(f"The server at {self.base_url} did not answer its model list, so no text is sent to it.") from exc
+            raise LLMUnavailable(f"The server at {self.shown_url} did not answer its model list, so no text is sent to it.") from exc
         if resp.status_code >= 500:
-            raise LLMUnavailable(f"The server at {self.base_url} failed to list its models, so no text is sent to it.")
+            raise LLMUnavailable(f"The server at {self.shown_url} failed to list its models, so no text is sent to it.")
         try:
             resp.raise_for_status()  # a 404 or 401 (vLLM started with --api-key) leaves the server unidentified
             cards = resp.json().get("data")
@@ -439,7 +442,7 @@ class VllmClient:
         if verdict == "cloud":
             raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
         if verdict == "missing":
-            raise LLMUnavailable(f"Model {model!r} is not installed on the Ollama server at {self.base_url}.")
+            raise LLMUnavailable(f"Model {model!r} is not installed on the Ollama server at {self.shown_url}.")
 
     # -- generation -------------------------------------------------------- #
 
@@ -502,7 +505,7 @@ class VllmClient:
                 ) from exc
             raise LLMError(f"vLLM error for model {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {record_text(exc)}") from exc
+            raise LLMUnavailable(f"vLLM not reachable at {self.shown_url}: {error_text(exc)}") from exc
         data = resp.json()
         choices = data.get("choices") or []
         text = ""

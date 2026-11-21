@@ -47,6 +47,7 @@ from src.llm.ollama import (
     LLMError,
     LLMUnavailable,
     OllamaClient,
+    shown_address,
 )
 from src.llm.prompts_i18n import PROMPTS as _PROMPTS
 from src.monitoring.secret_scrub import http_detail, log_failure
@@ -546,7 +547,7 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
             "backend": backend,
             "no_backend": no_backend,
             "backend_reason": backend_reason,
-            "base_url": client.base_url,
+            "base_url": shown_address(client.base_url),  # row 236 (R734): sign-in details and query values masked
             "installed_models": installed,
             **hw_fields,
         }
@@ -556,7 +557,7 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
             "backend": backend,
             "no_backend": no_backend,
             "backend_reason": backend_reason,
-            "base_url": client.base_url,
+            "base_url": shown_address(client.base_url),  # row 236 (R734): sign-in details and query values masked
             "installed_models": [],
             "detail": http_detail(exc),
             **hw_fields,
