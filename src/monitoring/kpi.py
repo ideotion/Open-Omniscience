@@ -1000,7 +1000,12 @@ def _elections_block() -> dict:
         "present_but_dateless": rep.get("present_but_dateless_n"), "missing": rep.get("missing_n"),
         "floor_as_of": rep.get("as_of"),
         "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
-        "snapshot_age_days": _age_days(snap.get("as_of")), "snapshot_rows": rows,
+        # Age and staleness as the snapshot's own reading states them (row 258), computed in one place
+        # (calendar_report.with_snapshot), so this block and the Agenda never disagree on a day boundary.
+        "snapshot_age_days": snap.get("age_days") if present else None,
+        "snapshot_stale": snap.get("stale") if present else None,
+        "snapshot_stale_after_days": snap.get("stale_after_days") if present else None,
+        "snapshot_rows": rows,
         **_method([_fr(
             "the elections floor diagnostic's own counts over the shipped catalogue layered with the Wikidata "
             "snapshot on disk, each state apart (covered, only a passed projection, present but dateless, "
