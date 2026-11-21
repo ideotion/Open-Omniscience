@@ -228,7 +228,8 @@ diagnostics bundle as a member (trimmed per R413), every figure read from rows t
 ran reporting `measured: false` with its reason; the located addresses are `src/wiki/located.py` (S2, R678, PR #1948),
 drawn on the map layer with their provenance in the hover (`app-map.js`). Under R678 (d), addresses in ARTICLE bodies stay
 a recorded gap with its reason, so they are not owed by this row. **Still owed (operator):** the report for all twelve
-editions from a real lane run, read back from a bundle; and one located infobox address hovered on the map.
+editions from a real lane run, read back from a bundle; and ~~one located infobox address hovered on the map~~ (amended
+2026-11-21, row 282: no screenshot is owed; see the row 282 note below for what this half rests on).
 
 **Progress 2026-11-21 (rows 257 and 260; the row stays OPEN on the same two operator runs).** The read-back path the
 first operator run needs is on main. One press of the Field data button saves `oo-field-*-wiki-coverage.json`, the lane's
@@ -238,6 +239,19 @@ from it, or from `soak-window.json` out of a Diagnostics zip. A total that was n
 walk is off", or read earlier and "no longer refreshed"), a sum over editions with no figure is never printed as 0, and a
 missing piece is named rather than guessed. Pinned by `tests/test_wiki_coverage_readback_row260.py` and
 `tests/test_wiki_total_reason_row257.py`.
+
+**Amended 2026-11-21 (row 282, coordinator ruling on the row 281 operator checklist; the row stays OPEN on ONE operator run).** The
+operator's part of this row is one press of the Field data button after a real lane run, and nothing else: no screenshot is
+owed. The hover half of the closing condition rests on two pieces of evidence, said here so neither is read as more than it is.
+(1) From the real run: the located-address counts per edition in `oo-field-*-wiki-coverage.json`, printed by
+`scripts/wiki_coverage_readback.py` as "located addresses: N of M found addresses located"; N above 0 shows that an infobox
+address was located on the operator's machine. (2) From a fixture, not the real run: the hover carries the provenance
+(address, field, page and edition, OSM object, extract date or "the extract states no date") on desktop hover and phone
+long-press, shown by row 268's Chromium walk (`docs/audit/map-marker-titles-r268-2026-11-21/`) and pinned by
+`tests/map_marker_titles_r268_node_test.js`. No picture of the hover on the operator's own data is part of the evidence. **Still
+owed (operator):** that one run, read back: the twelve-edition report and a located count above 0. A count of 0, or a count
+the file does not carry, leaves the row OPEN with that reason written beside it; it is never recorded as met. Nothing here
+says the hover was checked on the operator's own data, and no release wording may say so.
 
 ### Row E — Help's body ×12, the first tranche · ruled (Q1122 = b); *proposed staging* · CLOSED (R721)
 
@@ -281,6 +295,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Row C: the coverage report comes back through Field data; no row changed status.** The button saves `/api/diagnostics/law-coverage` and `scripts/law_coverage_readback.py` prints every floor country by state with the twelve-language tally (row 267). | session (Lane O) |
 | 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
 | 2026-11-21 | **Row A: a catalogue that was not read is said, never counted as "every country missing" (row 273); no row changed status.** The curated `configs/world_events.yml` is read with a state (present, absent, empty, or unreadable with the error's class and no path). When it is not present, the floor's counts, the tier report and K13 give null beside that state, `/api/events` and its facets carry it, the Agenda says it in one line, and `scripts/elections_readback.py` prints it; an unparsable file no longer raises out of its callers. | session (Lane U) |
+| 2026-11-21 | **Row D: the hover screenshot is no longer owed (row 282); no row changed status.** The operator's part is one Field data press after a real lane run. The hover half of the closing condition now rests on (a) the real-run located-address counts per edition read back by `scripts/wiki_coverage_readback.py` (`located_lines`), and (b) row 268's fixture Chromium walk (`docs/audit/map-marker-titles-r268-2026-11-21/`) and `tests/map_marker_titles_r268_node_test.js`. A located count of 0 keeps the row open with that reason; nothing says the hover was verified on the operator's real run. | coordinator ruling on the row 281 checklist · Lane F (row 282) |
 
 ---
 
