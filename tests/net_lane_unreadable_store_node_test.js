@@ -70,7 +70,7 @@ for (const l of OO_NET_LANES.filter((x) => x.fetcher === false && !x.mixed)) {
 }
 
 // --- unreadable: no line and no hint claims protected mode is on --------------------- //
-for (const kind of ["proxy", "pool", "refused"]) {
+for (const kind of ["proxy", "pool", "refused", "unknown"]) {
   for (const lane of OO_NET_LANES) {
     const line = F._laneTransport(lane, kind, true);
     assert.ok(!CLAIM.test(line), `${lane.id}/${kind}: ${line}`);
@@ -83,6 +83,11 @@ for (const kind of ["proxy", "pool", "refused"]) {
 }
 // a refused fetcher lane names the unreadable settings, never "no usable proxy" under protected mode
 assert.ok(/settings could not be read/.test(F._laneTransport(OO_NET_LANES.find((l) => l.fetcher !== false), "refused", true)));
+// with no environment proxy (kind "unknown") every fetcher lane is refused, and says so (READ_FAILED_REFUSAL)
+for (const l of OO_NET_LANES.filter((x) => x.fetcher !== false)) {
+  assert.ok(/settings could not be read, so these fetches are refused/.test(F._laneTransport(l, "unknown", true)), l.id);
+}
+assert.ok(/no proxy is named in this computer's environment/.test(F._transportHint("unknown", true)));
 // the install/update lanes say the install itself is refused (R766), never "mostly direct"
 for (const id of ["ai", "update"]) {
   const l = OO_NET_LANES.find((x) => x.id === id);

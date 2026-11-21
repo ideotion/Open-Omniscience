@@ -1567,7 +1567,7 @@
       if (kind === "direct") return t("Transport: direct — protected mode is off, so these hosts see your address.");
       if (kind === "proxy") return t("Transport: through your proxy.");
       if (kind === "pool") return t("Transport: through your proxy pool, one member per host.");
-      if (kind === "refused" && unreadable) return t("Transport: none — the settings could not be read, so these fetches are refused, never sent direct.");
+      if ((kind === "refused" || kind === "unknown") && unreadable) return t("Transport: none — the settings could not be read, so these fetches are refused, never sent direct.");
       if (kind === "refused") return t("Transport: none — protected mode is on with no usable proxy, so these fetches are refused, never sent direct.");
       return t("Transport: unknown — the safety settings could not be read.");
     }
@@ -1576,6 +1576,7 @@
     function _transportHint(kind, unreadable) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       if (unreadable && (kind === "proxy" || kind === "pool")) return t("The settings could not be read, so protected mode is assumed: fetches ride the proxy named in this computer's environment, and a lane never falls back to the clear internet on its own.");
+      if (unreadable && kind === "unknown") return t("The settings could not be read and no proxy is named in this computer's environment, so fetches are refused rather than sent direct.");
       if (unreadable && kind === "refused") return t("The settings could not be read, so fetches are refused as if protected mode were on: the proxy named in this computer's environment cannot be used.");
       if (kind === "proxy") return t("Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.");
       if (kind === "pool") return t("Fetches ride your proxy pool, one member per host; a lane never falls back to the clear internet on its own.");

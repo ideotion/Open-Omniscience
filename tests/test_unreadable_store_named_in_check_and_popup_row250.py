@@ -40,6 +40,8 @@ POPUP = (
     "through the proxy named in this computer's environment.",
     "Transport: direct, even though the unreadable settings are treated as protected mode — this lane does not use a "
     "proxy, so these hosts see your address.",
+    "The settings could not be read and no proxy is named in this computer's environment, so fetches are refused rather "
+    "than sent direct.",
 )
 
 
@@ -80,6 +82,21 @@ def test_a_check_refused_because_the_settings_could_not_be_read_says_so(monkeypa
     assert r.json()["detail"] == {"code": "settings_unreadable", "message": su.SETTINGS_UNREADABLE_CHECK_REFUSAL}
     assert "Protected mode" not in r.json()["detail"]["message"]
     assert su.SETTINGS_UNREADABLE_CHECK_REFUSAL == CHECK_UI
+
+
+def test_an_unusable_environment_pool_with_unreadable_settings_says_unreadable(monkeypatch):
+    """The store cannot be read and the environment names a pool with a non-SOCKS member: the pool is refused whole,
+    the check never runs, and the refusal still names the unreadable settings, never "Protected mode"."""
+    from src.safety import settings
+    from src.safety.fetcher import transport_summary
+
+    _read_fails(monkeypatch)
+    monkeypatch.setenv("OO_HTTP_PROXIES", "socks5h://127.0.0.1:9150,http://127.0.0.1:8118")
+    st = settings.load_settings()
+    assert st.mode_unknown and not st.read_failed
+    assert transport_summary(st) == {"kind": "refused", "reason": "pool-not-socks", "stored": "unreadable"}
+    r = _check(monkeypatch)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "settings_unreadable"
 
 
 def test_a_check_refused_in_chosen_protected_mode_keeps_its_own_words(monkeypatch):
