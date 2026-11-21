@@ -456,7 +456,7 @@ def lane_counters(
     window's blocks do, and this function composes them without a verdict. What the
     numbers MEAN is the maintainer's call; a composite would be a score.
     """
-    from src.wiki.coverage import edition_coverage
+    from src.wiki.coverage import edition_coverage, walk_switch
     from src.wiki.walk import walk_coverage
     from src.wiki.warm import warm_coverage
 
@@ -480,7 +480,10 @@ def lane_counters(
         # S06-03 S1 + S3: the per-edition coverage report (pages seen over the edition total, the
         # full-text share as bounds, last event, gap history) and the located counters, absent
         # with their reason. Read through the same walk and WARM readers, so no number differs.
-        "coverage": edition_coverage(lane, now=at, newest_gaps=False, located_budget=3.0),
+        # The walk switch names an absent total (row 257, R774); the live pause is this process's, so the artifact leaves it out.
+        "coverage": edition_coverage(
+            lane, now=at, newest_gaps=False, located_budget=3.0, walk_enabled=walk_switch()
+        ),
     }
     # R413 (net-zero): the walk's per-edition rows are the coverage rows' own fields, so the member
     # carries them once. Living sources and walk_coverage() itself keep the rows; only this artifact moves them.

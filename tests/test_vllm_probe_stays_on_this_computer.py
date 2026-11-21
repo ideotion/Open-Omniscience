@@ -194,7 +194,7 @@ def test_a_malformed_port_is_reported_not_raised_and_nothing_is_contacted(monkey
 
 
 def test_an_empty_setting_means_the_default_address(monkeypatch):
-    from src.llm.vllm_client import DEFAULT_VLLM_URL
+    from src.llm.vllm_client import default_vllm_url
 
     monkeypatch.setenv("OO_VLLM_URL", "")
-    assert V.base_url() == DEFAULT_VLLM_URL
+    assert V.base_url() == default_vllm_url()  # read when asked (row 247), not frozen at import
