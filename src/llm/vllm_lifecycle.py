@@ -939,7 +939,7 @@ _proc: subprocess.Popen | None = None
 def base_url() -> str:
     from src.llm.vllm_client import DEFAULT_VLLM_URL
 
-    return os.getenv("OO_VLLM_URL", DEFAULT_VLLM_URL)
+    return os.getenv("OO_VLLM_URL") or DEFAULT_VLLM_URL
 
 
 def is_running(*, timeout: float = 2.0) -> bool:
@@ -969,15 +969,34 @@ def port_occupant(*, timeout: float = 2.0) -> dict:
       ``foreign``  -- SOMETHING answered but it is not vLLM. Occupied port.
       ``free``     -- nothing is listening. vLLM is simply not started.
       ``unknown``  -- the probe itself failed; never guessed as one of the above.
+      ``refused``  -- the address is not on this computer, so nothing was contacted (R762).
+
+    THE LOOPBACK RULE COMES FIRST (R762). ``OO_VLLM_URL`` naming another computer is refused
+    by the SAME rule ``VllmClient`` uses (``src.llm.ollama._loopback_refusal``, which
+    ``_require_loopback`` raises), and the
+    refusal is the answer, said with its reason. It used to be swallowed by the ``except``
+    below, after which the raw ``connect_ex`` opened a TCP connection to that host on every
+    Settings read, with no click, past the rule every other local-AI call obeys.
     """
     import socket as _socket
     from urllib.parse import urlparse
 
+    from src.llm.ollama import _loopback_refusal
     from src.llm.vllm_client import VllmClient
 
     url = base_url()
     parsed = urlparse(url)
-    port = parsed.port or 0
+    try:
+        port = parsed.port or 0
+    except ValueError:  # a malformed port in OO_VLLM_URL: say so, never raise, never connect
+        return {
+            "state": "unknown",
+            "port": 0,
+            "detail": "OO_VLLM_URL has a port that is not a number from 0 to 65535, so nothing was contacted.",
+        }
+    refused = _loopback_refusal(url, setting="OO_VLLM_URL")
+    if refused is not None:
+        return {"state": "refused", "port": port, "detail": refused}
     try:
         if VllmClient(timeout=timeout).is_available():
             return {"state": "vllm", "port": port, "detail": f"a vLLM server is answering at {url}."}
@@ -2318,6 +2337,13 @@ def start(
 
     if not is_installed():
         raise VllmLifecycleError("vLLM is not installed. Run the install flow first.")
+    # R762: an address on another computer is refused BEFORE the GPU is touched (clearing it
+    # would unload Ollama's models for a server this app will never start or contact).
+    from src.llm.ollama import _loopback_refusal
+
+    refused = _loopback_refusal(base_url(), setting="OO_VLLM_URL")
+    if refused is not None:
+        raise VllmLifecycleError(refused)
     gpu = detect_gpu()
     if not gpu.get("available"):
         raise VllmUnsupportedError(
@@ -2415,6 +2441,9 @@ def start(
     # actionable refusal, not a subprocess that disappears -- the same principle
     # platform_support() already applies to a doomed install.
     occupant = port_occupant()
+    if occupant["state"] == "refused":
+        # Not on this computer: nothing to start here, and nothing was contacted (R762).
+        raise VllmLifecycleError(occupant["detail"])
     if occupant["state"] == "foreign":
         raise VllmLifecycleError(
             occupant["detail"]
@@ -2934,8 +2963,30 @@ def _stop_probe(ctx) -> Callable[[], bool]:
 
     The runner cannot import the job chassis, and a BackgroundJob ctx is not the only
     thing that can drive an install, so the cancel signal crosses that boundary as a
-    plain predicate. A ctx without ``stopping`` never cancels rather than raising."""
-    return lambda: bool(getattr(ctx, "stopping", False))
+    plain predicate. A ctx without ``stopping`` never cancels rather than raising.
+
+    R765/R769: it also stops when the transport changes under the install (protected mode switched on, or the settings no longer
+    readable), through the one shared watch: the job is cancelled, so its worker returns at its next check, and the reason is
+    recorded for its status."""
+    from src.safety.transport_watch import TransportWatch
+
+    watch = TransportWatch()
+
+    def probe() -> bool:
+        if getattr(ctx, "stopping", False):
+            return True
+        reason = watch.stop_reason()
+        if reason is None:
+            return False
+        job = getattr(ctx, "_job", None)
+        if job is not None:
+            from src.llm.install_transport import record_stop
+
+            record_stop(job.kind, reason)
+            job.cancel()
+        return True
+
+    return probe
 
 
 def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None = None) -> dict:

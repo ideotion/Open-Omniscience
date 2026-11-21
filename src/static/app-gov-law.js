@@ -1102,7 +1102,7 @@
         // official ↗" read in English in every locale. The listener re-runs this on a
         // switch, so the headers are t()'d here rather than left to the walker.
         const th = (k) => `<th>${esc(tr(k))}</th>`;
-        tbl.innerHTML = `<thead><tr>${th("Jurisdiction")}${th("Title")}${th("Category")}${th("Status")}${th("Changes")}<th></th></tr></thead><tbody>` +
+        tbl.innerHTML = `<thead><tr>${th("Jurisdiction")}${th("Title")}${th("Category")}${th("Status")}${th("Changes")}<th><span class="sr-only">${esc(tr("Actions"))}</span></th></tr></thead><tbody>` +
           d.documents.map(x =>
             `<tr${x.watched?'':' style="opacity:.55"'}><td>${ooCountryCell(x.jurisdiction)}</td><td>${esc(x.title)}</td><td>${_lawCodeLabel(_LAW_CATEGORY_LABEL, x.category)}</td>
               <td>${lawVerdictBadge(x)}${x.watched?'':' <span class="pill">'+esc(tr("not tracked"))+'</span>'}</td>

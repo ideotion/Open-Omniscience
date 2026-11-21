@@ -15,13 +15,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.api.diagnostics.source_samples import _SECRETISH, build_sample_zip
-from src.database.models import Article, Base, Source
+from src.database.models import Article, Base, FeedFetchState, Source, SourceQualificationAttempt
 
 
 @pytest.fixture
 def db():
     eng = create_engine("sqlite://")
-    Base.metadata.create_all(eng, tables=[Source.__table__, Article.__table__])
+    Base.metadata.create_all(eng, tables=[Source.__table__, Article.__table__, SourceQualificationAttempt.__table__,
+                                          FeedFetchState.__table__])
     with Session(eng) as s:
         yield s
 
@@ -55,8 +56,8 @@ def test_one_article_per_source_and_a_manifest_row_for_an_empty_source(db):
     assert (nxt, covered, total) == (None, 2, 2)
     assert [r["source_id"] for r in man["sources"]] == [1]
     # field report 2026-11-14 5.4: ids above the shipped catalogue differ across instances, so each row carries the join key
-    assert man["sources_without_article"]["rows"] == [[2, "s2.example", ""]]
-    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key"]
+    assert man["sources_without_article"]["rows"] == [[2, "s2.example", "", 0]]
+    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key", "class"]
     assert man["sources"][0]["domain"] == "s1.example" and man["sources"][0]["feed_key"] == ""
     assert man["sources_in_this_zip"] == 2
     from src.paths import instance_tag
@@ -110,15 +111,15 @@ def test_a_long_run_of_empty_sources_cannot_push_a_zip_past_the_cap(db):
 
 def test_a_long_run_of_never_collected_sources_does_not_make_parts_of_its_own(db):
     """The 2026-11-14 press: five parts in a row held only sources with no article. Now one zip reads past the
-    5,000-id batch until it is full, so the sampled source after 12,000 empty ones rides in the same first part."""
-    for sid in range(1, 12001):
+    5,000-id batch until it is full, so the sampled source after 10,000 empty ones rides in the same first part."""
+    for sid in range(1, 10001):
         db.add(Source(id=sid, name=f"S{sid}", domain=f"empty{sid}.example"))
     db.commit()
-    _add(db, 12001, 2)
+    _add(db, 10001, 2)
     data, nxt, covered, total = build_sample_zip(db, after=0, seed=3, cap=400_000)
-    assert (nxt, covered, total) == (None, 12001, 12001)
-    assert _ids(data) == list(range(1, 12002))
-    assert "samples/source-0012001.json" in _open(data).namelist()
+    assert (nxt, covered, total) == (None, 10001, 10001)
+    assert _ids(data) == list(range(1, 10002))
+    assert "samples/source-0010001.json" in _open(data).namelist()
     assert len(data) < 200_000, len(data)
 
 
@@ -209,7 +210,7 @@ def test_a_source_without_an_article_writes_its_kept_key_masked(db):
     data = build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]
     assert b"hunter2" not in _open(data).read("manifest.json")
     man = json.loads(_open(data).read("manifest.json"))
-    assert man["sources_without_article"]["rows"] == [[1, "news.example", "f:***@news.example/rss"]]
+    assert man["sources_without_article"]["rows"] == [[1, "news.example", "f:***@news.example/rss", 0]]
 
 
 def test_every_address_column_is_written_as_a_report_writes_it(db):
@@ -230,3 +231,88 @@ def test_every_address_column_is_written_as_a_report_writes_it(db):
         assert secret not in everything, secret
     assert b"BodyLinkDDDD4444" in everything, "the article's body is the sample: its words are kept"
     assert b'"region": "EU"' in everything or b'\\"region\\": \\"EU\\"' in everything, "the baseline's other fields were lost"
+
+
+def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the_whole_set(db):
+    """Row 248 (from row 39): about 25,000 sources of one press had no article and the list could not say why. Each row now
+    indexes a class (enabled, status, via tag, has a feed, last qualification verdict, last feed HTTP status), and the
+    first zip counts every never-collected source by class. Booleans and short codes only: no address leaves (R734)."""
+    from datetime import datetime
+
+    _add(db, 1, 2)
+    db.add(Source(id=2, name="Cand", domain="cand.example", enabled=False, status="unqualified",
+                  tags="news,via:wikidata-discovery"))
+    db.add(Source(id=3, name="Cand2", domain="cand2.example", enabled=False, status="unqualified",
+                  tags="via:wikidata-discovery"))
+    db.add(Source(id=4, name="Dead", domain="dead.example", enabled=True, status="qualified",
+                  rss_url="https://alice:hunter2@dead.example/rss?token=abc", tags="via:curated"))
+    db.flush()
+    db.add(SourceQualificationAttempt(source_id=3, attempted_at=datetime(2026, 11, 1), verdict="no_evidence",
+                                      criteria_version="v"))
+    db.add(FeedFetchState(source_id=4, last_status=404, last_checked_at=datetime(2026, 11, 2)))
+    db.commit()
+
+    data, nxt, _c, _t = build_sample_zip(db, after=0, seed=1, cap=4_000_000)
+    assert nxt is None
+    raw = _open(data).read("manifest.json")
+    assert b"hunter2" not in raw and b"token=abc" not in raw   # the feed key keeps its own R734 mask; a class says only True
+    man = json.loads(raw)
+    block = man["sources_without_article"]
+    assert block["classes"]["columns"] == ["enabled", "status", "via", "has_feed", "last_qualification",
+                                           "last_feed_status", "sources_in_this_zip"]
+    by_id = {r[0]: block["classes"]["rows"][r[3]] for r in block["rows"]}
+    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, 1]
+    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, 1]
+    assert by_id[4] == [True, "qualified", "curated", True, None, 404, 1]
+    tally = man["never_collected_in_set"]
+    assert tally["sources"] == 3 and tally["columns"][-1] == "sources"
+    assert sorted(tally["rows"], key=str) == sorted([r[:-1] + [1] for r in block["classes"]["rows"]], key=str)
+
+
+def test_the_whole_set_tally_rides_in_the_first_zip_only_and_one_class_is_written_once(db):
+    for sid in range(1, 301):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"c{sid}.example", enabled=False, tags="via:wikidata-discovery"))
+    db.commit()
+    first, nxt, _c, _t = build_sample_zip(db, after=0, seed=3, cap=6_000)
+    assert nxt is not None
+    man = json.loads(_open(first).read("manifest.json"))
+    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, 300]]
+    assert len(man["sources_without_article"]["classes"]["rows"]) == 1
+    assert {r[3] for r in man["sources_without_article"]["rows"]} == {0}
+    later, _n, _c, _t = build_sample_zip(db, after=nxt, seed=3, cap=6_000)
+    assert "never_collected_in_set" not in json.loads(_open(later).read("manifest.json"))
+    assert len(first) <= 6_000 and len(later) <= 6_000
+
+
+def test_a_via_tag_is_a_code_or_other_never_free_text():
+    from src.api.diagnostics.source_samples import _via
+
+    assert _via("news,via:wikidata-discovery") == "wikidata-discovery"
+    assert _via("via:Some Free Text, typed") == "other"
+    assert _via("news") is None and _via(None) is None
+    # Review of #2203: a lowercase slug a catalogue entry typed itself is not copied out, a tag that merely
+    # contains "via:" is not a provenance, and the known codes win over an unknown one on the same row.
+    assert _via("via:alice-hunter2-at-host") == "other"
+    assert _via("via:some free text") == "other"
+    assert _via("trivia:quiz") is None
+    assert _via("via:curated,via:zz-token") == "curated"
+    assert _via("x, via:legal-generated ") == "legal-generated"
+
+
+def test_the_whole_set_tally_lists_its_largest_classes_and_counts_the_rest(db, monkeypatch):
+    import importlib
+
+    ss = importlib.import_module("src.api.diagnostics.source_samples")
+
+    monkeypatch.setattr(ss, "_TALLY_MAX_CLASSES", 2)
+    # three never-collected classes: by feed (2 sources), by status (1), and the plain one (3)
+    for sid in range(1, 4):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.example"))
+    for sid in range(4, 6):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.example", rss_url=f"https://s{sid}.example/rss"))
+    db.add(Source(id=6, name="S6", domain="s6.example", status="disqualified"))
+    db.commit()
+    tally = ss.never_collected_in_set(db)
+    assert [r[-1] for r in tally["rows"]] == [3, 2]
+    assert tally["classes_left_out"] == 1 and tally["sources_in_classes_left_out"] == 1
+    assert tally["sources"] == 6 and "null = the collector never checked" in tally["feed_status_note"]

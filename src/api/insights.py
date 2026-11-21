@@ -2798,6 +2798,34 @@ def insights_map(
     return _deadlined(db, key, _compute, degraded_replay=True)
 
 
+def _count_sources_not_candidates(db: Session, data: dict) -> None:
+    """R773 (row 39): restate the map's per-country ``sources`` as sources only and put the
+    candidates not yet checked beside them, from one live read of the small sources table, so
+    the served rollup and the live query say the same thing. A country with candidates and no
+    source stays listed with ``sources`` 0: it is not covered."""
+    from src.catalog.source_standing import CANDIDATE_LINE, counted_by_country
+
+    sources, candidates = counted_by_country(db)
+    rows = {r["country"]: r for r in data.get("by_country", [])}
+    for code in set(sources) | set(candidates):
+        if code and code not in rows:
+            rows[code] = {"country": code, "articles": 0, "keywords": 0, "sentiment": None, "sentiment_n": 0}
+    kept = []
+    for code, row in rows.items():
+        row["sources"] = sources.get(code, 0)
+        row["candidates"] = candidates.get(code, 0)
+        if row["sources"] or row["candidates"] or row.get("articles"):
+            kept.append(row)
+    kept.sort(key=lambda r: (-r["sources"], -r["candidates"], r["country"]))
+    data["by_country"] = kept
+    unloc = data.setdefault("unlocated", {})
+    unloc["sources"] = sources.get("", 0)
+    unloc["candidates"] = candidates.get("", 0)
+    data["total_sources"] = sum(sources.values())
+    data["candidates_not_checked"] = sum(candidates.values())
+    data["candidate_line"] = CANDIDATE_LINE
+
+
 @router.get("/map-coverage")
 def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
     """Per-country COVERAGE for the choropleth (ooMap, slice 2): how many sources
@@ -2819,6 +2847,7 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         # miss falls back to the IDENTICAL live query. A served response carries a
         # ``basis`` disclosure (source + as-of); off/fallback it is the untouched live path.
         data = map_serve.map_coverage(db) or rm.source_country_counts(db)
+        _count_sources_not_candidates(db, data)
         for row in data["by_country"]:
             cc = row["country"]
             disp = country_display_name(cc)
@@ -2831,8 +2860,9 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
                 row["lat"], row["lon"] = pt["lat"], pt["lon"]
         data["dimension"] = "sources"
         data["method"] = (
-            "Count of catalogued sources whose country = each ISO-2 area "
-            "(articles = those collected from them). Counts only, no score."
+            "Count of sources whose country = each ISO-2 area: sources the app collected from "
+            "or may collect from now (enabled and qualified); candidates not yet checked are "
+            "counted apart (articles = those collected from them). Counts only, no score."
         )
         data["caveat"] = (
             "Country is operator/catalogue-asserted; sources without a country are "

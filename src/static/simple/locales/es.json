@@ -146,6 +146,8 @@
   "Language": "Idioma",
   "Any language": "Cualquier idioma",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Las cifras usan el idioma que declara cada fuente, solo sobre los artículos más recientes. El filtro también encuentra artículos cuyo idioma se detectó en su texto, así que una cifra puede diferir de los resultados.",
-  "Articles counted": "Artículos contados"
+  "Articles counted": "Artículos contados",
+  "candidates not yet checked": "candidatos aún sin comprobar",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Un candidato es un sitio que la aplicación encontró o recibió pero aún no ha comprobado. No se recopila de él y no cuenta como fuente."
  }
 }

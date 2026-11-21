@@ -417,15 +417,14 @@ def run_installer(path: str) -> Iterator[str]:
     _check_online()
     # R763: the script downloads the binary itself, outside the proxy protected mode routes this app through
     from src.llm.install_transport import (
-        AI_INSTALLER_STOPPED_NOTE,
+        note_for,
         refuse_if_protected,
         register_child,
-        stop_generation,
-        stopped_since,
         unregister_child,
     )
+    from src.safety.transport_watch import TransportWatch
 
-    generation = stop_generation()  # R765: read before the check, so a switch between the two still stops the script
+    watch = TransportWatch()  # R765/R769: taken before the check, so a switch between the two still stops the script
     refuse_if_protected(InstallerUnavailable)
     if _is_root():
         cmd = ["sh", str(p)]
@@ -474,7 +473,7 @@ def run_installer(path: str) -> Iterator[str]:
         stopped = False
         ended_first: int | None = None  # the script's exit code when it had already exited as the stop was seen
         try:
-            for line in _lines(proc.stdout.fileno(), lambda: stopped_since(generation)):
+            for line in _lines(proc.stdout.fileno(), lambda: watch.stop_reason() is not None):
                 if line is None:
                     stopped = True
                     ended_first = proc.poll()
@@ -491,12 +490,13 @@ def run_installer(path: str) -> Iterator[str]:
         # A script that exited 0 finished before the switch reached it, and is reported as the finished install it is; one that
         # had already failed on its own (an exit code, not a signal) reports its own failure.
         own_end = ended_first is not None and ended_first >= 0
-        if code != 0 and not own_end and (stopped or stopped_since(generation)):
+        reason = watch.stop_reason()
+        if code != 0 and not own_end and (stopped or reason is not None):
             # What it unpacked may be cut short, so the binary is not reported as installed until a run finishes (R765).
             from src.llm.install_transport import mark_ollama_install_interrupted
 
             mark_ollama_install_interrupted()
-            raise InstallerUnavailable(AI_INSTALLER_STOPPED_NOTE)
+            raise InstallerUnavailable(note_for(reason, installer=True))
         if code == 0:
             from src.llm.install_transport import clear_ollama_install_interrupted
 

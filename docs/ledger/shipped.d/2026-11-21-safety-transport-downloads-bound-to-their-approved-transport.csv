@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,safety/transport,Downloads bound to their approved transport (R768 R769 R772),shipped,PR #2199,src/safety/transport_watch.py;src/safety/fetcher.py;src/wiki/dumps.py;src/geo/osm_downloads.py;src/osm/update_job.py;src/api/jobs.py,"Protected mode on or off, a proxy change or unreadable settings stop running bulk downloads and hold queued ones with a named reason; one token-checked Resume the queue click names the transport first; R772(a) pending in row 245"
