@@ -281,7 +281,7 @@
         const occ = g.seen[d][h];
         if (!occ) {   // NEVER a zero: this slot did not occur in the observed span
           cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="url(#rhythm-none)"`
-            + `><title>${esc(t(_RHYTHM_DAYS[d]))} ${h}:00 — ${esc(t("not observed yet"))}</title></rect>`;
+            + ` title="${esc(t(_RHYTHM_DAYS[d]))} ${h}:00 — ${esc(t("not observed yet"))}"></rect>`;
           continue;
         }
         const avg = g.total[d][h] / occ;
@@ -292,7 +292,7 @@
           + _tfn("{total} articles over {occ} occurrence(s), {avg} on average",
               { total: fmtNum(g.total[d][h]), occ: String(occ), avg: fmtNum(avg, 1) });
         cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="${fill}"`
-          + ` stroke="var(--border)" stroke-width="0.4"><title>${esc(title)}</title></rect>`;
+          + ` stroke="var(--border)" stroke-width="0.4" title="${esc(title)}"></rect>`;
       }
       const dayLabels = _RHYTHM_DAYS.map((d, i) =>
         `<text x="${padL - 4}" y="${padT + i * ch + 11}" text-anchor="end" font-size="8.5"
@@ -1396,8 +1396,8 @@
         const frac = d.value / total;
         const seg = `<circle cx="${cx}" cy="${cy}" r="${rMid.toFixed(2)}" fill="none" stroke="${color(i)}"`
           + ` stroke-width="${sw.toFixed(2)}" stroke-dasharray="${(frac * C).toFixed(2)} ${C.toFixed(2)}"`
-          + ` stroke-dashoffset="${(-acc * C).toFixed(2)}"><title>${esc(d.label)}: ${esc(fmtNum(d.value))}`
-          + `${opts.unit ? " " + esc(opts.unit) : ""} (${ooLtrIsolate(Math.round(frac * 100) + "%")})</title></circle>`;
+          + ` stroke-dashoffset="${(-acc * C).toFixed(2)}" title="${esc(d.label)}: ${esc(fmtNum(d.value))}`
+          + `${opts.unit ? " " + esc(opts.unit) : ""} (${esc(ooLtrIsolate(Math.round(frac * 100) + "%"))})"></circle>`;
         acc += frac;
         return seg;
       }).join("");
