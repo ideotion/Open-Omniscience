@@ -187,9 +187,11 @@ def _make_scan_producer(first_chunk_at: list[float], scan_done_at: list[float] |
 
     ``phase`` (row 255) is the same window as a SEQUENCE the checkpointer reads, not a clock it compares: ``chunks`` counts the chunks
     delivered and ``done`` turns True before the producer leaves its loop, so "inside the scan" is ``chunks >= 1 and not done``, read on the
-    checkpointer's own thread at the moment it calls and again the moment it returns. ``writes_at_pin`` is the writer's commit count read
-    when the first chunk is delivered, AFTER the snapshot opened (so a commit it misses is counted as older, the safe direction), and it is
-    set before ``chunks`` first moves, so no attempt can see the scan as started without it."""
+    checkpointer's own thread at the moment it calls and again the moment it returns. ``writes_at_pin`` is the number of commits the writer
+    had STARTED when the first chunk is delivered, read after the snapshot opened: every commit whose frame the snapshot could hold is in it,
+    so a commit counted as done beyond it began after the snapshot and its frame is newer. (The done count is bumped after ``commit()``
+    returns, so reading THAT at the pin could miss a commit already in the snapshot and count it as newer -- the unsafe direction.) It is set
+    before ``chunks`` first moves, so no attempt can see the scan as started without it."""
 
     def _slow_scan_producer(session):
         result = session.execute(text("SELECT x FROM t"))
@@ -201,7 +203,7 @@ def _make_scan_producer(first_chunk_at: list[float], scan_done_at: list[float] |
                 break
             if phase is not None:
                 if phase["chunks"] == 0:
-                    phase["writes_at_pin"] = phase["writes"]()
+                    phase["writes_at_pin"] = phase["writes_started"]()
                 phase["chunks"] += 1
             time.sleep(0.1)
         if phase is not None:
@@ -231,8 +233,8 @@ def _evidence_attempts(attempts: list[dict]) -> list[dict]:
 
     An attempt is evidence when the scan was inside its loop both when the checkpoint was called and when it returned (``in_scan_at_call``,
     ``in_scan_at_end``: read from the producer's own counter on the checkpointer's thread, so no two threads' clocks are compared), and when
-    the writer had COMMITTED SINCE THE SCAN'S SNAPSHOT OPENED (``newer_frames``: its commit count at the call is above the count read at the
-    first chunk). Only then can a held snapshot stop the checkpoint. A reader that opens when every frame of the log is already copied into
+    the writer had COMMITTED SINCE THE SCAN'S SNAPSHOT OPENED (``newer_frames``: more commits DONE at the call than commits STARTED when the
+    first chunk was read, so at least one commit that began after the snapshot has landed). Only then can a held snapshot stop the checkpoint. A reader that opens when every frame of the log is already copied into
     the database takes SQLite's read-mark slot 0, which TRUNCATE and RESTART do not wait for, so with no newer frame the checkpoint answers
     busy=0 under a snapshot that is still held (measured: (0, 0, 0) on an empty log, and (0, 0, 0) on a 655 kB log a PASSIVE had fully
     copied; one commit later the same call answers busy=1). On a runner whose writer had not committed yet, the clock window counted those
@@ -284,8 +286,9 @@ def _run_one_round(
     monkeypatch.setattr(registry, "_release_transaction", _counting_release)
     first_chunk_at: list[float] = []
     scan_done_at: list[float] = []
-    rows_written = [0]
-    phase = {"chunks": 0, "done": False, "writes_at_pin": None, "writes": lambda: rows_written[0]}
+    rows_written = [0]  # commits DONE (bumped after commit() returns)
+    writes_started = [0]  # commits STARTED (bumped before the connection is taken): what the pin reads, see _make_scan_producer
+    phase = {"chunks": 0, "done": False, "writes_at_pin": None, "writes_started": lambda: writes_started[0]}
     registry.register("slow_scan", _make_scan_producer(first_chunk_at, scan_done_at, phase))
 
     def _in_scan() -> bool:
@@ -310,6 +313,7 @@ def _run_one_round(
         if writer_holds_s:
             stop_writer.wait(writer_holds_s)  # row 255: a writer that has not committed yet, as on a runner whose fsync is slow
         while not stop_writer.is_set():
+            writes_started[0] += 1
             try:
                 with eng.connect() as c:
                     c.exec_driver_sql(f"INSERT INTO t VALUES (randomblob({_WRITER_ROW_BYTES}))")
