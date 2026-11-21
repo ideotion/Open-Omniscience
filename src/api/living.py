@@ -180,6 +180,8 @@ def _wiki_walk() -> dict[str, Any]:
         "state": _state_since_switch(enabled, live),
         "reason": (live or {}).get("reason") if live else None,
     }
+    if live and live.get("stored") == "unreadable":
+        out["stored"] = "unreadable"  # row 254 (R766): the pause is for settings that could not be read
     if not lane_path("wiki").is_file():
         return {**out, "measured": False, "reason_counts": "lane-never-run"}
     try:
@@ -223,6 +225,8 @@ def _wiki_warm() -> dict[str, Any]:
         "waiting": dict((live or {}).get("waiting") or {}),
         "share": WARM_BUDGET_SHARE,
     }
+    if live and live.get("stored") == "unreadable":
+        out["stored"] = "unreadable"  # row 254 (R766): the pause is for settings that could not be read
     if not lane_path("wiki").is_file():
         return {**out, "measured": False, "reason_counts": "lane-never-run"}
     try:
