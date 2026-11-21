@@ -3542,6 +3542,7 @@
   "No related article, so there is no trail to export.": "関連する記事がないため、書き出す跡はありません。",
   "No related article, so there is nothing to check.": "関連する記事がないため、確かめるものはありません。",
   "No related article, so there is nothing to group.": "関連する記事がないため、グループ化するものはありません。",
+  "No release has been published yet, so there is nothing to update to.": "まだリリースが公開されていないため、更新できるものはありません。",
   "No repeated line reaches the threshold.": "しきい値に達する繰り返し行はありません。",
   "No resolvable keyword given.": "照合できるキーワードが指定されていません。",
   "No results in your corpus for this query.": "このクエリに一致する結果はコーパス内にありません。",
