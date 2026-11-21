@@ -1002,6 +1002,8 @@ def _elections_block() -> dict:
         # Row 273: the curated catalogue's own read state; when it is not "present" and no snapshot was read either,
         # the floor counts above are None.
         "catalogue_state": catalogue.get("state"),
+        # Row 279: the language floor's own read state; when it is not "present" every floor figure above is None.
+        "floor_state": (rep.get("floor") or {}).get("state"),
         # "snapshot_only" when the catalogue was not read but the snapshot was: the counts are the snapshot's alone.
         "counts_from": rep.get("counts_from"),
         "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
@@ -1017,6 +1019,10 @@ def _elections_block() -> dict:
             "missing). The first slice is the snapshot, so the vertical counts as ingested only when a snapshot "
             "with rows is present; the shipped catalogue alone is not an ingest. Read from files, never fetched.")]),
     }
+    if (rep.get("floor") or {}).get("state") not in (None, "present"):
+        block.update(_method([_fr("the language floor (the countries the elections count is measured against) was not "
+                                  "read on this machine (state: {state}), so no floor figure is given",
+                                  state=rep["floor"]["state"])], "floor_reason"))
     if rep.get("counts_from") == "snapshot_only":
         block.update(_method([_fr("the curated events catalogue was not read as a catalogue with events on this machine "
                                   "(state: {state}); the floor counts come from the Wikidata snapshot only",

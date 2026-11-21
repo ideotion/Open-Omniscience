@@ -250,6 +250,7 @@ def _first(lang: str, chosen: list[str]) -> dict[str, Any] | None:
 def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Everything the Settings picker draws. Reads local files only (``law`` from the corpus)."""
     from src.catalog.countries import ISO_3166_1_ALPHA2
+    from src.civic.coverage_floor import floor_state
     from src.geo.osm_regions import OSM_SIZES_AS_OF
 
     chosen = selected()
@@ -260,6 +261,9 @@ def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str
         "lang": (lang or "").strip().lower(),
         "suggestion_basis": SUGGESTION_BASIS,
         "suggested": suggestions(lang),
+        # Row 279: whether the language-to-country list was read (present / absent / empty / unreadable), so an empty
+        # suggestion list from a file that was not read is said, never drawn as a language with no country.
+        "suggested_floor": floor_state(),
         "first": _first(lang, chosen),
         "first_basis": FIRST_BASIS,
         "law_basis": LAW_BASIS,

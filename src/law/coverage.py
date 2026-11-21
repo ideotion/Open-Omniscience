@@ -397,6 +397,9 @@ def floor_report(
         "method": _FLOOR_METHOD,
         "caveat": _FLOOR_CAVEAT,
     }
+    from src.civic.coverage_floor import floor_state
+
+    out["floor"] = floor_state(floor)  # row 279: present, absent, empty or unreadable (the error's class, no path)
     if not countries:
         # An absent or empty floor file is a floor of NOTHING, and a report of "0 of 0" would read as complete.
         return {
@@ -539,6 +542,11 @@ def world_report(
         "method": _WORLD_METHOD,
         "caveat": _WORLD_CAVEAT,
     }
+    from src.civic.coverage_floor import floor_state
+
+    # Row 279: the floor's read state. Each country's state below is still a real lookup of the corpus and the catalogue,
+    # so it is kept; only the split between this block and the floor block depends on the floor having been read.
+    out["floor"] = floor_state(floor)
     if not on_floor:
         out["floor_note"] = ("the floor file is absent, unreadable or lists no country, so no country is set aside for the "
                              "floor block and this block lists every country")

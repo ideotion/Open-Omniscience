@@ -3411,6 +3411,15 @@
     // ONE label for a country anywhere in the picker: the name in the reader's language with the
     // alpha-3 code beside it (the pickers' convention, Q302/Q308), the server's English name as
     // the fallback when the browser has no region names.
+    // Row 279: one line when the language-to-country list (configs/language_countries.yml) was not read as a list
+    // with countries ("" when it was). Absent, empty and unreadable are three different facts and are said apart.
+    function osmFloorLine(fl, t) {
+      const st = fl && fl.state;
+      if (!st || st === "present") return "";
+      if (st === "absent") return t("The language-to-country list was not found on this install, so no country is counted from it.");
+      if (st === "empty") return t("The language-to-country list on this install was read and lists no country.");
+      return t("The language-to-country list on this install could not be read, so no country is counted from it.");
+    }
     function _osmPickLabel(cc, fallback) {
       const code = ooCountryCode(cc), name = ooCountryName(cc, fallback || "");
       return name && name !== code ? `${name} (${code})` : (code || fallback || cc);
@@ -3513,9 +3522,12 @@
             + `<button class="tiny" data-on-click="osmPickAddCode(${esc(JSON.stringify(f.cc))})">${esc(osmTf("Start with {country}", { country: _osmPickLabel(f.cc, f.name) }))}</button>${cost}`
             + (f.extract ? "" : ` <span class="hint">${esc(t(f.extract_reason || ""))}</span>`) + `</div>`;
         }
+        const floorLine = osmFloorLine(p.suggested_floor, t);
         html += open.length
           ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>` + open.map((r) => chip(r)).join(" ")
           : "";
+        // Row 279: a language-to-country list that was not read is said, never drawn as a language with no country.
+        if (floorLine) html += `<div class="hint" style="color:var(--caveat);margin-top:4px">${esc(floorLine)}</div>`;
         if (law.length) {
           html += `<div class="hint" style="margin:8px 0 4px">${esc(t(p.law_basis || ""))}</div>`
             + law.map((r) => chip(r, osmTf("{n} watched legal documents", { n: r.law_documents }))).join(" ");
