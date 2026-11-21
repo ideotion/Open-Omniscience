@@ -18,6 +18,7 @@ import logging
 
 from src.ingest import OO_VERSION
 from src.monitoring.secret_scrub import log_failure
+from src.safety.transport_watch import TransportStopped
 
 _LOG = logging.getLogger(__name__)
 ORES_ENDPOINT = "https://ores.wikimedia.org/v3/scores"
@@ -65,6 +66,7 @@ OUTCOMES: tuple[str, ...] = (
     "endpoint_gone",       # 404/410: the strongest available evidence of the migration
     "refused_offline",     # OUR kill switch, named as ours (invariant #14e's corollary)
     "refused_redirect",    # OUR host list refused the endpoint's redirect (R143): e.g. a move to another Wikimedia host, not a dropped packet
+    "transport_changed",   # R772(a): the transport changed under the caller's run; raised, never failed open
     "http_error",
     "transport_error",
     "unreadable_response",
@@ -166,6 +168,11 @@ class OresClient:
             resp = self.session.get(
                 f"{ORES_ENDPOINT}/{dbname(wiki)}/", params=params, timeout=self.timeout
             )
+        except TransportStopped:
+            # R772(a): not a scoring failure. The run this score belongs to was approved over another transport, so it stops: the
+            # caller (a tracking batch) ends by name rather than storing the revision without its score and going on.
+            self._note("transport_changed")
+            raise
         except Exception as exc:  # noqa: BLE001 - ORES is optional; never break tracking
             # OUR OWN REFUSAL IS NAMED AS OURS. Invariant #14e's corollary: an
             # operator pointed at Wikimedia for their own airplane mode has been sent

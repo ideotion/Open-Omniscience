@@ -59,6 +59,7 @@ from typing import Any
 
 from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 from src.monitoring.secret_scrub import log_failure
+from src.safety.transport_watch import TransportStopped, current_run
 from src.wiki.sse import SseEvent, SseParser
 
 _LOG = logging.getLogger("wiki.stream")
@@ -442,7 +443,9 @@ class WikiEventStream:
             except _CallerStop:
                 # An ordinary, requested end: the counters are the answer.
                 return self.counters
-            except StreamStopped:
+            except (StreamStopped, TransportStopped):
+                # R772(a): a transport change is not a transport FAULT. The stream was approved over one transport and does not go
+                # on over another: no backoff, no reconnect, no count against the connection. The lane holds it, by name.
                 raise
             except Exception as exc:  # noqa: BLE001 - every transport fault is a retry
                 if kill_switch_engaged_since(epoch):
@@ -535,6 +538,11 @@ class WikiEventStream:
             # operator who engaged airplane mode a moment ago must not have one more
             # edit stored because it was already decoded.
             self._refuse_if_offline("reading the Wikipedia change stream")
+            # R772(a): before this event is acted on, the run this stream belongs to (the lane's approved transport). Cheap per
+            # event: the watch re-reads the settings only after a save bumped it, or once a second.
+            run = current_run()
+            if run is not None:
+                run.check()
             if should_stop is not None and should_stop():
                 raise _CallerStop()
             now = self._monotonic()

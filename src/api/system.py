@@ -117,14 +117,15 @@ def update_status() -> dict:
         current_version,
         install_status,
         last_result,
-        protected_mode_chosen,
+        protected_reason,
     )
 
     st = install_status()
     return {
         "current": current_version(),
         # read first by the button, so protected mode is named before the consent popup would switch airplane mode off for nothing
-        "blocked": "protected" if protected_mode_chosen() else None,
+        # R766: "protected" or "settings_unreadable", so the button names the real reason
+        "blocked": protected_reason(),
         "install": {k: st[k] for k in ("kind", "can_apply", "reason", "manual_steps")},
         "last_result": last_result(),
     }
@@ -138,8 +139,10 @@ def update_apply(body: UpdateApplyBody) -> dict:
     from src.maintenance.self_update import (
         AIRPLANE_REFUSAL,
         PROTECTED_REFUSAL,
+        SETTINGS_UNREADABLE_REFUSAL,
         AirplaneRefused,
         ProtectedRefused,
+        SettingsUnreadableRefused,
         UpdateError,
         begin_apply,
     )
@@ -150,6 +153,10 @@ def update_apply(body: UpdateApplyBody) -> dict:
         begin_apply(body.ref, body.sha)
     except AirplaneRefused:
         raise HTTPException(status_code=409, detail={"code": "airplane", "message": AIRPLANE_REFUSAL}) from None
+    except SettingsUnreadableRefused:
+        raise HTTPException(
+            status_code=409, detail={"code": "settings_unreadable", "message": SETTINGS_UNREADABLE_REFUSAL}
+        ) from None
     except ProtectedRefused:
         raise HTTPException(status_code=409, detail={"code": "protected", "message": PROTECTED_REFUSAL}) from None
     except UpdateError as exc:
@@ -399,10 +406,11 @@ def egress_window_status() -> dict:
 
 
 def _ai_install_blocked() -> str | None:
-    """R763: ``"protected"`` when the AI install refuses protected mode, so the dialog refuses before it asks, as the update does."""
-    from src.llm.install_transport import ai_install_protected
+    """R763: ``"protected"`` when the AI install refuses protected mode, so the dialog refuses before it asks, as the update does;
+    ``"settings_unreadable"`` when the settings could not be read (R766: refused the same, said differently)."""
+    from src.llm.install_transport import ai_install_block_reason
 
-    return "protected" if ai_install_protected() else None
+    return ai_install_block_reason()
 
 
 @router.post("/egress-window")

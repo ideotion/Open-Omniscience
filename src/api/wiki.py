@@ -264,6 +264,13 @@ def delete_page(
     return {"deleted": page_id}
 
 
+#: R772(a): the transport changed while a page was being tracked. Nothing of that page was stored; it is asked again on the next click.
+TRACK_TRANSPORT_CHANGED = (
+    "Stopped because the transport changed while this page was being tracked: nothing of it was stored, and it does not go on over "
+    "the new transport. Track it again to use the transport now in force."
+)
+
+
 @router.post("/pages/{page_id}/track")
 def track_page(page_id: int, ores: bool = False, db: Session = Depends(get_db)) -> dict:
     # ores defaults OFF (Q717: opt-in) -- a caller that omits it contacts no scoring host.
@@ -272,10 +279,19 @@ def track_page(page_id: int, ores: bool = False, db: Session = Depends(get_db)) 
     page = db.query(WikiPage).filter_by(id=page_id).first()
     if page is None:
         raise HTTPException(status_code=404, detail=f"Page {page_id} not found.")
+    from src.safety import transport_watch as tw
+
     try:
-        return update_page(db, _client, page, ores_client=_ores if ores else None)
+        # R772(a): one click is one run, over the transport in force at the click; a change during it stops it by name (409).
+        with tw.run(tw.for_launch(tw.mode_now())):
+            return update_page(db, _client, page, ores_client=_ores if ores else None)
     except HTTPException:
         raise
+    except tw.TransportStopped as exc:
+        db.rollback()
+        # Settings that cannot be read are named as that, never as a change of transport (the second security read).
+        unreadable = tw.stop_reason_of(exc) == "unreadable"
+        raise HTTPException(status_code=409, detail=tw.stop_text_of(exc) if unreadable else TRACK_TRANSPORT_CHANGED) from None
     except Exception as exc:  # noqa: BLE001 - a MediaWiki fetch/parse failure is a 502, not a crash
         db.rollback()
         raise HTTPException(
