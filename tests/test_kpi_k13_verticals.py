@@ -306,7 +306,10 @@ def test_a_session_that_fails_to_commit_records_nothing(isolated, monkeypatch):
 
     with pytest.raises(RuntimeError):
         api._fetch_worker(Ctx(), dataset="oni", param=None)
-    assert not (isolated / "vertical-climate.json").exists()
+    # No fetch is recorded; since row 265 the failed commit is recorded as a failure (a fixed token, no text).
+    rec = K.read_climate_fetches()
+    assert rec["datasets"] == {} and rec["failures"]["oni"]["reason"] == "other"
+    assert _block(_k13(), "climate")["state"] == "not-measured"
 
 
 def test_a_failing_record_never_fails_a_fetch_already_kept(isolated, monkeypatch):

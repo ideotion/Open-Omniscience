@@ -403,6 +403,74 @@ def load_record(session: Session, dataset: str, param: str | None) -> dict | Non
     return out if isinstance(out, dict) else None
 
 
+#: Why a climate fetch did not store anything (row 265, 0.6 gate row A): a fixed token each, so the record of the operator's
+#: real-host run can say which datasets failed and how, and never holds the exception's own text (an address, a host path,
+#: a station or a server's words: R734/R736). ``kill_switch`` is the person's own airplane mode, named as such (#14e).
+FAILURE_REASONS = (
+    "kill_switch",        # airplane mode / the kill switch refused before or during the request
+    "robots",             # the host's robots.txt disallows the address
+    "robots_unreadable",  # the host's robots.txt could not be read, so the fetch was refused (fail closed)
+    "redirect_refused",   # the fetcher refused the address or a redirect hop (off the dataset's site, or not public)
+    "too_large",          # the answer was larger than the table's own shape allows
+    "http_403", "http_404", "http_429", "http_4xx", "http_5xx",
+    "timeout",            # the host did not answer in time
+    "connect",            # the connection could not be made (DNS, refused, reset)
+    "unreadable_answer",  # an answer came, but not the documented table
+    "other",              # anything not recognised above (the total stays honest)
+)
+
+
+def _chain(exc: BaseException):
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        yield cur
+        cur = cur.__cause__ or cur.__context__
+
+
+def failure_reason(exc: BaseException) -> str:
+    """The :data:`FAILURE_REASONS` token for a failed climate fetch. Reads the exception's TYPE and status code, and its text only to
+    recognise our own kill-switch sentences (never a phrase a server wrote): nothing of the text is kept."""
+    import requests
+
+    from src.ingest import BlockedTarget, RobotsDisallowed, RobotsUnavailable
+    from src.ingest.airplane import AirplaneModeError
+    from src.ingest.fetch_verdict import NETWORK_REFUSED, is_kill_switch_refusal
+    from src.safety.fetcher import RedirectRefused
+    from src.stats.fetch import BodyTooLarge
+
+    for e in _chain(exc):
+        text = str(e)
+        if isinstance(e, AirplaneModeError) or text.startswith(NETWORK_REFUSED) or is_kill_switch_refusal(text):
+            return "kill_switch"
+    for e in _chain(exc):
+        if isinstance(e, RobotsDisallowed):
+            return "robots"
+        if isinstance(e, RobotsUnavailable):
+            return "robots_unreadable"
+        if isinstance(e, (RedirectRefused, BlockedTarget)):
+            return "redirect_refused"
+        if isinstance(e, BodyTooLarge):
+            return "too_large"
+        if isinstance(e, requests.HTTPError):
+            code = getattr(getattr(e, "response", None), "status_code", None)
+            if code in (403, 404, 429):
+                return f"http_{code}"
+            if isinstance(code, int) and 400 <= code < 500:
+                return "http_4xx"
+            if isinstance(code, int) and 500 <= code < 600:
+                return "http_5xx"
+            return "other"
+        if isinstance(e, requests.Timeout):
+            return "timeout"
+        if isinstance(e, (requests.ConnectionError, ConnectionError)):
+            return "connect"
+    if isinstance(exc, ValueError):
+        return "unreadable_answer"
+    return "other"
+
+
 def fetch_and_store(
     session: Session, dataset: str, param: str | None, *, fetchers: Any = None,
     progress: Callable[[str], None] | None = None,

@@ -91,6 +91,12 @@ floor countries, 7 window, 3 passed, 8 dateless, 122 missing, curated list only.
 nothing added from memory. Still owed: the Wikidata networked run, the networked directory build and the real-host
 climate run, all the operator's.
 
+**Progress 2026-11-21 (row 265, R696): the real-host climate run can now be read back; the row stays OPEN.** Each climate
+fetch now leaves a trace per dataset, success or failure; a failure is one fixed token (`kill_switch`, `robots`,
+`http_404`, `timeout`, ...) with no address, unit or station. The Field data button saves it
+(`oo-field-{press}-climate-fetches.json`, a few kilobytes), and `scripts/climate_readback.py` prints the six datasets as
+fetched, failed (and why) or never tried, never an unread figure as 0. The run itself is still the operator's.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if

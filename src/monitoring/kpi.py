@@ -836,7 +836,39 @@ def record_climate_fetch(record: dict) -> dict | None:
         elif isinstance(earlier.get("last_with_figures"), dict):
             entry["last_with_figures"] = earlier["last_with_figures"]
         datasets[dataset] = entry
-        return _write_record(_CLIMATE_FILE, _CLIMATE_SCHEMA, {"datasets": dict(sorted(datasets.items()))})
+        return _write_record(_CLIMATE_FILE, _CLIMATE_SCHEMA, {"datasets": dict(sorted(datasets.items())),
+                                                              "failures": _held_failures(prev, DATASETS)})
+
+
+def _held_failures(prev: dict, known) -> dict:
+    held = prev.get("failures")
+    if not isinstance(held, dict):
+        return {}
+    return {k: v for k, v in sorted(held.items()) if k in known and isinstance(v, dict)}
+
+
+def record_climate_failure(dataset: str, reason: str) -> dict | None:
+    """Write down that a climate fetch of ``dataset`` failed, and why, as one fixed token (row 265, 0.6 gate row A).
+
+    Kept per DATASET beside the successful fetches, the LAST failure of each: its time and its token, nothing else. The reason is one
+    of :data:`src.stats.climate.FAILURE_REASONS` or it is written as ``other``: never the exception's text, an address, a host path,
+    a unit or a station (R734/R736; this file is plaintext beside the encrypted library). A later success does not erase it: the
+    read-back compares the two times, so a dataset that failed and then fetched reads as fetched."""
+    try:
+        from src.stats.climate import DATASETS, FAILURE_REASONS
+    except Exception:  # noqa: BLE001 - without the dataset list nothing can be checked, so nothing is written
+        return None
+    if not isinstance(dataset, str) or dataset not in DATASETS:
+        return None
+    token = reason if reason in FAILURE_REASONS else "other"
+    with _CLIMATE_LOCK:
+        prev: dict = _read_record(_CLIMATE_FILE, _CLIMATE_SCHEMA) or {}
+        held = prev.get("datasets")
+        datasets: dict = {k: v for k, v in held.items() if k in DATASETS and isinstance(v, dict)} if isinstance(held, dict) else {}
+        failures = _held_failures(prev, DATASETS)
+        failures[dataset] = {"failed_at": _now(), "reason": token}
+        return _write_record(_CLIMATE_FILE, _CLIMATE_SCHEMA, {"datasets": dict(sorted(datasets.items())),
+                                                              "failures": dict(sorted(failures.items()))})
 
 
 def read_climate_fetches() -> dict | None:

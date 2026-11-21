@@ -32,8 +32,20 @@ def _fetch_worker(ctx, *, dataset: str, param: str | None) -> dict:
     def progress(step: str) -> None:
         ctx.set_progress(done=steps.get(step, 0), total=2, detail=step)
 
-    with session_scope() as db:
-        record = fetch_and_store(db, dataset, param, progress=progress)
+    try:
+        with session_scope() as db:
+            record = fetch_and_store(db, dataset, param, progress=progress)
+    except Exception as exc:
+        # Row 265 (0.6 gate row A): a failed fetch leaves a trace too, as one fixed token, so the operator's real-host run can
+        # be read back dataset by dataset. The job still fails with its own words in the task manager.
+        try:
+            from src.monitoring.kpi import record_climate_failure
+            from src.stats.climate import failure_reason
+
+            record_climate_failure(dataset, failure_reason(exc))
+        except Exception:  # noqa: BLE001 - a diagnostic side-record never replaces the failure it records
+            pass
+        raise
     # K13 (row 183): written after the session committed, so the KPI never reports a fetch the library did not keep.
     try:
         from src.monitoring.kpi import record_climate_fetch
@@ -141,6 +153,13 @@ def climate_fetch(body: _FetchBody) -> dict:
 
     param = _unit(body.dataset, body.param)
     if kill_switch_active():
+        # Row 265: refused by the person's own airplane mode before any request; the read-back names it as such.
+        try:
+            from src.monitoring.kpi import record_climate_failure
+
+            record_climate_failure(body.dataset, "kill_switch")
+        except Exception:  # noqa: BLE001 - a diagnostic side-record never changes the refusal
+            pass
         raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     if not body.consent:
         raise HTTPException(status_code=400, detail="consent required: this sends a request to the dataset's publisher")
@@ -155,3 +174,43 @@ def climate_fetch(body: _FetchBody) -> dict:
 def climate_fetch_status() -> dict:
     """Live status of the climate fetch job (state, progress, result, error)."""
     return _FETCH_JOB.status()
+
+
+#: The Field data file's own schema (row 265): the read-back script refuses any other.
+FETCH_RECORD_SCHEMA = "oo-field-climate-fetches-1"
+
+
+@router.get("/fetch-record")
+def climate_fetch_record() -> dict:
+    """What the climate fetches on this machine came to, per dataset, for the Field data button (row 265, 0.6 gate row A).
+
+    Read-only and loopback: the K13 record as written (the last fetch and the last failure of each dataset, their times, counts
+    and fixed reason tokens) beside the list of datasets the app offers, so a dataset never tried is visible as such. Never an
+    address, host path, unit or station (R734/R736). A few kilobytes for six datasets, well under the 200 KB a Field data file
+    may weigh."""
+    from src.monitoring.kpi import read_climate_fetches
+    from src.stats.climate import DATASETS, FAILURE_REASONS
+
+    rec = read_climate_fetches() or {}
+    held_ok, held_ko = rec.get("datasets"), rec.get("failures")
+    datasets: dict = held_ok if isinstance(held_ok, dict) else {}
+    failures: dict = held_ko if isinstance(held_ko, dict) else {}
+
+    def _fetch(d: dict) -> dict:
+        lwf = d.get("last_with_figures")
+        kept: dict = lwf if isinstance(lwf, dict) else {}
+        return {k: d.get(k) for k in ("fetched_at", "figures", "new", "revised")} | {
+            "last_with_figures_at": kept.get("fetched_at")}
+
+    def _failure(d: dict) -> dict:
+        reason = d.get("reason")
+        return {"failed_at": d.get("failed_at"), "reason": reason if reason in FAILURE_REASONS else "other"}
+
+    return {
+        "schema": FETCH_RECORD_SCHEMA,
+        "recorded_at": rec.get("measured_at"),
+        "datasets_listed": sorted(DATASETS),
+        "fetches": {k: _fetch(v) for k, v in sorted(datasets.items()) if k in DATASETS and isinstance(v, dict)},
+        "failures": {k: _failure(v) for k, v in sorted(failures.items()) if k in DATASETS and isinstance(v, dict)},
+        "reasons": list(FAILURE_REASONS),
+    }
