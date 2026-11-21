@@ -398,7 +398,7 @@ def service(monkeypatch):
     built: list[_FakeRunner] = []
     monkeypatch.setattr(svc, "_state_of", lambda: "running")
     monkeypatch.setattr(svc, "_editions", lambda: ("en",))
-    monkeypatch.setattr(svc, "_build", lambda: built.append(_FakeRunner()) or built[-1])
+    monkeypatch.setattr(svc, "_build", lambda *_a: built.append(_FakeRunner()) or built[-1])
     try:
         yield svc, built
     finally:

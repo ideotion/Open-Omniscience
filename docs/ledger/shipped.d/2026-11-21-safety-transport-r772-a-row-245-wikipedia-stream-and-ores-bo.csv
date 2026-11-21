@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,safety/transport,R772(a) row 245: Wikipedia stream and ORES bound to their approved transport,shipped,PR #2207,src/safety/fetcher.py src/wiki/runner.py src/wiki/service.py src/api/scheduler.py src/wiki/track.py src/wiki/ores.py,"A transport change holds the Wikipedia lane and stops Track now and ORES by name; no backoff or reconnect; only the stream button resumes it, after naming the reason and the transport now in force, through a token-checked endpoint; unreadable settings refuse without a sticky hold."

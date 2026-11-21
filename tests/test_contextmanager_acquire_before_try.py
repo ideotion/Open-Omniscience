@@ -41,6 +41,10 @@ _DURABLE = "durable by design: what the gap leaves is the record that makes the 
 # (path under src/, function) -> why a statement before the try is allowed to stay. Every entry was read, not pattern-matched.
 _ALLOWED: dict[tuple[str, str], str] = {
     ("analytics/bulk_build.py", "bulk_index_window"): _DURABLE + ": open_state writes the marker BEFORE the indexes are dropped, so a gap leaves a marker and no drop",
+    ("ingest/loopback_scope.py", "loopback_only"): (
+        "base = _depth() only READS this thread's depth (a getattr on a thread-local); the take is inside the try and the finally "
+        "sets the depth back to that value, so it is idempotent (R767)"
+    ),
     ("api/main.py", "lifespan"): "the lifespan runs on the event loop, which uvicorn's signal capture covers (tests/test_event_loop_signal_exemption.py); its pre-yield work is the boot",
     ("backup/merge.py", "_fts_insert_suspended"): "works on a disposable working copy (its docstring), and a DROP TRIGGER that an interrupt strands is undone by the copy's rollback or its discard",
     ("backup/merge.py", "_step_watch"): "two nested function definitions: a def takes nothing",
