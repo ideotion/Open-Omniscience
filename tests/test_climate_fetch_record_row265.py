@@ -126,6 +126,8 @@ def _chained(outer: Exception, inner: BaseException) -> Exception:
         (requests.ConnectTimeout("timed out"), "timeout"),
         (requests.ConnectionError("Name or service not known"), "connect"),
         (ValueError("GISTEMP GLB: not the documented header"), "unreadable_answer"),
+        (ValueError("GISTEMP GLB: the response is 9 characters, over the 5 the table's own shape allows"), "too_large"),
+        (ValueError("USGS earthquakes: the response is 9 characters, over the 5 its declared 2 events allow"), "too_large"),
         (KeyError("x"), "other"),
     ],
 )
@@ -206,6 +208,19 @@ def test_a_kill_switch_refusal_at_the_button_is_recorded_as_the_kill_switch(clie
     assert STATION not in json.dumps(body)
 
 
+def test_an_unconsented_click_or_a_running_job_records_nothing(client, maker, monkeypatch):
+    monkeypatch.setattr(climate_api._FETCH_JOB, "start", lambda **kw: pytest.fail("started"))
+    activate_kill_switch()
+    try:
+        assert client.post("/api/climate/fetch", json={"dataset": "oni", "consent": False}).status_code == 409
+        monkeypatch.setattr(climate_api._FETCH_JOB, "status", lambda: {"state": "running"})
+        assert client.post("/api/climate/fetch", json={"dataset": "oni", "consent": True}).status_code == 409
+    finally:
+        clear_kill_switch()
+    with maker() as db:
+        assert climate.load_record(db, "oni", None) is None
+
+
 def test_a_failing_job_records_its_token_and_still_fails(maker, monkeypatch):
     def boom(db, dataset, param, progress=None):
         raise RobotsDisallowed(f"robots.txt disallows {HOST_PATH}")
@@ -261,6 +276,7 @@ def test_every_reason_token_has_words_in_the_script():
 
 def test_a_failure_only_record_shows_no_fetch_on_the_tab():
     js = (ROOT / "src" / "static" / "app-climate.js").read_text(encoding="utf-8")
+    assert "const verb = (unit.last_fetch && unit.last_fetch.fetched_at) ||" in js, "a unit that only failed still offers Fetch"
     assert "if (!rec || (rec.last_failure && !rec.fetched_at)) return \"\";" in js
 
 

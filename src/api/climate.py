@@ -171,8 +171,10 @@ def climate_fetch(body: _FetchBody) -> dict:
 
     param = _unit(body.dataset, body.param)
     if kill_switch_active():
-        # Row 265: refused by the person's own airplane mode before any request; the read-back names it as such.
-        _record_failure(body.dataset, param, "kill_switch")
+        # Row 265: refused by the person's own airplane mode before any request; the read-back names it as such. Only for a consented
+        # click, and never while a fetch job runs: its record may be mid-write, and a stale read written back would undo it.
+        if body.consent and _FETCH_JOB.status().get("state") != "running":
+            _record_failure(body.dataset, param, "kill_switch")
         raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     if not body.consent:
         raise HTTPException(status_code=400, detail="consent required: this sends a request to the dataset's publisher")

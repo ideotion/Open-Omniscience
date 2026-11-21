@@ -476,7 +476,9 @@ def failure_reason(exc: BaseException) -> str:
         if "requests.exceptions.ConnectionError" in names or isinstance(e, ConnectionError):
             return "connect"
     if isinstance(exc, ValueError):
-        return "unreadable_answer"
+        # The GISTEMP and USGS bounds raise a plain ValueError in OUR OWN fixed sentence (src/stats/fetch.py); a server's words
+        # never reach this text, and nothing of it is kept.
+        return "too_large" if "the table's own shape allows" in str(exc) or " events allow" in str(exc) else "unreadable_answer"
     return "other"
 
 
