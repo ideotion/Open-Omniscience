@@ -284,8 +284,21 @@ def save_settings(updates: dict) -> SafetySettings:
     if not _use_kv():
         path = _path()
         atomic_replace(path, json.dumps(payload, indent=2, sort_keys=True), fsync=False)
-        return current
-    from src.config.kv_store import kv_set_json
+    else:
+        from src.config.kv_store import kv_set_json
 
-    kv_set_json(_KV_KEY, payload)
+        kv_set_json(_KV_KEY, payload)
+    if current.is_protected:
+        # R765: protected mode is written first, THEN any AI install still downloading over a direct connection is stopped.
+        current.stopped_ai_installs = _stop_ai_installs()  # type: ignore[attr-defined]
     return current
+
+
+def _stop_ai_installs() -> list[str]:
+    """Ask every running AI-install step to stop, without waiting for it. Never raises: the switch does not depend on the install."""
+    try:
+        from src.llm.install_transport import stop_running_installs
+
+        return stop_running_installs()
+    except Exception:  # noqa: BLE001 - the mode is already saved; an install that could not be asked is still refused at its next step
+        return []

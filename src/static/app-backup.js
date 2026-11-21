@@ -3840,8 +3840,12 @@
       if ((body.fetch_mode === "protected" || body.http_proxy) &&
           !confirm(t("Send every fetch through this proxy? You must run and trust the proxy yourself; protected mode cannot guarantee anonymity."))) return;
       try {
-        await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
+        const r = await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
         toast("Fetch mode saved.");
+        // R765: the switch stopped an AI install that was downloading over a direct connection. Said, never silent.
+        if (r && Array.isArray(r.stopped_ai_installs) && r.stopped_ai_installs.length) {
+          toast(t("Protected mode is on, so the AI install that was running was stopped: it was downloading over a direct connection, not through your proxy. Switch protected mode off and start it again to finish."), "warn");
+        }
       } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
     //: The state the discovery result line last reported (null: nothing saved yet), so a

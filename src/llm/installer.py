@@ -413,8 +413,16 @@ def run_installer(path: str) -> Iterator[str]:
     p = _validate_staged(path)
     _check_online()
     # R763: the script downloads the binary itself, outside the proxy protected mode routes this app through
-    from src.llm.install_transport import refuse_if_protected
+    from src.llm.install_transport import (
+        AI_INSTALLER_STOPPED_NOTE,
+        refuse_if_protected,
+        register_child,
+        stop_generation,
+        stopped_since,
+        unregister_child,
+    )
 
+    generation = stop_generation()  # R765: read before the check, so a switch between the two still stops the script
     refuse_if_protected(InstallerUnavailable)
     if _is_root():
         cmd = ["sh", str(p)]
@@ -452,12 +460,29 @@ def run_installer(path: str) -> Iterator[str]:
             env=child_env(),
         )
         assert proc.stdout is not None
+        # R765: the switch to protected mode terminates this child (SIGTERM, a bounded wait, SIGKILL) from its own thread. That
+        # reaches the script's shell, not the curl it is waiting on (under sudo this process may not signal it at all), so this
+        # loop also stops reading and closes the pipe: curl writes its progress meter into that pipe, and its next write then
+        # fails and ends it. The script's output arrives at least as often as that meter, and text mode reads its \r as a line end.
+        register_child(proc)
+        stopped = False
         try:
             for line in proc.stdout:
+                if stopped_since(generation):
+                    stopped = True
+                    break
                 yield line.rstrip("\n")
         finally:
+            unregister_child(proc)
             proc.stdout.close()
+            if stopped:
+                from src.llm.install_transport import _terminate
+
+                _terminate(proc)
             code = proc.wait()
+        # A script that exited 0 finished before the switch reached it, and is reported as the finished install it is.
+        if stopped or (code != 0 and stopped_since(generation)):
+            raise InstallerUnavailable(AI_INSTALLER_STOPPED_NOTE)
         yield f"__exit__ {code}"
 
 

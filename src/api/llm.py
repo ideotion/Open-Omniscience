@@ -1104,7 +1104,9 @@ def _pull_queue_state(artifact: str, queue: dict, installed: bool | None) -> dic
         if status == "done":
             return {"state": "done", "detail": "downloaded"}
         if status == "cancelled":
-            return {"state": "cancelled", "detail": "cancelled"}
+            # R765: a pull the switch to protected mode stopped says why, never a bare "cancelled" the operator did not click
+            note = entry.get("note")
+            return {"state": "cancelled", "detail": note or "cancelled", "stopped_note": note}
         # Anything else the queue recorded is a failure, and the queue's own error
         # text is the only honest detail -- never a generic "failed".
         return {"state": "error", "detail": entry.get("error") or status or "failed"}
@@ -1119,6 +1121,18 @@ def _job_view(job: dict) -> dict:
     rather than a spread of the whole job: only the two fields the follower reads are
     promoted, so a future job field can never shadow ``plan`` or ``backend``."""
     return {"state": job.get("state"), "detail": job.get("detail") or job.get("error") or ""}
+
+
+def _with_stop_note(job: dict) -> dict:
+    """R765: a run that the switch to protected mode stopped says so, in ``stopped_note`` and in ``detail``, instead of a bare
+    "cancelled" the operator never clicked."""
+    from src.llm.install_transport import stop_note
+
+    if job.get("state") == "cancelled":
+        note = stop_note(job.get("kind") or "", job.get("started_at"))
+        if note:
+            return {**job, "detail": note, "stopped_note": note}
+    return job
 
 
 @router.get("/default-model/status")
@@ -1138,8 +1152,8 @@ def default_model_status() -> dict:
         queue = get_pull_manager().status()
         view = _pull_queue_state(plan["artifact"], queue, plan.get("installed"))
         return {"backend": "ollama", "plan": plan, "queue": queue, **view}
-    job = _get_vllm_model_job().status()
-    return {"backend": "vllm", "plan": plan, "job": job, **_job_view(job)}
+    job = _with_stop_note(_get_vllm_model_job().status())
+    return {"backend": "vllm", "plan": plan, "job": job, **_job_view(job), "stopped_note": job.get("stopped_note")}
 
 
 @router.post("/vllm/install")
@@ -1249,7 +1263,7 @@ def vllm_install_preflight() -> dict:
 
 @router.get("/vllm/install/status")
 def vllm_install_status() -> dict:
-    return _get_vllm_install_job().status()
+    return _with_stop_note(_get_vllm_install_job().status())
 
 
 @router.post("/vllm/install/cancel")
@@ -1646,8 +1660,8 @@ def model_install_status(backend: str | None = None) -> dict:
     letting a caller assume."""
     pick = _download_backend(backend)
     if pick["backend"] == "vllm":
-        job = _get_vllm_model_job().status()
-        return {"backend": "vllm", "queue_is_shared": False, "job": job, **_job_view(job)}
+        job = _with_stop_note(_get_vllm_model_job().status())
+        return {"backend": "vllm", "queue_is_shared": False, "job": job, **_job_view(job), "stopped_note": job.get("stopped_note")}
 
     from src.llm.pull_queue import get_pull_manager
 
@@ -1660,12 +1674,16 @@ def model_install_status(backend: str | None = None) -> dict:
         detail = f"{len(pending)} waiting"
     else:
         detail = "nothing downloading"
+    # R765: when the queue went quiet because the switch to protected mode stopped it, say so rather than "done".
+    last = (queue.get("history") or [{}])[-1]
+    stopped_note = last.get("note") if not (active or pending) and last.get("status") == "cancelled" else None
     return {
         "backend": "ollama",
         "queue_is_shared": True,
         "queue": queue,
-        "state": "running" if (active or pending) else "done",
-        "detail": detail,
+        "state": "running" if (active or pending) else ("cancelled" if stopped_note else "done"),
+        "detail": stopped_note or detail,
+        "stopped_note": stopped_note,
     }
 
 
