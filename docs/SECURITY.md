@@ -113,7 +113,12 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   protected mode is on with no usable proxy, because those fetches are refused. The mail
   and custody rows say they go direct even with protected mode on, and the local-AI row
   says *mostly* direct, because only its installer check is proxied. Settings that could
-  not be read show as unknown, never as direct. **A lane whose transport is unavailable
+  not be read never show as direct, and never as "protected mode is on" (row 250, after
+  R766): with no proxy named in the computer's environment every fetch is refused and the
+  lanes that use the fetcher, the local-AI row and the update row say *none*; with an
+  environment proxy the fetcher lanes say they ride it and the hint says it is the
+  environment's proxy, the local-AI and update rows say the install or update itself is
+  refused, and the mail and custody rows still say they go direct. **A lane whose transport is unavailable
   waits, and says on what:** the Wikipedia stream, the one long-lived lane connection,
   reports *waiting for a connection* with the failure verbatim and keeps retrying; it never
   falls back to a direct connection. A map or dump download held by airplane mode says so

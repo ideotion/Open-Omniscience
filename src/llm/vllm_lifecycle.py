@@ -942,6 +942,17 @@ def base_url() -> str:
     return os.getenv("OO_VLLM_URL") or DEFAULT_VLLM_URL
 
 
+def shown_address(url: str) -> str:
+    """The address as an answer shows it (row 236, R734): ``src.llm.ollama.shown_address``, imported when used like the rest
+    of this module's client imports. NEVER raises."""
+    try:
+        from src.llm.ollama import shown_address as _shown
+
+        return _shown(url)
+    except Exception:  # noqa: BLE001 - an answer is written whatever happens; an address that cannot be shown is withheld
+        return "(an address that could not be shown)"
+
+
 def is_running(*, timeout: float = 2.0) -> bool:
     """A live ``GET /v1/models`` health probe (bounded timeout so a dead server
     doesn't hang the caller). Honest False on any failure -- never assumed from
@@ -978,7 +989,6 @@ def port_occupant(*, timeout: float = 2.0) -> dict:
     below, after which the raw ``connect_ex`` opened a TCP connection to that host on every
     Settings read, with no click, past the rule every other local-AI call obeys.
     """
-    import socket as _socket
     from urllib.parse import urlparse
 
     from src.llm.ollama import _loopback_refusal
@@ -996,19 +1006,26 @@ def port_occupant(*, timeout: float = 2.0) -> dict:
         }
     refused = _loopback_refusal(url, setting="OO_VLLM_URL")
     if refused is not None:
-        return {"state": "refused", "port": port, "detail": refused}
+        from src.llm.loopback import alias_literal
+
+        out: dict = {"state": "refused", "port": port, "detail": refused}
+        literal = alias_literal(url)
+        if literal is not None:  # R767: a name local only by the hosts file; say which literal to use instead
+            out["use_instead"] = literal
+        return out
     try:
         if VllmClient(timeout=timeout).is_available():
-            return {"state": "vllm", "port": port, "detail": f"a vLLM server is answering at {url}."}
+            return {"state": "vllm", "port": port, "detail": f"a vLLM server is answering at {shown_address(url)}."}
     except Exception:  # noqa: BLE001 - a probe must never raise
         pass
     # Nothing vLLM-shaped answered. Is ANYTHING listening?
-    try:
-        with _socket.socket() as s:
-            s.settimeout(timeout)
-            connected = s.connect_ex((parsed.hostname or "127.0.0.1", port)) == 0
-    except OSError:
-        return {"state": "unknown", "port": port, "detail": f"could not probe {url}."}
+    # R767: every answer the name resolves to is checked loopback on the socket itself (fail closed).
+    from src.llm.loopback import connect_ex_loopback
+
+    code = connect_ex_loopback(parsed.hostname or "127.0.0.1", port, timeout=timeout)
+    if code is None:
+        return {"state": "unknown", "port": port, "detail": f"could not probe {shown_address(url)}."}
+    connected = code == 0
     if not connected:
         # Said only when it is so: a bundle on a machine without vLLM read "installed but not started" beside
         # ``installed: false`` (field report 2026-11-14, row 74).
@@ -2351,7 +2368,7 @@ def start(
             "Ollama is the CPU-first backend; use it instead."
         )
     if process_alive() or is_running():
-        return {"started": False, "reason": "already running", "base_url": base_url()}
+        return {"started": False, "reason": "already running", "base_url": shown_address(base_url())}
     # Refuse a model whose WEIGHTS alone exceed the card, with the numbers, instead of
     # letting it CUDA-OOM into a silent death (field report 2026-07-29). Acknowledgeable
     # rather than absolute -- the estimate reads the model NAME, so a quantised repo
@@ -2502,7 +2519,7 @@ def start(
         # What the card looked like at the moment of the attempt, and what the other
         # backend gave back to make it look that way.
         "vram_release": release,
-        "base_url": base_url(),
+        "base_url": shown_address(base_url()),
         "log_path": str(server_log_path()) if log_fh is not None else None,
         "note": "starting (model load takes tens of seconds) -- poll is_running() before use",
     }
@@ -2736,7 +2753,7 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         "start_outcome": start_outcome(),
         "gpu": gpu,
         "platform": platform_support(),
-        "base_url": base_url(),
+        "base_url": shown_address(base_url()),
         "venv_dir": str(venv_dir()),
         # The last start's own output (field report 2026-07-29). Without this, a server
         # that died on a gated repo, a bad model id or a CUDA OOM was reported only as

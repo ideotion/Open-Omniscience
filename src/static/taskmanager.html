@@ -51,7 +51,10 @@
   .tm-state.idle .tm-dot { background: var(--warn, #d9a441); }
   .tm-metric { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; }
   .tm-metric b { font-size: 13px; font-variant-numeric: tabular-nums; }
-  .tm-metric .ml { opacity: .6; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+  /* Row 228 (a11y sweep 2026-11-20, C1): every dimmed text on this page is a real colour (--muted, or --fg-soft for the
+     row labels), never opacity: opacity fell below 4.5:1 in light, dawn, mint, paper and solar (44 nodes), and --muted
+     clears 4.5:1 on --bg and --panel in every theme (tests/test_theme_contrast_and_donut_guard.py). */
+  .tm-metric .ml { color: var(--muted, #8c95a6); text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
   /* The row scrolls INSIDE its own box rather than widening the page: five unwrapped
      tabs are ~500 px, which gave the whole page 144 px of sideways scroll at 375 px
      (2026-09-26 click-through T6). One row, not a wrap; its offset is the summary's
@@ -59,21 +62,21 @@
   .tm-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line, #232733);
              background: var(--panel, #14171d); position: sticky; top: var(--tm-sum-h, 37px); z-index: 1;
              overflow-x: auto; }
-  .tm-tabs button { flex: none; background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
+  .tm-tabs button { flex: none; background: transparent; border: 0; color: var(--muted, #8c95a6);
                     padding: 8px 14px; border-bottom: 2px solid transparent; cursor: pointer;
                     font: inherit; border-radius: 6px 6px 0 0; }
-  .tm-tabs button.active { opacity: 1; border-bottom-color: var(--accent, #4a9eff); font-weight: 600; }
-  .tm-tabs button:hover { opacity: 1; background: var(--hover, rgba(255,255,255,.04)); }
+  .tm-tabs button.active { color: var(--fg, #e7e9ee); border-bottom-color: var(--accent, #4a9eff); font-weight: 600; }
+  .tm-tabs button:hover { color: var(--fg, #e7e9ee); background: var(--hover, rgba(255,255,255,.04)); }
   .tm-body { padding: 14px 18px; max-width: 980px; }
   .tm-panel[hidden] { display: none; }
   .vsect { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
-           opacity: .7; margin: 16px 0 6px; display: flex; align-items: center; gap: 8px; }
+           color: var(--muted, #8c95a6); margin: 16px 0 6px; display: flex; align-items: center; gap: 8px; }
   .vsect:first-child { margin-top: 2px; }
-  .vsect .count { opacity: .5; font-weight: 500; }
+  .vsect .count { color: var(--muted, #8c95a6); font-weight: 500; }
   .vr { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0;
         border-bottom: 1px solid var(--line, #1c2029); font-size: 13px; }
-  .vr span { opacity: .8; } .vr b { text-align: end; font-weight: 500; }
-  .vnote { font-size: 11px; opacity: .6; margin: 4px 0 2px; }
+  .vr span { color: var(--fg-soft, #c4cad6); } .vr b { text-align: end; font-weight: 500; }
+  .vnote { font-size: 11px; color: var(--muted, #8c95a6); margin: 4px 0 2px; }
   .cap-bar { position: relative; height: 14px; background: var(--line, #232733); border-radius: 7px;
              overflow: hidden; margin: 4px 0; }
   .cap-bar > i, .cap-fill { display: block; height: 100%; background: var(--accent, #4a9eff); }
@@ -87,13 +90,13 @@
   .pill.ok { color: var(--ok-text, #4caf7d); }
   .pill.warn { color: var(--warn-fg, #d9a441); }
   .pill.err { color: var(--err-text, #d96c6c); }
-  .pill.muted { opacity: .6; }
+  .pill.muted { color: var(--muted, #8c95a6); }
   .job { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap;
          border-bottom: 1px solid var(--line, #1c2029); }
   .job .label { font-size: 13px; font-weight: 600; }
-  .job .detail { font-size: 11px; opacity: .6; flex-basis: 100%; }
+  .job .detail { font-size: 11px; color: var(--muted, #8c95a6); flex-basis: 100%; }
   /* The pass counts of an errored run carry the basis word, which is a caveat: a real colour, not opacity (see a11y-tm-muted-by-opacity below). */
-  .job .detail.counts { opacity: 1; color: var(--muted, #8c95a6); }
+  .job .detail.counts { color: var(--muted, #8c95a6); }
   .job .detail.counts .basis { color: var(--fg, #e7e9ee); }
   .job .acts { margin-inline-start: auto; display: flex; gap: 4px; }
   .tbtn { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
@@ -123,14 +126,14 @@
   .perf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .perf-card { border: 1px solid var(--line, #232733); border-radius: 10px; padding: 10px 12px;
                background: var(--panel2, #161a21); }
-  .perf-card .pt { font-size: 12px; opacity: .7; text-transform: uppercase; letter-spacing: .04em; }
+  .perf-card .pt { font-size: 12px; color: var(--muted, #8c95a6); text-transform: uppercase; letter-spacing: .04em; }
   .perf-card .pv { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
-  .perf-card .ps { font-size: 11px; opacity: .6; }
+  .perf-card .ps { font-size: 11px; color: var(--muted, #8c95a6); }
   .perf-card svg { width: 100%; height: 46px; display: block; margin-top: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
   .tm-upnext { margin: 4px 0 2px; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 2px; }
   .tm-upnext li { font-size: 13px; line-height: 1.5; }
-  #tm-foot { padding: 10px 18px; font-size: 11px; opacity: .55; border-top: 1px solid var(--line, #232733); }
+  #tm-foot { padding: 10px 18px; font-size: 11px; color: var(--muted, #8c95a6); border-top: 1px solid var(--line, #232733); }
 /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
 #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background: var(--line); }
 </style>
