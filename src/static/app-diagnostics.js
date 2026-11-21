@@ -3173,6 +3173,18 @@
       // soak-window.json read them -- counts, dates, edition codes and reason tokens, no title, text or address -- so the report for
       // the twelve editions can be read back from a real run (scripts/wiki_coverage_readback.py).
       {kind: "file", url: "/api/wiki/lane/counters", name: "oo-field-{press}-wiki-coverage.json"},
+      // Law coverage (row 267, 0.6 gate row C): the floor countries by state, the twelve-language tally and zh on its own line,
+      // the Diagnostics zip's own law-coverage.json and the report Living sources draws (about 37 KB on the 140-country floor),
+      // read back by scripts/law_coverage_readback.py, which prints codes, states, counts and dates only.
+      {kind: "file", url: "/api/diagnostics/law-coverage?download=1", name: "oo-field-{press}-law-coverage.json"},
+      // Elections (row 266, 0.6 gate row A): the elections floor with the Wikidata snapshot run layered in -- the snapshot's
+      // state, date, age and counts, the floor's four states -- country codes, counts, dates, entry titles and the reasons a
+      // date is absent; no path or address (scripts/elections_readback.py).
+      {kind: "file", url: "/api/diagnostics/elections-floor", name: "oo-field-{press}-elections-floor.json"},
+      // Climate fetches per dataset (row 265, 0.6 gate row A): read from each unit's own fetch record, the publisher's host, counts,
+      // dates and fixed reason tokens (kill_switch, robots, http_403, ...); no unit, address or station is named, so the operator's
+      // real-host run can be read back dataset by dataset (scripts/climate_readback.py). A few kilobytes.
+      {kind: "file", url: "/api/climate/fetch-record", name: "oo-field-{press}-climate-fetches.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte

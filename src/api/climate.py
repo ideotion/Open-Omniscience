@@ -14,6 +14,8 @@ the job kind. Every other route reads the local database and makes no request.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -21,6 +23,28 @@ from src.jobs.background import BackgroundJob, register_job
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/climate", tags=["climate"])
+
+
+def _failure_token(exc: BaseException) -> str:
+    try:
+        from src.stats.climate import failure_reason
+
+        return failure_reason(exc)
+    except Exception:  # noqa: BLE001 - an unclassifiable failure is still a failure
+        return "other"
+
+
+def _record_failure(dataset: str, param: str | None, reason: str) -> None:
+    """Row 265: best-effort, in its own transaction. A diagnostic side-record never replaces the failure or the refusal it records
+    (a locked or unreadable library simply records nothing)."""
+    try:
+        from src.database.session import session_scope
+        from src.stats.climate import record_failure
+
+        with session_scope() as db:
+            record_failure(db, dataset, param, reason)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _fetch_worker(ctx, *, dataset: str, param: str | None) -> dict:
@@ -32,8 +56,14 @@ def _fetch_worker(ctx, *, dataset: str, param: str | None) -> dict:
     def progress(step: str) -> None:
         ctx.set_progress(done=steps.get(step, 0), total=2, detail=step)
 
-    with session_scope() as db:
-        record = fetch_and_store(db, dataset, param, progress=progress)
+    try:
+        with session_scope() as db:
+            record = fetch_and_store(db, dataset, param, progress=progress)
+    except Exception as exc:
+        # Row 265 (0.6 gate row A): a failed fetch leaves a trace in the unit's own fetch record, as one fixed token, so the
+        # operator's real-host run can be read back dataset by dataset. The job still fails with its own words in the task manager.
+        _record_failure(dataset, param, _failure_token(exc))
+        raise
     # K13 (row 183): written after the session committed, so the KPI never reports a fetch the library did not keep.
     try:
         from src.monitoring.kpi import record_climate_fetch
@@ -141,6 +171,10 @@ def climate_fetch(body: _FetchBody) -> dict:
 
     param = _unit(body.dataset, body.param)
     if kill_switch_active():
+        # Row 265: refused by the person's own airplane mode before any request; the read-back names it as such. Only for a consented
+        # click, and never while a fetch job runs: its record may be mid-write, and a stale read written back would undo it.
+        if body.consent and _FETCH_JOB.status().get("state") != "running":
+            _record_failure(body.dataset, param, "kill_switch")
         raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     if not body.consent:
         raise HTTPException(status_code=400, detail="consent required: this sends a request to the dataset's publisher")
@@ -155,3 +189,26 @@ def climate_fetch(body: _FetchBody) -> dict:
 def climate_fetch_status() -> dict:
     """Live status of the climate fetch job (state, progress, result, error)."""
     return _FETCH_JOB.status()
+
+
+#: The Field data file's own schema (row 265): the read-back script refuses any other.
+FETCH_RECORD_SCHEMA = "oo-field-climate-fetches-1"
+
+
+@router.get("/fetch-record")
+def climate_fetch_record() -> dict:
+    """What the climate fetches on this machine came to, per dataset, for the Field data button (row 265, 0.6 gate row A).
+
+    Read-only and loopback, from each unit's own fetch record (:func:`src.stats.climate.fetch_outcomes`): counts, dates, the
+    publisher's host and fixed reason tokens. No unit is named and no address or path is given (R734/R736); GHCN stations are a
+    count and summed counts. A few kilobytes, well under the 200 KB a Field data file may weigh."""
+    from src.database.session import session_scope
+    from src.stats.climate import DATASETS, FAILURE_REASONS, fetch_outcomes
+
+    base = {"schema": FETCH_RECORD_SCHEMA, "read_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "datasets_listed": sorted(DATASETS), "reasons": list(FAILURE_REASONS)}
+    try:
+        with session_scope() as db:
+            return base | {"measured": True, "datasets": fetch_outcomes(db)}
+    except Exception:  # noqa: BLE001 - a locked or unreadable library is said, never read as "nothing fetched"
+        return base | {"measured": False, "reason": "library_unreadable"}

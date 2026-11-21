@@ -54,7 +54,7 @@ def _doc(country, category="legislation"):
 
 
 def _states(block):
-    return {cc: st for st, ccs in block["by_state"].items() for cc in ccs}
+    return {cc: st for st, ccs in block["by_state"].items() for cc in (ccs or [])}
 
 
 def _session():
@@ -112,7 +112,7 @@ def test_the_world_states_are_read_the_same_way_as_the_floor():
 def test_an_unreadable_catalogue_leaves_the_world_unchecked_never_no_source():
     block = world_report([_doc("it")], None, _floor("fr"), reason="the catalogue could not be read", population=_NO_POP)
     assert block["state"] == "unchecked" and block["reason"] == "the catalogue could not be read"
-    assert block["by_state"][FLOOR_NO_SOURCE] == [] and block["by_state"][FLOOR_TRACKED] == ["it"]
+    assert block["by_state"][FLOOR_NO_SOURCE] is None and block["by_state"][FLOOR_TRACKED] == ["it"]
     assert len(block["by_state"][FLOOR_UNCHECKED]) == block["countries"] - 1
 
 
@@ -125,7 +125,7 @@ def test_the_report_with_an_unreadable_catalogue_keeps_the_world_unchecked(monke
     monkeypatch.setattr(law_catalog, "load_legal_catalog", boom)
     world = law_coverage_report(_session())["world"]
     assert world["state"] == "unchecked" and "PermissionError" in world["reason"]
-    assert world["by_state"][FLOOR_NO_SOURCE] == [] and world["by_state"][FLOOR_UNCHECKED]
+    assert world["by_state"][FLOOR_NO_SOURCE] is None and world["by_state"][FLOOR_UNCHECKED]
 
 
 def test_a_tracked_code_neither_block_lists_is_named_not_dropped():

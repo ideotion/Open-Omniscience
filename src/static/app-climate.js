@@ -169,7 +169,8 @@
     // dataset's own exclusions. Each number is shown only when the record carries it.
     function climateDiagnosticsHtml(unit, t, tf) {
       const rec = unit && unit.last_fetch;
-      if (!rec) return "";
+      // A record holding only a failure (row 265's last_failure) has no fetch to describe: never a "0 new" line for it.
+      if (!rec || (rec.last_failure && !rec.fetched_at)) return "";
       const tally = rec.tally || {}, d = rec.diagnostics || {};
       const n = (v) => fmtNum(v || 0, 0);
       const lines = [];
@@ -264,7 +265,7 @@
       }
       if (unit) {
         html += climateFactsHtml(unit, t, tf);
-        const verb = unit.last_fetch || (unit.stored && unit.stored.stored_rows) ? t("Update from the publisher") : t("Fetch from the publisher");
+        const verb = (unit.last_fetch && unit.last_fetch.fetched_at) || (unit.stored && unit.stored.stored_rows) ? t("Update from the publisher") : t("Fetch from the publisher");
         if (id !== "ghcnd") html += `<div class="row" style="margin:8px 0"><button type="button" data-climate-fetch="unit" title="${esc(tf("Sends a request to {host}. Refused while airplane mode is on.", {host: unit.host}))}">${esc(verb)}</button></div>`;
         else html += `<div class="row" style="margin:8px 0"><button type="button" class="secondary" data-climate-fetch="refresh" title="${esc(tf("Sends a request to {host}. Refused while airplane mode is on.", {host: unit.host}))}">${esc(t("Update this station"))}</button></div>`;
       } else if (id === "ghcnd") {

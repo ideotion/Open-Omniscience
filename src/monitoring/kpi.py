@@ -1000,7 +1000,12 @@ def _elections_block() -> dict:
         "present_but_dateless": rep.get("present_but_dateless_n"), "missing": rep.get("missing_n"),
         "floor_as_of": rep.get("as_of"),
         "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
-        "snapshot_age_days": _age_days(snap.get("as_of")), "snapshot_rows": rows,
+        # Age and staleness as the snapshot's own reading states them (row 258), computed in one place
+        # (calendar_report.with_snapshot), so this block and the Agenda never disagree on a day boundary.
+        "snapshot_age_days": snap.get("age_days") if present else None,
+        "snapshot_stale": snap.get("stale") if present else None,
+        "snapshot_stale_after_days": snap.get("stale_after_days") if present else None,
+        "snapshot_rows": rows,
         **_method([_fr(
             "the elections floor diagnostic's own counts over the shipped catalogue layered with the Wikidata "
             "snapshot on disk, each state apart (covered, only a passed projection, present but dateless, "
@@ -1042,7 +1047,8 @@ def record_law_coverage(report: dict) -> dict | None:
     floor_state = floor.get("state") if isinstance(floor.get("state"), str) else None
     counts: dict | None = None
     if by_state is not None:
-        counts = {str(k): len(v) for k, v in by_state.items() if isinstance(v, list)}
+        # A null state is one the report did not look up (row 272: an unread catalogue): kept as null, never dropped or 0.
+        counts = {str(k): (len(v) if isinstance(v, list) else None) for k, v in by_state.items() if isinstance(v, list) or v is None}
         if floor_state == "unchecked":
             # The catalogue could not be read, so the states that need it were never looked up: unknown, never 0.
             # Only what the database says (tracked) and the unchecked bucket itself are counts.

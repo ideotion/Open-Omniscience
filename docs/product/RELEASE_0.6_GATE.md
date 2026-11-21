@@ -73,6 +73,18 @@ acquisitions (G2's elections session, §5 step 1). The empty-until-it-runs claus
 not weakened here. No new board row; the placement is what was assumed. Reversed by writing a letter at
 `ANSWER RC08.4`.
 
+**Progress 2026-11-21 (rows 258 and 266; the row stays OPEN).** The read-back path for the operator's Wikidata election
+snapshot run is on main. The snapshot states its age, and one past 90 days, or dated after today, is called stale in the
+Agenda, the coverage report and the external-artifact registry (row 258). One press of the Field data button saves
+`oo-field-*-elections-floor.json`, the `/api/diagnostics/elections-floor` answer with the snapshot layered in: country
+codes, counts, dates, entry titles and the reasons a date is absent, no path or address. The Diagnostics zip carries the
+same answer as `elections-floor.json` again, held to 200,000 bytes: it names what it cut when a large snapshot pushes it
+over (the per-country entry lists first), and says so with the size written if even that does not fit.
+`python3 scripts/elections_readback.py <file>` prints the snapshot's state, date, age, staleness and counts, the floor's
+four states and the tier report's counts; an absent figure gives its reason, never 0. K13 reads the same age. Pinned by
+`tests/test_elections_snapshot_freshness.py` and `tests/test_elections_readback_row266.py`. **Still owed (operator):** the
+networked snapshot run itself, read back from the file it sends.
+
 **Progress 2026-11-13 (PR #1935, R661 + R662): the climate half has its surface; the row stays OPEN.** The six keyless
 series now have one Climate main tab, a subtab each, fetched only through the consent gate and read back offline, with
 source, licence, last fetch, gaps and parse diagnostics shown per series. A re-fetch keeps every vintage (R662). Still
@@ -90,6 +102,13 @@ floor countries, 7 window, 3 passed, 8 dateless, 122 missing, curated list only.
 /api/stats/agencies` now states `directory_progress` — 29 listed, 0 news pages confirmed, about 152 planned — with
 nothing added from memory. Still owed: the Wikidata networked run, the networked directory build and the real-host
 climate run, all the operator's.
+
+**Progress 2026-11-21 (row 265, R696): the real-host climate run can now be read back; the row stays OPEN.** A failed
+climate fetch now leaves a trace in the unit's own fetch record (one fixed token: `kill_switch`, `robots`, `http_404`,
+`timeout`, ...), beside its last successful fetch. The Field data button saves a per-dataset summary
+(`oo-field-{press}-climate-fetches.json`, a few kilobytes: the publisher's host, counts, dates and tokens, no unit, path or
+station), and `scripts/climate_readback.py` prints the six datasets as fetched, failed (and why) or not fetched yet, never an
+unread figure as 0. The run itself is still the operator's.
 
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
@@ -173,6 +192,16 @@ steps.** Of the three closing conditions:
   stacked consonant or a vowel written before its consonant), tested on real Khmer, Lao and Burmese words, so the three are
   scored, every hit ≈; the stated limit is that syllable edges are checked and word edges are not.
 
+**Progress 2026-11-21 (row 267; the row stays OPEN on the operator's live verification).** The coverage report the row closes
+on can now come back from the operator's machine. One press of the Field data button saves `oo-field-*-law-coverage.json`,
+`/api/diagnostics/law-coverage` in its export envelope (the Diagnostics zip's `law-coverage.json`), measured at 37,397 bytes on
+the 140-country floor with the shipped catalogue. `python3 scripts/law_coverage_readback.py <file>` prints every floor country by
+state, the order within a state and its source and date (or "by code" and why), the twelve-language tally with zh on its own
+line beside Hong Kong and Macau, the many-country sources as counts, the world block and the catalogue's official counts. It also
+reads a piece set, the member out of a Diagnostics zip or the zip itself. An absent figure prints its reason, never 0, and only
+codes, states, counts and dates are printed. Pinned by `tests/test_law_coverage_readback_row267.py`, including a fixture that
+holds reasons and no figures.
+
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
 **What it must demonstrate.** Per edition: pages seen / edition total (from `siteinfo` statistics), full-text
@@ -239,6 +268,8 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Row B: the read-back path for the measured daily diff cost is named; no row changed status.** `scripts/osm_change_files_readback.py` reads the OSM change-file cost the Field data button saves (row 117) back per country (row 263). | session (Lane O) |
 | 2026-11-21 | **Exit text, two rows proven (row 259): the OSM vintage stated on every map; a contested border rendering as contested.** One renderer (`ooMap`) draws every world map and its border-source legend unconditionally, pinned by `tests/test_map_vintage_r259.py`; the legend's text for every source and the contested hatch under the default worldview run as real code in `tests/map_vintage_r259_node_test.js`. Two OSM layers drew undated and were fixed in the same PR: the lane's object and cluster views (now dated per country in view) and the downloaded-region preview (its borders were credited to Natural Earth; now "Offline OSM preview, as of {date}" from the file's own header). Chromium walk, both with and without an OSM border file: `docs/audit/map-vintage-r259-2026-11-21/` (four surfaces, 28 of 28 disputed areas hatched and none attributed on each). | session (row 259) · Lane I |
 | 2026-11-21 | **Row D, a located address's provenance reaches a touch reader (row 268).** The infobox-address square's hover (address, field, page and edition, OSM object, extract date or "the extract states no date") rode an SVG `<title>` child, which only a mouse reaches; on a phone, a long-press on the square showed a country's bubble instead. Every marker `app-map.js` draws (wiki pages and addresses, mentioned places, server IPs, signals, the Insights cities map) now carries its hover in a `title` attribute, so the #oo-tip bubble (invariant #17) opens on long-press too (walked in Chromium for the page and address markers; the other markers are run by the node test); `tests/map_marker_titles_r268_node_test.js` and `tests/wiki_map_layer_node_test.js` run each marker and fail on a `<title>` child. Chromium walk, desktop hover and phone long-press, before and after: `docs/audit/map-marker-titles-r268-2026-11-21/`. | session (row 268) · Lane I |
+| 2026-11-21 | **Row C: the coverage report comes back through Field data; no row changed status.** The button saves `/api/diagnostics/law-coverage` and `scripts/law_coverage_readback.py` prints every floor country by state with the twelve-language tally (row 267). | session (Lane O) |
+| 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
 
 ---
 
