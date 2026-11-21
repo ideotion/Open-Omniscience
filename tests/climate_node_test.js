@@ -43,7 +43,7 @@ function extractConst(name) {
 
 const CLIMATE = [
   "climateText", "climateParamLabel", "climateSeriesLabel", "climateUnitLabel", "_climateWhen", "_climateFact",
-  "climateFactsHtml", "climateDiagnosticsHtml", "climateSeriesNote", "climateStationOk",
+  "climateFactsHtml", "climateFailureReason", "climateDiagnosticsHtml", "climateSeriesNote", "climateStationOk",
   "climatePlaceDefaults", "climatePlaceRound", "climatePlaceProblem", "climatePlaceVarLabel", "climatePlaceResultHtml",
 ];
 const src =
@@ -146,6 +146,33 @@ const unit = (over) => Object.assign({
   assert.strictEqual(R.climateDiagnosticsHtml(unit({ last_fetch: { last_failure: { failed_at: "2026-11-21T10:00:00+00:00", reason: "timeout" } } }), t, tf), "",
     "a failure-only record prints no fetch tally");
   assert.ok(visible(R.climateFactsHtml(unit({ last_fetch: { last_failure: { reason: "timeout" } } }), t, tf)).includes("never fetched on this machine"));
+}
+
+// Row 275: the latest failed attempt sits BESIDE the last success, never in its place; airplane mode is
+// named as such; the caveat line is visible (outside any hover), and a never-fetched unit says nothing was stored.
+{
+  const both = R.climateFactsHtml(unit({ last_fetch: { fetched_at: "2026-11-20T08:00:00+00:00", tally: { new: 3 },
+    last_failure: { failed_at: "2026-11-21T10:00:00+00:00", reason: "kill_switch" } }, stored: { stored_rows: 12, vintages: 1 } }), t, tf);
+  const v = visible(both);
+  assert.ok(v.includes("Last fetched 2026-11-20"), "the last success is still shown: " + v);
+  assert.ok(v.includes("Last failed attempt 2026-11-21"), "the failure is dated beside it: " + v);
+  assert.ok(v.includes("refused by airplane mode; no request was sent"), "the kill switch is named as airplane mode: " + v);
+  assert.ok(v.includes("Last fetch: 3 new"), "the success's tally still prints: " + v);
+  assert.ok(/class="card-caveat climate-failure-note">[^<]*the values already stored are shown/.test(both), "the caveat is a visible line, not a hover");
+  noJunk(both, "success + failure");
+  assert.ok(!VERDICTS.test(v), "a verdict word crept in: " + v);
+  const only = visible(R.climateFactsHtml(unit({ last_fetch: { last_failure: { failed_at: "2026-11-21T10:00:00+00:00", reason: "http_5xx" } } }), t, tf));
+  assert.ok(only.includes("never fetched on this machine") && only.includes("nothing is stored for this yet"), only);
+  assert.ok(!visible(R.climateFactsHtml(unit({ last_fetch: { fetched_at: "2026-11-20T08:00:00+00:00" } }), t, tf)).includes("failed"), "no failure, no failure line");
+  // Every token the server can write has its own words; only an unknown one falls back.
+  const fs = require("fs"), path = require("path");
+  const py = fs.readFileSync(path.join(__dirname, "..", "src", "stats", "climate.py"), "utf8");
+  const block = py.slice(py.indexOf("FAILURE_REASONS = ("), py.indexOf("\n)", py.indexOf("FAILURE_REASONS = (")));
+  const tokens = [...block.matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]);
+  assert.ok(tokens.length >= 15, "FAILURE_REASONS not read: " + tokens);
+  const fallback = R.climateFailureReason("no-such-token", t);
+  for (const tok of tokens.filter((x) => x !== "other")) assert.notStrictEqual(R.climateFailureReason(tok, t), fallback, tok + " has no words in the climate tab");
+  assert.ok(!/<|>/.test(R.climateFailureReason("<img src=x>", t)), "a token is never echoed as markup");
 }
 
 // The n line: values and gaps are separate counts, and a revision is named.

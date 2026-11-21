@@ -141,7 +141,12 @@ def floor_countries() -> set[str]:
     return set(load_floor()["countries"])
 
 
-def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def floor_coverage(
+    today: date | None = None,
+    events: list[dict[str, Any]] | None = None,
+    catalogue: dict[str, Any] | None = None,
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """What the shipped elections calendar covers of the ruled floor.
 
     Network-free and cheap (one config read, one catalog read), so it rides the
@@ -153,16 +158,27 @@ def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | Non
     named with the fields it lacks, so it is a worklist rather than a complaint), and
     ``missing`` (no entry at all).
     """
-    from src.events.catalog import load_events
+    from src.events.catalog import catalogue_state, layered_read, load_events
 
     today = today or date.today()
     floor = load_floor()
     wanted = set(floor["countries"])
+    if events is None:
+        _layered, snapshot, catalogue = layered_read(today)  # the snapshot's and the catalogue's read states
+        events = load_events()  # the events as before (the same cached layered read)
+    elif catalogue is None:
+        catalogue = catalogue_state()  # never claim "present" without having looked
+    # Row 273 (R696): the counts come from whatever was READ. The curated catalogue not read but the snapshot read: the
+    # counts are the snapshot's alone, said so by counts_from. Neither read: every count is None, never 0 or "missing".
+    # A snapshot the caller did not hand over is not known to have been read.
+    curated_read = catalogue.get("state") == "present"
+    if not curated_read and (snapshot or {}).get("state") != "present":
+        return _not_read(floor, wanted, catalogue)
 
     with_date: set[str] = set()
     live: set[str] = set()
     dateless: dict[str, list[str]] = {}
-    for ev in (load_events() if events is None else events):
+    for ev in events:
         if str(ev.get("calendar") or "") != ELECTIONS_CALENDAR:
             continue
         cc = str(ev.get("country") or "").strip().lower()
@@ -231,4 +247,30 @@ def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | Non
         "covered_outside_floor": outside,
         "invalid_rows": floor["invalid"],
         "contested_rows": floor["contested"],
+        "catalogue": dict(catalogue),
+        **({} if curated_read else {"counts_from": "snapshot_only"}),
     }
+
+
+#: The per-state keys :func:`floor_coverage` fills; :func:`_not_read` gives each of them ``None``.
+_STATE_KEYS = ("covered", "only_passed_projection", "present_but_dateless", "missing")
+
+
+def _not_read(floor: dict[str, Any], wanted: set[str], catalogue: dict[str, Any]) -> dict[str, Any]:
+    """The floor when the curated catalogue was not read (row 273): the denominator is known, every count is
+    ``None`` and ``catalogue`` says why. Never 0 and never "missing": that would say the calendar holds no
+    entry for a country, which nobody looked up. An ``empty`` catalogue WAS read and holds nothing; its state
+    says exactly that."""
+    out: dict[str, Any] = {
+        "as_of": floor["as_of"],
+        "verification_status": floor["verification_status"],
+        "floor_countries": len(wanted),
+        "covered_outside_floor": None,
+        "invalid_rows": floor["invalid"],
+        "contested_rows": floor["contested"],
+        "catalogue": dict(catalogue),
+    }
+    for key in _STATE_KEYS:
+        out[key] = None
+        out[f"{key}_n"] = None
+    return out

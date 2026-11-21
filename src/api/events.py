@@ -69,7 +69,7 @@ def list_events(
     any date disagreement (``date_variants``) rather than hiding it. Subscription itself
     is a client preference (which calendars to show).
     """
-    from src.events.catalog import agenda, load_calendars
+    from src.events.catalog import agenda, catalogue_state, load_calendars
     from src.events.dedup import dedup as dedup_events
 
     items = agenda(category=category, calendar=calendar, country=country, tag=tag)
@@ -80,6 +80,9 @@ def list_events(
         "count": len(items),
         "confirmed": sum(1 for e in items if e["confirmed"]),
         "caveat": _CAVEAT,
+        # Row 273: whether the curated catalogue was read at all (present / absent / empty / unreadable), so the
+        # Agenda can say "not read" instead of drawing an empty month as if nothing were scheduled.
+        "catalogue": catalogue_state(),
         "events": items,
     }
 

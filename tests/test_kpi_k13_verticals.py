@@ -38,13 +38,13 @@ def isolated(monkeypatch, tmp_path):
 def _snapshot(monkeypatch, snap: dict) -> None:
     from src.events import catalog
 
-    real = catalog.layered_events
+    real = catalog.layered_read  # K13 reads events, snapshot and the catalogue's state in one call (row 273)
 
     def fake(today=None):
-        events, _ = real(today)
-        return events, dict(snap)
+        events, _, cat = real(today)
+        return events, dict(snap), cat
 
-    monkeypatch.setattr(catalog, "layered_events", fake)
+    monkeypatch.setattr(catalog, "layered_read", fake)
 
 
 def _k13() -> dict:
@@ -221,7 +221,7 @@ def test_one_vertical_failing_never_hides_the_other(isolated, monkeypatch):
     def boom(today=None):
         raise RuntimeError("catalogue unreadable")
 
-    monkeypatch.setattr(catalog, "layered_events", boom)
+    monkeypatch.setattr(catalog, "layered_read", boom)
     K.record_climate_fetch(_fetch())
     m = _k13()
     assert _block(m, "elections")["reason"] == "its block could not be read (RuntimeError)"

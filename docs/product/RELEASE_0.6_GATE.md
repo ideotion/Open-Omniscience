@@ -110,6 +110,16 @@ climate fetch now leaves a trace in the unit's own fetch record (one fixed token
 station), and `scripts/climate_readback.py` prints the six datasets as fetched, failed (and why) or not fetched yet, never an
 unread figure as 0. The run itself is still the operator's.
 
+**Progress 2026-11-21 (row 275, R696): the Climate tab now shows a unit's latest failed attempt; the row stays OPEN.** It
+sits beside "Last fetched" as "Last failed attempt" (its date and the reason in words), never in place of the last success,
+which stays shown with its values. A kill-switch refusal reads as airplane mode. A visible caveat line says that the failed
+attempt changed nothing stored, or that nothing is stored yet. 19 strings, 12 languages. Pinned by `tests/climate_node_test.js`.
+
+**Progress 2026-11-21 (row 280, R696): the simple view's Climate list marks it too; the row stays OPEN.** A dataset whose latest
+attempt failed keeps its "Fetched" date and gains the stale mark (◷); its ⓘ gives the failed attempt's time and the reason in
+the full view's own words (airplane mode named), and says nothing stored changed. 19 strings, 12 languages. Pinned by
+`tests/simple_climate_node_test.js` and `tests/test_simple_climate_row280.py`.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if
@@ -270,6 +280,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Row D, a located address's provenance reaches a touch reader (row 268).** The infobox-address square's hover (address, field, page and edition, OSM object, extract date or "the extract states no date") rode an SVG `<title>` child, which only a mouse reaches; on a phone, a long-press on the square showed a country's bubble instead. Every marker `app-map.js` draws (wiki pages and addresses, mentioned places, server IPs, signals, the Insights cities map) now carries its hover in a `title` attribute, so the #oo-tip bubble (invariant #17) opens on long-press too (walked in Chromium for the page and address markers; the other markers are run by the node test); `tests/map_marker_titles_r268_node_test.js` and `tests/wiki_map_layer_node_test.js` run each marker and fail on a `<title>` child. Chromium walk, desktop hover and phone long-press, before and after: `docs/audit/map-marker-titles-r268-2026-11-21/`. | session (row 268) · Lane I |
 | 2026-11-21 | **Row C: the coverage report comes back through Field data; no row changed status.** The button saves `/api/diagnostics/law-coverage` and `scripts/law_coverage_readback.py` prints every floor country by state with the twelve-language tally (row 267). | session (Lane O) |
 | 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
+| 2026-11-21 | **Row A: a catalogue that was not read is said, never counted as "every country missing" (row 273); no row changed status.** The curated `configs/world_events.yml` is read with a state (present, absent, empty, or unreadable with the error's class and no path). When it is not present, the floor's counts, the tier report and K13 give null beside that state, `/api/events` and its facets carry it, the Agenda says it in one line, and `scripts/elections_readback.py` prints it; an unparsable file no longer raises out of its callers. | session (Lane U) |
 
 ---
 
