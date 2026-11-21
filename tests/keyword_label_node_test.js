@@ -238,6 +238,10 @@ const K = (() => {
   };
   const inside = K.kwLabelHtml(wahl, { inButton: true });
   assert.ok(!/<button/.test(inside), "a label drawn inside a button still nests buttons: " + inside);
+  // Row 231 (axe nested-interactive): nor a link. The QID's anchor is drawn beside the chip by the caller.
+  const withQid = Object.assign({}, wahl, { translation_qid: "Q40231" });
+  assert.ok(!/<a\b/.test(K.kwLabelHtml(withQid, { inButton: true })), "a label drawn inside a button still nests the QID link");
+  assert.ok(/<a\b[^>]*class="kw-qid"/.test(K.kwLabelHtml(withQid)), "the plain label still carries the QID link (row 178)");
   assert.ok(/Several senses/.test(inside), "the refusal must still be stated inside the chip: " + inside);
   const after = K.kwSensesAfterHtml(wahl);
   assert.ok(/data-kwpin="wahl:election"/.test(after) && /data-kwpin="wahl:public_election"/.test(after), after);

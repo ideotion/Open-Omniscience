@@ -230,8 +230,10 @@ class VllmClient:
         # URL and never egress.
         if client is None:
             _require_loopback(self.base_url, setting="OO_VLLM_URL")
+        # trust_env=False (R770): the connection is always direct; with trust_env on, httpx routes even http://127.0.0.1
+        # through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts would reach that proxy.
         # R767: requests run inside the loopback-only scope (src.llm.loopback), so localhost's answer is checked.
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout, transport=_loopback_transport())
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout, transport=_loopback_transport(), trust_env=False)
 
     # -- network kill switch ----------------------------------------------- #
 

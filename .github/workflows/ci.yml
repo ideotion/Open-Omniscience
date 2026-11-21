@@ -991,9 +991,10 @@ jobs:
     runs-on: windows-latest
     name: Portability observation (windows-latest, shard ${{ matrix.shard }} of 6)
     continue-on-error: true  # observation lane: never required
-    # 90 min per leg, as before (row 93): a sixth of the suite is predicted at about 45 minutes here, so the cap only bounds slowness. A hang ends a leg
-    # in 10 minutes on its own (OO_TEST_HANG_LIMIT_S below).
-    timeout-minutes: 90
+    # 120 min per leg (row 238; 90 since row 93): the table predicts about 45 minutes a leg, but it is the Linux table, and shard 1 measured 70.6 to over 90
+    # minutes here (run 44734791675 stopped it at 98%, run 44849278064 passed it in 77). The cap only bounds slowness; a hang ends a leg in 10 minutes on
+    # its own (OO_TEST_HANG_LIMIT_S below). The junit report each leg now keeps is the source of a Windows cost table, after which the cap can come down.
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash  # the Windows default is PowerShell, which does not expand "$RUNNER_TEMP" or read `@FILE` the same way
@@ -1017,7 +1018,8 @@ jobs:
       - name: Plan this shard (which test files it runs)
         run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/6 --out shard.args
 
-      # One process (row 163: four workers gained nothing here, the cost is I/O serialized below the tests). `-rsfE` as on macOS; no junit report.
+      # One process (row 163: four workers gained nothing here, the cost is I/O serialized below the tests). `-rsfE` as on macOS. The junit report (row 238)
+      # is written in the workspace, like shard.args, and is the Windows legs' own per-module seconds: the Linux table under-predicts them (shard 1).
       - name: Test (pytest)
         env:
           OO_TEST_HANG_LIMIT_S: "600"
@@ -1025,7 +1027,34 @@ jobs:
           OO_TEST_SLOW_S: "20"
           OO_TEST_SLOW_REPORT: test-slow-report.txt
           OO_TEST_FAIL_REPORT: test-fail-report.txt
-        run: python -m pytest -q -rsfE @shard.args
+        run: python -m pytest -q -rsfE --junitxml=junit.xml @shard.args
+
+      # The same upload as the `test` job's (see there), named for Windows: `python scripts/ci_shard.py --table configs/ci_shard_costs_windows.json costs
+      # --min-seconds 0.5 junit-windows-shard-*/junit.xml` over the six reports of ONE run writes the Windows table (docs/maintenance/CI_SHARDS.md). A leg
+      # the job cap stops writes no report (pytest writes it at the end), so a table needs a run in which all six legs finished.
+      - name: Upload this leg's junit report (the Windows cost table's source)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-windows-shard-${{ matrix.shard }}
+          path: junit.xml
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: warn
+
+      # The same per-file costs, printed to the job log (row 238): the artifact's download address is a storage host a reader of the run cannot always
+      # reach, and the log is read through the API itself. One compact JSON line per leg between the two markers; the six lines of one run where all six
+      # legs finished merge into configs/ci_shard_costs_windows.json (docs/maintenance/CI_SHARDS.md). An observation: it never turns a leg red.
+      - name: Print this leg's file costs (the Windows cost table's source, in the log)
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s junit.xml ]; then
+            echo "windows-costs-shard-${{ matrix.shard }} begin"
+            python scripts/ci_shard.py costs --stdout --min-seconds 0.5 junit.xml
+            echo "windows-costs-shard-${{ matrix.shard }} end"
+          fi
 
       - name: Name a test that hung, and the slow tests
         if: always()

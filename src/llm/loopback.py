@@ -38,11 +38,12 @@ _ALIAS_LITERAL = {
 }
 
 
-def _host(url: str) -> str:
+def _host(url: str) -> str | None:
+    """The URL's host, lower-cased; ``None`` when the address cannot be read (e.g. an unclosed "[", row 234)."""
     try:
         return (urlparse(url).hostname or "").lower()
     except ValueError:
-        return ""
+        return None
 
 
 def _is_loopback_literal(host: str) -> bool:
@@ -56,12 +57,13 @@ def _is_loopback_literal(host: str) -> bool:
 def is_loopback_url(url: str) -> bool:
     """True when ``url``'s host is a loopback literal or exactly ``localhost`` (R767)."""
     host = _host(url)
-    return host == LOOPBACK_NAME or _is_loopback_literal(host)
+    return host is not None and (host == LOOPBACK_NAME or _is_loopback_literal(host))
 
 
 def alias_literal(url: str) -> str | None:
     """The loopback literal to use instead when ``url`` names a refused alias (R767), else ``None``."""
-    return _ALIAS_LITERAL.get(_host(url))
+    host = _host(url)
+    return _ALIAS_LITERAL.get(host) if host is not None else None
 
 
 def loopback_refusal(url: str, *, setting: str) -> str | None:
@@ -70,13 +72,21 @@ def loopback_refusal(url: str, *, setting: str) -> str | None:
         return None
     host = _host(url)
     literal = alias_literal(url)
-    if literal is not None:
+    if literal is not None and "@" not in url:
         return (
             f"{setting} names {host!r}, which is local only if this computer's hosts file says so; otherwise it is "
             f"looked up in DNS. Use {literal} instead (or localhost). The local LLM never talks to a remote host."
         )
+    if host is None:
+        got = "an address that could not be read"
+    elif "@" in url:
+        # Sign-in details in the address: urlparse can take part of them for the host (an unencoded "/", "?" or "#" ends the
+        # authority early), so nothing of it is quoted -- the setting's name is enough to find it (row 234 security read).
+        got = "an address with sign-in details (not shown)"
+    else:
+        got = repr(host)
     return (
-        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {host!r}. "
+        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {got}. "
         "The local LLM never talks to a remote host."
     )
 
