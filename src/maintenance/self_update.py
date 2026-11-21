@@ -345,6 +345,12 @@ SETTINGS_UNREADABLE_REFUSAL = (
     "Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings "
     "and save. Then try again."
 )
+#: Row 250: the update CHECK refused for the same reason (R766's wording; it used to say "Protected mode has no usable proxy").
+SETTINGS_UNREADABLE_CHECK_REFUSAL = (
+    "The settings could not be read, so the update check did not run: network actions are refused as if protected mode were on. "
+    "Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings "
+    "and save. Then try again."
+)
 
 #: The two reason codes :func:`protected_reason` answers, shared with the endpoints and the UI.
 BLOCKED_PROTECTED = "protected"

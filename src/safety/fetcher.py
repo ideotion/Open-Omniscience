@@ -627,10 +627,16 @@ def transport_summary(settings: SafetySettings) -> dict[str, Any]:
         return {"kind": "direct"}
     _single, pool, refusal = _protected_transport(settings)
     if refusal is not None:
-        return {"kind": "refused", "reason": "no-proxy" if refusal == NO_PROXY_REFUSAL else "pool-not-socks"}
-    if pool:
-        return {"kind": "pool", "members": len(pool)}
-    return {"kind": "proxy"}
+        out: dict[str, Any] = {"kind": "refused", "reason": "no-proxy" if refusal == NO_PROXY_REFUSAL else "pool-not-socks"}
+    elif pool:
+        out = {"kind": "pool", "members": len(pool)}
+    else:
+        out = {"kind": "proxy"}
+    if getattr(settings, "mode_unknown", False):
+        # Row 250 (R766): the stored choice could not be read and the environment names a proxy, so ``read_failed`` is False and the
+        # transport is real -- but nobody chose protected mode. The popup says so instead of "protected mode is on".
+        out["stored"] = "unreadable"
+    return out
 
 
 def guarded_session(

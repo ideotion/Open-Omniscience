@@ -99,7 +99,18 @@ def update_check() -> dict:
             status_code=409, detail={"code": "airplane", "message": "Airplane mode is on: the update check did not run. Go online first."}
         ) from None
     except TransportUnavailable:
-        # never named as airplane mode (#14e's corollary): it is the proxy protected mode needs, not the operator's switch
+        # never named as airplane mode (#14e's corollary): it is the proxy protected mode needs, not the operator's switch.
+        # Row 250 (R766): when the settings could not be read, nobody chose protected mode, so the refusal says what is true.
+        from src.maintenance.self_update import (
+            BLOCKED_SETTINGS_UNREADABLE,
+            SETTINGS_UNREADABLE_CHECK_REFUSAL,
+            protected_reason,
+        )
+
+        if protected_reason() == BLOCKED_SETTINGS_UNREADABLE:
+            raise HTTPException(
+                status_code=409, detail={"code": "settings_unreadable", "message": SETTINGS_UNREADABLE_CHECK_REFUSAL}
+            ) from None
         raise HTTPException(
             status_code=409, detail={"code": "protected_no_proxy", "message": "Protected mode has no usable proxy: the update check did not run."}
         ) from None
