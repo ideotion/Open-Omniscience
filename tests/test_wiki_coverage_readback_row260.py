@@ -100,7 +100,9 @@ def test_the_readback_prints_the_twelve_editions_and_says_why_a_total_is_absent(
     assert "located addresses: 1 of 1 found addresses located" in text
     assert sum(1 for ln in lines if ln.split(":")[0] in {"ar", "bn", "de", "es", "hi", "id", "ja", "pt", "ru", "zh"}) == 10
     assert "de: no run yet (no-run-yet)" in text
-    assert "%" not in text and "de: 0" not in text, "an absent figure was printed as a measurement"
+    assert "%" not in text and not any(ln.startswith("de: ") and any(c.isdigit() for c in ln) for ln in lines), (
+        "an edition that never ran was given a figure"
+    )
 
 
 def test_a_piece_set_is_joined_and_a_missing_piece_is_named_never_guessed(lane, monkeypatch, tmp_path):
@@ -149,3 +151,34 @@ def test_the_script_runs_stdlib_only_from_the_command_line(lane, monkeypatch, tm
     bad.write_text("not json", encoding="utf-8")
     out = subprocess.run([sys.executable, "-I", str(SCRIPT), str(bad)], capture_output=True, text=True, timeout=60, check=False)
     assert out.returncode == 2 and "not a JSON file" in out.stderr
+
+
+def test_a_soak_window_json_from_the_diagnostics_zip_is_read_through_its_wiki_lane_block(lane, monkeypatch, tmp_path):
+    _seed(monkeypatch)
+    inner = json.loads(_route_file(lane).read_text(encoding="utf-8"))
+    soak = tmp_path / "soak-window.json"
+    soak.write_text(json.dumps({"window": {"measured": True}, "wiki_lane": inner}), encoding="utf-8")
+    text = "\n".join(R.report(R.load(soak)))
+    assert "en: 40 of 1,000 pages seen" in text and "a build before" not in text
+
+
+def test_sums_over_editions_that_have_no_figure_are_never_printed_as_0():
+    doc = {"read_at": "2026-11-21T10:00:00+00:00", "coverage": {"measured": True, "editions": [
+        {"edition": "en", "has_run": True, "pages_seen": None, "edition_articles": None,
+         "edition_articles_read": {"state": "not_read_walk_off"}, "gaps": {"total": 0, "by_reason": {}}},
+    ], "totals": {"pages_seen": 0, "edition_articles": 0, "editions_without_total": 1, "editions_with_a_run": 1, "gaps": 0},
+        "located": {"measured": False, "reason": "lane-never-run"}}}
+    text = "\n".join(R.report(doc))
+    assert "totals: no edition walked yet; no edition total read yet" in text, text
+    assert "0 pages seen" not in text and "0 articles" not in text
+    assert "last event: not recorded in this file" in text, "a key an older build did not write read as 'never'"
+
+
+def test_malformed_shapes_are_said_never_a_crash():
+    row = {"edition": "en", "has_run": True, "pages_seen": 3, "edition_articles": True,
+           "full_text": "x", "gaps": ["x"], "last_event_recorded_at": None}
+    line = R.edition_line(row)
+    assert "3 pages seen, total unknown" in line and "gaps not recorded in this file" in line and "last event: never" in line
+    assert R.located_lines({"measured": True, "per_edition": ["en"]}) == ["located addresses: no address found yet"]
+    out = R.located_lines({"measured": True, "complete": True, "per_edition": {"en": {"found": "2", "located": 1}}})
+    assert out[0].startswith("located addresses: ") and out[1] == "  en: found —, located 1"

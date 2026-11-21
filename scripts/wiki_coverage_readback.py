@@ -67,8 +67,8 @@ def load(path: Path) -> dict[str, Any]:
         raise ValueError(f"{path.name}: not a JSON file ({type(exc).__name__})") from exc
     if not isinstance(doc, dict):
         raise ValueError(f"{path.name}: not a counters reading (a JSON object was expected)")
-    if "coverage" not in doc and isinstance(doc.get("wiki"), dict):
-        doc = doc["wiki"]  # soak-window.json from a Diagnostics zip
+    if "coverage" not in doc and isinstance(doc.get("wiki_lane"), dict):
+        doc = doc["wiki_lane"]  # soak-window.json from a Diagnostics zip (src/monitoring/soak_window.py names the block wiki_lane)
     return doc
 
 
@@ -78,6 +78,15 @@ def _n(value: Any) -> str:
 
 def _when(iso: Any) -> str:
     return str(iso)[:16].replace("T", " ") + " UTC" if isinstance(iso, str) and iso else "never"
+
+
+def _int(value: Any) -> int | None:
+    """A count, or None for anything that is not one (a bool, a string, a missing key): never coerced into a 0."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def total_words(note: Any) -> str:
@@ -94,29 +103,33 @@ def edition_line(row: dict[str, Any]) -> str:
     code = str(row.get("edition") or "?")
     if not row.get("has_run"):
         return f"{code}: no run yet ({row.get('reason') or 'no reason given'})"
-    seen, total = row.get("pages_seen"), row.get("edition_articles")
-    if not isinstance(seen, int):
+    seen, total = _int(row.get("pages_seen")), _int(row.get("edition_articles"))
+    if seen is None:
         pages = "the walk has not run for this edition"
-    elif isinstance(total, int):
+    elif total is not None:
         pages = f"{_n(seen)} of {_n(total)} pages seen"
     else:
         pages = f"{_n(seen)} pages seen, total unknown"
     parts = [pages, "total " + total_words(row.get("edition_articles_read"))]
     if row.get("walk_complete"):
         parts.append("walk pass complete")
-    ft = row.get("full_text") or {}
-    hot, warm = ft.get("hot_pages_with_text"), ft.get("warm_pages_with_text")
-    if isinstance(hot, int) and isinstance(warm, int):
+    ft = _dict(row.get("full_text"))
+    hot, warm = _int(ft.get("hot_pages_with_text")), _int(ft.get("warm_pages_with_text"))
+    if hot is not None and warm is not None:
         parts.append(f"full text held for between {_n(max(hot, warm))} and {_n(hot + warm)} pages")
-    elif isinstance(hot, int):
+    elif hot is not None:
         parts.append(f"full text held for at least {_n(hot)} pages (the second tier has not run)")
     if row.get("last_event_unreadable"):
         parts.append("last event: could not be read")
+    elif "last_event_recorded_at" not in row:
+        parts.append("last event: not recorded in this file")
     else:
         parts.append(f"last event: {_when(row.get('last_event_recorded_at'))}")
-    gaps = row.get("gaps") or {}
-    if isinstance(gaps.get("total"), int) and gaps["total"] > 0:
-        by = ", ".join(f"{k} {_n(v)}" for k, v in sorted((gaps.get("by_reason") or {}).items()))
+    gaps = _dict(row.get("gaps"))
+    if "total" not in gaps:
+        parts.append("gaps not recorded in this file")
+    elif (_int(gaps.get("total")) or 0) > 0:
+        by = ", ".join(f"{k} {_n(v)}" for k, v in sorted(_dict(gaps.get("by_reason")).items()))
         parts.append(f"{_n(gaps['total'])} gaps ({by})" if by else f"{_n(gaps['total'])} gaps")
     else:
         parts.append("no gap recorded")
@@ -128,15 +141,15 @@ def located_lines(block: Any) -> list[str]:
         return ["located addresses: absent from this file"]
     if block.get("measured") is not True:
         return [f"located addresses: not measured ({block.get('reason') or 'no reason given'})"]
-    per = block.get("per_edition") or {}
+    per = _dict(block.get("per_edition"))
     if not per:
         return ["located addresses: no address found yet"]
-    found = sum(int(v.get("found") or 0) for v in per.values() if isinstance(v, dict))
-    located = sum(int(v.get("located") or 0) for v in per.values() if isinstance(v, dict))
+    found = sum(_int(_dict(v).get("found")) or 0 for v in per.values())
+    located = sum(_int(_dict(v).get("located")) or 0 for v in per.values())
     out = [f"located addresses: {_n(located)} of {_n(found)} found addresses located"
            + ("" if block.get("complete") else " (the scan has not read every stored page yet)")]
     for code in sorted(per):
-        counts = per[code] if isinstance(per[code], dict) else {}
+        counts = _dict(per[code])
         out.append(f"  {code}: " + ", ".join(f"{k} {_n(v)}" for k, v in sorted(counts.items())))
     return out
 
@@ -154,10 +167,16 @@ def report(doc: dict[str, Any]) -> list[str]:
     rows = [r for r in cov.get("editions") or [] if isinstance(r, dict)]
     lines.append(f"{len(rows)} editions listed")
     lines += [edition_line(r) for r in rows]
-    t = cov.get("totals") or {}
+    t = _dict(cov.get("totals"))
+    # The report sums an edition with no figure as 0 (coverage.py's totals), so a sum is printed only when some edition HAS the figure.
+    walked = any(_int(r.get("pages_seen")) is not None for r in rows)
+    with_total = any(_int(r.get("edition_articles")) is not None for r in rows)
     lines.append(
-        f"totals: {_n(t.get('pages_seen'))} pages seen; {_n(t.get('edition_articles'))} articles over the editions with a total; "
-        f"{_n(t.get('editions_without_total'))} editions without a total; {_n(t.get('editions_with_a_run'))} editions with a run; "
+        "totals: "
+        + (f"{_n(t.get('pages_seen'))} pages seen" if walked else "no edition walked yet")
+        + "; "
+        + (f"{_n(t.get('edition_articles'))} articles over the editions with a total" if with_total else "no edition total read yet")
+        + f"; {_n(t.get('editions_without_total'))} editions without a total; {_n(t.get('editions_with_a_run'))} editions with a run; "
         f"{_n(t.get('gaps'))} gaps"
     )
     lines += located_lines(cov.get("located"))
