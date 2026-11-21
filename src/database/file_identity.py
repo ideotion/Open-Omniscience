@@ -139,6 +139,13 @@ def pinned_creator[T](path: Path | str, opener: Callable[[], T]) -> Callable[[],
     return _create
 
 
+def taken() -> Identity | None:
+    """The identity the last :func:`pinned_creator` open on this thread took, until :func:`attach`'s ``connect`` listener
+    consumes it (None when no pinned open is pending). Read by a ``connect`` listener registered before that one (row 271: a lane
+    connection is counted against the file it actually opened)."""
+    return getattr(_local, "ident", None)
+
+
 def _refuse(_conn: Any) -> None:
     # Not invalidated here: closing a connection from inside its own statement hook makes SQLAlchemy log a failed cursor close at
     # ERROR. The transaction rolls back, and the connection, once back in the pool, is dropped at its next checkout.

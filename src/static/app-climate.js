@@ -156,13 +156,46 @@
       } else {
         facts.push(_climateFact(t("Last fetched"), esc(t("never fetched on this machine")), ""));
       }
+      // Row 275: the latest attempt failed. Shown BESIDE the last success above, never in its place.
+      const fail = rec && rec.last_failure;
+      if (fail) {
+        facts.push(_climateFact(t("Last failed attempt"),
+          esc((fail.failed_at ? _climateWhen(fail.failed_at, t) + " · " : "") + climateFailureReason(fail.reason, t)),
+          t("The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.")));
+      }
       if (st.stored_rows) {
         facts.push(_climateFact(t("Stored"), esc(tf("{rows} values from {vintages} fetches", {rows: fmtNum(st.stored_rows, 0), vintages: fmtNum(st.vintages, 0)})),
           t("A re-fetch stores only values that are new or that the publisher revised; earlier values stay readable and nothing is overwritten.")));
       }
       facts.push(_climateFact(t("Shape documented"), esc(unit.documented_as_of),
         t("When the file layout was written down from the publisher's documentation. The first real download is the check; a file that does not match is refused, never guessed.")));
-      return `<div class="climate-facts">${facts.join("")}</div>` + climateDiagnosticsHtml(unit, t, tf);
+      // The caveat is visible by default (informed consent), not only in the hover.
+      const failNote = !fail ? "" : `<div class="card-caveat climate-failure-note">${esc(st.stored_rows
+        ? t("The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.")
+        : t("The latest attempt failed, so nothing is stored for this yet."))}</div>`;
+      return `<div class="climate-facts">${facts.join("")}</div>` + failNote + climateDiagnosticsHtml(unit, t, tf);
+    }
+
+    // One failure token (src/stats/climate.py FAILURE_REASONS) in words. The kill switch is named as
+    // airplane mode, the user's own setting, never as the publisher's fault. An unknown token reads "other".
+    function climateFailureReason(reason, t) {
+      switch (reason) {
+        case "kill_switch": return t("refused by airplane mode; no request was sent");
+        case "robots": return t("the site's robots.txt disallows it");
+        case "robots_unreadable": return t("the site's robots.txt could not be read, so nothing was fetched");
+        case "redirect_refused": return t("the address or a redirect was refused (off the publisher's site, or not public)");
+        case "transport_stopped": return t("stopped because the network mode changed during the fetch");
+        case "too_large": return t("the answer was larger than this table allows");
+        case "http_403": return t("the publisher answered 403 (forbidden)");
+        case "http_404": return t("the publisher answered 404 (not found)");
+        case "http_429": return t("the publisher answered 429 (too many requests)");
+        case "http_4xx": return t("the publisher refused the request (another 4xx status)");
+        case "http_5xx": return t("the publisher's server failed (a 5xx status)");
+        case "timeout": return t("the publisher did not answer in time");
+        case "connect": return t("no connection could be made");
+        case "unreadable_answer": return t("an answer came, but not the documented table");
+        default: return t("another error, not recognised");
+      }
     }
 
     // What the last fetch found: new, revised and unchanged values, gaps, refusals and the
