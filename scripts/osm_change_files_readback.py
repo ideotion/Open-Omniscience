@@ -114,6 +114,8 @@ def _n(value: Any, unit: str = "") -> str:
         return "—"
     if isinstance(v, int):
         return f"{v:,}{unit}"
+    if 0 < v < 0.0005:
+        return f"<0.001{unit}"  # measured, but below the printed precision: never shown as a 0
     return f"{v:,.3f}".rstrip("0").rstrip(".") + unit
 
 
@@ -150,6 +152,13 @@ def cost_lines(row: dict[str, Any]) -> list[str]:
     return out
 
 
+def _run_figure(run: dict[str, Any], key: str, label: str, unit: str) -> str:
+    """One run's figure, or that it was not measured (a run's null measurement is the member's own, left out of the cost's n)."""
+    if _num(run.get(key)) is None:
+        return f"{label} not measured by this file's run"
+    return f"{label} {_n(run.get(key), unit)}"
+
+
 def country_lines(row: dict[str, Any]) -> list[str]:
     code = _code(row.get("alpha3"))
     status = row.get("status") if isinstance(row.get("status"), str) and row.get("status", "").isidentifier() else "?"
@@ -174,8 +183,9 @@ def country_lines(row: dict[str, Any]) -> list[str]:
                      + (f", {_n(row.get('gaps_not_shown'))} not shown" if _int(row.get("gaps_not_shown")) else ""))
     runs = [r for r in _list(row.get("runs")) if isinstance(r, dict)]
     for r in runs:
-        lines.append(f"  file {_n(_int(r.get('sequence')))} of {_when(r.get('diff_timestamp')) or 'an unrecorded date'}: "
-                     f"{_n(r.get('bytes_fetched'))} bytes, fetch {_n(r.get('fetch_seconds'), ' s')}, apply {_n(r.get('apply_seconds'), ' s')}")
+        seq = _int(r.get("sequence"))
+        lines.append(f"  file {seq if seq is not None else '(sequence not recorded)'} of {_when(r.get('diff_timestamp')) or 'an unrecorded date'}: "
+                     + ", ".join(_run_figure(r, key, label, unit) for key, label, unit in _COST_KEYS))
     hidden = _int(row.get("runs_not_shown"))
     if hidden:
         lines.append(f"  {_n(hidden)} older files not shown (they are in the cost above)")
@@ -187,17 +197,23 @@ def report(doc: dict[str, Any]) -> list[str]:
     if "error" in doc and "countries" not in doc:
         return [f"the member could not be built: {_reason(doc.get('reason'), 'no reason given')}"]
     if doc.get("lane") == "absent":
-        return [f"the OSM lane was not read: {_reason(doc.get('reason'), 'no reason given')}"]
+        return [f"the OSM lane was not read: {_reason(doc.get('reason'), 'no reason given')}"] + _street_view_lines(doc)
     if doc.get("over_budget") is True:
         need = _int(doc.get("needs_at_least_bytes"))
+        lane = doc.get("lane") if doc.get("lane") in ("present", "absent") else "not stated"
         return [f"the member was omitted: {_reason(doc.get('omitted'), 'over its budget')}"
-                + (f" (needs at least {_n(need)} bytes)" if need is not None else "")]
+                + (f" (needs at least {_n(need)} bytes)" if need is not None else "") + f"; the lane: {lane}"]
     rows = [r for r in _list(doc.get("countries")) if isinstance(r, dict)]
-    lines = [f"{len(rows)} countries with change files or gaps"]
+    rows_hidden = _int(doc.get("countries_not_shown")) or 0
+    lines = [f"{len(rows) + rows_hidden} countries with change files or gaps"
+             + (f" ({rows_hidden} not shown: cut to fit the member's budget)" if rows_hidden else "")]
     for r in rows:
         lines += country_lines(r)
     without = [_code(c) for c in _list(doc.get("countries_without_updates"))]
-    lines.append("countries no change file has touched: " + (", ".join(without) if without else "none"))
+    untouched_hidden = _int(doc.get("countries_without_updates_not_shown")) or 0
+    listed = ", ".join(without) if without else ("none" if not untouched_hidden else "")
+    more = f"{untouched_hidden} not shown (cut to fit the member's budget)" if untouched_hidden else ""
+    lines.append("countries no change file has touched: " + "; ".join(x for x in (listed, more) if x))
     cut = _dict(doc.get("dropped_to_fit"))
     dropped = [(k, _int(v)) for k, v in (("runs", cut.get("runs")), ("gaps", cut.get("gaps")),
                                          ("countries", doc.get("countries_not_shown")),
@@ -206,18 +222,30 @@ def report(doc: dict[str, Any]) -> list[str]:
     lines.append("cut to fit the member's budget: " + (", ".join(shown) if shown else "nothing"))
     m = _dict(doc.get("measured_on"))
     if m:
-        lines.append(f"measured on: {m.get('os') if isinstance(m.get('os'), str) and m.get('os', '').isalnum() else '—'}, "
-                     f"{m.get('arch') if isinstance(m.get('arch'), str) and m.get('arch', '').replace('_', '').isalnum() else '—'}, "
-                     f"{_n(_int(m.get('cpus')))} CPUs")
-    sv = doc.get("street_view")
-    if isinstance(sv, dict):
-        state = sv.get("state") if sv.get("state") in ("measured", "not measured", "unreadable") else "?"
-        when = _when(sv.get("measured_at"))
-        lines.append(f"street view frame budget: {state}" + (f", {when}" if when else "")
-                     + (f": {_reason(sv.get('reason'), 'no reason given')}" if state != "measured" else ""))
+        unreported = _dict(m.get("unreported"))
+
+        def _fact(key: str, ok: bool, text: str) -> str:
+            return text if ok else f"{key} not reported ({_reason(unreported.get(key), 'absent from this file')})"
+
+        os_, arch, cpus = m.get("os"), m.get("arch"), _int(m.get("cpus"))
+        lines.append("measured on: " + ", ".join((
+            _fact("os", isinstance(os_, str) and os_.isalnum(), str(os_)),
+            _fact("arch", isinstance(arch, str) and arch.replace("_", "").isalnum(), str(arch)),
+            _fact("cpus", cpus is not None, f"{cpus} CPUs"),
+        )))
     else:
-        lines.append("street view frame budget: absent from this file")
-    return lines
+        lines.append("measured on: absent from this file")
+    return lines + _street_view_lines(doc)
+
+
+def _street_view_lines(doc: dict[str, Any]) -> list[str]:
+    sv = doc.get("street_view")
+    if not isinstance(sv, dict):
+        return ["street view frame budget: absent from this file"]
+    state = sv.get("state") if sv.get("state") in ("measured", "not measured", "unreadable") else "?"
+    when = _when(sv.get("measured_at"))
+    return [f"street view frame budget: {state}" + (f", {when}" if when else "")
+            + (f": {_reason(sv.get('reason'), 'no reason given')}" if state != "measured" else "")]
 
 
 def main(argv: list[str] | None = None) -> int:

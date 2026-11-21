@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from src.osm.frame_budget import NOT_MEASURED_REASON
 from tests import _osm_lane_helpers
 from tests.test_osm_apply import DAY1, Mirror, _extract
 from tests.test_osm_diagnostics import DAY2
@@ -72,18 +73,12 @@ REASONS_ONLY = {
             "cursor_token": None, "cursor_reason": "this table is not in the lane (it was cut by an older build); re-cutting the country creates it",
             "runs": [], "runs_not_shown": 0,
         },
-        {
-            "alpha3": "YYY", "status": "complete",
-            "position": {"from": "extract", "sequence": None, "timestamp": None, "reason": "this country carries no recorded position (cut before positions were stored)"},
-            "diffs_recorded": None, "gaps_total": None,
-            "cost": {"bytes_fetched": None, "fetch_seconds": None, "apply_seconds": None, "method": "x",
-                     "unmeasured": dict.fromkeys(("apply_seconds", "bytes_fetched", "fetch_seconds"), "no recorded change file carries this measurement")},
-            "runs": [], "runs_not_shown": 0,
-        },
     ],
     "countries_without_updates": [], "countries_without_updates_not_shown": 0, "countries_not_shown": 0,
     "dropped_to_fit": {"runs": 0, "gaps": 0},
-    "street_view": {"state": "not measured", "reason": "no frame budget has been recorded on this machine"},
+    "measured_on": {"os": None, "arch": None, "cpus": None, "full_record": "manifest.json run.hardware",
+                    "unreported": dict.fromkeys(("os", "arch", "cpus"), "this machine did not report it")},
+    "street_view": {"state": "not measured", "reason": NOT_MEASURED_REASON},
 }
 
 
@@ -112,11 +107,10 @@ def test_a_file_with_only_reasons_prints_every_reason_and_no_figure():
     assert "change files: not recorded: this table is not in the lane" in text
     assert "  cost: not measured: this table is not in the lane" in text
     assert "  gaps: not recorded: this table is not in the lane" in text
-    for label in ("bytes fetched", "fetch", "apply"):
-        assert f"  {label}: not measured: no recorded change file carries this measurement" in text
-    assert "street view frame budget: not measured: no frame budget has been recorded" in text
+    assert "measured on: os not reported (this machine did not report it), arch not reported" in text
+    assert f"street view frame budget: not measured: {NOT_MEASURED_REASON}" in text
     assert "not in the member's fixed words" not in text
-    figures = [ln for ln in text.splitlines() if re.search(r"\d", ln) and not ln.startswith("2 countries")]
+    figures = [ln for ln in text.splitlines() if re.search(r"\d", ln) and not ln.startswith("1 countries")]
     assert figures == [], f"a figure was printed for a file that holds none: {figures}"
 
 
@@ -129,13 +123,38 @@ def test_some_files_without_a_measurement_are_said_not_averaged_away():
     assert "bytes fetched: 3 files measured, total 300, mean per file 100, largest 120" in out
     assert "fetch: 1 files measured, total 2.5 s, mean per file 2.5 s, largest 2.5 s (2 of 3 files did not measure it)" in out
     assert "apply: not measured: no recorded change file carries this measurement" in out
+    every = dict(row, cost=dict.fromkeys(("bytes_fetched", "fetch_seconds", "apply_seconds"))
+                 | {"unmeasured": dict.fromkeys(("bytes_fetched", "fetch_seconds", "apply_seconds"), "no recorded change file carries this measurement")})
+    assert R.cost_lines(every) == [f"  {label}: not measured: no recorded change file carries this measurement" for label in ("bytes fetched", "fetch", "apply")]
+
+
+def test_a_run_without_a_measurement_says_so_and_a_tiny_measured_time_is_not_a_0():
+    row = {"alpha3": "ZZZ", "runs": [{"sequence": None, "diff_timestamp": "2025-01-12T00:00:00+00:00", "bytes_fetched": 512,
+                                      "fetch_seconds": None, "apply_seconds": 0.0002}]}
+    line = [ln for ln in R.country_lines(row) if ln.startswith("  file")][0]
+    assert line == ("  file (sequence not recorded) of 2025-01-12 00:00 UTC: bytes fetched 512, fetch not measured by this file's run, "
+                    "apply <0.001 s")
 
 
 def test_an_absent_lane_and_an_omitted_member_say_so_and_print_no_figure(osm_lane_dir, tmp_path):
     text = "\n".join(R.report(R.load(_route_file(tmp_path))))
-    assert text == "the OSM lane was not read: no OpenStreetMap country has been cut on this install"
+    assert text.startswith("the OSM lane was not read: no OpenStreetMap country has been cut on this install\nstreet view frame budget: ")
     omitted = R.report({"omitted": "max_bytes is below the member's fixed part", "over_budget": True, "needs_at_least_bytes": 412})
-    assert omitted == ["the member was omitted: max_bytes is below the member's fixed part (needs at least 412 bytes)"]
+    assert omitted == ["the member was omitted: max_bytes is below the member's fixed part (needs at least 412 bytes); the lane: not stated"]
+    assert R.report({"error": "TypeError", "reason": "max_bytes is not a whole number"}) == [
+        "the member could not be built: max_bytes is not a whole number"]
+
+
+def test_a_member_cut_to_its_budget_counts_what_it_dropped_never_calls_it_none(applied):
+    from src.osm import diagnostics as D
+
+    small = D.diagnostics_member(900)
+    assert small["countries_not_shown"] == 1 and small["countries"] == [], "the fixture must make the member drop its country"
+    text = "\n".join(R.report(small))
+    assert text.startswith("1 countries with change files or gaps (1 not shown: cut to fit the member's budget)")
+    assert "countries no change file has touched: none" in text and "cut to fit the member's budget: " in text and "countries 1" in text
+    hidden = dict(small, countries_without_updates=[], countries_without_updates_not_shown=3)
+    assert "countries no change file has touched: 3 not shown (cut to fit the member's budget)" in "\n".join(R.report(hidden))
 
 
 def test_a_piece_set_is_joined_and_a_missing_piece_is_named_never_guessed(applied, tmp_path):
