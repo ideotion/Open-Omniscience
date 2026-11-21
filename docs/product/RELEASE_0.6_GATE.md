@@ -163,6 +163,14 @@ the file. And the Settings OSM picker shows, once a chosen country has applied f
 per file, how many, through which date) beside the from-memory estimate, which it replaces as the lead figure; its cadence text no
 longer says the daily apply "arrives in 0.6" (row 278, PR #2239, Q824).
 
+**Progress 2026-11-21 (row 286, R775; the row stays OPEN on the same two operator items).** Once daily files are applied, the
+picker's lane cell, the map's OpenStreetMap line, the completeness heads and the object and place cards name the extract's date as
+the extract's and state beside it the data time of the last file applied in an unbroken sequence from the extract (the file's own
+replication timestamp, never the day it was applied here); applied files whose timestamp was not recorded read "daily updates
+applied, data date not read". With no file applied every surface reads as before. All of them, the view legend, the geography and
+the trends vintages read one function, `country_data_date` (`src/osm/lane_models.py`); the words claim the files were applied, never
+that every object is current to that date (row 286, PR pending).
+
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 
 **What it must demonstrate.** Floor = every country in `language_countries.yml` (official / de-facto / regional

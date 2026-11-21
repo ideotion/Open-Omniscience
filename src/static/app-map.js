@@ -1896,8 +1896,11 @@
     function _ooOsmLaneVintage(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const day = (iso) => (iso ? ooIsoDate(iso) : t("not stated in the extract"));
+      // Row 286 (R775): applied files whose own date was not read say so; "no diff applied" is said only when none was.
       return (d.vintage || []).map((v) => _mapTf("Extract date {a}: {d}.", { a: v.alpha3, d: day(v.extract_date) }) + " "
-        + (v.last_diff ? _mapTf("Last applied diff {a}: {d}.", { a: v.alpha3, d: day(v.last_diff) }) : t("No daily diff applied since the extract."))).join(" ");
+        + (v.last_diff ? _mapTf("Last applied diff {a}: {d}.", { a: v.alpha3, d: day(v.last_diff) })
+          : v.updates === "date_not_read" ? _mapTf("Daily updates applied {a}, data date not read.", { a: v.alpha3 })
+          : t("No daily diff applied since the extract."))).join(" ");
     }
     function _ooOsmLaneLegend(host, d, readMs, drawMs) {
       const el = host.querySelector("[data-oomap-osmlane]"); if (!el || !d) return;
@@ -3482,7 +3485,11 @@
       const c = _osmLaneByA3()[r.alpha3];
       if (!c) return `<span class="muted" title="${esc(t("The continent extract is downloaded first, then read into the map data."))}">${esc(t("Not read yet"))}</span>`;
       if (c.status === "complete") {
-        return `<span class="pill ok">${esc(c.vintage ? osmTf("Read · data as of {date}", { date: ooIsoDate(c.vintage) }) : t("Read · the extract states no date"))}</span>`;
+        // Row 286: once a daily change file was applied the extract's date is named as the extract's, never as the data's.
+        const read = !c.vintage ? t("Read · the extract states no date")
+          : ooOsmUpdated(c.data_date) ? osmTf("Read · extract of {date}", { date: ooIsoDate(c.vintage) })
+          : osmTf("Read · data as of {date}", { date: ooIsoDate(c.vintage) });
+        return `<span class="pill ok">${esc(read)}${ooOsmUpdatesHtml(c.data_date)}</span>`;
       }
       if (c.status === "ingesting") return `<span class="pill">${esc(t("Reading…"))}</span>`;
       return `<span class="pill err" title="${esc(c.error || "")}">${esc(t("Reading failed"))}</span>`;
@@ -3593,6 +3600,17 @@
     // Q828: the World map states the vintage of the OpenStreetMap data and links to where it
     // is chosen. Read from the lane's own record (the extract header's timestamp), never
     // assumed; a country the extract gave no date for says so.
+    // "{country}, as of {date}" (the extract's date, nothing applied since) or, once a daily change file was applied,
+    // "{country}: extract of {date}" followed by the last applied file's own date (row 286, R775). Returns HTML.
+    function _osmVintageHead(country, vintage, dd, noDateSaid) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const head = !vintage
+        ? (noDateSaid ? osmTf("{country}, date not stated in the extract", { country }) : country)
+        : ooOsmUpdated(dd) ? osmTf("{country}: extract of {date}", { country, date: ooIsoDate(vintage) })
+        : osmTf("{country}, as of {date}", { country, date: ooIsoDate(vintage) });
+      return esc(head) + ooOsmUpdatesHtml(dd);
+    }
     async function loadOsmVintage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
@@ -3602,9 +3620,7 @@
       const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
       const link = `<a href="#" data-on-click="openSettingsOsm();return false">${esc(t("Settings → OpenStreetMap"))}</a>`;
       el.innerHTML = done.length
-        ? `${esc(t("OpenStreetMap places, roads and buildings:"))} ${done.map((c) => esc(c.vintage
-            ? osmTf("{country}, as of {date}", { country: _osmPickLabel(c.alpha3, c.name), date: ooIsoDate(c.vintage) })
-            : osmTf("{country}, date not stated in the extract", { country: _osmPickLabel(c.alpha3, c.name) }))).join(" · ")} · ${link}`
+        ? `${esc(t("OpenStreetMap places, roads and buildings:"))} ${done.map((c) => _osmVintageHead(_osmPickLabel(c.alpha3, c.name), c.vintage, c.data_date, true)).join(" · ")} · ${link}`
         : `${esc(t("No OpenStreetMap country has been read yet."))} ${link}`;
     }
 
@@ -3790,14 +3806,14 @@
       const host = $("osm-comp-body"); if (!host || !_osmComp) return;
       host.innerHTML = _osmComp.map((c) => {
         const name = _osmPickLabel(c.country, c.name);
-        const head = c.vintage ? osmCompTf("{country}, as of {date}", { country: name, date: ooIsoDate(c.vintage) }) : name;
+        const head = _osmVintageHead(name, c.vintage, c.data_date, false);   // HTML, escaped inside
         if (c.status !== "complete") {
-          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("This country's figures could not be read."))}</div>` + _osmCompUpdate(c);
+          return `<h3 class="lib-sub">${head}</h3><div class="muted">${esc(t("This country's figures could not be read."))}</div>` + _osmCompUpdate(c);
         }
         if (!c.n) {
-          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("No places with metadata were kept for this country, so there is no share to show."))}</div>` + _osmCompUpdate(c);
+          return `<h3 class="lib-sub">${head}</h3><div class="muted">${esc(t("No places with metadata were kept for this country, so there is no share to show."))}</div>` + _osmCompUpdate(c);
         }
-        return `<h3 class="lib-sub">${esc(head)}</h3>` + _osmCompUpdate(c)
+        return `<h3 class="lib-sub">${head}</h3>` + _osmCompUpdate(c)
           + `<div class="hint" title="${esc(t(c.method || ""))}">${esc(osmCompTf("{n} places with metadata, each tag counted on its own.", { n: fmtNum(c.n, 0) }))}</div>`
           + _osmCompTable(c.keys, c.n)
           + `<div class="card-caveat" style="margin-top:4px">${esc(t(c.caveat || ""))}</div>`
@@ -4156,6 +4172,7 @@
       const extract = v.extract ? ooIsoDate(v.extract) : t("Not recorded");
       const vint = v.last_diff
         ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
+        : v.updates === "date_not_read" ? osmCompTf("Counted from the extract of {extract}, with daily updates applied; their data date was not read.", { extract })
         : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
       const now = `<h4 class="lib-sub">${esc(t("Counted now"))}</h4>`
         + `<div class="hint" title="${esc(t(snap.method || ""))}">${esc(vint)} ${esc(t("Hover for the method."))}</div>`
@@ -4311,6 +4328,7 @@
       const extract = v && v.extract ? ooIsoDate(v.extract) : t("Not recorded");
       const sentence = v && v.last_diff
         ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
+        : v && v.updates === "date_not_read" ? osmCompTf("Counted from the extract of {extract}, with daily updates applied; their data date was not read.", { extract })
         : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
       // The «changed» measure counts a window, so it says where the window starts (Q814 = b: observed here, never the planet's past).
       const window_ = since ? " " + osmCompTf("Changes observed here since {since}.", { since: ooIsoDate(since) }) : "";
@@ -4336,7 +4354,7 @@
       const lane = (done || []).find((x) => x.alpha3 === _osmGeogLevel);
       if (!c || !lane) return out;
       const cname = _osmPickLabel(lane.alpha3, lane.name);
-      out.vintage.push(_osmGeogVintage(cname, { extract: lane.vintage, last_diff: lane.diff_timestamp }));
+      out.vintage.push(_osmGeogVintage(cname, lane.data_date || { extract: lane.vintage, last_diff: lane.diff_timestamp }));
       const a = c.admin1 || {};
       if (m === "changed") { out.note = t("A change row records the country a place was in, not its region, so this measure is drawn by country only."); return out; }
       if (a.status !== "complete") { out.status = a.status || "unreadable"; return out; }

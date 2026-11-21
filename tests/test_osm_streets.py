@@ -111,7 +111,7 @@ def test_the_vintage_is_the_extract_date_and_the_last_applied_diff(osm_lane_dir)
         c.diff_sequence = 4321
     (v,) = V.streets(*BOX)["vintage"]
     assert v == {"alpha3": "ZZZ", "extract_date": "2026-10-01T21:00:00+00:00",
-                 "last_diff": "2026-11-03T21:00:00+00:00", "diff_sequence": 4321}
+                 "last_diff": "2026-11-03T21:00:00+00:00", "diff_sequence": 4321, "updates": "dated"}
 
 
 def test_over_the_count_cap_the_lowest_classes_go_first_and_are_named(osm_lane_dir, monkeypatch):

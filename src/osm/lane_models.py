@@ -189,6 +189,36 @@ def country_basis(country: OsmCountry | None) -> str | None:
     return base if country.diff_sequence is None else f"{base}+diff{country.diff_sequence}"
 
 
+def _utc_iso(d: datetime | None) -> str | None:
+    if d is None:
+        return None
+    return (d if d.tzinfo else d.replace(tzinfo=UTC)).isoformat()
+
+
+def country_data_date(country: OsmCountry) -> dict[str, Any]:
+    """The country's data dates as every OSM map surface states them (row 286, R775): ONE source of truth.
+
+    ``extract`` is the extract's own date (``extract_vintage``). ``last_diff`` is the data time of the last daily change file
+    applied in an unbroken sequence from the extract: ``diff_timestamp``, which the daily apply writes only after a file applied
+    in full and only when it was the next one owed (``src/osm/apply.py``), so a failed, skipped or partly applied file never moves
+    it. It is the file's own timestamp (its replication state), never the day it was applied here. ``updates`` names the state:
+    ``none`` (no change file applied since the extract), ``dated`` (applied through ``last_diff``) or ``date_not_read`` (files
+    applied, their timestamp not recorded): then ``last_diff`` is None and nothing stands in for it.
+    """
+    if country.diff_sequence is None:
+        updates = "none"
+    elif country.diff_timestamp is None:
+        updates = "date_not_read"
+    else:
+        updates = "dated"
+    return {
+        "extract": _utc_iso(country.extract_vintage),
+        "last_diff": _utc_iso(country.diff_timestamp) if updates == "dated" else None,
+        "diff_sequence": country.diff_sequence,
+        "updates": updates,
+    }
+
+
 class OsmTagChange(LaneBase):
     """Q813 = a: one tag-level change, written by the daily apply (``src/osm/apply.py``, S06-01 S2).
 
