@@ -336,6 +336,38 @@ def test_the_status_names_the_hold_and_the_transport_a_click_would_use(monkeypat
         clear_kill_switch()
 
 
+def test_a_resume_that_starts_nothing_says_it_did_not_resume(monkeypatch, _service):
+    """When the click lifts the hold but nothing can start (no editions, a failed build), ``resume_held_lane`` puts the hold
+    back; the answer must then say ``resumed: false``, not report a resume the lane never made."""
+    from src.api import scheduler as api
+    from src.ingest import clear_kill_switch
+
+    monkeypatch.setenv("OO_NO_SCHEDULER", "0")
+    clear_kill_switch()
+    monkeypatch.setattr(api, "save_settings", lambda fields, **_kw: None)
+    monkeypatch.setattr(api, "_wiki_lane_block", lambda: {})
+    _settings(monkeypatch)
+    holder = object()
+    monkeypatch.setattr(_service, "_RUNNER", holder)
+    _service._note_hold(holder, "protected")
+    monkeypatch.setattr(_service, "_RUNNER", None)
+    class _NoEditions:
+        held_by = None
+        streaming = False
+
+        def start(self):
+            return False  # nothing to stream: no edition is watched
+
+        def stop(self, *_a, **_k):
+            return None
+
+    monkeypatch.setattr(_service, "_build", lambda *_a: _NoEditions())
+
+    out = api.resume_wiki_lane(api.WikiLaneResumeBody(transport=tw.display_token()))
+    assert out["resumed"] is False and out["streaming"] is False
+    assert _service.lane_hold() is not None, "the hold stays, so no later Start can use a transport the operator was not shown"
+
+
 def test_the_resume_endpoint_refuses_without_the_token_of_the_transport_now_in_force(monkeypatch, _service, tmp_path):
     from fastapi import HTTPException
 
@@ -465,14 +497,15 @@ def test_a_page_whose_window_saw_the_change_is_not_stored(monkeypatch):
 
 
 def test_the_stream_button_resumes_a_held_lane_only_through_the_resume_route_after_naming_the_transport():
+    from tests.js_source_helper import function_source
+
     src = (_ROOT / "src/static/app-sources.js").read_text(encoding="utf-8")
-    start = src.index("async function resumeHeldWikiLane(")
-    body = src[start : src.index("async function stopWikiLane(", start)]
+    body = function_source(src, "resumeHeldWikiLane")
     assert "/api/scheduler/wiki-lane/resume" in body
     assert "confirm(lines.why" in body and "lines.over" in body, "the reason and the transport are shown before the click"
     assert body.index("confirm(") < body.index("ensureOnline(") < body.index("/api/scheduler/wiki-lane/resume")
     assert "held.token" in body
-    toggle = src[src.index("async function toggleWikiLane("):start]
+    toggle = function_source(src, "toggleWikiLane")
     assert "if (_wikiLaneWhy && _wikiLaneWhy.held) { await resumeHeldWikiLane(); return; }" in toggle
     assert '"transport-held"' in src
 

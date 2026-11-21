@@ -797,7 +797,9 @@ def resume_wiki_lane(body: WikiLaneResumeBody | None = None) -> dict:
         from src.wiki.service import clear_hold
 
         clear_hold()  # tests and headless runs drive the lane themselves
-    return {"resumed": True, "streaming": bool(started), "wiki_lane": _wiki_lane_block()}
+    # "resumed" says whether the hold was lifted, not that the click arrived: when nothing could start (no editions, a build that
+    # failed) the hold is put back and the answer says so (the Opus read of row 245).
+    return {"resumed": lane_hold() is None, "streaming": bool(started), "wiki_lane": _wiki_lane_block()}
 
 
 @router.get("/runs")
