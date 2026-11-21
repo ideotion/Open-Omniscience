@@ -252,6 +252,7 @@ def save_settings(updates: dict) -> SafetySettings:
     else:
         reset = []
     current = _settings_from(stored)
+    was_protected = current.is_protected
     current.reset_fields = reset  # type: ignore[attr-defined]
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
@@ -288,7 +289,8 @@ def save_settings(updates: dict) -> SafetySettings:
         from src.config.kv_store import kv_set_json
 
         kv_set_json(_KV_KEY, payload)
-    if current.is_protected:
+    current.stopped_ai_installs = []  # type: ignore[attr-defined]
+    if current.is_protected and not was_protected:
         # R765: protected mode is written first, THEN any AI install still downloading over a direct connection is stopped.
         current.stopped_ai_installs = _stop_ai_installs()  # type: ignore[attr-defined]
     return current

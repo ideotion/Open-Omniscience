@@ -33,7 +33,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(autouse=True)
 def _clean_stop_state(monkeypatch):
     monkeypatch.setattr(it, "_STOPPED_AT", {})
-    monkeypatch.setattr(it, "_PROCS", set())
+    monkeypatch.setattr(it, "_PROCS", {})
+    monkeypatch.setattr(it, "_ACTIVE_PULLS", 0)
 
 
 def _settings(monkeypatch, **kw):
@@ -96,12 +97,13 @@ def test_a_running_pull_stops_reading_the_moment_protected_mode_is_switched_on(m
     monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: type("M", (), {"stop_all": lambda self, n: False})())
     gen = c.pull("qwen2.5:3b")
     assert next(gen)["completed"] == 0
-    it.stop_running_installs()
+    assert it.stop_running_installs() == ["ollama-pull"]  # a pull on the direct route is named too
     with pytest.raises(LLMUnavailable) as exc:
         next(gen)
     assert str(exc.value) == it.AI_INSTALL_STOPPED_NOTE
     # one line was read past the switch (the one that told the loop to stop) and none was handed on; the request is closed
     assert len(sent) == 2 and stream.closed
+    assert it._ACTIVE_PULLS == 0
 
 
 def test_the_pull_queue_records_the_stop_and_drops_what_was_waiting(monkeypatch):
@@ -191,6 +193,44 @@ def test_a_running_vllm_job_is_cancelled_and_its_status_says_why(monkeypatch, ki
     # a later run, started after the switch, carries no stale note
     later = {"kind": kind, "state": "cancelled", "started_at": time.time() + 1}
     assert "stopped_note" not in _with_stop_note(later)
+    # a run that finished as the switch landed is labelled "cancelled" by the job, but what it installed is used: no note
+    done = {**job.status(), "result": {"installed": True, "state": "done"}}
+    assert "stopped_note" not in _with_stop_note(done)
+
+
+def test_a_run_the_operator_had_already_cancelled_keeps_reading_as_theirs(monkeypatch):
+    from src.api.llm import _with_stop_note
+    from src.jobs.background import BackgroundJob
+
+    release = threading.Event()
+
+    def worker(ctx):
+        release.wait(5)  # still terminating its child when protected mode is switched on
+        return {"state": "cancelled"}
+
+    job = BackgroundJob("vllm-install", "test", worker, cancellable=True)
+    monkeypatch.setattr("src.jobs.background.get_job", lambda k: job if k == "vllm-install" else None)
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: type("M", (), {"stop_all": lambda self, n: False})())
+    job.start()
+    job.cancel()
+    it.stop_running_installs()
+    release.set()
+    assert _wait(lambda: job.status()["state"] == "cancelled")
+    assert "stopped_note" not in _with_stop_note(job.status())
+
+
+def test_a_step_the_stop_came_before_is_never_spawned(monkeypatch):
+    """The uv step falls back to pip when it is stopped; the runner must not then start pip."""
+    import src.llm.vllm_lifecycle as vl
+
+    spawned: list = []
+    def popen(*a, **k):
+        spawned.append(a)
+        raise AssertionError("spawned")
+
+    monkeypatch.setattr(vl.subprocess, "Popen", popen)
+    assert list(vl._default_runner(["pip", "install", "vllm"], should_stop=lambda: True)) == [vl._HEARTBEAT]
+    assert spawned == []
 
 
 def test_the_stop_never_raises_even_when_every_source_fails(monkeypatch):
@@ -207,6 +247,7 @@ def test_the_stop_never_raises_even_when_every_source_fails(monkeypatch):
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the Ollama installer is a POSIX shell script")
 def test_the_installer_script_and_the_download_it_waits_on_are_ended(monkeypatch, tmp_path):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
     """The script's shell is terminated, and the "curl" it waits on (a child the signal does not reach) ends when its next
     progress write meets the closed pipe."""
     import src.llm.installer as inst
@@ -250,6 +291,44 @@ def test_the_installer_script_and_the_download_it_waits_on_are_ended(monkeypatch
 
     assert _wait(gone, 10)
     assert not it._PROCS
+    # what it unpacked is not reported as installed until an install finishes
+    assert it._interrupted_marker().exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the Ollama installer is a POSIX shell script")
+def test_a_silent_installer_still_sees_the_stop(monkeypatch, tmp_path):
+    import src.llm.installer as inst
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    _settings(monkeypatch)
+    script = tmp_path / "install.sh"
+    script.write_text("#!/bin/sh\necho start\nsleep 60\necho never\n", encoding="utf-8")
+    monkeypatch.setattr(inst, "_validate_staged", lambda p: script)
+    monkeypatch.setattr(inst, "_check_online", lambda: None)
+    monkeypatch.setattr(inst, "_is_root", lambda: True)
+    monkeypatch.setattr(it, "_TERMINATE_WAIT_S", 2.0)
+    gen = inst.run_installer(str(script))
+    assert next(gen) == "start"
+    with it._STOP_LOCK:  # only the generation: the reader alone must notice, with nothing printed
+        it._STOP_GENERATION += 1
+    began = time.monotonic()
+    with pytest.raises(inst.InstallerUnavailable):
+        list(gen)
+    assert time.monotonic() - began < 10
+
+
+def test_a_half_unpacked_ollama_is_not_reported_until_an_install_finishes(monkeypatch, tmp_path):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    binary = tmp_path / "ollama"
+    binary.write_bytes(b"truncated")
+    it.mark_ollama_install_interrupted()
+    assert it.ollama_install_interrupted(str(binary)) is True
+    # a binary written after the stop (a later install, by the app or by hand) is believed
+    os.utime(it._interrupted_marker(), (time.time() - 60, time.time() - 60))
+    binary.write_bytes(b"whole")
+    assert it.ollama_install_interrupted(str(binary)) is False
+    it.clear_ollama_install_interrupted()
+    assert it.ollama_install_interrupted(str(binary)) is False
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the Ollama installer is a POSIX shell script")
@@ -264,9 +343,36 @@ def test_an_installer_that_finished_before_the_switch_is_reported_as_finished(mo
     monkeypatch.setattr(inst, "_is_root", lambda: True)
     gen = inst.run_installer(str(script))
     assert next(gen) == "done"
-    with it._STOP_LOCK:  # a switch that lands after the script's last line, while it exits 0
+    (proc,) = list(it._PROCS)
+    assert _wait(lambda: _exited(proc.pid))  # the script has finished; the reader has not yet seen its end
+    with it._STOP_LOCK:  # a switch that lands after the script's last line, once it has exited 0
         it._STOP_GENERATION += 1
     assert list(gen) == ["__exit__ 0"]
+
+
+def test_only_the_switch_stops_installs_not_every_protected_save(monkeypatch, tmp_path):
+    settings = _isolated_settings_file(monkeypatch, tmp_path)
+    calls: list[int] = []
+    def stop() -> list[str]:
+        calls.append(1)
+        return []
+
+    monkeypatch.setattr(it, "stop_running_installs", stop)
+    settings.save_settings({"fetch_mode": "protected", "http_proxy": "socks5h://127.0.0.1:9050"})
+    settings.save_settings({"http_proxy": "socks5h://127.0.0.1:9150"})  # protected to protected: nothing can be running
+    assert calls == [1]
+
+
+def _exited(pid: int) -> bool:
+    """True once ``pid`` is a zombie (exited, not yet reaped) or gone."""
+    if not os.path.isdir("/proc/self"):  # no procfs (macOS): give the two-line script ample time instead
+        time.sleep(1.0)
+        return True
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            return fh.read().split(") ", 1)[1].startswith("Z")
+    except OSError:
+        return True
 
 
 # --------------------------------------------------------------------------- the save

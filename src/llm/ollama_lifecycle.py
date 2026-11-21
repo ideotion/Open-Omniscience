@@ -80,9 +80,13 @@ def binary_path() -> str | None:
 
     This is the INSTALLED question, and it is answered without touching the network
     or the daemon -- which is the entire point: it stays truthful while the server
-    is stopped.
+    is stopped. A binary that an install stopped by the switch to protected mode may have left half unpacked is not
+    reported until an install finishes (R765).
     """
-    return shutil.which("ollama")
+    from src.llm.install_transport import ollama_install_interrupted
+
+    path = shutil.which("ollama")
+    return None if path is None or ollama_install_interrupted(path) else path
 
 
 def is_installed() -> bool:

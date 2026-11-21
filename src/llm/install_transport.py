@@ -65,7 +65,8 @@ import threading as _threading  # noqa: E402 - kept beside the R765 block it ser
 _STOP_LOCK = _threading.Lock()
 _STOP_GENERATION = 0
 _STOPPED_AT: dict[str, float] = {}
-_PROCS: set = set()
+_PROCS: dict = {}  # spawned install child -> True when it leads its own process group
+_ACTIVE_PULLS = 0  # daemon pulls streaming now, through the queue or the direct route
 _TERMINATE_WAIT_S = 10.0
 
 
@@ -89,32 +90,103 @@ def stop_note(kind: str, started_at: float | None) -> str | None:
     return AI_INSTALLER_STOPPED_NOTE if kind == "ollama-installer" else AI_INSTALL_STOPPED_NOTE
 
 
-def register_child(proc) -> None:
-    """A spawned install child the switch must be able to stop (the Ollama script runs outside any job)."""
+def register_child(proc, *, group: bool = False) -> None:
+    """A spawned install child the switch must be able to stop (the Ollama script runs outside any job). ``group``: the child leads
+    its own process group, and the stop signals the whole group."""
     with _STOP_LOCK:
-        _PROCS.add(proc)
+        _PROCS[proc] = group
 
 
 def unregister_child(proc) -> None:
     with _STOP_LOCK:
-        _PROCS.discard(proc)
+        _PROCS.pop(proc, None)
 
 
-def _terminate(proc) -> None:
-    """SIGTERM, a bounded wait, then SIGKILL. Never raises."""
+def pull_started() -> None:
+    """A daemon pull began streaming (``OllamaClient.pull``), so a stop can name it even when it did not come from the queue."""
+    global _ACTIVE_PULLS
+    with _STOP_LOCK:
+        _ACTIVE_PULLS += 1
+
+
+def pull_ended() -> None:
+    global _ACTIVE_PULLS
+    with _STOP_LOCK:
+        _ACTIVE_PULLS = max(0, _ACTIVE_PULLS - 1)
+
+
+def _signal(proc, sig, group: bool) -> None:
+    import os
+
+    if group and hasattr(os, "killpg"):
+        try:
+            os.killpg(proc.pid, sig)
+            return
+        except OSError:
+            pass  # the group is gone or not ours: the child itself below
+    proc.send_signal(sig)
+
+
+def _terminate(proc, *, group: bool = False) -> None:
+    """SIGTERM, a bounded wait, then SIGKILL; to the whole process group when ``group``. Never raises."""
+    import contextlib
+    import signal
     import subprocess
 
     try:
-        if proc.poll() is not None:
+        if proc.poll() is not None and not group:
             return
-        proc.terminate()
-        try:
+        _signal(proc, signal.SIGTERM, group)
+        with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=_TERMINATE_WAIT_S)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        if group or proc.poll() is None:  # the leader may be gone while a child it was waiting on still downloads
+            _signal(proc, getattr(signal, "SIGKILL", signal.SIGTERM), group)
             proc.wait(timeout=5)
     except Exception:  # noqa: BLE001, S110 - best effort: the child may already be gone
         pass
+
+
+# An Ollama install the switch cut short may have unpacked part of the program. Until a run finishes, the binary it may have left
+# is not reported as installed. The marker's time is compared with the binary's ctime (which unpacking sets and nothing can set
+# back): a binary written after the marker came from a later install, by this app or by hand, and is believed.
+
+
+def _interrupted_marker():
+    from src.paths import data_dir
+
+    return data_dir() / "ollama_install_interrupted"
+
+
+def mark_ollama_install_interrupted() -> None:
+    try:
+        marker = _interrupted_marker()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("stopped because protected mode was switched on\n", encoding="utf-8")
+    except OSError:
+        pass  # the stop is said in the install's own note either way
+
+
+def clear_ollama_install_interrupted() -> None:
+    import contextlib
+
+    with contextlib.suppress(OSError):
+        _interrupted_marker().unlink(missing_ok=True)
+
+
+def ollama_install_interrupted(binary: str | None) -> bool:
+    """True while the binary at ``binary`` may be one a stopped install left half unpacked."""
+    import os
+
+    try:
+        marked = _interrupted_marker().stat().st_mtime
+    except OSError:
+        return False
+    if binary is None:
+        return True
+    try:
+        return os.stat(binary).st_ctime <= marked
+    except OSError:
+        return True
 
 
 def stop_running_installs() -> list[str]:
@@ -128,15 +200,16 @@ def stop_running_installs() -> list[str]:
     now = time.time()
     with _STOP_LOCK:
         _STOP_GENERATION += 1
-        procs = list(_PROCS)
+        procs = list(_PROCS.items())
     try:
         from src.jobs.background import get_job
 
         for kind in ("vllm-install", "vllm-model-download"):
             job = get_job(kind)
             if job is not None and job.status().get("running"):
-                with _STOP_LOCK:
-                    _STOPPED_AT[kind] = now
+                if not job.stop_requested():  # a run the operator already cancelled keeps reading as theirs
+                    with _STOP_LOCK:
+                        _STOPPED_AT[kind] = now
                 job.cancel()  # its runner terminates the child (SIGTERM, bounded wait, SIGKILL) at its next poll
                 stopped.append(kind)
     except Exception:  # noqa: BLE001, S110 - one source of installs never hides the others
@@ -144,14 +217,19 @@ def stop_running_installs() -> list[str]:
     try:
         from src.llm.pull_queue import get_pull_manager
 
-        if get_pull_manager().stop_all(AI_INSTALL_STOPPED_NOTE):
-            stopped.append("ollama-pull")
+        queued = get_pull_manager().stop_all(AI_INSTALL_STOPPED_NOTE)
     except Exception:  # noqa: BLE001, S110
-        pass
+        queued = False
+    with _STOP_LOCK:
+        streaming = _ACTIVE_PULLS > 0
+    if queued or streaming:  # a pull on the direct route is stopped by the generation above and named here
+        stopped.append("ollama-pull")
     if procs:
         with _STOP_LOCK:
             _STOPPED_AT["ollama-installer"] = now
         stopped.append("ollama-installer")
-        for proc in procs:
-            _threading.Thread(target=_terminate, args=(proc,), name="ai-install-stop", daemon=True).start()
+        for proc, group in procs:
+            _threading.Thread(
+                target=_terminate, args=(proc,), kwargs={"group": group}, name="ai-install-stop", daemon=True
+            ).start()
     return stopped

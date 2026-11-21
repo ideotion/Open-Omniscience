@@ -150,8 +150,11 @@ class InstallerFetchFailed(InstallerVerificationError):
 
 
 def ollama_present() -> bool:
-    """True if an ``ollama`` binary is already on PATH (nothing to install)."""
-    return shutil.which("ollama") is not None
+    """True if an ``ollama`` binary is already on PATH (nothing to install), and no install of it was cut short (R765)."""
+    from src.llm.install_transport import ollama_install_interrupted
+
+    path = shutil.which("ollama")
+    return path is not None and not ollama_install_interrupted(path)
 
 
 def _is_root() -> bool:
@@ -451,39 +454,83 @@ def run_installer(path: str) -> Iterator[str]:
         # takes ``model_store.launch_env``.
         from src.llm.model_store import child_env
 
+        root = cmd[0] == "sh"
         proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, verified script
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            bufsize=0,
             env=child_env(),
+            # R765: as root the script gets its own process group, so the stop can end the whole tree (the curl and tar it
+            # waits on as well as its shell). Not under sudo: a new session drops the terminal a cached sudo ticket is tied to.
+            start_new_session=root,
         )
         assert proc.stdout is not None
-        # R765: the switch to protected mode terminates this child (SIGTERM, a bounded wait, SIGKILL) from its own thread. That
-        # reaches the script's shell, not the curl it is waiting on (under sudo this process may not signal it at all), so this
-        # loop also stops reading and closes the pipe: curl writes its progress meter into that pipe, and its next write then
-        # fails and ends it. The script's output arrives at least as often as that meter, and text mode reads its \r as a line end.
-        register_child(proc)
+        # R765: the switch to protected mode terminates this child from its own thread (SIGTERM to the group as root, a bounded
+        # wait, SIGKILL). Under sudo the signal may not reach the root-owned curl at all, so this loop also watches for the stop
+        # between reads (at most _READ_POLL_S apart, whatever the script prints) and then closes the pipe: curl writes its
+        # progress meter into that pipe, and its next write fails and ends it.
+        register_child(proc, group=root)
         stopped = False
         try:
-            for line in proc.stdout:
-                if stopped_since(generation):
+            for line in _lines(proc.stdout.fileno(), lambda: stopped_since(generation)):
+                if line is None:
                     stopped = True
                     break
-                yield line.rstrip("\n")
+                yield line
         finally:
             unregister_child(proc)
             proc.stdout.close()
             if stopped:
                 from src.llm.install_transport import _terminate
 
-                _terminate(proc)
+                _terminate(proc, group=root)
             code = proc.wait()
         # A script that exited 0 finished before the switch reached it, and is reported as the finished install it is.
-        if stopped or (code != 0 and stopped_since(generation)):
+        if code != 0 and (stopped or stopped_since(generation)):
+            # What it unpacked may be cut short, so the binary is not reported as installed until a run finishes (R765).
+            from src.llm.install_transport import mark_ollama_install_interrupted
+
+            mark_ollama_install_interrupted()
             raise InstallerUnavailable(AI_INSTALLER_STOPPED_NOTE)
+        if code == 0:
+            from src.llm.install_transport import clear_ollama_install_interrupted
+
+            clear_ollama_install_interrupted()
         yield f"__exit__ {code}"
+
+
+#: How often the installer's reader looks for a stop while the script prints nothing (R765).
+_READ_POLL_S = 0.5
+
+
+def _lines(fd: int, stop: Callable[[], bool]) -> Iterator[str | None]:
+    """The script's output as text lines (``\\n``, ``\\r\\n`` and a progress meter's bare ``\\r`` all end a line), read with a
+    timeout so a silent script still sees the stop. Yields None once ``stop()`` is true, then ends."""
+    import re
+    import select
+
+    buf = b""
+    while True:
+        if stop():
+            yield None
+            return
+        ready, _, _ = select.select([fd], [], [], _READ_POLL_S)
+        if not ready:
+            continue
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            break
+        buf += chunk
+        parts = re.split(rb"\r\n|\r|\n", buf)
+        buf = parts.pop()
+        for part in parts:
+            if stop():
+                yield None
+                return
+            yield part.decode("utf-8", "replace")
+    if buf:
+        yield buf.decode("utf-8", "replace")
 
 
 # -- real fetchers (through the guarded factory) ----------------------------- #

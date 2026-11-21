@@ -1128,7 +1128,13 @@ def _with_stop_note(job: dict) -> dict:
     "cancelled" the operator never clicked."""
     from src.llm.install_transport import stop_note
 
-    if job.get("state") == "cancelled":
+    raw = job.get("result")
+    result: dict = raw if isinstance(raw, dict) else {}
+    # A run that finished as the switch landed reads "cancelled" too (``BackgroundJob`` labels any stopped run so); what it says it
+    # installed or downloaded is used, so it gets no note saying otherwise.
+    # (``is True``: the batch download counts its models under the same key, and a batch the switch cut short still gets its note.)
+    finished = result.get("installed") is True or (result.get("downloaded") is True and not result.get("cancelled"))
+    if job.get("state") == "cancelled" and not finished:
         note = stop_note(job.get("kind") or "", job.get("started_at"))
         if note:
             return {**job, "detail": note, "stopped_note": note}
