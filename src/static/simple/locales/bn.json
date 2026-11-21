@@ -146,6 +146,8 @@
   "Language": "ভাষা",
   "Any language": "যেকোনো ভাষা",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "সংখ্যাগুলো প্রতিটি উৎসের ঘোষিত ভাষা ধরে, শুধু সাম্প্রতিক নিবন্ধগুলোর ওপর। ফিল্টারটি লেখা থেকে শনাক্ত ভাষার নিবন্ধও খুঁজে পায়, তাই সংখ্যা ফলাফলের থেকে আলাদা হতে পারে।",
-  "Articles counted": "গণনা করা নিবন্ধ"
+  "Articles counted": "গণনা করা নিবন্ধ",
+  "candidates not yet checked": "এখনও যাচাই না করা প্রার্থী",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "প্রার্থী হলো এমন একটি সাইট যা অ্যাপ খুঁজে পেয়েছে বা পেয়েছে, কিন্তু এখনও যাচাই করেনি। এটি থেকে কিছু সংগ্রহ করা হয় না এবং এটিকে উৎস হিসেবে গণনা করা হয় না।"
  }
 }
