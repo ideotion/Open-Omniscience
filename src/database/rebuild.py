@@ -34,7 +34,9 @@ inside that hold, the probe is closed BEFORE the new file is moved in (so no con
 fold its log into a name the new file owns), and a log another process still holds open refuses the switch. Nothing schedules a
 rebuild and nothing runs one at start: the only caller is the operator's click (``start``).
 
-STATED LIMITS: one store at a time. A file system that cannot give a file a second name is refused before anything is copied. A reader that is still reading when the swap comes is
+STATED LIMITS: one store at a time. A lane's switch is a plain rename: on Windows, a handle another program keeps on the file
+(an antivirus scan) makes it fail, with the files as they were and the kept name removed again. A lane writer that opens the
+file during the switch waits for it (at most ``versioned.store.SWAP_WAIT_S``), then is refused by name; nothing is written. A file system that cannot give a file a second name is refused before anything is copied. A reader that is still reading when the swap comes is
 refused from its next statement, as at a restore or a repair. A Stop takes effect up to the moment the switch begins, never
 after it. A second server on the same data folder is not held by this process's swap window (the R176 limit a restore and a
 repair share): its writes after the switch land in the kept file, not the library.
@@ -289,7 +291,7 @@ def target_settings() -> dict[str, int]:
     return {"page_size": int(_FRESH_PAGE_SIZE), "auto_vacuum": int(_FRESH_AUTO_VACUUM)}
 
 
-def preflight(target: Path, bytes_in_use: int) -> dict[str, Any]:
+def preflight(target: Path, bytes_in_use: int, what: str = "library") -> dict[str, Any]:
     """Room on the library's drive for the new file: the pages in use times :data:`SIZE_FACTOR`, plus the log and
     :data:`MARGIN_BYTES`. The old file stays (as the kept copy), so nothing it holds is freed by the rebuild. The files earlier
     rebuilds kept are named with their size, since removing them is how room is made."""
@@ -304,14 +306,14 @@ def preflight(target: Path, bytes_in_use: int) -> dict[str, Any]:
     except OSError:
         report["free_bytes"] = None
         report["sufficient"] = None
-        report["detail"] = "the free space on the library's drive could not be read, so it was not checked"
+        report["detail"] = f"the free space on the {what}'s drive could not be read, so it was not checked"
         return report
     report["sufficient"] = report["free_bytes"] >= needed
     if report["sufficient"]:
         report["detail"] = "enough free space for the new file"
     else:
         report["detail"] = (
-            f"the new file needs about {_mb(needed)} MB and the library's drive has {_mb(report['free_bytes'])} MB free"
+            f"the new file needs about {_mb(needed)} MB and the {what}'s drive has {_mb(report['free_bytes'])} MB free"
             + (
                 f"; the {len(kept)} file(s) earlier rebuilds kept take {_mb(report['kept_copies_bytes'])} MB and can be removed from this panel"
                 if kept else ""
@@ -337,7 +339,7 @@ def status(store: str = LIBRARY) -> dict[str, Any]:
     out: dict[str, Any] = {
         "supported": target is not None,
         "store": store,
-        "label": store_label(store) if store in stores() else store,
+        "label": store_label(store) if store in stores() else None,  # an unknown name is never echoed
         "target": target_settings(),
         "current": None,
         "needed": None,
@@ -364,7 +366,7 @@ def status(store: str = LIBRARY) -> dict[str, Any]:
     out["current"] = {"page_size": now["page_size"], "auto_vacuum": now["auto_vacuum"]}
     out["bytes_in_use"] = now["bytes_in_use"]
     out["needed"] = any(now[k] != v for k, v in out["target"].items())
-    out["preflight"] = preflight(target, now["bytes_in_use"])
+    out["preflight"] = preflight(target, now["bytes_in_use"], "library" if store == LIBRARY else "store")
     return out
 
 
@@ -421,7 +423,8 @@ def _lane_busy(kind: str) -> list[str]:
             from src.wiki.service import lane_runner
 
             runner = lane_runner()
-            if runner is not None and not runner.stopped:
+            # told to stop is not the same as idle: a stream thread still alive may still be writing
+            if runner is not None and (not runner.stopped or runner.streaming):
                 busy.append("the Wikipedia stream (stop it in Living sources first)")
         except Exception:  # noqa: BLE001 - the class is not needed: the answer is "busy" either way
             busy.append("the Wikipedia stream (its state could not be read)")
@@ -567,7 +570,7 @@ def _run(backup_answer: str, ctx: JobContext | None, store: str = LIBRARY) -> di
         report["before"] = {"page_size": now["page_size"], "auto_vacuum": now["auto_vacuum"]}
         if all(now[k] == v for k, v in target_settings().items()):
             raise Declined("nothing-to-change", "this store already has the current settings" if lane else "the library already has the current settings")
-        room = preflight(target, now["bytes_in_use"])
+        room = preflight(target, now["bytes_in_use"], "store" if lane else "library")
         report["preflight"] = room
         if room.get("sufficient") is False:
             raise NoRoom("no-room", room["detail"], free_bytes=room["free_bytes"], needed_bytes=room["needed_bytes"])
@@ -583,7 +586,7 @@ def _run(backup_answer: str, ctx: JobContext | None, store: str = LIBRARY) -> di
                 watch = repair._Probe(target)  # opened BEFORE the copy reads its first row
                 try:
                     if _replaced_since(target, origin):  # replaced between the two looks: the probe may watch either file
-                        raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
+                        raise Declined("replaced-during-the-copy", _REPLACED_LANE_WORDS if lane else _REPLACED_WORDS)
                     if lane:
                         progress(FRAME_COPYING_STORE, store=store_label(store), mb=_mb(now["bytes_in_use"]))
                     else:
@@ -782,7 +785,9 @@ def _switch_lane(kind: str, target: Path, finished: Path, kept: Path, watch: Any
         raise Stopped("the app is shutting down")
     try:
         with lane_store.held_for_swap(kind), probes_held():  # probes_held: no status probe on the file while it is switched (row 149)
-            _switch_lane_held(target, finished, kept, watch, origin)
+            _switch_lane_held(kind, target, finished, kept, watch, origin)
+    except lane_store.LaneAlreadyHeld:
+        raise Declined("running", "this store is already being switched, so nothing was switched") from None
     except lane_store.LaneInUse as held:  # raised only as the hold begins, before anything was changed
         raise Declined(
             "store-in-use",
@@ -801,12 +806,13 @@ def _switch_lane(kind: str, target: Path, finished: Path, kept: Path, watch: Any
     return True
 
 
-def _switch_lane_held(target: Path, finished: Path, kept: Path, watch: Any, origin: tuple[int, int, bool | None]) -> None:
+def _switch_lane_held(kind: str, target: Path, finished: Path, kept: Path, watch: Any, origin: tuple[int, int, bool | None]) -> None:
     """The body of :func:`_switch_lane`, under the lane's hold. Raises :class:`Declined` (or :class:`Stopped`) with the lane's file
     as it was; returns once the new file has the name."""
     from src.database import repair, salvage
     from src.database.connect import invalidate_header_cache
     from src.database.file_identity import note_replaced
+    from src.versioned import store as lane_store
 
     stopped = refused = None
     try:
@@ -827,19 +833,16 @@ def _switch_lane_held(target: Path, finished: Path, kept: Path, watch: Any, orig
     if failed is not None:  # raised outside the handler, so the keyed connection's error is not carried as the context
         raise Declined("writer-busy", f"another connection kept this store's write lock, so it could not be told whether it was written to ({failed})")
     if _replaced_since(target, origin):
-        raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
+        raise Declined("replaced-during-the-copy", _REPLACED_LANE_WORDS)
     if moved:
         raise Declined("saved-during-the-copy", "something was saved to this store while it was copied, so nothing was switched; start the rebuild again")
     watch.close()  # the last connection of this process on the old file: SQLite folds and removes its log by name, NOW, not later
-    for side in ("-wal", "-shm"):
-        left = Path(str(target) + side)
-        size = None
-        with contextlib.suppress(OSError):
-            size = left.stat().st_size
-        if side == "-wal" and size:
-            raise Declined("store-in-use", "another program still has this store's log open, so nothing was switched; start the rebuild again")
-        if size is not None:
-            left.unlink()  # an empty log or an index nobody holds: the new file must never be opened beside them
+    if not lane_store.quiet(kind):
+        raise Declined("store-in-use", _IN_USE_WORDS)
+    # The probe was the last connection of THIS process (the hold says so): closing it removed the log and its index. A side file
+    # still there is held by another program (a second server on the same folder): never removed under it, the switch refused.
+    if any(Path(str(target) + side).exists() for side in ("-wal", "-shm")):
+        raise Declined("store-in-use", "another program still has this store open, so nothing was switched; start the rebuild again")
     try:
         os.link(target, kept)
     except FileExistsError:
@@ -847,6 +850,8 @@ def _switch_lane_held(target: Path, finished: Path, kept: Path, watch: Any, orig
     except OSError:
         raise Declined("no-hard-links", "the drive cannot give this store a second name, so the old file could not be kept") from None
     repair._fsync_dir(target.parent)
+    if not lane_store.quiet(kind):  # read once more right before the name moves: nothing of this process may be open on the old file
+        raise Declined("store-in-use", _IN_USE_WORDS)
     try:
         os.replace(finished, target)  # atomic on the same file system
     finally:
@@ -860,7 +865,14 @@ def _forget_damage_verdict(kind: str) -> None:
     damage.registry.verification_forget(kind)  # an earlier check's verdict is about the file that was switched out
 
 
+_IN_USE_WORDS = "a connection to this store was opened while it was being switched, so nothing was switched; start the rebuild again"
+
 _DAMAGED_WORDS = "this store is marked as damaged; a copy of it would read as healthy, so repair or restore it first"
+
+_REPLACED_LANE_WORDS = (
+    "another step (encrypting the stores, or a restore) put a different file under this store's name while it was copied, "
+    "so nothing was switched; start the rebuild again"
+)
 
 _REPLACED_WORDS = (
     "another step (encrypting the library, or a restore) put a different file under the library's name while it was copied, "
@@ -885,7 +897,6 @@ def _kv_invalidate() -> None:
 def _worker(ctx: JobContext, *, backup_answer: str, store: str = LIBRARY) -> dict[str, Any]:
     """A refusal and a stop are ordinary outcomes, not crashes: the job ends with the report (the panel reads it from
     :func:`last_report`), so the task manager never shows "nothing to change" or a Stop as an error."""
-    _set_running_store(store)
     try:
         return run(backup_answer, ctx, store)
     except (Declined, Stopped):
@@ -920,4 +931,11 @@ def start(backup_answer: str, store: str = LIBRARY) -> dict[str, Any]:
     room = st.get("preflight") or {}
     if room.get("sufficient") is False:
         raise NoRoom("no-room", room["detail"])
-    return REBUILD_JOB.start(backup_answer=backup_answer, store=store)
+    if REBUILD_JOB.status().get("state") == "running":
+        raise Running("running", "a rebuild is running; start this one once it has finished")
+    _set_running_store(store)  # before the job is running, so a status never reads "running" without the store it is for
+    try:
+        return REBUILD_JOB.start(backup_answer=backup_answer, store=store)
+    except BaseException:
+        _set_running_store(None)
+        raise

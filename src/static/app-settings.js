@@ -1494,6 +1494,10 @@
       if (!st.supported) {
         box.textContent = t("There is no library file here to rebuild.");
         btn.disabled = true;
+      } else if (!st.current && running) {
+        // While any rebuild runs the settings are not read (no connection may be open as the switch begins).
+        box.textContent = t("A rebuild is running; the settings are read again once it has finished.");
+        btn.disabled = true;
       } else if (!st.current) {
         box.textContent = t("The library's settings could not be read, so a rebuild is not offered.");
         btn.disabled = true;
@@ -1653,7 +1657,12 @@
     }
     async function rebuildStop() {
       const t = _rbT();
-      try { await api("/api/jobs/rebuild-database/cancel", {method: "POST"}); toast(t("Stopping the rebuild at the next safe point. The library stays as it was."), "ok"); }
+      const lane = _rebuildSt && _rebuildSt.running_store && _rebuildSt.running_store !== "library";
+      try {
+        await api("/api/jobs/rebuild-database/cancel", {method: "POST"});
+        toast(lane ? t("Stopping the rebuild at the next safe point. The store stays as it was.")
+          : t("Stopping the rebuild at the next safe point. The library stays as it was."), "ok");
+      }
       catch (e) { toast(ooLabelText(t("Could not stop the rebuild"), e.message), "err"); }
       loadRebuild();
     }

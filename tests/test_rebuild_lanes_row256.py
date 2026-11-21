@@ -190,15 +190,26 @@ def test_the_wikipedia_stream_running_refuses_the_wiki_lane_and_names_it(data_di
 
     class _Runner:
         stopped = False
+        streaming = True
 
     monkeypatch.setattr("src.wiki.service.lane_runner", lambda: _Runner())
     refusal = _refused(data_dir, "wiki", "busy")
-    assert "Wikipedia stream" in refusal.detail
+    assert "stop it in Living sources" in refusal.detail
+
+
+def test_a_stream_told_to_stop_but_still_alive_still_holds_the_wiki_lane(monkeypatch):
+    class _Runner:
+        stopped = True
+        streaming = True
+
+    monkeypatch.setattr("src.wiki.service.lane_runner", lambda: _Runner())
+    assert rebuild._lane_busy("wiki")
 
 
 def test_a_stopped_stream_does_not_hold_the_wiki_lane(monkeypatch):
     class _Runner:
         stopped = True
+        streaming = False
 
     monkeypatch.setattr("src.wiki.service.lane_runner", lambda: _Runner())
     assert rebuild._lane_busy("wiki") == []
@@ -266,23 +277,26 @@ def test_a_connection_still_open_refuses_the_hold(data_dir):
     _old_lane("law")
     with store.lane_session("law") as s:
         s.execute(text("SELECT 1"))
-        with pytest.raises(store.LaneInUse) as caught:
-            with store.held_for_swap("law"):
-                pass
+        with pytest.raises(store.LaneInUse) as caught, store.held_for_swap("law"):
+            pass
         assert caught.value.count == 1
     with store.held_for_swap("law"):
         pass  # nothing open: the hold is given
 
 
 def test_a_connection_opened_during_the_hold_waits_and_then_opens_the_new_file(data_dir):
-    _old_lane("law")
+    import os
+
+    from src.database.connect import copy_at_current_settings
+
+    path = _old_lane("law")
     seen: list[object] = []
     entered = threading.Event()
 
     def reader() -> None:
         entered.set()
         with store.lane_session("law") as s:
-            seen.append(s.execute(text("SELECT count(*) FROM lane_meta")).scalar())
+            seen.append(int(s.execute(text("PRAGMA page_size")).scalar()))
 
     with store.held_for_swap("law"):
         t = threading.Thread(target=reader)
@@ -290,17 +304,80 @@ def test_a_connection_opened_during_the_hold_waits_and_then_opens_the_new_file(d
         entered.wait(5)
         t.join(0.5)
         assert t.is_alive() and seen == [], "no lane connection is opened while the file is switched"
+        new = data_dir / "law.swap-test.db"
+        copy_at_current_settings(path, new)
+        os.replace(new, path)  # the switch, while the reader waits
     t.join(10)
-    assert seen == [1]
+    assert seen == [16384], "the waiting reader opened the NEW file, never the old one"
+
+
+def test_an_open_already_under_way_when_the_hold_begins_is_counted(data_dir, monkeypatch):
+    """The two security reads' finding: an open that passed the not-switching check before the hold began (the key derivation
+    alone takes ~170 ms) must be seen by the hold, or it would land on the old file after the switch was decided."""
+    from src.database import connect as C
+
+    _old_lane("law")
+    release, inside = threading.Event(), threading.Event()
+    real = C.connect
+
+    def slow_connect(*a, **kw):
+        inside.set()
+        release.wait(10)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(C, "connect", slow_connect)
+    monkeypatch.setattr(store, "HOLD_SETTLE_S", 0.3)
+
+    def opener() -> None:
+        with store.lane_session("law") as s:
+            s.execute(text("SELECT 1"))
+
+    t = threading.Thread(target=opener)
+    t.start()
+    assert inside.wait(10)
+    try:
+        with pytest.raises(store.LaneInUse) as caught, store.held_for_swap("law"):
+            pass
+        assert caught.value.count == 1
+    finally:
+        release.set()
+        t.join(10)
+    monkeypatch.setattr(C, "connect", real)
+    with store.held_for_swap("law"):
+        assert store.quiet("law"), "once it has landed and gone back to the pool, the hold closes it and is given"
+
+
+def test_another_program_holding_the_lane_open_refuses_the_switch(data_dir):
+    path = _old_lane("law")
+    other = connect(str(path), check_same_thread=False)  # not one of this process's pools: what a second server looks like
+    try:
+        other.execute("PRAGMA journal_mode = WAL")
+        other.execute("SELECT count(*) FROM lane_meta").fetchone()
+        with pytest.raises(rebuild.Declined) as caught:
+            rebuild.run("have_backup", None, "law")
+        assert caught.value.code == "store-in-use"
+    finally:
+        other.close()
+    assert _settings(path)[:2] == (4096, 0), "the lane is as it was"
+    assert not [p for p in data_dir.iterdir() if "rebuild-" in p.name], "no kept name and no unfinished copy"
+
+
+def test_the_last_report_and_the_running_store_name_the_lane(data_dir, monkeypatch):
+    _old_lane("law")
+    rebuild.run("have_backup", None, "law")
+    assert rebuild.status_all()["last"]["store"] == "law"
+    seen: list[object] = []
+    monkeypatch.setattr(rebuild.REBUILD_JOB, "start", lambda **kw: seen.append((rebuild._running_store(), kw)) or {"started": True})
+    _old_lane("medical")
+    rebuild.start("have_backup", "medical")
+    assert seen == [("medical", {"backup_answer": "have_backup", "store": "medical"})], "the store is set before the job runs"
 
 
 def test_a_connection_waiting_longer_than_the_hold_allows_is_refused_by_name(data_dir, monkeypatch):
     _old_lane("law")
     monkeypatch.setattr(store, "SWAP_WAIT_S", 0.2)
-    with store.held_for_swap("law"):
-        with pytest.raises(Exception) as caught:
-            with store.lane_session("law") as s:
-                s.execute(text("SELECT 1"))
+    with store.held_for_swap("law"), pytest.raises(Exception) as caught, store.lane_session("law") as s:
+        s.execute(text("SELECT 1"))
     assert store.SWAPPING_WORDS in str(caught.value)
 
 
