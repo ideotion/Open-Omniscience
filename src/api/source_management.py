@@ -2105,16 +2105,26 @@ def _floor_note_parts(criterion: dict, floor_status: dict) -> list[str]:
 def qualification_queue_view(db: Session = Depends(get_db)) -> dict:
     """The qualification QUEUE (R94, 2026-09-29): new candidates first, then due re-checks,
     in the order the pass takes them. Read-only; counts and domains, never a score."""
+    from src.catalog.backlog import discovery_gate, judging_pace
     from src.catalog.qualification import effective_qualification_budgets, qualification_queue
     from src.scheduler.settings import load_settings
 
     settings = load_settings()
     new_n, rech_n = effective_qualification_budgets(settings)
     per_pass = {"new": new_n, "rechecks": rech_n,
+                "configured_new": int(settings.qualification_per_pass),
                 "auto": bool(settings.qualification_budget_auto)}
+    queue = qualification_queue(db, recheck_per_pass=per_pass["rechecks"])
+    # R773 (2) and (4), row 249: whether world discovery is waiting for this line, by the same numbers the
+    # ride-along reads, and how fast the line has actually been moving (measured, never assumed).
+    gate = discovery_gate(db, bound=int(settings.world_discovery_backlog_bound),
+                          country_bound=int(settings.world_discovery_country_backlog_bound))
+    gate["ride_along_on"] = int(settings.world_discovery_per_pass) > 0
     return {
-        **qualification_queue(db, recheck_per_pass=per_pass["rechecks"]),
+        **queue,
         "per_pass": per_pass,
+        "discovery": gate,
+        "pace": judging_pace(db, backlog=int(gate["backlog"])),
     }
 
 
@@ -2166,6 +2176,8 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         "qualification_budget_auto": settings.qualification_budget_auto,
         "qualification_effective_per_pass": eff_new,
         "qualification_effective_recheck_per_pass": eff_rech,
+        "world_discovery_backlog_bound": settings.world_discovery_backlog_bound,
+        "world_discovery_country_backlog_bound": settings.world_discovery_country_backlog_bound,
         "min_source_articles": MIN_SOURCE_ARTICLES,
         "source_cohort_floor": SOURCE_COHORT_FLOOR,
         "tail_p": TAIL_P,

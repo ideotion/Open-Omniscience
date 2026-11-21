@@ -106,6 +106,8 @@ def run_world_discovery(
     state_path: Path | None = None,
     world_codes: list[str] | None = None,
     sleep_s: float = 1.0,
+    country_bound: int = 0,
+    country_backlog: dict[str, int] | None = None,
 ) -> dict:
     """Walk the requested countries (default: the whole world) through
     :func:`discover_sources`, persisting a resume cursor per country.
@@ -120,6 +122,12 @@ def run_world_discovery(
     done; a pause names its reason. The persisted ``completed_at`` stamp is set
     only when the WHOLE WORLD is done (a subset run must never mark the world
     complete — the ride-along reads that stamp to know when to stop).
+
+    ``country_bound`` (R773 (2), the ride-along only): a country whose never-judged
+    candidates, read from ``country_backlog``, number at least this many is PASSED OVER —
+    not asked, not marked done, not counted against ``max_countries`` — and named in the
+    summary's ``held_countries``; it is asked on a later pass, once judging has drained it.
+    0 holds none.
     """
     from src.catalog.discover import discover_sources
     from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
@@ -145,11 +153,16 @@ def run_world_discovery(
     processed = 0  # countries attempted THIS call (the max_countries budget)
     paused_reason: str | None = None
     consecutive_failures = 0
+    held: list[str] = []
+    per_country_backlog = country_backlog or {}
 
     ctx.set_progress(done=done_in_run, total=total, detail="starting…")
 
     for cc in codes:
         if cc in done:
+            continue
+        if country_bound > 0 and per_country_backlog.get(cc, 0) >= country_bound:
+            held.append(cc)  # R773 (2): its own backlog first; asked again once judging drains it
             continue
         if max_countries is not None and processed >= max_countries:
             break  # the per-pass budget is spent — a clean bounded end, not a pause
@@ -277,6 +290,8 @@ def run_world_discovery(
             "nothing is scraped until you enable it."
         ),
     }
+    if held:
+        summary["held_countries"] = held
     if paused_reason:
         summary["paused_reason"] = paused_reason
     return summary
@@ -299,6 +314,8 @@ def advance_world_discovery(
     state_path: Path | None = None,
     world_codes: list[str] | None = None,
     sleep_s: float = 1.0,
+    backlog_bound: int = 0,
+    country_backlog_bound: int = 0,
 ) -> dict:
     """The scheduler RIDE-ALONG (maintainer ruled 2026-07-15: source scraping/discovery
     should be "background and automated"): advance the persisted world-discovery cursor
@@ -312,6 +329,12 @@ def advance_world_discovery(
     is already complete (the ``completed_at`` stamp; ``restart=1`` on the manual
     endpoint re-runs). Best-effort by contract — the caller wraps it so a failure never
     breaks a scrape.
+
+    THE BACKLOG BOUNDS (R773 (2), row 249): while the never-judged candidates number at
+    least ``backlog_bound`` the ride-along adds none and says so (``skipped: "backlog"``
+    with the numbers), resuming by itself on the first pass that finds the count below
+    the bound; a country at or above ``country_backlog_bound`` is passed over while the
+    others go on. 0 switches a bound off. Nothing is deleted.
     """
     if per_pass <= 0:
         return {"enabled": False}
@@ -331,6 +354,24 @@ def advance_world_discovery(
             "skipped": "world discovery already complete",
             "added_total": state.get("added_total", 0),
         }
+    by_country: dict[str, int] = {}
+    if backlog_bound > 0 or country_backlog_bound > 0:
+        from src.catalog.backlog import discovery_gate, unjudged_by_country
+
+        factory = session_factory
+        if factory is None:
+            from src.database.session import session_scope as factory
+        with factory() as db:
+            gate = discovery_gate(db, bound=backlog_bound, country_bound=0)
+            if gate["paused"]:
+                return {
+                    "enabled": True,
+                    "skipped": "backlog",
+                    "backlog": gate["backlog"],
+                    "bound": gate["bound"],
+                }
+            if country_backlog_bound > 0:
+                by_country = unjudged_by_country(db)
     return {
         "enabled": True,
         **run_world_discovery(
@@ -341,5 +382,7 @@ def advance_world_discovery(
             state_path=state_path,
             world_codes=world_codes,
             sleep_s=sleep_s,
+            country_bound=country_backlog_bound,
+            country_backlog=by_country,
         ),
     }

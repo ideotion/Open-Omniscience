@@ -110,7 +110,10 @@
       "trigger": "ride-along",
       "setting": "world_discovery_per_pass",
       "settingFrom": "scheduler",
-      "fetcher": true
+      "fetcher": true,
+      "candidateTrial": true,
+      "trialFeedLinks": 2,
+      "sitemapPaths": ["/sitemap.xml", "/sitemap_index.xml"]
     },
     {
       "id": "wikipedia",

@@ -304,7 +304,13 @@ def test_scheduler_ride_along_wiring_and_setting():
     settings_src = (_ROOT / "src" / "scheduler" / "settings.py").read_text("utf-8")
     api_src = (_ROOT / "src" / "api" / "scheduler.py").read_text("utf-8")
 
-    assert "advance_world_discovery(per_pass=settings.world_discovery_per_pass)" in runner_src
+    assert "per_pass=settings.world_discovery_per_pass," in runner_src and "advance_world_discovery(" in runner_src
+    # R773 (2): the ride-along is handed both backlog bounds, which exist with their defaults and round-trip
+    assert "backlog_bound=settings.world_discovery_backlog_bound" in runner_src
+    assert "country_backlog_bound=settings.world_discovery_country_backlog_bound" in runner_src
+    for key, default in (("world_discovery_backlog_bound", 2000), ("world_discovery_country_backlog_bound", 500)):
+        assert f"{key}: int = {default}" in settings_src and f'raw.get("{key}")' in settings_src
+        assert f'_ranged("{key}", 0, 1_000_000' in settings_src and f"{key}: int | None = None" in api_src
     assert "world_discovery_per_pass: int = 2" in settings_src  # default ON (the ruling)
     assert '_ranged("world_discovery_per_pass", 0, 12' in settings_src  # 0 = the off switch
     assert 'raw.get("world_discovery_per_pass")' in settings_src  # persisted round-trip

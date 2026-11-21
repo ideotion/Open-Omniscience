@@ -370,15 +370,93 @@ def trial_fetch(session: Session, source: Source, fetcher: EthicalFetcher,
     article URLs via its sitemap and ingest a bounded few, exactly like the RSS
     path. Only a source with NEITHER an rss_url NOR a discoverable sitemap is
     judged on whatever it has already collected by other means, if anything (the
-    residual, narrower documented scope limit -- see run_qualification_pass)."""
+    residual, narrower documented scope limit -- see run_qualification_pass).
+
+    R773 (3), row 249: BEFORE the sitemap, a feedless candidate's own home page is read for
+    the feed links it publishes on the same site (:mod:`src.ingest.feed_find`; no guessed
+    feed address is ever probed). A link whose feed yields entries becomes the source's
+    ``rss_url`` and the trial runs on it, exactly like a source that came with a feed; a link
+    that yields nothing is put back and the sitemap channel runs as before. All of it inside
+    this ONE candidate's trial, so the per-pass budget and the sites a pass contacts are
+    unchanged, and every request goes through the same ethical fetcher (robots, politeness,
+    transport and protected mode)."""
     from src.ingest.pipeline import ingest_source
 
     if getattr(source, "rss_url", None):
-        return ingest_source(session, source, fetcher=fetcher, max_items=max_items)
+        # A trial judges THIS site, also on a later trial of a feed an earlier one found and
+        # kept: entries elsewhere are counted, never fetched (security read, row 249).
+        return ingest_source(session, source, fetcher=fetcher, max_items=max_items,
+                             entry_site=source.domain)
+
+    found = _trial_feed_ingest(session, source, fetcher, max_items=max_items)
+    if found is not None:
+        return found
 
     from src.ingest.sitemap import sitemap_trial_ingest
 
     return sitemap_trial_ingest(session, source, fetcher, max_items=max_items)
+
+
+def _trial_feed_ingest(session: Session, source: Source, fetcher: EthicalFetcher,
+                       *, max_items: int) -> dict | None:
+    """The feed half of a feedless candidate's trial: the tally of the first same-site feed its
+    home page names that gives something to judge (an article stored, or one already held),
+    with that feed kept as the source's ``rss_url``; or None when the page names none that
+    does. A feed tried and not kept leaves nothing behind: its address is taken off the row
+    and its conditional-GET and backoff state deleted, both COMMITTED (``ingest_source``
+    commits its own bookkeeping, so a revert only in memory would be undone by the next
+    commit), and each feed tried starts with no state of another's."""
+    from src.database.feed_key import feed_key
+    from src.database.models import Source as _Source
+    from src.ingest.feed_find import find_trial_feed
+    from src.ingest.pipeline import ingest_source
+
+    report = find_trial_feed(fetcher, source.domain)
+    for url in report.feeds:
+        # (domain, feed_key) is unique: a feed another row of this domain already carries is
+        # that row's to collect, never taken over by a candidate's trial.
+        owner = (session.query(_Source.id)
+                 .filter(_Source.domain == source.domain, _Source.feed_key == feed_key(url),
+                         _Source.id != source.id)
+                 .first())
+        if owner is not None:
+            continue
+        _forget_feed_state(session, int(source.id))
+        source.rss_url = url
+        kept = False
+        try:
+            tally = ingest_source(session, source, fetcher=fetcher, max_items=max_items,
+                                  entry_site=source.domain)
+            judged = int(tally.get("stored") or 0) + int(tally.get("duplicate") or 0)
+            kept = judged > 0
+        finally:
+            if not kept:
+                _put_feed_back(session, source)
+        if kept:
+            return {**tally, "channel": "feed", "feed_found_on_page": True}
+    return None
+
+
+def _forget_feed_state(session: Session, source_id: int) -> None:
+    """Delete one source's conditional-GET validators and backoff (``FeedFetchState``), so the
+    next feed tried for it is asked with no ETag, Last-Modified or skip deadline of another."""
+    from src.database.models import FeedFetchState
+
+    session.query(FeedFetchState).filter(FeedFetchState.source_id == source_id).delete(
+        synchronize_session="fetch")
+
+
+def _put_feed_back(session: Session, source: Source) -> None:
+    """Undo a feed that was tried and not kept, and commit it: no ``rss_url``, no feed state."""
+    try:
+        source.rss_url = None
+        _forget_feed_state(session, int(source.id))
+        session.commit()
+    except Exception:
+        session.rollback()
+        source.rss_url = None
+        _forget_feed_state(session, int(source.id))
+        session.commit()
 
 
 def select_unqualified(session: Session, *, limit: int) -> list[Source]:
@@ -405,13 +483,32 @@ def select_unqualified(session: Session, *, limit: int) -> list[Source]:
     chance -- but can never again BLOCK a candidate that hasn't been tried yet). ``id``
     stays the final tiebreaker for determinism. Mirrors the same LEFT-JOIN-a-last-attempt
     shape ``select_due_disqualified`` already uses.
+
+    THE LIKELIEST FIRST (R773 (4), row 249), inside each tier the attempt order above leaves
+    tied (every never-tried candidate, and candidates whose no-evidence attempts were logged in
+    the same pass): a candidate that already has a feed goes first, since its trial is the one
+    most likely to produce evidence; then the candidate whose country has the FEWEST sources
+    being collected today (a country with none comes first), so judging fills coverage gaps
+    before it adds to well-covered countries. A candidate with no country recorded comes after
+    those with one. The attempt order stays the FIRST key, so the livelock fix is untouched: a
+    candidate already tried never jumps ahead of one never tried.
     """
-    from sqlalchemy import func
+    if limit <= 0:
+        return []
+    return (
+        _unqualified_in_trial_order(session)
+        .limit(limit)
+        .all()
+    )
+
+
+def _unqualified_in_trial_order(session: Session):
+    """The never-judged candidates as a query, in the order ``select_unqualified`` takes them (one
+    definition, so the queue view and the pass cannot list them differently)."""
+    from sqlalchemy import case
 
     from src.database.models import Source, SourceQualificationAttempt
 
-    if limit <= 0:
-        return []
     last_attempt = (
         session.query(
             SourceQualificationAttempt.source_id.label("source_id"),
@@ -420,13 +517,24 @@ def select_unqualified(session: Session, *, limit: int) -> list[Source]:
         .group_by(SourceQualificationAttempt.source_id)
         .subquery()
     )
+    from src.catalog.source_standing import counted_source_clause
+
+    # the per-country count of SOURCES as every count the user sees defines them (R773 (1), Lane I)
+    collecting = (
+        session.query(Source.country.label("country"), func.count(Source.id).label("n"))
+        .filter(counted_source_clause(), Source.country.isnot(None))
+        .group_by(Source.country)
+        .subquery()
+    )
+    has_feed = case((func.coalesce(Source.rss_url, "") != "", 0), else_=1)
+    gap = case((Source.country.is_(None), 1), else_=0)
     return (
         session.query(Source)
         .outerjoin(last_attempt, last_attempt.c.source_id == Source.id)
+        .outerjoin(collecting, collecting.c.country == Source.country)
         .filter(Source.status == STATUS_UNQUALIFIED, not_a_stand_in_source())  # a repair's stand-in source is never judged
-        .order_by(last_attempt.c.last_at.asc().nullsfirst(), Source.id.asc())
-        .limit(limit)
-        .all()
+        .order_by(last_attempt.c.last_at.asc().nullsfirst(), has_feed, gap,
+                  func.coalesce(collecting.c.n, 0).asc(), Source.id.asc())
     )
 
 

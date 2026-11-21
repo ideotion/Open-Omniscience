@@ -71,7 +71,7 @@ runs too). From the six reports of ONE run in which all six legs finished (a leg
     python scripts/ci_shard.py --table configs/ci_shard_costs_windows.json costs --min-seconds 0.5 junit-windows-shard-*/junit.xml
 
 writes the Windows table (start the file as a copy of `configs/ci_shard_costs.json` with `"shards": 6`, since `costs` keeps the table's other fields). Where the artifacts cannot be downloaded (their address is a storage host, not the API), each leg also prints the same costs to its log as one JSON line between `windows-costs-shard-N begin` and `end`; merge the six lines' `costs` into the table instead. The
-Windows plan step then reads it with `--table`, and the cap comes back down to what the new legs measure. `tests/test_ci_shards.py` pins the upload and the cap.
+Windows plan step then reads it with `--table`, and the cap comes back down to what the new legs measure. **Built (row 251)** from run 44876431425 (all six legs green, head 96cc85e40): 1,034 modules, 17,337 s in all. On the Linux table the six legs' measured sums were 3,656 / 3,000 / 1,679 / 2,627 / 2,814 / 3,561 s; on this table each predicted leg is about 2,890 s. The cap stays at 120 minutes until a run on this table measures the legs. `tests/test_ci_shards.py` pins the upload and the cap.
 
 ## Changing the number of shards
 
