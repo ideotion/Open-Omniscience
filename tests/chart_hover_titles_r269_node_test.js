@@ -94,15 +94,24 @@ function noTitleChild(markup, what) {
 {
   const name = new Function(extract("_ooTipSvgName") + "\nreturn _ooTipSvgName;")();
   const SVG = "http://www.w3.org/2000/svg";
-  const el = (ns, tag, attrs) => ({ namespaceURI: ns, tagName: tag, a: Object.assign({}, attrs || {}),
+  const el = (ns, tag, attrs, root) => ({ namespaceURI: ns, tagName: tag, a: Object.assign({}, attrs || {}),
     hasAttribute(k) { return k in this.a; }, getAttribute(k) { return k in this.a ? this.a[k] : null; },
-    setAttribute(k, v) { this.a[k] = String(v); } });
-  const dot = el(SVG, "circle");
+    setAttribute(k, v) { this.a[k] = String(v); }, closest(sel) { return sel === "svg" ? (root || null) : null; } });
+  const plain = el(SVG, "svg");
+  const dot = el(SVG, "circle", {}, plain);
   name(dot, "Lyon: 3");
   assert.strictEqual(dot.a["aria-label"], "Lyon: 3");
+  assert.strictEqual(dot.a.role, "graphics-symbol", "an aria-label on a role-less SVG shape is an axe serious finding");
+  const node = el(SVG, "g", {}, plain);
+  name(node, "a keyword");
+  assert.strictEqual(node.a.role, "group");
+  const img = el(SVG, "svg", { role: "img" });
+  const inImg = el(SVG, "rect", {}, img);
+  name(inImg, "Monday 9:00");
+  assert.ok(!("aria-label" in inImg.a) && !("role" in inImg.a), "a mark inside <svg role=img> is presentational: no name, no role");
   name(dot, "Lyon: 4");
   assert.strictEqual(dot.a["aria-label"], "Lyon: 4", "a name this helper set must follow the title");
-  const own = el(SVG, "g", { "aria-label": "set by the renderer" });
+  const own = el(SVG, "g", { "aria-label": "set by the renderer" }, plain);
   name(own, "the hover");
   assert.strictEqual(own.a["aria-label"], "set by the renderer", "a renderer's own aria-label was overwritten");
   const html = el("http://www.w3.org/1999/xhtml", "BUTTON");

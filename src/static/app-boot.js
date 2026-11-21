@@ -470,10 +470,17 @@
     // An SVG mark whose hover rides a title ATTRIBUTE (rows 268/269: the attribute is what #oo-tip opens on touch) loses
     // the accessible name its old <title> child gave it, because SVG's name computation reads aria-label and a <title>
     // child, never the title attribute. So the same text becomes its aria-label, which shows no native tooltip beside the
-    // bubble. Only on an SVG element; an aria-label the renderer set itself is kept; one this helper set follows the title.
+    // bubble -- with a role, since axe counts aria-label on a role-less SVG shape or group as prohibited (serious). Not
+    // inside an <svg role="img">: its children are presentational, so its own aria-label is the name and a child's would
+    // reach no one. An aria-label the renderer set itself is kept; one this helper set follows the title.
     function _ooTipSvgName(el, v) {
-      if (!el || el.namespaceURI !== "http://www.w3.org/2000/svg" || String(el.tagName).toLowerCase() === "svg") return;
+      if (!el || el.namespaceURI !== "http://www.w3.org/2000/svg") return;
+      const tag = String(el.tagName).toLowerCase();
+      if (tag === "svg") return;
+      const root = el.closest ? el.closest("svg") : null;
+      if (root && root.getAttribute("role") === "img") return;
       if (el.hasAttribute("aria-label") && el.getAttribute("data-oo-tip-named") !== "1") return;
+      if (!el.hasAttribute("role")) el.setAttribute("role", tag === "g" ? "group" : "graphics-symbol");
       el.setAttribute("aria-label", v);
       el.setAttribute("data-oo-tip-named", "1");
     }
