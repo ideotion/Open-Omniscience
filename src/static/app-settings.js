@@ -615,7 +615,7 @@
         : t("RAM unknown");
       const active = d.active || d.default;   // the stored UI choice (Q10), else the default
       const installed = (d.installed || []).length
-        ? `<table><tr><th>${esc(t("Installed model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Updated"))}</th><th></th></tr>` +
+        ? `<table><tr><th>${esc(t("Installed model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Updated"))}</th><th><span class="sr-only">${esc(t("Actions"))}</span></th></tr>` +
           d.installed.map(m => {
             const isActive = m.tag === active;
             const badge = isActive ? ` <span class="pill ok">${esc(t("active"))}</span>` : "";
