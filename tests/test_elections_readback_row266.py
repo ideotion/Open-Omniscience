@@ -152,9 +152,9 @@ def test_a_member_that_cannot_be_built_says_so(monkeypatch):
 
 def test_the_bundle_lists_the_member_and_the_route_maps_to_it():
     from src.api.diagnostics import bundle
+    from tests.js_source_helper import python_function_source
 
-    src = Path(bundle.__file__).read_text(encoding="utf-8")
-    members = src.split("def _all_diagnostics_members", 1)[1].split("\ndef _", 1)[0]
+    members = python_function_source(Path(bundle.__file__).read_text(encoding="utf-8"), "_all_diagnostics_members")
     assert '("elections-floor.json", lambda: _elections_floor_member())' in members
     assert bundle._DIAG_COVERAGE_MAP["/elections-floor"] == "elections-floor.json"
 
@@ -253,6 +253,7 @@ def test_the_member_is_read_out_of_a_diagnostics_zip_and_a_cut_is_printed(snapsh
     text = "\n".join(R.report(R.load(zpath)))
     assert "snapshot: present" in text
     assert "cut to fit 15,000 bytes (was " in text and "tier_report.countries (replaced by countries_n" in text
+    assert "held to one Field data piece" in text and "/api/diagnostics/elections-floor still answers in full" in text
 
 
 def test_a_zip_without_the_member_and_an_omitted_member_are_named(tmp_path):

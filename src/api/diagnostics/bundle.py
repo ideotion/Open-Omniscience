@@ -2007,8 +2007,9 @@ def _elections_floor_member(limit: int = ELECTIONS_FLOOR_MEMBER_MAX_BYTES) -> di
         "what": what,
         "bytes_before": before,
         "limit_bytes": limit,
-        "reason": "the member is held to one Field data piece so the file sent back is never cut",
-        "how_to_get_it": "the /api/diagnostics/elections-floor route answers in full",
+        # Tokens, not sentences: this is a report file, and scripts/elections_readback.py words them.
+        "bound": "field_data_piece",  # one Field data piece, so the file sent back is never cut
+        "full_answer": "/api/diagnostics/elections-floor",  # the route still answers in full
     }
     rep = out.get("tier_report")
     rows = rep.get("countries") if isinstance(rep, dict) else None

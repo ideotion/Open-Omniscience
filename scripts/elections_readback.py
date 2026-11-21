@@ -178,6 +178,9 @@ def cut_lines(cut: Any) -> list[str]:
     what = cut.get("what") if isinstance(cut.get("what"), list) else []
     lines = [f"cut to fit {_n(cut.get('limit_bytes'))} bytes (was {_n(cut.get('bytes_before'))}): "
              + ("; ".join(map(str, what)) if what else "nothing named")]
+    if cut.get("bound") == "field_data_piece":
+        lines.append("  (the member is held to one Field data piece so the file sent back is never cut; "
+                     f"{cut.get('full_answer') or 'its route'} still answers in full)")
     if cut.get("still_over") is True:
         lines.append(f"still over the limit after the cut: {_n(cut.get('bytes_after'))} bytes written")
     return lines
