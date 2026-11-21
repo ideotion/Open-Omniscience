@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-21,tests,"Row 253: the storage guard's bounded-wait tests read their bound on a clock only the wait moves, so a slow first reading no longer spends it",shipped,PR #2214; row 253,tests/test_storage_guard.py,"Release note: no change you can see; a test that failed on slow CI runners now measures what it means to. Cause reproduced: with a 0.25 s first reading the old real-clock shape returned False (never waited) for a latch that held throughout."
