@@ -148,7 +148,7 @@
               + _kwTf("{n} mentions — click to zoom in", {n: fmtNum(f.mentions)});
             return `<button class="ls-chip" data-i18n-dyn style="font-size:${(11.5*scale).toFixed(1)}px"
               title="${esc(tip)}"
-              data-on-click="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}`;
+              data-on-click="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f, {inButton: true})}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>${kwSensesAfterHtml(f)}${kwQidHtml(f, {noDossier: true})}`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
@@ -688,7 +688,7 @@
           ? ` <button class="ghost tiny" title="${esc(t("Open on the cross-country concept map"))}"
                data-on-click="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
         return `<button class="chip${isRing ? " lvl-group" : ""}" data-on-click="openCorpus(${esc(JSON.stringify(m.normalized))})"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${kwSensesAfterHtml(m)}${mapLink}`;
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${kwSensesAfterHtml(m)}${kwQidHtml(m, {noDossier: true})}${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
       const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
