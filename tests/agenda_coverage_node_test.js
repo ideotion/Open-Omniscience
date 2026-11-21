@@ -85,5 +85,32 @@ const REPORT = {
   answer = { as_of: "x" }; P.reset(); P.render(); await tick(); await tick();
   assert(box.innerHTML.includes("Could not load"));
   P.repaint(); assert.strictEqual(calls, 6, "no fetch from a repaint");
+
+  // 7. Row 273: a catalogue that was not read draws its one line, the snapshot line, and no chip or table, so
+  //    no floor country reads "missing" and no count reads 0; the three states are said apart.
+  const LINES = {
+    absent: "No events catalogue was found on this install, so its events are not shown.",
+    empty: "The events catalogue on this install was read and holds no events.",
+    unreadable: "The events catalogue on this install could not be read, so its events are not shown.",
+  };
+  for (const [state, line] of Object.entries(LINES)) {
+    answer = { as_of: "2025-12-14", covered_n: null, missing_n: null, catalogue: { state, error: "ParserError" },
+      snapshot: { state: "absent" },
+      tier_report: { floor_countries: 140, counts: null, countries: null, catalogue: { state } } };
+    P.reset(); P.render(); await tick(); await tick();
+    h = box.innerHTML;
+    assert(h.includes(line), "draws the " + state + " line");
+    for (const other of Object.values(LINES)) if (other !== line) assert(!h.includes(other), state + " is not said as another state");
+    assert(h.includes("hand-curated list"), "the snapshot line stays");
+    assert(!/aria-pressed|<table|> 0<|Missing|missing/i.test(h.replace(line, "")), state + ": no chip, no table, no 0, no missing");
+  }
+  // 8. R696: the catalogue was not read but the snapshot was: the counts are drawn, labelled as the snapshot's alone.
+  answer = { ...REPORT, catalogue: { state: "absent" }, counts_from: "snapshot_only", snapshot: { state: "absent" } };
+  P.reset(); P.render(); await tick(); await tick();
+  h = box.innerHTML;
+  assert(h.includes(LINES.absent + " These counts come from the Wikidata election snapshot only."), "the label is drawn");
+  assert(h.includes("THE METHOD") && /scheduled<\/span> 1/.test(h) && h.includes("France (FR)"), "and the counts with it");
+  answer = { ...REPORT, catalogue: { state: "present" } }; P.reset(); P.render(); await tick(); await tick();
+  assert(!box.innerHTML.includes("snapshot only"), "a read catalogue carries no label");
   console.log("agenda coverage node test: ok");
 })().catch((e) => { console.error(e); process.exit(1); });
