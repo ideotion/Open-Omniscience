@@ -3048,7 +3048,7 @@
         const d = await api("/api/wiki/dumps");
         const t = $("dump-table");
         if (!d.downloads.length) { t.innerHTML = `<tr><td class="muted">No offline downloads.</td></tr>`; return; }
-        t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th></th></tr>" +
+        t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th><span class='sr-only'>Actions</span></th></tr>" +
           d.downloads.map(e => `<tr>
             <td><strong>${esc(e.wiki)}</strong> <span class="muted">${esc(e.kind)}</span></td>
             <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
@@ -3433,7 +3433,7 @@
           const shared = new Set(p.selected.filter((r) => r.extract).map((r) => r.extract.code)).size < p.selected.filter((r) => r.extract).length;
           host.innerHTML = `<div style="overflow:auto"><table class="osm-pick-table">
               <thead><tr><th>${esc(t("Country"))}</th><th>${esc(t("Continent download"))}</th><th>${esc(t("Daily changes"))}</th>
-                <th>${esc(t("Download"))}</th><th>${esc(t("Map data"))}</th><th></th></tr></thead>
+                <th>${esc(t("Download"))}</th><th>${esc(t("Map data"))}</th><th><span class="sr-only">${esc(t("Actions"))}</span></th></tr></thead>
               <tbody>${rows}</tbody></table></div>`
             + (shared ? `<div class="hint">${esc(t("Countries on the same continent share one download and one daily change file."))}</div>` : "");
         }
@@ -5005,7 +5005,7 @@
                 <button class="secondary" data-on-click="deleteStatSub(${s.id})">Remove</button></td>
           </tr>`;
         }).join("");
-        box.innerHTML = `<table><tr><th>Source</th><th>Series</th><th>Interval</th><th>State</th><th>Last refresh</th><th></th></tr>${rows}</table>`
+        box.innerHTML = `<table><tr><th>Source</th><th>Series</th><th>Interval</th><th>State</th><th>Last refresh</th><th><span class='sr-only'>Actions</span></th></tr>${rows}</table>`
           + (d.caveat ? `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not load tracked figures: ${esc(e.message)}</div>`; }
     }
@@ -5328,7 +5328,7 @@
       try {
         const d = await api("/api/wiki/pages");
         const t = $("wiki-pages");
-        t.innerHTML = "<tr><th>Edition</th><th>Title</th><th>Watchlist</th><th>Checked</th><th>Edits</th><th>Flagged</th><th></th></tr>" +
+        t.innerHTML = "<tr><th>Edition</th><th>Title</th><th>Watchlist</th><th>Checked</th><th>Edits</th><th>Flagged</th><th><span class='sr-only'>Actions</span></th></tr>" +
           (d.pages.length ? d.pages.map(p => `<tr>
             <td><strong>${esc(p.wiki)}</strong></td>
             <td>${esc(p.title)}${p.missing
@@ -5407,7 +5407,7 @@
       try {
         const d = await api(`/api/wiki/changes?flagged_only=${flagged}&limit=80` + (w?"&wiki="+encodeURIComponent(w):""));
         const t = $("wiki-changes");
-        t.innerHTML = "<tr><th>When</th><th>Edition · Page</th><th>Editor</th><th>Δ bytes</th><th>Reasons</th><th>ORES</th><th></th></tr>" +
+        t.innerHTML = "<tr><th>When</th><th>Edition · Page</th><th>Editor</th><th>Δ bytes</th><th>Reasons</th><th>ORES</th><th><span class='sr-only'>Actions</span></th></tr>" +
           (d.changes.length ? d.changes.map(c => `<tr>
             <td class="muted" style="font-size:12px">${c.timestamp?esc(c.timestamp.slice(0,16).replace("T"," ")):"—"}</td>
             <td><strong>${esc(c.wiki)}</strong> · ${esc(c.title)}</td>

@@ -102,3 +102,15 @@ def test_the_explore_actions_column_has_a_name_in_every_language():
     for loc in sorted((STATIC / "locales").glob("*.json")):
         d = json.loads(loc.read_text(encoding="utf-8"))
         assert d.get("Actions") and d.get("Ranked table"), loc.name
+
+
+def test_no_table_header_cell_is_left_without_a_name():
+    """Row 246: the sweep's V8 (an empty ``<th>``) recurred in seventeen other tables. A header cell with no text
+    leaves a screen reader announcing a nameless column; an actions column gets a visually hidden name instead."""
+    empty = re.compile(r"<th(?:\s[^>]*)?>\s*</th>")
+    found = []
+    for path in sorted([*STATIC.glob("*.js"), *STATIC.glob("*.html"), ROOT / "src" / "api" / "main.py"]):
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if empty.search(line):
+                found.append(f"{path.name}:{n}")
+    assert not found, found

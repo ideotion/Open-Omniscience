@@ -3174,7 +3174,7 @@
       return `<div style="margin-top:8px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("How your corpus grew"))}</div>`
         + `<table style="width:100%;font-size:13px;border-collapse:collapse">`
-        + `<thead><tr><th></th><th style="text-align:right">${esc(t("Before"))}</th><th style="text-align:right">${esc(t("After"))}</th><th></th></tr></thead>`
+        + `<thead><tr><th><span class="sr-only">${esc(t("Measure"))}</span></th><th style="text-align:right">${esc(t("Before"))}</th><th style="text-align:right">${esc(t("After"))}</th><th><span class="sr-only">${esc(t("Difference"))}</span></th></tr></thead>`
         + `<tbody>${rows}${dateRow}</tbody></table></div>`;
     }
 
