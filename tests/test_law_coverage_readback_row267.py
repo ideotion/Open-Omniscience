@@ -102,7 +102,9 @@ def test_a_report_with_only_reasons_prints_every_reason_and_no_figure(tmp_path):
     """Row 267's fixture with reasons and no figures: nothing in, nothing out but the reasons."""
     text = "\n".join(R.report(R.load(_write(tmp_path, json.dumps(_reasons_only()).encode()))))
     assert "catalogue: could not be read (the law catalogue could not be parsed)" in text
-    assert "floor: no country listed, floor file undated (its verification is not stated)" in text
+    # row 279: the floor's read state is named rather than "no country listed"
+    assert ("floor: empty: the language-to-country list was read and lists no country, so no floor country was counted, "
+            "floor file undated (its verification is not stated)") in text
     assert "  not checked: the floor file (language_countries.yml) is absent, unreadable or lists no country" in text
     assert "off the floor (world): absent from this file" in text
     assert "official counts in the catalogue: not read: the law catalogue could not be parsed" in text

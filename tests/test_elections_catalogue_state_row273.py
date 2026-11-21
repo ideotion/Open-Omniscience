@@ -149,7 +149,7 @@ def test_the_floor_gives_none_beside_the_state_never_zero_or_missing(catalogue, 
             assert doc[key] is None and doc[f"{key}_n"] is None, key
         assert doc["covered_outside_floor"] is None
     rep = elections_coverage_floor()["tier_report"]
-    assert rep == {"floor_countries": n, "counts": None, "countries": None, "catalogue": want}
+    assert rep == {"floor_countries": n, "counts": None, "countries": None, "catalogue": want, "floor": {"state": "present"}}
 
 
 def test_the_present_catalogue_still_counts(catalogue):

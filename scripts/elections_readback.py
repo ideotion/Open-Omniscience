@@ -12,7 +12,7 @@ FILE is any of:
     piece is named rather than guessed at.
 
 Prints the curated catalogue's read state when it was not read as a catalogue with events (row 273: absent, empty,
-or unreadable with the error's class), the snapshot's state, its date, its age and whether it is past the staleness limit, the rows it added, shadowed
+or unreadable with the error's class), the language floor's when it was not read (row 279), the snapshot's state, its date, its age and whether it is past the staleness limit, the rows it added, shadowed
 and refused; then the floor's four states and the per-country tier report's counts; then any cut the member records. A
 figure the file does not have is printed with its reason, never as 0. Counts and dates only: no verdict, no score.
 
@@ -171,7 +171,21 @@ def catalogue_lines(doc: dict[str, Any]) -> list[str]:
     return [f"catalogue: state {state!r} (unknown to this script), so the floor states are not printed"]
 
 
+_FLOOR_WORDS = {
+    "absent": "absent: no language-to-country list (configs/language_countries.yml) on that machine",
+    "empty": "empty: the language-to-country list was read and lists no country",
+}
+
+
 def floor_lines(doc: dict[str, Any]) -> list[str]:
+    fl = doc.get("floor")
+    if isinstance(fl, dict) and fl.get("state") not in (None, "present"):
+        # Row 279: no floor was read, so there is no denominator and no state was counted.
+        state = fl.get("state")
+        words = _FLOOR_WORDS.get(str(state)) or (
+            f"unreadable ({fl.get('error') or 'no error named'}): the language-to-country list could not be read"
+            if state == "unreadable" else f"state {state!r} (unknown to this script)")
+        return [f"floor: {words}, so no floor figure was counted"]
     total = _int(doc.get("floor_countries"))
     if total is None:
         return ["floor: no floor figures in this file"]
@@ -193,6 +207,9 @@ def floor_lines(doc: dict[str, Any]) -> list[str]:
 def tier_lines(rep: Any) -> list[str]:
     if not isinstance(rep, dict):
         return ["tier report: not recorded in this file"]
+    fl = rep.get("floor")
+    if isinstance(fl, dict) and fl.get("state") not in (None, "present"):
+        return ["tier report: not counted (see the floor line)"]
     cat = rep.get("catalogue")
     if isinstance(cat, dict) and cat.get("state") != "present" and rep.get("counts_from") != "snapshot_only":
         return ["tier report: not counted (see the catalogue line)"]
