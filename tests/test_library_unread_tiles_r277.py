@@ -75,12 +75,87 @@ def test_a_readable_store_is_counted_even_beside_a_protected_one():
     }
 
 
-def test_an_unreadable_model_store_is_null_in_the_overview():
-    # The overview's own fallback when store_status() throws: the source, since the overview is cached
-    # and reads every store at once.
-    src = Path(library.__file__).read_text(encoding="utf-8")
-    assert '"count": None, "total_bytes": None, "available": False, "reason": UNREAD_MODELS' in src
-    assert '{"count": 0, "total_bytes": 0, "available": False}' not in src
+@pytest.fixture()
+def overview(monkeypatch):
+    """The overview computed now, past the shared cache, over a real session."""
+    from src.database.session import SessionLocal
+
+    monkeypatch.setattr(library, "_cached", lambda key, compute, db: compute(db))
+
+    def run():
+        db = SessionLocal()
+        try:
+            return library.library_overview(db=db)
+        finally:
+            db.close()
+
+    return run
+
+
+def test_an_unreadable_model_store_is_null_in_the_overview(overview, monkeypatch):
+    from src.backup import ollama_models
+
+    def boom():
+        raise OSError("denied")
+
+    monkeypatch.setattr(ollama_models, "store_status", boom)
+    models = overview()["downloaded"]["models"]
+    assert models == {
+        "count": None,
+        "total_bytes": None,
+        "available": False,
+        "reason": UNREAD_MODELS,
+    }
+
+
+def _store_only(monkeypatch, store):
+    from src.backup import ollama_models as om
+
+    monkeypatch.setenv("OLLAMA_MODELS", str(store))
+    monkeypatch.setattr(om, "candidate_stores", lambda: [store])
+
+
+def test_an_empty_readable_store_on_disk_is_a_real_zero(overview, monkeypatch, tmp_path):
+    # The Opus read's case: a store this app owns with an empty manifests folder is not "protected".
+    store = tmp_path / "models"
+    (store / "manifests").mkdir(parents=True)
+    _store_only(monkeypatch, store)
+    from src.backup.ollama_models import store_status
+
+    assert store_status()["protected_store"] is None
+    assert overview()["downloaded"]["models"] == {"count": 0, "total_bytes": 0}
+
+
+def test_a_store_whose_models_were_all_removed_is_a_real_zero(overview, monkeypatch, tmp_path):
+    # ollama rm leaves the namespace folders behind; nothing is refused, so nothing is "not read".
+    store = tmp_path / "models"
+    (store / "manifests" / "registry.ollama.ai" / "library" / "gone").mkdir(parents=True)
+    (store / "blobs").mkdir()
+    _store_only(monkeypatch, store)
+    assert overview()["downloaded"]["models"] == {"count": 0, "total_bytes": 0}
+
+
+def test_a_store_whose_manifests_cannot_be_opened_is_not_read(overview, monkeypatch, tmp_path):
+    # The service install: the folders list, the manifest files are the service user's. Simulated
+    # through os.access so the test does not depend on the runner's uid (root reads everything).
+    import os
+
+    store = tmp_path / "service"
+    tag = store / "manifests" / "registry.ollama.ai" / "library" / "m"
+    tag.mkdir(parents=True)
+    # Not JSON: list_models skips it exactly as it skips a manifest it may not open.
+    (tag / "latest").write_bytes(b"\x00")
+    _store_only(monkeypatch, store)
+    real_access = os.access
+
+    def fake_access(path, mode, *a, **k):
+        if str(path).endswith("latest"):
+            return False
+        return real_access(path, mode, *a, **k)
+
+    monkeypatch.setattr(os, "access", fake_access)
+    assert overview()["downloaded"]["models"]["reason"] == PROTECTED_MODELS
+    assert overview()["downloaded"]["models"]["count"] is None
 
 
 def test_every_reason_is_a_key_in_all_twelve_catalogues():

@@ -129,6 +129,23 @@ def default_store() -> Path:
         return Path.home() / ".ollama" / "models"
 
 
+def _read_refused(mroot: Path) -> bool:
+    """True when reading ``manifests/`` (any folder, any manifest) is refused, as the service install's store is."""
+    if not os.access(mroot, os.R_OK | os.X_OK):
+        return True
+    refused: list[OSError] = []
+    try:
+        for _ in mroot.iterdir():
+            break
+        for dirpath, _dirs, files in os.walk(mroot, onerror=refused.append):
+            # A manifest we can list but not open is refused too (files owned by the service user).
+            if refused or any(not os.access(os.path.join(dirpath, f), os.R_OK) for f in files):
+                return True
+    except OSError:
+        return True
+    return bool(refused)
+
+
 def store_status(store: Path | None = None) -> dict:
     """Honest status of the model store for the backup UI.
 
@@ -150,15 +167,13 @@ def store_status(store: Path | None = None) -> dict:
             present = True  # a stat error usually means a permission wall
         if not present:
             continue
-        try:
-            readable = any(mroot.iterdir())  # can we actually enumerate it?
-            if readable and not list_models(p):
-                readable = False
-        except (OSError, PermissionError):
-            readable = False
-        if not readable and not (str(p) == str(store) and models):
-            protected_path = str(p)
-            break
+        # Protected means a read was REFUSED, never merely empty: a readable store with no models
+        # (an empty manifests folder, or every model removed) is a real zero, not a protected one
+        # (row 277 -- the Library counts a protected store as "not read").
+        if not _read_refused(mroot) or (str(p) == str(store) and models):
+            continue
+        protected_path = str(p)
+        break
     hint = None
     if not models:
         if protected_path:
