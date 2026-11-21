@@ -21,7 +21,10 @@ from src.wiki.dumps import DumpDownloadManager
 
 class _SlowResp:
     """A response whose body only advances when the gate is released, so several
-    downloads can be observed 'downloading' at once."""
+    downloads can be observed 'downloading' at once. It never finishes on its own:
+    a gate that is not released in time is an error, never a completed download
+    (a 5 s timeout that yielded anyway let a slow runner finish a download before
+    the test looked, and read as "not parallel": row 270)."""
 
     status_code = 200
     headers = {"Content-Length": "30"}
@@ -33,16 +36,39 @@ class _SlowResp:
         pass
 
     def iter_content(self, _chunk):
+        if not self._gate.wait(_GENEROUS):
+            raise TimeoutError("the test never released the gate")
         for _ in range(3):
-            self._gate.wait(5)
             yield b"0123456789"
 
 
-def _wait_until(predicate, tries=200, delay=0.02):
-    for _ in range(tries):
-        if predicate():
+#: A bound on waits that only a hung run reaches. Never what makes a test fail on a slow runner: the checks that fail on a real
+#: serialisation are immediate (start() claims or queues under its lock, synchronously) or event-driven (the barrier below).
+_GENEROUS = 60
+
+
+def _parallel_get(parties: int, gate: threading.Event):
+    """A fake http_get whose callers wait at a barrier until ``parties`` of them are inside it at once. ``arrived`` is set the
+    moment the last one arrives: proof that that many download workers ran concurrently, not merely that their status said so.
+    A serialised manager never fills it; the barrier then breaks and every waiter raises."""
+    arrived = threading.Event()
+    barrier = threading.Barrier(parties, action=arrived.set, timeout=_GENEROUS)
+
+    def get(_url, _headers):
+        barrier.wait()
+        return _SlowResp(gate)
+
+    return get, arrived, barrier
+
+
+def _wait_for(arrived: threading.Event, barrier: threading.Barrier) -> bool:
+    """Wait on the barrier's own event, ending early if the barrier broke (a waiter timed out or the run was reset)."""
+    deadline = time.monotonic() + _GENEROUS
+    while time.monotonic() < deadline:
+        if arrived.wait(0.05):
             return True
-        time.sleep(delay)
+        if barrier.broken:
+            return False
     return False
 
 
@@ -55,36 +81,44 @@ def _downloading(mgr) -> int:
 
 def test_dumps_download_in_parallel_up_to_capacity(tmp_path):
     gate = threading.Event()
-    mgr = DumpDownloadManager(
-        base_dir=tmp_path, http_get=lambda u, h: _SlowResp(gate), max_concurrent=3
-    )
-    mgr.start("en")
-    mgr.start("fr")
-    mgr.start("de")
+    get, arrived, barrier = _parallel_get(3, gate)
+    mgr = DumpDownloadManager(base_dir=tmp_path, http_get=get, max_concurrent=3)
     try:
-        assert _wait_until(lambda: _downloading(mgr) == 3), "all three should run at once"
+        mgr.start("en")
+        mgr.start("fr")
+        mgr.start("de")
+        # start() claims a slot or queues under its lock, before it returns: read at once, never polled.
+        assert _downloading(mgr) == 3, "all three should run at once"
         assert mgr.queue_order() == []  # nothing queued -- true parallelism
+        assert _wait_for(arrived, barrier), (
+            "the three download workers were never inside the fetch together"
+        )
+        assert _downloading(mgr) == 3
     finally:
         gate.set()
+        barrier.abort()  # releases any waiter a failed assertion left behind
 
 
 def test_excess_over_capacity_queues_and_stays_reorderable(tmp_path):
     gate = threading.Event()
-    mgr = DumpDownloadManager(
-        base_dir=tmp_path, http_get=lambda u, h: _SlowResp(gate), max_concurrent=2
-    )
-    for w in ("en", "fr", "de", "es"):
-        mgr.start(w)
+    get, arrived, barrier = _parallel_get(2, gate)
+    mgr = DumpDownloadManager(base_dir=tmp_path, http_get=get, max_concurrent=2)
     try:
-        assert _wait_until(lambda: _downloading(mgr) == 2), "capacity = 2 download at once"
+        for w in ("en", "fr", "de", "es"):
+            mgr.start(w)
+        assert _downloading(mgr) == 2, "capacity = 2 download at once"
         q = mgr.queue_order()
         assert len(q) == 2, "the excess two queue (prioritisation preserved)"
+        assert _wait_for(arrived, barrier), (
+            "the two download workers were never inside the fetch together"
+        )
         # The queued downloads remain operator-reorderable.
         reversed_q = [q[1], q[0]]
         assert mgr.reorder(reversed_q) == reversed_q
         assert mgr.queue_order() == reversed_q
     finally:
         gate.set()
+        barrier.abort()
 
 
 def test_stale_downloading_status_is_reset_on_reload(tmp_path):
@@ -96,7 +130,7 @@ def test_stale_downloading_status_is_reset_on_reload(tmp_path):
     )
     mgr.start("en")
     try:
-        assert _wait_until(lambda: _downloading(mgr) == 1)
+        assert _downloading(mgr) == 1
     finally:
         gate.set()
     # Join the worker so its own completion (status="done" + _save) fully lands
