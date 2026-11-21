@@ -174,7 +174,7 @@ async function run() {
     const split = its.filter((x) => /title=/.test(x.attrs));
     assert(split.length === 3, "three split items carry a hover, got " + split.length);
     for (const x of split) {
-      assert(/of your 11 sources/.test(x.attrs), "hover does not name the total: " + x.attrs);
+      assert(/of the 11 sites in your list/.test(x.attrs), "hover does not name the total: " + x.attrs);
       assert(/data-i18n-dyn/.test(x.attrs), "a titled split item must own its title: " + x.attrs);
     }
     assert(its[1].n === "3" && its[1].label === "Sources collecting",
@@ -288,7 +288,7 @@ async function run() {
     sb.paint({ counts: COUNTS });
     assert(tiles["db-t-commodity_prices"].lbl.textContent === "Commodity prices",
       "raw key on a tile: " + tiles["db-t-commodity_prices"].lbl.textContent);
-    assert(/of your 11 sources/.test(tiles["db-t-sources_pending"].title), "split tile has no hover");
+    assert(/of the 11 sites in your list/.test(tiles["db-t-sources_pending"].title), "split tile has no hover");
     assert(!tiles["db-t-articles"].hasAttribute("title"), "a plain tile must carry no split hover");
     I.use("ar");
     sb.paint();                                        // the langchange path: no payload, no fetch

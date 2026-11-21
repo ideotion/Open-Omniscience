@@ -74,10 +74,10 @@ def test_field_bundle_splits_the_flat_source_count():
     corpus = r.json()["data"]["corpus"]
     parts = ("sources_collecting", "sources_enabled_not_qualified", "sources_not_enabled")
     assert all(isinstance(corpus[k], int) for k in (*parts, "sources_named_by_bare_id")), corpus
-    assert sum(corpus[k] for k in parts) == corpus["sources"]
+    assert sum(corpus[k] for k in parts) == corpus["source_rows"]
     never = corpus["sources_never_stored"]
     grouped = sum(g["sources"] for g in never["groups"])
-    assert never["total"] <= corpus["sources"] and grouped <= never["total"]
+    assert never["total"] <= corpus["source_rows"] and grouped <= never["total"]
     assert never["groups_truncated"] is (grouped < never["total"])
 
 
@@ -105,7 +105,7 @@ def test_a_source_whose_enabled_flag_was_never_set_is_counted_in_the_split():
         with TestClient(app) as c:
             corpus = c.post("/api/diagnostics/debug-bundle").json()["data"]["corpus"]
         parts = ("sources_collecting", "sources_enabled_not_qualified", "sources_not_enabled")
-        assert sum(corpus[k] for k in parts) == corpus["sources"]
+        assert sum(corpus[k] for k in parts) == corpus["source_rows"]
     finally:
         s = SessionLocal()
         try:

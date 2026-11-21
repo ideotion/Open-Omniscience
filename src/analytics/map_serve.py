@@ -381,9 +381,10 @@ def basis() -> dict:
     stale = bool(built_at) and (pending or (age_s is not None and age_s > _BACKSTOP_S))
     rebuilding = _BUILD_LOCK.locked()
     note = (
-        "Served from the in-memory per-country source-coverage rollup for speed. Counts "
-        "are exact as of the last rollup build; the unlocated per-language donut is "
-        "computed live. New sources/articles appear after the next background rebuild."
+        "Served from the in-memory per-country source-coverage rollup for speed. Article "
+        "and keyword counts are exact as of the last rollup build; the source and "
+        "candidate counts and the unlocated per-language donut are computed live. New "
+        "articles appear after the next background rebuild."
     )
     if stale or rebuilding:
         note += (
