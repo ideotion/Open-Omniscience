@@ -159,6 +159,26 @@ def _run_figure(run: dict[str, Any], key: str, label: str, unit: str) -> str:
     return f"{label} {_n(run.get(key), unit)}"
 
 
+_TAG_PARTS = (("created", "created"), ("deleted", "deleted"), ("left_class", "left their class"), ("tags_changed", "tags changed"))
+
+
+def _tag_text(holder: dict[str, Any], key: str, reason_key: str) -> str:
+    """Row 276: what a file (or a country's files) did to tags, as counts: rows by change and objects by how they took part.
+
+    A block the member left null says its reason; a key the file does not carry is an older build's file, said so, never a 0."""
+    if key not in holder:
+        return "tag changes: not in this file (an older build)"
+    block = holder.get(key)
+    if not isinstance(block, dict):
+        return f"tag changes: not given: {_reason(holder.get(reason_key), 'no reason given in this file')}"
+    rows = _int(block.get("rows"))
+    if rows is None:
+        return "tag changes: not recorded in this file"
+    changes = ", ".join(f"{c} {_n(block.get(c))}" for c in ("added", "removed", "modified"))
+    objects = ", ".join(f"{label} {_n(block.get('objects_' + part))}" for part, label in _TAG_PARTS)
+    return f"tag changes: {_n(rows)} key rows ({changes}); objects {objects}"
+
+
 def country_lines(row: dict[str, Any]) -> list[str]:
     code = _code(row.get("alpha3"))
     status = row.get("status") if isinstance(row.get("status"), str) and row.get("status", "").isidentifier() else "?"
@@ -181,11 +201,16 @@ def country_lines(row: dict[str, Any]) -> list[str]:
     else:
         lines.append(f"  gaps: {_n(gaps)} (re-baselines {_n(row.get('rebaselines'))}, hand re-cuts {_n(row.get('hand_recuts_seen'))})"
                      + (f", {_n(row.get('gaps_not_shown'))} not shown" if _int(row.get("gaps_not_shown")) else ""))
+    lines.append("  all files, " + _tag_text(row, "tag_changes_total", "tag_changes_reason"))
+    untimed = _int(row.get("tag_rows_time_not_recorded"))
+    if untimed:
+        lines.append(f"  {_n(untimed)} key rows whose file stated no time (counted above, in no file below)")
     runs = [r for r in _list(row.get("runs")) if isinstance(r, dict)]
     for r in runs:
         seq = _int(r.get("sequence"))
         lines.append(f"  file {seq if seq is not None else '(sequence not recorded)'} of {_when(r.get('diff_timestamp')) or 'an unrecorded date'}: "
                      + ", ".join(_run_figure(r, key, label, unit) for key, label, unit in _COST_KEYS))
+        lines.append("    " + _tag_text(r, "tag_changes", "tag_changes_reason"))
     hidden = _int(row.get("runs_not_shown"))
     if hidden:
         lines.append(f"  {_n(hidden)} older files not shown (they are in the cost above)")
