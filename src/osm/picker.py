@@ -16,7 +16,8 @@ countries. The wizard SUGGESTS the countries of the interface language, read fro
 ``configs/language_countries.yml`` -- never from the IP address, which this module never sees
 and nothing here could ask for. Extracts stay continent-level, so a country costs its
 CONTINENT's download; the per-country daily change cost is shown before the choice, with the
-cadence and the re-baseline rule stated (applying the changes is 0.6's, S06-01).
+cadence and the re-baseline rule stated (the daily apply is S06-01's); once a country's files are
+applied, the size measured here is shown beside the estimate (row 278).
 
 NOTHING HERE TOUCHES THE NETWORK. Choosing a country writes one setting. The download is the
 existing ``/api/geo/downloads`` job, started by the Settings button through the ONE online
@@ -44,8 +45,11 @@ finds no ``admin_level=2`` relation for the country and records the failure.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+_LOG = logging.getLogger(__name__)
 
 #: When the diff estimate below was last reviewed (freshness-tested through the registry).
 OSM_DIFF_ESTIMATE_AS_OF = "2026-09"
@@ -68,10 +72,21 @@ DIFF_CAVEAT = (
     "measurement. The first daily update measures the real figure."
 )
 CADENCE = (
-    "One change file a day per extract. Applying it arrives in 0.6; until then the extract is "
-    "read as downloaded. If the changes are not applied for longer than about three months "
-    "(what the mirror keeps), the extract is downloaded again instead (a re-baseline)."
+    "One change file a day per extract. Each country's map data is brought up to date by applying "
+    "the change files published since its last update, when you run the daily update. If the "
+    "changes are not applied for longer than about three months (what the mirror keeps), the "
+    "extract is downloaded again instead (a re-baseline)."
 )
+#: Row 278: what the picker says when it has a measured figure, and why it has none.
+MEASURED_METHOD = (
+    "Measured on this machine: the median compressed size of the daily change files applied for "
+    "this country, as each crossed the wire."
+)
+NOT_MEASURED_NO_LANE = "not measured yet: no country's map data has been read on this machine"
+NOT_MEASURED_NO_RUN = "not measured yet: no daily change file has been applied for this country"
+NOT_MEASURED_NO_SIZE = "not measured: no applied daily change file for this country carries a measured size"
+NOT_MEASURED_OLD_LANE = "not measured: the map data was cut by an older build that does not record daily change files"
+NOT_MEASURED_UNREADABLE = "not measured: the map data could not be read"
 SUGGESTION_BASIS = (
     "Suggested from the interface language (the countries where it is an official or major "
     "language). Never from your IP address."
@@ -247,13 +262,73 @@ def _first(lang: str, chosen: list[str]) -> dict[str, Any] | None:
     return _row(cc) if cc and not chosen else None
 
 
+def measured_diff_costs(alpha3s: list[str]) -> dict[str, dict[str, Any]]:
+    """Row 278 (Q824): the daily change file cost MEASURED here, per country, beside the estimate.
+
+    ``{alpha3: {"diff_measured": {...} | None, "diff_measured_reason": str | None}}``. The figure is the median of
+    ``osm_diff_runs.bytes_fetched`` over the country's applied files that carry one, with how many did and the newest file's
+    own date. A country with no figure gets ``None`` and the reason, never a 0. Read in ONE lane session that is closed when
+    the block ends; when the lane file does not exist it is not opened (``lane_exists`` is a stat).
+    """
+    import statistics
+
+    from sqlalchemy import inspect, select
+
+    from src.osm.lane_models import OsmDiffRun
+    from src.versioned import store
+
+    wanted = sorted({a for a in alpha3s if a})
+    out: dict[str, dict[str, Any]] = {}
+
+    def none(reason: str) -> dict[str, dict[str, Any]]:
+        return {a: {"diff_measured": None, "diff_measured_reason": reason} for a in wanted}
+
+    if not wanted:
+        return out
+    if not store.lane_exists("osm"):
+        return none(NOT_MEASURED_NO_LANE)
+    try:
+        with store.lane_session("osm") as s:
+            if OsmDiffRun.__tablename__ not in set(inspect(s.get_bind()).get_table_names()):
+                return none(NOT_MEASURED_OLD_LANE)
+            rows = s.execute(
+                select(OsmDiffRun.alpha3, OsmDiffRun.bytes_fetched, OsmDiffRun.diff_timestamp).where(OsmDiffRun.alpha3.in_(wanted))
+            ).all()
+    except Exception as exc:  # noqa: BLE001 - the picker still draws the estimate; the reason names the failure by class only
+        _LOG.warning("the measured OSM change file costs could not be read (%s)", type(exc).__name__)
+        return none(NOT_MEASURED_UNREADABLE)
+    for a in wanted:
+        mine = [r for r in rows if r[0] == a]
+        sizes = [int(r[1]) for r in mine if r[1] is not None]
+        if not mine:
+            out[a] = {"diff_measured": None, "diff_measured_reason": NOT_MEASURED_NO_RUN}
+        elif not sizes:
+            out[a] = {"diff_measured": None, "diff_measured_reason": NOT_MEASURED_NO_SIZE}
+        else:
+            stamps = [r[2] for r in mine if r[2] is not None]
+            out[a] = {
+                "diff_measured": {
+                    "median_bytes": int(statistics.median(sizes)),
+                    "files_measured": len(sizes),
+                    "files_applied": len(mine),
+                    "through": max(stamps).date().isoformat() if stamps else None,
+                    "method": MEASURED_METHOD,
+                },
+                "diff_measured_reason": None,
+            }
+    return out
+
+
 def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """Everything the Settings picker draws. Reads local files only (``law`` from the corpus)."""
+    """Everything the Settings picker draws. Reads local files only (``law`` from the corpus; the measured change file
+    costs from the OSM lane, in one session closed before this returns)."""
     from src.catalog.countries import ISO_3166_1_ALPHA2
     from src.geo.osm_regions import OSM_SIZES_AS_OF
 
     chosen = selected()
     everyone = sorted((_row(cc) for cc in ISO_3166_1_ALPHA2), key=lambda r: r["name"].casefold())
+    rows = [_row(cc) for cc in chosen]
+    measured = measured_diff_costs([r["alpha3"] for r in rows if r["alpha3"]])
     return {
         "enabled": bool(chosen),
         "off": None if chosen else OFF,
@@ -265,7 +340,7 @@ def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str
         "law_basis": LAW_BASIS,
         "law_suggested": law or [],
         "law_unavailable": law is None,
-        "selected": [_row(cc) for cc in chosen],
+        "selected": [{**r, **measured.get(r["alpha3"] or "", {"diff_measured": None, "diff_measured_reason": None})} for r in rows],
         "countries": [{"cc": r["cc"], "name": r["name"], "alpha3": r["alpha3"]} for r in everyone],
         "size_as_of": OSM_SIZES_AS_OF,
         "diff": {
@@ -274,6 +349,5 @@ def picker_state(lang: str, law: list[dict[str, Any]] | None = None) -> dict[str
             "cadence": CADENCE,
             "retention_days": DIFF_RETENTION_DAYS,
             "as_of": OSM_DIFF_ESTIMATE_AS_OF,
-            "apply": "0.6",
         },
     }

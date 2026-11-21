@@ -171,7 +171,8 @@ def test_every_figure_travels_with_its_method_caveat_and_dates(settings_file):
     d = state["diff"]
     assert d["method"] == P.DIFF_METHOD and "from memory" in d["method"]
     assert d["caveat"] == P.DIFF_CAVEAT and "not a measurement" in d["caveat"]
-    assert "re-baseline" in d["cadence"] and d["apply"] == "0.6"
+    assert "re-baseline" in d["cadence"] and "apply" not in d, "the daily apply ships: no field still says it arrives in 0.6 (row 278)"
+    assert "0.6" not in d["cadence"] and "until then" not in d["cadence"]
     assert d["retention_days"] == 90 and re.fullmatch(r"\d{4}-\d{2}", d["as_of"])
     assert re.fullmatch(r"\d{4}-\d{2}", state["size_as_of"])
 
