@@ -164,7 +164,7 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
     (
         "app-insights.js",
         "font-size=\"10\" fill=\"var(--fg)\">${cc}</text>",
-        "the per-country chart axis label (the SVG <title> beside it carries the name)",
+        "the per-country chart axis label (the title attribute beside it carries the name)",
     ),
     ("app-insights.js", "ooLangCell(k.language)", "a keyword's language"),
     ("app-insights.js", "(r.languages || []).map((l) => ooLangCell(l))", "a concept group chip's languages"),

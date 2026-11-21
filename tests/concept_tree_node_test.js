@@ -67,7 +67,7 @@ function lines(svg) {
     .map((m) => ({ x1: +m[1], y1: +m[2], x2: +m[3], y2: +m[4] }));
 }
 function labels(svg) {
-  return [...svg.matchAll(/<g transform="translate\(([-\d.]+),([-\d.]+)\)">(?:<title>([^<]*)<\/title>)?<text[^>]*>([^<]*)<\/text>/g)]
+  return [...svg.matchAll(/<g transform="translate\(([-\d.]+),([-\d.]+)\)"(?: title="([^"]*)")?><text[^>]*>([^<]*)<\/text>/g)]
     .map((m) => ({ x: +m[1], y: +m[2], title: m[3] || "", text: m[4] }));
 }
 const rOf = (p) => Math.hypot(p.x - GEO.cx, p.y - GEO.cy);
