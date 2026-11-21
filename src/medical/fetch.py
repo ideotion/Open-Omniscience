@@ -286,7 +286,8 @@ def run_fetch(
             if isinstance(exc, TransportStopped):
                 # R768/R769: protected mode was switched on under a direct run, or the settings could not be read. Named, and not
                 # charged to the file; the run never goes on, on that transport or another, until the operator starts it again.
-                failed = {"file": name, "error": "protected_mode" if exc.reason == "protected" else "settings_unreadable",
+                errors = {"protected": "protected_mode", "unprotected": "protected_mode_off"}
+                failed = {"file": name, "error": errors.get(exc.reason, "settings_unreadable"),
                           "reason": str(exc)}
                 break
             if kill_switch_active():

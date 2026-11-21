@@ -76,6 +76,34 @@ def test_a_download_through_the_proxy_goes_on_while_protected_mode_stays_on(monk
     assert w.stop_reason() is None
 
 
+def test_a_proxy_start_stops_when_protected_mode_is_switched_off(monkeypatch):
+    """R772: a download is bound to the mode it was approved under, in either direction."""
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    w = tw.TransportWatch()
+    _settings(monkeypatch)
+    tw.bump()
+    assert w.stop_reason() == "unprotected"
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)  # switched back on: the stop stands
+    with pytest.raises(tw.TransportStopped) as exc:
+        w.check()
+    assert exc.value.reason == "unprotected" and str(exc.value) == tw.UNPROTECTED_STOP
+    assert "switched off" in tw.UNPROTECTED_STOP and "direct connection" in tw.UNPROTECTED_STOP
+
+
+def test_switching_protected_mode_off_tells_every_watch_at_once(monkeypatch, tmp_path):
+    import src.safety.settings as settings
+    from src.llm import install_transport as it
+
+    monkeypatch.setattr(settings, "_path", lambda: tmp_path / "safety_settings.json")
+    monkeypatch.setattr(it, "stop_running_installs", lambda: [])
+    settings.save_settings({"fetch_mode": "protected", "http_proxy": _PROXY})
+    before = tw.generation()
+    settings.save_settings({"http_proxy": "socks5h://127.0.0.1:9150"})  # protected to protected: no switch
+    assert tw.generation() == before
+    settings.save_settings({"fetch_mode": "transparent"})
+    assert tw.generation() == before + 1
+
+
 @pytest.mark.parametrize("protected", [False, True])
 def test_unreadable_settings_stop_any_download_and_name_that_reason(monkeypatch, protected):
     if protected:
@@ -345,6 +373,44 @@ def test_the_queue_is_held_when_protected_mode_comes_on_and_resumed_only_by_the_
 
 
 @pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_switching_protected_mode_off_holds_what_was_queued_through_the_proxy(monkeypatch, tmp_path, kind):
+    """R772: nothing queued under protected mode starts over the direct connection without a click; the panel names the
+    transport a resume would use BEFORE the click."""
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    launched: list[str] = []
+
+    def launch(entry):
+        launched.append(entry.key)
+        entry.status = "done"
+
+    monkeypatch.setattr(m, "_launch", launch)
+    busy = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    busy.status = "downloading"
+    m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    (k,) = m._order
+    busy.status = "done"
+    _settings(monkeypatch)  # switched off
+    m._pump()
+    assert launched == [] and m._entries[k].held_by == "unprotected"
+    row = next(d for d in m.list() if d["key"] == k)
+    assert row["held_by"] == "unprotected" and row["resume_transport"] == "direct"
+    assert m.resume_held() == 1 and launched == [k]  # the operator's click in direct mode
+
+
+def test_a_launch_decided_through_the_proxy_stops_if_the_switch_off_lands_first(monkeypatch):
+    from src.safety.fetcher import _session_for
+
+    st = _settings(monkeypatch)  # switched off between the pump's reading and the session
+    with tw.run(tw.for_launch("protected")), pytest.raises(tw.TransportStopped) as exc:
+        _session_for(st).get("https://dumps.example.org/big")
+    assert exc.value.reason == "unprotected"
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
 def test_unreadable_settings_hold_even_a_download_queued_under_protected_mode(monkeypatch, tmp_path, kind):
     from src.ingest import clear_kill_switch
 
@@ -576,6 +642,9 @@ def test_every_panel_names_the_two_reasons_in_every_language():
 
     keys = [
         pause_p, pause_s, "Held: protected mode was switched on", "Held: the settings could not be read", "Resume the queue",
+        "Held: protected mode was switched off", "Resume the queue through your proxy", "Resume the queue over the direct connection",
+        "Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go "
+        "on over the direct connection until you resume the queue.", tw.UNPROTECTED_STOP,
         "Resume every held download, in queue order, through the transport now in force.",
         tw.PROTECTED_STOP, tw.UNREADABLE_STOP, it.AI_INSTALL_UNREADABLE_NOTE, it.AI_INSTALLER_UNREADABLE_NOTE,
     ]

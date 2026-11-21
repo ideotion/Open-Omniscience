@@ -158,6 +158,7 @@ def _dump_jobs() -> list[dict]:
                 "paused_by": e.get("paused_by"),
                 # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
                 "held_by": e.get("held_by"),
+                "resume_transport": e.get("resume_transport"),
                 "actions": _dl_actions(state),
             }
         )
@@ -208,6 +209,7 @@ def _osm_jobs() -> list[dict]:
                 "paused_by": e.get("paused_by"),
                 # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
                 "held_by": e.get("held_by"),
+                "resume_transport": e.get("resume_transport"),
                 "actions": _dl_actions(state),
             }
         )

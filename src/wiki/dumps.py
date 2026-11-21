@@ -161,7 +161,8 @@ class DownloadEntry:
     # while the status is "paused", so a stale value never outlives the pause.
     paused_by: str | None = None
     # R768's queue ruling: why a QUEUED download is HELD instead of started -- "protected" (protected mode came on and it was
-    # queued, or had started, over the direct connection) or "settings" (the settings could not be read, R769) -- and the
+    # queued, or had started, over the direct connection), "unprotected" (R772: protected mode went off and it was queued, or
+    # had started, through the proxy) or "settings" (the settings could not be read, R769) -- and the
     # transport it was queued under ("protected" | "direct"). A held download keeps its place and waits for the operator's
     # "Resume the queue", never for a mode change.
     held_by: str | None = None
@@ -448,6 +449,7 @@ class DumpDownloadManager:
         with self._lock:
             entries = list(self._entries.values())
         out = []
+        transport: str | None = None
         for e in entries:
             d = e.to_dict()
             # PERF-09: the measurement rides BESIDE the byte counts, and
@@ -455,6 +457,13 @@ class DumpDownloadManager:
             d["rate"] = self._rates.snapshot(
                 e.key, total_bytes=e.total_bytes or None, done_bytes=e.downloaded_bytes
             )
+            if d.get("held_by"):
+                # R772: the panel says, before the click, which transport "Resume the queue" would use now
+                if transport is None:
+                    from src.safety.transport_watch import resume_transport
+
+                    transport = resume_transport()
+                d["resume_transport"] = transport
             out.append(d)
         return out
 
@@ -729,7 +738,7 @@ class DumpDownloadManager:
                 entry.status = "queued"
                 entry.error = None
                 entry.paused_by = None
-                entry.held_by = "protected" if exc.reason == "protected" else "settings"
+                entry.held_by = {"protected": "protected", "unprotected": "unprotected"}.get(exc.reason, "settings")
                 mine = getattr(entry, "_launch_seq", 0) or 0
                 entry._stopped_seq = mine  # type: ignore[attr-defined]
                 with self._lock:

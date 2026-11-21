@@ -260,7 +260,8 @@
     var line = "";
     if (j.state === "queued" && j.held_by) {
       // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
-      line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+      line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
+        : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
     } else if (j.state === "paused") {
       if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
       else if (j.paused_by === "operator") line = t("Paused by you.");
@@ -371,8 +372,12 @@
     var queuedKeysByKind = {};
     queued.forEach(function (j) { if (isDl(j.kind)) (queuedKeysByKind[j.kind] = queuedKeysByKind[j.kind] || []).push(dlKey(j)); });
     // R768: protected mode (or unreadable settings) HELD the queue; ONE control resumes it, in order, after the consent popup
-    var held = queued.some(function (j) { return j.held_by; })
-      ? '<div style="padding:2px 0 6px"><button class="tbtn" data-tm="resume-queue" title="' + esc(t("Resume every held download, in queue order, through the transport now in force.")) + '">' + esc(t("Resume the queue")) + "</button></div>"
+    // R772: the button says, BEFORE the click, which transport it resumes over (the server's reading)
+    var heldJob = queued.filter(function (j) { return j.held_by; })[0];
+    var heldLabel = !heldJob ? "" : heldJob.resume_transport === "proxy" ? t("Resume the queue through your proxy")
+      : heldJob.resume_transport === "direct" ? t("Resume the queue over the direct connection") : t("Resume the queue");
+    var held = heldJob
+      ? '<div style="padding:2px 0 6px"><button class="tbtn" data-tm="resume-queue" title="' + esc(t("Resume every held download, in queue order, through the transport now in force.")) + '">' + esc(heldLabel) + "</button></div>"
       : "";
     var qHtml = '<div class="vsect">' + esc(t("Queue")) + "</div>" + held + (queued.length
       ? queued.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")

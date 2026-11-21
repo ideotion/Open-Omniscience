@@ -296,6 +296,12 @@ def save_settings(updates: dict) -> SafetySettings:
     if not was_protected and _effective_protected():  # the mode in force, which an OO_FETCH_MODE override decides
         # R765: protected mode is written first, THEN any AI install still downloading over a direct connection is stopped.
         current.stopped_ai_installs = _stop_ai_installs()  # type: ignore[attr-defined]
+    elif was_protected and not _effective_protected():
+        # R772: switched OFF. Every download that began through the proxy sees it at its next boundary and is held; none goes on
+        # over the direct connection without the operator's click.
+        from src.safety.transport_watch import bump
+
+        bump()
     return current
 
 

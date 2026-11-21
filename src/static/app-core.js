@@ -2648,7 +2648,8 @@
       let line = "";
       if (j.state === "queued" && j.held_by) {
         // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
-        line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+        line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
+          : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
       } else if (j.state === "paused") {
         if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
         else if (j.paused_by === "operator") line = t("Paused by you.");
@@ -2815,8 +2816,9 @@
       }
       if (elQ) {
         // R768: protected mode (or unreadable settings) HELD the queue; ONE control resumes it, in order, after the consent popup
-        const held = queued.some(j => j.held_by)
-          ? `<div style="padding:2px 0 6px"><button class="tiny" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue()">${esc(t("Resume the queue"))}</button></div>`
+        const heldJob = queued.find(j => j.held_by);
+        const held = heldJob
+          ? `<div style="padding:2px 0 6px"><button class="tiny" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue()">${esc(_resumeQueueLabel(t, heldJob.resume_transport))}</button></div>`
           : "";
         let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + held + (queued.length
           ? queued.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
@@ -2888,6 +2890,12 @@
         toast(r.detail ? t(r.detail) : t("Resumed."));
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
+    }
+    // R772: the queue's resume button says, BEFORE the click, which transport it resumes over (the server's reading).
+    function _resumeQueueLabel(t, transport) {
+      if (transport === "proxy") return t("Resume the queue through your proxy");
+      if (transport === "direct") return t("Resume the queue over the direct connection");
+      return t("Resume the queue");
     }
     // R768's queue ruling: the ONE control that resumes every held download, in queue order. It re-opens fetches, so the ONE
     // consent popup comes first (invariant #14); each download then starts under the transport now in force and its own rules.

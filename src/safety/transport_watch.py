@@ -42,6 +42,10 @@ PROTECTED_STOP = (
     "Stopped because protected mode was switched on: this download had started over a direct connection, and it does not "
     "continue on it. Start it again to download through your proxy."
 )
+UNPROTECTED_STOP = (
+    "Stopped because protected mode was switched off: this download had started through your proxy, and it does not continue "
+    "over the direct connection. Start it again to download over the direct connection."
+)
 UNREADABLE_STOP = (
     "Stopped because the safety settings could not be read: the transport you chose is unknown until they can be read "
     "again, so nothing is sent. Start it again once they can be read."
@@ -62,7 +66,11 @@ class TransportStopped(RuntimeError):
 
 
 def stop_message(reason: str) -> str:
-    return UNREADABLE_STOP if reason == "unreadable" else PROTECTED_STOP
+    if reason == "unreadable":
+        return UNREADABLE_STOP
+    if reason == "unprotected":
+        return UNPROTECTED_STOP
+    return PROTECTED_STOP
 
 
 def generation() -> int:
@@ -102,14 +110,24 @@ def hold_reason(queued_mode: str | None, mode: tuple[bool, bool] | None = None) 
 
     ``"settings"`` while the settings cannot be read, whatever it was queued under; ``"protected"`` when protected mode is on and the
     download was queued under the other mode (or before the mode was recorded): the operator queued it for a direct fetch, so a
-    multi-GB fetch over the protected transport needs its own click in that mode. ``mode`` is a ``(protected, unreadable)`` reading
+    multi-GB fetch over the protected transport needs its own click in that mode; ``"unprotected"`` (R772) when protected mode is
+    off and it was queued through the proxy: a download is bound to the mode it was approved under, in either direction. ``mode`` is a ``(protected, unreadable)`` reading
     taken once for a whole queue."""
     protected, unreadable = mode if mode is not None else _mode_now()
     if unreadable:
         return "settings"
     if protected and queued_mode != "protected":
         return "protected"
+    if not protected and queued_mode == "protected":
+        return "unprotected"  # R772: queued through the proxy, never started over the direct connection unasked
     return None
+
+
+def resume_transport() -> str:
+    """What "Resume the queue" would send held downloads over NOW, for the panel to say before the click (R772): ``"proxy"``,
+    ``"direct"`` or ``"settings"`` (the settings cannot be read, so nothing would be sent)."""
+    protected, unreadable = _mode_now()
+    return "settings" if unreadable else ("proxy" if protected else "direct")
 
 
 def mode_now() -> tuple[bool, bool]:
@@ -190,6 +208,8 @@ class TransportWatch:
             reason = "unreadable"
         elif protected and not self.started_protected:
             reason = "protected"
+        elif self.started_protected and not protected:
+            reason = "unprotected"  # R772: started through the proxy, never goes on over the direct connection
         if reason is not None:
             with self._lock:
                 self._reason = self._reason or reason
