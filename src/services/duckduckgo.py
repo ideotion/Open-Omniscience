@@ -87,6 +87,33 @@ class SearchRobotsUnavailable(SearchRefusedByRobots):
     reason = "unavailable"
 
 
+#: The common feed addresses probed on every site a topic search returns (row 224, R761). A module constant
+#: rather than a local list so the disclosure can be tied to it: ``src/static/net-hosts.js`` (the consent
+#: popup's hover) and the "Discover by topic" row of ``docs/SECURITY.md`` name exactly these, and
+#: ``tests/test_topic_discovery_disclosure_r761.py`` reddens when the three drift apart.
+FEED_PROBE_PATHS: tuple[str, ...] = (
+    "/rss",
+    "/rss.xml",
+    "/rss2.xml",
+    "/rss2.0.xml",
+    "/feed",
+    "/feed.xml",
+    "/atom.xml",
+    "/rdf.xml",
+    "/news/rss",
+    "/rss/news",
+    "/rss/feed",
+    "/feed/rss",
+    "/index.rss",
+    "/index.xml",
+    "/index.atom",
+    "/blog/rss",
+    "/blog/feed",
+    "/posts/rss",
+    "/articles/rss",
+)
+
+
 class DuckDuckGoSearch:
     """
     A class for performing web searches using DuckDuckGo.
@@ -471,30 +498,8 @@ class DuckDuckGoSearch:
                 if feed_url and feed_url not in feeds:
                     feeds.append(feed_url)
 
-            # Method 2: Try common RSS feed paths
-            common_paths = [
-                "/rss",
-                "/rss.xml",
-                "/rss2.xml",
-                "/rss2.0.xml",
-                "/feed",
-                "/feed.xml",
-                "/atom.xml",
-                "/rdf.xml",
-                "/news/rss",
-                "/rss/news",
-                "/rss/feed",
-                "/feed/rss",
-                "/index.rss",
-                "/index.xml",
-                "/index.atom",
-                "/blog/rss",
-                "/blog/feed",
-                "/posts/rss",
-                "/articles/rss",
-            ]
-
-            for path in common_paths:
+            # Method 2: Try common RSS feed paths (FEED_PROBE_PATHS, the list the disclosure names)
+            for path in FEED_PROBE_PATHS:
                 feed_url = cls._resolve_url(path, url)
                 if feed_url and feed_url not in feeds:
                     # Probe the candidate path through the same ethical fetcher

@@ -3859,7 +3859,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // The disclosure of an egress is a consent string: it ships x12 like the box beside it.
       box.textContent = _discoveryResultOn
-        ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo.")
+        ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo, and each site it returns will be visited.")
         : t("Disabled (the default): no topic query leaves this machine.");
     }
     async function saveDiscoveryExternal(box) {
@@ -3869,7 +3869,7 @@
       // one) changes nothing (audit A-004).
       if (!box || box.id !== "discovery-external" || box.type !== "checkbox") return;
       const on = box.checked;
-      if (on && !confirm(t("Send your topic-discovery queries to DuckDuckGo? Your query leaves this machine."))) {
+      if (on && !confirm(t("Send your topic-discovery queries to DuckDuckGo and visit each site it returns? Your query leaves this machine, and each of those sites sees your visit."))) {
         box.checked = false;
         return;
       }
