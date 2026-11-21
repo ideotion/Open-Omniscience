@@ -100,7 +100,7 @@ def test_resolve_backend_reports_ollama_installed_but_stopped(fake_ollama, monke
     monkeypatch.setattr(backend_mod, "_ollama_available", lambda: False)
     monkeypatch.setattr(backend_mod, "_vllm_status", lambda: {"installed": False, "running": False})
     r = backend_mod.resolve_backend()
-    assert r["ollama"] == {"installed": True, "running": False, "can_launch": True}
+    assert r["ollama"] == {"installed": True, "running": False, "refused": None, "can_launch": True}
     # ...while the pre-existing flat field keeps its old meaning, so nothing that read
     # it before changes behaviour.
     assert r["ollama_available"] is False
@@ -115,7 +115,7 @@ def test_every_branch_carries_the_launch_fields(fake_ollama, monkeypatch):
     for override in (None, "ollama", "vllm", "auto"):
         r = backend_mod.resolve_backend(override=override)
         assert "ollama" in r, f"missing ollama block for override={override!r}"
-        assert set(r["ollama"]) == {"installed", "running", "can_launch"}
+        assert set(r["ollama"]) == {"installed", "running", "refused", "can_launch"}
         assert r["vllm_can_launch"] is True, f"override={override!r}"
 
 

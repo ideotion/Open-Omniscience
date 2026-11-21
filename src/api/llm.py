@@ -1759,8 +1759,10 @@ def ollama_release() -> dict:
     app does not own, costs at worst one model reload, and is how the card is handed to
     vLLM on a single-GPU machine. A queued summary or translation run in flight is paused first (below).
     """
-    from src.llm.ollama_lifecycle import release_vram
+    from src.llm.ollama_lifecycle import refusal, release_vram
 
+    if refusal() is not None:
+        return release_vram()  # row 234: the address is refused, so nothing is released and no run is paused for it
     return _after_runs_pause(release_vram, "release")
 
 
