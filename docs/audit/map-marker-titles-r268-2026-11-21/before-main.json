@@ -1,0 +1,13 @@
+{
+ "before_main": {
+  "title_attr": null,
+  "tip_target": false,
+  "title_child": "2 Rue Fixture, Paris, from the adresse field of Salle Fixture (fr). Located at OpenStreetMap way/42, extract of 2026-10-01."
+ },
+ "long_press_tip": {
+  "text": "Belgium — 51 sources",
+  "opacity": "1",
+  "aria_hidden": null
+ },
+ "page_errors": []
+}
