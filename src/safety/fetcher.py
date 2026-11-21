@@ -897,7 +897,10 @@ def following_session(owner: str, user_agent: str, *, allowed_hosts: Iterable[st
         held = _FOLLOWING.get(name)
         if getattr(s, "read_failed", False) and held is not None and held[0][-1] == user_agent and held[0][-2] == hosts:
             return held[1]  # the setting could not be read: keep the transport this was built with, never a direct one
-        if held is None or held[0] != key:
+        watch = getattr(held[1], "transport_watch", None) if held is not None else None
+        if held is None or held[0] != key or (watch is not None and watch.latched and not getattr(s, "store_unreadable", False)):
+            # R768/R769: a stopped session is never re-opened; once the settings read again, the next request gets a fresh one built
+            # under the rules then in force (a short protected window or a passing unreadable store must not stop it for good).
             held = (key, _session_for(s, user_agent=user_agent, allowed_hosts=hosts))
             _FOLLOWING[name] = held
         return held[1]

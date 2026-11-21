@@ -19,7 +19,12 @@ boundary, whether it must stop:
 A download that started through the proxy and stays protected goes on: that is not a downgrade.
 
 The answer is cheap to ask per chunk: the save that switches protected mode on raises :func:`bump`, which every watch reads at
-once, and otherwise the settings are re-read at most every :data:`RECHECK_S`. Once a watch has a reason it keeps it.
+once, and otherwise the settings are re-read at most every :data:`RECHECK_S`. Once a watch has a reason it keeps it: a long-lived
+holder (``following_session``) asks :attr:`TransportWatch.latched` and builds a fresh session under the rules then in force, never
+re-opening the stopped one.
+
+Only bodies read through ``iter_content`` (and so ``iter_lines`` and ``content``) are watched; nothing here reads ``resp.raw``
+directly, and a reader that did would bypass the watch.
 """
 
 from __future__ import annotations
@@ -78,7 +83,8 @@ def _mode_now() -> tuple[bool, bool]:
         s = load_settings()
     except Exception:  # noqa: BLE001 - a store that cannot be read is the case this exists for
         return False, True
-    return bool(s.is_protected), bool(getattr(s, "read_failed", False))
+    unreadable = bool(getattr(s, "read_failed", False) or getattr(s, "store_unreadable", False))
+    return bool(s.is_protected), unreadable
 
 
 class TransportWatch:
@@ -96,8 +102,19 @@ class TransportWatch:
 
     @classmethod
     def for_settings(cls, settings) -> TransportWatch:
-        """A watch for a session built from ``settings`` (the snapshot it took its transport from)."""
-        return cls(protected=bool(settings.is_protected), unreadable=bool(getattr(settings, "read_failed", False)))
+        """A watch for a session built from ``settings`` (the snapshot it took its transport from).
+
+        The snapshot was read BEFORE this watch took the generation, so a switch saved between the two would be missed: the first
+        check re-reads the settings whatever the interval."""
+        w = cls(protected=bool(settings.is_protected), unreadable=bool(getattr(settings, "read_failed", False)))
+        w._checked = float("-inf")
+        return w
+
+    @property
+    def latched(self) -> bool:
+        """Whether this watch already has a stop reason (no settings read)."""
+        with self._lock:
+            return self._reason is not None
 
     def stop_reason(self) -> str | None:
         with self._lock:

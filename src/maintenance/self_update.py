@@ -173,6 +173,7 @@ def _get_json(url: str) -> Any:
     from src.safety.fetcher import (
         FETCH_FAILURES,
         RedirectRefused,
+        TransportStopped,
         TransportUnavailable,
         failure_words,
         guarded_session,
@@ -193,7 +194,7 @@ def _get_json(url: str) -> Any:
             raise ValueError("nested") from None
     except RedirectRefused:
         refused = True
-    except TransportUnavailable:
+    except (TransportUnavailable, TransportStopped):
         raise
     except FETCH_FAILURES as exc:
         failure = failure_words(exc)

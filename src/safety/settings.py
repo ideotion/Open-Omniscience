@@ -82,6 +82,8 @@ class SafetySettings:
     #: no fetcher or session turns into a direct connection (``TransportUnavailable`` / a transport refusal): offline, as the app
     #: starts (R117), until the store reads again.
     read_failed = False
+    #: R769: the stored choice could not be read (even when an environment proxy keeps the transport usable): a running download stops.
+    store_unreadable = False
 
 
 # The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
@@ -205,6 +207,7 @@ def load_settings() -> SafetySettings:
         if os.getenv("OO_FETCH_MODE") not in VALID_MODES:
             s.fetch_mode = "protected"
             s.read_failed = not (s.http_proxy or s.http_proxies)
+            s.store_unreadable = True
         return s
     return _settings_from(raw)
 

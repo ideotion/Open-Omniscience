@@ -113,6 +113,55 @@ def test_the_settings_are_not_reread_on_every_chunk(monkeypatch):
     assert reads == [1]
 
 
+def test_a_session_snapshot_taken_before_the_switch_rereads_at_its_first_check(monkeypatch):
+    import src.safety.settings as settings
+
+    monkeypatch.setattr(tw, "RECHECK_S", 60.0)
+    snapshot = settings.SafetySettings()  # read direct...
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    tw.bump()  # ...and the switch is saved before the session's watch takes the generation
+    w = tw.TransportWatch.for_settings(snapshot)
+    assert w.stop_reason() == "protected"
+
+
+def test_an_unreadable_store_stops_a_download_even_when_the_environment_names_a_proxy(monkeypatch):
+    import src.safety.settings as settings
+    from src.config.kv_store import KvReadError
+
+    monkeypatch.delenv("OO_FETCH_MODE", raising=False)
+    monkeypatch.setenv("OO_HTTP_PROXY", _PROXY)
+    w = tw.TransportWatch(protected=False)
+
+    def locked():
+        raise KvReadError("locked")
+
+    monkeypatch.setattr(settings, "_read_raw", locked)
+    s = settings.load_settings()
+    assert s.is_protected and not s.read_failed and s.store_unreadable
+    assert w.stop_reason() == "unreadable"  # the R769 reason, never "protected mode was switched on"
+
+
+@pytest.mark.parametrize("passing", ["unreadable", "protected"])
+def test_a_long_lived_session_is_rebuilt_after_a_passing_stop(monkeypatch, passing):
+    from src.safety import fetcher
+
+    monkeypatch.setattr(fetcher, "_FOLLOWING", {})
+    _settings(monkeypatch)
+    s1 = fetcher.following_session("t768", "ua")
+    if passing == "unreadable":
+        _unreadable(monkeypatch)
+    else:
+        _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+        tw.bump()
+    with pytest.raises(tw.TransportStopped):
+        s1.transport_watch.check()
+    _settings(monkeypatch)  # readable again, back to direct: the transport key is the one s1 was built under
+    s2 = fetcher.following_session("t768", "ua")
+    assert s2 is not s1 and s2.transport_watch.stop_reason() is None
+    with pytest.raises(tw.TransportStopped):
+        s1.transport_watch.check()  # the stopped one is never re-opened
+
+
 # --------------------------------------------------------------------------- the session every download is built on
 
 
@@ -247,6 +296,53 @@ def test_an_osm_download_pauses_with_the_settings_reason(tmp_path):
     m = OsmDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _Resp())
     res = m._download(m._entry_for("monaco"))
     assert res.status == "paused" and res.paused_by == "settings" and res.error is None
+
+
+def test_an_osm_catch_up_run_is_one_download_and_stops_between_files(monkeypatch, tmp_path):
+    from src.osm import replication as rep
+    from src.safety import fetcher
+
+    _settings(monkeypatch)
+    sent: list[str] = []
+
+    class _S:
+        transport_watch = None
+
+        def get(self, url, **kw):
+            self.transport_watch.check()
+            sent.append(url)
+            raise AssertionError("unreached")
+
+    def fake_guarded_session(**kw):
+        s = _S()
+        s.transport_watch = tw.TransportWatch()
+        return s
+
+    monkeypatch.setattr(fetcher, "guarded_session", fake_guarded_session)
+    src_ = rep.GuardedDiffSource("monaco")
+    first = src_._session("https://download.geofabrik.de/a")
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    tw.bump()
+    second = src_._session("https://download.geofabrik.de/b")  # built under protected mode, but the run started direct
+    assert second.transport_watch is first.transport_watch
+    with pytest.raises(rep.DiffRefused) as exc:
+        src_.fetch_diff(2, tmp_path / "2.osc.gz")
+    assert str(exc.value) == tw.PROTECTED_STOP and sent == []
+
+
+def test_an_update_check_stopped_mid_request_is_a_named_409(monkeypatch):
+    from fastapi import HTTPException
+
+    from src.api import system
+    from src.maintenance import self_update
+
+    def stopped():
+        raise tw.TransportStopped("unreadable")
+
+    monkeypatch.setattr(self_update, "check", stopped)
+    with pytest.raises(HTTPException) as exc:
+        system.update_check()
+    assert exc.value.status_code == 409 and exc.value.detail == {"code": "transport_stopped", "message": tw.UNREADABLE_STOP}
 
 
 # --------------------------------------------------------------------------- the AI installs (R769)

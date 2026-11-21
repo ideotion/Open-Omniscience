@@ -72,8 +72,12 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   directly. A download already running when protected mode is switched on does not go on
   over the direct connection it started on: every session checks its transport before each
   request, redirect hop and chunk, so a dump or map download pauses (its partial file kept)
-  and a Medical papers run ends, each saying why, until you start it again; settings that can
-  no longer be read stop it the same way (R768, R769; `src/safety/transport_watch.py`;
+  and a Medical papers run ends, each saying why, until you start it again. An OSM update's
+  catch-up of several files is one download: a switch between two files ends the run rather
+  than moving the rest of it to the proxy. Settings that can no longer be read stop it the
+  same way, even when an environment proxy keeps the transport usable. A stopped session is
+  never reopened; the long-lived Wikipedia and ORES clients get a new one, built under the
+  rules then in force, once the settings read again (R768, R769; `src/safety/transport_watch.py`;
   `tests/test_transport_watch.py`). (`src/safety/fetcher.py`; `tests/test_transport_follows_setting.py`.)
 
   **The hover says how each lane leaves (S04-08's S5).** Every lane in the consent popup's

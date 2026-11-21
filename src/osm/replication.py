@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 from src.geo.osm_downloads import GEOFABRIK_BASE
@@ -198,23 +198,34 @@ class GuardedDiffSource:
         self.base = updates_base(region)
         self._factory = session_factory
         self._timeout = timeout
+        self._watch: Any = None  # the run's TransportWatch, taken at its first request
 
     def _session(self, url: str):
         if self._factory is not None:
             return self._factory(url)
         from src.safety.fetcher import guarded_session
+        from src.safety.transport_watch import TransportWatch
 
-        return guarded_session(isolation_token=url, allowed_hosts=REPLICATION_HOSTS)
+        s = guarded_session(isolation_token=url, allowed_hosts=REPLICATION_HOSTS)
+        # R768/R769: one catch-up run is one download. A session per file, but ONE watch for the run, taken at its first request: a
+        # switch to protected mode between two files stops the run rather than moving the rest of it to the proxy unasked.
+        if self._watch is None:
+            self._watch = s.transport_watch or TransportWatch()
+        s.transport_watch = self._watch
+        return s
 
     def _get(self, url: str):
         from src.ingest import kill_switch_engaged_since, kill_switch_epoch
         from src.ingest.airplane import AirplaneModeError
         from src.monitoring.secret_scrub import record_text
         from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
+        from src.safety.transport_watch import TransportStopped
 
         epoch = kill_switch_epoch()  # the request's window (R617, R614)
         try:
             resp = self._session(url).get(url, stream=True, timeout=self._timeout)
+        except TransportStopped as exc:
+            raise DiffRefused(str(exc)) from None  # the operator's own setting (R768/R769, #14e), never "the mirror is unavailable"
         except (NetworkBlocked, AirplaneModeError):
             raise DiffRefused(KILL_SWITCH_TEXT) from None
         except TransportUnavailable as exc:
@@ -260,6 +271,10 @@ class GuardedDiffSource:
         except Exception as exc:  # noqa: BLE001 - a body that stops half-way is a failed fetch, and the half file is not kept
             dest.unlink(missing_ok=True)
             from src.monitoring.secret_scrub import record_text
+            from src.safety.transport_watch import TransportStopped
+
+            if isinstance(exc, TransportStopped):
+                raise DiffRefused(str(exc)) from None  # R768/R769: stopped by the operator's own setting, never the mirror's failure
 
             raise DiffUnavailable(record_text(exc)) from None
         finally:
