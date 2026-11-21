@@ -6072,6 +6072,7 @@
   "This text is in force from": "Этот текст действует с",
   "This theme is taking up a bigger share of your corpus's daily coverage than its own recent history — worth a look, never proof of importance.": "Эта тема занимает бо́льшую долю ежедневных публикаций вашего корпуса, чем в своей недавней истории, — это стоит изучить, но никогда не доказывает важность.",
   "This title is not in the dump's index.": "Этого названия нет в индексе дампа.",
+  "This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1.": "Этот адрес vLLM находится не на этом компьютере, поэтому приложение к нему не обращается. Локальный ИИ работает только с этим компьютером: задайте OO_VLLM_URL как 127.0.0.1, localhost или ::1.",
   "This version cannot back up the living-source stores on this computer yet; a later version will.": "Эта версия пока не может сохранить хранилища живых источников на этом компьютере; это сможет следующая версия.",
   "This version is already in your corpus.": "Эта версия уже есть в вашем корпусе.",
   "This version is no longer held on this machine.": "Эта версия больше не хранится на этой машине.",
