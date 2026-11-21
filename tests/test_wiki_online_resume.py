@@ -75,7 +75,7 @@ def toggle(data_dir, monkeypatch):
             pass
 
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: _FakeScheduler())
-    monkeypatch.setattr(svc, "_build", lambda: built.append(_Runner()) or built[-1])
+    monkeypatch.setattr(svc, "_build", lambda *_a: built.append(_Runner()) or built[-1])
     app = FastAPI()
     app.include_router(router)
     try:
@@ -128,7 +128,7 @@ def test_the_lane_starts_only_when_its_setting_says_running(data_dir, monkeypatc
     import src.wiki.service as svc
 
     built: list[_Runner] = []
-    monkeypatch.setattr(svc, "_build", lambda: built.append(_Runner()) or built[-1])
+    monkeypatch.setattr(svc, "_build", lambda *_a: built.append(_Runner()) or built[-1])
     save_settings({"wiki_lane_state": state})
     try:
         assert svc.start_wiki_lane() is starts
@@ -193,7 +193,7 @@ def test_the_collection_start_buttons_resume_only_a_lane_that_was_on(
 
     built: list[_Runner] = []
     monkeypatch.setattr(sched, "get_scheduler", lambda: _Scheduler())
-    monkeypatch.setattr(svc, "_build", lambda: built.append(_ReadableRunner()) or built[-1])
+    monkeypatch.setattr(svc, "_build", lambda *_a: built.append(_ReadableRunner()) or built[-1])
     save_settings({"wiki_lane_state": state})
     app = FastAPI()
     app.include_router(sched.router)
