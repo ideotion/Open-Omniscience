@@ -184,7 +184,9 @@ def test_connect_ex_loopback_reaches_a_real_loopback_listener():
     """Control: the probe is not vacuous -- a loopback listener IS found."""
     with socket.socket() as srv:
         srv.bind(("127.0.0.1", 0))
-        srv.listen(1)
+        # A backlog with room for every probe: nothing accepts here, and on macOS a full loopback backlog answers a
+        # connect with EAGAIN (35), which read as "nothing listening" on the CI's second probe.
+        srv.listen(16)
         port = srv.getsockname()[1]
         assert L.connect_ex_loopback("127.0.0.1", port, timeout=1.0) == 0
         assert L.connect_ex_loopback("localhost", port, timeout=1.0) == 0
