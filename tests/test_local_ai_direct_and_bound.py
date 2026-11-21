@@ -289,6 +289,68 @@ def _is_the_loopback_transport(keyword) -> bool:
     )
 
 
+_LOOPBACK_TRANSPORT_SRC = '''
+class LoopbackTransport(httpx.HTTPTransport):
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        with loopback_only():
+            return super().handle_request(request)
+'''
+_LOOPBACK_FACTORY_SRC = '''
+def _loopback_transport() -> httpx.HTTPTransport:
+    from src.llm.loopback import LoopbackTransport
+
+    return LoopbackTransport()
+'''
+
+
+def _loopback_exception_is_exact(root) -> None:
+    """The exception names ONE class and ONE factory: both must match their reviewed parse tree exactly, the factory's name
+    may be bound only by that definition or a plain import of it, and neither may be built with arguments, subclassed,
+    reassigned or handed ``**kwargs``."""
+    import ast
+
+    def body_dump(src):
+        node = ast.parse(src).body[0]
+        if node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant):
+            node.body = node.body[1:]  # the docstring is free text
+        return ast.dump(node)
+
+    pinned = {("llm/loopback.py", "LoopbackTransport"): body_dump(_LOOPBACK_TRANSPORT_SRC),
+              ("llm/ollama.py", "_loopback_transport"): body_dump(_LOOPBACK_FACTORY_SRC)}
+    names = {"LoopbackTransport", "_loopback_transport"}
+    for path in sorted(root.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "LoopbackTransport" not in text and "_loopback_transport" not in text and "Client" not in text:
+            continue
+        rel = path.relative_to(root).as_posix()
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) and node.name in names:
+                assert (rel, node.name) in pinned, f"{rel}:{node.lineno} defines another {node.name}"
+                assert body_dump(ast.unparse(node)) == pinned[(rel, node.name)], f"{rel}:{node.lineno} changes {node.name}"
+            if isinstance(node, ast.ClassDef):
+                assert not any((isinstance(b, ast.Name) and b.id in names) or (isinstance(b, ast.Attribute) and b.attr in names)
+                               for b in node.bases), f"{rel}:{node.lineno} subclasses LoopbackTransport"
+            if isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    assert (a.asname or a.name) not in names or (a.asname in (None, a.name) and a.name in names
+                            and node.module in ("src.llm.ollama", "src.llm.loopback")), f"{rel}:{node.lineno} imports {a.name} as {a.asname}"
+            if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
+                for t in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                    for sub in ast.walk(t):
+                        hit = (isinstance(sub, ast.Name) and sub.id in names) or (isinstance(sub, ast.Attribute) and sub.attr in names)
+                        assert not hit, f"{rel}:{node.lineno} rebinds {ast.unparse(sub)}"
+            if isinstance(node, ast.Call):
+                f = node.func
+                fname = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+                if fname in names:
+                    assert not node.args and not node.keywords, f"{rel}:{node.lineno} builds {fname} with arguments"
+                if fname in {"setattr", "delattr"} and len(node.args) > 1:
+                    a1 = node.args[1]
+                    assert not (isinstance(a1, ast.Constant) and a1.value in names), f"{rel}:{node.lineno} {fname}s {a1.value}"
+                if fname in {"Client", "AsyncClient"}:
+                    assert all(k.arg is not None for k in node.keywords), f"{rel}:{node.lineno} hands {fname} **kwargs"
+
+
 def _sweep_evasions(root) -> None:
     """Fails on any way round the keyword sweep above in ``root``: a client built through an alias, a subclass or
     ``getattr``, or given its own proxy, mounts or transport (security read of R770)."""
@@ -354,6 +416,7 @@ def _sweep_evasions(root) -> None:
             if inner in builders:
                 given = {k.arg for k in node.keywords if not _is_the_loopback_transport(k)} & routes
                 assert not given, f"{rel}:{node.lineno} gives httpx.{inner} its own route: {sorted(given)}"
+    _loopback_exception_is_exact(root)  # the one exception (R767) is exactly the reviewed class and factory
 
 
 def test_the_sweep_also_refuses_the_ways_round_it():
@@ -374,6 +437,12 @@ def test_the_sweep_also_refuses_the_ways_round_it():
         "import httpx\nt = httpx.HTTPTransport(proxy='http://p')\n",
         "import httpx\nc = httpx.Client(trust_env=False, proxy='http://p')\n",
         "import httpx as h\nc = h.Client(trust_env=False, mounts={})\n",
+        # Ways round the R767 exception (security read of the merge with R770):
+        "import httpx\nc = httpx.Client(trust_env=False, **{'proxy': 'http://p'})\n",
+        "import httpx\ndef _loopback_transport():\n    return object()\nc = httpx.Client(trust_env=False, transport=_loopback_transport())\n",
+        "import httpx\nfrom m2 import proxied as _loopback_transport\nc = httpx.Client(trust_env=False, transport=_loopback_transport())\n",
+        "from src.llm.loopback import LoopbackTransport\nclass P(LoopbackTransport):\n    pass\n",
+        "from src.llm import ollama\nollama._loopback_transport = lambda: None\n",
     ],
 )
 def test_the_sweep_catches_each_way_round_it(code, tmp_path):
