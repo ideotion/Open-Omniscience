@@ -111,6 +111,47 @@ def refusal() -> str | None:
     return _loopback_refusal(configured_url(), setting="OO_OLLAMA_URL")
 
 
+def bind_address() -> str:
+    """The ``OLLAMA_HOST`` a daemon this app starts listens on: the configured loopback host and port (R771).
+
+    Exactly the address ``OllamaClient`` will connect to -- the port defaults the way an ``http(s)://`` URL does, because
+    that is the port the client uses -- so the daemon is reachable by the app and by nothing off this computer. An
+    inherited ``OLLAMA_HOST`` (``0.0.0.0`` would put the daemon on the local network) is never passed through.
+
+    Raises :class:`OllamaLifecycleError` for an address that is not on this computer, whose port cannot be read or is 0
+    (a random port the app would never find, so every Launch would orphan another daemon), or whose scheme is not
+    ``http`` (Ollama serves no TLS); the caller spawns nothing then. The alias names the loopback rule accepts besides
+    ``localhost`` are given as their literal address: the daemon would resolve a name itself, and on a machine whose hosts
+    file lacks it that goes to DNS, whose answer could be a network address (security read of R771).
+    """
+    from urllib.parse import urlparse
+
+    refused = refusal()
+    if refused is not None:
+        raise OllamaLifecycleError(refused)
+    url = configured_url()
+    parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        raise OllamaLifecycleError(
+            "OO_OLLAMA_URL has a port that is not a number from 0 to 65535, so Ollama was not started."
+        ) from None
+    if parsed.scheme.lower() != "http":
+        raise OllamaLifecycleError(
+            "OO_OLLAMA_URL must start with http:// for an Ollama this app starts (Ollama serves no TLS), so it was not started."
+        )
+    if port is None:
+        port = 80  # the port the client itself uses for an http:// address with none
+    if port == 0:
+        raise OllamaLifecycleError(
+            "OO_OLLAMA_URL has port 0, which would start Ollama on a random port the app never finds, so it was not started."
+        )
+    host = parsed.hostname or "127.0.0.1"
+    host = {"localhost.localdomain": "127.0.0.1", "ip6-localhost": "::1"}.get(host, host)
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
 def is_running(*, timeout: float = 2.0) -> bool:
     """Live loopback probe of the daemon. Mirrors ``vllm_lifecycle.is_running``:
     never inferred from a tracked subprocess handle, because the daemon is usually
@@ -181,11 +222,10 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
 
     THE ADDRESS IS CHECKED FIRST (row 234). With ``OO_OLLAMA_URL`` naming another computer
     the app never talks to a local daemon, so spawning ``ollama serve`` here would start a
-    process nothing uses; the refusal is raised, with its reason, before anything runs.
+    process nothing uses; the refusal is raised, with its reason, before anything runs. The
+    same step reads the address the daemon will listen on (R771, :func:`bind_address`).
     """
-    refused = refusal()
-    if refused is not None:
-        raise OllamaLifecycleError(refused)
+    bind = bind_address()  # raises the row-234 refusal, or an unreadable port, before anything else
     path = binary_path()
     if path is None:
         raise OllamaLifecycleError(
@@ -212,6 +252,11 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
     # operator's environment says, so a cloud model name cannot forward a prompt off this computer through it. A daemon the
     # operator runs keeps its own setting; OllamaClient refuses those models before any request either way.
     env["OLLAMA_NO_CLOUD"] = "1"
+    # R771: the daemon listens only where the app will talk to it, on this computer -- never an inherited OLLAMA_HOST.
+    env["OLLAMA_HOST"] = bind
+    # Nor an inherited OLLAMA_ORIGINS: "*" there would let any web page open in the browser call this daemon and read the
+    # answers (models, prompts, pulls, deletes). The app calls it from the server, so Ollama's own default is all it needs.
+    env.pop("OLLAMA_ORIGINS", None)
     try:
         popen_kwargs: dict = {
             "stdin": subprocess.DEVNULL,
