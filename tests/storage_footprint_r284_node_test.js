@@ -123,4 +123,42 @@ for (const lang of ["en", "fr"]) {
   assert(html.includes(esc(sb.t(CAV))), "caveat missing for a partial footprint");
 }
 
-console.log("ok - storage footprint row 284 (" + 3 + " groups)");
+
+// 4. The forensics panel's data-folder block (app-diagnostics.js): an unlisted folder is "not measured",
+//    never "0 B"; refused entries make every figure "at least" with the reason on screen.
+{
+  const DIAG = fs.readFileSync(path.join(STATIC, "app-diagnostics.js"), "utf-8");
+  const cat = LOCALE("fr");
+  const t = (k) => (cat[k] != null ? cat[k] : k);
+  const tf = (s, v) => String(t(s)).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+  const OOI18N = { t, tf };
+  // eslint-disable-next-line no-new-func
+  const render = new Function("window", "OOI18N", "esc", "humanBytes", "fmtNum", "_fmtTs", "_tf", "_diagIso", "ooSaidHtml",
+    extract("ooLabelHtml", CORE) + "\n" + extract("_invTotalHtml", DIAG) + "\n" + extract("_renderSessionForensics", DIAG) + "\nreturn _renderSessionForensics;")(
+    { OOI18N }, OOI18N, esc, (n) => n + " B", (n) => String(n), (x) => String(x), tf, (x) => x, () => "");
+  const none = render({ inventory: { data_dir: "/d", totals: {}, unreadable: true } }, t);
+  assert(none.includes(esc(t("not measured"))), "unlisted data folder not 'not measured': " + none);
+  assert(!none.includes(">0 B") && !/ 0 B/.test(none), "unlisted data folder shows 0 B: " + none);
+  const part = render({ inventory: { data_dir: "/d", totals: { total_bytes: 30, db_bytes: 20, wal_bytes: 0, other_bytes: 10, unread_entries: 2 },
+    entries: [{ name: "wiki_dumps", kind: "dir", bytes: 10, files: 1, unread_entries: 2 }] } }, t);
+  assert(part.includes(esc(t("at least")) + " 30 B"), "partial total not 'at least': " + part);
+  assert(part.includes(esc(t(PART))), "partial reason not visible: " + part);
+  assert(part.includes(esc(t("at least")) + " 10 B · "), "partial entry not 'at least': " + part);
+  const clean = render({ inventory: { data_dir: "/d", totals: { total_bytes: 30, db_bytes: 20, wal_bytes: 0, other_bytes: 10, unread_entries: 0 } } }, t);
+  assert(!clean.includes(esc(t("at least"))) && clean.includes("30 B"), "clean inventory marked partial: " + clean);
+}
+
+// 5. A line refused before any byte was read (partial at 0) is still shown, and a null total reads "not measured".
+{
+  const { html, sb } = paint("en", { totals: { grand_total_bytes: 20, complete: false }, components: [
+    { kind: "db", name: "database", bytes: 20 },
+    { kind: "wiki_dumps", name: "wiki dumps", bytes: 0, partial: true, reason: PART }] });
+  const row = rowFor(html, sb.t("Wikipedia dumps"));
+  assert(row.includes("at least 0 B") && row.includes(esc(PART)), "a partial 0 line is hidden or unexplained: " + row);
+  const nul = paint("en", { totals: { grand_total_bytes: null, complete: false }, components: [
+    { kind: "db", name: "database", bytes: null, reason: "The data folder could not be read, so its size is not counted." }] }).html;
+  assert(nul.includes('<b style="font-size:1.15em;color:var(--caveat)">not measured</b>'), "null total not 'not measured': " + nul);
+  assert(!nul.includes("at least 0 B"), "null total reads 'at least 0 B': " + nul);
+}
+
+console.log("ok - storage footprint row 284 (5 groups)");

@@ -78,7 +78,7 @@
       const privGap = d.components.some(c => !_SF_PUBLIC.has(c.kind) && gap(c));
       const pubGap = d.components.some(c => _SF_PUBLIC.has(c.kind) && gap(c));
       const atLeast = (gapped, html) => gapped ? `${esc(t("at least"))} ${html}` : html;
-      const rows = d.components.filter(c => c.bytes == null || c.bytes > 0)
+      const rows = d.components.filter(c => c.bytes == null || c.bytes > 0 || c.partial)
         .sort((a, b) => (a.bytes == null) - (b.bytes == null) || (b.bytes || 0) - (a.bytes || 0)).map(c => {
         const unread = c.bytes == null;
         const pct = (total && !unread) ? Math.round(100 * c.bytes / total) : 0;
@@ -101,7 +101,9 @@
         `<div class="sf-incomplete" style="color:var(--caveat);font-size:12px;margin:2px 0 6px">${esc(t("Not every store could be measured, so this total is a lower bound. Hover a line for the reason."))}</div>`;
       host.innerHTML =
         `<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">`
-        + `<div>${atLeast(!complete, `<b style="font-size:1.15em">${esc(_fmtBytes(total))}</b>`)} <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
+        + `<div>${tot.grand_total_bytes == null && !complete
+            ? `<b style="font-size:1.15em;color:var(--caveat)">${esc(t("not measured"))}</b>`
+            : atLeast(!complete, `<b style="font-size:1.15em">${esc(_fmtBytes(total))}</b>`)} <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
         + `<button class="secondary" style="font-size:11px;padding:2px 8px" data-on-click="renderStorageFootprint(${esc(JSON.stringify(host.id))}, true)">${esc(t("Re-measure"))}</button></div>`
         + caveat
         + `<div class="muted" style="font-size:11px;margin:3px 0 8px"${d.method ? ` title="${esc(ooSaidText(d, "method"))}"` : ""}>`

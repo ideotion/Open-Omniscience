@@ -1405,7 +1405,10 @@ def _ollama_components() -> tuple[str | None, list[dict[str, Any]]]:
         nbytes, files, unread = _tree_measure(Path(store))
     line: dict[str, Any] = {"name": "Ollama model store", "kind": "ollama_models", "bytes": nbytes,
                             "files": files, "detail": store, "outside_data_dir": True, "measured": True}
-    if unread:
+    if unread and not files and not nbytes:
+        # Refused before a single file was read (the store's own listing): that is no figure at all.
+        line.update(bytes=None, files=None, measured=False, unread_entries=unread, reason=FOOTPRINT_UNREAD_STORE)
+    elif unread:
         line.update(partial=True, unread_entries=unread, reason=FOOTPRINT_PARTIAL)
     out.append(line)
     if protected:
@@ -2337,11 +2340,18 @@ def render_text(d: dict[str, Any] | None = None) -> str:
     tot = inv.get("totals") or {}
     lines += ["", "## Data folder", ""]
     lines.append(f"- path: {inv.get('data_dir') or 'unknown'}")
+    # Row 284: refused folders or files make every figure here a lower bound, and the export says so.
+    at_least = "at least " if tot.get("unread_entries") else ""
     lines.append(
-        f"- total on disk: {_mb(tot.get('total_bytes'))} "
+        f"- total on disk: {at_least}{_mb(tot.get('total_bytes'))} "
         f"(database {_mb(tot.get('db_bytes'))} · WAL {_mb(tot.get('wal_bytes'))} · "
         f"other {_mb(tot.get('other_bytes'))})"
     )
+    if tot.get("unread_entries"):
+        lines.append(
+            f"- {tot['unread_entries']} folder(s) or file(s) could not be read; these figures count only "
+            "the ones that could."
+        )
     suspect = inv.get("suspect_staging") or []
     if suspect:
         # An orphaned staging tree from an ENCRYPTED corpus holds a PLAINTEXT copy, so

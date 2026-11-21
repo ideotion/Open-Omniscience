@@ -265,3 +265,33 @@ def test_the_panel_runs_as_real_code():
     r = subprocess.run([node, str(ROOT / "tests" / "storage_footprint_r284_node_test.js")],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_store_whose_own_listing_is_refused_has_no_figure(data, monkeypatch, tmp_path):
+    app = _store(tmp_path / "app", blob=700)
+    monkeypatch.setattr(ollama_models, "candidate_stores", lambda: [app])
+    monkeypatch.setattr(ollama_models, "default_store", lambda: app)
+    real_walk = os.walk
+
+    def fake_walk(top, onerror=None, followlinks=False):
+        if str(top) == str(app):
+            onerror(PermissionError(errno.EACCES, "denied", str(top)))
+            return
+        yield from real_walk(top, onerror=onerror, followlinks=followlinks)
+
+    scope_os(monkeypatch, forensics, walk=fake_walk)
+    fp = forensics.storage_footprint()
+    line = _line(fp, "Ollama model store")
+    assert line["bytes"] is None and line["measured"] is False and line["reason"] == FOOTPRINT_UNREAD_STORE
+    assert fp["totals"]["ollama_models_bytes"] is None and fp["totals"]["complete"] is False
+
+
+def test_the_text_export_says_at_least_for_a_partly_read_folder():
+    base = {"inventory": {"data_dir": "/d", "totals": {"total_bytes": 3 << 20, "db_bytes": 1 << 20, "wal_bytes": 0,
+                                                      "other_bytes": 2 << 20, "unread_entries": 2}}}
+    text = forensics.render_text(base)
+    assert "- total on disk: at least " in text
+    assert "2 folder(s) or file(s) could not be read" in text
+    base["inventory"]["totals"]["unread_entries"] = 0
+    clean = forensics.render_text(base)
+    assert "at least" not in clean and "could not be read; these figures" not in clean
