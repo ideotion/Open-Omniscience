@@ -56,22 +56,21 @@ def _write(tmp_path: Path, data: bytes, name: str = "oo-field-20261121-1600-p800
     return p
 
 
-#: A report whose catalogue could not be read: the floor is unchecked and every figure it would need is absent with its reason.
-REASONS_ONLY = {
-    "kind": "law-coverage",
-    "data": {
-        "catalog": {"readable": False, "error": "the law catalogue could not be parsed"},
-        "floor": {
-            "state": "unchecked",
-            "reason": "the floor file (configs/language_countries.yml) is absent, unreadable or lists no country",
-            "as_of": None, "verification_status": None, "countries": None,
-            "languages": None, "by_state": None, "order": None, "zh_beyond_floor": None, "many_country_sources": None,
-            "unplaced_documents": None, "non_law_documents": None, "invalid_rows": None,
+def _reasons_only() -> dict:
+    """A report with reasons and no figures, built by the report's OWN functions on their unread branches: the floor file
+    could not be read (an empty floor), the catalogue could not be read, the enumeration not looked up. No world block and no
+    document count: those are always figures, so they are absent here and must say so."""
+    from src.law.coverage import floor_report
+
+    floor = floor_report([], None, {"countries": [], "languages": {}}, reason="the law catalogue could not be parsed")
+    return {
+        "kind": "law-coverage",
+        "data": {
+            "catalog": {"readable": False, "error": "the law catalogue could not be parsed"},
+            "floor": floor,
+            "enumeration": {"state": "unchecked", "reason": "the law catalogue could not be parsed"},
         },
-        "world": {"state": "unchecked", "reason": "the law catalogue could not be parsed", "countries": None, "states": {}},
-        "enumeration": {"state": "unchecked", "reason": "the law catalogue could not be parsed"},
-    },
-}
+    }
 
 
 def test_the_file_fits_one_piece_and_carries_no_document_or_address_the_readback_would_print(route_bytes, tmp_path):
@@ -101,16 +100,38 @@ def test_every_floor_country_is_printed_once_with_its_state_and_the_twelve_langu
 
 def test_a_report_with_only_reasons_prints_every_reason_and_no_figure(tmp_path):
     """Row 267's fixture with reasons and no figures: nothing in, nothing out but the reasons."""
-    text = "\n".join(R.report(R.load(_write(tmp_path, json.dumps(REASONS_ONLY).encode()))))
+    text = "\n".join(R.report(R.load(_write(tmp_path, json.dumps(_reasons_only()).encode()))))
     assert "catalogue: could not be read (the law catalogue could not be parsed)" in text
-    assert "floor: country count not recorded, floor file undated (its verification is not stated)" in text
-    assert "  not checked: the floor file (configs" not in text, "a path-shaped reason is withheld"
-    assert "  not checked: a value not in the report's own words (not printed)" in text
-    assert "off the floor (world): —" in text and "not checked: the law catalogue could not be parsed" in text
+    assert "floor: no country listed, floor file undated (its verification is not stated)" in text
+    assert "  not checked: the floor file (language_countries.yml) is absent, unreadable or lists no country" in text
+    assert "off the floor (world): absent from this file" in text
     assert "official counts in the catalogue: not read: the law catalogue could not be parsed" in text
     assert "documents tracked: not recorded in this file" in text
     figures = [ln for ln in text.splitlines() if re.search(r"\d", ln)]
     assert figures == [], f"a figure was printed for a report that holds none: {figures}"
+
+
+def test_an_unreadable_catalogue_reads_not_looked_up_never_the_zeros_the_report_writes(tmp_path, monkeypatch):
+    """The real route with the catalogue unreadable: the tracked side is still measured, every other state was never looked up."""
+    from fastapi.testclient import TestClient
+
+    import src.law.catalog as catalog
+    from src.api.main import app
+
+    def _unreadable():
+        raise catalog.LawCatalogUnreadable("the law catalogue could not be parsed")
+
+    monkeypatch.setattr(catalog, "load_legal_catalog", _unreadable)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        body = client.get("/api/diagnostics/law-coverage?download=1").content
+    lines = R.report(R.load(_write(tmp_path, body)))
+    text = "\n".join(lines)
+    assert re.search(r"  tracked: \d+", text) and re.search(r"  unchecked \(the catalogue could not be read\): \d+", text)
+    assert "  verified but not yet tracked, unverified, no eligible source: not looked up (" in text
+    tally = [ln for ln in lines if re.match(r"    [a-z]{2}: ", ln)]
+    assert tally and all("not looked up" in ln and "unverified 0" not in ln and "no eligible source 0" not in ln for ln in tally)
+    assert "no eligible source, research to do" not in text and "no eligible source 0" not in text
+    assert "official counts in the catalogue: not read: " in text
 
 
 def test_a_state_list_or_tally_the_file_lacks_says_so_never_0():
@@ -149,14 +170,16 @@ def test_malformed_shapes_are_said_never_a_crash_and_free_text_is_not_printed():
     doc = {"documents": "3", "catalog": [], "floor": {"state": "checked", "countries": True, "by_state": {"tracked": ["../x", "fr"]},
            "languages": ["x", {"language": "https://x.org", "states": "y"}], "zh_beyond_floor": {"hk": "nope"},
            "many_country_sources": {"int": {"treaties.un.org": True, "a": "yes"}}, "unplaced_documents": {"tl": "6"},
-           "non_law_documents": {"see https://x.org": 1}, "verification_status": "see https://x.org/a?b=c"},
+           "non_law_documents": {"see https://x.org": 1}, "verification_status": "see https://x.org/a?b=c",
+           "order": {"by": "population", "source": "data.worldbank.org", "as_of": "2024-07-11"}},
            "world": "x", "enumeration": []}
     text = "\n".join(R.report(doc))
-    assert "x.org" not in text and "treaties.un.org" not in text and "../x" not in text
+    assert "x.org" not in text and "treaties.un.org" not in text and "../x" not in text and "worldbank" not in text
     assert "documents tracked: not recorded in this file" in text and "floor: country count not recorded" in text
     assert "  tracked: 2 (?, fr)" in text and "    ?: no country listed · states not recorded" in text
     assert "hk ?" in text and "many-country sources under int: 2 listed, 1 verified" in text
     assert "documents that state no country: tl —" in text
+    assert R._code("us-ca") == "us-ca", "a subdivision code is printed as written, not as ?"
 
 
 def test_the_script_runs_stdlib_only_and_its_json_carries_no_host(route_bytes, tmp_path):
@@ -165,7 +188,9 @@ def test_the_script_runs_stdlib_only_and_its_json_carries_no_host(route_bytes, t
     assert out.returncode == 0, out.stderr
     assert out.stdout.splitlines()[0].startswith("read at ") and "floor: " in out.stdout
     js = subprocess.run([sys.executable, "-I", str(SCRIPT), str(f), "--json"], capture_output=True, text=True, timeout=60, check=False)
-    assert js.returncode == 0 and "\"many_country_sources\"" not in js.stdout and "treaties.un.org" not in js.stdout and "by_state" in js.stdout
+    assert js.returncode == 0 and "by_state" in js.stdout
+    for leak in ("many_country_sources", "treaties.un.org", "configs/", "method", "caveat", "http"):
+        assert leak not in js.stdout, f"{leak!r} reached --json"
     bad = _write(tmp_path, b"not json", "bad.json")
     out = subprocess.run([sys.executable, "-I", str(SCRIPT), str(bad)], capture_output=True, text=True, timeout=60, check=False)
     assert out.returncode == 2 and "not a JSON file" in out.stderr

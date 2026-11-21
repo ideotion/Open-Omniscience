@@ -48,7 +48,12 @@ _BASES = ("official", "de-facto", "regional")
 #: Words this script prints from the file: the code's fixed sentences and the floor file's dated labels. Nothing that could be an
 #: address: no slash, @, ?, =, & or #. A value outside it (a hand-edited or foreign file) is not printed (R734/R736).
 _WORDS = re.compile(r"[A-Za-z0-9_ ,;:'()\-.]{1,400}")
-_CODE = re.compile(r"[A-Za-z]{2,3}")
+_CODE = re.compile(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{1,3})?")  # a country or language code, or a subdivision (us-ca)
+#: A host name inside otherwise plain words (a population table's source, a hand-edited reason): never printed.
+_HOST = re.compile(r"\b[\w-]+(\.[\w-]+)*\.(org|com|net|int|gov|edu|io|info|eu|uk|fr|de|un)\b", re.IGNORECASE)
+#: The repository folders the report's fixed sentences name a file in ("the floor file (configs/language_countries.yml) ...").
+#: The folder is dropped and the file's name kept, so the reason is shown without a path.
+_REPO_DIRS = re.compile(r"\b(configs|src|docs|scripts)/")
 
 
 def _pieces() -> Any:
@@ -127,7 +132,22 @@ def _codes(values: Any) -> str:
 def _words(value: Any, fallback: str) -> str:
     if not isinstance(value, str) or not value:
         return fallback
-    return value if _WORDS.fullmatch(value) else "a value not in the report's own words (not printed)"
+    text = _REPO_DIRS.sub("", value)
+    if not _WORDS.fullmatch(text) or _HOST.search(text):
+        return "a value not in the report's own words (not printed)"
+    return text
+
+
+def _counts(states: Any, reason: str | None) -> str:
+    """One row's counts per state. Where the catalogue was not read (an ``unchecked`` count is present), the states that needed it
+    were not looked up: they read so, with the reason, never as the 0 the report writes for them."""
+    st = _dict(states)
+    if not st:
+        return "states not recorded"
+    if "unchecked" in st:
+        return (f"tracked {_n(st.get('tracked'))}, not looked up {_n(st.get('unchecked'))}"
+                f" (the other states need the catalogue: {reason or 'it could not be read'})")
+    return ", ".join(f"{_STATE_WORDS[s]} {_n(st.get(s))}" for s in STATES if s in st)
 
 
 def _when(iso: Any) -> str | None:
@@ -152,10 +172,17 @@ def _order_line(order: Any, label: str) -> str:
     return f"{label}: not stated in this file"
 
 
-def _state_lines(by_state: Any, indent: str = "  ") -> list[str]:
-    """Each state's countries by code, in the report's order. A state the file does not list says so, never 0."""
+def _state_lines(by_state: Any, indent: str = "  ", reason: str | None = None) -> list[str]:
+    """Each state's countries by code, in the report's order. A state the file does not list says so, never 0; where the
+    catalogue was not read, the states that need it say they were not looked up instead of the empty lists the report writes."""
     bs = _dict(by_state)
     out = []
+    if "unchecked" in bs:
+        for st in ("tracked", "unchecked"):
+            codes = _list(bs.get(st))
+            out.append(f"{indent}{_STATE_WORDS[st]}: {len(codes)}" + (f" ({_codes(codes)})" if codes else ""))
+        out.append(f"{indent}verified but not yet tracked, unverified, no eligible source: not looked up ({reason or 'the catalogue could not be read'})")
+        return out
     for st in STATES:
         if st not in bs:
             if st != "unchecked":
@@ -172,7 +199,12 @@ def floor_lines(floor: Any) -> list[str]:
         return ["floor: absent from this file (a build before the floor report)"]
     lines = []
     countries = _int(f.get("countries"))
-    head = f"floor: {_n(countries)} countries" if countries is not None else "floor: country count not recorded"
+    if countries is None:
+        head = "floor: country count not recorded"
+    elif countries == 0 and f.get("state") != "checked":
+        head = "floor: no country listed"  # the report's 0 for a floor file it could not read: not a floor of no countries
+    else:
+        head = f"floor: {_n(countries)} countries"
     as_of = _when(f.get("as_of"))
     head += f", floor file dated {as_of}" if as_of else ", floor file undated"
     head += f" ({_words(f.get('verification_status'), 'its verification is not stated')})"
@@ -181,7 +213,8 @@ def floor_lines(floor: Any) -> list[str]:
         lines.append(f"  not checked: {_words(f.get('reason'), 'no reason given')}")
         if f.get("by_state") is None:
             return lines
-    lines += _state_lines(f.get("by_state"))
+    why = _words(f.get("reason"), "the catalogue could not be read")
+    lines += _state_lines(f.get("by_state"), reason=why)
     lines.append("  " + _order_line(f.get("order"), "order within a state"))
     rows = [r for r in _list(f.get("languages")) if isinstance(r, dict)]
     if f.get("languages") is None:
@@ -195,7 +228,7 @@ def floor_lines(floor: Any) -> list[str]:
             zh_row = r
         bases = ", ".join(f"{b} {len(_list(r.get(b)))}" for b in _BASES if b in r) or "no country listed"
         st = _dict(r.get("states"))
-        counts = ", ".join(f"{_STATE_WORDS[s]} {_n(st.get(s))}" for s in STATES if s in st) or "states not recorded"
+        counts = _counts(st, why)
         docs = _int(r.get("documents"))
         contested = _list(r.get("contested"))
         lines.append(f"    {code}: {bases} · {counts} · " + (f"{docs:,} documents" if docs is not None else "documents not recorded")
@@ -205,7 +238,7 @@ def floor_lines(floor: Any) -> list[str]:
         lines.append("  zh: not in this file")
     else:
         zh_states = _dict(_dict(zh_row).get("states"))
-        listed = ", ".join(f"{_STATE_WORDS[s]} {_n(zh_states.get(s))}" for s in STATES if s in zh_states) or "states not recorded"
+        listed = _counts(zh_states, why)
         named = ", ".join(f"{_code(cc)} {_STATE_WORDS.get(str(s), '?')}" for cc, s in sorted(beyond.items())) or "none"
         lines.append(f"  zh (its own line): floor countries {listed}; named by the seed row beyond the floor: {named}")
     many = f.get("many_country_sources")
@@ -239,10 +272,10 @@ def world_lines(world: Any) -> list[str]:
         return ["off the floor (world): absent from this file (a build before the world block)"]
     lines = [f"off the floor (world): {_n(w.get('countries'))} countries"
              + ("" if w.get("state") == "checked" else f"; not checked: {_words(w.get('reason'), 'no reason given')}")]
-    st = _dict(w.get("states"))
-    lines.append("  " + (", ".join(f"{_STATE_WORDS[s]} {_n(st.get(s))}" for s in STATES if s in st) or "states not recorded"))
+    unchecked = w.get("state") != "checked"
+    lines.append("  " + _counts(w.get("states"), _words(w.get("reason"), "the catalogue could not be read")))
     research, empty = _int(w.get("no_eligible_source_to_research")), _int(w.get("no_eligible_source_no_permanent_population"))
-    if research is not None:
+    if research is not None and not unchecked:
         lines.append(f"  no eligible source, research to do: {research:,}"
                      + (f"; no permanent population: {empty:,}" if empty is not None else ""))
     lines.append("  " + _order_line(w.get("order"), "order within a state"))
@@ -250,6 +283,29 @@ def world_lines(world: Any) -> list[str]:
     if odd:
         lines.append(f"  codes a tracked document states that no block lists: {_codes(odd)}")
     return lines
+
+
+def json_floor(doc: dict[str, Any]) -> dict[str, Any]:
+    """The floor block for ``--json``: its codes, states, counts and dates, through the same filters as the text. The method and
+    caveat sentences, the many-country sources' hosts and the floor file's invalid-row texts are left out."""
+    f = _dict(doc.get("floor"))
+    order = _dict(f.get("order"))
+    return {
+        "state": f.get("state") if f.get("state") in ("checked", "unchecked") else None,
+        "reason": _words(f.get("reason"), "") or None,
+        "as_of": _when(f.get("as_of")),
+        "countries": _int(f.get("countries")),
+        "by_state": {st: [_code(c) for c in _list(v)] for st, v in _dict(f.get("by_state")).items() if st in STATES},
+        "languages": [
+            {"language": _code(r.get("language")), **{b: [_code(c) for c in _list(r.get(b))] for b in _BASES if b in r},
+             "states": {st: _int(v) for st, v in _dict(r.get("states")).items() if st in STATES}, "documents": _int(r.get("documents"))}
+            for r in _list(f.get("languages")) if isinstance(r, dict)
+        ],
+        "zh_beyond_floor": {_code(cc): (st if st in STATES else None) for cc, st in _dict(f.get("zh_beyond_floor")).items()},
+        "order": {"by": order.get("by") if order.get("by") in ("population", "code") else None,
+                  "source": _words(order.get("source"), "") or None, "as_of": _when(order.get("as_of")),
+                  "missing": [_code(c) for c in _list(order.get("missing"))]},
+    }
 
 
 def report(doc: dict[str, Any]) -> list[str]:
@@ -292,9 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot read {args.file.name}: {exc}", file=sys.stderr)
         return 2
     if args.json:
-        # The floor block as read, less the many-country sources' host names (counts only leave this script).
-        floor = {k: v for k, v in _dict(doc.get("floor")).items() if k != "many_country_sources"}
-        print(json.dumps(floor, indent=2, ensure_ascii=False))
+        print(json.dumps(json_floor(doc), indent=2, ensure_ascii=False))
     else:
         print("\n".join(report(doc)))
     return 0
