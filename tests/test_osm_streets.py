@@ -212,8 +212,11 @@ def test_the_client_draws_streets_itself_and_keeps_the_credit():
     m = re.search(r"const OO_OSM_STREET_MAX_DEG = ([0-9.]+);", js)
     assert m and float(m.group(1)) == V.STREET_VIEW_MAX_DEG, "client and server agree on the street zoom"
     legend = function_source(js, "_ooOsmLaneLegend")
+    vintage = function_source(js, "_ooOsmLaneVintage")   # one helper for every layer since row 259
     # The planner's point (3): the vintage reads as extract date and last applied diff, never "current".
-    assert "extract date" in legend.lower() and "last applied" in legend.lower()
+    assert "_ooOsmLaneVintage(d)" in legend
+    assert "extract date" in vintage.lower() and "last applied" in vintage.lower()
+    assert "current" not in vintage.lower(), "the drawing is never called current"
     assert "current" not in legend.replace("OOI18N.current", "").lower(), "the drawing is never called current"
     # Point (2): the OSM credit is printed by ooMap beside the lane's legend, whatever the layer.
     oomap = function_source(js, "ooMap")
