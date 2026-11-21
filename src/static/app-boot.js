@@ -835,6 +835,11 @@
         sp.delete("resume");
         const qs = sp.toString();
         history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+        // "queue" is the queue's ONE resume (R768): the same jobResumeQueue the in-app Queue button runs, popup first.
+        if (id === "queue" && typeof jobResumeQueue === "function") {
+          Promise.resolve(window.OOI18N && OOI18N.ready).then(() => jobResumeQueue(), () => jobResumeQueue());
+          return;
+        }
         if (!/^(dump|osm):./.test(id) || typeof jobResume !== "function") return;
         Promise.resolve(window.OOI18N && OOI18N.ready).then(() => jobResume(id), () => jobResume(id));
       } catch (e) { /* a malformed deep link must never break boot */ }

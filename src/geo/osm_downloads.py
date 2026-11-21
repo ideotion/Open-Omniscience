@@ -121,6 +121,12 @@ class OsmDownloadEntry:
     # mode looked exactly like one the operator had stopped. ``to_dict`` reports it only
     # while the status is "paused", so a stale value never outlives the pause.
     paused_by: str | None = None
+    # R768's queue ruling: why a QUEUED download is HELD instead of started -- "protected" (protected mode came on and it was
+    # queued, or had started, over the direct connection) or "settings" (the settings could not be read, R769) -- and the
+    # transport it was queued under ("protected" | "direct"). A held download keeps its place and waits for the operator's
+    # "Resume the queue", never for a mode change.
+    held_by: str | None = None
+    queued_mode: str | None = None
     # C11 (2026-07-24 throughput brief, S-C): operator/config-supplied acceleration
     # inputs — EMPTY for every real catalog entry today (no verified Geofabrik
     # mirror list or per-file checksum could be confirmed from this sandbox; see
@@ -146,6 +152,7 @@ class OsmDownloadEntry:
             # marker, the file keeps the words (they come back readable once what the process holds can be read again).
             d["error"] = UNREADABLE_TEXT
         d["paused_by"] = self.paused_by if self.status == "paused" else None
+        d["held_by"] = self.held_by if self.status == "queued" else None
         d["percent"] = (
             round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
         )
@@ -355,7 +362,9 @@ class OsmDownloadManager:
         -> "downloading") UNDER THE LOCK before launch, so two concurrent pumps can
         never exceed capacity; the launch itself runs outside the lock."""
         from src.ingest import kill_switch_active
+        from src.safety.transport_watch import hold_reason, mode_now
 
+        mode = mode_now()  # one reading for the whole queue, taken before the lock
         to_launch: list[OsmDownloadEntry] = []
         with self._lock:
             # R617: a worker that airplane mode paused frees its slot and pumps. Under airplane mode EVERY queued entry is
@@ -365,12 +374,22 @@ class OsmDownloadManager:
             claimed = False
             free = self.max_concurrent - self._downloading_now()
             for k in list(self._order):
-                if free <= 0 and not offline:
-                    break
                 e = self._entries.get(k)
                 if e is None or e.status != "queued":
                     self._order.remove(k)
                     continue
+                if e.held_by is not None:
+                    continue  # R768: held in its place until the operator resumes the queue; a mode change starts nothing
+                if not offline:
+                    reason = hold_reason(e.queued_mode, mode)
+                    if reason is not None:
+                        # Queued under the direct connection and protected mode is now on, or the settings cannot be read: HELD,
+                        # never started over the protected transport without the operator's own click in that mode.
+                        e.held_by = reason
+                        claimed = True
+                        continue
+                    if free <= 0:
+                        continue  # waits its turn; the rest are still read, so every one that must be held is shown held
                 self._order.remove(k)
                 if offline:
                     e.status = "paused"
@@ -406,6 +425,29 @@ class OsmDownloadManager:
             self._order = wanted + tail
             self._save()
             return list(self._order)
+
+    def resume_held(self) -> int:
+        """R768's queue ruling: the operator's ONE click that resumes the whole queue, in order, under the transport now in force.
+
+        Every queued entry is re-stamped with the mode of this click and its hold lifted; each then passes that mode's own rules as
+        it starts (the protected transport, or a refusal by name). Under unreadable settings the pump holds them again, with that
+        reason. Returns how many were held."""
+        from src.safety.transport_watch import queue_mode
+
+        qmode = queue_mode()
+        held = 0
+        with self._lock:
+            for k in self._order:
+                e = self._entries.get(k)
+                if e is None or e.status != "queued":
+                    continue
+                if e.held_by is not None:
+                    held += 1
+                e.held_by = None
+                e.queued_mode = qmode
+            self._save()
+        self._pump()
+        return held
 
     def queue_order(self) -> list[str]:
         with self._lock:
@@ -646,11 +688,16 @@ class OsmDownloadManager:
 
             if isinstance(exc, TransportStopped):
                 # R768/R769: the session's watch stopped it (protected mode switched on under a direct download, or the settings
-                # no longer readable). PAUSED with that reason and the partial file kept: it never goes on, on that transport or
-                # another, until the operator resumes it under the rules then in force.
-                entry.status = "paused"
+                # no longer readable). HELD at the head of the queue with that reason and the partial file kept: it never goes on,
+                # on that transport or another, until the operator resumes the queue under the rules then in force.
+                entry.status = "queued"
                 entry.error = None
-                entry.paused_by = "protected" if exc.reason == "protected" else "settings"
+                entry.paused_by = None
+                entry.held_by = "protected" if exc.reason == "protected" else "settings"
+                with self._lock:
+                    if entry.key in self._order:
+                        self._order.remove(entry.key)
+                    self._order.insert(0, entry.key)  # first in the queue it heads: it was running before the ones waiting
                 stopped = True
             elif isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
                 # R617 (R320, R614): the Stop refused or cut this attempt, still engaged or cleared again before the failure
@@ -709,12 +756,18 @@ class OsmDownloadManager:
                 entry.status = "paused"
                 entry.error = None
                 entry.paused_by = "airplane"
+                entry.held_by = None
                 self._save()
             return entry.to_dict()
+        from src.safety.transport_watch import queue_mode
+
+        qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
+            entry.held_by = None  # a start is the operator's own click: it lifts a hold on this entry
             if self._downloading_now() >= self.max_concurrent:
                 entry.status = "queued"
                 entry.error = None
+                entry.queued_mode = qmode
                 if entry.key not in self._order:
                     self._order.append(entry.key)
                 self._save()
@@ -734,6 +787,7 @@ class OsmDownloadManager:
                     self._order.remove(key)
                 e.status = "paused"
                 e.paused_by = "operator"
+                e.held_by = None
                 self._save()
                 return True
         stop = self._stops.get(key)

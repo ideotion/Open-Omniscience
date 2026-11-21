@@ -3047,12 +3047,17 @@
       try {
         const d = await api("/api/wiki/dumps");
         const t = $("dump-table");
+        const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        // R768/R769: a download HELD by a transport change says why (the reason on hover); the queue's ONE control resumes it
+        const held = (e) => e.status === "queued" && e.held_by
+          ? ` <span class="pill warn" title="${esc(tr(e.held_by === "settings" ? "Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read." : "Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy."))}">${esc(tr(e.held_by === "settings" ? "Held: the settings could not be read" : "Held: protected mode was switched on"))}</span>`
+          : "";
         if (!d.downloads.length) { t.innerHTML = `<tr><td class="muted">No offline downloads.</td></tr>`; return; }
         t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th></th></tr>" +
           d.downloads.map(e => `<tr>
             <td><strong>${esc(e.wiki)}</strong> <span class="muted">${esc(e.kind)}</span></td>
             <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
-            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
+            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${held(e)}${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
             <td style="white-space:nowrap">
               ${e.status==='downloading'?`<button class="tiny secondary" data-on-click="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
                 (e.status!=='done'?`<button class="tiny secondary" data-on-click="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
@@ -3396,11 +3401,12 @@
       if (!d) return btn("Download", "startOsmDownload");
       if (d.status === "done") return `<span class="pill ok">${esc(t("Downloaded"))} ✓</span>`;
       if (d.status === "downloading") return `<span class="pill">${esc(t("Downloading"))} ${ooLtrIsolate((d.percent || 0) + "%")}</span>`;
+      // R768/R769: held by a transport change; the hover says why, and the queue's ONE control resumes it
+      const heldBtn = `<button class="tiny secondary" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue()">${esc(t("Resume the queue"))}</button>`;
+      if (d.status === "queued" && d.held_by === "settings") return `<span class="pill warn" title="${esc(t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read."))}">${esc(t("Held: the settings could not be read"))}</span> ${heldBtn}`;
+      if (d.status === "queued" && d.held_by) return `<span class="pill warn" title="${esc(t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy."))}">${esc(t("Held: protected mode was switched on"))}</span> ${heldBtn}`;
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span>`;
       if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${btn("Resume", "resumeOsm")}`;
-      // R768/R769: stopped by a transport change; the hover says what Resume will do
-      if (d.status === "paused" && d.paused_by === "protected") return `<span class="pill warn" title="${esc(t("Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads the rest through your proxy."))}">${esc(t("Paused: protected mode was switched on"))}</span> ${btn("Resume", "resumeOsm")}`;
-      if (d.status === "paused" && d.paused_by === "settings") return `<span class="pill warn" title="${esc(t("Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read."))}">${esc(t("Paused: the settings could not be read"))}</span> ${btn("Resume", "resumeOsm")}`;
       const label = d.status === "error" ? t("Failed") : t("Paused");
       return `<span class="pill ${d.status === "error" ? "err" : "warn"}" title="${esc(d.error || "")}">${esc(label)}</span> ${btn("Resume", "resumeOsm")}`;
     }
@@ -4463,12 +4469,13 @@
         const pct = d.percent || 0;
         return `<span class="pill">${esc(t("Downloading"))} ${ooLtrIsolate(pct + "%")}</span> <progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress> <span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span> <button class="tiny secondary" data-on-click="pauseOsm(${c})">${esc(t("Pause"))}</button>`;
       }
+      // R768/R769: held by a transport change; the hover says why, and the queue's ONE control resumes it
+      const heldBtn = `<button class="tiny secondary" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue()">${esc(t("Resume the queue"))}</button>`;
+      if (d.status === "queued" && d.held_by === "settings") return `<span class="pill warn" title="${esc(t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read."))}">${esc(t("Held: the settings could not be read"))}</span> ${heldBtn}`;
+      if (d.status === "queued" && d.held_by) return `<span class="pill warn" title="${esc(t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy."))}">${esc(t("Held: protected mode was switched on"))}</span> ${heldBtn}`;
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span> <button class="tiny secondary" data-on-click="deleteOsm(${c})">${esc(t("Cancel"))}</button>`;
       const resume = `<button class="tiny secondary" data-on-click="resumeOsm(${c}, this)">${esc(t("Resume"))}</button> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;
       if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${resume}`;
-      // R768/R769: stopped by a transport change; the hover says what Resume will do
-      if (d.status === "paused" && d.paused_by === "protected") return `<span class="pill warn" title="${esc(t("Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads the rest through your proxy."))}">${esc(t("Paused: protected mode was switched on"))}</span> ${resume}`;
-      if (d.status === "paused" && d.paused_by === "settings") return `<span class="pill warn" title="${esc(t("Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read."))}">${esc(t("Paused: the settings could not be read"))}</span> ${resume}`;
       return `<span class="pill ${d.status === "error" ? "err" : "warn"}" title="${esc(d.error || "")}">${esc(d.status === "error" ? t("Failed") : t("Paused"))}</span> ${resume}`;
     }
     function _osmHistCutLine(c) {

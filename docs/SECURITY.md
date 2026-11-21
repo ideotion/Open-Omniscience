@@ -71,8 +71,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   usable proxy refuses each request by name (`TransportUnavailable`) instead of connecting
   directly. A download already running when protected mode is switched on does not go on
   over the direct connection it started on: every session checks its transport before each
-  request, redirect hop and chunk, so a dump or map download pauses (its partial file kept)
-  and a Medical papers run ends, each saying why, until you start it again. An OSM update's
+  request, redirect hop and chunk, so a dump or map download is held at the head of its queue
+  (its partial file kept) and a Medical papers run ends, each saying why, until you start it again.
+  Downloads queued under the direct connection are held too, never started over the proxy
+  unasked; one "Resume the queue" click, behind the consent popup, resumes them in order. An OSM update's
   catch-up of several files is one download: a switch between two files ends the run rather
   than moving the rest of it to the proxy. Settings that can no longer be read stop it the
   same way, even when an environment proxy keeps the transport usable. A stopped session is

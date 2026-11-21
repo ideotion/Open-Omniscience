@@ -2646,13 +2646,13 @@
       }
       if (!_isDownloadKind(j.kind)) return "";
       let line = "";
-      if (j.state === "paused") {
+      if (j.state === "queued" && j.held_by) {
+        // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
+        line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+      } else if (j.state === "paused") {
         if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
         else if (j.paused_by === "operator") line = t("Paused by you.");
         else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
-        // R768/R769: a transport change stopped it; it never resumed on its own
-        else if (j.paused_by === "protected") line = t("Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads the rest through your proxy.");
-        else if (j.paused_by === "settings") line = t("Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read.");
       } else if (j.state === "failed" && j.error) {
         // The reader's own separator (ooLabelText): a welded ": " printed "失败： HTTP 503"
         // in Chinese, a Latin space after a full-width colon (2026-09-27 re-walk O-5).
@@ -2814,7 +2814,11 @@
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here."))}</div>`);
       }
       if (elQ) {
-        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
+        // R768: protected mode (or unreadable settings) HELD the queue; ONE control resumes it, in order, after the consent popup
+        const held = queued.some(j => j.held_by)
+          ? `<div style="padding:2px 0 6px"><button class="tiny" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue()">${esc(t("Resume the queue"))}</button></div>`
+          : "";
+        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + held + (queued.length
           ? queued.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."))}</div>`);
         // Read-only "Up next" preview of the COLLECTION pass order. The download
@@ -2882,6 +2886,17 @@
       try {
         const r = await api(`/api/jobs/${encodeURIComponent(id)}/resume`, {method: "POST"});
         toast(r.detail ? t(r.detail) : t("Resumed."));
+        _renderJobs();
+      } catch (e) { toast(e.message, "err"); }
+    }
+    // R768's queue ruling: the ONE control that resumes every held download, in queue order. It re-opens fetches, so the ONE
+    // consent popup comes first (invariant #14); each download then starts under the transport now in force and its own rules.
+    async function jobResumeQueue() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume the queue"))) return;
+      try {
+        await api("/api/jobs/queue/resume", {method: "POST"});
+        toast(t("Resumed."));
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
     }

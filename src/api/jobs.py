@@ -156,6 +156,8 @@ def _dump_jobs() -> list[dict]:
                 "error": e.get("error"),
                 # Who paused it (airplane / operator / restart), only while paused.
                 "paused_by": e.get("paused_by"),
+                # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
+                "held_by": e.get("held_by"),
                 "actions": _dl_actions(state),
             }
         )
@@ -204,6 +206,8 @@ def _osm_jobs() -> list[dict]:
                 "error": e.get("error"),
                 # Who paused it (airplane / operator / restart), only while paused.
                 "paused_by": e.get("paused_by"),
+                # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
+                "held_by": e.get("held_by"),
                 "actions": _dl_actions(state),
             }
         )
@@ -1123,6 +1127,21 @@ def reorder_dumps(body: ReorderBody) -> dict:
     from src.wiki.dumps import get_manager
 
     return {"queue_order": get_manager().reorder(body.keys)}
+
+
+@router.post("/queue/resume")
+def resume_held_queue() -> dict:
+    """R768's queue ruling: the ONE control that resumes the whole download queue, in order, after protected mode came on (or the
+    settings could not be read) under it. Wikipedia dumps first, then map regions, each in its own queue order; every entry then
+    starts under the transport now in force and its own rules. The page asks the go-online consent before it calls this."""
+    from src.geo.osm_downloads import get_manager as osm_manager
+    from src.ingest import kill_switch_active
+    from src.wiki.dumps import get_manager as dump_manager
+
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
+    held = dump_manager().resume_held() + osm_manager().resume_held()
+    return {"resumed": held}
 
 
 @router.post("/osm/reorder")

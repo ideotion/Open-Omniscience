@@ -87,6 +87,33 @@ def _mode_now() -> tuple[bool, bool]:
     return bool(s.is_protected), unreadable
 
 
+def queue_mode() -> str:
+    """The transport a download queued NOW would be sent on: ``"protected"`` or ``"direct"`` (unreadable settings count as
+    protected, as every transport builder treats them). Recorded on a queued download (R768's queue ruling)."""
+    protected, unreadable = _mode_now()
+    return "protected" if (protected or unreadable) else "direct"
+
+
+def hold_reason(queued_mode: str | None, mode: tuple[bool, bool] | None = None) -> str | None:
+    """Why a queued download must be HELD instead of started (R768's queue ruling, R769), or ``None`` when it may start.
+
+    ``"settings"`` while the settings cannot be read, whatever it was queued under; ``"protected"`` when protected mode is on and the
+    download was queued under the other mode (or before the mode was recorded): the operator queued it for a direct fetch, so a
+    multi-GB fetch over the protected transport needs its own click in that mode. ``mode`` is a ``(protected, unreadable)`` reading
+    taken once for a whole queue."""
+    protected, unreadable = mode if mode is not None else _mode_now()
+    if unreadable:
+        return "settings"
+    if protected and queued_mode != "protected":
+        return "protected"
+    return None
+
+
+def mode_now() -> tuple[bool, bool]:
+    """``(protected, unreadable)`` of the settings in force (one reading for a whole queue)."""
+    return _mode_now()
+
+
 class TransportWatch:
     """The transport a download started on, and whether it must stop now. Thread-safe."""
 

@@ -258,9 +258,7 @@ def test_a_body_with_no_change_is_read_whole(monkeypatch):
 # --------------------------------------------------------------------------- the downloads
 
 
-def test_a_dump_download_pauses_with_the_reason_and_keeps_its_partial_file(monkeypatch, tmp_path):
-    from src.wiki.dumps import DumpDownloadManager
-
+def _stopping_resp(reason):
     class _Resp:
         status_code = 200
         headers = {"Content-Length": "12"}
@@ -270,32 +268,124 @@ def test_a_dump_download_pauses_with_the_reason_and_keeps_its_partial_file(monke
 
         def iter_content(self, _n):
             yield b"abcd"
-            raise tw.TransportStopped("protected")
+            raise tw.TransportStopped(reason)
 
-    m = DumpDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _Resp())
-    entry = m._entry_for("en", "pages-articles")
-    res = m._download(entry)
-    assert res.status == "paused" and res.paused_by == "protected" and res.error is None
-    assert Path(res.dest).read_bytes() == b"abcd"
+    return _Resp()
 
 
-def test_an_osm_download_pauses_with_the_settings_reason(tmp_path):
+def _manager(kind, tmp_path, http_get=None):
+    if kind == "dump":
+        from src.wiki.dumps import DumpDownloadManager
+
+        return DumpDownloadManager(base_dir=tmp_path, http_get=http_get, max_concurrent=1)
     from src.geo.osm_downloads import OsmDownloadManager
 
-    class _Resp:
-        status_code = 200
-        headers = {"Content-Length": "12"}
+    return OsmDownloadManager(base_dir=tmp_path, http_get=http_get, max_concurrent=1)
 
-        def raise_for_status(self):
-            return None
 
-        def iter_content(self, _n):
-            yield b"abcd"
-            raise tw.TransportStopped("unreadable")
+def _entry(kind, m, name):
+    return m._entry_for(name, "pages-articles") if kind == "dump" else m._entry_for(name)
 
-    m = OsmDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _Resp())
-    res = m._download(m._entry_for("monaco"))
-    assert res.status == "paused" and res.paused_by == "settings" and res.error is None
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+@pytest.mark.parametrize(("reason", "held"), [("protected", "protected"), ("unreadable", "settings")])
+def test_a_stopped_download_is_held_at_the_head_of_the_queue_with_its_partial_file(monkeypatch, tmp_path, kind, reason, held):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch)
+    m = _manager(kind, tmp_path, http_get=lambda url, headers: _stopping_resp(reason))
+    waiting = _entry(kind, m, "fr" if kind == "dump" else "andorra")
+    waiting.status = "queued"
+    m._order.append(waiting.key)
+    entry = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    entry.status = "downloading"
+    res = m._download(entry)
+    assert res.status == "queued" and res.held_by == held and res.error is None and res.paused_by is None
+    assert Path(res.dest).read_bytes() == b"abcd"
+    assert m._order[0] == entry.key and res.to_dict()["held_by"] == held
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_the_queue_is_held_when_protected_mode_comes_on_and_resumed_only_by_the_operator(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch)
+    m = _manager(kind, tmp_path)
+    launched: list[str] = []
+
+    def launch(entry):
+        launched.append(entry.key)
+        entry.status = "done"  # the slot frees at once, so every entry the pump may start is started
+
+    monkeypatch.setattr(m, "_launch", launch)
+    names = ("de", "fr") if kind == "dump" else ("andorra", "malta")
+    busy = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    busy.status = "downloading"  # the slot is taken: the two below queue
+    direct = [m.start(n) if kind == "osm" else m.start(n, "pages-articles") for n in names]
+    assert [d["status"] for d in direct] == ["queued", "queued"]
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    tw.bump()
+    late = m.start("es") if kind == "dump" else m.start("cyprus")  # queued while already protected
+    keys = list(m._order)
+    busy.status = "done"
+    m._pump()
+    assert launched == [keys[-1]]  # only the one queued under protected mode ran
+    for k in keys[:-1]:
+        assert m._entries[k].status == "queued" and m._entries[k].held_by == "protected"
+    _settings(monkeypatch)  # switched back off: the held ones still do not start
+    m._pump()
+    assert launched == [keys[-1]]
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    assert m.resume_held() == 2  # the operator's ONE click, in protected mode: in queue order, one slot at a time
+    m._pump()  # the next slot frees (a worker's own pump in the app)
+    assert launched == [keys[-1], *keys[:-1]]
+    assert late["status"] == "queued"
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_unreadable_settings_hold_even_a_download_queued_under_protected_mode(monkeypatch, tmp_path, kind):
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    monkeypatch.setattr(m, "_launch", lambda e: pytest.fail("started while the settings could not be read"))
+    busy = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    busy.status = "downloading"
+    m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    busy.status = "done"
+    _unreadable(monkeypatch)
+    m._pump()
+    (k,) = m._order
+    assert m._entries[k].held_by == "settings"
+    assert m.resume_held() == 1 and m._entries[k].held_by == "settings"  # resumed into the same reason: nothing is sent
+
+
+def test_the_queue_shows_why_and_one_control_resumes_it(monkeypatch):
+    from src.api import jobs
+
+    calls: list[str] = []
+
+    class _M:
+        def __init__(self, name):
+            self.name = name
+
+        def resume_held(self):
+            calls.append(self.name)
+            return 1
+
+    import src.geo.osm_downloads as osm
+    import src.ingest as ingest
+    import src.wiki.dumps as dumps
+
+    monkeypatch.setattr(dumps, "get_manager", lambda: _M("dumps"))
+    monkeypatch.setattr(osm, "get_manager", lambda: _M("osm"))
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
+    assert jobs.resume_held_queue() == {"resumed": 2} and calls == ["dumps", "osm"]
+    src = (_ROOT / "src" / "api" / "jobs.py").read_text(encoding="utf-8")
+    assert src.count('"held_by": e.get("held_by")') == 2
 
 
 def test_an_osm_catch_up_run_is_one_download_and_stops_between_files(monkeypatch, tmp_path):
@@ -414,20 +504,25 @@ def test_a_vllm_job_stops_when_the_settings_become_unreadable_and_says_so(monkey
 
 def test_every_panel_names_the_two_reasons_in_every_language():
     pause_p = (
-        "Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads "
-        "the rest through your proxy."
+        "Held because protected mode was switched on: this download had started, or was queued, over a direct connection. "
+        "Resume the queue to download it through your proxy."
     )
-    pause_s = "Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read."
+    pause_s = (
+        "Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once "
+        "they can be read."
+    )
     for name in ("app-core.js", "taskmanager.js", "app-map.js"):
         js = (_ROOT / "src" / "static" / name).read_text(encoding="utf-8")
-        assert 'paused_by === "protected"' in js and 'paused_by === "settings"' in js, name
+        assert "held_by" in js and "Resume the queue" in js, name
         assert pause_p in js and pause_s in js, name
+    assert "/api/jobs/queue/resume" in (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     med = (_ROOT / "src" / "static" / "app-medical.js").read_text(encoding="utf-8")
     assert '"protected_mode"' in med and '"settings_unreadable"' in med
     from src.llm import install_transport as it
 
     keys = [
-        pause_p, pause_s, "Paused: protected mode was switched on", "Paused: the settings could not be read",
+        pause_p, pause_s, "Held: protected mode was switched on", "Held: the settings could not be read", "Resume the queue",
+        "Resume every held download, in queue order, through the transport now in force.",
         tw.PROTECTED_STOP, tw.UNREADABLE_STOP, it.AI_INSTALL_UNREADABLE_NOTE, it.AI_INSTALLER_UNREADABLE_NOTE,
     ]
     for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
