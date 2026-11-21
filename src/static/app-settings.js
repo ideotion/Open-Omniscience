@@ -2316,6 +2316,8 @@
       }
       const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";
       _updPaintInstall(_updCheck.install);
+      // Tags only (R760): with no published release there is nothing to update to, said as such and never "up to date" or anything offered instead.
+      if (_updCheck.no_release) { if (msg) msg.textContent = t("No release has been published yet, so there is nothing to update to."); return; }
       if (!_updCheck.update_available) { if (msg) msg.textContent = t("You are up to date."); return; }
       if (msg) msg.textContent = t("A newer version is available.");
       if (go) go.hidden = !(_updCheck.install && _updCheck.install.can_apply);
