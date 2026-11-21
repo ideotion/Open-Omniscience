@@ -8589,5 +8589,6 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:": "Alamat vLLM ini memakai nama yang hanya menunjuk ke komputer ini jika file hosts-nya menyatakan demikian; jika tidak, nama itu dicari di internet, jadi aplikasi tidak menghubunginya. Gunakan alamat ini sebagai gantinya:"
 }

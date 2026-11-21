@@ -8589,5 +8589,6 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:": "এই vLLM ঠিকানাটি এমন একটি নাম ব্যবহার করে যা কেবল তখনই এই কম্পিউটারকে বোঝায় যখন এর hosts ফাইল তা বলে; নইলে নামটি ইন্টারনেটে খোঁজা হয়, তাই অ্যাপ এর সঙ্গে যোগাযোগ করে না। এর বদলে এই ঠিকানাটি ব্যবহার করুন:"
 }

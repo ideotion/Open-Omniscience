@@ -8589,5 +8589,6 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:": "Esta dirección de vLLM usa un nombre que solo apunta a este ordenador si su archivo hosts lo indica; si no, se busca en internet, así que la aplicación no la contacta. Use esta dirección en su lugar:"
 }

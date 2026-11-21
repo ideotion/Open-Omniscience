@@ -129,6 +129,7 @@ _ALLOWED_HTTP_IMPORTERS = {
     "src/ingest/__init__.py",  # THE fetch path (EthicalFetcher + kill switch)
     "src/llm/ollama.py",  # loopback-only by construction (localhost Ollama)
     "src/llm/vllm_client.py",  # loopback-only by construction (localhost vLLM server)
+    "src/llm/loopback.py",  # R767: THE loopback rule; its httpx transport only scopes requests to loopback
     "src/safety/fetcher.py",  # the ONE guarded session factory (kill switch + proxy + UA)
     # NOTE: wiki/dumps, wiki/client, wiki/ores and services/duckduckgo were
     # removed from this allowlist when they were routed through guarded_session
@@ -186,6 +187,9 @@ _ALLOWED_SOCKET_IMPORTERS: dict[str, str] = {
         "loopback-only by construction (localhost Ollama), _require_loopback-gated",
     "src/llm/vllm_client.py":
         "loopback-only by construction (localhost vLLM server)",
+    "src/llm/loopback.py":
+        "R767: THE loopback rule for the local AI; its one connect is a port probe whose every answer is "
+        "checked loopback on the socket (loopback_only), and its httpx transport only adds that scope",
     "src/ingest/airplane.py":
         "IS the socket guard -- it patches getaddrinfo/create_connection/connect, "
         "so importing socket and http.client is the mechanism, not a bypass",

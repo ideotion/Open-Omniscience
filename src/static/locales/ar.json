@@ -8589,5 +8589,6 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:": "يستخدم عنوان vLLM هذا اسمًا لا يشير إلى هذا الحاسوب إلا إذا نصّ ملف hosts على ذلك؛ وإلا يُبحث عنه على الإنترنت، لذلك لا يتصل به التطبيق. استخدم هذا العنوان بدلًا منه:"
 }

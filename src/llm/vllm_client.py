@@ -39,6 +39,7 @@ from src.llm.ollama import (
     LLMUnavailable,
     _http_error_text,
     _is_loopback_url,
+    _loopback_transport,
     _require_loopback,
 )
 from src.monitoring.secret_scrub import record_text
@@ -229,7 +230,8 @@ class VllmClient:
         # URL and never egress.
         if client is None:
             _require_loopback(self.base_url, setting="OO_VLLM_URL")
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
+        # R767: requests run inside the loopback-only scope (src.llm.loopback), so localhost's answer is checked.
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout, transport=_loopback_transport())
 
     # -- network kill switch ----------------------------------------------- #
 

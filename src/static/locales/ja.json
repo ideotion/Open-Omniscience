@@ -8589,5 +8589,6 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:": "この vLLM アドレスは、hosts ファイルにそう書かれている場合にのみこのコンピューターを指す名前を使っています。そうでなければインターネットで名前が調べられるため、アプリは接続しません。代わりにこのアドレスを使ってください："
 }

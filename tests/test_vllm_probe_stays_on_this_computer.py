@@ -146,7 +146,7 @@ def test_one_shared_loopback_rule_not_a_second_copy():
     """R762: the probe calls the helper VllmClient calls; vllm_lifecycle carries no loopback test of its own."""
     probe = inspect.getsource(V.port_occupant)
     assert "_loopback_refusal(url" in probe
-    assert probe.index("_loopback_refusal(url") < probe.index("s.connect_ex("), "the refusal comes before any connect"
+    assert probe.index("_loopback_refusal(url") < probe.index("connect_ex_loopback("), "the refusal comes before any connect"
     from src.llm import ollama
 
     raiser = inspect.getsource(ollama._require_loopback)
@@ -170,7 +170,7 @@ def test_each_refusal_names_its_own_setting():
 
 def test_settings_shows_the_refusal_in_twelve_languages():
     js = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
-    assert 's.port_occupant.state === "refused"' in js
+    assert 'occ.state !== "refused"' in js
     assert f't("{REFUSED_UI}")' in js
     assert "</p>` + refusedNote + kindNote + logBlock;" in js, "the note is part of what the box shows"
     for path in sorted((ROOT / "src/static/locales").glob("*.json")):

@@ -8589,5 +8589,6 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:": "此 vLLM 地址使用的名称只有在本机 hosts 文件这样写时才指向本机；否则会在互联网上查询，因此应用不会联系它。请改用此地址："
 }
