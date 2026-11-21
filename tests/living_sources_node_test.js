@@ -709,16 +709,23 @@ const WIKI = {
   // The catalogue could not be read: tracked is still true, the rest is "Not looked up", never "No eligible source".
   const UNCHECKED = {
     state: "unchecked", reason: "LawCatalogUnreadable: boom", as_of: "2026-09-07", verification_status: "drafted-x", countries: 2,
-    by_state: { tracked: ["fr"], "verified-not-yet-tracked": [], unverified: [], "no-eligible-source": [], unchecked: ["de"] },
-    languages: [{ language: "fr", official: ["fr", "de"], states: { tracked: 1, "verified-not-yet-tracked": 0, unverified: 0, "no-eligible-source": 0, unchecked: 1 }, documents: 1 }],
+    // row 272: the report writes null for every state that needs the catalogue (never looked up), never 0 or []
+    by_state: { tracked: ["fr"], "verified-not-yet-tracked": null, unverified: null, "no-eligible-source": null, unchecked: ["de"] },
+    languages: [{ language: "fr", official: ["fr", "de"], states: { tracked: 1, "verified-not-yet-tracked": null, unverified: null, "no-eligible-source": null, unchecked: 1 }, documents: 1 }],
     zh_beyond_floor: { hk: "unchecked", mo: "unchecked" }, many_country_sources: null, unplaced_documents: {},
   };
   const html = R.livingLawFloorHtml({ floor: UNCHECKED }, t, tf);
   const text = visible(html);
   noJunk(html, "the unchecked floor");
   assert.ok(text.includes("Not looked up") && text.includes("LawCatalogUnreadable: boom"), text);
-  // a state with nobody in it is a measured zero and is drawn as one, in the tally and in the language row
-  assert.ok(text.includes("Verified, not tracked yet 0 Not verified 0 No eligible source 0 Not looked up 1"), text);
+  // row 272: a state nothing looked up is left out, never drawn as 0 -- in the tally and in the language row
+  assert.ok(text.includes("Tracked here 1 Not looked up 1"), text);
+  for (const word of ["Verified, not tracked yet", "Not verified", "No eligible source"]) {
+    assert.ok(!text.includes(word), word + " was drawn for a state nothing looked up: " + text);
+  }
+  assert.ok(!/\b0\b/.test(text.replace(/\d{4}-\d\d-\d\d/g, "")), "a 0 was drawn for an unread catalogue: " + text);
+  // the same refusal in the counts helpers themselves
+  assert.deepStrictEqual(R.lawFloorStatesIn({ tracked: 1, unverified: null, unchecked: 2, "x-new": null }), ["tracked", "unchecked"]);
   assert.ok(/<p class="card-caveat">[^<]*could not be read/.test(html), "the unreadable catalogue is not a visible caveat");
   assert.ok(text.includes("CC(de) official language · Not looked up"), text);
   // the reader is told nothing about "no source" for a lookup that never happened
@@ -741,7 +748,9 @@ const WIKI = {
   const text = visible(html).replace(/\s+/g, " ");
   noJunk(html, "the newer-build floor");
   assert.ok(text.includes("brand-new-state 2"), `an unknown state was dropped from the counts: ${text}`);
-  assert.ok(text.includes("Tracked here 1") && text.includes("Verified, not tracked yet 0") && text.includes("Not verified 0"), text);
+  assert.ok(text.includes("Tracked here 1") && text.includes("Verified, not tracked yet 0"), text);
+  // a null member list is a state nothing looked up (row 272): left out, never drawn as "Not verified 0"
+  assert.ok(!text.includes("Not verified"), text);
   assert.ok(text.includes("CC(de) official language · brand-new-state") && text.includes("CC(es) official language · brand-new-state"), text);
   assert.ok(text.indexOf("CC(fr) official language · Tracked here") < text.indexOf("CC(de) official language · brand-new-state"),
     "an unknown state sorted ahead of a known one");

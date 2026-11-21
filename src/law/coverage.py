@@ -247,6 +247,9 @@ FLOOR_STATES: tuple[str, ...] = (FLOOR_TRACKED, FLOOR_VERIFIED_UNTRACKED, FLOOR_
 #: Only when the catalogue could not be read: what is tracked is still true (it comes from the database), what could be
 #: reached is not known. Unchecked, which is not "none".
 FLOOR_UNCHECKED = "unchecked"
+#: The states that need the catalogue. When it could not be read they were never looked up, so the report writes null for each
+#: (in by_state, in every language's states, in the world block): never a 0 or an empty list, which would read as "none" (row 272).
+FLOOR_NEEDS_CATALOG: tuple[str, ...] = (FLOOR_VERIFIED_UNTRACKED, FLOOR_UNVERIFIED, FLOOR_NO_SOURCE)
 
 #: The catalogue's many-country codes. A source filed under one of these serves many countries at once (EUR-Lex, the African
 #: Union, the UN Treaty Collection), so it is credited to NO single floor country: crediting Germany for an EU portal would
@@ -280,6 +283,12 @@ _FLOOR_CAVEAT = (
     "verification_status): its country set is a denominator, not a settled one. A tracked document is an entry point, "
     "never a coverage claim, and no fraction or score is computed here."
 )
+
+
+def _not_looked_up(by_state: dict[str, list[str]]) -> dict[str, list[str] | None]:
+    """``by_state`` for an unread catalogue: the states that need it are null (never looked up), tracked and unchecked keep
+    their lists. Every country is still in exactly one list: none can be in a state nothing looked up."""
+    return {st: (None if st in FLOOR_NEEDS_CATALOG else v) for st, v in by_state.items()}
 
 
 def _floor_unchecked(reason: str | None, docs: list, population: dict | None = None) -> dict:
@@ -428,14 +437,14 @@ def floor_report(
         row.update(listed)  # one list per basis present (official / de-facto / regional), the basis kept
         if contested:
             row["contested"] = contested
-        row["states"] = counts
+        row["states"] = {st: (None if catalog is None and st in FLOOR_NEEDS_CATALOG else n) for st, n in counts.items()}
         row["documents"] = docs_by_language.get(code, 0)
         rows.append(row)
 
     # zh is its own line (the standing Q911 emphasis): the three floor countries it lists are in its row above, and the two
     # territories its seed row names are here, beside it, with the state they would have if they were on the floor.
     out["languages"] = rows
-    out["by_state"] = by_state
+    out["by_state"] = _not_looked_up(by_state) if catalog is None else by_state
     out["order"] = order
     out["zh_beyond_floor"] = {cc: state_of(cc) for cc in ZH_NAMED_BEYOND_FLOOR}
     out["many_country_sources"] = many if catalog is not None else None
@@ -504,13 +513,15 @@ def world_report(
         by_state[_state_of(cc, tracked, reachable, catalog is not None)].append(cc)
     if order["by"] == "population":
         order["missing"] = sorted(cc for cc in countries if order_key(cc)[0])
+    unread = catalog is None
+    shown: dict[str, list[str] | None] = _not_looked_up(by_state) if unread else dict(by_state)
     out: dict = {
         "state": "checked" if catalog is not None else "unchecked",
         "reason": None if catalog is not None else reason,
         "countries": len(countries),
         "floor_countries_excluded": len(on_floor & universe),
-        "states": {st: len(v) for st, v in by_state.items()},
-        "by_state": by_state,
+        "states": {st: (None if v is None else len(v)) for st, v in shown.items()},
+        "by_state": shown,
         "order": order,
         # A code a tracked document states that neither block lists (a many-country code such as eu, a retired or mistyped
         # code): named, never dropped.
@@ -518,8 +529,11 @@ def world_report(
         "no_permanent_population": [cc for cc in WORLD_NO_PERMANENT_POPULATION if cc in set(countries)],
         # R752: the research list is no-eligible-source WITHOUT the codes no one lives in; those are counted apart, never
         # dropped from by_state (each code keeps its own entry and state).
-        "no_eligible_source_to_research": sum(1 for cc in by_state.get(FLOOR_NO_SOURCE, []) if cc not in WORLD_NO_PERMANENT_POPULATION),
-        "no_eligible_source_no_permanent_population": sum(
+        # Unread catalogue: no country was looked up, so neither count exists (null, never the 0 an empty list would give).
+        "no_eligible_source_to_research": None if unread else sum(
+            1 for cc in by_state.get(FLOOR_NO_SOURCE, []) if cc not in WORLD_NO_PERMANENT_POPULATION
+        ),
+        "no_eligible_source_no_permanent_population": None if unread else sum(
             1 for cc in by_state.get(FLOOR_NO_SOURCE, []) if cc in WORLD_NO_PERMANENT_POPULATION
         ),
         "method": _WORLD_METHOD,

@@ -140,14 +140,15 @@ def _words(value: Any, fallback: str) -> str:
 
 def _counts(states: Any, reason: str | None) -> str:
     """One row's counts per state. Where the catalogue was not read (an ``unchecked`` count is present), the states that needed it
-    were not looked up: they read so, with the reason, never as the 0 the report writes for them."""
+    were not looked up: they read so, with the reason, never as a 0 (the report writes null for them since row 272)."""
     st = _dict(states)
     if not st:
         return "states not recorded"
     if "unchecked" in st:
         return (f"tracked {_n(st.get('tracked'))}, not looked up {_n(st.get('unchecked'))}"
                 f" (the other states need the catalogue: {reason or 'it could not be read'})")
-    return ", ".join(f"{_STATE_WORDS[s]} {_n(st.get(s))}" for s in STATES if s in st)
+    # A null count is a state the report did not look up (row 272): said so, never a dash that could pass for a figure.
+    return ", ".join(f"{_STATE_WORDS[s]} {'not looked up' if st.get(s) is None else _n(st.get(s))}" for s in STATES if s in st)
 
 
 def _when(iso: Any) -> str | None:
@@ -174,7 +175,7 @@ def _order_line(order: Any, label: str) -> str:
 
 def _state_lines(by_state: Any, indent: str = "  ", reason: str | None = None) -> list[str]:
     """Each state's countries by code, in the report's order. A state the file does not list says so, never 0; where the
-    catalogue was not read, the states that need it say they were not looked up instead of the empty lists the report writes."""
+    catalogue was not read, the states that need it say they were not looked up (null in the report since row 272)."""
     bs = _dict(by_state)
     out = []
     if "unchecked" in bs:
@@ -187,6 +188,9 @@ def _state_lines(by_state: Any, indent: str = "  ", reason: str | None = None) -
         if st not in bs:
             if st != "unchecked":
                 out.append(f"{indent}{_STATE_WORDS[st]}: not listed in this file")
+            continue
+        if bs[st] is None:  # row 272: null is a state nothing looked up, never an empty one
+            out.append(f"{indent}{_STATE_WORDS[st]}: not looked up")
             continue
         codes = _list(bs[st])
         out.append(f"{indent}{_STATE_WORDS[st]}: {len(codes)}" + (f" ({_codes(codes)})" if codes else ""))
@@ -295,7 +299,7 @@ def json_floor(doc: dict[str, Any]) -> dict[str, Any]:
         "reason": _words(f.get("reason"), "") or None,
         "as_of": _when(f.get("as_of")),
         "countries": _int(f.get("countries")),
-        "by_state": {st: [_code(c) for c in _list(v)] for st, v in _dict(f.get("by_state")).items() if st in STATES},
+        "by_state": {st: (None if v is None else [_code(c) for c in _list(v)]) for st, v in _dict(f.get("by_state")).items() if st in STATES},
         "languages": [
             {"language": _code(r.get("language")), **{b: [_code(c) for c in _list(r.get(b))] for b in _BASES if b in r},
              "states": {st: _int(v) for st, v in _dict(r.get("states")).items() if st in STATES}, "documents": _int(r.get("documents"))}
