@@ -172,8 +172,8 @@
         const m = (c.top||[]).reduce((s,t)=>s+t.mentions,0);
         const r = (1.5 + 4*Math.sqrt(m/maxM)).toFixed(1);
         const terms = (c.top||[]).map(t=>t.term+" "+t.mentions).join(", ");
-        return `<g><circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.75">
-            <title>${esc(c.name)}${c.country?" ("+esc(ooCountryCode(c.country))+" — "+esc(ooCountryName(c.country, c.country))+")":""}: ${esc(terms)}</title></circle>
+        return `<g><circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.75"
+            title="${esc(c.name)}${c.country?" ("+esc(ooCountryCode(c.country))+" — "+esc(ooCountryName(c.country, c.country))+")":""}: ${esc(terms)}"></circle>
           <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
       }).join("");
       if (!placed.length)
@@ -1181,16 +1181,18 @@
     }
 
     function _ooSigMarker(cls, x, y, r, fill, titleEsc) {
-      const ttl = `<title>${titleEsc}</title>`;
+      // The hover rides a title ATTRIBUTE (row 268, invariant #17): #oo-tip opens it on hover, keyboard focus and touch
+      // long-press, where an SVG <title> child only ever reached a mouse.
+      const ttl = ` title="${titleEsc}"`;
       if (cls === "scheduled") {
         const pts = `${x},${(y - r).toFixed(1)} ${(x - r).toFixed(1)},${(y + r * 0.8).toFixed(1)} ${(x + r).toFixed(1)},${(y + r * 0.8).toFixed(1)}`;
-        return `<polygon points="${pts}" ${fill}>${ttl}</polygon>`;
+        return `<polygon points="${pts}" ${fill}${ttl}></polygon>`;
       }
       if (cls === "deduced") {
         const pts = `${x},${(y - r).toFixed(1)} ${(x + r).toFixed(1)},${y} ${x},${(y + r).toFixed(1)} ${(x - r).toFixed(1)},${y}`;
-        return `<polygon points="${pts}" ${fill}>${ttl}</polygon>`;
+        return `<polygon points="${pts}" ${fill}${ttl}></polygon>`;
       }
-      return `<circle cx="${x}" cy="${y}" r="${r}" ${fill}>${ttl}</circle>`;
+      return `<circle cx="${x}" cy="${y}" r="${r}" ${fill}${ttl}></circle>`;
     }
 
     // The choropleth scale is LINEAR by default (faithful to magnitude; it
@@ -1288,8 +1290,8 @@
         for (const p of ov) {
           const _op = project(p.lon, p.lat), x = _op.x.toFixed(1), y = _op.y.toFixed(1);
           const r = (1.3 + 3.2 * Math.sqrt((+p.value || 0) / ovMax)).toFixed(1);
-          overlayPts += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="0.7" opacity="0.85">`
-            + `<title>${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(mentioned, deduced)"))}</title></circle>`;
+          overlayPts += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="0.7" opacity="0.85"`
+            + ` title="${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(mentioned, deduced)"))}"></circle>`;
         }
       }
 
@@ -1304,8 +1306,8 @@
         for (const p of sv) {
           const _vp = project(p.lon, p.lat), cx = _vp.x, cy = _vp.y;
           const s = 2 + 3 * Math.sqrt((+p.value || 0) / svMax);
-          serverPts += `<rect x="${(cx - s / 2).toFixed(1)}" y="${(cy - s / 2).toFixed(1)}" width="${s.toFixed(1)}" height="${s.toFixed(1)}" fill="#8b5cf6" stroke="var(--panel)" stroke-width="0.4" opacity="0.85">`
-            + `<title>${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(server IP location)"))}</title></rect>`;
+          serverPts += `<rect x="${(cx - s / 2).toFixed(1)}" y="${(cy - s / 2).toFixed(1)}" width="${s.toFixed(1)}" height="${s.toFixed(1)}" fill="#8b5cf6" stroke="var(--panel)" stroke-width="0.4" opacity="0.85"`
+            + ` title="${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(server IP location)"))}"></rect>`;
         }
       }
 
