@@ -28,6 +28,39 @@ from src.utils.export_envelope import envelope
 from ._base import _MAX_KEYWORDS_PER_LANG, router
 from .keywords import keyword_log
 
+#: Why the last pass's failure count is absent. Fixed sentences, so a reader can match on them.
+LAST_PASS_NO_PASS = "no collection pass has finished since the app started"
+LAST_PASS_NO_TALLY = "the last pass that finished recorded no tally"
+LAST_PASS_UNREADABLE = "the last pass's failure count is not a whole number"
+
+
+def last_pass_figures(last_result: object, last_error: object = None) -> dict:
+    """The last finished pass's fetch-failure count, or null with the reason it is absent (row 274).
+
+    The scheduler keeps its last result in memory only, so after every start it is None until a
+    pass finishes. Reading that as 0 told a report taken before the first pass that the last pass
+    failed nothing -- a pass that never ran. 0 is printed only when a recorded tally says 0.
+    ``last_pass_error`` names a newer pass that died before it could leave a result, so the figure
+    is never read as the newest pass's when it is not.
+    """
+    out: dict = {"last_pass_fetch_failed": None, "last_pass_measured": False}
+    tally = last_result.get("tally") if isinstance(last_result, dict) else None
+    if not isinstance(last_result, dict):
+        out["last_pass_absent_reason"] = LAST_PASS_NO_PASS
+    elif not isinstance(tally, dict):
+        out["last_pass_absent_reason"] = LAST_PASS_NO_TALLY
+    else:
+        # The runner's tally is sparse: a counter no source incremented is absent, a real 0.
+        raw = tally.get("fetch_failed", 0)
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            out["last_pass_fetch_failed"] = raw
+            out["last_pass_measured"] = True
+        else:
+            out["last_pass_absent_reason"] = LAST_PASS_UNREADABLE
+    if last_error:
+        out["last_pass_error"] = str(last_error)[:80]
+    return out
+
 
 @router.post("/performance")
 def performance_report(
@@ -107,18 +140,19 @@ def performance_report(
     from src.ingest.fetch_verdict import fetch_failed_reasons as _ff_reasons
     from src.scheduler.runner import get_scheduler as _get_scheduler
 
-    _last = _get_scheduler().status().get("last_result") or {}
-    _tally_raw = _last.get("tally")
-    _last_tally: dict = _tally_raw if isinstance(_tally_raw, dict) else {}
-    collection = {
-        "last_pass_fetch_failed": int(_last_tally.get("fetch_failed") or 0),
-        "fetch_failed_reasons": _ff_reasons(_last),
+    _status = _get_scheduler().status()
+    collection = last_pass_figures(_status.get("last_result"), _status.get("last_error"))
+    collection.update({
+        # null beside a null count: an empty map there would read as "no failures".
+        "fetch_failed_reasons": (
+            _ff_reasons(_status.get("last_result") or {}) if collection["last_pass_measured"] else None
+        ),
         "method": (
             "The last scrape pass's fetch failures bucketed by cause (per-reason "
             "counts sum to fetch_failed). http_403 is typically the Tor-block "
             "reality on premium news, NOT asserted as Tor. Counts only, no score."
         ),
-    }
+    })
     # Why the collector may be running fewer workers than collect_parallelism allows:
     # the ceiling this machine demonstrated under memory pressure. Null on any box that
     # has never backed off, which is the normal state and is NOT the same as a ceiling
