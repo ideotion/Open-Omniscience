@@ -2179,9 +2179,13 @@
             : "";
         // R762: an address on another computer is refused by the same rule as every local-AI call, and the app
         // does not contact it; said here, where the address is shown, instead of a silent "not running".
-        const refusedNote = (s.port_occupant && s.port_occupant.state === "refused")
-          ? `<p class="card-caveat">${esc(t("This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1."))}</p>`
-          : "";
+        // R767: a name that is local only if the hosts file says so (ip6-localhost, localhost.localdomain) is refused
+        // too, and the note names the address to use instead.
+        const occ = s.port_occupant || {};
+        const refusedNote = occ.state !== "refused" ? ""
+          : occ.use_instead
+            ? `<p class="card-caveat">${esc(t("This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:"))} <code>${esc(occ.use_instead)}</code></p>`
+            : `<p class="card-caveat">${esc(t("This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1."))}</p>`;
         box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + refusedNote + kindNote + logBlock;
         if (!s.installed) {
           if (!installBox) return;

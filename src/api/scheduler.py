@@ -212,6 +212,7 @@ def _wiki_lane_block() -> dict:
     stream = (settings_block.get("service") or {}).get("stream") or {}
     waiting = bool(live) and bool(stream.get("consecutive_failures"))
     return {
+        **_wiki_lane_hold_block(),
         "state": state,
         "active": bool(live),
         # A literal token, never prose: the sentence is composed by the UI through
@@ -223,7 +224,7 @@ def _wiki_lane_block() -> dict:
         # the same overclaim in reverse: an operator told the feature is unbuilt while
         # their own airplane mode is what is holding it. The reason is MEASURED --
         # each branch reads a real fact, and none of them guesses.
-        "reason": _wiki_lane_reason(state, bool(live), waiting=waiting),
+        "reason": _wiki_lane_reason(state, bool(live), waiting=waiting, held=_wiki_lane_held()),
         # The failure itself, verbatim, only while waiting: the one fact an operator
         # needs to fix their proxy, and never a stale one from a wait that ended.
         "waiting_on": stream.get("last_failure") if waiting else None,
@@ -237,10 +238,40 @@ def _wiki_lane_block() -> dict:
     }
 
 
-def _wiki_lane_reason(state: str, live: bool, *, waiting: bool = False) -> str | None:
+def _wiki_lane_held() -> bool:
+    from src.wiki.service import lane_hold
+
+    return lane_hold() is not None
+
+
+def _wiki_lane_hold_block() -> dict:
+    """R772(a): while the lane is held by a transport change, WHY (``held_by``: ``protected``, ``unprotected``, ``proxy`` or
+    ``settings``), what a click on the stream button would start it over (``resume_transport``: ``proxy``, ``direct`` or
+    ``settings``, the last meaning nothing could be sent), and the token the click sends back so a change in between is refused.
+    Empty while it is not held. Never a proxy address or a digest of one."""
+    from src.safety.transport_watch import display_token, mode_now, resume_transport
+    from src.wiki.service import lane_hold
+
+    hold = lane_hold()
+    if hold is None:
+        return {}
+    tid = mode_now()
+    return {
+        "held_by": hold.get("held_by"),
+        "held_at": hold.get("at"),
+        "resume_transport": resume_transport(tid),
+        "resume_token": display_token(tid),
+    }
+
+
+def _wiki_lane_reason(state: str, live: bool, *, waiting: bool = False, held: bool = False) -> str | None:
     """WHY nothing is streaming, in one token the UI translates. ``None`` when it is."""
     from src.ingest import kill_switch_active
 
+    if held and state == "running":
+        # R772(a), before airplane mode: going online does not lift it, so naming airplane mode would send the operator to the
+        # wrong button. The stream button resumes it, and the status says over which transport.
+        return "transport-held"
     if live:
         # Registered is not connected: ``transport-waiting`` while its connections fail.
         return "transport-waiting" if waiting else None
@@ -723,6 +754,56 @@ def _apply_wiki_lane_state(state: str) -> None:
             stop_wiki_lane()
     except Exception as exc:  # noqa: BLE001 - a lane hiccup must never fail the setting write
         log_failure(_LOG, f"could not apply the wiki lane state {state!r}", exc, level=logging.WARNING)
+
+
+class WikiLaneResumeBody(BaseModel):
+    #: The token of the transport the stream button named (``resume_token``), sent back with the click (R772(a)).
+    transport: str = ""
+
+
+#: R772(a): the transport changed between the button naming it and the click. Nothing is started; the page reads the status again.
+WIKI_TRANSPORT_CHANGED = (
+    "The transport changed since this page was drawn, so the stream was not started. Look at the stream button again, then start it."
+)
+
+
+@router.post("/wiki-lane/resume")
+def resume_wiki_lane(body: WikiLaneResumeBody | None = None) -> dict:
+    """R772(a): the stream button's click on a lane HELD by a transport change. It starts a new lane over the transport the button
+    named (the token), or nothing: a click with no token, or a token of another transport, is refused. Sets the lane's state to
+    ``running`` (the click is the operator turning it on again). The page asks the go-online consent before it calls this."""
+    import hmac
+
+    from src.ingest import kill_switch_active
+    from src.safety.transport_watch import UNKNOWN, UNREADABLE_STOP, display_token, mode_now
+    from src.wiki.service import lane_hold, resume_held_lane
+
+    if lane_hold() is None:
+        raise HTTPException(status_code=409, detail="The Wikipedia stream is not held, so there is nothing to resume.")
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
+    tid = mode_now()
+    sent = (body.transport if body is not None else "") or ""
+    if not sent or not hmac.compare_digest(sent.encode("utf-8"), display_token(tid).encode("utf-8")):
+        raise HTTPException(status_code=409, detail=WIKI_TRANSPORT_CHANGED)
+    if tid == UNKNOWN:
+        raise HTTPException(status_code=409, detail=UNREADABLE_STOP)
+    try:
+        save_settings({"wiki_lane_state": "running"}, replace_damaged=True)
+    except SchedulerSettingsError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    import os
+
+    started = False
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        started = resume_held_lane(tid)
+    else:
+        from src.wiki.service import clear_hold
+
+        clear_hold()  # tests and headless runs drive the lane themselves
+    # "resumed" says whether the hold was lifted, not that the click arrived: when nothing could start (no editions, a build that
+    # failed) the hold is put back and the answer says so (the Opus read of row 245).
+    return {"resumed": lane_hold() is None, "streaming": bool(started), "wiki_lane": _wiki_lane_block()}
 
 
 @router.get("/runs")

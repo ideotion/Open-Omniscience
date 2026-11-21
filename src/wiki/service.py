@@ -51,6 +51,47 @@ _LOCK = threading.RLock()
 _STOP_LOCK = threading.RLock()
 _RUNNER: Any = None
 _DRAIN_THREAD: threading.Thread | None = None
+#: R772(a): the lane's hold, while the transport it was approved under changed: ``{"held_by": ..., "at": ...}``. In memory only:
+#: the app starts offline after a restart, and going online again is the operator's new approval under the transport then in force.
+#: Nothing but :func:`resume_held_lane` (the stream button's click) lifts it; going online, the collection buttons and a settings
+#: write do not.
+_HELD: dict | None = None
+# Its own lock, never ``_LOCK``: the runner reports a hold from its own threads, and a start or a stop joins those threads while
+# holding ``_LOCK``.
+_HOLD_LOCK = threading.Lock()
+#: The transport identity the last lane of this process was approved under (R772(a), the first security read's finding 2): a lane
+#: stopped by airplane mode or paused, then started again after the transport changed, is held rather than approved anew by a click
+#: that never showed the new transport. In memory only, as the hold is.
+_APPROVED: str | None = None
+
+
+def _record_hold(held_by: str) -> None:
+    global _HELD
+    from datetime import UTC, datetime
+
+    with _HOLD_LOCK:
+        if _HELD is None:
+            _HELD = {"held_by": held_by, "at": datetime.now(UTC).isoformat()}
+
+
+def _note_hold(runner: Any, held_by: str) -> None:
+    """A runner's callback: the lane is held (R772(a)). Only the CURRENT runner's hold counts: a runner already detached by a stop
+    ends anyway, and its hold must not land on the next one."""
+    if runner is _RUNNER:
+        _record_hold(held_by)
+
+
+def clear_hold() -> None:
+    """Lift the hold without starting anything: for a caller that drives the lane itself (``OO_NO_SCHEDULER``, the tests)."""
+    global _HELD
+    with _HOLD_LOCK:
+        _HELD = None
+
+
+def lane_hold() -> dict | None:
+    """The lane's hold (a copy), or ``None``."""
+    with _HOLD_LOCK:
+        return dict(_HELD) if _HELD is not None else None
 
 
 def _settings():
@@ -297,9 +338,11 @@ def _refresh_one_pageview_top(client: Any) -> str | None:
     return None
 
 
-def _build():
-    """Construct the runner with the real client, stream and sessions."""
+def _build(approved: str | None = None):
+    """Construct the runner with the real client, stream and sessions, approved under the transport ``approved`` (R772(a)): the
+    one in force now, unless the caller read it at the operator's click."""
     from src.database.session import SessionLocal
+    from src.safety import transport_watch as tw
     from src.wiki.client import WikiClient
     from src.wiki.lane import WikiStreamAdapter
     from src.wiki.lane_search import LaneIndexer
@@ -345,7 +388,8 @@ def _build():
     indexer = LaneIndexer(
         lane_session=walk_lane_session, budget=_budget, tracker_session=SessionLocal
     )
-    return WikiLaneRunner(
+    runner_ref: list[Any] = [None]
+    runner_ref[0] = WikiLaneRunner(
         adapter=adapter,
         stream=stream,
         lane_session=wiki_lane_session,
@@ -358,10 +402,13 @@ def _build():
         walker=walker,
         warm=warm,
         indexer=indexer,
+        transport_watch=tw.for_launch(approved if approved is not None else tw.mode_now()),
+        on_hold=lambda held_by: _note_hold(runner_ref[0], held_by),
     )
+    return runner_ref[0]
 
 
-def start_wiki_lane() -> bool:
+def start_wiki_lane(*, _approved: str | None = None) -> bool:
     """Start the lane if the operator's setting says ``running``. Idempotent.
 
     Returns whether a runner is streaming afterwards. Never raises.
@@ -373,11 +420,25 @@ def start_wiki_lane() -> bool:
     nothing alive (tear the leftover down, then build). A second call that built a new runner
     beside a live drain thread would put two writers on one lane.
     """
-    global _RUNNER, _DRAIN_THREAD
+    global _RUNNER, _DRAIN_THREAD, _APPROVED
+    from src.safety import transport_watch as tw
+
     with _STOP_LOCK, _LOCK:
         try:
             if _state_of() != "running":
                 _LOG.info("the Wikipedia lane is not started: its setting does not say running")
+                return False
+            if lane_hold() is not None:
+                # R772(a): held by a transport change. Going online, Start, Run-now and a settings write all land here, and none of
+                # them is the operator's resume: only ``resume_held_lane`` (the stream button, which shows the transport first).
+                _LOG.info("the Wikipedia lane is not started: it is held by a transport change until you resume it")
+                return False
+            runner_held = getattr(_RUNNER, "held_by", None) if _RUNNER is not None else None
+            if runner_held is not None:
+                # The runner held itself and its record has not landed yet (or was lost): it is held all the same, never torn down
+                # and rebuilt over the new transport.
+                _record_hold(runner_held)
+                _LOG.info("the Wikipedia lane is not started: it is held by a transport change until you resume it")
                 return False
             drain_alive = (
                 _RUNNER is not None and _DRAIN_THREAD is not None and _DRAIN_THREAD.is_alive()
@@ -401,7 +462,21 @@ def start_wiki_lane() -> bool:
                     if not _RUNNER.stopped:
                         return False
                 _finish(*_detach_locked(), 5.0)
-            _RUNNER = _build()
+            approved = _approved if _approved is not None else tw.mode_now()
+            if approved == tw.UNKNOWN:
+                # The settings cannot be read: nothing is built, and nothing is held either (a hold would outlive the read failure
+                # and name it after it ended); the next start, once they read again, is checked against the last approval.
+                _LOG.info("the Wikipedia lane is not started: the safety settings cannot be read")
+                return False
+            if _approved is None and _APPROVED is not None:
+                changed = tw.change_reason(_APPROVED, approved)
+                if changed is not None:
+                    # The lane was approved under another transport and nothing has shown the operator this one.
+                    _record_hold(tw.held_by_for(changed))
+                    _LOG.info("the Wikipedia lane is not started: the transport changed since it was approved")
+                    return False
+            _RUNNER = _build(approved)
+            _APPROVED = approved
             if not _RUNNER.start():
                 return False
             _DRAIN_THREAD = threading.Thread(
@@ -413,6 +488,30 @@ def start_wiki_lane() -> bool:
         except Exception as exc:  # noqa: BLE001 - a lane that cannot start must not fail the toggle
             log_failure(_LOG, "the Wikipedia lane could not start", exc, level=logging.WARNING)
             return False
+
+
+def resume_held_lane(approved: str) -> bool:
+    """The operator's click on a held stream (R772(a)): lift the hold and start a NEW runner approved under ``approved``, the
+    transport the page showed (the caller compared its token). The held runner is torn down first, never revived.
+
+    Returns whether a runner is streaming afterwards."""
+    global _HELD
+    with _STOP_LOCK:
+        with _LOCK:
+            with _HOLD_LOCK:
+                before, _HELD = _HELD, None
+            runner, thread = (
+                _detach_locked() if _RUNNER is not None and getattr(_RUNNER, "held_by", None) is not None else (None, None)
+            )
+        _finish(runner, thread, 5.0)
+        started = start_wiki_lane(_approved=approved)
+        if not started and before is not None:
+            # Nothing started (no editions, a build that failed): the hold stays, so a later Start or go-online cannot start the
+            # lane over a transport the operator was not shown (the second security read's finding 4).
+            with _HOLD_LOCK:
+                if _HELD is None:
+                    _HELD = before
+        return started
 
 
 def _detach_locked() -> tuple[Any, threading.Thread | None]:
