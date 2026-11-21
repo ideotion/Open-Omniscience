@@ -83,6 +83,12 @@ function hoverOf(markup, tag) {
   }
 }
 
+// --- a clickable signal's wider hit disc carries the same hover, so a long-press anywhere on it opens the bubble //
+{
+  const body = extract("_ooSignalLayer");
+  assert.ok(/fill="transparent" title="\$\{esc\(ti\)\}"><\/circle>/.test(body), "the signal's hit disc has no hover of its own");
+}
+
 // --- the Insights cities map ------------------------------------------------------------------ //
 {
   const build = new Function("esc", "project", "_mapGraticule", "_mapSphere", "ooCountryCode", "ooCountryName",

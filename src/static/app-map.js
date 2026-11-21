@@ -1051,7 +1051,7 @@
           // temporal-map lesson: hollow rings were clickable only on the 1px edge).
           const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
           return `<g${clk} opacity="${op.toFixed(2)}">`
-            + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent"></circle>` : "")
+            + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent" title="${esc(ti)}"></circle>` : "")
             + _ooSigMarker(cls, x, y, r, ring, esc(ti)) + `</g>`;
       }).join("");
       return { markup, kinds, visible };
@@ -1181,8 +1181,8 @@
     }
 
     function _ooSigMarker(cls, x, y, r, fill, titleEsc) {
-      // The hover rides a title ATTRIBUTE (row 268, invariant #17): #oo-tip opens it on hover, keyboard focus and touch
-      // long-press, where an SVG <title> child only ever reached a mouse.
+      // The hover rides a title ATTRIBUTE (row 268, invariant #17): #oo-tip opens it on hover and touch long-press, where
+      // an SVG <title> child only ever reached a mouse. (An SVG marker takes no keyboard focus.)
       const ttl = ` title="${titleEsc}"`;
       if (cls === "scheduled") {
         const pts = `${x},${(y - r).toFixed(1)} ${(x - r).toFixed(1)},${(y + r * 0.8).toFixed(1)} ${(x + r).toFixed(1)},${(y + r * 0.8).toFixed(1)}`;

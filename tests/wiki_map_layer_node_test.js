@@ -82,7 +82,7 @@ const { project, layer } = build();
     assert.ok(out.markup.includes(piece), "the hover lost its provenance piece " + piece + ": " + out.markup);
   }
   // Row 268 (invariant #17): the provenance rides a title ATTRIBUTE of the square, the one
-  // #oo-tip opens on hover, keyboard focus AND touch long-press -- an SVG <title> child only
+  // #oo-tip opens on hover AND touch long-press -- an SVG <title> child only
   // ever reached a mouse, so a touch or keyboard reader never saw where the address came from.
   const attr = /<rect [^>]*title="([^"]*)"[^>]*>/.exec(out.markup);
   assert.ok(attr, "the square's provenance is not in a title attribute: " + out.markup);

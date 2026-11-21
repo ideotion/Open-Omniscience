@@ -13,7 +13,10 @@ child:
 
 * the Wikipedia page marker and the located infobox-address square (`_ooWikiLayer`, `_ooWikiAddrMarker`);
 * the mentioned-place circles and the server-IP squares (two statements inside `ooMap`);
-* the signal shapes (`_ooSigMarker`) and the Insights cities map (`buildMapSvg`).
+* the signal shapes (`_ooSigMarker`) and a clickable signal's wider hit disc, and the Insights cities map
+  (`buildMapSvg`).
+
+The walk below covers the page and address markers; the others are run by the node test only.
 
 `tests/map_marker_titles_r268_node_test.js` and `tests/wiki_map_layer_node_test.js` run each one from the
 shipped source and fail if `app-map.js` builds a `<title>` child again; `tests/test_map_marker_titles_r268.py`
