@@ -25,20 +25,13 @@ Tests for DuckDuckGo Search Module
 This module contains tests for the DuckDuckGo search functionality.
 """
 
-import sys
-from pathlib import Path
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from datetime import UTC
-
-from services.duckduckgo import DuckDuckGoSearch
 from src.ingest import FetchError
+from src.services.duckduckgo import DuckDuckGoSearch
 
 
 class TestDuckDuckGoSearch:
@@ -306,8 +299,8 @@ class TestSourceDiscovery:
 class TestRateLimiting:
     """Test rate limiting functionality."""
 
-    @patch("services.duckduckgo.time.time")
-    @patch("services.duckduckgo.time.sleep")
+    @patch("src.services.duckduckgo.time.time")
+    @patch("src.services.duckduckgo.time.sleep")
     def test_rate_limiting(self, mock_sleep, mock_time):
         """Test that rate limiting is enforced."""
         # Reset last request time
