@@ -242,11 +242,16 @@ def _wiki_warm() -> dict[str, Any]:
     return {**out, **coverage}
 
 
-def _wiki_coverage() -> dict[str, Any]:
+def _wiki_coverage(walk: dict[str, Any] | None = None) -> dict[str, Any]:
     """The per-edition coverage report (v0.6 row D, S06-03 S1): pages seen of each edition's own count, the full-text range, the last event
     and the gaps by reason, through the one reader the counters artifact and the diagnostics bundle use (``edition_coverage``), so the
     three cannot disagree about a number. The compact form (no per-gap list): this view shows counts.
+
+    ``walk`` is :func:`_wiki_walk`'s block: its switch and, while the walker is paused, the pause's token name why a total is absent or
+    no longer refreshed (row 257, R774), from the same read this view already made, so the two groups cannot disagree.
     """
+    walk = walk or {}
+    pause = walk.get("reason") if walk.get("state") == "paused" else None
     from src.versioned.store import LaneAbsentError, lane_path, lane_session
     from src.wiki.coverage import edition_coverage
 
@@ -254,7 +259,7 @@ def _wiki_coverage() -> dict[str, Any]:
         return {"measured": False, "reason": "lane-never-run"}
     try:
         with lane_session("wiki") as lane:
-            return edition_coverage(lane, newest_gaps=False)
+            return edition_coverage(lane, newest_gaps=False, walk_enabled=walk.get("enabled"), walk_pause=pause)
     except LaneAbsentError:
         return {"measured": False, "reason": "lane-never-run"}
     except SQLAlchemyError as exc:
@@ -417,6 +422,7 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
     now = datetime.now(UTC)
     since = now - timedelta(days=WINDOW_DAYS)
     storage = _storage(db)
+    walk = _wiki_walk()
     return {
         "read_at": now.isoformat(),
         "window_days": WINDOW_DAYS,
@@ -427,8 +433,8 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "stream": _wiki_stream(since),
                 "tracked": _wiki_tracked(db, since.replace(tzinfo=None)),
                 "warm": _wiki_warm(),
-                "walk": _wiki_walk(),
-                "coverage": _wiki_coverage(),
+                "walk": walk,
+                "coverage": _wiki_coverage(walk),
                 "storage": storage.get("wiki"),
             },
             {

@@ -16,6 +16,9 @@ WHAT IS RECORDED (``metric`` / ``kind``):
 * ``walk`` / ``ok`` or a refusal token, per edition: requests, answer time, bytes, pages, the
   longest ``Retry-After`` seen and the latest detail (the walk's bookmark on ``ok``, the
   exception TYPE and HTTP status on a refusal, never a URL or a message);
+* ``walk_count`` / a refusal token, per edition: a refused read of the edition's article count
+  (``meta=siteinfo``), ALSO counted under ``walk``; kept apart so a later batch refusal never
+  stands in for it (row 257);
 * ``drain`` / ``ok`` or ``failed``: drains, their duration, revisions stored; ``drain_stage`` /
   ``hot-sets`` or ``feeds-wall``: the WALL time of each stage (``feeds-wall`` includes opening the
   lane, waiting for a connection and the HTTP text fetches between stores, so it is an upper bound

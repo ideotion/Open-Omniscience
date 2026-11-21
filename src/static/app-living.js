@@ -170,6 +170,8 @@
       const both = eds.filter((e) => e.has_run && typeof e.pages_seen === "number" && typeof e.edition_articles === "number");
       const seenAll = eds.reduce((n, e) => n + (e.has_run && typeof e.pages_seen === "number" ? e.pages_seen : 0), 0);
       const noTotal = eds.filter((e) => e.has_run && typeof e.edition_articles !== "number").length;
+      // R774: the switch as stored, from the walk group's own read (never guessed when it could not be read).
+      const walkOff = (src.walk || {}).enabled === false;
       facts.push({ label: t("All editions"),
         value: both.length
           ? tf("{n} of {m} pages seen", { n: _livingCount(both.reduce((n, e) => n + e.pages_seen, 0)),
@@ -186,11 +188,14 @@
         let hover = t("The edition counts its articles its own way, so pages seen can pass its total. A page promoted from the second tier to the first may be counted twice, so the full-text figure is a range.");
         if (!e.has_run) {
           value = t("No run yet");
+          if (walkOff) value += " · " + t("total not read: the page walk is off");
         } else {
           if (typeof e.pages_seen !== "number") value = t("The walk has not run for this edition.");
           else if (typeof e.edition_articles === "number") {
             value = tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) });
           } else value = tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
+          const why = livingTotalWhy(e.edition_articles_read, t, tf);
+          if (why) value += " · " + why;
           const ft = e.full_text || {};
           if (typeof ft.hot_pages_with_text === "number") {
             if (typeof ft.warm_pages_with_text === "number") {
@@ -207,8 +212,48 @@
         }
         facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
       }
+      if (walkOff) facts.push(livingWalkSwitchFact(t));
       facts.push(livingLocatedFact(c.located, t, tf));
       return { title: t("Edition coverage"), facts };
+    }
+
+    // Row 257 / R774: why an edition's article total is absent, or that one read earlier is no longer refreshed -- never an empty or
+    // zero total that could read as a measurement. "" when the total was read and is kept fresh (the figure speaks for itself).
+    // Airplane and protected mode are named as such (the pause's own words, #14e); a count read the edition refused is named with its
+    // time, apart from any later batch refusal.
+    function livingTotalWhy(r, t, tf) {
+      const s = (r && r.state) || "";
+      if (s === "not_read_walk_off") return t("total not read: the page walk is off");
+      if (s === "stale_walk_off") {
+        return tf("total read {when}, no longer refreshed: the page walk is off", { when: livingWhen(r.at, t) });
+      }
+      if (s === "not_read_paused" || s === "not_read_refused") {
+        const reason = _LIVING_WALK_WHY[r.reason] ? t(_LIVING_WALK_WHY[r.reason]) : String(r.reason || "?");
+        return s === "not_read_refused"
+          ? tf("total not read ({when}): {reason}", { when: livingWhen(r.at, t), reason })
+          : tf("total not read: {reason}", { reason });
+      }
+      if (s === "answer_unreadable") return t("total not read: the edition's answer held no article count");
+      if (s === "unknown") return t("total not read: the walk's switch could not be read");
+      return "";
+    }
+
+    // R774: the walk switch one click away from the coverage it explains. The same save as Settings -> Wikipedia (saveWikiWalk), and
+    // the same visible cost text beside it: turning the walk on starts the egress Settings describes, never a second, unseen one.
+    function livingWalkSwitchFact(t) {
+      const btn = `<button type="button" class="tiny secondary" data-on-click="livingWalkOn(this)">${esc(t("Turn the page walk on"))}</button>`;
+      return { label: t("Page walk"), html: true,
+        value: btn + ` <span class="muted">${esc(t("Slow and long: 50 titles a request, one request at a time, and one request per edition for its article count. It keeps titles, sizes and Wikidata ids, never text, and runs only while the stream runs."))}</span>`,
+        hover: t("The article totals come only from the page walk, so none is read while it is off. It reads them from each edition's own Wikipedia address, the same one the stream's pages come from.") };
+    }
+
+    async function livingWalkOn(btn) {
+      if (btn) btn.disabled = true;
+      try {
+        if (typeof saveWikiWalk === "function") await saveWikiWalk(true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     // R17 step 4 (S06-03 S2 + S3, R678): addresses from place infoboxes, located only in the local OpenStreetMap index. Counts, never a

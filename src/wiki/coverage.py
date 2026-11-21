@@ -251,13 +251,93 @@ def _record_k13(rows: list[dict[str, Any]], measured: bool) -> None:
         pass
 
 
+#: Why an edition's total reads as it does (row 257, R774). ``read``: the walk read it and the walk is on. ``stale_walk_off``: read earlier,
+#: the walk is now off, so it is shown with its read date and no longer refreshed. ``not_read_walk_off``: never read, and the walk that
+#: reads it is off (R774: no other path reads it, so there is no new default egress). ``not_read_paused``: the walk is held by airplane
+#: mode, protected mode or the storage budget, named by its token. ``not_read_refused``: the edition refused the count read itself, named
+#: by its token and time, never by a later batch's refusal. ``answer_unreadable``: the edition answered, but with no article count.
+#: ``not_read_yet``: the walk is on and has not asked yet. ``unknown``: the switch could not be read, and nothing is guessed.
+TOTAL_STATES: tuple[str, ...] = (
+    "read", "stale_walk_off", "not_read_walk_off", "not_read_paused", "not_read_refused", "answer_unreadable", "not_read_yet",
+    "unknown",
+)
+
+
+def _count_read_refusals(lane: Any) -> dict[str, dict[str, Any]]:
+    """The newest refused article-count read per edition, from the walk's own history rows (``walk_count``, row 257).
+
+    Kept apart from the bookmark's ``last_error``, which the next batch refusal overwrites. The history keeps seven days; a refusal older
+    than that has been retried long since (the walk's pause is at most an hour), so absence after seven days is not a lost fact.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    from src.wiki.lane_models import WikiLaneHour
+    from src.wiki.walk import COUNT_READ_METRIC
+
+    if not sa_inspect(lane.connection()).has_table(WikiLaneHour.__tablename__):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    rows = lane.execute(
+        select(WikiLaneHour)
+        .where(WikiLaneHour.metric == COUNT_READ_METRIC)
+        .order_by(WikiLaneHour.hour_start.desc(), WikiLaneHour.last_at.desc())
+    ).scalars()
+    for r in rows:
+        if r.edition in out:
+            continue
+        out[r.edition] = {"reason": r.kind, "at": _iso(r.last_at or r.hour_start)}
+    return out
+
+
+def _total_state(
+    *, total: Any, read_at: Any, refusal: dict[str, Any] | None, walk_enabled: bool | None, walk_pause: str | None
+) -> dict[str, Any]:
+    """One edition's total, said for what it is (row 257, R774). Never a zero or an empty figure that could read as a measurement.
+
+    ``read_at`` arrives as walk_coverage gives it (ISO text) or as a datetime; either way it leaves as ISO text.
+    """
+    read_at = read_at if isinstance(read_at, str) else _iso(read_at)
+    if walk_enabled is False:
+        if total is not None:
+            return {"state": "stale_walk_off", "reason": None, "at": read_at}
+        return {"state": "not_read_walk_off", "reason": None, "at": None}
+    if total is not None:
+        return {"state": "read", "reason": None, "at": read_at}
+    if read_at is not None:
+        # Read, but the answer held no article count: the walk does not ask again this pass (walk.py's _read_count).
+        return {"state": "answer_unreadable", "reason": None, "at": read_at}
+    if walk_enabled is None:
+        return {"state": "unknown", "reason": None, "at": None}
+    if walk_pause:
+        return {"state": "not_read_paused", "reason": walk_pause, "at": None}
+    if refusal:
+        return {"state": "not_read_refused", "reason": refusal.get("reason"), "at": refusal.get("at")}
+    return {"state": "not_read_yet", "reason": None, "at": None}
+
+
+def walk_switch() -> bool | None:
+    """The operator's walk switch as stored, or ``None`` when the settings cannot be read (never guessed either way)."""
+    try:
+        from src.scheduler.settings import load_settings
+
+        return bool(getattr(load_settings(), "wiki_walk_enabled", False))
+    except Exception as exc:  # noqa: BLE001 - an unreadable switch is named, never guessed
+        log_failure(_LOG, "the edition coverage report could not read the walk switch", exc, level=logging.WARNING)
+        return None
+
+
 def edition_coverage(
-    lane: Any, *, now: datetime | None = None, newest_gaps: bool = True, located_budget: float | None = None
+    lane: Any, *, now: datetime | None = None, newest_gaps: bool = True, located_budget: float | None = None,
+    walk_enabled: bool | None = None, walk_pause: str | None = None,
 ) -> dict[str, Any]:
     """The report: one row per edition (the twelve first), a totals row, and the located block. Never raises on a missing table.
 
     ``measured`` is False, with a ``reason``, for a lane that has never run (the walk, WARM and the stream have written nothing); the twelve
     rows are still listed with their fields ``None`` so a surface can draw twelve honest "no run yet" lines.
+
+    ``walk_enabled`` is the operator's walk switch (``None``: unread, and each total's state says ``unknown`` rather than guess) and
+    ``walk_pause`` the global pause holding the walk now, if any (airplane mode, protected mode, the budget): row 257 and R774 name
+    from them why an edition's total is absent, or that a total read earlier is no longer refreshed.
     """
     from src.wiki.walk import walk_coverage
     from src.wiki.warm import warm_coverage
@@ -303,6 +383,14 @@ def edition_coverage(
             for n in names
         }
 
+    try:
+        count_refusals = _count_read_refusals(lane)
+    except Exception as exc:  # noqa: BLE001 - the totals' reasons are a side read; the counts stand without them
+        log_failure(
+            _LOG, "the edition coverage report could not read the count reads' refusals", exc, level=logging.WARNING
+        )
+        count_refusals = {}
+
     rows: list[dict[str, Any]] = []
     for name in names:
         w, m = walk_by.get(name), warm_by.get(name)
@@ -315,11 +403,19 @@ def edition_coverage(
             if newest_gaps
             else {"total": 0, "by_reason": {}}
         )
-        # walk.py stores ONE last_error for every refusal (a batch 503 as much as a siteinfo failure) and clears it
-        # never, so it cannot say the TOTAL's read failed. It is given as what it is: the walk's last refusal.
+        # walk.py stores ONE last_error for every refusal (a batch 503 as much as a siteinfo failure), so it cannot say the TOTAL's read
+        # failed: it is given as what it is, the walk's last refusal. The total's own state (row 257) reads the count read's refusals
+        # from their own history metric, which no batch refusal touches.
         total_note = {
             "last_refusal": w.get("last_error") if w else None,
             "last_refusal_at": w.get("last_error_at") if w else None,
+            **_total_state(
+                total=total,
+                read_at=w.get("edition_articles_read_at") if w else None,
+                refusal=count_refusals.get(name),
+                walk_enabled=walk_enabled,
+                walk_pause=walk_pause,
+            ),
         }
         ran = bool(
             w
