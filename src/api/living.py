@@ -252,6 +252,7 @@ def _wiki_coverage(walk: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     walk = walk or {}
     pause = walk.get("reason") if walk.get("state") == "paused" else None
+    running = False if walk.get("state") == "not_running" else (True if walk.get("state") else None)
     from src.versioned.store import LaneAbsentError, lane_path, lane_session
     from src.wiki.coverage import edition_coverage
 
@@ -259,7 +260,8 @@ def _wiki_coverage(walk: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"measured": False, "reason": "lane-never-run"}
     try:
         with lane_session("wiki") as lane:
-            return edition_coverage(lane, newest_gaps=False, walk_enabled=walk.get("enabled"), walk_pause=pause)
+            return edition_coverage(lane, newest_gaps=False, walk_enabled=walk.get("enabled"), walk_pause=pause,
+                                     walk_running=running)
     except LaneAbsentError:
         return {"measured": False, "reason": "lane-never-run"}
     except SQLAlchemyError as exc:

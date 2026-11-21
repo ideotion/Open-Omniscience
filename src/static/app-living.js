@@ -234,6 +234,7 @@
           : tf("total not read: {reason}", { reason });
       }
       if (s === "answer_unreadable") return t("total not read: the edition's answer held no article count");
+      if (s === "not_read_not_running") return t("total not read: the walk runs only while the live stream runs");
       if (s === "unknown") return t("total not read: the walk's switch could not be read");
       return "";
     }
@@ -243,8 +244,8 @@
     function livingWalkSwitchFact(t) {
       const btn = `<button type="button" class="tiny secondary" data-on-click="livingWalkOn(this)">${esc(t("Turn the page walk on"))}</button>`;
       return { label: t("Page walk"), html: true,
-        value: btn + ` <span class="muted">${esc(t("Slow and long: 50 titles a request, one request at a time, and one request per edition for its article count. It keeps titles, sizes and Wikidata ids, never text, and runs only while the stream runs."))}</span>`,
-        hover: t("The article totals come only from the page walk, so none is read while it is off. It reads each one from that edition's own Wikipedia address, the host the walk itself uses, once per edition.") };
+        value: btn + ` <span class="muted">${esc(t("Slow and long: 50 titles a request, one request at a time, for several days, and one request per edition for its article count, asked again only after a refusal. It keeps titles, sizes and Wikidata ids, never text, inside the lane's storage budget, and runs only while the stream runs."))}</span>`,
+        hover: t("The article totals come only from the page walk, so none is read while it is off. It reads each one from that edition's own Wikipedia address, the host the walk itself uses, once per edition, and again only after a refusal.") };
     }
 
     async function livingWalkOn(btn) {

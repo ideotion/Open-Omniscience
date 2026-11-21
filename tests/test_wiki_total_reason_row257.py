@@ -192,9 +192,26 @@ def test_the_living_overview_hands_the_walk_s_switch_and_pause_to_the_coverage_r
 
     monkeypatch.setattr("src.wiki.coverage.edition_coverage", fake)
     living._wiki_coverage({"enabled": True, "state": "paused", "reason": W.PAUSED_TRANSPORT_UNAVAILABLE})
-    assert seen == {"newest_gaps": False, "walk_enabled": True, "walk_pause": W.PAUSED_TRANSPORT_UNAVAILABLE}
+    assert seen == {"newest_gaps": False, "walk_enabled": True, "walk_pause": W.PAUSED_TRANSPORT_UNAVAILABLE,
+                    "walk_running": True}
     living._wiki_coverage({"enabled": False, "state": "off", "reason": W.PAUSED_NETWORK_OFF})
     assert seen["walk_enabled"] is False and seen["walk_pause"] is None, "a reason without a pause is not a pause"
+    living._wiki_coverage({"enabled": True, "state": "not_running", "reason": None})
+    assert seen["walk_running"] is False and seen["walk_pause"] is None
+
+
+def test_an_answer_with_no_count_stays_SAID_after_the_walk_is_switched_off():
+    """It WAS read: "the page walk is off" would send the operator to a switch that would not bring a total back."""
+    st = _total_state(total=None, read_at=T0, refusal=None, walk_enabled=False, walk_pause=None)
+    assert st["state"] == "answer_unreadable" and st["at"].startswith("2026-11-20")
+
+
+def test_a_walk_switched_ON_with_no_walker_running_says_so_never_nothing():
+    st = _total_state(total=None, read_at=None, refusal=None, walk_enabled=True, walk_pause=None, walk_running=False)
+    assert st["state"] == "not_read_not_running"
+    # Unknown here (the diagnostics bundle): no claim either way.
+    st = _total_state(total=None, read_at=None, refusal=None, walk_enabled=True, walk_pause=None, walk_running=None)
+    assert st["state"] == "not_read_yet"
 
 
 def test_the_disclosures_name_the_count_read():

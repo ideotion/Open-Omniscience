@@ -845,6 +845,7 @@ const WIKI = {
     ed("it", null, { state: "not_read_refused", reason: "request_refused", at: "2026-11-20T08:00:00+00:00", last_refusal: "service_busy" }),
     ed("pt", null, { state: "answer_unreadable", at: "2026-11-20T08:00:00+00:00" }),
     ed("es", null, { state: "not_read_yet" }),
+    ed("hi", null, { state: "not_read_not_running" }),
     ed("ru", 900, { state: "read", at: "2026-11-20T08:00:00+00:00" }),
   ] };
   const on = group(R.livingWikiGroups({ ...WIKI, walk: { enabled: true }, coverage: ON }, t, tf), "Edition coverage");
@@ -858,6 +859,7 @@ const WIKI = {
   assert.ok(otext.includes("L3(pt) 10 pages seen, total unknown · total not read: the edition's answer held no article count"), otext);
   assert.ok(/L3\(es\) 10 pages seen, total unknown(?! ·)/.test(otext), "nothing to say was said anyway: " + otext);
   assert.ok(/L3\(ru\) 10 of 900 pages seen(?! ·)/.test(otext), otext);
+  assert.ok(otext.includes("L3(hi) 10 pages seen, total unknown · total not read: the walk runs only while the live stream runs"), otext);
   // A switch that could not be read is neither on nor off: no button, and the state says so.
   const unread = R.livingTotalWhy({ state: "unknown" }, t, tf);
   assert.strictEqual(unread, "total not read: the walk's switch could not be read");
