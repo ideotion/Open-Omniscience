@@ -187,6 +187,18 @@
         + `<div class="hint" style="margin-top:4px">${esc(t("Bar = sources collected; the vertical mark is that region's floor. Counts only, no score."))}</div></div>`;
     }
 
+    // Row 289: the regional targets file's read state, as one line, or "" when it was read. A floor that was not read
+    // is never "no floor set": every region's mark is then "—" for a reason this line names.
+    function covTargetsLine(reg, t, tf) {
+      const st = (reg && reg.targets && reg.targets.state) || "present";
+      const refused = (reg && reg.targets_refused) || [];
+      if (st === "absent") return t("The regional targets file was not found on this install, so no region is compared with a floor.");
+      if (st === "empty") return t("The regional targets file on this install was read and sets no floor.");
+      if (st === "unreadable") return t("The regional targets file on this install could not be read, so no region is compared with a floor.");
+      if (refused.length) return tf("{n} values in the regional targets file were refused and are not compared.", {n: refused.length});
+      return "";
+    }
+
     function renderCoverageRegions(c) {
       const reg = c.regional;
       const host = $("coverage-regions");
@@ -207,12 +219,15 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
       const over = tc.max_share_pct != null && tc.share_pct > tc.max_share_pct;
+      const targetsLine = covTargetsLine(reg, t, tf);
+      const targetsErr = (reg.targets && reg.targets.error) || "";
       const located = reg.located_share_pct != null
         ? " · " + esc(tf("{pct}% of sources carry a country", {pct: reg.located_share_pct})) +
           (reg.min_located_share_pct != null ? ` <span class="muted">(${ooLtrPct(esc(tf("floor {pct}%", {pct: reg.min_located_share_pct})))})</span>` : "")
         : "";
       host.innerHTML =
         `<strong>Regional balance</strong> <span class="muted">(floors are working targets from configs/catalog_targets.yml)</span>` +
+        (targetsLine ? `<div class="card-caveat" style="margin-top:4px"${targetsErr ? ` title="${esc(targetsErr)}"` : ""}>${esc(targetsLine)}</div>` : "") +
         _regionFloorBars(reg.regions) +
         `<div style="overflow:auto;margin-top:6px"><table>` +
         `<tr><th>Region</th><th>Sources / floor</th><th>Countries / floor</th></tr>${rows}</table></div>` +
