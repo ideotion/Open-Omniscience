@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "5ca54037ea5b758693716c4ce947d02529ad7230b55b5385ab594793ef6e270c",
+  "digest": "4064e69a680165cd9f0049465055a5541adf5699ea0dc56e0d3f4d822ae776b5",
   "log": [
     {
       "version": 1,
@@ -103,6 +103,12 @@
       "digest": "5ca54037ea5b758693716c4ce947d02529ad7230b55b5385ab594793ef6e270c",
       "kind": "same",
       "note": "R758 row 210: the engine identity hashes data file names in POSIX form and also accepts the pre-R758 Windows id of the same bytes; the rows index_article writes are unchanged"
+    },
+    {
+      "version": 3,
+      "digest": "4064e69a680165cd9f0049465055a5541adf5699ea0dc56e0d3f4d822ae776b5",
+      "kind": "same",
+      "note": "row 239: safe_yaml maps libyaml 0.2.6's own nesting error (PyYAML 6.0.4) to the same YAMLDepthError; a document that parsed before parses to the same value, and a refused one is refused as before, so the rows an article gets are identical"
     }
   ]
 }

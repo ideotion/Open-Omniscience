@@ -54,6 +54,10 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: storage guard's choice of ``_LOG.warning`` or ``_LOG.info`` for one summary line. Matched by exact message and COUNTED, so a
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
+    # Row 239 (R696): ``_is_libyaml_nesting_limit(exc)`` compares libyaml's ``problem`` with one fixed string to tell its own nesting
+    # limit (PyYAML 6.0.4, libyaml 0.2.6) from a malformed document, at the helper and its two call sites; the refusal raised is a fixed
+    # sentence, nothing of the exception or the document is stored, served or logged
+    "src/utils/safe_yaml.py": {"the caught exception 'exc' is used outside a scrubbing call": 3},
     # R689 (1): ``_await_unless_stopped`` hands a queued generation's exception from its thread to the waiting caller, which
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
@@ -1087,7 +1091,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('OllamaClient.generate', 'if exc.response.status_code == 404:'): 1,
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
-        ('OllamaClient.pull', 'raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}")'): 1,
+        ('OllamaClient._pull_stream', 'raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}")'): 1,
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('OllamaClient.remove', 'if exc.response.status_code == 404:'): 1,
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
