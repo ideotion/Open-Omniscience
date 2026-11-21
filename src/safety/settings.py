@@ -252,7 +252,7 @@ def save_settings(updates: dict) -> SafetySettings:
     else:
         reset = []
     current = _settings_from(stored)
-    was_protected = current.is_protected
+    was_protected = _effective_protected()
     current.reset_fields = reset  # type: ignore[attr-defined]
     if "fetch_mode" in updates and updates["fetch_mode"] is not None:
         mode = str(updates["fetch_mode"])
@@ -290,10 +290,19 @@ def save_settings(updates: dict) -> SafetySettings:
 
         kv_set_json(_KV_KEY, payload)
     current.stopped_ai_installs = []  # type: ignore[attr-defined]
-    if current.is_protected and not was_protected:
+    if not was_protected and _effective_protected():  # the mode in force, which an OO_FETCH_MODE override decides
         # R765: protected mode is written first, THEN any AI install still downloading over a direct connection is stopped.
         current.stopped_ai_installs = _stop_ai_installs()  # type: ignore[attr-defined]
     return current
+
+
+def _effective_protected() -> bool:
+    """Whether the mode in force is protected. Settings that cannot be read count as protected, as everywhere (R117)."""
+    try:
+        s = load_settings()
+    except Exception:  # noqa: BLE001 - unreadable settings are protected
+        return True
+    return bool(s.is_protected or getattr(s, "read_failed", False))
 
 
 def _stop_ai_installs() -> list[str]:

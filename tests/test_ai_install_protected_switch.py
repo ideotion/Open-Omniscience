@@ -282,6 +282,8 @@ def test_the_installer_script_and_the_download_it_waits_on_are_ended(monkeypatch
             os.kill(child, 0)
         except ProcessLookupError:
             return True
+        if not os.path.isdir("/proc/self"):  # no procfs (macOS): the orphan is reaped by launchd, so signal 0 alone answers
+            return False
         # a zombie still answers signal 0; it is no longer downloading
         try:
             with open(f"/proc/{child}/stat", encoding="utf-8") as fh:
@@ -315,6 +317,57 @@ def test_a_silent_installer_still_sees_the_stop(monkeypatch, tmp_path):
     with pytest.raises(inst.InstallerUnavailable):
         list(gen)
     assert time.monotonic() - began < 10
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the Ollama installer is a POSIX shell script")
+def test_a_script_that_failed_on_its_own_reports_its_own_failure(monkeypatch, tmp_path):
+    import src.llm.installer as inst
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    _settings(monkeypatch)
+    script = tmp_path / "install.sh"
+    script.write_text("#!/bin/sh\necho failing\nexit 3\n", encoding="utf-8")
+    monkeypatch.setattr(inst, "_validate_staged", lambda p: script)
+    monkeypatch.setattr(inst, "_check_online", lambda: None)
+    monkeypatch.setattr(inst, "_is_root", lambda: True)
+    gen = inst.run_installer(str(script))
+    assert next(gen) == "failing"
+    (proc,) = list(it._PROCS)
+    assert _wait(lambda: _exited(proc.pid))
+    with it._STOP_LOCK:  # the switch lands after the script failed, before its end was read
+        it._STOP_GENERATION += 1
+    assert list(gen) == ["__exit__ 3"]
+    assert not it._interrupted_marker().exists()
+
+
+def test_a_crlf_split_across_two_reads_makes_one_line_end(monkeypatch):
+    import src.llm.installer as inst
+
+    r, w = os.pipe()
+    first_read = threading.Event()
+
+    def write() -> None:
+        os.write(w, b"a" * 1023 + b"\r")  # one read's worth, ending on the "\r"
+        first_read.wait(5)
+        os.write(w, b"\nnext\n")
+        os.close(w)
+
+    real_read = os.read
+
+    def read(fd: int, n: int) -> bytes:
+        out = real_read(fd, n)
+        first_read.set()
+        return out
+
+    monkeypatch.setattr(inst.os, "read", read)
+    writer = threading.Thread(target=write)
+    writer.start()
+    try:
+        lines = list(inst._lines(r, lambda: False))
+    finally:
+        writer.join(5)
+        os.close(r)
+    assert lines == ["a" * 1023, "next"]
 
 
 def test_a_half_unpacked_ollama_is_not_reported_until_an_install_finishes(monkeypatch, tmp_path):

@@ -472,22 +472,26 @@ def run_installer(path: str) -> Iterator[str]:
         # progress meter into that pipe, and its next write fails and ends it.
         register_child(proc, group=root)
         stopped = False
+        ended_first: int | None = None  # the script's exit code when it had already exited as the stop was seen
         try:
             for line in _lines(proc.stdout.fileno(), lambda: stopped_since(generation)):
                 if line is None:
                     stopped = True
+                    ended_first = proc.poll()
                     break
                 yield line
         finally:
             unregister_child(proc)
             proc.stdout.close()
-            if stopped:
+            if stopped and ended_first is None:
                 from src.llm.install_transport import _terminate
 
                 _terminate(proc, group=root)
             code = proc.wait()
-        # A script that exited 0 finished before the switch reached it, and is reported as the finished install it is.
-        if code != 0 and (stopped or stopped_since(generation)):
+        # A script that exited 0 finished before the switch reached it, and is reported as the finished install it is; one that
+        # had already failed on its own (an exit code, not a signal) reports its own failure.
+        own_end = ended_first is not None and ended_first >= 0
+        if code != 0 and not own_end and (stopped or stopped_since(generation)):
             # What it unpacked may be cut short, so the binary is not reported as installed until a run finishes (R765).
             from src.llm.install_transport import mark_ollama_install_interrupted
 
@@ -508,29 +512,32 @@ def _lines(fd: int, stop: Callable[[], bool]) -> Iterator[str | None]:
     """The script's output as text lines (``\\n``, ``\\r\\n`` and a progress meter's bare ``\\r`` all end a line), read with a
     timeout so a silent script still sees the stop. Yields None once ``stop()`` is true, then ends."""
     import re
-    import select
+    import selectors
 
     buf = b""
-    while True:
-        if stop():
-            yield None
-            return
-        ready, _, _ = select.select([fd], [], [], _READ_POLL_S)
-        if not ready:
-            continue
-        chunk = os.read(fd, 65536)
-        if not chunk:
-            break
-        buf += chunk
-        parts = re.split(rb"\r\n|\r|\n", buf)
-        buf = parts.pop()
-        for part in parts:
+    with selectors.DefaultSelector() as sel:  # not select.select, which refuses a descriptor past 1023
+        sel.register(fd, selectors.EVENT_READ)
+        while True:
             if stop():
                 yield None
                 return
-            yield part.decode("utf-8", "replace")
+            if not sel.select(_READ_POLL_S):
+                continue
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            buf += chunk
+            # a "\r" that ends the read may be the first half of a "\r\n": it waits for the next read
+            held = buf.endswith(b"\r")
+            parts = re.split(rb"\r\n|\r|\n", buf[:-1] if held else buf)
+            buf = parts.pop() + (b"\r" if held else b"")
+            for part in parts:
+                if stop():
+                    yield None
+                    return
+                yield part.decode("utf-8", "replace")
     if buf:
-        yield buf.decode("utf-8", "replace")
+        yield buf.removesuffix(b"\r").decode("utf-8", "replace")
 
 
 # -- real fetchers (through the guarded factory) ----------------------------- #
