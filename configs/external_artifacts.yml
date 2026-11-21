@@ -399,14 +399,14 @@ artifacts:
       under the hand-curated world_events.yml entries. OPERATOR-BUILT, so absent until that run
       (the Agenda says so). It dates itself with as_of. An election called after that date, a snap
       vote above all, is not in it, so past SNAPSHOT_STALE_DAYS (90 days, the same window as
-      max_age_months below) the Agenda states the age beside the counts (docket row 258).
+      max_age_days below, counted the same way) the Agenda states the age beside the counts (docket row 258).
     upstream: https://query.wikidata.org (Wikidata Query Service)
     fetched_from: the operator's networked run; the app opens no connection for it
     check_upstream: "elections are called continuously; rerun when the window lapses or before a release"
     license: "CC0 1.0 (Wikidata)"
     pin: {path: configs/elections_snapshot.json, sha256: "", vintage_key: as_of, optional: true}
     refresh: "python scripts/generate_wikidata_elections.py -o configs/elections_snapshot.json --force"
-    freshness: {max_age_months: 3}
+    freshness: {max_age_days: 90}
     last_verified: "2026-11-21 (not built yet)"
 
   - id: language-countries-floor

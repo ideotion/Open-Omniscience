@@ -60,8 +60,32 @@ def test_the_registry_carries_the_snapshot_with_the_same_window():
     pin = entry["pin"]
     assert ROOT / pin["path"] == SNAPSHOT_PATH, "the registry watches the file the app reads"
     assert pin["vintage_key"] == "as_of" and pin["optional"] is True
-    assert entry["freshness"]["max_age_months"] * 30 == SNAPSHOT_STALE_DAYS
+    assert entry["freshness"] == {"max_age_days": SNAPSHOT_STALE_DAYS}
     assert "-o configs/elections_snapshot.json" in entry["refresh"]
+
+
+@pytest.mark.parametrize(
+    ("as_of", "today"),
+    [
+        ("2026-08-01", date(2026, 11, 30)),  # 121 days: a month count still read "3/3 months"
+        ("2026-09-01", date(2026, 11, 30)),  # 90 days: not stale for either
+        ("2026-12-20", date(2026, 11, 21)),  # after today: stale for both
+        ("2026-11-21", date(2026, 11, 21)),
+    ],
+)
+def test_the_registry_and_the_app_give_one_verdict(tmp_path, monkeypatch, as_of, today):
+    """Not two constants compared: the registry's own evaluate() on the same file and day."""
+    import src.maintenance.registry as R
+
+    reg = yaml.safe_load((ROOT / "configs" / "external_artifacts.yml").read_text(encoding="utf-8"))
+    entries = reg["artifacts"] if isinstance(reg, dict) else reg
+    entry = dict(next(a for a in entries if a["id"] == "wikidata-elections-snapshot"))
+    path = _snap(tmp_path, as_of)
+    entry["pin"] = {**entry["pin"], "path": str(path)}  # an absolute path replaces the repo root on join
+    monkeypatch.setattr(R, "load_registry", lambda *a, **k: [entry])
+    (row,) = R.evaluate(today=today)
+    _, info = with_snapshot([], today, path)
+    assert (row["status"] == "stale") is info["stale"], (row, info)
 
 
 def test_the_coverage_report_says_a_stale_snapshot(tmp_path, monkeypatch):
