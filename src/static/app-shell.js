@@ -498,7 +498,7 @@
         [t("Submit search / run the selection"), "Enter"],
       ].map(([lbl, k]) => `<tr><td>${esc(lbl)}</td><td><span class="kb-chip">${esc(k)}</span></td><td class="muted">${esc(t("Fixed"))}</td></tr>`).join("");
       host.innerHTML =
-        `<table><thead><tr><th>${esc(t("Action"))}</th><th>${esc(t("Shortcut"))}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+        `<table><thead><tr><th>${esc(t("Action"))}</th><th>${esc(t("Shortcut"))}</th><th><span class="sr-only">${esc(t("Actions"))}</span></th></tr></thead><tbody>${rows}</tbody></table>
          <div style="margin:8px 0"><button class="secondary tiny" data-on-click="kbReset()">${esc(t("Reset to defaults"))}</button></div>
          <h3 style="margin-top:14px;font-size:14px">${esc(t("Fixed shortcuts"))}</h3>
          <p class="hint muted">${esc(t("These contextual keys are always available and are not rebindable."))}</p>

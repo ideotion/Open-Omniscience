@@ -548,7 +548,7 @@
             + `<th style="text-align:right" title="${esc(t("Pearson correlation of the two daily shares of coverage, from -1 to +1."))}">r</th>`
             + `<th style="text-align:right" title="${esc(t("The false-discovery rate at which this pair would still be kept (Benjamini-Hochberg, across every pair tested)."))}">q</th>`
             + `<th style="text-align:right" title="${esc(t("Distinct sources carrying the commodity / the topic in the window."))}">${esc(t("Sources"))}</th>`
-            + `<th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint muted">${tested}</div>`;
+            + `<th><span class="sr-only">${esc(t("Actions"))}</span></th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint muted">${tested}</div>`;
         }
       }
       host.innerHTML = `<div class="an-panel">${head}${body ? `<div style="margin-top:6px">${body}</div>` : ""}</div>`;
@@ -1710,7 +1710,7 @@
       try {
         const d = await api("/api/markets/rules");
         const t = $("mkt-rules");
-        t.innerHTML = "<tr><th>Symbol</th><th>Category</th><th>Source</th><th>Last status</th><th></th></tr>" +
+        t.innerHTML = "<tr><th>Symbol</th><th>Category</th><th>Source</th><th>Last status</th><th><span class='sr-only'>Actions</span></th></tr>" +
           (d.rules.length ? d.rules.map(r => `<tr>
             <td><strong>${esc(r.symbol)}</strong></td><td class="muted">${esc(r.category)}</td>
             <td class="muted">${esc(r.source_name||"")}</td>
@@ -1729,7 +1729,7 @@
         const d = await api("/api/markets/feeds");
         const t = $("feed-table");
         if (!d.feeds.length) { t.innerHTML = `<tr><td class="muted">No feeds configured.</td></tr>`; return; }
-        t.innerHTML = "<tr><th>Series</th><th>Symbol</th><th>Unit</th><th>Stored</th><th></th></tr>" +
+        t.innerHTML = "<tr><th>Series</th><th>Symbol</th><th>Unit</th><th>Stored</th><th><span class='sr-only'>Actions</span></th></tr>" +
           d.feeds.map(f => `<tr>
             <td>${esc(f.name)}<div class="muted" style="font-size:12px">${esc(f.market||"")}</div></td>
             <td><strong>${esc(f.symbol)}</strong></td>
