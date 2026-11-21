@@ -176,6 +176,20 @@ class SchedulerSettings:
     # 0 disables the ride-along; the manual Diagnostics job remains either way.
     world_discovery_per_pass: int = 2
 
+    # THE BACKLOG BOUNDS (R773 (2), row 249). Discovery adds a country's finds in one go (some
+    # 270 on average: 66.7k candidates over ~250 countries, the largest field count measured) and
+    # qualification judges a few per pass, so with no bound the line of candidates nobody has
+    # checked only grows -- 25,281 of them, every one with 0 articles, in the 11-14 field press.
+    # The ride-along PAUSES while the never-judged candidates number at least
+    # `world_discovery_backlog_bound`, and RESUMES by itself once judging brings them below it;
+    # a country already holding at least `world_discovery_country_backlog_bound` of them is
+    # passed over (and asked again later) while the others go on. Nothing is ever deleted.
+    # 2,000 is about four days of judging at the shipped 5 per pass and ~96 passes a day; 500
+    # is about two average countries. 0 switches a bound off. The manual "Discover sources
+    # worldwide" button is the user's own ask and is not held by either bound.
+    world_discovery_backlog_bound: int = 2000
+    world_discovery_country_backlog_bound: int = 500
+
     # QUALIFICATION ride-along (0.3 CLOSE GATE ruling: "qualification runs as a
     # background job... like the world-discovery ride-along"): how many candidate
     # sources (never-yet-qualified, then due re-qualifications) the admission gate
@@ -770,6 +784,12 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
         world_discovery_per_pass=_coerce_int(
             raw.get("world_discovery_per_pass"), d.world_discovery_per_pass, 0, 12
         ),
+        world_discovery_backlog_bound=_coerce_int(
+            raw.get("world_discovery_backlog_bound"), d.world_discovery_backlog_bound, 0, 1_000_000
+        ),
+        world_discovery_country_backlog_bound=_coerce_int(
+            raw.get("world_discovery_country_backlog_bound"), d.world_discovery_country_backlog_bound, 0, 1_000_000
+        ),
         qualification_per_pass=_coerce_int(
             raw.get("qualification_per_pass"), d.qualification_per_pass, 0, 100
         ),
@@ -1093,6 +1113,8 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
 
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
     _ranged("world_discovery_per_pass", 0, 12, "world_discovery_per_pass")
+    _ranged("world_discovery_backlog_bound", 0, 1_000_000, "world_discovery_backlog_bound")
+    _ranged("world_discovery_country_backlog_bound", 0, 1_000_000, "world_discovery_country_backlog_bound")
     _ranged("qualification_per_pass", 0, 100, "qualification_per_pass")
     _ranged("qualification_recheck_per_pass", 0, 100, "qualification_recheck_per_pass")
     _ranged("country_data_per_pass", 0, 100, "country_data_per_pass")

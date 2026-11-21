@@ -83,6 +83,10 @@ class SchedulerConfigUpdate(BaseModel):
     # WORLD discovery ride-along: countries advanced per online pass (2026-07-15
     # "background and automated" ruling); 0 disables. Finds stay DISABLED for review.
     world_discovery_per_pass: int | None = None
+    # R773 (2): the never-judged backlog at which the ride-along pauses (global) and passes a
+    # country over (per country); 0 switches a bound off.
+    world_discovery_backlog_bound: int | None = None
+    world_discovery_country_backlog_bound: int | None = None
     # QUALIFICATION ride-along (0.3 CLOSE GATE ruling): candidate sources trial-fetched +
     # judged per online pass, like the world-discovery ride-along; 0 disables.
     qualification_per_pass: int | None = None

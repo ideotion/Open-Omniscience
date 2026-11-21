@@ -99,6 +99,18 @@ SOURCE_GATE_TUNABLES: tuple[Tunable, ...] = (
                "auto-admitted. Nothing is deleted and no existing verdict changes.",
     ),
     Tunable(
+        key="world_discovery_backlog_bound", label="Pause world discovery while this many wait",
+        default=2000, lo=0, hi=1_000_000, kind="int", unit="found sites not checked yet",
+        impact="World discovery adds no new candidates while this many found sites have not been checked yet, and "
+               "resumes by itself once fewer wait. 0 removes the bound. Nothing waiting is ever deleted.",
+    ),
+    Tunable(
+        key="world_discovery_country_backlog_bound", label="Pass a country over while this many of its sources wait",
+        default=500, lo=0, hi=1_000_000, kind="int", unit="found sites not checked yet",
+        impact="World discovery skips a country with this many found sites not checked yet and asks it again once "
+               "fewer wait. 0 removes the bound.",
+    ),
+    Tunable(
         key="min_source_articles", label="Too few articles to judge below", default=20,
         lo=5, hi=200, kind="int", unit="articles",
         impact="A source below this is REPORTED but not judged. Lowering it judges "
