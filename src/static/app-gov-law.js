@@ -1140,8 +1140,11 @@
           method: "POST",
           body: JSON.stringify({ jurisdiction, title, url, official_url }),
         });
-        // A robots refusal reads as the stored "fetch error: robots.txt disallows ..." text; its verdict's words say what it is.
-        const robotsWords = (r.verdict === "robots_blocked" || r.verdict === "robots_unread") ? lawVerdictLabel(r.verdict) : "";
+        // A robots refusal reads as the stored "fetch error: robots.txt disallows ..." text; its own words say what it is.
+        // Keyed on the tracker's exact tag (the exception it caught), never the text-parsed verdict, whose catch-all would
+        // call a real failure at an address that merely contains "robots" a robots block (Opus read of #2244).
+        const rtag = r.track_result && r.track_result.robots;
+        const robotsWords = rtag === "blocked" ? lawVerdictLabel("robots_blocked") : rtag === "unread" ? lawVerdictLabel("robots_unread") : "";
         msg.textContent = `${t("Added.")} ${t("Status:")} ${robotsWords || r.last_status || r.track_result.status}`;
         $("law-add-jur").value = ""; $("law-add-title").value = "";
         $("law-add-url").value = ""; $("law-add-official").value = "";

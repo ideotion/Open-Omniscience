@@ -125,4 +125,6 @@ def test_the_add_message_and_the_track_toast_name_it():
     assert "{n} blocked by the site's robots.txt" in track
     assert "{n} not fetched: the site's robots.txt could not be read" in track
     assert "(r.errors || 0) - rb - ru" in track, "the robots refusals leave the error count"
-    assert 'r.verdict === "robots_blocked"' in js and "lawVerdictLabel(r.verdict)" in js
+    add = function_source(js, "lawAddDocument")
+    # keyed on the tracker's exact tag, never the text-parsed verdict (a URL containing "robots" must not read as blocked)
+    assert "r.track_result.robots" in add and "r.verdict" not in add
