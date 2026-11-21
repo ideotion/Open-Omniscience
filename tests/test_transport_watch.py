@@ -948,9 +948,10 @@ def test_cancel_then_resume_puts_a_held_download_back_in_the_queue_still_held(mo
     m = _manager(kind, tmp_path)
     monkeypatch.setattr(m, "_launch", lambda e: pytest.fail("a held entry started without the token click"))
     e = _entry(kind, m, "de" if kind == "dump" else "andorra")
-    e.status, e.held_by, e.queued_mode = "queued", "proxy", tw.DIRECT
+    other = tw.transport_id(_settings_obj(fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150"))
+    e.status, e.held_by, e.queued_mode = "queued", "proxy", other
     m._order.append(e.key)
-    assert m.pause(e.key) and m._entries[e.key].status == "paused"
+    assert m.pause(e.key) and m._entries[e.key].status == "paused" and m.list()[0]["held_by"] is None  # "Paused by you"
     row = m.resume(e.key)
     assert row["status"] == "queued" and row["held_by"] == "proxy" and e.key in m._order
 
@@ -1003,3 +1004,21 @@ def test_a_queue_read_back_after_a_restart_shows_what_it_cannot_confirm_as_held(
     again = _manager(kind, tmp_path)
     assert again._entries[e.key].held_by == held
 
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_a_first_click_in_airplane_mode_records_its_transport(monkeypatch, tmp_path, kind):
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    _settings(monkeypatch)
+    m = _manager(kind, tmp_path)
+    activate_kill_switch()
+    try:
+        row = m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    finally:
+        clear_kill_switch()
+    assert row["status"] == "paused" and m._entries[row["key"]].queued_mode == tw.DIRECT
+    launched: list[str] = []
+    monkeypatch.setattr(m, "_launch", lambda e: launched.append(e.key))
+    m.resume(row["key"])
+    assert launched == [row["key"]]  # the same transport: it goes on, no hold

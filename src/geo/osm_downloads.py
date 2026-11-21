@@ -802,8 +802,10 @@ class OsmDownloadManager:
                 self._requeue_held(entry, entry.held_by)
                 return entry.to_dict()
         from src.ingest import kill_switch_active
+        from src.safety.transport_watch import queue_mode
 
         if kill_switch_active():
+            amode = queue_mode() if fresh else None  # read before the lock, like every settings read here
             # Airplane mode: never open a socket. Present as PAUSED (resumable), never a
             # cryptic "error" (field test 2026-06-19 #36/#41); resume re-prompts go-online.
             with self._lock:
@@ -813,9 +815,11 @@ class OsmDownloadManager:
                 entry.error = None
                 entry.paused_by = "airplane"
                 entry.held_by = None
+                if fresh:
+                    entry.queued_mode = amode  # R772(b): a first click approves the transport now in force, as on any path
                 self._save()
             return entry.to_dict()
-        from src.safety.transport_watch import hold_reason, queue_mode
+        from src.safety.transport_watch import hold_reason
 
         qmode = queue_mode()  # the operator's click: what the entry is queued under, read before the lock
         with self._lock:
@@ -866,8 +870,9 @@ class OsmDownloadManager:
                     self._order.remove(key)
                 e.status = "paused"
                 e.paused_by = "operator"
-                # R772(b): a held entry keeps its hold through Cancel, so a later per-job Resume puts it back in the queue HELD (the
-                # transport named on the "Resume the queue" button first) rather than starting it on the transport now in force.
+                # Cancel ends the hold with the queue place; the transport it was approved under stays, so a later per-job Resume
+                # under another one is HELD again, named, by start() (R772(b)), never started on it.
+                e.held_by = None
                 self._save()
                 return True
         stop = self._stops.get(key)
