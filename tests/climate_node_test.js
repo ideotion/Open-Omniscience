@@ -142,6 +142,10 @@ const unit = (over) => Object.assign({
   const quiet = visible(R.climateDiagnosticsHtml(unit({ last_fetch: { tally: { new: 1 }, diagnostics: { unreviewed: null } } }), t, tf));
   assert.ok(!/refused|pole|earthquakes|reviewed|quality/.test(quiet), "a count not carried is not printed: " + quiet);
   assert.strictEqual(R.climateDiagnosticsHtml(unit(), t, tf), "", "no record, no diagnostics");
+  // Row 265: a record holding only a failure has no fetch to describe, never a "0 new" line.
+  assert.strictEqual(R.climateDiagnosticsHtml(unit({ last_fetch: { last_failure: { failed_at: "2026-11-21T10:00:00+00:00", reason: "timeout" } } }), t, tf), "",
+    "a failure-only record prints no fetch tally");
+  assert.ok(visible(R.climateFactsHtml(unit({ last_fetch: { last_failure: { reason: "timeout" } } }), t, tf)).includes("never fetched on this machine"));
 }
 
 // The n line: values and gaps are separate counts, and a revision is named.

@@ -4,13 +4,14 @@
 Usage:
     python3 scripts/climate_readback.py oo-field-YYYYMMDD-HHMM-<instance>-climate-fetches.json [--json]
 
-The file is what the Field data button saved from ``/api/climate/fetch-record``: per dataset, the last fetch and the last
-failure, their times, counts and a fixed reason token. A file the button cut into numbered pieces can be given as any one of
+The file is what the Field data button saved from ``/api/climate/fetch-record``: per dataset, read from each unit's own fetch
+record, how many units were fetched, how many last failed and why (a fixed token each), the newest dates and summed counts.
+No unit is named (a GHCN station is a count), and no address or path. A file the button cut into numbered pieces can be given as any one of
 its pieces: the set is joined in memory, and a missing piece is named rather than guessed at.
 
-Prints one line per dataset the app offers (GISTEMP, NSIDC, ONI, USGS, OWID, GHCN): fetched (with what the fetch stored),
-failed (with its reason), or never tried. When a dataset both fetched and failed, the later of the two leads and the other is
-named beside it. A figure the record does not hold is printed as "not recorded", never as 0. Counts, dates and tokens only.
+Prints one line per dataset the app offers (GISTEMP, NSIDC, ONI, USGS, OWID, GHCN): not fetched yet, or how many units were
+fetched (and how many are not fetched yet), what the last fetches stored, and the units whose latest attempt failed, with their
+reasons. A figure the record does not hold is printed as "not recorded", never as 0. Counts, dates and tokens only.
 
 Stdlib only; reads the file it is given and writes nothing; no network.
 """
@@ -33,6 +34,7 @@ REASON_WORDS = {
     "robots": "the host's robots.txt disallows it",
     "robots_unreadable": "the host's robots.txt could not be read, so the fetch was refused",
     "redirect_refused": "the fetcher refused the address or a redirect (off the dataset's site, or not public)",
+    "transport_stopped": "stopped because the network mode (protected mode or proxy) changed during the fetch",
     "too_large": "the answer was larger than the table allows",
     "http_403": "the host answered 403 (forbidden)",
     "http_404": "the host answered 404 (not found)",
@@ -97,50 +99,52 @@ def reason_words(token: Any) -> str:
     return REASON_WORDS.get(str(token), f"reason {token!r} (unknown to this script)")
 
 
-def _fetch_words(f: dict[str, Any]) -> str:
-    figures = _int(f.get("figures"))
-    if figures == 0:
-        what = "the source gave no figures"
-    elif figures is None:
-        what = "figures not recorded"
+def _units(n: int, kind: str) -> str:
+    return f"{n} {kind}" + ("" if n == 1 else "s")
+
+
+def dataset_line(name: str, d: Any) -> str:
+    d = _dict(d)
+    head = f"{name} ({d.get('host') or 'host not recorded'})"
+    if not d:
+        return f"{head}: not in this file"
+    kind = "station" if d.get("unit_kind") == "station" else "unit"
+    fetched, failed = _int(d.get("units_fetched")) or 0, _int(d.get("units_last_failed")) or 0
+    if d.get("state") == "not_fetched_yet" or (not fetched and not failed):
+        return f"{head}: not fetched yet"
+    parts: list[str] = []
+    offered, not_yet = _int(d.get("units_offered")), _int(d.get("units_not_fetched_yet"))
+    if fetched:
+        if offered is not None:
+            parts.append(f"{fetched} of {_units(offered, kind)} fetched, {not_yet if not_yet is not None else '?'} not fetched yet")
+        else:
+            parts.append(f"{_units(fetched, kind)} fetched")
+        parts.append(f"last fetch {_when(d.get('last_fetched_at'))}")
+        if _int(d.get("figures")) == 0:
+            parts.append("the source gave no figures")
+        else:
+            parts.append(f"{_n(d.get('figures'))} figures in the last fetches, {_n(d.get('new'))} new, {_n(d.get('revised'))} revised")
+        parts.append(f"{_n(d.get('stored_rows'))} values stored")
     else:
-        what = f"{_n(figures)} figures, {_n(f.get('new'))} new, {_n(f.get('revised'))} revised"
-    out = f"fetched {_when(f.get('fetched_at'))}: {what}"
-    kept = f.get("last_with_figures_at")
-    if figures == 0 and isinstance(kept, str) and kept:
-        out += f" (last fetch with figures {_when(kept)})"
-    return out
-
-
-def dataset_line(name: str, fetch: Any, failure: Any) -> str:
-    f, x = _dict(fetch), _dict(failure)
-    if not f and not x:
-        return f"{name}: never tried"
-    fail = f"failed {_when(x.get('failed_at'))}: {reason_words(x.get('reason'))}" if x else ""
-    if not f:
-        return f"{name}: {fail}"
-    ok = _fetch_words(f)
-    if not x:
-        return f"{name}: {ok}"
-    # ISO-8601 UTC strings from the same clock compare as text; the later event leads.
-    if str(x.get("failed_at") or "") > str(f.get("fetched_at") or ""):
-        return f"{name}: {fail} · earlier {ok}"
-    return f"{name}: {ok} · earlier {fail}"
+        parts.append("not fetched yet" + (f" (0 of {_units(offered, kind)})" if offered is not None else ""))
+    if failed:
+        reasons = _dict(d.get("reasons"))
+        why = "; ".join(f"{reason_words(k)} ({_n(v)})" for k, v in sorted(reasons.items())) or "no reason recorded"
+        parts.append(f"latest attempt failed for {_units(failed, kind)}, last {_when(d.get('last_failed_at'))}: {why}")
+    return f"{head}: " + " · ".join(parts)
 
 
 def report(doc: dict[str, Any]) -> list[str]:
-    lines = [f"recorded {_when(doc.get('recorded_at'))}" if doc.get("recorded_at") else "no climate fetch recorded on this machine"]
-    listed = [str(d) for d in doc.get("datasets_listed") or [] if isinstance(d, str)]
-    fetches, failures = _dict(doc.get("fetches")), _dict(doc.get("failures"))
+    lines = [f"read at {_when(doc.get('read_at'))}"]
+    if doc.get("measured") is not True:
+        return lines + [f"the climate fetch records were not read: {doc.get('reason') or 'no reason given'}"]
+    listed = [str(x) for x in doc.get("datasets_listed") or [] if isinstance(x, str)]
+    per = _dict(doc.get("datasets"))
     lines.append(f"{len(listed)} datasets offered")
-    lines += [dataset_line(d, fetches.get(d), failures.get(d)) for d in listed]
-    extra = sorted((set(fetches) | set(failures)) - set(listed))
-    if extra:
-        lines.append("in the record but not offered by this build: " + ", ".join(extra))
-    fetched = sum(1 for d in listed if d in fetches)
-    failed_only = sum(1 for d in listed if d in failures and d not in fetches)
-    never = sum(1 for d in listed if d not in fetches and d not in failures)
-    lines.append(f"totals: {fetched} fetched at least once, {failed_only} only failed, {never} never tried")
+    lines += [dataset_line(name, per.get(name)) for name in listed]
+    tried = [n for n in listed if _dict(per.get(n)).get("state") in ("fetched", "failed")]
+    fetched = [n for n in listed if _dict(per.get(n)).get("state") == "fetched"]
+    lines.append(f"totals: {len(fetched)} fetched, {len(tried) - len(fetched)} only failed, {len(listed) - len(tried)} not fetched yet")
     return lines
 
 

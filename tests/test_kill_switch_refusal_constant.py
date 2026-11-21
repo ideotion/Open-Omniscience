@@ -320,7 +320,8 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
 # the stats bounded read's between-chunk check (stats/fetch.py _bounded_get, review row 19: Stop ends a download under way); 35 with the medical
 # fetch (R750: medical/fetch.py's run_fetch and _get pre-checks and its mid-run airplane-mode reason, and api/medical.py's 409). A thirty-sixth site that says the constant is a conscious change of this number, which is the point of pinning
 # it; a site that goes back to a literal fails the scan above it.
-_PRE_CHECK_SITES = 35
+# 36 with the climate failure token (row 265: src/stats/climate.py failure_reason reads it to name the stats fetchers' own refusal as the kill switch, #14e).
+_PRE_CHECK_SITES = 36
 _CONSTANT = "NETWORK_REFUSED"
 _DEFINING_MODULE = "src.ingest.fetch_verdict"
 

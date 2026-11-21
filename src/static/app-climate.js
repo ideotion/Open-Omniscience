@@ -169,7 +169,8 @@
     // dataset's own exclusions. Each number is shown only when the record carries it.
     function climateDiagnosticsHtml(unit, t, tf) {
       const rec = unit && unit.last_fetch;
-      if (!rec) return "";
+      // A record holding only a failure (row 265's last_failure) has no fetch to describe: never a "0 new" line for it.
+      if (!rec || (rec.last_failure && !rec.fetched_at)) return "";
       const tally = rec.tally || {}, d = rec.diagnostics || {};
       const n = (v) => fmtNum(v || 0, 0);
       const lines = [];
