@@ -34,23 +34,36 @@ import pytest
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from database.models import Base, Session, Source, SourceGroup, engine
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from database.models import Base, Source, SourceGroup
 from database.source_manager import SourceManager
 
 
 @pytest.fixture
-def db_session():
-    """Create a fresh database session for each test."""
-    # Create all tables
+def db_session(tmp_path):
+    """A fresh database of this test's own for each test, never the app's live store.
+
+    Row 261: this fixture used the app's own engine and dropped EVERY table of the live store at each teardown, ``app_state``
+    with them. The next uncached read of the store's country form then failed (the settings store had seen that file), the
+    failure was held process-wide for its retry window, and tests in other files that only bind a country column, on their own
+    in-memory databases, failed with ``StoreFormUnreadable``. Only under some test orders, so only in some parallel runs."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'sources.db'}", future=True)
     Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
 
-    session = Session()
-    yield session
 
-    # Clean up
-    session.close()
-    # Drop all tables
-    Base.metadata.drop_all(engine)
+def test_the_fixture_database_is_never_the_apps_live_store(db_session):
+    # Row 261: fails while the fixture binds the app's engine (whose teardown emptied the live store under every later test)
+    from src.database.session import engine as live
+
+    assert db_session.get_bind().url.database != live.url.database
 
 
 @pytest.fixture

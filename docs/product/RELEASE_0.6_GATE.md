@@ -155,6 +155,14 @@ n files measured, total, mean per file and largest. It also reads a piece set, t
 An absent figure prints its reason, never 0, and only counts, country codes, sequence numbers and dates are printed. Pinned by
 `tests/test_osm_change_files_readback_row263.py`, including a fixture that holds reasons and no figures.
 
+**Progress 2026-11-21 (rows 276 and 278; the row stays OPEN on the same two operator items).** The same file now carries what each
+applied daily file did to tags, for the closing artifact "a real day-over-day tag change ... from an applied diff": per file and for
+the country, the count of tag rows added, removed and modified and of objects created, deleted, leaving their class or with tags
+changed, joined on the file's own time (row 276, PR #2238). The read-back prints them; a key, a value or an object id never reaches
+the file. And the Settings OSM picker shows, once a chosen country has applied files, the size measured here (median compressed bytes
+per file, how many, through which date) beside the from-memory estimate, which it replaces as the lead figure; its cadence text no
+longer says the daily apply "arrives in 0.6" (row 278, PR #2239, Q824).
+
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 
 **What it must demonstrate.** Floor = every country in `language_countries.yml` (official / de-facto / regional
@@ -296,6 +304,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
 | 2026-11-21 | **Row A: a catalogue that was not read is said, never counted as "every country missing" (row 273); no row changed status.** The curated `configs/world_events.yml` is read with a state (present, absent, empty, or unreadable with the error's class and no path). When it is not present, the floor's counts, the tier report and K13 give null beside that state, `/api/events` and its facets carry it, the Agenda says it in one line, and `scripts/elections_readback.py` prints it; an unparsable file no longer raises out of its callers. | session (Lane U) |
 | 2026-11-21 | **Row D: the hover screenshot is no longer owed (row 282); no row changed status.** The operator's part is one Field data press after a real lane run. The hover half of the closing condition now rests on (a) the real-run located-address counts per edition read back by `scripts/wiki_coverage_readback.py` (`located_lines`), and (b) row 268's fixture Chromium walk (`docs/audit/map-marker-titles-r268-2026-11-21/`) and `tests/map_marker_titles_r268_node_test.js`. A located count of 0 keeps the row open with that reason; nothing says the hover was verified on the operator's real run. | coordinator ruling on the row 281 checklist · Lane F (row 282) |
+| 2026-11-21 | **Row B: the Field data file counts each applied file's tag changes, and the picker shows the measured daily cost; no row changed status.** Rows 276 (PR #2238) and 278 (PR #2239): counts only, never a key, value or object id; the picker's measured figure leads once files are applied, the estimate stays in the hover. | session (Lane O) |
 
 ---
 
