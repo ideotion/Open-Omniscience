@@ -1120,7 +1120,7 @@
           ? 'fill="var(--accent)" fill-opacity="0.8" stroke="var(--bg)" stroke-width="0.4"'
           : 'fill="transparent" stroke="var(--accent)" stroke-width="1"';
         const label = (pt.title || pt.external_id || "") + (pt.edition ? " (" + pt.edition + ")" : "");
-        return `<circle cx="${x}" cy="${y}" r="2.4" ${paint}><title>${esc(label)}</title></circle>`;
+        return `<circle cx="${x}" cy="${y}" r="2.4" ${paint} title="${esc(label)}"></circle>`;
       }).join("") + (Array.isArray(payload.addresses) ? payload.addresses.map(_ooWikiAddrMarker).join("") : "");
       return { markup, n: payload.points.length + (Array.isArray(payload.addresses) ? payload.addresses.length : 0) };
     }
@@ -1138,7 +1138,7 @@
       const hover = vals.vintage
         ? tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}, extract of {vintage}.", vals)
         : tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}; the extract states no date.", vals);
-      return `<rect x="${x}" y="${y}" width="4" height="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.4"><title>${esc(hover)}</title></rect>`;
+      return `<rect x="${x}" y="${y}" width="4" height="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.4" title="${esc(hover)}"></rect>`;
     }
 
     // The kind chips of the legend, as their own fragment: the visible KINDS change as
