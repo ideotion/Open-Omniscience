@@ -39,6 +39,7 @@ from src.llm.ollama import (
     LLMUnavailable,
     _http_error_text,
     _is_loopback_url,
+    _loopback_transport,
     _require_loopback,
 )
 from src.monitoring.secret_scrub import record_text
@@ -229,10 +230,10 @@ class VllmClient:
         # URL and never egress.
         if client is None:
             _require_loopback(self.base_url, setting="OO_VLLM_URL")
-        # trust_env=False (R770): the server is on this computer, so the connection is always direct. With trust_env left on,
-        # httpx routes even http://127.0.0.1 through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts and
-        # article text would reach that proxy.
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout, trust_env=False)
+        # trust_env=False (R770): the connection is always direct; with trust_env on, httpx routes even http://127.0.0.1
+        # through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts would reach that proxy.
+        # R767: requests run inside the loopback-only scope (src.llm.loopback), so localhost's answer is checked.
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout, transport=_loopback_transport(), trust_env=False)
 
     # -- network kill switch ----------------------------------------------- #
 
