@@ -65,14 +65,23 @@ def _live_sources_by_country(session: Session) -> dict:
     every request -- extracted verbatim so the live fallback and the rollup builder
     can never drift apart (the single source of truth for this payload's shape)."""
     from src.catalog.countries import ISO_3166_1_ALPHA2, continent_of, country_display_name
+    from src.catalog.source_standing import counted_source_clause, unchecked_candidate_clause
     from src.database.models import Source
 
-    rows = session.query(Source.country, Source.enabled, Source.tags).all()
+    # R773 (row 39): "sources" counts only rows the app collected from or may collect from now;
+    # candidates not yet checked are their own column, never part of the country's source count.
+    rows = session.query(
+        Source.country, Source.enabled, Source.tags,
+        counted_source_clause(), unchecked_candidate_clause(),
+    ).all()
     per: dict[str, dict] = {}
-    for country, enabled, tags in rows:
+    for country, enabled, tags, counted, candidate in rows:
         cc = (country or "").strip().lower() or "(none)"
-        slot = per.setdefault(cc, {"sources": 0, "enabled": 0, "tags": Counter()})
-        slot["sources"] += 1
+        slot = per.setdefault(cc, {"sources": 0, "candidates": 0, "enabled": 0, "tags": Counter()})
+        if counted:
+            slot["sources"] += 1
+        elif candidate:
+            slot["candidates"] += 1
         if enabled:
             slot["enabled"] += 1
         for t in (tags or "").split(","):
@@ -86,14 +95,15 @@ def _live_sources_by_country(session: Session) -> dict:
             "name": None if cc == "(none)" else country_display_name(cc),
             "region": None if cc == "(none)" else continent_of(cc),
             "sources": d["sources"],
+            "candidates": d["candidates"],
             "enabled": d["enabled"],
             "top_tags": d["tags"].most_common(8),
         }
         for cc, d in per.items()
     ]
-    countries.sort(key=lambda c: (-c["sources"], c["code"]))
+    countries.sort(key=lambda c: (-c["sources"], -c["candidates"], c["code"]))
 
-    present = {cc for cc in per if cc != "(none)"}
+    present = {cc for cc, d in per.items() if cc != "(none)" and d["sources"] > 0}
     missing = sorted(c for c in ISO_3166_1_ALPHA2 if c not in present)
     return {
         "countries": countries,
@@ -102,6 +112,7 @@ def _live_sources_by_country(session: Session) -> dict:
         "missing": missing,
         "missing_names": {c: country_display_name(c) for c in missing},
         "missing_count": len(missing),
+        "candidates_not_checked": sum(d["candidates"] for d in per.values()),
     }
 
 
