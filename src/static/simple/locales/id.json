@@ -146,6 +146,8 @@
   "Language": "Bahasa",
   "Any language": "Bahasa apa saja",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Angkanya memakai bahasa yang dinyatakan setiap sumber, hanya atas artikel terbaru. Filter juga menemukan artikel yang bahasanya terdeteksi dari teksnya, jadi angka bisa berbeda dari hasil.",
-  "Articles counted": "Artikel yang dihitung"
+  "Articles counted": "Artikel yang dihitung",
+  "candidates not yet checked": "kandidat yang belum diperiksa",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Kandidat adalah situs yang ditemukan atau diberikan kepada aplikasi tetapi belum diperiksa. Tidak ada yang dikumpulkan darinya dan tidak dihitung sebagai sumber."
  }
 }

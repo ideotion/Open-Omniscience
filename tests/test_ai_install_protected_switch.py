@@ -45,6 +45,14 @@ def _settings(monkeypatch, **kw):
     return st
 
 
+def _bump_with_protected_on(monkeypatch):
+    """What the save does to a running step: protected mode is now in force, and every watch is told to re-read."""
+    from src.safety import transport_watch
+
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")
+    transport_watch.bump()
+
+
 def _wait(pred, timeout=10.0):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -97,6 +105,7 @@ def test_a_running_pull_stops_reading_the_moment_protected_mode_is_switched_on(m
     monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: type("M", (), {"stop_all": lambda self, n: False})())
     gen = c.pull("qwen2.5:3b")
     assert next(gen)["completed"] == 0
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")  # the save wrote it
     assert it.stop_running_installs() == ["ollama-pull"]  # a pull on the direct route is named too
     with pytest.raises(LLMUnavailable) as exc:
         next(gen)
@@ -114,10 +123,12 @@ def test_the_pull_queue_records_the_stop_and_drops_what_was_waiting(monkeypatch)
 
     class Client:
         def pull(self, model):
-            generation = it.stop_generation()
+            from src.safety.transport_watch import TransportWatch
+
+            watch = TransportWatch()
             started.set()
             while True:
-                if it.stopped_since(generation):
+                if watch.stop_reason() is not None:
                     raise LLMUnavailable(it.AI_INSTALL_STOPPED_NOTE)
                 yield {"status": "pulling", "completed": 1, "total": 10}
                 time.sleep(0.01)
@@ -132,6 +143,7 @@ def test_the_pull_queue_records_the_stop_and_drops_what_was_waiting(monkeypatch)
     m.enqueue("qwen2.5:3b")
     m.enqueue("llama3.2:1b")
     assert started.wait(5)
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")  # the save wrote it
     assert it.stop_running_installs() == ["ollama-pull"]
     assert _wait(lambda: m.status()["active"] is None)
     st = m.status()
@@ -186,6 +198,7 @@ def test_a_running_vllm_job_is_cancelled_and_its_status_says_why(monkeypatch, ki
     monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: type("M", (), {"stop_all": lambda self, n: False})())
     job.start()
     assert _wait(lambda: job.status()["running"])
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")  # the save wrote it
     assert it.stop_running_installs() == [kind]
     assert _wait(lambda: job.status()["state"] == "cancelled")
     st = _with_stop_note(job.status())
@@ -213,6 +226,7 @@ def test_a_run_the_operator_had_already_cancelled_keeps_reading_as_theirs(monkey
     monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: type("M", (), {"stop_all": lambda self, n: False})())
     job.start()
     job.cancel()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")  # the save wrote it
     it.stop_running_installs()
     release.set()
     assert _wait(lambda: job.status()["state"] == "cancelled")
@@ -239,6 +253,7 @@ def test_the_stop_never_raises_even_when_every_source_fails(monkeypatch):
 
     monkeypatch.setattr("src.jobs.background.get_job", boom)
     monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", boom)
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")  # the save wrote it
     assert it.stop_running_installs() == []
 
 
@@ -269,6 +284,7 @@ def test_the_installer_script_and_the_download_it_waits_on_are_ended(monkeypatch
     first = next(gen)
     assert first.startswith("pid ")
     child = int(first.split()[1])
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9050")  # the save wrote it
     assert it.stop_running_installs() == ["ollama-installer"]
     seen: list[str] = []
     with pytest.raises(inst.InstallerUnavailable) as exc:
@@ -311,8 +327,7 @@ def test_a_silent_installer_still_sees_the_stop(monkeypatch, tmp_path):
     monkeypatch.setattr(it, "_TERMINATE_WAIT_S", 2.0)
     gen = inst.run_installer(str(script))
     assert next(gen) == "start"
-    with it._STOP_LOCK:  # only the generation: the reader alone must notice, with nothing printed
-        it._STOP_GENERATION += 1
+    _bump_with_protected_on(monkeypatch)  # only the switch: the reader alone must notice, with nothing printed
     began = time.monotonic()
     with pytest.raises(inst.InstallerUnavailable):
         list(gen)
@@ -334,12 +349,12 @@ def test_a_script_that_failed_on_its_own_reports_its_own_failure(monkeypatch, tm
     assert next(gen) == "failing"
     (proc,) = list(it._PROCS)
     assert _wait(lambda: _exited(proc.pid))
-    with it._STOP_LOCK:  # the switch lands after the script failed, before its end was read
-        it._STOP_GENERATION += 1
+    _bump_with_protected_on(monkeypatch)  # the switch lands after the script failed, before its end was read
     assert list(gen) == ["__exit__ 3"]
     assert not it._interrupted_marker().exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the scripted Ollama install runs on Linux only (installer.platform_support); its reader selects on a pipe, which Windows refuses")
 def test_a_crlf_split_across_two_reads_makes_one_line_end():
     import src.llm.installer as inst
 
@@ -389,8 +404,7 @@ def test_an_installer_that_finished_before_the_switch_is_reported_as_finished(mo
     assert next(gen) == "done"
     (proc,) = list(it._PROCS)
     assert _wait(lambda: _exited(proc.pid))  # the script has finished; the reader has not yet seen its end
-    with it._STOP_LOCK:  # a switch that lands after the script's last line, once it has exited 0
-        it._STOP_GENERATION += 1
+    _bump_with_protected_on(monkeypatch)  # a switch that lands after the script's last line, once it has exited 0
     assert list(gen) == ["__exit__ 0"]
 
 

@@ -368,7 +368,8 @@ def test_the_functions_the_request_finder_added_to_the_trusted_click_table_stay_
 def test_request_sites_outside_any_named_function_are_the_known_delegated_click_handlers() -> None:
     """Eight requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
     the reader's curation buttons and the task manager's job controls (the fifth: the low-memory pause's Resume, a retry the
-    guard takes back if memory is still low). A new one has to be looked at. The ninth is not a request but a table row:
+    guard takes back if memory is still low; the sixth: R768's "Resume the queue", which starts held downloads again and
+    stops nothing). A new one has to be looked at. The ninth is not a request but a table row:
     the Field data button's FIELD_DATA_EXPORTS lists the cards export as a POST (R694, it reads article text; it writes
     nothing), sent only by downloadFieldData on the operator's click (2026-11-14, Lane X). The tenth, the same table's
     candidate-sources export, is a POST for the same reason (R694: it groups the article table) and writes nothing."""
@@ -385,4 +386,4 @@ def test_request_sites_outside_any_named_function_are_the_known_delegated_click_
         for req in re.finditer(r"""["']?method["']?\s*:\s*[^,}]*\b(?:DELETE|POST|PUT|PATCH)\b""", js):
             if not any(a <= req.start() < b for a, b in spans):
                 outside[path.name] = outside.get(path.name, 0) + 1
-    assert outside == {"app-diagnostics.js": 2, "reader.js": 3, "taskmanager.js": 5}, outside
+    assert outside == {"app-diagnostics.js": 2, "reader.js": 3, "taskmanager.js": 6}, outside

@@ -487,10 +487,22 @@ def debug_bundle(
             "method": "sources with no stored article (quarantined ones count as stored), grouped; at most 200 groups",
         }
 
+    def _standing() -> dict:
+        from src.catalog.source_standing import standing_totals
+
+        t = standing_totals(db)
+        return {
+            "sources": t["sources"],
+            "candidates_not_checked": t["candidates_not_checked"],
+            "source_rows": t["sources"] + t["candidates_not_checked"] + t["other"],
+        }
+
     def _corpus() -> dict:
         return {
             "articles": int(db.query(func.count(Article.id)).scalar() or 0),
-            "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+            # R773 (row 39): "sources" are rows collected from or collectable now; candidates not yet checked
+            # are their own figure, and the flat row count is named for what it is.
+            **_standing(),
             "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
             "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
             # Field test 2026-11-14 row 71: the flat count above read 20k-37k across instances, most of it

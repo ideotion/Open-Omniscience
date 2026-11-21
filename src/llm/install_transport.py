@@ -27,6 +27,31 @@ AI_INSTALL_PROTECTED_REFUSAL = (
 )
 
 
+#: R766: the refusal when the settings could not be read. Refused all the same (R117), but never said to be protected mode.
+AI_INSTALL_SETTINGS_UNREADABLE_REFUSAL = (
+    "The settings could not be read, so the AI install did not start: network actions are refused as if protected mode were "
+    "on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in "
+    "Settings and save. Then try again."
+)
+
+
+def ai_install_block_reason() -> str | None:
+    """``"protected"``, ``"settings_unreadable"`` or ``None``: the update's own :func:`protected_reason` (R766)."""
+    from src.maintenance.self_update import protected_reason
+
+    return protected_reason()
+
+
+def ai_install_refusal() -> str | None:
+    """The sentence an AI-install step is refused with, or ``None`` when it may run."""
+    from src.maintenance.self_update import BLOCKED_SETTINGS_UNREADABLE
+
+    reason = ai_install_block_reason()
+    if reason is None:
+        return None
+    return AI_INSTALL_SETTINGS_UNREADABLE_REFUSAL if reason == BLOCKED_SETTINGS_UNREADABLE else AI_INSTALL_PROTECTED_REFUSAL
+
+
 def ai_install_protected() -> bool:
     """True when an AI install step that runs outside this process must be refused: protected mode is chosen, or the settings
     cannot be read (R117). The update's own rule, the one function, so the two refusals cannot drift apart."""
@@ -36,10 +61,11 @@ def ai_install_protected() -> bool:
 
 
 def refuse_if_protected(exc_type: type[Exception]) -> None:
-    """Raise ``exc_type(AI_INSTALL_PROTECTED_REFUSAL)`` when :func:`ai_install_protected`. Each caller passes its own module's
-    error type, so the refusal reaches the user on the path that module already reports through."""
-    if ai_install_protected():
-        raise exc_type(AI_INSTALL_PROTECTED_REFUSAL)
+    """Raise ``exc_type(<refusal>)`` when :func:`ai_install_protected`, naming the real reason (R766). Each caller passes its own
+    module's error type, so the refusal reaches the user on the path that module already reports through."""
+    refusal = ai_install_refusal()
+    if refusal is not None:
+        raise exc_type(refusal)
 
 
 # --------------------------------------------------------------------------- #
@@ -60,34 +86,50 @@ AI_INSTALLER_STOPPED_NOTE = (
     "proxy. The install was interrupted and may be incomplete: switch protected mode off and run it again."
 )
 
+#: R769: the same stops when the stored settings cannot be read: the choice in force is unknown, so nothing goes on (fail closed).
+#: The reason named is the settings, not protected mode (R766).
+AI_INSTALL_UNREADABLE_NOTE = (
+    "Stopped because the safety settings could not be read: this download goes over a direct connection, and the transport "
+    "you chose is unknown until they can be read again. What it had downloaded is not used as finished. Start it again once "
+    "they can be read."
+)
+AI_INSTALLER_UNREADABLE_NOTE = (
+    "Stopped because the safety settings could not be read: the Ollama installer downloads over a direct connection, and the "
+    "transport you chose is unknown until they can be read again. The install was interrupted and may be incomplete: run it "
+    "again once they can be read."
+)
+
 import threading as _threading  # noqa: E402 - kept beside the R765 block it serves
 
 _STOP_LOCK = _threading.Lock()
-_STOP_GENERATION = 0
-_STOPPED_AT: dict[str, float] = {}
+_STOPPED_AT: dict[str, tuple[float, str]] = {}  # kind -> (when, reason) of the last stop by a transport change
 _PROCS: dict = {}  # spawned install child -> True when it leads its own process group
 _ACTIVE_PULLS = 0  # daemon pulls streaming now, through the queue or the direct route
 _TERMINATE_WAIT_S = 10.0
 
 
-def stop_generation() -> int:
-    """A counter the stop raises by one. A running step reads it when it starts and again as it goes: a change means stop."""
+def note_for(reason: str | None, *, installer: bool = False) -> str:
+    """The fixed note for a stop by ``reason`` (``"protected"`` or ``"unreadable"``, :mod:`src.safety.transport_watch`)."""
+    if reason == "unreadable":
+        return AI_INSTALLER_UNREADABLE_NOTE if installer else AI_INSTALL_UNREADABLE_NOTE
+    return AI_INSTALLER_STOPPED_NOTE if installer else AI_INSTALL_STOPPED_NOTE
+
+
+def record_stop(kind: str, reason: str) -> None:
+    """Remember that the run of ``kind`` going now was stopped by a transport change, so its status can say why."""
+    import time
+
     with _STOP_LOCK:
-        return _STOP_GENERATION
-
-
-def stopped_since(generation: int) -> bool:
-    """True once a stop has been asked after ``generation`` was read."""
-    return stop_generation() != generation
+        _STOPPED_AT[kind] = (time.time(), reason)
 
 
 def stop_note(kind: str, started_at: float | None) -> str | None:
-    """The stop note (:data:`AI_INSTALL_STOPPED_NOTE`, or :data:`AI_INSTALLER_STOPPED_NOTE` for the script) when the run of ``kind`` that started at ``started_at`` was stopped by the switch, else None."""
+    """The stop note when the run of ``kind`` that started at ``started_at`` was stopped by a transport change, else None."""
     with _STOP_LOCK:
-        at = _STOPPED_AT.get(kind)
-    if at is None or started_at is None or started_at > at:  # a run with no start time cannot be placed before the stop
+        hit = _STOPPED_AT.get(kind)
+    if hit is None or started_at is None or started_at > hit[0]:  # a run with no start time cannot be placed before the stop
         return None
-    return AI_INSTALLER_STOPPED_NOTE if kind == "ollama-installer" else AI_INSTALL_STOPPED_NOTE
+    return note_for(hit[1], installer=kind == "ollama-installer")
 
 
 def register_child(proc, *, group: bool = False) -> None:
@@ -197,11 +239,12 @@ def stop_running_installs() -> list[str]:
     Called after protected mode is saved. Never raises: the switch must not fail because of an install."""
     import time
 
-    global _STOP_GENERATION
+    from src.safety.transport_watch import bump
+
     stopped: list[str] = []
     now = time.time()
+    bump()  # every running step's watch re-reads the mode at its next boundary
     with _STOP_LOCK:
-        _STOP_GENERATION += 1
         procs = list(_PROCS.items())
     try:
         from src.jobs.background import get_job
@@ -211,7 +254,7 @@ def stop_running_installs() -> list[str]:
             if job is not None and job.status().get("running"):
                 if not job.stop_requested():  # a run the operator already cancelled keeps reading as theirs
                     with _STOP_LOCK:
-                        _STOPPED_AT[kind] = now
+                        _STOPPED_AT[kind] = (now, "protected")
                 job.cancel()  # its runner terminates the child (SIGTERM, bounded wait, SIGKILL) at its next poll
                 stopped.append(kind)
     except Exception:  # noqa: BLE001, S110 - one source of installs never hides the others
@@ -228,7 +271,7 @@ def stop_running_installs() -> list[str]:
         stopped.append("ollama-pull")
     if procs:
         with _STOP_LOCK:
-            _STOPPED_AT["ollama-installer"] = now
+            _STOPPED_AT["ollama-installer"] = (now, "protected")
         stopped.append("ollama-installer")
         for proc, group in procs:
             _threading.Thread(

@@ -477,7 +477,10 @@ def _is_loopback_url(url: str) -> bool:
     match against the localhost aliases; anything else that fails IP parsing is
     treated as remote.
     """
-    host = (urlparse(url).hostname or "").lower()
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:  # e.g. an unclosed "[" -- not an address on this computer (row 234)
+        return False
     if host in {"localhost", "ip6-localhost", "localhost.localdomain"}:
         return True
     try:
@@ -509,9 +512,20 @@ def _loopback_refusal(url: str, *, setting: str = "OO_OLLAMA_URL") -> str | None
     """
     if _is_loopback_url(url):
         return None
-    host = (urlparse(url).hostname or "").lower()
+    try:
+        host: str | None = (urlparse(url).hostname or "").lower()
+    except ValueError:  # malformed: fail closed, and say so rather than raise (row 234)
+        host = None
+    if host is None:
+        got = "an address that could not be read"
+    elif "@" in url:
+        # Sign-in details in the address: urlparse can take part of them for the host (an unencoded "/", "?" or "#" ends the
+        # authority early), so nothing of it is quoted -- the setting's name is enough to find it (row 234 security read).
+        got = "an address with sign-in details (not shown)"
+    else:
+        got = repr(host)
     return (
-        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {host!r}. "
+        f"{setting} must be loopback (127.0.0.1 / localhost / ::1); got {got}. "
         "The local LLM never talks to a remote host."
     )
 
@@ -556,7 +570,10 @@ class OllamaClient:
             _require_loopback(self.base_url)
         # ``connect_timeout`` caps the connect alone (the liveness probe's, row 141); the reply keeps the whole ``timeout``.
         limits = timeout if connect_timeout is None else httpx.Timeout(timeout, connect=min(timeout, connect_timeout))
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits)
+        # trust_env=False (R770): the daemon is on this computer, so the connection is always direct. With trust_env left on,
+        # httpx routes even http://127.0.0.1 through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts and
+        # article text would reach that proxy.
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits, trust_env=False)
 
     # -- network kill switch ----------------------------------------------- #
 
@@ -830,37 +847,38 @@ class OllamaClient:
         self._check_kill_switch(clearnet=True)
         # R763: the Ollama daemon downloads the weights itself, outside the proxy protected mode routes this app through
         from src.llm.install_transport import (
-            AI_INSTALL_STOPPED_NOTE,
+            note_for,
             pull_ended,
             pull_started,
             refuse_if_protected,
-            stop_generation,
-            stopped_since,
         )
+        from src.safety.transport_watch import TransportWatch
 
         pull_started()  # R765: counted before anything else, so a stop from here on names this pull
         try:
-            generation = stop_generation()  # read BEFORE the check, so a switch between the two still stops the pull (R765)
+            watch = TransportWatch()  # taken BEFORE the check, so a switch between the two still stops the pull (R765, R769)
             refuse_if_protected(LLMUnavailable)
-            yield from self._pull_stream(model, generation, stopped_since, AI_INSTALL_STOPPED_NOTE)
+            yield from self._pull_stream(model, watch, note_for)
         finally:
             pull_ended()
 
-    def _pull_stream(self, model: str, generation: int, stopped_since, stopped_note: str):
+    def _pull_stream(self, model: str, watch, note_for):
         import json as _json
 
-        if stopped_since(generation):  # the switch landed after the check: no request is sent
-            raise LLMUnavailable(stopped_note)
+        reason = watch.stop_reason()
+        if reason is not None:  # the switch landed after the check: no request is sent
+            raise LLMUnavailable(note_for(reason))
         try:
             with self._client.stream(
                 "POST", "/api/pull", json={"model": model, "stream": True}
             ) as resp:
                 resp.raise_for_status()
                 for line in resp.iter_lines():
-                    # R765: protected mode was switched on during the pull. Leaving the stream closes the request, which is what
-                    # stops the daemon's download; the daemon keeps no unfinished model as installed.
-                    if stopped_since(generation):
-                        raise LLMUnavailable(stopped_note)
+                    # R765/R769: protected mode was switched on, or the settings can no longer be read. Leaving the stream closes
+                    # the request, which is what stops the daemon's download; the daemon keeps no unfinished model as installed.
+                    reason = watch.stop_reason()
+                    if reason is not None:
+                        raise LLMUnavailable(note_for(reason))
                     if not line:
                         continue
                     try:

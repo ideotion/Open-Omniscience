@@ -150,10 +150,16 @@ def _check_database(r: _Report) -> None:
         )
         return
     try:
+        from src.catalog.source_standing import standing_totals
+
         with session_scope() as s:
-            sources = s.query(Source).count()
+            standing = standing_totals(s)  # R773: candidates not yet checked are never counted as sources
             articles = s.query(Article).count()
-        r.line(OK, "Database", f"{sources} sources, {articles} articles ({where})")
+        r.line(
+            OK, "Database",
+            f"{standing['sources']} sources, {standing['candidates_not_checked']} candidates not yet checked, "
+            f"{articles} articles ({where})",
+        )
     except Exception as exc:
         r.line(FAIL, "Database", f"reachable but query failed: {_brief(exc)}")
 

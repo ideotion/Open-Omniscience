@@ -855,10 +855,11 @@ def _refuse_protected_ai_install() -> None:
     Every AI-install download runs outside this process (the Ollama daemon, pip / uv, the Hugging Face snapshot), where the
     protected-mode proxy does not reach, so it would leave over a direct connection. The update helper refuses the same way.
     """
-    from src.llm.install_transport import AI_INSTALL_PROTECTED_REFUSAL, ai_install_protected
+    from src.llm.install_transport import ai_install_refusal
 
-    if ai_install_protected():
-        raise HTTPException(status_code=409, detail=AI_INSTALL_PROTECTED_REFUSAL)
+    refusal = ai_install_refusal()  # R766: names the real reason, protected mode or settings that could not be read
+    if refusal is not None:
+        raise HTTPException(status_code=409, detail=refusal)
 
 
 # Model-download QUEUE (§2.C1): pulls run one at a time, the rest queue, each
@@ -1758,8 +1759,10 @@ def ollama_release() -> dict:
     app does not own, costs at worst one model reload, and is how the card is handed to
     vLLM on a single-GPU machine. A queued summary or translation run in flight is paused first (below).
     """
-    from src.llm.ollama_lifecycle import release_vram
+    from src.llm.ollama_lifecycle import refusal, release_vram
 
+    if refusal() is not None:
+        return release_vram()  # row 234: the address is refused, so nothing is released and no run is paused for it
     return _after_runs_pause(release_vram, "release")
 
 

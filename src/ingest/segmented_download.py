@@ -29,6 +29,7 @@ fallback. This is a genuine safety gate, not a stub.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 import time
@@ -87,7 +88,9 @@ def segmented_fetch(
         return None
     parts: list[tuple[int, bytes]] = []
     with ThreadPoolExecutor(max_workers=len(segs), thread_name_prefix="oo-segfetch") as ex:
-        futures = {ex.submit(fetch_segment, url, s, e): (s, e) for s, e in segs}
+        # Each segment runs in the caller's context (a copy each: one Context cannot be entered by two threads), so a download
+        # run's ONE transport watch (R768) reaches every segment's session.
+        futures = {ex.submit(contextvars.copy_context().run, fetch_segment, url, s, e): (s, e) for s, e in segs}
         for fut in as_completed(futures):
             start, _end = futures[fut]
             parts.append((start, fut.result()))

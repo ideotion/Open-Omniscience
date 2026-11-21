@@ -79,12 +79,20 @@
         if (statusEl) statusEl.textContent = _t("Stopped before the end, as asked.");
         return;
       }
+      if (r.listed == null && r.failed && r.failed.reason) {
+        // R772(b): stopped by a transport change before the listing: nothing was asked of NLM, and the server's sentence says why
+        if (statusEl) statusEl.textContent = _t(r.failed.reason);
+        return;
+      }
       const applied = (r.applied || []).length;
       let msg = _tf("Applied {applied} files; {remaining} listed files not applied yet.",
         {applied: applied, remaining: r.remaining || 0});
       if (r.failed) {
         msg += " " + (r.failed.error === "airplane_mode"
           ? _t("Stopped: airplane mode is on.")
+          // R768/R769: stopped by a transport change, the server's fixed sentence
+          : (r.failed.error === "protected_mode" || r.failed.error === "protected_mode_off" || r.failed.error === "proxy_changed" || r.failed.error === "settings_unreadable")
+          ? _t(r.failed.reason || "")
           : _tf("Stopped at {file}: {error}. Files are applied in NLM's order, so this one is tried again first next time.",
               {file: r.failed.file, error: r.failed.reason || r.failed.error}));
       }
