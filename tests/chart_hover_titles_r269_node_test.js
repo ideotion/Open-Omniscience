@@ -88,4 +88,29 @@ function noTitleChild(markup, what) {
   assert.ok(/<circle [^>]*title="Lyon: 3"/.test(svg), svg.slice(0, 800));
 }
 
+// --- the accessible name: an SVG <title> child named the mark for a screen reader; the title ATTRIBUTE does
+// not (SVG reads aria-label and a <title> child), so the bubble's marker gives a titled SVG mark the same text
+// as its aria-label, and keeps one the renderer set itself. ------------------------------------------------ //
+{
+  const name = new Function(extract("_ooTipSvgName") + "\nreturn _ooTipSvgName;")();
+  const SVG = "http://www.w3.org/2000/svg";
+  const el = (ns, tag, attrs) => ({ namespaceURI: ns, tagName: tag, a: Object.assign({}, attrs || {}),
+    hasAttribute(k) { return k in this.a; }, getAttribute(k) { return k in this.a ? this.a[k] : null; },
+    setAttribute(k, v) { this.a[k] = String(v); } });
+  const dot = el(SVG, "circle");
+  name(dot, "Lyon: 3");
+  assert.strictEqual(dot.a["aria-label"], "Lyon: 3");
+  name(dot, "Lyon: 4");
+  assert.strictEqual(dot.a["aria-label"], "Lyon: 4", "a name this helper set must follow the title");
+  const own = el(SVG, "g", { "aria-label": "set by the renderer" });
+  name(own, "the hover");
+  assert.strictEqual(own.a["aria-label"], "set by the renderer", "a renderer's own aria-label was overwritten");
+  const html = el("http://www.w3.org/1999/xhtml", "BUTTON");
+  name(html, "x");
+  assert.ok(!("aria-label" in html.a), "an HTML element's title is already its description: no aria-label added");
+  const root = el(SVG, "svg");
+  name(root, "x");
+  assert.ok(!("aria-label" in root.a), "the <svg> root keeps its own role and name");
+}
+
 console.log("chart_hover_titles_r269_node_test.js: all assertions passed");

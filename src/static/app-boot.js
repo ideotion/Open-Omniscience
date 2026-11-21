@@ -467,6 +467,17 @@
     // covers every anchor — static or rendered later. Loopback links are exempt.
     // ---- the hover-for-information enhancer (one delegated listener; the ----
     // bubble re-reads the live translated title, so language switches apply.
+    // An SVG mark whose hover rides a title ATTRIBUTE (rows 268/269: the attribute is what #oo-tip opens on touch) loses
+    // the accessible name its old <title> child gave it, because SVG's name computation reads aria-label and a <title>
+    // child, never the title attribute. So the same text becomes its aria-label, which shows no native tooltip beside the
+    // bubble. Only on an SVG element; an aria-label the renderer set itself is kept; one this helper set follows the title.
+    function _ooTipSvgName(el, v) {
+      if (!el || el.namespaceURI !== "http://www.w3.org/2000/svg" || String(el.tagName).toLowerCase() === "svg") return;
+      if (el.hasAttribute("aria-label") && el.getAttribute("data-oo-tip-named") !== "1") return;
+      el.setAttribute("aria-label", v);
+      el.setAttribute("data-oo-tip-named", "1");
+    }
+
     (function ooTipInit() {
       const tip = document.createElement("div"); tip.id = "oo-tip";
       tip.setAttribute("role", "tooltip");
@@ -479,7 +490,8 @@
       document.body.appendChild(tip);
       const mark = (root) => {
         (root.querySelectorAll ? root.querySelectorAll("[title]") : []).forEach((el) => {
-          if ((el.getAttribute("title") || "").trim()) el.classList.add("oo-tip-target");
+          const v = (el.getAttribute("title") || "").trim();
+          if (v) { el.classList.add("oo-tip-target"); _ooTipSvgName(el, v); }
         });
       };
       mark(document);
@@ -495,6 +507,7 @@
         const el = m.target, v = el.getAttribute && el.getAttribute("title");
         if (!v || !v.trim()) return;
         el.classList.add("oo-tip-target");
+        _ooTipSvgName(el, v.trim());
         if (el === cur) { el.dataset.ooTip = v; el.removeAttribute("title"); tip.textContent = v; }
       })).observe(document.body, {attributes: true, attributeFilter: ["title"], subtree: true});
       function show(el, x, y) {
