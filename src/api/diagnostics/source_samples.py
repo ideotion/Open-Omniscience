@@ -19,7 +19,9 @@ and password (R637), and a key stored before R628 keeps them (R634): the two col
 address are written as the app shows it (``_SHOWN_SOURCE_COLUMNS``, the independent read's M1 on
 R637), and a test pins the source's column list, so a new column is a decision, never a default.
 The article's columns are written as stored (its ``url`` as given, R621). A source with no stored
-article is not skipped: it gets a manifest row saying so.
+article is not skipped: it gets a manifest row saying so, and that row says WHY by a class (row 248): enabled, status,
+``via:`` tag, has a feed, last qualification verdict, last feed HTTP status. The first zip also counts every never-collected
+source in the set by class, so a disabled, unjudged candidate is told apart from a feed that fails.
 
 NEWSLETTER BODIES STAY HOME (R655, 2026-11-09), by the same gate and the same switch as
 ``/source-quality``: an article is a newsletter when its source is one of the mailbox sources
@@ -47,7 +49,7 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
 from src.api.cross_site import refuse_cross_site_get
-from src.database.models import Article, Source
+from src.database.models import Article, FeedFetchState, Source, SourceQualificationAttempt
 from src.database.session import get_db
 
 from ._base import router
@@ -176,6 +178,77 @@ def _newsletter_source_ids(db: Session) -> set[int]:
     ).all()}
 
 
+#: WHY A SOURCE HAS NO ARTICLE (row 248, from row 39: about 25,000 sources of one press had never stored one, and the
+#: compact list could not say why). Each never-collected row carries an index into ``classes``: whether collection may
+#: take it (``enabled``, ``status``), where it came from (its ``via:`` tag), whether it has a feed address to try,
+#: the last qualification verdict recorded for it, and the last HTTP status its feed answered (null = never fetched).
+#: Booleans and short codes only: never an address (R734), never free text, so a row grows by a few bytes.
+CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status"]
+_KNOWN_STATUS = ("qualified", "unqualified", "disqualified")
+_VIA = re.compile(r"via:([a-z0-9][a-z0-9-]{0,39})")
+_VERDICT = re.compile(r"[a-z_]{1,20}")
+
+
+def _via(tags: str | None) -> str | None:
+    """The source's provenance class from its ``via:`` tag (set by code, never typed); anything else reads as ``other``."""
+    found = sorted({m.group(1) for m in _VIA.finditer(tags or "")})
+    if not found:
+        return "other" if "via:" in (tags or "") else None
+    return found[0]
+
+
+def _last_by_source(db: Session, ids: list[int]) -> tuple[dict[int, str], dict[int, int | None]]:
+    """``({source id: last qualification verdict}, {source id: last feed HTTP status})`` for these ids."""
+    verdicts: dict[int, str] = {}
+    for sid, verdict in db.execute(
+        select(SourceQualificationAttempt.source_id, SourceQualificationAttempt.verdict)
+        .where(SourceQualificationAttempt.source_id.in_(ids))
+        .order_by(SourceQualificationAttempt.attempted_at, SourceQualificationAttempt.id)
+    ).all():
+        v = str(verdict or "")
+        verdicts[int(sid)] = v if _VERDICT.fullmatch(v) else "other"
+    fetched: dict[int, int | None] = {}
+    for sid, status, checked in db.execute(
+        select(FeedFetchState.source_id, FeedFetchState.last_status, FeedFetchState.last_checked_at)
+        .where(FeedFetchState.source_id.in_(ids))
+    ).all():
+        if checked is not None or status is not None:
+            fetched[int(sid)] = int(status) if isinstance(status, int) else 0
+    return verdicts, fetched
+
+
+def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None) -> tuple:
+    st = str(status or "")
+    return (
+        bool(enabled), st if st in _KNOWN_STATUS else "other", _via(tags),
+        bool(rss_url), verdict, feed_status,
+    )
+
+
+def never_collected_in_set(db: Session) -> dict[str, Any]:
+    """Counts only: every source with no stored article, by class, across the whole set (in the first zip)."""
+    has_article = select(Article.id).where(Article.source_id == Source.id).exists()
+    rows = db.execute(
+        select(Source.id, Source.enabled, Source.status, Source.tags, Source.rss_url)
+        .where(~has_article).order_by(Source.id)
+    ).all()
+    counts: dict[tuple, int] = {}
+    for start in range(0, len(rows), 900):   # under SQLite's bound-parameter limit
+        chunk = rows[start:start + 900]
+        verdicts, fetched = _last_by_source(db, [int(r[0]) for r in chunk])
+        for sid, enabled, status, tags, rss in chunk:
+            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)))
+            counts[k] = counts.get(k, 0) + 1
+    ordered = sorted(counts.items(), key=lambda kv: (-kv[1], [str(x) for x in kv[0]]))
+    return {
+        "note": "every source in the set with no stored article, counted by class; a source is collected only when it is "
+                "enabled and qualified, so a disabled or unjudged one is a candidate, not a failing feed",
+        "sources": len(rows),
+        "columns": CLASS_COLUMNS + ["sources"],
+        "rows": [list(k) + [n] for k, n in ordered],
+    }
+
+
 def build_sample_zip(
     db: Session, *, after: int, seed: int, cap: int, include_newsletters: bool = False,
 ) -> tuple[bytes, int | None, int, int]:
@@ -186,8 +259,14 @@ def build_sample_zip(
     total = db.execute(select(func.count()).select_from(Source)).scalar_one()
     buf = io.BytesIO()
     manifest: list[dict[str, Any]] = []
-    empty: list[list[Any]] = []   # [source_id, domain] for each source with no stored article
+    empty: list[list[Any]] = []   # [source_id, domain, feed_key, class] for each source with no stored article
+    classes: dict[tuple, int] = {}   # a never-collected source's class -> its index in the manifest's ``classes``
+    class_counts: list[int] = []
     rows_bytes = 0   # the manifest's rows as written, before compression: a bound the compressed manifest stays under
+    # the whole set's never-collected tally rides in the first zip only: counts, a few hundred bytes
+    in_set = never_collected_in_set(db) if after == 0 else None
+    if in_set is not None:
+        rows_bytes += len(json.dumps(in_set, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
     last = None
     done = False
     full = False
@@ -202,6 +281,12 @@ def build_sample_zip(
             if not ids:
                 done = True
                 break
+            verdicts: dict[int, str] = {}
+            fetched: dict[int, int | None] = {}
+            for start in range(0, len(ids), 900):   # under SQLite's bound-parameter limit
+                v, f = _last_by_source(db, ids[start:start + 900])
+                verdicts.update(v)
+                fetched.update(f)
             for sid in ids:
                 src = db.get(Source, sid)
                 if src is None:
@@ -230,14 +315,28 @@ def build_sample_zip(
                     data = json.dumps(doc, ensure_ascii=False, default=str).encode("utf-8")
                     row["article_id"] = art.id
                     row["bytes"] = len(data)
-                entry: Any = [sid, src.domain, shown_feed_key(src.feed_key)] if row is None else row
+                new_class: tuple | None = None
+                if row is None:
+                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid))
+                    idx = classes.get(k)
+                    if idx is None:
+                        idx, new_class = len(classes), k
+                    entry: Any = [sid, src.domain, shown_feed_key(src.feed_key), idx]
+                else:
+                    entry = row
                 row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
+                if new_class is not None:   # a class is written once, beside its count
+                    row_bytes += len(json.dumps(list(new_class) + [0], separators=(",", ":"), default=str).encode("utf-8")) + 1
                 used = buf.tell() + _RESERVE_BYTES + rows_bytes + row_bytes
                 if (manifest or empty) and used + len(data or b"") > cap:   # empty sources count too: their rows add up
                     full = True   # nothing is added that could breach the cap; the next request resumes here
                     break
                 rows_bytes += row_bytes
                 if row is None:
+                    if new_class is not None:
+                        classes[new_class] = len(class_counts)
+                        class_counts.append(0)
+                    class_counts[entry[3]] += 1
                     empty.append(entry)
                 else:
                     z.writestr(f"samples/source-{sid:07d}.json", data or b"")
@@ -263,9 +362,15 @@ def build_sample_zip(
                 "note": "no stored article for these sources",
                 # a source id is this instance's own above the shipped catalogue (field report 2026-11-14 5.4):
                 # domain + feed_key is what joins one instance's rows to another's
-                "columns": ["source_id", "domain", "feed_key"],
+                "columns": ["source_id", "domain", "feed_key", "class"],
                 "rows": empty,
+                # ``class`` indexes these rows; why a source has no article is read here, not guessed (row 248)
+                "classes": {
+                    "columns": CLASS_COLUMNS + ["sources_in_this_zip"],
+                    "rows": [list(k) + [class_counts[i]] for k, i in sorted(classes.items(), key=lambda kv: kv[1])],
+                },
             },
+            **({"never_collected_in_set": in_set} if in_set is not None else {}),
         }, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     if not done and last is None:
         done = True   # defensive: a zip that took nothing must not hand back the same cursor forever
