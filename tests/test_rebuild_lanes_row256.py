@@ -347,6 +347,20 @@ def test_an_open_already_under_way_when_the_hold_begins_is_counted(data_dir, mon
         assert store.quiet("law"), "once it has landed and gone back to the pool, the hold closes it and is given"
 
 
+def test_a_connection_whose_setup_failed_is_not_left_counted(data_dir, monkeypatch):
+    """SQLAlchemy drops a connection whose connect listener raised without a ``close`` event: the lane's own listener forgets and
+    closes it, or every later rebuild of the lane would be refused as "still open" until a restart."""
+    _old_lane("law")
+
+    def fail(_conn):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(store, "_apply_lane_pragmas", fail)
+    with pytest.raises(Exception, match="database is locked"), store.lane_session("law") as s:
+        s.execute(text("SELECT 1"))
+    assert store.quiet("law"), "a connection whose setup failed is neither live nor opening"
+
+
 def test_another_program_holding_the_lane_open_refuses_the_switch(data_dir):
     path = _old_lane("law")
     other = connect(str(path), check_same_thread=False)  # not one of this process's pools: what a second server looks like

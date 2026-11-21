@@ -53,13 +53,14 @@ CROSS-FILE LINKS. SQLite has no cross-database foreign keys, so a revision's
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import Engine, Table, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -350,8 +351,11 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
 
     @event.listens_for(eng, "connect")
     def _lane_opened(dbapi_connection, record) -> None:
-        # The FIRST connect listener: the open under way becomes a live connection before any other listener can fail it (a later
-        # failure closes it through the pool, whose ``close`` event then removes it).
+        # The FIRST of this module's connect listeners: the open under way becomes a live connection. SQLAlchemy does NOT close a
+        # connection whose later connect listener raised (no ``close`` event fires), so the one of ours that can fail
+        # (``_lane_pragmas``: WAL on a locked file) closes it and forgets it itself. ``file_identity``'s stamp cannot raise (a
+        # ``stat`` that fails is None). STATED LIMIT: a failure in the dialect's own connect handler, before this one, leaves the
+        # open counted, which refuses this lane's later rebuilds until a restart (a refusal, never a loss).
         with _swap_cond:
             record.info[_GEN_KEY] = getattr(_open_gen, "value", _gen.get(spec.kind, 0))
         _note(spec.kind, id(dbapi_connection), live=True)
@@ -408,21 +412,32 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         through the codec, and a lane is encrypted by ruling, so the corpus
         listener's plaintext-only mmap branch would never fire here anyway.
         """
-        cur = dbapi_connection.cursor()
         try:
-            cur.execute("PRAGMA journal_mode=WAL")
-            cur.execute("PRAGMA foreign_keys=ON")
-            cur.execute("PRAGMA busy_timeout=30000")
-            cur.execute("PRAGMA synchronous=NORMAL")
-            # Bounded, and much smaller than the corpus's RAM-derived budget: a lane
-            # engine can be open BESIDE the corpus engine, so its cache is additive
-            # to a figure another module already sized against the machine.
-            cur.execute("PRAGMA cache_size=-16000")  # 16 MiB
-            cur.execute("PRAGMA journal_size_limit=67108864")  # 64 MiB
-        finally:
-            cur.close()
+            _apply_lane_pragmas(dbapi_connection)
+        except BaseException:
+            _note(spec.kind, id(dbapi_connection), live=False, out=False)  # the pool drops it without a ``close`` event
+            with contextlib.suppress(Exception):
+                dbapi_connection.close()
+            raise
 
     return eng
+
+
+def _apply_lane_pragmas(dbapi_connection: Any) -> None:
+    """The body of ``_lane_pragmas`` (a function of its own so the listener can clean up after it)."""
+    cur = dbapi_connection.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        # Bounded, and much smaller than the corpus's RAM-derived budget: a lane
+        # engine can be open BESIDE the corpus engine, so its cache is additive
+        # to a figure another module already sized against the machine.
+        cur.execute("PRAGMA cache_size=-16000")  # 16 MiB
+        cur.execute("PRAGMA journal_size_limit=67108864")  # 64 MiB
+    finally:
+        cur.close()
 
 
 def _other_engines_of(kind: str, key: tuple[str, str]) -> list[tuple[str, str]]:
@@ -463,8 +478,8 @@ def _engine_and_factory(kind: str, *, create: bool = False) -> tuple[Engine, ses
             eng = _build_engine(spec, path)
             _engines[key] = eng
             _factories[key] = sessionmaker(bind=eng, autocommit=False, autoflush=False, future=True)
-        # Read in the same locked step as the engine: a switch's hold (``held_for_swap``) pops both under this lock, and a factory
-        # looked up after the lock was let go could be gone (a KeyError where the caller should simply wait for the switch).
+        # Read in the same locked step as the engine: ``dispose_lane`` pops both under this lock, and a factory looked up after the
+        # lock was let go could be gone (a KeyError).
         factory = _factories[key]
     # Dispose OUTSIDE the lock: ``Engine.dispose`` closes sockets/file handles and
     # must never run while another thread is waiting to build its own engine.

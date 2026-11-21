@@ -937,5 +937,7 @@ def start(backup_answer: str, store: str = LIBRARY) -> dict[str, Any]:
     try:
         return REBUILD_JOB.start(backup_answer=backup_answer, store=store)
     except BaseException:
-        _set_running_store(None)
+        with _LOCK:
+            if _RUNNING_STORE[0] == store and REBUILD_JOB.status().get("state") != "running":
+                _RUNNING_STORE[0] = None  # never cleared under a job another request started meanwhile
         raise
