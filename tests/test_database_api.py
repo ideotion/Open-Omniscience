@@ -67,7 +67,9 @@ def test_countries_breakdown_counts_and_keywords():
         body = client.get("/api/database/countries").json()
     try:
         row = next(c for c in body["countries"] if c["code"] == "zz")
-        assert row["sources"] >= 2 and row["enabled"] >= 1
+        # R773: neither row is judged or collected from, so both are candidates, not sources.
+        assert row["candidates"] >= 2 and row["enabled"] >= 1
+        assert row["sources"] + row["candidates"] >= 2
         tag_map = dict(row["top_tags"])
         assert tag_map.get("politics", 0) >= 2  # aggregated across the two sources
         assert "missing" in body and isinstance(body["missing"], list)

@@ -175,6 +175,13 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
             counts["sources_candidates"] = int(
                 db.query(func.count(Source.id)).filter(Source.enabled.is_(False)).scalar() or 0
             )
+            # R773 (row 39): the rows still waiting for a first verdict and never collected from -- the
+            # figure shown as "candidates not yet checked" beside every source count.
+            from src.catalog.source_standing import unchecked_candidate_clause
+
+            counts["candidates_not_checked"] = int(
+                db.query(func.count(Source.id)).filter(unchecked_candidate_clause()).scalar() or 0
+            )
 
         backend = engine.url.get_backend_name()
         from src.backup.sqlite_backup import is_sqlite
@@ -508,23 +515,27 @@ def country_coverage(db: Session = Depends(get_db)) -> dict:
     Counts are computed from each source's country code (real data) against the
     ISO 3166-1 set, so coverage is measured, never asserted. ``missing`` lists
     country codes with no source; ``thin`` lists covered countries with very few.
+    A source here is one the app collected from or may collect from now (R773);
+    candidates not yet checked never cover a country and are reported as their own total.
     """
-    from sqlalchemy import func
-
     from src.catalog.countries import country_display_name
-    from src.catalog.coverage import (
-        country_counts_from_session,
-        coverage_report,
-        regional_report,
-    )
-    from src.database.models import Source
+    from src.catalog.coverage import coverage_report, regional_report
 
     def _compute(db: Session) -> dict:
-        counts = country_counts_from_session(db)
+        from src.catalog.source_standing import CANDIDATE_LINE, counted_by_country, standing_totals
+
+        # R773 (row 39): a country is covered by SOURCES (collected from, or enabled and qualified),
+        # never by candidates nobody has checked yet; those are a separate total beside the figures.
+        counts, _candidates_by_country = counted_by_country(db)
+        counts.pop("", None)
         report = coverage_report(counts)
         report["missing"] = report["missing"][:80]  # trim for the UI; details in /countries
-        total_sources = int(db.query(func.count(Source.id)).scalar() or 0)
+        totals = standing_totals(db)
+        total_sources = totals["sources"]
         report["regional"] = regional_report(counts, total_sources=total_sources)
+        report["sources"] = totals["sources"]
+        report["candidates_not_checked"] = totals["candidates_not_checked"]
+        report["candidate_line"] = CANDIDATE_LINE
         # Full display names for every code this response mentions (one conversion
         # layer, applied server-side; the UI never carries its own country table).
         mentioned = (

@@ -146,6 +146,8 @@
   "Language": "言語",
   "Any language": "すべての言語",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "件数は各情報源が示す言語にもとづき、最新の記事のみを対象にしています。フィルターは本文から言語を検出した記事も見つけるため、件数と結果が異なることがあります。",
-  "Articles counted": "数えた記事"
+  "Articles counted": "数えた記事",
+  "candidates not yet checked": "未確認の候補",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "候補とは、アプリが見つけたか受け取ったものの、まだ確認していないサイトです。収集は行われず、ソースとしても数えません。"
  }
 }

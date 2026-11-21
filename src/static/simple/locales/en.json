@@ -146,6 +146,8 @@
   "Language": "Language",
   "Any language": "Any language",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.",
-  "Articles counted": "Articles counted"
+  "Articles counted": "Articles counted",
+  "candidates not yet checked": "candidates not yet checked",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source."
  }
 }

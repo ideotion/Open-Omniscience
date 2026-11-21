@@ -114,13 +114,20 @@
         _covStamp = stamp;
         const covTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
           : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        const covT = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
         el.innerHTML =
           `<div class="stat"><div class="n">${c.covered}/${c.total_countries}</div><div class="k">countries</div></div>` +
           `<div class="stat"><div class="n">${c.coverage_pct}%</div><div class="k">coverage</div></div>` +
           `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">not covered</div></div>` +
           // A keyed frame: interpolated, the label was never a key the walker could match,
           // so it read "THIN (<3)" in every locale (2026-09-27 re-walk L-9).
-          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">${esc(covTf("thin (<{n})", {n: c.thin_threshold}))}</div></div>`;
+          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">${esc(covTf("thin (<{n})", {n: c.thin_threshold}))}</div></div>` +
+          // R773 (row 39): a country is covered by sources only; candidates nobody has checked yet are
+          // their own figure beside it, with the one line that says what a candidate is.
+          (c.candidates_not_checked != null
+            ? `<div class="stat"><div class="n">${c.candidates_not_checked}</div><div class="k">${esc(covT("candidates not yet checked"))}</div></div>` +
+              `<p class="hint" style="grid-column:1/-1;flex-basis:100%;margin:0">${esc(covT(c.candidate_line || ""))}</p>`
+            : "");
         renderCoverageRegions(c);
         COV_COUNTRIES = d.countries || [];
         COV_MISSING = (d.missing || []).map(code =>
@@ -241,7 +248,7 @@
         return (c.top_tags || []).some(([t]) => t.toLowerCase().includes(q));
       });
       const t = $("coverage-table");
-      t.innerHTML = "<tr><th>Country</th><th>Region</th><th>Sources</th><th>Enabled</th><th>Topic keywords (source tags)</th></tr>" +
+      t.innerHTML = "<tr><th>Country</th><th>Region</th><th>Sources</th><th>Candidates not yet checked</th><th>Enabled</th><th>Topic keywords (source tags)</th></tr>" +
         (rows.length ? rows.map(c => {
           // Q302's note inverts what this cell used to do: the CODE is the label
           // and the NAME rides the hover, where it used to be the other way round.
@@ -263,8 +270,9 @@
               : tf("show sources in {country}", {country: where}))}"
                 data-on-click="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, null)">${label}</strong>`;
           return `<tr><td>${codeCell}</td><td class="muted">${esc(c.region || "—")}</td><td>${c.sources}</td>
+                  <td class="muted">${c.candidates != null ? c.candidates : "—"}</td>
                   <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
-        }).join("") : `<tr><td colspan="5" class="muted">No matching countries.</td></tr>`);
+        }).join("") : `<tr><td colspan="6" class="muted">No matching countries.</td></tr>`);
       // Not-covered list (same filter, matched on name or code).
       const miss = COV_MISSING.filter(x => !q || matches(x.code, x.name));
       $("coverage-gaps").innerHTML = miss.length

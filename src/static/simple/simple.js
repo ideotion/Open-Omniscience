@@ -372,12 +372,13 @@
       <h2 id="s-status-h" class="s-sr">${t("Your corpus")}</h2>
       <div class="s-figs">
         <div class="s-fig"><b>${fmtInt(c.articles)}</b><span>${t("articles")}</span></div>
-        <div class="s-fig"><b>${fmtInt(c.sources_qualified != null ? c.sources_qualified : c.sources)}</b><span>${t("sources")}</span></div>
+        <div class="s-fig"><b>${c.sources_qualified != null ? fmtInt(c.sources_qualified) : "—"}</b><span>${t("sources")}</span></div>
         ${stale ? html`<${Mark} kind="stale"/>` : null}
         <${Details} what=${t("Your corpus")}>
           <${Row} k=${t("Counted")} v=${fmtTime(stats.as_of || stats.computed_at)}/>
           <${Row} k=${t("Where")} v=${t("On this machine only; nothing is sent anywhere.")}/>
           <${Row} k=${t("Sources waiting to be checked")} v=${fmtInt(c.sources_pending)}/>
+          ${c.candidates_not_checked != null ? html`<${Row} k=${t("candidates not yet checked")} v=${fmtInt(c.candidates_not_checked)}/>` : null}
           ${stats.cached ? html`<${Row} k=${t("Cache")} v=${t("A count from the last {s} s.", { s: stats.cache_age_s })}/>` : null}
         <//>
       </div>
@@ -790,7 +791,8 @@
     var d = r.data || {};
     var all = d.by_country || [];
     var withArt = all.filter(function (c) { return c.articles > 0; }).sort(function (a, b) { return b.articles - a.articles; });
-    var waiting = all.length - withArt.length;
+    // R773: a country "has sources" only when it has a source, never only candidates not yet checked.
+    var waiting = all.filter(function (c) { return !(c.articles > 0) && c.sources > 0; }).length;
     var max = withArt.length ? withArt[0].articles : 1;
     return html`<div class="s-view">
       <h1 class="s-h1">${t("World")}</h1>
@@ -801,6 +803,8 @@
           ${d.caveat ? html`<p class="s-caveat"><b>${t("Caveat")}</b> ${t(d.caveat)}</p>` : null}
           <${Row} k=${t("Articles")} v=${fmtInt(d.total_articles)}/>
           <${Row} k=${t("sources")} v=${fmtInt(d.total_sources)}/>
+          ${d.candidates_not_checked != null ? html`<${Row} k=${t("candidates not yet checked")} v=${fmtInt(d.candidates_not_checked)}/>` : null}
+          ${d.candidate_line ? html`<p>${t(d.candidate_line)}</p>` : null}
           <p>${t("Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.")}</p>
           ${d.unlocated && d.unlocated.sources ? html`<${Row} k=${t("Sources with no country")} v=${fmtInt(d.unlocated.sources)}/>` : null}
           ${d.computed_at ? html`<${Row} k=${t("Computed")} v=${fmtTime(d.computed_at)}/>` : null}
