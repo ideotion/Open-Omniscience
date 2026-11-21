@@ -2386,7 +2386,9 @@
         _updCheck = null;
         const code = e && e.detail && e.detail.code;
         if (msg) msg.textContent = code === "airplane" ? t("Airplane mode is on: the update check did not run.")
-          : code === "protected_no_proxy" ? t("Protected mode has no usable proxy: the update check did not run.") : t("The update check failed.");
+          : code === "protected_no_proxy" ? t("Protected mode has no usable proxy: the update check did not run.")
+          : code === "settings_unreadable" ? t("The settings could not be read, so the update check did not run: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.")
+          : t("The update check failed.");
         return;
       }
       const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";

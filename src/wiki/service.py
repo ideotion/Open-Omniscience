@@ -586,7 +586,7 @@ def lane_service_status() -> dict:
     if runner is None:
         return {"streaming": False, "draining": False, "drains": 0, "last_drain": None,
                 "stream": None, "drain": None, "walk": None, "warm": None, "index": None}
-    return {
+    return _mark_unreadable({
         "streaming": bool(runner.streaming),
         "draining": drain_alive,
         "drains": int(runner.drains),
@@ -609,4 +609,26 @@ def lane_service_status() -> dict:
         # The search indexer's in-process state; its counts are rows read by
         # ``src.wiki.lane_search.index_status``.
         "index": runner.index_status(),
-    }
+    })
+
+
+def _settings_unreadable() -> bool:
+    """True when the safety settings could not be read (R766): protected mode is then ASSUMED, never chosen."""
+    try:
+        from src.safety.settings import load_settings
+
+        st = load_settings()
+        return bool(getattr(st, "mode_unknown", False) or getattr(st, "read_failed", False))
+    except Exception:  # noqa: BLE001 - a read that raises is an unreadable read
+        return True
+
+
+def _mark_unreadable(status: dict) -> dict:
+    """Row 254 (R766): a walk or WARM pause for ``transport_unavailable`` while the settings cannot be read is marked
+    ``stored: "unreadable"`` (``transport_summary``'s mark), so no surface says "Protected mode has no usable proxy" when
+    nobody chose protected mode. What waits, and why it never goes direct, is unchanged."""
+    for key in ("walk", "warm"):
+        part = status.get(key)
+        if isinstance(part, dict) and part.get("reason") == "transport_unavailable" and _settings_unreadable():
+            status[key] = {**part, "stored": "unreadable"}
+    return status

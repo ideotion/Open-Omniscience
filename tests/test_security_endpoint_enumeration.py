@@ -1223,6 +1223,6 @@ def test_every_lane_name_takes_keyboard_focus():
 
     js = (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     line = strip_comments(function_source(js, "_laneLine"))
-    assert '<span tabindex="0" title="${esc(_laneHostTitle(lane, kind))}">' in line, (
+    assert '<span tabindex="0" title="${esc(_laneHostTitle(lane, kind, unreadable))}">' in line, (
         "a lane name in the consent popup no longer takes keyboard focus"
     )

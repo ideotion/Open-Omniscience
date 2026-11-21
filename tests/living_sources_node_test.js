@@ -420,6 +420,12 @@ const WIKI = {
     measured: false } }, t, tf);
   assert.ok(tor.facts[0].value.includes("never goes direct"),
     "a walk held by protected mode must say it waits rather than going direct");
+  // Row 254 (R766): the same pause while the settings could not be read never says protected mode was chosen.
+  assert.ok(tor.facts[0].value.includes("Protected mode has no usable proxy"));
+  const torU = R.livingWalkGroup({ walk: { enabled: true, state: "paused", reason: "transport_unavailable",
+    stored: "unreadable", measured: false } }, t, tf);
+  assert.strictEqual(torU.facts[0].value,
+    "Paused: The settings could not be read, so the walk is refused as if protected mode were on, and never goes direct.");
   // A state this build does not know is shown as sent, never mapped onto a known word.
   assert.strictEqual(R.livingWalkGroup({ walk: { enabled: true, state: "dozing" } }, t, tf).facts[0].value, "dozing");
   const WALK = {
@@ -540,6 +546,13 @@ const WIKI = {
   const tor = R.livingWarmGroup({ warm: { state: "paused", reason: "transport_unavailable", measured: false } }, t, tf);
   assert.ok(tor.facts[0].value.includes("never goes direct"),
     "a WARM tier held by protected mode must say it waits rather than going direct");
+  const torU = R.livingWarmGroup({ warm: { state: "paused", reason: "transport_unavailable", stored: "unreadable",
+    measured: false } }, t, tf);
+  assert.strictEqual(torU.facts[0].value,
+    "Paused: The settings could not be read, so the lane is refused as if protected mode were on, and never goes direct.");
+  // the mark alone, on another reason, changes nothing
+  assert.strictEqual(R.livingWarmGroup({ warm: { state: "paused", reason: "network_off", stored: "unreadable" } }, t, tf).facts[0].value,
+    "Paused: Airplane mode is on.");
   // A state or a reason this build does not know is shown as sent, never mapped.
   assert.strictEqual(R.livingWarmGroup({ warm: { state: "dozing" } }, t, tf).facts[0].value, "dozing");
   assert.strictEqual(R.livingWarmGroup({ warm: { state: "paused", reason: "a_new_token" } }, t, tf).facts[0].value,

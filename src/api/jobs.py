@@ -773,6 +773,9 @@ _WALK_WHY = {
     "transport_unavailable": "Protected mode has no usable proxy, and the walk never goes direct.",
     "storage_budget_spent": "The lane's storage budget is spent.",
 }
+#: Row 254 (R766): the same pause when the settings could not be read (``stored: "unreadable"``), the same key as
+#: ``app-living.js``'s line for it.
+_WALK_WHY_UNREADABLE = "The settings could not be read, so the walk is refused as if protected mode were on, and never goes direct."
 _WALK_ALL_WAITING = "Every edition is waiting out a refusal from the wiki."
 
 
@@ -807,6 +810,8 @@ def _wiki_walk_jobs() -> list[dict]:
         seen = None
     reason = live.get("reason")
     why = _WALK_WHY.get(reason or "")
+    if reason == "transport_unavailable" and live.get("stored") == "unreadable":
+        why = _WALK_WHY_UNREADABLE  # row 254 (R766): nobody chose protected mode; say what is true
     job: dict = {
         "id": "wiki-walk",
         "kind": "wiki-walk",
