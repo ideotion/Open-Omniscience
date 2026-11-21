@@ -1464,7 +1464,7 @@
       } finally { btn.disabled = false; }
     }
 
-    // ---- R702: rebuild at the current storage settings (main library only) ---- //
+    // ---- R702: rebuild at the current storage settings (the library, and each separate store: R702 part 2) ---- //
     // The duration estimate is the project's own measurement (R702 bench, 2026-11-14). The copy alone:
     // 7-8 s per GB with the file in the page cache and 12-13 s per GB from a cold cache (encrypted 4 KiB
     // stores of 0.53 and 3.2 GB). The whole rebuild with its check (quick_check, a row count per table on
@@ -1494,6 +1494,10 @@
       if (!st.supported) {
         box.textContent = t("There is no library file here to rebuild.");
         btn.disabled = true;
+      } else if (!st.current && running) {
+        // While any rebuild runs the settings are not read (no connection may be open as the switch begins).
+        box.textContent = t("A rebuild is running; the settings are read again once it has finished.");
+        btn.disabled = true;
       } else if (!st.current) {
         box.textContent = t("The library's settings could not be read, so a rebuild is not offered.");
         btn.disabled = true;
@@ -1516,7 +1520,18 @@
       const res = $("rebuild-result");
       if (running) {
         delete res.dataset.keep;  // a start that did go ahead replaces the refusal shown before it
-        res.textContent = job.detail_i18n ? _rbTf(t(job.detail_i18n), job.detail_vars || {}) : t("Rebuilding…");
+        const vars = Object.assign({}, job.detail_vars || {});
+        if (vars.store) vars.store = t(vars.store);  // a separate store's name, from the store registry's own label
+        res.textContent = job.detail_i18n ? _rbTf(t(job.detail_i18n), vars) : t("Rebuilding…");
+      } else if (st.last && st.last.outcome && !res.dataset.keep && st.last.store && st.last.store !== "library") {
+        // A separate store's last rebuild: named, and "the store" where the library's lines say "the library".
+        const L = st.last, lane = (st.lanes || []).find((x) => x.store === L.store);
+        const store = t((lane && lane.label) || L.store);
+        if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild of {store} finished in {secs} s. The old file was kept as {name}.", {store, secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
+        else if (L.outcome === "stopped") res.textContent = _rbTf("The last rebuild of {store} was stopped. The store is as it was.", {store});
+        else if (L.outcome === "declined") res.textContent = ooLabelText(_rbTf("The last rebuild of {store} did not start", {store}), L.reason_text || L.reason || "");
+        else if (L.outcome === "failed") res.textContent = ooLabelText(_rbTf("The last rebuild of {store} failed", {store}), L.failure || "") +
+          (L.switched ? "" : " " + t("The store is as it was."));
       } else if (st.last && st.last.outcome && !res.dataset.keep) {
         const L = st.last;
         if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild finished in {secs} s. The old file was kept as {name}.", {secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
@@ -1532,8 +1547,38 @@
         list.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
           `<button class="secondary" data-rebuild-remove="${esc(k.name)}">${esc(t("Remove"))}</button></div>`).join("")
       ) : "";
+      _rbPaintLanes(st.lanes || [], running);
       if (running && !_rebuildPoll) _rebuildPoll = setInterval(loadRebuild, 2000);
       if (!running && _rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; }
+    }
+    // R702 part 2 (row 256): one block per separate store that has a file: its settings now and after, its own Rebuild button,
+    // and the files its earlier rebuilds kept, each with a Remove button. Only a click starts a rebuild.
+    function _rbPaintLanes(lanes, running) {
+      const t = _rbT(), host = $("rebuild-lanes");
+      if (!host) return;
+      if (!lanes.length) { host.innerHTML = ""; return; }
+      host.innerHTML = `<div class="muted">${esc(t("Separate stores:"))}</div>` + lanes.map((L) => {
+        const name = t(L.label || L.store);
+        let line, can = false;
+        if (!L.supported) line = t("This store has no file to rebuild.");
+        else if (running) line = t("A rebuild is running; this store's settings are read again once it has finished.");
+        else if (!L.current) line = t("This store's settings could not be read, so a rebuild is not offered.");
+        else {
+          line = _rbTf("Now: {now}. A rebuild gives: {want}.", {now: _rbSettings(L.current), want: _rbSettings(L.target)});
+          const pf = L.preflight || {};
+          if (!L.needed) line += " " + t("This store already has the current settings; nothing to rebuild.");
+          else if (pf.sufficient === false) line += " " + _rbTf("Not enough free space: the new file needs about {need} and the drive has {free}.",
+            {need: _fmtBytes(pf.needed_bytes), free: _fmtBytes(pf.free_bytes)});
+          else if (pf.sufficient == null) line += " " + t("The free space on the store's drive could not be read, so it was not checked.");
+          can = !!L.needed && pf.sufficient !== false;
+        }
+        const kept = (L.kept_copies || []);
+        return `<div class="vr" style="flex-wrap:wrap;gap:6px"><span><strong>${esc(name)}</strong> · ${esc(line)}</span>` +
+          `<button class="danger" data-rebuild-store="${esc(L.store)}"${(can && !running) ? "" : " disabled"}>${esc(t("Rebuild…"))}</button></div>` +
+          (kept.length ? `<div class="muted">${esc(t("Files earlier rebuilds of this store kept (the store as it was before each rebuild):"))}</div>` +
+            kept.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
+              `<button class="secondary" data-rebuild-remove="${esc(k.name)}" data-rebuild-store="${esc(L.store)}">${esc(t("Remove"))}</button></div>`).join("") : "");
+      }).join("");
     }
     async function loadRebuild() {
       if (!_rebuildWired) {
@@ -1545,6 +1590,13 @@
         if (kept) kept.addEventListener("click", (ev) => {
           const x = ev.target && ev.target.closest ? ev.target.closest("button[data-rebuild-remove]") : null;
           if (x) rebuildRemoveKept(x);
+        });
+        const lanesHost = $("rebuild-lanes");
+        if (lanesHost) lanesHost.addEventListener("click", (ev) => {
+          const x = ev.target && ev.target.closest ? ev.target.closest("button[data-rebuild-store]") : null;
+          if (!x) return;
+          if (x.dataset.rebuildRemove) rebuildRemoveKept(x);
+          else rebuildStoreNow(x.dataset.rebuildStore);
         });
         const sec = document.querySelector('details[data-adv="safety"]');
         if (sec) sec.addEventListener("toggle", () => { if (sec.open) loadRebuild(); else if (_rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; } });
@@ -1579,18 +1631,50 @@
       }
       loadRebuild();
     }
+    async function rebuildStoreNow(store) {
+      const t = _rbT(), L = ((_rebuildSt && _rebuildSt.lanes) || []).find((x) => x.store === store);
+      if (!L || !L.needed) return;
+      const gb = (L.bytes_in_use || 0) / 1e9;
+      const lo = Math.max(1, Math.round(gb * REBUILD_LO_S_PER_GB)), hi = Math.max(1, Math.round(gb * REBUILD_HI_S_PER_GB));
+      const about = _rbTf("{store} holds about {size}; a rebuild typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). Collection and every other job wait while it runs. A store that is in use is not rebuilt: stop what uses it, then try again.",
+        {store: t(L.label || store), size: _fmtBytes(L.bytes_in_use || 0), lo: fmtNum(lo, 0), hi: fmtNum(hi, 0)});
+      // The same three questions as the library's, in the same order: a reflexive OK lands on the backup export, never on the rebuild.
+      let answer = null;
+      if (window.confirm(about + "\n\n" + t("Do you have a recent backup of this store? OK = yes, I have one. Cancel = I have none."))) answer = "have_backup";
+      else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
+      else if (window.confirm(t("Rebuild this store WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
+      if (!answer) return;
+      const res = $("rebuild-result");
+      delete res.dataset.keep;
+      try {
+        await api("/api/database/rebuild", {method: "POST", body: JSON.stringify({backup_answer: answer, store})});
+        res.textContent = t("Rebuilding…");
+      } catch (e) {
+        res.dataset.keep = "1";
+        res.textContent = ooLabelText(t("The rebuild did not start"), e.message);
+      }
+      loadRebuild();
+    }
     async function rebuildStop() {
       const t = _rbT();
-      try { await api("/api/jobs/rebuild-database/cancel", {method: "POST"}); toast(t("Stopping the rebuild at the next safe point. The library stays as it was."), "ok"); }
+      const lane = _rebuildSt && _rebuildSt.running_store && _rebuildSt.running_store !== "library";
+      try {
+        await api("/api/jobs/rebuild-database/cancel", {method: "POST"});
+        toast(lane ? t("Stopping the rebuild at the next safe point. The store stays as it was.")
+          : t("Stopping the rebuild at the next safe point. The library stays as it was."), "ok");
+      }
       catch (e) { toast(ooLabelText(t("Could not stop the rebuild"), e.message), "err"); }
       loadRebuild();
     }
     async function rebuildRemoveKept(btn) {
-      const t = _rbT(), name = btn.dataset.rebuildRemove;
-      if (!window.confirm(_rbTf("Remove {name}? It is the library as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name}))) return;
+      const t = _rbT(), name = btn.dataset.rebuildRemove, store = btn.dataset.rebuildStore || "library";
+      const ask = store === "library"
+        ? _rbTf("Remove {name}? It is the library as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name})
+        : _rbTf("Remove {name}? It is the store as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name});
+      if (!window.confirm(ask)) return;
       btn.disabled = true;
       try {
-        const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, confirm: true})});
+        const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, store, confirm: true})});
         toast(_rbTf("Removed. {size} freed.", {size: _fmtBytes(r.bytes || 0)}), "ok");
       } catch (e) { toast(ooLabelText(t("Could not remove the file"), e.message), "err"); btn.disabled = false; }
       loadRebuild();

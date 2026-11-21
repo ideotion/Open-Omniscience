@@ -180,7 +180,7 @@ def test_a_rebuild_gives_the_current_settings_keeps_every_row_and_keeps_the_old_
 def test_the_status_says_what_would_change_and_lists_the_kept_copy(tmp_path, monkeypatch, key_held, engine):
     live = _live(tmp_path, monkeypatch, encrypted=True)
     st = rebuild.status()
-    assert st["supported"] and st["needed"] is True and st["scope"] == "main library only"
+    assert st["supported"] and st["needed"] is True and st["store"] == "library"
     assert st["current"] == {"page_size": 4096, "auto_vacuum": 0} and st["target"] == {"page_size": 16384, "auto_vacuum": 2}
     assert st["kept_copies"] == []
     rebuild.run("no_backup_understood")
@@ -489,7 +489,7 @@ def test_the_routes_refuse_without_an_answer_and_remove_only_a_listed_name(tmp_p
     assert client.post(prefix + "/rebuild/remove-kept", json={"name": "live.db"}).status_code == 400, "no confirm, no removal"
     assert client.post(prefix + "/rebuild/remove-kept", json={"name": "live.db", "confirm": True}).status_code == 404
     assert live.exists()
-    assert client.get(prefix + "/rebuild").json()["scope"] == "main library only"
+    assert client.get(prefix + "/rebuild").json()["store"] == "library"
 
 
 def test_the_job_is_a_cancellable_writer():
