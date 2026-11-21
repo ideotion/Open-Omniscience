@@ -148,6 +148,25 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "संख्याएँ हर स्रोत की बताई भाषा पर आधारित हैं, केवल नवीनतम लेखों पर। फ़िल्टर उन लेखों को भी ढूँढता है जिनकी भाषा पाठ से पहचानी गई, इसलिए संख्या परिणामों से अलग हो सकती है।",
   "Articles counted": "गिने गए लेख",
   "candidates not yet checked": "अभी तक न जाँचे गए उम्मीदवार",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "उम्मीदवार वह साइट है जिसे ऐप ने पाया या जो उसे दी गई, पर अभी तक जाँची नहीं गई। उससे कुछ एकत्र नहीं होता और उसे स्रोत नहीं गिना जाता।"
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "उम्मीदवार वह साइट है जिसे ऐप ने पाया या जो उसे दी गई, पर अभी तक जाँची नहीं गई। उससे कुछ एकत्र नहीं होता और उसे स्रोत नहीं गिना जाता।",
+  "refused by airplane mode; no request was sent": "एयरप्लेन मोड ने मना किया; कोई अनुरोध नहीं भेजा गया",
+  "the site's robots.txt disallows it": "साइट की robots.txt इसकी अनुमति नहीं देती",
+  "the site's robots.txt could not be read, so nothing was fetched": "साइट की robots.txt पढ़ी नहीं जा सकी, इसलिए कुछ भी फ़ेच नहीं हुआ",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "पता या एक रीडायरेक्ट अस्वीकार किया गया (प्रकाशक की साइट से बाहर, या सार्वजनिक नहीं)",
+  "stopped because the network mode changed during the fetch": "रुक गया क्योंकि फ़ेच के दौरान नेटवर्क मोड बदल गया",
+  "the answer was larger than this table allows": "उत्तर इस तालिका की सीमा से बड़ा था",
+  "the publisher answered 403 (forbidden)": "प्रकाशक ने 403 (निषिद्ध) उत्तर दिया",
+  "the publisher answered 404 (not found)": "प्रकाशक ने 404 (नहीं मिला) उत्तर दिया",
+  "the publisher answered 429 (too many requests)": "प्रकाशक ने 429 (बहुत अधिक अनुरोध) उत्तर दिया",
+  "the publisher refused the request (another 4xx status)": "प्रकाशक ने अनुरोध अस्वीकार किया (कोई अन्य 4xx स्थिति)",
+  "the publisher's server failed (a 5xx status)": "प्रकाशक का सर्वर विफल रहा (5xx स्थिति)",
+  "the publisher did not answer in time": "प्रकाशक ने समय पर उत्तर नहीं दिया",
+  "no connection could be made": "कोई कनेक्शन नहीं बन सका",
+  "an answer came, but not the documented table": "एक उत्तर आया, पर दस्तावेज़ित तालिका नहीं",
+  "another error, not recognised": "कोई अन्य त्रुटि, पहचानी नहीं गई",
+  "Latest attempt failed": "पिछला प्रयास विफल",
+  "Why": "क्यों",
+  "Stored": "संग्रहीत",
+  "Nothing stored was changed: the values counted here are kept as they were.": "संग्रहीत कुछ भी नहीं बदला: यहाँ गिने गए मान जैसे थे वैसे ही रखे गए हैं।"
  }
 }

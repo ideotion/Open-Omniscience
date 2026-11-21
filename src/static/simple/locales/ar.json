@@ -148,6 +148,25 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "تعتمد الأعداد على اللغة التي يذكرها كل مصدر، ولأحدث المقالات فقط. ويجد المرشّح أيضًا مقالات اكتُشفت لغتها من نصها، لذا قد يختلف العدد عن النتائج.",
   "Articles counted": "المقالات المحسوبة",
   "candidates not yet checked": "مرشحون لم يُفحصوا بعد",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "المرشح موقع وجده التطبيق أو أُعطي له لكنه لم يفحصه بعد. لا يُجمع منه شيء ولا يُحسب مصدرًا."
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "المرشح موقع وجده التطبيق أو أُعطي له لكنه لم يفحصه بعد. لا يُجمع منه شيء ولا يُحسب مصدرًا.",
+  "refused by airplane mode; no request was sent": "رفضها وضع الطيران؛ لم يُرسَل أي طلب",
+  "the site's robots.txt disallows it": "ملف robots.txt للموقع يمنع ذلك",
+  "the site's robots.txt could not be read, so nothing was fetched": "تعذّرت قراءة ملف robots.txt للموقع، لذلك لم يُجلب شيء",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "رُفض العنوان أو إعادة توجيه (خارج موقع الناشر، أو غير عام)",
+  "stopped because the network mode changed during the fetch": "توقّف لأن وضع الشبكة تغيّر أثناء الجلب",
+  "the answer was larger than this table allows": "كانت الإجابة أكبر مما يسمح به هذا الجدول",
+  "the publisher answered 403 (forbidden)": "أجاب الناشر بالرمز 403 (ممنوع)",
+  "the publisher answered 404 (not found)": "أجاب الناشر بالرمز 404 (غير موجود)",
+  "the publisher answered 429 (too many requests)": "أجاب الناشر بالرمز 429 (طلبات كثيرة جدًا)",
+  "the publisher refused the request (another 4xx status)": "رفض الناشر الطلب (حالة 4xx أخرى)",
+  "the publisher's server failed (a 5xx status)": "فشل خادم الناشر (حالة 5xx)",
+  "the publisher did not answer in time": "لم يُجب الناشر في الوقت المحدد",
+  "no connection could be made": "تعذّر إنشاء أي اتصال",
+  "an answer came, but not the documented table": "وصلت إجابة، لكنها ليست الجدول الموثَّق",
+  "another error, not recognised": "خطأ آخر غير معروف",
+  "Latest attempt failed": "فشلت المحاولة الأخيرة",
+  "Why": "السبب",
+  "Stored": "المخزَّن",
+  "Nothing stored was changed: the values counted here are kept as they were.": "لم يتغيّر شيء مما هو مخزَّن: القيم المعدودة هنا محفوظة كما كانت."
  }
 }

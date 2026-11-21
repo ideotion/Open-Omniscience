@@ -115,6 +115,11 @@ sits beside "Last fetched" as "Last failed attempt" (its date and the reason in 
 which stays shown with its values. A kill-switch refusal reads as airplane mode. A visible caveat line says that the failed
 attempt changed nothing stored, or that nothing is stored yet. 19 strings, 12 languages. Pinned by `tests/climate_node_test.js`.
 
+**Progress 2026-11-21 (row 280, R696): the simple view's Climate list marks it too; the row stays OPEN.** A dataset whose latest
+attempt failed keeps its "Fetched" date and gains the stale mark (◷); its ⓘ gives the failed attempt's time and the reason in
+the full view's own words (airplane mode named), and says nothing stored changed. 19 strings, 12 languages. Pinned by
+`tests/simple_climate_node_test.js` and `tests/test_simple_climate_row280.py`.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if

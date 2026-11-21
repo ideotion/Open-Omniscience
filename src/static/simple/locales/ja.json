@@ -148,6 +148,25 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "件数は各情報源が示す言語にもとづき、最新の記事のみを対象にしています。フィルターは本文から言語を検出した記事も見つけるため、件数と結果が異なることがあります。",
   "Articles counted": "数えた記事",
   "candidates not yet checked": "未確認の候補",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "候補とは、アプリが見つけたか受け取ったものの、まだ確認していないサイトです。収集は行われず、ソースとしても数えません。"
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "候補とは、アプリが見つけたか受け取ったものの、まだ確認していないサイトです。収集は行われず、ソースとしても数えません。",
+  "refused by airplane mode; no request was sent": "機内モードにより拒否されました。リクエストは送信されていません",
+  "the site's robots.txt disallows it": "サイトの robots.txt が禁止しています",
+  "the site's robots.txt could not be read, so nothing was fetched": "サイトの robots.txt を読めなかったため、何も取得していません",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "アドレスまたはリダイレクトが拒否されました（発行元のサイト外、または非公開）",
+  "stopped because the network mode changed during the fetch": "取得中にネットワークモードが変わったため停止しました",
+  "the answer was larger than this table allows": "応答がこの表で許される大きさを超えていました",
+  "the publisher answered 403 (forbidden)": "発行元が 403（禁止）と応答しました",
+  "the publisher answered 404 (not found)": "発行元が 404（見つかりません）と応答しました",
+  "the publisher answered 429 (too many requests)": "発行元が 429（リクエスト過多）と応答しました",
+  "the publisher refused the request (another 4xx status)": "発行元がリクエストを拒否しました（その他の 4xx ステータス）",
+  "the publisher's server failed (a 5xx status)": "発行元のサーバーで障害が発生しました（5xx ステータス）",
+  "the publisher did not answer in time": "発行元が時間内に応答しませんでした",
+  "no connection could be made": "接続できませんでした",
+  "an answer came, but not the documented table": "応答はありましたが、文書化された表ではありませんでした",
+  "another error, not recognised": "その他の認識できないエラー",
+  "Latest attempt failed": "直近の試行は失敗",
+  "Why": "理由",
+  "Stored": "保存済み",
+  "Nothing stored was changed: the values counted here are kept as they were.": "保存済みのものは何も変わっていません。ここで数えた値はそのまま保持されています。"
  }
 }

@@ -148,6 +148,25 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Числа основаны на языке, который указывает каждый источник, и только по самым новым статьям. Фильтр находит и статьи, язык которых определён по тексту, поэтому число может отличаться от результатов.",
   "Articles counted": "Учтено статей",
   "candidates not yet checked": "кандидаты, ещё не проверенные",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Кандидат — это сайт, который приложение нашло или получило, но ещё не проверило. С него ничего не собирается, и он не считается источником."
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Кандидат — это сайт, который приложение нашло или получило, но ещё не проверило. С него ничего не собирается, и он не считается источником.",
+  "refused by airplane mode; no request was sent": "отклонено режимом «в самолёте»; запрос не отправлялся",
+  "the site's robots.txt disallows it": "robots.txt сайта это запрещает",
+  "the site's robots.txt could not be read, so nothing was fetched": "не удалось прочитать robots.txt сайта, поэтому ничего не загружено",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "адрес или перенаправление отклонены (вне сайта издателя или не публичный адрес)",
+  "stopped because the network mode changed during the fetch": "остановлено, потому что сетевой режим изменился во время загрузки",
+  "the answer was larger than this table allows": "ответ оказался больше, чем допускает эта таблица",
+  "the publisher answered 403 (forbidden)": "издатель ответил 403 (запрещено)",
+  "the publisher answered 404 (not found)": "издатель ответил 404 (не найдено)",
+  "the publisher answered 429 (too many requests)": "издатель ответил 429 (слишком много запросов)",
+  "the publisher refused the request (another 4xx status)": "издатель отклонил запрос (другой статус 4xx)",
+  "the publisher's server failed (a 5xx status)": "сбой сервера издателя (статус 5xx)",
+  "the publisher did not answer in time": "издатель не ответил вовремя",
+  "no connection could be made": "не удалось установить соединение",
+  "an answer came, but not the documented table": "ответ пришёл, но не документированная таблица",
+  "another error, not recognised": "другая ошибка, не распознана",
+  "Latest attempt failed": "Последняя попытка не удалась",
+  "Why": "Почему",
+  "Stored": "Сохранено",
+  "Nothing stored was changed: the values counted here are kept as they were.": "Ничего из сохранённого не изменилось: учтённые здесь значения остаются прежними."
  }
 }

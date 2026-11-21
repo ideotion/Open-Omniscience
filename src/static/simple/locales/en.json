@@ -148,6 +148,25 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.",
   "Articles counted": "Articles counted",
   "candidates not yet checked": "candidates not yet checked",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source."
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.",
+  "refused by airplane mode; no request was sent": "refused by airplane mode; no request was sent",
+  "the site's robots.txt disallows it": "the site's robots.txt disallows it",
+  "the site's robots.txt could not be read, so nothing was fetched": "the site's robots.txt could not be read, so nothing was fetched",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "the address or a redirect was refused (off the publisher's site, or not public)",
+  "stopped because the network mode changed during the fetch": "stopped because the network mode changed during the fetch",
+  "the answer was larger than this table allows": "the answer was larger than this table allows",
+  "the publisher answered 403 (forbidden)": "the publisher answered 403 (forbidden)",
+  "the publisher answered 404 (not found)": "the publisher answered 404 (not found)",
+  "the publisher answered 429 (too many requests)": "the publisher answered 429 (too many requests)",
+  "the publisher refused the request (another 4xx status)": "the publisher refused the request (another 4xx status)",
+  "the publisher's server failed (a 5xx status)": "the publisher's server failed (a 5xx status)",
+  "the publisher did not answer in time": "the publisher did not answer in time",
+  "no connection could be made": "no connection could be made",
+  "an answer came, but not the documented table": "an answer came, but not the documented table",
+  "another error, not recognised": "another error, not recognised",
+  "Latest attempt failed": "Latest attempt failed",
+  "Why": "Why",
+  "Stored": "Stored",
+  "Nothing stored was changed: the values counted here are kept as they were.": "Nothing stored was changed: the values counted here are kept as they were."
  }
 }

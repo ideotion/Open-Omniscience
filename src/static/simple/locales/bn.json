@@ -148,6 +148,25 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "সংখ্যাগুলো প্রতিটি উৎসের ঘোষিত ভাষা ধরে, শুধু সাম্প্রতিক নিবন্ধগুলোর ওপর। ফিল্টারটি লেখা থেকে শনাক্ত ভাষার নিবন্ধও খুঁজে পায়, তাই সংখ্যা ফলাফলের থেকে আলাদা হতে পারে।",
   "Articles counted": "গণনা করা নিবন্ধ",
   "candidates not yet checked": "এখনও যাচাই না করা প্রার্থী",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "প্রার্থী হলো এমন একটি সাইট যা অ্যাপ খুঁজে পেয়েছে বা পেয়েছে, কিন্তু এখনও যাচাই করেনি। এটি থেকে কিছু সংগ্রহ করা হয় না এবং এটিকে উৎস হিসেবে গণনা করা হয় না।"
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "প্রার্থী হলো এমন একটি সাইট যা অ্যাপ খুঁজে পেয়েছে বা পেয়েছে, কিন্তু এখনও যাচাই করেনি। এটি থেকে কিছু সংগ্রহ করা হয় না এবং এটিকে উৎস হিসেবে গণনা করা হয় না।",
+  "refused by airplane mode; no request was sent": "এয়ারপ্লেন মোড প্রত্যাখ্যান করেছে; কোনো অনুরোধ পাঠানো হয়নি",
+  "the site's robots.txt disallows it": "সাইটের robots.txt এটি নিষেধ করে",
+  "the site's robots.txt could not be read, so nothing was fetched": "সাইটের robots.txt পড়া যায়নি, তাই কিছুই আনা হয়নি",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "ঠিকানা বা একটি রিডাইরেক্ট প্রত্যাখ্যাত হয়েছে (প্রকাশকের সাইটের বাইরে, বা সর্বজনীন নয়)",
+  "stopped because the network mode changed during the fetch": "আনয়নের সময় নেটওয়ার্ক মোড বদলে যাওয়ায় থেমে গেছে",
+  "the answer was larger than this table allows": "উত্তরটি এই সারণির অনুমোদিত আকারের চেয়ে বড় ছিল",
+  "the publisher answered 403 (forbidden)": "প্রকাশক 403 (নিষিদ্ধ) উত্তর দিয়েছে",
+  "the publisher answered 404 (not found)": "প্রকাশক 404 (পাওয়া যায়নি) উত্তর দিয়েছে",
+  "the publisher answered 429 (too many requests)": "প্রকাশক 429 (অতিরিক্ত অনুরোধ) উত্তর দিয়েছে",
+  "the publisher refused the request (another 4xx status)": "প্রকাশক অনুরোধ প্রত্যাখ্যান করেছে (অন্য একটি 4xx অবস্থা)",
+  "the publisher's server failed (a 5xx status)": "প্রকাশকের সার্ভার ব্যর্থ হয়েছে (একটি 5xx অবস্থা)",
+  "the publisher did not answer in time": "প্রকাশক সময়মতো উত্তর দেয়নি",
+  "no connection could be made": "কোনো সংযোগ স্থাপন করা যায়নি",
+  "an answer came, but not the documented table": "একটি উত্তর এসেছে, কিন্তু নথিভুক্ত সারণি নয়",
+  "another error, not recognised": "অন্য একটি ত্রুটি, চেনা যায়নি",
+  "Latest attempt failed": "শেষ প্রচেষ্টা ব্যর্থ",
+  "Why": "কেন",
+  "Stored": "সংরক্ষিত",
+  "Nothing stored was changed: the values counted here are kept as they were.": "সংরক্ষিত কিছুই বদলায়নি: এখানে গোনা মানগুলি যেমন ছিল তেমনই রাখা আছে।"
  }
 }
