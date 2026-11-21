@@ -25,7 +25,7 @@
         if (!panel || !list) return;
         if (!r.count) { panel.style.display = "none"; return; }
         panel.style.display = "";
-        list.innerHTML = "<table><tr><th>Domain</th><th>Channel</th><th>Evidence</th><th>First seen</th><th></th></tr>" +
+        list.innerHTML = "<table><tr><th>Domain</th><th>Channel</th><th>Evidence</th><th>First seen</th><th><span class='sr-only'>Actions</span></th></tr>" +
           r.candidates.map(c => {
             const ev = c.channel === "citation"
               ? `cited by ${esc(c.evidence.distinct_citing_articles)} of your articles`

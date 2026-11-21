@@ -995,7 +995,7 @@ def drill_reader(driver: PlaywrightUiWalkDriver, report: Report, shots: Path) ->
         return article_id
     # -- the two-class provenance groups (the informed-consent headings) ---------------- --- #
     groups = driver.page.evaluate(
-        "() => Array.from(document.querySelectorAll('.mgrp h3')).map(h => h.textContent.trim())"
+        "() => Array.from(document.querySelectorAll('.mgrp > h2')).map(h => h.textContent.trim())"
     )
     has_source = any("From the source" in g for g in groups)
     has_deduced = any("Deduced by this app" in g for g in groups)
