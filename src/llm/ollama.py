@@ -816,17 +816,38 @@ class OllamaClient:
             raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
         self._check_kill_switch(clearnet=True)
         # R763: the Ollama daemon downloads the weights itself, outside the proxy protected mode routes this app through
-        from src.llm.install_transport import refuse_if_protected
+        from src.llm.install_transport import (
+            AI_INSTALL_STOPPED_NOTE,
+            pull_ended,
+            pull_started,
+            refuse_if_protected,
+            stop_generation,
+            stopped_since,
+        )
 
-        refuse_if_protected(LLMUnavailable)
+        pull_started()  # R765: counted before anything else, so a stop from here on names this pull
+        try:
+            generation = stop_generation()  # read BEFORE the check, so a switch between the two still stops the pull (R765)
+            refuse_if_protected(LLMUnavailable)
+            yield from self._pull_stream(model, generation, stopped_since, AI_INSTALL_STOPPED_NOTE)
+        finally:
+            pull_ended()
+
+    def _pull_stream(self, model: str, generation: int, stopped_since, stopped_note: str):
         import json as _json
 
+        if stopped_since(generation):  # the switch landed after the check: no request is sent
+            raise LLMUnavailable(stopped_note)
         try:
             with self._client.stream(
                 "POST", "/api/pull", json={"model": model, "stream": True}
             ) as resp:
                 resp.raise_for_status()
                 for line in resp.iter_lines():
+                    # R765: protected mode was switched on during the pull. Leaving the stream closes the request, which is what
+                    # stops the daemon's download; the daemon keeps no unfinished model as installed.
+                    if stopped_since(generation):
+                        raise LLMUnavailable(stopped_note)
                     if not line:
                         continue
                     try:
