@@ -144,8 +144,8 @@ def test_windows_runs_nightly_on_main_and_on_request_in_six_non_required_shards(
     assert windows["type"] == "boolean" and windows["default"] is False, "a plain dispatch (every PR line) must not start the Windows legs"
     assert job["runs-on"] == "windows-latest" and job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4, 5, 6]
     assert job["timeout-minutes"] == 120 and job["continue-on-error"] is True  # row 238: 90 until shard 1 measured 70.6 to over 90 minutes
-    plan = [s["run"] for s in job["steps"] if "ci_shard.py plan" in str(s.get("run") or "")]
-    assert plan == ["python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/6 --out shard.args"], plan
+    plan = [s["run"] for s in job["steps"] if "plan --shard" in str(s.get("run") or "")]
+    assert plan == ["python scripts/ci_shard.py --table configs/ci_shard_costs_windows.json plan --shard ${{ matrix.shard }}/6 --out shard.args"], plan
     assert "macos-latest" not in str(job) and "windows-latest" not in str(workflow["jobs"]["portability"]["strategy"])
 
 
