@@ -47,9 +47,10 @@ def _host(url: str) -> str:
 
 def _is_loopback_literal(host: str) -> bool:
     try:
-        return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+        ip = ipaddress.ip_address(host)  # a %zone is taken by ipaddress for IPv6 only; "127.0.0.1%x" is a name
     except ValueError:
         return False
+    return ip.is_loopback
 
 
 def is_loopback_url(url: str) -> bool:

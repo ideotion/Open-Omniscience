@@ -53,9 +53,10 @@ def loopback_only() -> Iterator[None]:
 
 def _literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
-        return ipaddress.ip_address(host.strip("[]").split("%", 1)[0])
+        ip = ipaddress.ip_address(host)  # never stripped: "[127.0.0.1]" or "127.0.0.1%x" is a NAME to the resolver
     except ValueError:
         return None
+    return ip
 
 
 def check_loopback_connect(address: object, *, name_allowed: bool = False) -> None:
@@ -82,4 +83,24 @@ def check_loopback_connect(address: object, *, name_allowed: bool = False) -> No
     raise LoopbackConnectRefused(
         f"refusing to connect to {host!r}: the local LLM only talks to this computer, and this address is not on it"
         + (" (the name localhost answered with it)" if ip is not None else "")
+    )
+
+
+def check_loopback_lookup(host: object) -> None:
+    """Refuse, inside :func:`loopback_only`, a name lookup of anything but ``localhost`` or a loopback literal.
+
+    The connect check alone would still let a lookup of another name leave the machine as a DNS query before the
+    connect is refused; inside the scope nothing but this computer is ever looked up. Fail closed, as above."""
+    if _depth() <= 0:
+        return
+    if isinstance(host, bytes):
+        host = host.decode("ascii", "replace")
+    if isinstance(host, str):
+        if host.lower() == LOOPBACK_NAME:
+            return
+        ip = _literal(host)
+        if ip is not None and ip.is_loopback:
+            return
+    raise LoopbackConnectRefused(
+        f"refusing to look up {host!r}: the local LLM only talks to this computer, and this name is not it"
     )

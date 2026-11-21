@@ -47,6 +47,11 @@ def _online():
 def network_calls(monkeypatch):
     """Every resolution and connect, recorded; a remote one is refused here so a regression cannot egress."""
     calls: list[tuple[str, object]] = []
+    # The probe enters the loopback-only scope (R767), which installs the socket patch layer: install it FIRST, so the
+    # recorder below sits on top of it instead of being overwritten by it.
+    from src.ingest.airplane import ensure_loopback_guard_installed
+
+    ensure_loopback_guard_installed()
     real_connect_ex = socket.socket.connect_ex
     real_connect = socket.socket.connect
     real_getaddrinfo = socket.getaddrinfo

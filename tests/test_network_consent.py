@@ -210,10 +210,6 @@ _ALLOWED_SOCKET_IMPORTERS: dict[str, str] = {
         "127.0.0.1 on the app's own port, never read from argv or the environment; "
         "it POSTs only scheduler/stop (toward offline) and system/shutdown, never a "
         "move online (R601). Pinned by tests/test_terminal_panel.py",
-    "src/llm/vllm_lifecycle.py":
-        "a port probe (connect_ex) against the CONFIGURED vLLM URL, defaulting to "
-        "127.0.0.1. A remote URL would egress here, which the airplane socket guard "
-        "refuses while offline -- listed so that is a known property, not a surprise",
 }
 
 

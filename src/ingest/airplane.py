@@ -115,7 +115,7 @@ from typing import Any, cast
 
 from src.ingest import dns_stale, kill_switch_active
 from src.ingest.egress_window import any_window_open, socket_exempt_here
-from src.ingest.loopback_scope import check_loopback_connect
+from src.ingest.loopback_scope import check_loopback_connect, check_loopback_lookup
 from src.ingest.ssrf_guard import (
     check_connect_target,
     check_resolution,
@@ -350,6 +350,7 @@ def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     if _is_local_host(host) and not _lookup_exempt(host):
         _guard(_ALIAS_LOOKUP_TARGET)
     _guard(host)
+    check_loopback_lookup(host)  # R767: inside the local AI's scope, nothing but this computer is looked up
     with native_call("dns"):
         if _airplane_armed and kill_switch_active() and _is_localhost_name(host):
             infos = _localhost_in_process(args, kwargs)

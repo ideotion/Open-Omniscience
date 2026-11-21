@@ -93,7 +93,8 @@ def test_the_check_is_inert_outside_the_scope():
 
 
 @pytest.mark.parametrize("address", [(PUBLIC, 80), ("10.0.0.1", 80), ("::ffff:203.0.113.7", 80, 0, 0), ("example.com", 80),
-                                     ("localhost", 80), ("ip6-localhost", 80), (None, 80), 12345])
+                                     ("localhost", 80), ("ip6-localhost", 80), (None, 80), 12345,
+                                     ("127.0.0.1%evil.example", 80), ("[127.0.0.1]", 80)])
 def test_inside_the_scope_only_a_loopback_address_passes(address):
     with loopback_only():
         assert in_scope()
@@ -102,6 +103,26 @@ def test_inside_the_scope_only_a_loopback_address_passes(address):
         check_loopback_connect(("127.0.0.1", 80))
         check_loopback_connect(("::1", 80, 0, 0))
     assert not in_scope()
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1%25evil.example:11434", "http://[127.0.0.1]:8000"])
+def test_a_literal_with_a_suffix_is_a_name_not_a_literal(url):
+    assert not L.is_loopback_url(url)
+
+
+def test_inside_the_scope_nothing_but_this_computer_is_looked_up(monkeypatch):
+    asked: list[object] = []
+    real = ap._orig_getaddrinfo
+    ap.ensure_loopback_guard_installed()
+    monkeypatch.setattr(ap, "_orig_getaddrinfo", lambda host, *a, **k: asked.append(host) or real(host, *a, **k))
+    with loopback_only():
+        for name in ("example.com", "localhost.localdomain", PUBLIC, "127.0.0.1%x"):
+            with pytest.raises(LoopbackConnectRefused):
+                socket.getaddrinfo(name, 80)
+        socket.getaddrinfo("localhost", 80)
+        socket.getaddrinfo("127.0.0.1", 80)
+    assert asked == ["localhost", "127.0.0.1"], "a refused name never reached the resolver"
+    socket.getaddrinfo("127.0.0.1", 80)  # outside the scope: unchanged
 
 
 def test_localhost_by_name_passes_only_where_its_answers_are_checked_next():
