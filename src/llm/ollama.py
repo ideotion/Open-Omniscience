@@ -828,6 +828,10 @@ class OllamaClient:
         if is_cloud_name(model):
             raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
         self._check_kill_switch(clearnet=True)
+        # R763: the Ollama daemon downloads the weights itself, outside the proxy protected mode routes this app through
+        from src.llm.install_transport import refuse_if_protected
+
+        refuse_if_protected(LLMUnavailable)
         import json as _json
 
         try:

@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-20,llm/install,AI install refuses protected mode; proxy dialog every time (R763),shipped,PR #2194,src/llm/install_transport.py; src/api/llm.py; src/static/app-core.js; tests/test_ai_install_protected_mode.py,"The AI install's spawned steps (Ollama script, pip/uv vLLM, HF snapshot, Ollama daemon pull) refuse protected mode by the update's own rule, seven routes answer 409 first, and the dialog naming the proxy shows before every install step, online or not (row 226)."

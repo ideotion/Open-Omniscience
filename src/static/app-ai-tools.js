@@ -1333,9 +1333,10 @@
         (modelStep && modelStep.caveats.length ? "\n\n" + modelStep.caveats.join("\n") : "")
       );
       if (!ok) return;
-      // ONE egress window for the WHOLE chain, taken here so the per-step calls
-      // below find it already open and never ask again. The collector is not
-      // started: this allows the install to reach the network, nothing else.
+      // ONE dialog for the WHOLE chain, shown here; the per-step calls below pass
+      // alreadyAsked and do not ask again while the network it allowed is still in
+      // place. The collector is not started: this allows the install to reach the
+      // network, nothing else.
       if (!await ensureAiEgress(t("Set up local AI (downloads several GB over the clear internet)"))) return;
       const status = $("ai-setup-status");
       const say = (msg) => { if (status) status.textContent = msg; };
@@ -1377,7 +1378,7 @@
             // Ends in the "Install Ollama" box below: elevation is explicit and
             // may need a password this app must never pretend to have.
             say(t("Continue in the Install Ollama box below."));
-            await prepareOllamaInstall();
+            await prepareOllamaInstall({alreadyAsked: true});
             return;
           } else if (step.id === "model") {
             // The chain already took ONE consent covering this download, so the

@@ -391,7 +391,14 @@ def egress_window_status() -> dict:
     from src.ingest import egress_window as ew
 
     ew.reap_idle()
-    return ew.status(with_collector=True)
+    return ew.status(with_collector=True) | {"ai_install_blocked": _ai_install_blocked()}
+
+
+def _ai_install_blocked() -> str | None:
+    """R763: ``"protected"`` when the AI install refuses protected mode, so the dialog refuses before it asks, as the update does."""
+    from src.llm.install_transport import ai_install_protected
+
+    return "protected" if ai_install_protected() else None
 
 
 @router.post("/egress-window")
