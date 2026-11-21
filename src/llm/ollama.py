@@ -570,7 +570,10 @@ class OllamaClient:
             _require_loopback(self.base_url)
         # ``connect_timeout`` caps the connect alone (the liveness probe's, row 141); the reply keeps the whole ``timeout``.
         limits = timeout if connect_timeout is None else httpx.Timeout(timeout, connect=min(timeout, connect_timeout))
-        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits)
+        # trust_env=False (R770): the daemon is on this computer, so the connection is always direct. With trust_env left on,
+        # httpx routes even http://127.0.0.1 through HTTP_PROXY / ALL_PROXY when NO_PROXY does not name it, and prompts and
+        # article text would reach that proxy.
+        self._client = client or httpx.Client(base_url=self.base_url, timeout=limits, trust_env=False)
 
     # -- network kill switch ----------------------------------------------- #
 

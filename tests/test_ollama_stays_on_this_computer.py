@@ -268,3 +268,28 @@ def test_stop_and_release_name_the_refusal(monkeypatch, fake_ollama, network_cal
     rel = ollama_release()
     assert rel["attempted"] is False and "must be loopback" in rel["reason"] and not rel.get("deferred")
     assert network_calls == []
+
+
+def test_with_no_binary_the_address_is_still_the_reason_given(monkeypatch, tmp_path, network_calls):
+    """Second security read of row 234: release_vram and the bench's wake named "not installed" before the refusal."""
+    from src.ai_layer import model_bench
+
+    monkeypatch.setenv("PATH", str(tmp_path))  # no ollama binary anywhere
+    monkeypatch.delenv("OO_LLM_AUTOSTART", raising=False)
+    _remote(monkeypatch, REMOTE_URLS[0])
+    out = life.release_vram()
+    assert out["attempted"] is False and "must be loopback" in out["reason"]
+    woke = model_bench._default_wake("ollama")
+    assert woke["woken"] is False and "must be loopback" in woke["reason"]
+    assert network_calls == []
+
+
+def test_the_gpu_handover_refuses_without_a_start_too(monkeypatch, spawned):
+    from src.llm import arbitration
+
+    released: list[str] = []
+    monkeypatch.setattr(arbitration, "release_backend", lambda b: released.append(b) or {"backend": b})
+    monkeypatch.setattr(arbitration, "free_vram_mb", lambda: None)
+    _remote(monkeypatch, REMOTE_URLS[0])
+    out = arbitration.hand_gpu_to("ollama", start=False)
+    assert released == [] and out["ready"] is False and "must be loopback" in out["reason"]
