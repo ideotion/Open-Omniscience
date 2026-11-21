@@ -68,6 +68,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/database/encrypt_tool.py": (1, "WAL"),
     "src/database/fts_reindex.py": (2, "WAL"),
     "src/database/maintenance.py": (1, "WAL"),
+    "src/database/rebuild.py": (1, "WAL"),  # row 256: a lane's switch moves the rebuilt copy over the lane file (the library's goes through merge.swap_in_corpus)
     "src/database/repair.py": (6, "WAL"),
     "src/entities/gazetteer_build.py": (1, "Plan J"),
     "src/events/feeds.py": (4, "Plan J"),  # the third and fourth: R397 (b) moves a damaged store to .damaged (where a drive has no hard links) and gives back a file that replaced it

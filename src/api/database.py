@@ -643,10 +643,11 @@ def vacuum() -> dict:
 @router.get("/rebuild")
 def rebuild_status() -> dict:
     """R702: the library's storage settings now and the ones a rebuild gives it, whether a rebuild would change anything, the
-    free-space check, the files earlier rebuilds kept (name, size, date) and the last rebuild's report. Main library only."""
+    free-space check, the files earlier rebuilds kept (name, size, date) and the last rebuild's report; ``lanes`` gives the same for
+    every separate store that has a file (R702 part 2, row 256)."""
     from src.database import rebuild
 
-    return rebuild.status()
+    return rebuild.status_all()
 
 
 @router.post("/rebuild")
@@ -654,19 +655,24 @@ def rebuild_start(body: dict) -> dict:
     """R702: start the rebuild at the current settings. ``backup_answer`` is required (``have_backup`` or
     ``no_backup_understood``): the page asks "back up first?" and the server does not start without the answer. Refuses with 409
     while anything else runs (a backup download included, named), 507 when the drive is too small (the numbers in the text), and
-    400 without an answer; the job re-checks every one of them before it copies."""
+    400 without an answer; the job re-checks every one of them before it copies. ``store`` (default ``library``) names a separate
+    store by its kind (R702 part 2, row 256); an unknown one is refused with 400 and never echoed. This route is the only way a
+    rebuild starts: nothing schedules one and nothing starts one at boot."""
     from src.database import rebuild
 
     answer = str((body or {}).get("backup_answer") or "")
     if answer not in rebuild.BACKUP_ANSWERS:
         raise HTTPException(status_code=400, detail="say whether you made a backup first (backup_answer)")
+    store = (body or {}).get("store") or rebuild.LIBRARY
+    if not isinstance(store, str) or store not in rebuild.stores():
+        raise HTTPException(status_code=400, detail="that is not a store this app keeps")
     # Under the backup slot's lock, which the download's claim also takes and which refuses while a rebuild runs: a snapshot and a
     # rebuild never overlap (the rebuild swaps the file a snapshot is reading).
     with _BACKUP_LOCK:
         if _backup_flight is not None:
             raise HTTPException(status_code=409, detail="the rebuild waits until the backup download in progress has finished")
         try:
-            return rebuild.start(answer)
+            return rebuild.start(answer, store)
         except rebuild.NoRoom as refusal:
             raise HTTPException(status_code=507, detail=http_detail(refusal)) from None
         except rebuild.Declined as refusal:
@@ -677,6 +683,8 @@ def rebuild_start(body: dict) -> dict:
 
 class RemoveKeptBody(BaseModel):
     name: str = ""
+    #: Which store's kept file (R702 part 2): ``library`` or a lane kind.
+    store: str = "library"
     #: The page asks before it removes (the kept file is the library as it was, recoverable only from a backup once gone).
     confirm: bool = False
 
@@ -689,8 +697,10 @@ def rebuild_remove_kept(body: RemoveKeptBody) -> dict:
 
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirm the removal (confirm: true)")
+    if body.store not in rebuild.stores():
+        raise HTTPException(status_code=400, detail="that is not a store this app keeps")
     try:
-        return rebuild.remove_kept_copy(body.name)
+        return rebuild.remove_kept_copy(body.name, body.store)
     except rebuild.Running as refusal:
         raise HTTPException(status_code=409, detail=http_detail(refusal)) from None
     except rebuild.Declined as refusal:
