@@ -264,7 +264,7 @@ def view(w: float, s: float, e: float, n: float) -> dict[str, Any]:
         _ensure(ses)
         # Every map states the date of the OpenStreetMap data it draws (0.6 gate, row 259): the
         # street layer always did; the object and cluster layers drew undated.
-        out["vintage"] = _vintage(_countries_in_box(ses, w, s, e, n))
+        out["vintage"] = _vintage(_countries_in_box(ses, out["bbox"]))
         few: int = ses.execute(
             text(f"SELECT count(*) FROM (SELECT 1 FROM osm_rtree WHERE {hit} LIMIT :cap)"),  # nosec B608 # hit is a constant clause; values are bound
             {**p, "cap": POINTS_PER_VIEW + 1},
@@ -397,8 +397,8 @@ def _vintage(rows: list[Any]) -> list[dict[str, Any]]:
     } for c in rows]
 
 
-def _countries_in_box(ses: Any, w: float, s: float, e: float, n: float) -> list[Any]:
-    """The lane's countries whose data can be in the box: their border's box meets it.
+def _countries_in_box(ses: Any, view_box: list[float]) -> list[Any]:
+    """The lane's countries whose data can be in ``view_box`` (west, south, east, north): their border's box meets it.
 
     Read from the country rows (a handful), never from the objects, so the cluster view that
     reads no object still names its data's date. A row whose border box is not recorded (a cut
@@ -408,6 +408,7 @@ def _countries_in_box(ses: Any, w: float, s: float, e: float, n: float) -> list[
     """
     from src.osm.lane_models import OsmCountry
 
+    west, south, east, north = view_box
     out = []
     for c in ses.query(OsmCountry).order_by(OsmCountry.alpha3):
         try:
@@ -416,7 +417,7 @@ def _countries_in_box(ses: Any, w: float, s: float, e: float, n: float) -> list[
             box = None
         if isinstance(box, list) and len(box) == 4:
             min_lat, min_lon, max_lat, max_lon = (float(x) for x in box)   # Border.bbox's order
-            if max_lon < w or min_lon > e or max_lat < s or min_lat > n:
+            if max_lon < west or min_lon > east or max_lat < south or min_lat > north:
                 continue
         out.append(c)
     return out
