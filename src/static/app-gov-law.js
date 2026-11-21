@@ -1074,18 +1074,25 @@
       // A deferral (R406, Q1013 = a) is neither a warning nor a success: the host's own Crawl-delay put the check off.
       deferred: "",
     };
-    function lawVerdictBadge(x) {
+    // Row 283 (row 72's unowned part): the ONE verdict-to-words table, read by the badge AND by "Add & track". A robots
+    // refusal is named as the site's rule ("blocked by the site's robots.txt") or our fail-closed refusal ("robots.txt not
+    // readable"), never as a fetch error, a failure or an empty document: nothing was requested, so nothing failed.
+    function lawVerdictLabel(verdict) {
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const labels = {
-        never_checked: tr("not checked yet"), robots_blocked: tr("robots-blocked"),
+        never_checked: tr("not checked yet"), robots_blocked: tr("blocked by the site's robots.txt"),
         // robots.txt could not be read, so the fetch was refused (fail-closed): not the host's rule.
         robots_unread: tr("robots.txt not readable"),
         error: tr("fetch error"), empty: tr("no usable text"), changed: tr("changed"),
         reverted: tr("reverted"), baselined: tr("baselined"), unchanged: tr("unchanged"),
         other: tr("other"), re_extracted: tr("re-read by us"), deferred: tr("deferred"),
       };
+      return labels[verdict] || verdict;
+    }
+    function lawVerdictBadge(x) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const cls = _LAW_VERDICT_PILL[x.verdict] || "";
-      const label = labels[x.verdict] || x.verdict;
+      const label = lawVerdictLabel(x.verdict);
       const hover = x.last_status ? esc(x.last_status) : tr("Never fetched yet.");
       return `<span class="pill ${cls}" title="${hover}">${esc(label)}</span>`;
     }
@@ -1133,7 +1140,9 @@
           method: "POST",
           body: JSON.stringify({ jurisdiction, title, url, official_url }),
         });
-        msg.textContent = `${t("Added.")} ${t("Status:")} ${r.last_status || r.track_result.status}`;
+        // A robots refusal reads as the stored "fetch error: robots.txt disallows ..." text; its verdict's words say what it is.
+        const robotsWords = (r.verdict === "robots_blocked" || r.verdict === "robots_unread") ? lawVerdictLabel(r.verdict) : "";
+        msg.textContent = `${t("Added.")} ${t("Status:")} ${robotsWords || r.last_status || r.track_result.status}`;
         $("law-add-jur").value = ""; $("law-add-title").value = "";
         $("law-add-url").value = ""; $("law-add-official").value = "";
         loadLaw();
@@ -1186,8 +1195,15 @@
         const dfrClause = dfr ? _govTf("{n} deferred (the host's own Crawl-delay)", {n: dfr}) : "";
         if (off && off >= r.documents) toast(_govT("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.") + (dfrClause ? " " + dfrClause : ""), "warn");
         else {
-          const extra = [off ? _govTf("{n} not fetched (airplane mode)", {n: off}) : "", dfrClause].filter(Boolean).join(", ");
-          toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.` + (extra ? " " + extra : ""));
+          // Row 283: a robots refusal still sits inside `errors` (like `skipped_offline`, the old field is unchanged); it is
+          // taken out here and named, because nothing was requested and nothing failed.
+          const rb = r.robots_blocked || 0, ru = r.robots_unread || 0;
+          const extra = [off ? _govTf("{n} not fetched (airplane mode)", {n: off}) : "",
+            rb ? _govTf("{n} blocked by the site's robots.txt", {n: rb}) : "",
+            ru ? _govTf("{n} not fetched: the site's robots.txt could not be read", {n: ru}) : "",
+            dfrClause].filter(Boolean).join(", ");
+          const errs = Math.max(0, (r.errors || 0) - rb - ru);
+          toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${errs} errors.` + (extra ? " " + extra : ""));
         }
         loadLaw(); loadLawChanges && loadLawChanges();
       } catch (e) { toast(_failMsg("Tracking failed: {error}", e), "err"); if (st) loadLaw(); }
