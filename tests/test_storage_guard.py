@@ -2697,6 +2697,28 @@ def test_a_latch_set_by_measurement_never_releases_on_an_unreadable_figure():
     assert g.engaged, "no measurement said the drive recovered"
 
 
+def _clock_only_the_wait_moves():
+    """``(clock, pause, waits)``: a clock that moves only when the wait sleeps on ``pause``, and the list of what it asked for.
+
+    Row 253: a bound read on the real clock is spent by whatever the first turn costs (a reading, a drain under a lease) before
+    the wait has slept once, so on a slow runner ``wait_if_engaged(max_wait_s=0.2)`` returned False, "never waited", for a
+    latch that held throughout. On this clock the turn's own work costs nothing and the bound is a sum to read."""
+    now = {"t": 1000.0}
+    waits: list[float] = []
+
+    class _Pause:
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, timeout: float | None = None) -> bool:
+            waits.append(timeout or 0.0)
+            assert len(waits) < 1000, "the wait never ended"
+            now["t"] += timeout or 0.0
+            return False
+
+    return (lambda: now["t"]), _Pause(), waits
+
+
 def _returns_within(fn, seconds=HANG_GUARD_S):
     """Run ``fn`` on a daemon thread and fail, instead of hanging the suite, if it does not return:
     a regression that ignores a bound waits for ever."""
@@ -2741,10 +2763,10 @@ def test_wait_if_engaged_can_be_bounded():
     assert sum(asked) == pytest.approx(0.3), f"it waited out the time it was given and no more: {asked}"
     assert max(asked) <= 0.2 + 1e-9, "no single wait is longer than the poll it was given"
     g = _engaged("wal")
-    g._clock = time.monotonic  # the helper's fake clock does not move; this wait is real, and short
-    t0 = time.monotonic()
-    assert _returns_within(lambda: g.wait_if_engaged(max_wait_s=0.3, poll_s=0.05)) is True
-    assert time.monotonic() - t0 >= 0.25, "it waited out the time it was given"
+    clock, pause, waits = _clock_only_the_wait_moves()
+    g._clock = clock
+    assert _returns_within(lambda: g.wait_if_engaged(pause, max_wait_s=0.3, poll_s=0.05)) is True
+    assert sum(waits) == pytest.approx(0.3), f"it waited out the time it was given: {waits}"
     stop = threading.Event()
     stop.set()
     assert _returns_within(lambda: g.wait_if_engaged(stop, poll_s=0.05)) is False, "an interrupted wait returns at once"
@@ -2754,12 +2776,12 @@ def test_a_background_wait_does_not_follow_the_operators_override():
     """"Resume anyway" forces COLLECTION on (admit); a background rewrite is not collection, so
     wait_if_engaged (and the off-peak gate) read the latch."""
     g = _overridable()
-    g._clock = time.monotonic
     g.override(reason="test")
     assert g.admit() is None
-    t0 = time.monotonic()
-    assert _returns_within(lambda: g.wait_if_engaged(max_wait_s=0.2, poll_s=0.05)) is True, "still waits while the latch holds"
-    assert time.monotonic() - t0 >= 0.15
+    clock, pause, waits = _clock_only_the_wait_moves()
+    g._clock = clock
+    assert _returns_within(lambda: g.wait_if_engaged(pause, max_wait_s=0.2, poll_s=0.05)) is True, "still waits while the latch holds"
+    assert sum(waits) == pytest.approx(0.2), f"it waited out the time it was given: {waits}"
 
 
 def test_wait_if_engaged_ends_when_the_callers_own_stop_condition_says_so():
