@@ -890,3 +890,56 @@ def test_a_red_static_job_is_green_only_on_the_docs_only_fast_path():
 def test_a_table_for_another_n_is_named():
     problems = _wiring_problems(_workflow(), {**_TABLE, "shards": 4})
     assert any("the matrix must be" in p for p in problems), problems
+
+
+# ------------------------------------------------------------------------------------------------ the Windows observation legs (row 238)
+#: The Windows legs write their junit report in the workspace, like their shard.args (a drive-lettered $RUNNER_TEMP), and keep it as the source of a
+#: Windows cost table: the Linux table predicts about 45 minutes a leg there, and shard 1 measured 70.6 to over 90 (runs 44734791675, 44849278064).
+_WINDOWS_PYTEST = "python -m pytest -q -rsfE --junitxml=junit.xml @shard.args"
+_WINDOWS_CAP = 120
+
+
+def _windows_problems(wf: dict) -> list[str]:
+    job = wf["jobs"].get("portability-windows") or {}
+    steps = job.get("steps") or []
+    found: list[str] = []
+    if job.get("timeout-minutes") != _WINDOWS_CAP:
+        found.append(f"portability-windows: `timeout-minutes: {_WINDOWS_CAP}` expected (row 238: shard 1 passed in 77 minutes, close to the old 90), it is {job.get('timeout-minutes')!r}")
+    pytest_at = [i for i, s in enumerate(steps) if str(s.get("run") or "").lstrip().startswith("python -m pytest")]
+    if [str(steps[i].get("run")).strip() for i in pytest_at] != [_WINDOWS_PYTEST]:
+        found.append(f"portability-windows: the pytest step must run exactly `{_WINDOWS_PYTEST}` (once), it runs {[steps[i].get('run') for i in pytest_at]!r}")
+    uploads = [i for i, s in enumerate(steps) if "upload-artifact" in str(s.get("uses") or "")]
+    if len(uploads) != 1:
+        return [*found, f"portability-windows: exactly one step that uploads the leg's junit report expected (the Windows cost table's source), found {len(uploads)}"]
+    step, with_ = steps[uploads[0]], steps[uploads[0]].get("with") or {}
+    if not re.fullmatch(r"actions/upload-artifact@[0-9a-f]{40}", str(step.get("uses") or "")):
+        found.append(f"portability-windows: the upload step must be pinned to a full commit sha ({step.get('uses')!r})")
+    if step.get("if") != "always()" or step.get("continue-on-error") is not True:
+        found.append("portability-windows: the upload step must say `if: always()` and `continue-on-error: true` (a red leg's seconds count, an upload is never red)")
+    if with_.get("path") != "junit.xml" or with_.get("name") != _ARTIFACT % "windows":
+        found.append(f"portability-windows: the upload step must keep `junit.xml` as `{_ARTIFACT % 'windows'}` ({with_.get('path')!r}, {with_.get('name')!r})")
+    if not isinstance(with_.get("retention-days"), int) or with_.get("overwrite") is not True:
+        found.append("portability-windows: the upload step must say `retention-days` and `overwrite: true`")
+    if pytest_at and not pytest_at[0] < uploads[0]:
+        found.append("portability-windows: the upload step must come after the pytest step")
+    return found
+
+
+def test_the_windows_legs_keep_their_junit_report_under_a_120_minute_cap():
+    assert _windows_problems(_workflow()) == []
+
+
+@pytest.mark.parametrize(
+    ("label", "break_it", "says"),
+    [
+        ("cap back to 90", lambda j: j.__setitem__("timeout-minutes", 90), "timeout-minutes: 120"),
+        ("no junit report", lambda j: next(s for s in j["steps"] if s.get("name") == "Test (pytest)").__setitem__("run", "python -m pytest -q -rsfE @shard.args"), "must run exactly"),
+        ("upload gone", lambda j: j["steps"].remove(next(s for s in j["steps"] if "upload-artifact" in str(s.get("uses") or ""))), "exactly one step that uploads"),
+        ("named like the Linux legs", lambda j: next(s for s in j["steps"] if "upload-artifact" in str(s.get("uses") or ""))["with"].__setitem__("name", "junit-test-shard-${{ matrix.shard }}"), "junit-windows-shard"),
+        ("upload turns the leg red", lambda j: next(s for s in j["steps"] if "upload-artifact" in str(s.get("uses") or "")).pop("continue-on-error"), "continue-on-error"),
+    ],
+)
+def test_the_windows_checker_names_each_broken_property(label, break_it, says):
+    wf = _workflow()
+    break_it(wf["jobs"]["portability-windows"])
+    assert any(says in p for p in _windows_problems(wf)), (label, _windows_problems(wf))

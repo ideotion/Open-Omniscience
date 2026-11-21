@@ -61,6 +61,18 @@ table that ships. After a refresh that moves many files, or a change of shard co
 `git show 0d8047c91:.github/workflows/ci.yml`, the head of PR #1726 that carried them), read the legs, and remove them again. The parity jobs are needed for that,
 no longer for a plain refresh.
 
+## The Windows observation legs and their own table (row 238)
+
+The nightly `portability-windows` job (six legs, one process each, R743) plans its files from the same table as the Linux legs, which predicts about
+45 minutes a leg; shard 1 measured 70.6 to over 90 minutes there (run 44734791675 stopped it at 98 % of the then 90-minute cap, run 44849278064 passed it in
+77). So the cap is 120 minutes for now, and **each Windows leg uploads its junit report** as `junit-windows-shard-N` (written in the workspace, 14 days, on red
+runs too). From the six reports of ONE run in which all six legs finished (a leg the cap stops writes none):
+
+    python scripts/ci_shard.py --table configs/ci_shard_costs_windows.json costs --min-seconds 0.5 junit-windows-shard-*/junit.xml
+
+writes the Windows table (start the file as a copy of `configs/ci_shard_costs.json` with `"shards": 6`, since `costs` keeps the table's other fields). The
+Windows plan step then reads it with `--table`, and the cap comes back down to what the new legs measure. `tests/test_ci_shards.py` pins the upload and the cap.
+
 ## Changing the number of shards
 
 `shards` in the table, `shard: [1, 2, 3]` in both matrices, `/3` in both plan steps and in the leg names must all change together; `tests/test_ci_shards.py`
@@ -89,7 +101,7 @@ Core-only was not compared with an unsharded Core-only run: its legs use the sam
 whole suite once and each shard's plan (`python scripts/ci_shard.py collected`): 29440 tests in 1555 modules, the shards 528 + 514 + 513 modules, 0 differences.
 A test that is order-dependent shows up as a red leg that is green alone; the fix is in the test.
 
-`release.yml` still runs the suite in one process at a tag, and the macOS/Windows `portability` observation lane is unchanged.
+`release.yml` still runs the suite in one process at a tag, and the macOS/Windows `portability` observation lane is unchanged (the Windows legs' own table is the section above).
 
 ## How long it takes, and what limits it
 
