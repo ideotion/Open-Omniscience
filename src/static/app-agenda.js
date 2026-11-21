@@ -1801,7 +1801,8 @@
       }
       const floor = _agCov, rep = floor.tier_report, counts = rep.counts || {};
       const catLine = agCatalogueLine(floor.catalogue);
-      if (catLine) {
+      const snapOnly = floor.counts_from === "snapshot_only";
+      if (catLine && !snapOnly) {
         // Row 273: the catalogue was not read (or holds nothing), so there are no per-country states to
         // draw: the line says why, and no 0 chip claims every floor country is missing.
         box.innerHTML = `<h3 style="font-size:14px;margin:4px 0 6px">${esc(T("Elections coverage of the language floor"))}</h3>`
@@ -1837,6 +1838,8 @@
       }).join("");
       box.innerHTML = `<h3 style="font-size:14px;margin:4px 0 6px">${esc(T("Elections coverage of the language floor"))}</h3>`
         + `<p class="muted" style="margin:0 0 6px">${esc(TF("{n} floor countries · country list as of {date}", { n: rep.floor_countries || 0, date: floor.as_of ? ooIsoDate(floor.as_of) : "?" }))}</p>`
+        // Row 273 (R696): the curated catalogue was not read but the snapshot was, so the counts are the snapshot's alone.
+        + (snapOnly ? `<p style="color:var(--caveat);margin:0 0 4px">${esc(catLine)} ${esc(T("These counts come from the Wikidata election snapshot only."))}</p>` : "")
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(floor.caveat || ""))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(rep.caveat || ""))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.gap || ""))}</p>`

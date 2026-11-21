@@ -104,5 +104,13 @@ const REPORT = {
     assert(h.includes("hand-curated list"), "the snapshot line stays");
     assert(!/aria-pressed|<table|> 0<|Missing|missing/i.test(h.replace(line, "")), state + ": no chip, no table, no 0, no missing");
   }
+  // 8. R696: the catalogue was not read but the snapshot was: the counts are drawn, labelled as the snapshot's alone.
+  answer = { ...REPORT, catalogue: { state: "absent" }, counts_from: "snapshot_only", snapshot: { state: "absent" } };
+  P.reset(); P.render(); await tick(); await tick();
+  h = box.innerHTML;
+  assert(h.includes(LINES.absent + " These counts come from the Wikidata election snapshot only."), "the label is drawn");
+  assert(h.includes("THE METHOD") && /scheduled<\/span> 1/.test(h) && h.includes("France (FR)"), "and the counts with it");
+  answer = { ...REPORT, catalogue: { state: "present" } }; P.reset(); P.render(); await tick(); await tick();
+  assert(!box.innerHTML.includes("snapshot only"), "a read catalogue carries no label");
   console.log("agenda coverage node test: ok");
 })().catch((e) => { console.error(e); process.exit(1); });

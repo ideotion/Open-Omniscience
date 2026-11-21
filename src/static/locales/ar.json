@@ -7467,6 +7467,8 @@
   "The events catalogue on this install was read and holds no events.": "قُرئ فهرس الأحداث في هذا التثبيت ولا يحتوي على أي حدث.",
   "The events catalogue on this install could not be read, so its events are not shown.": "تعذّرت قراءة فهرس الأحداث في هذا التثبيت، لذا لا تُعرض أحداثه.",
   "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}), so the floor counts are not given": "لم يُقرأ فهرس الأحداث المنسّق على هذا الجهاز بوصفه فهرسًا يحتوي على أحداث (الحالة: {state})، لذا لا تُعطى أعداد الحد الأدنى",
+  "These counts come from the Wikidata election snapshot only.": "تأتي هذه الأعداد من لقطة انتخابات Wikidata وحدها.",
+  "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}); the floor counts come from the Wikidata snapshot only": "لم يُقرأ فهرس الأحداث المنسّق على هذا الجهاز بوصفه فهرسًا يحتوي على أحداث (الحالة: {state})؛ تأتي أعداد الحد الأدنى من لقطة Wikidata وحدها",
   "no readable text": "لا نص مقروء",
   "no reason recorded": "لم يُسجَّل سبب",
   "no reason was reported": "لم يُبلَّغ عن سبب",

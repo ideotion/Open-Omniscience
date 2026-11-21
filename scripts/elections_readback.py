@@ -148,7 +148,7 @@ def catalogue_read(doc: dict[str, Any]) -> bool:
     """Whether the curated catalogue was read as one with events. A file from before row 273 carries no
     ``catalogue`` block; its counts are printed as recorded."""
     cat = doc.get("catalogue")
-    return not isinstance(cat, dict) or cat.get("state") == "present"
+    return not isinstance(cat, dict) or cat.get("state") == "present" or doc.get("counts_from") == "snapshot_only"
 
 
 def catalogue_lines(doc: dict[str, Any]) -> list[str]:
@@ -156,6 +156,10 @@ def catalogue_lines(doc: dict[str, Any]) -> list[str]:
     if not isinstance(cat, dict) or cat.get("state") == "present":
         return []
     state = cat.get("state")
+    if doc.get("counts_from") == "snapshot_only":
+        error = f" ({cat.get('error')})" if cat.get("error") else ""
+        return [f"catalogue: {state}{error}: curated catalogue not read; the counts below come from the Wikidata "
+                "snapshot only"]
     if state == "absent":
         return ["catalogue: absent: no curated events catalogue on that machine, so the floor states were not counted"]
     if state == "empty":
@@ -190,7 +194,7 @@ def tier_lines(rep: Any) -> list[str]:
     if not isinstance(rep, dict):
         return ["tier report: not recorded in this file"]
     cat = rep.get("catalogue")
-    if isinstance(cat, dict) and cat.get("state") != "present":
+    if isinstance(cat, dict) and cat.get("state") != "present" and rep.get("counts_from") != "snapshot_only":
         return ["tier report: not counted (see the catalogue line)"]
     counts = rep.get("counts")
     if not isinstance(counts, dict) or not counts:

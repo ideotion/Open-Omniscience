@@ -49,16 +49,27 @@ def _read_catalogue() -> tuple[dict, dict]:
         return {}, {"state": "empty"}
     if not isinstance(data, dict):
         return {}, {"state": "unreadable", "error": f"not a mapping ({type(data).__name__})"}
+    for section in ("events", "calendars"):
+        value = data.get(section)
+        if value is not None and not isinstance(value, list):
+            # a section every reader iterates: a non-list would raise out of agenda(), facets() and load_calendars()
+            return {}, {"state": "unreadable", "error": f"{section} is not a list ({type(value).__name__})"}
     events = data.get("events")
-    if events is not None and not isinstance(events, list):
-        return {}, {"state": "unreadable", "error": f"events is not a list ({type(events).__name__})"}
     if not events:
         return data, {"state": "empty"}
-    if not any(isinstance(e, dict) and e.get("title") and e.get("official_url") for e in events):
+    if not any(_usable_row(e) for e in events):
         # Rows are there but none is an event load_curated_events would keep: never read as a catalogue with
         # events (every floor country would read "missing"), and not "empty" either, since the file holds rows.
         return {}, {"state": "unreadable", "error": f"no usable event row ({len(events)} refused)"}
     return data, {"state": "present"}
+
+
+def _usable_row(e: object) -> bool:
+    """A row :func:`load_curated_events` keeps: a mapping with a title and an official address, and tags (when given)
+    as a list. Anything else is refused, so a malformed row cannot raise out of agenda() or facets() later."""
+    if not (isinstance(e, dict) and e.get("title") and e.get("official_url")):
+        return False
+    return e.get("tags") is None or isinstance(e.get("tags"), list)
 
 
 def _raw() -> dict:
@@ -77,7 +88,7 @@ def catalogue_state() -> dict:
 def load_calendars() -> list[dict]:
     """The declared calendars (subscribable collections)."""
     out = []
-    for c in _raw().get("calendars", []):
+    for c in _raw().get("calendars") or []:
         if isinstance(c, dict) and c.get("key"):
             out.append(
                 {
@@ -168,8 +179,8 @@ def load_curated_events() -> list[dict]:
         from explicitly stated start+end, never guessed.
     """
     out = []
-    for e in _raw().get("events", []):
-        if not (isinstance(e, dict) and e.get("title") and e.get("official_url")):
+    for e in _raw().get("events") or []:
+        if not _usable_row(e):
             continue
         tags = [str(t) for t in (e.get("tags") or []) if t]
         out.append(

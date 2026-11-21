@@ -142,7 +142,10 @@ def floor_countries() -> set[str]:
 
 
 def floor_coverage(
-    today: date | None = None, events: list[dict[str, Any]] | None = None, catalogue: dict[str, Any] | None = None
+    today: date | None = None,
+    events: list[dict[str, Any]] | None = None,
+    catalogue: dict[str, Any] | None = None,
+    snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What the shipped elections calendar covers of the ruled floor.
 
@@ -155,20 +158,27 @@ def floor_coverage(
     named with the fields it lacks, so it is a worklist rather than a complaint), and
     ``missing`` (no entry at all).
     """
-    from src.events.catalog import catalogue_state, load_events
+    from src.events.catalog import catalogue_state, layered_read, load_events
 
     today = today or date.today()
     floor = load_floor()
     wanted = set(floor["countries"])
     if events is None:
-        catalogue = catalogue_state()
-    if catalogue is not None and catalogue.get("state") != "present":
+        _layered, snapshot, catalogue = layered_read(today)  # the snapshot's and the catalogue's read states
+        events = load_events()  # the events as before (the same cached layered read)
+    elif catalogue is None:
+        catalogue = catalogue_state()  # never claim "present" without having looked
+    # Row 273 (R696): the counts come from whatever was READ. The curated catalogue not read but the snapshot read: the
+    # counts are the snapshot's alone, said so by counts_from. Neither read: every count is None, never 0 or "missing".
+    # A snapshot the caller did not hand over is not known to have been read.
+    curated_read = catalogue.get("state") == "present"
+    if not curated_read and (snapshot or {}).get("state") != "present":
         return _not_read(floor, wanted, catalogue)
 
     with_date: set[str] = set()
     live: set[str] = set()
     dateless: dict[str, list[str]] = {}
-    for ev in (load_events() if events is None else events):
+    for ev in events:
         if str(ev.get("calendar") or "") != ELECTIONS_CALENDAR:
             continue
         cc = str(ev.get("country") or "").strip().lower()
@@ -237,7 +247,8 @@ def floor_coverage(
         "covered_outside_floor": outside,
         "invalid_rows": floor["invalid"],
         "contested_rows": floor["contested"],
-        "catalogue": catalogue if catalogue is not None else {"state": "present"},
+        "catalogue": dict(catalogue),
+        **({} if curated_read else {"counts_from": "snapshot_only"}),
     }
 
 

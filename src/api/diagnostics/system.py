@@ -110,12 +110,14 @@ def elections_coverage_floor() -> dict:
 
     today = date.today()  # one clock for every half, so a request that spans midnight cannot split them
     events, snapshot, catalogue = layered_read(today)  # one read, so the snapshot line and the tables agree
-    out = floor_coverage(today, events=events, catalogue=catalogue)
+    out = floor_coverage(today, events=events, catalogue=catalogue, snapshot=snapshot)
     floor = set(load_floor()["countries"])
-    if catalogue.get("state") == "present":
+    if out.get("covered_n") is not None:
         out["tier_report"] = country_tier_report(events, floor, today)
+        if "counts_from" in out:  # row 273 (R696): the curated catalogue was not read; these are the snapshot's alone
+            out["tier_report"].update(catalogue=dict(catalogue), counts_from=out["counts_from"])
     else:
-        # Row 273: a catalogue that was not read (or was read and holds nothing) has no per-country states to
+        # Row 273: neither the curated catalogue nor a snapshot was read, so there are no per-country states to
         # report; every count is None beside the catalogue's state, never 0 and never "missing".
         out["tier_report"] = {"floor_countries": len(floor), "counts": None, "countries": None,
                               "catalogue": dict(catalogue)}

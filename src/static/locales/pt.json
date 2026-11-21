@@ -7467,6 +7467,8 @@
   "The events catalogue on this install was read and holds no events.": "O catálogo de eventos desta instalação foi lido e não contém eventos.",
   "The events catalogue on this install could not be read, so its events are not shown.": "O catálogo de eventos desta instalação não pôde ser lido, por isso os seus eventos não são mostrados.",
   "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}), so the floor counts are not given": "o catálogo de eventos curado não foi lido como um catálogo com eventos nesta máquina (estado: {state}), por isso as contagens do piso não são dadas",
+  "These counts come from the Wikidata election snapshot only.": "Estas contagens vêm apenas do snapshot eleitoral do Wikidata.",
+  "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}); the floor counts come from the Wikidata snapshot only": "o catálogo de eventos curado não foi lido como um catálogo com eventos nesta máquina (estado: {state}); as contagens do piso vêm apenas do snapshot do Wikidata",
   "no readable text": "sem texto legível",
   "no reason recorded": "nenhum motivo registrado",
   "no reason was reported": "nenhum motivo foi informado",

@@ -986,7 +986,7 @@ def _elections_block() -> dict:
 
     today = date.today()
     events, snap, catalogue = layered_read(today)  # one read, so the snapshot line and the counts agree
-    rep = floor_coverage(today, events=events, catalogue=catalogue)
+    rep = floor_coverage(today, events=events, catalogue=catalogue, snapshot=snap)
     rows = snap.get("rows")
     present = snap.get("state") == "present"
     loaded = present and isinstance(rows, int) and rows > 0
@@ -999,8 +999,11 @@ def _elections_block() -> dict:
         "only_passed_projection": rep.get("only_passed_projection_n"),
         "present_but_dateless": rep.get("present_but_dateless_n"), "missing": rep.get("missing_n"),
         "floor_as_of": rep.get("as_of"),
-        # Row 273: the curated catalogue's own read state; when it is not "present" the floor counts above are None.
+        # Row 273: the curated catalogue's own read state; when it is not "present" and no snapshot was read either,
+        # the floor counts above are None.
         "catalogue_state": catalogue.get("state"),
+        # "snapshot_only" when the catalogue was not read but the snapshot was: the counts are the snapshot's alone.
+        "counts_from": rep.get("counts_from"),
         "snapshot_state": snap.get("state"), "snapshot_as_of": snap.get("as_of"),
         # Age and staleness as the snapshot's own reading states them (row 258), computed in one place
         # (calendar_report.with_snapshot), so this block and the Agenda never disagree on a day boundary.
@@ -1014,7 +1017,11 @@ def _elections_block() -> dict:
             "missing). The first slice is the snapshot, so the vertical counts as ingested only when a snapshot "
             "with rows is present; the shipped catalogue alone is not an ingest. Read from files, never fetched.")]),
     }
-    if catalogue.get("state") != "present":
+    if rep.get("counts_from") == "snapshot_only":
+        block.update(_method([_fr("the curated events catalogue was not read as a catalogue with events on this machine "
+                                  "(state: {state}); the floor counts come from the Wikidata snapshot only",
+                                  state=catalogue.get("state"))], "catalogue_reason"))
+    elif catalogue.get("state") != "present":
         block.update(_method([_fr("the curated events catalogue was not read as a catalogue with events on this machine "
                                   "(state: {state}), so the floor counts are not given", state=catalogue.get("state"))],
                              "catalogue_reason"))

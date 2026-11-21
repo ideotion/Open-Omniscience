@@ -175,9 +175,12 @@
       const top = [state, slice].map(esc).concat(b.as_of ? [label(esc(t("as of")), esc(h.date(b.as_of)))] : []);
       const method = kpiFramesText(b.method_i18n, b.method, h);
       const reason = kpiFramesText(b.reason_i18n, b.reason, h);
+      // Row 273: why the elections counts are unknown, or whose they are, when the curated catalogue was not read.
+      const catReason = kpiFramesText(b.catalogue_reason_i18n, b.catalogue_reason, h);
       return `<div class="kpi-block" style="margin:3px 0 3px 14px;font-size:11.5px"${method ? ` title="${esc(method)}"` : ""}>`
         + `<div>${esc(name)} <span class="muted">· ${top.join(" · ")}</span></div>`
         + (figs.length ? `<div class="muted">${figs.join(" · ")}</div>` : "")
+        + (catReason ? `<div class="muted">${esc(catReason)}</div>` : "")
         + (reason ? `<div class="muted">${esc(reason)}</div>` : "")
         + `</div>`;
     }

@@ -7467,6 +7467,8 @@
   "The events catalogue on this install was read and holds no events.": "The events catalogue on this install was read and holds no events.",
   "The events catalogue on this install could not be read, so its events are not shown.": "The events catalogue on this install could not be read, so its events are not shown.",
   "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}), so the floor counts are not given": "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}), so the floor counts are not given",
+  "These counts come from the Wikidata election snapshot only.": "These counts come from the Wikidata election snapshot only.",
+  "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}); the floor counts come from the Wikidata snapshot only": "the curated events catalogue was not read as a catalogue with events on this machine (state: {state}); the floor counts come from the Wikidata snapshot only",
   "no readable text": "no readable text",
   "no reason recorded": "no reason recorded",
   "no reason was reported": "no reason was reported",

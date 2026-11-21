@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,10 @@ CASES = {
     "not a mapping": ("- a\n- b\n", {"state": "unreadable", "error": "not a mapping (list)"}),
     "events not a list": ("events: 3\n", {"state": "unreadable", "error": "events is not a list (int)"}),
     "no usable row": ("events: [1, x, {title: t}]\n", {"state": "unreadable", "error": "no usable event row (3 refused)"}),
+    "tags not a list": ("events:\n  - {title: t, official_url: 'https://example.invalid/t', tags: 5}\n",
+                        {"state": "unreadable", "error": "no usable event row (1 refused)"}),
+    "calendars not a list": ("calendars: 3\nevents:\n  - {title: t, official_url: 'https://example.invalid/t'}\n",
+                             {"state": "unreadable", "error": "calendars is not a list (int)"}),
     "bad utf-8": (b"events:\n  - title: \xff\xfe\n", {"state": "unreadable", "error": "UnicodeDecodeError"}),
 }
 
@@ -45,6 +50,18 @@ def _script():
 
 
 R = _script()
+
+
+def _write_snapshot(tmp_path: Path, n: int = 6) -> None:
+    """A Wikidata election snapshot with ``n`` rows over the first floor countries, where the fixture points it."""
+    from src.civic.coverage_floor import load_floor
+    from src.events import catalog
+
+    cs = sorted(load_floor()["countries"])[:n]
+    rows = [{"country": cc, "office": f"National Assembly {i}", "qid": f"Q{900 + i}",
+             "point_in_time": f"{date.today().year + 1}-0{1 + i}-01", "precision": "month"} for i, cc in enumerate(cs)]
+    (tmp_path / "absent-snapshot.json").write_text(json.dumps({"as_of": date.today().isoformat(), "rows": rows}), "utf-8")
+    catalog.load_events.cache_clear()
 
 
 @pytest.fixture()
@@ -247,3 +264,90 @@ def test_a_file_from_before_row_273_still_prints_its_counts():
            "missing_n": 1, "covered_outside_floor": [], "tier_report": {"counts": {"scheduled": 1, "missing": 1}}}
     text = "\n".join(R.report(doc))
     assert "1 covered" in text and "1 missing" in text and "catalogue:" not in text
+
+
+# --- Opus read and R696 follow-ups ----------------------------------------------------------------------------------
+
+_VALID = "events:\n  - {title: Vote, official_url: 'https://example.invalid/v', category: civic, country: FR, month: 5, day: 1}\n"
+
+
+def test_a_null_calendars_section_or_a_bad_row_beside_a_good_one_never_crashes(catalogue):
+    from src.events import catalog
+
+    catalogue("calendars:\n" + _VALID + "  - {title: Bad, official_url: 'https://example.invalid/b', tags: 5}\n")
+    assert catalog.catalogue_state() == {"state": "present"}
+    assert [e["title"] for e in catalog.load_curated_events()] == ["Vote"], "the bad row is refused, the good one kept"
+    assert catalog.load_calendars() == [] and catalog.facets()["catalogue"] == {"state": "present"}
+    assert _list_events()["count"] == 1
+
+
+def test_floor_coverage_reads_the_state_when_handed_events_without_one(catalogue):
+    from src.civic.coverage_floor import floor_coverage
+    from src.events import catalog
+
+    catalogue(None)
+    doc = floor_coverage(events=catalog.layered_read()[0])
+    assert doc["catalogue"] == {"state": "absent"} and doc["missing_n"] is None, "never 'present' without looking"
+
+
+@pytest.mark.parametrize("case", ["absent", "empty", "unparsable"])
+def test_a_snapshot_read_beside_an_unread_catalogue_gives_its_own_counts_labelled(catalogue, tmp_path, case):
+    """R696: the snapshot WAS looked up, so its counts are given, labelled as the snapshot's alone."""
+    from src.api.diagnostics.system import elections_coverage_floor
+    from src.civic.coverage_floor import floor_coverage
+    from src.monitoring.kpi import _elections_block
+
+    body, want = CASES[case]
+    catalogue(body)
+    _write_snapshot(tmp_path, 6)
+    for doc in (elections_coverage_floor(), floor_coverage()):
+        assert doc["catalogue"] == want and doc["counts_from"] == "snapshot_only"
+        assert doc["covered_n"] == 6 and doc["missing_n"] == doc["floor_countries"] - 6
+    rep = elections_coverage_floor()["tier_report"]
+    assert rep["counts_from"] == "snapshot_only" and rep["catalogue"] == want
+    assert sum(rep["counts"].values()) == rep["floor_countries"]
+    block = _elections_block()
+    assert block["covered"] == 6 and block["counts_from"] == "snapshot_only"
+    assert block["catalogue_reason"].endswith("the floor counts come from the Wikidata snapshot only")
+    out = tmp_path / "oo-field-x-elections-floor.json"
+    out.write_text(json.dumps(elections_coverage_floor()), encoding="utf-8")
+    text = "\n".join(R.report(R.load(out)))
+    assert f"catalogue: {want['state']}" in text and "the counts below come from the Wikidata snapshot only" in text
+    assert "6 covered" in text and "not counted" not in text
+
+
+def test_a_present_catalogue_carries_no_counts_from_label(catalogue, tmp_path):
+    from src.api.diagnostics.system import elections_coverage_floor
+
+    catalogue(_VALID)
+    _write_snapshot(tmp_path, 3)
+    doc = elections_coverage_floor()
+    assert "counts_from" not in doc and "counts_from" not in doc["tier_report"]
+
+
+def test_the_coverage_report_script_says_the_catalogue_was_not_read(catalogue, tmp_path):
+    spec = importlib.util.spec_from_file_location("oo_elections_coverage_report", ROOT / "scripts" / "elections_coverage_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    catalogue(None)
+    text = mod.build_report(date.today())
+    assert "- Curated catalogue: absent; no floor state was counted, so no table follows." in text
+    assert "missing (no entry)" not in text and "| State |" not in text
+    _write_snapshot(tmp_path, 4)
+    text = mod.build_report(date.today())
+    assert "- Curated catalogue: absent; the counts below come from the Wikidata snapshot only." in text
+    assert "| State |" in text
+
+
+def test_the_task_manager_draws_the_k13_catalogue_reason():
+    from tests.js_source_helper import function_body
+
+    body = function_body((ROOT / "src/static/app-library.js").read_text("utf-8"), "_kpiBlockHtml")
+    assert "kpiFramesText(b.catalogue_reason_i18n, b.catalogue_reason, h)" in body and "catReason ?" in body
+
+
+def test_the_snapshot_only_line_is_in_every_language():
+    key = "These counts come from the Wikidata election snapshot only."
+    assert key in (ROOT / "src/static/app-agenda.js").read_text("utf-8")
+    for loc in sorted((ROOT / "src/static/locales").glob("*.json")):
+        assert json.loads(loc.read_text("utf-8")).get(key), loc.name
