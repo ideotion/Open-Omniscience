@@ -38,6 +38,7 @@ class ModelPullManager:
         self._progress: dict = {}
         self._history: list[dict] = []  # recent finished pulls (done/error/cancelled)
         self._cancel: set[str] = set()
+        self._notes: dict[str, str] = {}  # R765: why a pull was stopped, shown in its history entry
         self._thread: threading.Thread | None = None
         self._client_factory = client_factory  # test seam
 
@@ -98,6 +99,21 @@ class ModelPullManager:
                 self._cancel.add(model)  # the pump notices + aborts the stream
             return self.status()
 
+    def stop_all(self, note: str) -> bool:
+        """R765: stop the active pull and drop every queued one, each recorded with ``note``. True when anything was stopped.
+
+        The active pull also stops on its own (``OllamaClient.pull`` reads the stop), so this only names why."""
+        with self._lock:
+            any_stopped = bool(self._queue) or self._active is not None
+            for model in self._queue:
+                self._history.append({"model": model, "status": "cancelled", "at": time.time(), "note": note})
+            self._queue.clear()
+            if self._active is not None:
+                self._cancel.add(self._active)
+                self._notes[self._active] = note
+            self._history = self._history[-20:]
+            return any_stopped
+
     def _pump(self) -> None:
         while True:
             with self._lock:
@@ -137,6 +153,9 @@ class ModelPullManager:
                         self._progress = _progress_of(nxt, prog)
             except Exception as exc:  # noqa: BLE001 - surface, never crash the pump
                 status, err = "error", record_text(exc)
+                with self._lock:
+                    if nxt in self._cancel:  # R765: stopped on purpose, so it reads as cancelled with its reason, not as a failure
+                        status, err = "cancelled", None
             # D6: what ARRIVED, against what was PINNED. Ollama's own /api/tags digest is
             # the only content commitment on this path -- a tag can be re-pointed, so a
             # pull "succeeding" says nothing about which bytes landed. Checked only on a
@@ -174,6 +193,9 @@ class ModelPullManager:
                 entry = {"model": nxt, "status": status, "at": time.time()}
                 if err:
                     entry["error"] = err
+                note = self._notes.pop(nxt, None)
+                if note and status == "cancelled":
+                    entry["note"] = note
                 # The store this model went into, recorded WITH the pull rather than
                 # re-derived later: by the time anyone asks, the serving daemon may be a
                 # different one, and "where did that model go" would have no answer.

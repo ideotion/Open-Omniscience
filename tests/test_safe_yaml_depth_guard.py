@@ -92,20 +92,52 @@ def test_a_malformed_document_is_still_an_ordinary_yaml_error(loader):
     assert not isinstance(err.value, YAMLDepthError)
 
 
+def libyaml_limits_nesting() -> bool:
+    """True when the libyaml PyYAML carries has a nesting limit of its own: 0.2.6, bundled from PyYAML 6.0.4 (2026-11-20). Keyed on
+    libyaml's own version, not PyYAML's, because a PyYAML built against a system libyaml takes that one's behaviour."""
+    from yaml import _yaml
+
+    return tuple(int(p) for p in _yaml.get_version_string().split(".")[:3]) >= (0, 2, 6)
+
+
+def assert_the_unguarded_c_loader_fails_on_it(done: subprocess.CompletedProcess) -> None:
+    """The reason the guard exists, as the installed libyaml has it: below 0.2.6 the C loader dies by signal (a crash, not an
+    exception); from 0.2.6 its scanner raises past 1,000 levels instead. Either way the guard's refusal must come first, at 256."""
+    if libyaml_limits_nesting():
+        assert done.returncode == 1 and "exceeded maximum nesting depth" in done.stderr, (
+            "libyaml 0.2.6 or later no longer raises its own nesting error on this input: re-measure the bound")
+    else:
+        # not "died by signal": Windows reports a stack overflow as the positive code 0xC00000FD
+        assert done.returncode != 0, "libyaml no longer crashes on deep nesting: the guard's premise changed; re-measure the bound"
+        # ... and not by an ordinary Python exception (exit 1 with a traceback): that would be the library fixing itself
+        assert "Traceback" not in done.stderr, "libyaml now raises on deep nesting instead of crashing: re-measure the bound"
+
+
 @pytest.mark.skipif(getattr(yaml, "CSafeLoader", None) is None, reason="libyaml is not present")
 def test_the_unguarded_libyaml_loader_really_does_crash_on_this_input():
-    # The reason the guard exists, run in a child so the crash is a return code and not this test's death: the loader this
-    # repo used before the guard (the C loader, called directly) dies by signal on a 100,000-deep document.
+    # Run in a child so the crash is a return code and not this test's death: the loader this repo used before the guard (the C
+    # loader, called directly) dies by signal on a 100,000-deep document below libyaml 0.2.6, and raises from 0.2.6 (row 239).
     code = (
         "import yaml\n"
         f"t = {'- '!r} * {_DEEP} + 'x'\n"
         "yaml.load(t, Loader=yaml.CSafeLoader)\n"
     )
     done = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=120)
-    # not "died by signal": Windows reports a stack overflow as the positive code 0xC00000FD
-    assert done.returncode != 0, "libyaml no longer crashes on deep nesting: the guard's premise changed; re-measure the bound"
-    # ... and not by an ordinary Python exception (exit 1 with a traceback): that would be the library fixing itself
-    assert "Traceback" not in done.stderr, "libyaml now raises on deep nesting instead of crashing: re-measure the bound"
+    assert_the_unguarded_c_loader_fails_on_it(done)
+
+
+@pytest.mark.skipif(getattr(yaml, "CSafeLoader", None) is None, reason="libyaml is not present")
+def test_past_libyamls_own_limit_the_refusal_is_still_the_depth_error_on_every_shape(monkeypatch):
+    """Row 239 (R696): from libyaml 0.2.6 a flow document past 1,000 levels raises a ScannerError from the scanner's read-ahead before
+    the event count reaches the bound; it must come out as the same YAMLDepthError, through both entry points, on every shape."""
+    monkeypatch.setattr(safe_yaml, "YAML_LOADER", yaml.CSafeLoader)
+    for doc in (_flow_seq(1001), _flow_map(1001), _seq(1001), _block_map(1001), _flow_seq(_DEEP)):
+        for call in (safe_yaml.refuse_if_too_deep, load_safe_yaml):
+            with pytest.raises(YAMLDepthError, match=str(MAX_NESTING)):
+                call(doc)
+    with pytest.raises(yaml.YAMLError) as err:  # an ordinary scanner error is still not a depth refusal
+        load_safe_yaml("a: [1, 2\n")
+    assert not isinstance(err.value, YAMLDepthError)
 
 
 def test_the_shared_module_still_imports_nothing_of_the_project():

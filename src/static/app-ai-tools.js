@@ -1373,7 +1373,7 @@
               say(t("vLLM install failed:") + " " + (done.error || done.detail || ""));
               return;   // never carry on into steps that need the backend
             }
-            if (done.state === "cancelled") { say(t("Cancelled.")); return; }
+            if (done.state === "cancelled") { say(done.stopped_note ? t(done.stopped_note) : t("Cancelled.")); return; }
           } else if (step.id === "install-ollama") {
             // Ends in the "Install Ollama" box below: elevation is explicit and
             // may need a password this app must never pretend to have.
@@ -1393,7 +1393,7 @@
               say(t("Model download failed:") + " " + (done.error || done.detail || ""));
               return;
             }
-            if (done.state === "cancelled") { say(t("Cancelled.")); return; }
+            if (done.state === "cancelled") { say(done.stopped_note ? t(done.stopped_note) : t("Cancelled.")); return; }
             // "idle" means the queue was never asked for this artifact -- the install
             // call refused (a missing prerequisite, say) and reported that itself.
             // Carrying on would start a server against weights that are not coming and
@@ -1850,7 +1850,8 @@
           (m) => { if (status) status.textContent = m; });
         if (status) {
           status.textContent = st.state === "error"
-            ? (t("Download failed:") + " " + (st.detail || "")) : (st.detail || t("Done."));
+            ? (t("Download failed:") + " " + (st.detail || ""))
+            : (st.stopped_note ? t(st.stopped_note) : (st.detail || t("Done.")));
         }
         // Repaint so the finished row loses its button and the picker gains the model.
         loadModelCatalog();
