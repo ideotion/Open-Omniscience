@@ -26,7 +26,8 @@ CASES = {
     "empty": ("", {"state": "empty"}),
     "comments only": ("# nothing\n", {"state": "empty"}),
     "no usable row": ("languages: {en: {countries: 3}}\n", {"state": "empty"}),
-    "only invalid codes": ("languages: {en: {countries: [{cc: zz, basis: official}]}}\n", {"state": "empty"}),
+    "only invalid codes": ("languages: {en: {countries: [{cc: zz, basis: official}]}}\n",
+                           {"state": "unreadable", "error": "no usable country row (1 refused)"}),
     "unparsable": ("languages: [\n", {"state": "unreadable", "error": "ParserError"}),
     "not a mapping": ("- a\n", {"state": "unreadable", "error": "not a mapping (list)"}),
     "languages not a mapping": ("languages: 4\n", {"state": "unreadable", "error": "languages is not a mapping (int)"}),
@@ -153,10 +154,17 @@ def test_the_law_reports_name_the_floor_state(floor_file, case):
     body, want = CASES[case]
     floor_file(body)
     rep = floor_report([], {})
-    assert rep["state"] == "unchecked" and rep["floor"] == want and rep["countries"] == 0
+    assert rep["state"] == "unchecked" and rep["floor"] == want and rep["countries"] is None
     world = world_report([], {})
     assert world["floor"] == want and "floor_note" in world
-    assert world["floor_countries_excluded"] == 0
+    assert world["floor_countries_excluded"] is None, "nothing was set aside: unknown, never 0"
+    readback = _load("oo_law_coverage_readback_r279", "scripts/law_coverage_readback.py")
+    floor_text = "\n".join(readback.floor_lines(rep))
+    assert floor_text.startswith(f"floor: {want['state']}: ") and "so no floor country was counted" in floor_text
+    assert "no country listed" not in floor_text and " 0 " not in floor_text
+    world_text = "\n".join(readback.world_lines(world))
+    assert f"the floor was not read ({want['state']}: " in world_text and "every country is listed here" in world_text
+    assert readback.json_floor({"floor": rep})["floor_read"].startswith(want["state"])
 
 
 def test_the_law_reports_say_present_for_the_shipped_floor():
@@ -217,3 +225,22 @@ def test_the_readback_and_the_coverage_report_say_the_floor_was_not_read(floor_f
     report = _load("oo_elections_coverage_report_r279", "scripts/elections_coverage_report.py").build_report(date.today())
     assert f"- Language floor (configs/language_countries.yml): {want['state']}" in report
     assert "- Floor:" not in report and "| State |" not in report
+
+
+def test_the_coverage_report_keeps_the_catalogue_line_when_neither_was_read(floor_file, monkeypatch, tmp_path):
+    from src.events import catalog
+
+    floor_file(None)
+    monkeypatch.setattr(catalog, "CATALOG_PATH", tmp_path / "no-catalogue.yml")
+    catalog.load_events.cache_clear()
+    report = _load("oo_elections_coverage_report_r279b", "scripts/elections_coverage_report.py").build_report(date.today())
+    assert "- Language floor (configs/language_countries.yml): absent" in report
+    assert "- Curated catalogue: absent." in report
+
+
+def test_a_file_of_only_refused_rows_is_not_said_to_list_no_country(floor_file):
+    from src.civic import coverage_floor as cf
+
+    floor_file("languages: {en: {countries: [{cc: zz, basis: official}, {cc: gb, basis: maybe}]}}\n")
+    assert cf.floor_state() == {"state": "unreadable", "error": "no usable country row (2 refused)"}
+    assert len(cf.load_floor()["invalid"]) == 2

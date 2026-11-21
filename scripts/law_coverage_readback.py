@@ -197,13 +197,39 @@ def _state_lines(by_state: Any, indent: str = "  ", reason: str | None = None) -
     return out
 
 
+#: The floor file's read states (row 279), as the report states them; the error is printed only when it is a plain token.
+_FLOOR_READ_WORDS = {
+    "absent": "no language-to-country list (configs/language_countries.yml) on that machine",
+    "empty": "the language-to-country list was read and lists no country",
+    "unreadable": "the language-to-country list could not be read",
+}
+
+
+def _floor_read(block: dict[str, Any]) -> str | None:
+    """Words for a floor file that was not read (row 279), or None when it was read or the file does not say."""
+    read = _dict(block.get("floor"))
+    state = read.get("state")
+    if state in (None, "present"):
+        return None
+    words = _FLOOR_READ_WORDS.get(state) if isinstance(state, str) else None
+    if words is None:
+        return "the floor file's read state is not one this script knows (not printed)"
+    error = read.get("error")
+    if state == "unreadable" and isinstance(error, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", error):
+        words += f" ({error})"
+    return f"{state}: {words}"
+
+
 def floor_lines(floor: Any) -> list[str]:
     f = _dict(floor)
     if not f:
         return ["floor: absent from this file (a build before the floor report)"]
     lines = []
     countries = _int(f.get("countries"))
-    if countries is None:
+    unread = _floor_read(f)
+    if unread is not None:
+        head = f"floor: {unread}, so no floor country was counted"
+    elif countries is None:
         head = "floor: country count not recorded"
     elif countries == 0 and f.get("state") != "checked":
         head = "floor: no country listed"  # the report's 0 for a floor file it could not read: not a floor of no countries
@@ -276,6 +302,11 @@ def world_lines(world: Any) -> list[str]:
         return ["off the floor (world): absent from this file (a build before the world block)"]
     lines = [f"off the floor (world): {_n(w.get('countries'))} countries"
              + ("" if w.get("state") == "checked" else f"; not checked: {_words(w.get('reason'), 'no reason given')}")]
+    unread = _floor_read(w)
+    if unread is not None:
+        # Row 279: no floor was read, so no country was set aside for the floor block; the floor's own countries are in here.
+        lines.append(f"  the floor was not read ({unread}), so no country is set aside for the floor block and every "
+                     "country is listed here")
     unchecked = w.get("state") != "checked"
     lines.append("  " + _counts(w.get("states"), _words(w.get("reason"), "the catalogue could not be read")))
     research, empty = _int(w.get("no_eligible_source_to_research")), _int(w.get("no_eligible_source_no_permanent_population"))
@@ -296,6 +327,7 @@ def json_floor(doc: dict[str, Any]) -> dict[str, Any]:
     order = _dict(f.get("order"))
     return {
         "state": f.get("state") if f.get("state") in ("checked", "unchecked") else None,
+        "floor_read": _floor_read(f),  # row 279: words for a floor file that was not read, else None
         "reason": _words(f.get("reason"), "") or None,
         "as_of": _when(f.get("as_of")),
         "countries": _int(f.get("countries")),

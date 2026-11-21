@@ -82,6 +82,9 @@ def build_report(today: date) -> str:
         error = f" ({fl['error']})" if fl.get("error") else ""
         out.append(f"- Language floor (configs/language_countries.yml): {fl.get('state')}{error}; no floor state was "
                    "counted, so no table follows.")
+        if catalogue.get("state") != "present":
+            cat_error = f" ({catalogue['error']})" if catalogue.get("error") else ""
+            out.append(f"- Curated catalogue: {catalogue.get('state')}{cat_error}.")
         out.append("")
         return "\n".join(out)
     if catalogue.get("state") != "present":

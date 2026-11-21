@@ -143,7 +143,9 @@ def test_a_tracked_ip_or_case_law_document_credits_no_country_in_the_world_eithe
 
 def test_with_no_floor_every_country_is_in_the_world_and_the_block_says_why():
     block = world_report([], {"sources": []}, {"countries": []}, population=_NO_POP)
-    assert block["countries"] == len(set(ISO_3166_1_ALPHA2) | {"xk"}) and block["floor_countries_excluded"] == 0
+    # row 279: no floor was read, so how many were set aside is unknown (None), never 0
+    assert block["countries"] == len(set(ISO_3166_1_ALPHA2) | {"xk"}) and block["floor_countries_excluded"] is None
+    assert block["floor"] == {"state": "empty"}
     assert "no country is set aside" in block["floor_note"]
 
 

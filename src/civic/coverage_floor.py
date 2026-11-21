@@ -164,7 +164,10 @@ def _load_floor() -> dict[str, Any]:
         }
 
     if read["state"] == "present" and not countries:
-        read = {"state": "empty"}  # read, but no row survived: a floor of nothing is not a floor
+        # Read, but no row survived. Rows that were there and all refused are "unreadable" (they are named in invalid),
+        # never "empty", which would say the file lists no country.
+        read = ({"state": "unreadable", "error": f"no usable country row ({len(invalid)} refused)"} if invalid
+                else {"state": "empty"})
     return {
         "as_of": str(raw.get("as_of") or ""),
         "verification_status": str(raw.get("verification_status") or ""),
