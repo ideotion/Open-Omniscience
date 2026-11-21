@@ -146,6 +146,8 @@
   "Language": "语言",
   "Any language": "任何语言",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "计数依据各来源声明的语言，且只针对最新的文章。筛选还会找到根据正文检测出语言的文章，因此计数可能与结果不同。",
-  "Articles counted": "已计数的文章"
+  "Articles counted": "已计数的文章",
+  "candidates not yet checked": "尚未检查的候选",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "候选是应用找到或收到但尚未检查的网站。不会从中收集内容，也不计为来源。"
  }
 }

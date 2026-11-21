@@ -52,11 +52,6 @@ _PAGE_TEXT = {
     ("app-map.js", "esc(cd.caveat)"): (1, "ooViz.choroplethData writes it through the translator (keyed x12)"),
     ("app-map.js", ".textContent = cd.caveat +"): (1, "ooViz.choroplethData writes it through the translator"),
     ("app-markets.js", "esc(d.method)"): (1, "a correlation method's NAME (spearman), an identifier"),
-    # The standalone reader page (/api/articles/{id}/view) loads reader.js and i18n.js, never app-core.js: its
-    # caveat and method lines are the remaining item of this row, listed so the count cannot grow unseen.
-    ("reader.js", 'esc((d && d.caveat) || "")'): (2, "the standalone reader page has no app-core.js (remaining)"),
-    ("reader.js", 'esc((d && d.method) || "")'): (1, "the standalone reader page has no app-core.js (remaining)"),
-    ("reader.js", 'esc(d.method || "")'): (1, "the standalone reader page has no app-core.js (remaining)"),
 }
 
 
@@ -91,9 +86,11 @@ def test_the_ratchet_sees_a_raw_print():
 
 
 def _said_calls():
-    """Every ``said(...)`` call, with its arguments as text: a string literal, or the NAME of a module-level string
+    """Every ``said(...)`` and ``frame(...)`` call, with its arguments as text: a string literal, or the NAME of a module-level string
     constant in the same file (``FETCH_CAVEAT``), resolved here. Anything else stays an AST node and is refused."""
     for path in sorted((ROOT / "src").rglob("*.py")):
+        if path.name == "shared_text.py":  # the helpers themselves, passing a template through
+            continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except SyntaxError:  # pragma: no cover - the suite's own import would fail first
@@ -103,11 +100,46 @@ def _said_calls():
             for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
             for t in n.targets if isinstance(t, ast.Name)
         }
+        # Only the helpers this file takes from src.shared_text: the briefing package has a frame() of its own.
+        mine = {a.asname or a.name: a.name for n in tree.body if isinstance(n, ast.ImportFrom)
+                and n.module == "src.shared_text" for a in n.names}
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "said":
+            name = mine.get(getattr(node.func, "id", None)) if isinstance(node, ast.Call) else None
+            if name in ("said", "frame"):
                 args = [a.value if isinstance(a, ast.Constant) and isinstance(a.value, str)
                         else consts.get(a.id, a) if isinstance(a, ast.Name) else a for a in node.args]
+                if name == "frame":  # frame(template, ...): the same check as said(field, template, ...)
+                    args = ["(frame)", *args]
                 yield path.relative_to(ROOT), node, args
+
+
+def _tr_words(where: Path, call: ast.Call) -> list[str]:
+    """The words a frame names in ``tr`` (each looked up as a key itself): a literal value, or a name the same file
+    assigns from literals (``missing = "CPU core count" if ... else "total system RAM"``)."""
+    tr = next((k.value for k in call.keywords if k.arg == "tr"), None)
+    if not isinstance(tr, (ast.List, ast.Tuple)):
+        return []
+    named = {e.value for e in tr.elts if isinstance(e, ast.Constant)}
+    tree = ast.parse((ROOT / where).read_text(encoding="utf-8"))
+
+    def literals(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.IfExp):
+            return literals(node.body) + literals(node.orelse)
+        return []
+
+    words: list[str] = []
+    for k in call.keywords:
+        if k.arg not in named:
+            continue
+        words += literals(k.value)
+        if isinstance(k.value, ast.Name):
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == k.value.id for t in n.targets):
+                    words += literals(n.value)
+    assert words or not named, f"{where}:{call.lineno}: a tr value this test cannot read -- use literals"
+    return words
 
 
 def test_every_server_sentence_is_a_key_in_twelve_languages():
@@ -118,13 +150,25 @@ def test_every_server_sentence_is_a_key_in_twelve_languages():
     for where, call, args in calls:
         at = f"{where}:{call.lineno}"
         if len(args) != 2 or not all(isinstance(a, str) for a in args):
-            problems.append(f"{at}: said(field, template) takes two strings, each a literal or a module constant")
+            problems.append(f"{at}: said(field, template) / frame(template) take string templates, each a literal or "
+                            "a module constant")
             continue
         template = args[1]
         missing = [lang for lang in LOCALES if template not in locales[lang]]
         if missing:
             problems.append(f"{at}: not a key in {missing}: {template[:70]!r}")
         holes = set(re.findall(r"\{(\w+)\}", template))
+        if not re.search(r"[^\W\d_]", re.sub(r"\{\w+\}", "", template)):
+            # A template of holes and punctuation alone translates to itself in most locales, and the page reads an
+            # unchanged translation as a missing one, labelling a translated sentence English. Put the separator in
+            # the sentence that holds the parts instead.
+            problems.append(f"{at}: a template needs words of its own, not only holes: {template!r}")
+        if any(k.arg is None for k in call.keywords):
+            problems.append(f"{at}: name every hole's value (no **mapping), so the holes can be checked")
+        for word in _tr_words(where, call):
+            absent = [lang for lang in LOCALES if word not in locales[lang]]
+            if absent:
+                problems.append(f"{at}: the tr word {word!r} is not a key in {absent}")
         given = {k.arg for k in call.keywords if k.arg not in (None, "tr")}
         if holes != given:
             problems.append(f"{at}: holes {sorted(holes)} but values {sorted(given)}")
@@ -160,3 +204,100 @@ def test_the_helpers_are_declared_once():
     src = "\n".join(f.read_text(encoding="utf-8") for f in sorted(STATIC.glob("*.js")))
     for name in ("_ooSaidFramed", "ooSaidText", "ooSaidHtml"):
         assert len(re.findall(rf"\bfunction {name}\(", src)) == 1, name
+
+
+#: THE SERVER-SIDE RATCHET (row 206 part 2). Every caveat, method or reason the server still writes as bare English
+#: (a literal, a module constant or an f-string under one of those keys, not a locale key), counted per file. The
+#: count only goes DOWN: a new sentence goes through said()/frame() and is keyed x12, and a file that converts some
+#: lowers its line here in the same PR. Zero slack either way. Most of what is left goes to report files (the
+#: diagnostics bundle, field data), not to a page; the page labels any of it that does reach one as English (R289).
+#: What it reads: a dict literal's value, a call's keyword, and ``x["caveat"] = ...``. What it cannot: a sentence built
+#: in a local variable first, or joined with ``+`` -- review those by eye.
+BASELINE = ROOT / "configs" / "server_text_unkeyed.tsv"
+_FIELDS = ("caveat", "method", "reason")
+
+
+def _count_unkeyed(text: str, keys: dict) -> int:
+    """How many caveat/method/reason values in one module's source are bare English."""
+    tree = ast.parse(text)
+    consts = {
+        t.id: n.value.value
+        for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+        for t in n.targets if isinstance(t, ast.Name)
+    }
+    count = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            values = [v for k, v in zip(node.keys, node.values, strict=True) if isinstance(k, ast.Constant) and k.value in _FIELDS]
+        elif isinstance(node, ast.Call):
+            values = [k.value for k in node.keywords if k.arg in _FIELDS]
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant) and t.slice.value in _FIELDS
+            for t in node.targets
+        ):
+            values = [node.value]  # out["reason"] = "..."
+        else:
+            continue
+        for v in values:
+            if isinstance(v, ast.JoinedStr):
+                count += 1
+                continue
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                text_ = v.value
+            elif isinstance(v, ast.Name) and v.id in consts:
+                text_ = consts[v.id]
+            else:
+                continue
+            if " " in text_.strip() and text_ not in keys:  # not an identifier (spearman), not keyed already
+                count += 1
+    return count
+
+
+def _unkeyed_server_sentences() -> Counter:
+    en = json.loads((STATIC / "locales" / "en.json").read_text(encoding="utf-8"))
+    found: Counter = Counter()
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        n = _count_unkeyed(path.read_text(encoding="utf-8"), en)
+        if n:
+            found[path.relative_to(ROOT).as_posix()] = n
+    return found
+
+
+def _baseline() -> Counter:
+    out: Counter = Counter()
+    for line in BASELINE.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            path, n = line.split("\t")
+            out[path] = int(n)
+    return out
+
+
+def test_no_new_english_only_server_sentence():
+    found, base = _unkeyed_server_sentences(), _baseline()
+    grew = {p: (base.get(p, 0), n) for p, n in found.items() if n > base.get(p, 0)}
+    assert not grew, (
+        "a server caveat, method or reason was added as bare English -- send it with said()/frame() "
+        "(src/shared_text.py) and key the template in all twelve locales: {file: (allowed, found)} "
+        f"{grew}"
+    )
+    shrank = {p: (n, found.get(p, 0)) for p, n in base.items() if found.get(p, 0) < n}
+    assert not shrank, f"fewer bare English sentences than {BASELINE.name} allows -- lower these lines: {shrank}"
+
+
+def test_the_server_ratchet_sees_each_shape():
+    src = (
+        'X = "A constant caveat, unkeyed."\n'
+        'def f(exc):\n'
+        '    a = {"caveat": "An unkeyed sentence here."}\n'
+        '    b = {"method": X}\n'
+        '    c = {"reason": f"failed ({exc})"}\n'
+        '    g(reason="Another unkeyed one.")\n'
+        '    a["caveat"] = "Set after the fact."\n'
+    )
+    assert _count_unkeyed(src, {}) == 5
+    quiet = (
+        'def f():\n'
+        '    d = {"method": "spearman", "caveat": "A keyed sentence."}\n'
+        '    e = {**said("reason", "Anything keyed or not.")}\n'
+    )
+    assert _count_unkeyed(quiet, {"A keyed sentence.": "A keyed sentence."}) == 0

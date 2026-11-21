@@ -846,17 +846,39 @@ class OllamaClient:
             raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
         self._check_kill_switch(clearnet=True)
         # R763: the Ollama daemon downloads the weights itself, outside the proxy protected mode routes this app through
-        from src.llm.install_transport import refuse_if_protected
+        from src.llm.install_transport import (
+            note_for,
+            pull_ended,
+            pull_started,
+            refuse_if_protected,
+        )
+        from src.safety.transport_watch import TransportWatch
 
-        refuse_if_protected(LLMUnavailable)
+        pull_started()  # R765: counted before anything else, so a stop from here on names this pull
+        try:
+            watch = TransportWatch()  # taken BEFORE the check, so a switch between the two still stops the pull (R765, R769)
+            refuse_if_protected(LLMUnavailable)
+            yield from self._pull_stream(model, watch, note_for)
+        finally:
+            pull_ended()
+
+    def _pull_stream(self, model: str, watch, note_for):
         import json as _json
 
+        reason = watch.stop_reason()
+        if reason is not None:  # the switch landed after the check: no request is sent
+            raise LLMUnavailable(note_for(reason))
         try:
             with self._client.stream(
                 "POST", "/api/pull", json={"model": model, "stream": True}
             ) as resp:
                 resp.raise_for_status()
                 for line in resp.iter_lines():
+                    # R765/R769: protected mode was switched on, or the settings can no longer be read. Leaving the stream closes
+                    # the request, which is what stops the daemon's download; the daemon keeps no unfinished model as installed.
+                    reason = watch.stop_reason()
+                    if reason is not None:
+                        raise LLMUnavailable(note_for(reason))
                     if not line:
                         continue
                     try:

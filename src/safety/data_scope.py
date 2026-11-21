@@ -43,7 +43,7 @@ APP_FILES: frozenset[str] = frozenset({
     "integrity_collapse.json", "keyword-coverage.json", "keyword_cleanup.json", "keyword_filter.json",
     "keyword_fold_job.json", "keyword_fold_report.json", "keyword_rings_local.yml", "langdetect_state.json",
     "legal_consent.json", "memory_stop.json", "narration_progress_state.json", "native_inflight.bin",
-    "newsletter_import.json", "oo-export-request.json", "oo-folder-backup.json", "pass_journal.jsonl",
+    "newsletter_import.json", "ollama_install_interrupted", "oo-export-request.json", "oo-folder-backup.json", "pass_journal.jsonl",
     "perception_extract_progress_state.json", "quarantine_job.json", "reindex_backlog.json", "reindex_job.json",
     "robots_cache.json", "rollup_build.json", "rollup_stopped.json", "runs.jsonl", "safety_settings.json",
     "scheduler_runs.jsonl", "scheduler_settings.json", "search_reindex_job.json", "search_reindex_report.json",

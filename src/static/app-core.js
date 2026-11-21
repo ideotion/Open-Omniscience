@@ -113,20 +113,26 @@
       const frames = obj && obj[field + "_i18n"];
       if (Array.isArray(frames)) {
         let unkeyed = false;
-        const out = frames.filter(f => f && typeof f.t === "string").map(f => {
+        // One frame, and every frame nested in a hole (a reason that quotes what each probe said): each part reads in
+        // the page's language, and any part this locale does not hold marks the whole as English.
+        const one = (f, depth) => {
           // A template this page's locale does not hold (a newer server, a cached older page) fills in ENGLISH:
           // tf gives no sign of it, so ask t() -- and label the result rather than pass it off as translated.
           if (t(f.t) === f.t) unkeyed = true;
           const v = {}, src = (f.v && typeof f.v === "object") ? f.v : {};
           const tr = Array.isArray(f.tr) ? f.tr : [];
           Object.keys(src).forEach(k => {
-            if (src[k] == null) return;
-            if (tr.indexOf(k) !== -1) v[k] = t(String(src[k]));
-            else if (typeof src[k] === "number" && typeof fmtNum === "function") v[k] = fmtNum(src[k]);
-            else v[k] = String(src[k]);
+            const x = src[k];
+            if (x == null) return;
+            if (typeof x === "object" && typeof x.t === "string" && depth < 4) v[k] = one(x, depth + 1);
+            else if (typeof x === "object") return;
+            else if (tr.indexOf(k) !== -1) v[k] = t(String(x));
+            else if (typeof x === "number" && typeof fmtNum === "function") v[k] = fmtNum(x);
+            else v[k] = String(x);
           });
           return tf(f.t, v);
-        }).filter(Boolean).join(" ");
+        };
+        const out = frames.filter(f => f && typeof f.t === "string").map(f => one(f, 0)).filter(Boolean).join(" ");
         if (out) return {text: out, english: unkeyed && lang !== "en"};
       }
       const s = (obj && obj[field] != null) ? String(obj[field]) : "";
@@ -1559,6 +1565,8 @@
     // ship in twelve locales.
     function _laneHostTitle(lane, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const parts = [];
       // Each host sits in a left-to-right ISOLATE (U+2066 … U+2069). The bubble is
       // plain text in an RTL document under Arabic, so without it the bidi algorithm
@@ -1572,6 +1580,13 @@
                    t("the full list is in the security notes"));
       }
       if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
+      // R761 (row 224): a search lane also reaches every site the search RETURNS, which no
+      // table can name in advance. Say so, and name each feed address probed on each of
+      // them: `probePaths` is FEED_PROBE_PATHS exactly (a test ties the two).
+      if (lane.resultSites) {
+        parts.push(tf("then each site the search returns: its robots.txt, its page, the feed links it names (which may sit on another site), and these feed addresses on it: {paths}. Any of these addresses that redirects leads to another site too, whose robots.txt is read first.",
+                      { paths: (lane.probePaths || []).map((p) => "⁦" + p + "⁩").join(" · ") }));
+      }
       parts.push(_laneTransport(lane, kind));
       // A STEP, not only a host: part of this lane is programs the app starts, and the
       // installer script's own download of Ollama is one of them (net-hosts.js `spawned`).
@@ -1595,7 +1610,10 @@
       // sibling `${n} ${t("sources")}` sites all render "1 sources" today. The
       // hover spells the number out in words, where the only lanes that reach it
       // are the two classes, whose counts are never 1.
-      const count = n ? ` <span class="muted">n=${n}</span>` : "";
+      const count = (n ? ` <span class="muted">n=${n}</span>` : "") +
+        // R761: visible on the row, not only in the hover -- the sites a search returns are
+        // contacted too, and the operator should see that before the click that goes online.
+        (lane.resultSites ? ` <span class="muted">${esc(t("+ each site the search returns"))}</span>` : "");
       // tabindex="0": the hosts live in the hover, and invariant #17 opens the bubble on
       // hover, KEYBOARD FOCUS or long-press. A plain span never takes focus, so Tab
       // skipped every lane and a keyboard user could not read one host (row H).
@@ -2638,9 +2656,15 @@
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }
-      if (!_isDownloadKind(j.kind)) return "";
+      if (!_isDownloadKind(j.kind) && !(j.kind === "osm-update" && j.held_by)) return "";  // R772: a held daily update says why too
       let line = "";
-      if (j.state === "paused") {
+      if (j.state === "queued" && j.held_by) {
+        // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
+        line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
+          : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.")
+          : j.held_by === "proxy" ? t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.")
+          : j.held_by === "unverified" ? t("Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+      } else if (j.state === "paused") {
         if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
         else if (j.paused_by === "operator") line = t("Paused by you.");
         else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
@@ -2805,7 +2829,12 @@
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here."))}</div>`);
       }
       if (elQ) {
-        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
+        // R768: protected mode (or unreadable settings) HELD the queue; ONE control resumes it, in order, after the consent popup
+        const heldJob = queued.find(j => j.held_by);
+        const held = heldJob
+          ? `<div style="padding:2px 0 6px"><button class="tiny" title="${esc(t("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue(${esc(JSON.stringify(heldJob.resume_token || ""))})">${esc(_resumeQueueLabel(t, heldJob.resume_transport))}</button></div>`
+          : "";
+        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + held + (queued.length
           ? queued.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."))}</div>`);
         // Read-only "Up next" preview of the COLLECTION pass order. The download
@@ -2875,6 +2904,24 @@
         toast(r.detail ? t(r.detail) : t("Resumed."));
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
+    }
+    // R772: the queue's resume button says, BEFORE the click, which transport it resumes over (the server's reading).
+    function _resumeQueueLabel(t, transport) {
+      if (transport === "proxy") return t("Resume the queue through your proxy");
+      if (transport === "direct") return t("Resume the queue over the direct connection");
+      return t("Resume the queue");
+    }
+    // R768's queue ruling: the ONE control that resumes every held download, in queue order. It re-opens fetches, so the ONE
+    // consent popup comes first (invariant #14); each download then starts under the transport now in force and its own rules.
+    // ``token`` is the transport the button named (R772): the server refuses the click if the transport changed since.
+    async function jobResumeQueue(token) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume the queue"))) return;
+      try {
+        await api("/api/jobs/queue/resume", {method: "POST", body: JSON.stringify({transport: String(token || "")})});
+        toast(t("Resumed."));
+        _renderJobs();
+      } catch (e) { toast(t(e.message), "err"); _renderJobs(); }
     }
     async function jobMove(key, dir, kind) {
       const jobs = (_jobsData && _jobsData.jobs) || [];

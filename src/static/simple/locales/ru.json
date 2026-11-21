@@ -146,6 +146,8 @@
   "Language": "Язык",
   "Any language": "Любой язык",
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Числа основаны на языке, который указывает каждый источник, и только по самым новым статьям. Фильтр находит и статьи, язык которых определён по тексту, поэтому число может отличаться от результатов.",
-  "Articles counted": "Учтено статей"
+  "Articles counted": "Учтено статей",
+  "candidates not yet checked": "кандидаты, ещё не проверенные",
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "Кандидат — это сайт, который приложение нашло или получило, но ещё не проверило. С него ничего не собирается, и он не считается источником."
  }
 }

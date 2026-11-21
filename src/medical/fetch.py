@@ -226,6 +226,10 @@ def _record_failure(name: str, error_class: str) -> None:
         s.commit()
 
 
+#: R768/R769/R772: a run stopped by a transport change, by its reason (anything else is the settings that could not be read).
+_TRANSPORT_ERRORS = {"protected": "protected_mode", "unprotected": "protected_mode_off", "proxy": "proxy_changed"}
+
+
 def run_fetch(
     files: int = DEFAULT_FILES,
     *,
@@ -267,7 +271,16 @@ def run_fetch(
         wanted._set(kind).update(cited._set(kind) | named._set(kind))
 
     http = session if session is not None else _session()
-    listed = list_update_files(http)
+    from src.safety.transport_watch import TransportStopped, stop_reason_of, stop_text_of
+
+    try:
+        listed = list_update_files(http)
+    except TransportStopped as exc:
+        # R768/R772: the transport changed between the consented click and the first request (the corpus scan runs first). Named
+        # the same way as a stop between files; nothing was sent, so no fetch is recorded.
+        return {"cited_ids": n_cited, "named_ids": len(named), "listed": None, "remaining": None, "applied": [],
+                "failed": {"file": None, "error": _TRANSPORT_ERRORS.get(stop_reason_of(exc), "settings_unreadable"), "reason": stop_text_of(exc)},
+                "failed_files": 0, "stopped": False, "coverage": None}
     done = _done_files()
     todo = [n for n in listed if n not in done][:files]
     applied: list[dict] = []
@@ -281,6 +294,14 @@ def run_fetch(
             body = _get(http, UPDATE_BASE + name, MAX_FILE_BYTES)
             applied.append(apply_body(name, body, _expected_md5(http, name), wanted))
         except Exception as exc:  # noqa: BLE001 - recorded on the file's row and named in the result
+            from src.safety.transport_watch import TransportStopped, stop_reason_of, stop_text_of
+
+            if isinstance(exc, TransportStopped):
+                # R768/R769: protected mode was switched on under a direct run, or the settings could not be read. Named, and not
+                # charged to the file; the run never goes on, on that transport or another, until the operator starts it again.
+                failed = {"file": name, "error": _TRANSPORT_ERRORS.get(stop_reason_of(exc), "settings_unreadable"),
+                          "reason": stop_text_of(exc)}
+                break
             if kill_switch_active():
                 # Airplane mode came on mid-run: named as such (#14e), and not charged to the file, which did nothing wrong.
                 failed = {"file": name, "error": "airplane_mode", "reason": NETWORK_REFUSED}
