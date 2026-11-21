@@ -113,6 +113,35 @@ def _said_calls():
                 yield path.relative_to(ROOT), node, args
 
 
+def _tr_words(where: Path, call: ast.Call) -> list[str]:
+    """The words a frame names in ``tr`` (each looked up as a key itself): a literal value, or a name the same file
+    assigns from literals (``missing = "CPU core count" if ... else "total system RAM"``)."""
+    tr = next((k.value for k in call.keywords if k.arg == "tr"), None)
+    if not isinstance(tr, (ast.List, ast.Tuple)):
+        return []
+    named = {e.value for e in tr.elts if isinstance(e, ast.Constant)}
+    tree = ast.parse((ROOT / where).read_text(encoding="utf-8"))
+
+    def literals(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.IfExp):
+            return literals(node.body) + literals(node.orelse)
+        return []
+
+    words: list[str] = []
+    for k in call.keywords:
+        if k.arg not in named:
+            continue
+        words += literals(k.value)
+        if isinstance(k.value, ast.Name):
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == k.value.id for t in n.targets):
+                    words += literals(n.value)
+    assert words or not named, f"{where}:{call.lineno}: a tr value this test cannot read -- use literals"
+    return words
+
+
 def test_every_server_sentence_is_a_key_in_twelve_languages():
     locales = {lang: json.loads((STATIC / "locales" / f"{lang}.json").read_text(encoding="utf-8")) for lang in LOCALES}
     calls = list(_said_calls())
@@ -129,6 +158,17 @@ def test_every_server_sentence_is_a_key_in_twelve_languages():
         if missing:
             problems.append(f"{at}: not a key in {missing}: {template[:70]!r}")
         holes = set(re.findall(r"\{(\w+)\}", template))
+        if not re.search(r"[^\W\d_]", re.sub(r"\{\w+\}", "", template)):
+            # A template of holes and punctuation alone translates to itself in most locales, and the page reads an
+            # unchanged translation as a missing one, labelling a translated sentence English. Put the separator in
+            # the sentence that holds the parts instead.
+            problems.append(f"{at}: a template needs words of its own, not only holes: {template!r}")
+        if any(k.arg is None for k in call.keywords):
+            problems.append(f"{at}: name every hole's value (no **mapping), so the holes can be checked")
+        for word in _tr_words(where, call):
+            absent = [lang for lang in LOCALES if word not in locales[lang]]
+            if absent:
+                problems.append(f"{at}: the tr word {word!r} is not a key in {absent}")
         given = {k.arg for k in call.keywords if k.arg not in (None, "tr")}
         if holes != given:
             problems.append(f"{at}: holes {sorted(holes)} but values {sorted(given)}")
@@ -171,6 +211,8 @@ def test_the_helpers_are_declared_once():
 #: count only goes DOWN: a new sentence goes through said()/frame() and is keyed x12, and a file that converts some
 #: lowers its line here in the same PR. Zero slack either way. Most of what is left goes to report files (the
 #: diagnostics bundle, field data), not to a page; the page labels any of it that does reach one as English (R289).
+#: What it reads: a dict literal's value, a call's keyword, and ``x["caveat"] = ...``. What it cannot: a sentence built
+#: in a local variable first, or joined with ``+`` -- review those by eye.
 BASELINE = ROOT / "configs" / "server_text_unkeyed.tsv"
 _FIELDS = ("caveat", "method", "reason")
 
@@ -189,6 +231,11 @@ def _count_unkeyed(text: str, keys: dict) -> int:
             values = [v for k, v in zip(node.keys, node.values, strict=True) if isinstance(k, ast.Constant) and k.value in _FIELDS]
         elif isinstance(node, ast.Call):
             values = [k.value for k in node.keywords if k.arg in _FIELDS]
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant) and t.slice.value in _FIELDS
+            for t in node.targets
+        ):
+            values = [node.value]  # out["reason"] = "..."
         else:
             continue
         for v in values:
@@ -245,8 +292,9 @@ def test_the_server_ratchet_sees_each_shape():
         '    b = {"method": X}\n'
         '    c = {"reason": f"failed ({exc})"}\n'
         '    g(reason="Another unkeyed one.")\n'
+        '    a["caveat"] = "Set after the fact."\n'
     )
-    assert _count_unkeyed(src, {}) == 4
+    assert _count_unkeyed(src, {}) == 5
     quiet = (
         'def f():\n'
         '    d = {"method": "spearman", "caveat": "A keyed sentence."}\n'

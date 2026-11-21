@@ -58,15 +58,17 @@ def spoken(fr: Any) -> str:
     return _HOLE.sub(_fill, fr["t"])
 
 
-def frame_of(payload: Any, field: str = "reason") -> Any:
+def frame_of(payload: Any, field: str = "reason") -> dict | None:
     """What another payload said in ``field``, ready to sit in a hole: its frame when it sent exactly one, else its
-    English (which the page then shows as data, untranslated)."""
+    English as a frame of its own. That English is no locale key, so the page labels the whole sentence as English
+    rather than pass an untranslated part off as translated. ``None`` when it said nothing."""
     if not isinstance(payload, dict):
         return None
     frames = payload.get(f"{field}_i18n")
     if isinstance(frames, list) and len(frames) == 1 and _is_frame(frames[0]):
         return frames[0]
-    return payload.get(field)
+    text = payload.get(field)
+    return frame(str(text)) if text else None
 
 
 def said(field: str, template: str, *, tr: Any = (), **variables: Any) -> dict:

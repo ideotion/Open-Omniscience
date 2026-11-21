@@ -206,10 +206,10 @@ _NOT_ARM64 = (
 _OVERRIDE_ON = "Enabled anyway by the operator override."
 _OVERRIDE_OFF = "AI features default to off; the override turns them on."
 _UNREAD_FLOOR = (
-    "No usable accelerator was detected ({probe}), and this machine's {missing} could not be read, so the "
+    "No usable accelerator was detected ({gpu}; {apple}), and this machine's {missing} could not be read, so the "
     "{cores}-core / {ram} GB floor could not be checked either."
 )
-_BELOW_FLOOR = "{short}, and no usable accelerator ({probe}) -- {consequence}."
+_BELOW_FLOOR = "{short}, and no usable accelerator ({gpu}; {apple}) -- {consequence}."
 _CORES_SHORT = "{cores} CPU core(s), below the {need} needed"
 _RAM_SHORT = "{ram} GB RAM, below the {need} GB needed"
 _BOTH_SHORT = "{first} and {second}"
@@ -465,8 +465,9 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
         # machine has no GPU" are different claims, and only one of them was
         # measured -- collapsing them is the fabrication the probe-failure tests
         # exist to catch.
-        probe_why = frame("{gpu}; {apple}", gpu=frame_of(gpu) or frame("no dedicated NVIDIA GPU detected"),
-                          apple=frame_of(apple))
+        # What each probe said, each in its own hole (never one punctuation-only template: its translation equals
+        # the English in most locales, and the page would then label a translated sentence as English).
+        gpu_said, apple_said = frame_of(gpu) or frame("no dedicated NVIDIA GPU detected"), frame_of(apple)
         if cores is None or ram_gb is None:
             missing = "CPU core count" if cores is None else "total system RAM"
             return _capability(
@@ -475,7 +476,7 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
                 name=None,
                 reason=said_frames(
                     "reason",
-                    frame(_UNREAD_FLOOR, tr=["missing"], probe=probe_why, missing=missing, cores=MIN_CPU_CORES,
+                    frame(_UNREAD_FLOOR, tr=["missing"], gpu=gpu_said, apple=apple_said, missing=missing, cores=MIN_CPU_CORES,
                           ram=f"{MIN_SYSTEM_RAM_GB:g}"),
                     _override_said(requested),
                 ),
@@ -497,7 +498,7 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
                 name=None,
                 reason=said_frames(
                     "reason",
-                    frame(_BELOW_FLOOR, short=shortfall, probe=probe_why, consequence=frame(IMPRACTICAL_CONSEQUENCE)),
+                    frame(_BELOW_FLOOR, short=shortfall, gpu=gpu_said, apple=apple_said, consequence=frame(IMPRACTICAL_CONSEQUENCE)),
                     _override_said(requested),
                 ),
                 overridden=bool(requested),
