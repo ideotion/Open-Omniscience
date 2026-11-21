@@ -303,9 +303,7 @@ def _sweep_evasions(root) -> None:
         called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
         annotations: list[ast.AST] = []  # a type annotation names the class without building one
         for n in ast.walk(tree):
-            if isinstance(n, ast.arg) and n.annotation is not None:
-                annotations.append(n.annotation)
-            elif isinstance(n, ast.AnnAssign):
+            if (isinstance(n, ast.arg) and n.annotation is not None) or isinstance(n, ast.AnnAssign):
                 annotations.append(n.annotation)
             elif isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.returns is not None:
                 annotations.append(n.returns)
