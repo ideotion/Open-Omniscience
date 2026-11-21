@@ -73,6 +73,17 @@ acquisitions (G2's elections session, §5 step 1). The empty-until-it-runs claus
 not weakened here. No new board row; the placement is what was assumed. Reversed by writing a letter at
 `ANSWER RC08.4`.
 
+**Progress 2026-11-21 (rows 258 and 266; the row stays OPEN).** The read-back path for the operator's Wikidata election
+snapshot run is on main. The snapshot states its age, and one past 90 days, or dated after today, is called stale in the
+Agenda, the coverage report and the external-artifact registry (row 258). One press of the Field data button saves
+`oo-field-*-elections-floor.json`, the `/api/diagnostics/elections-floor` answer with the snapshot layered in: country
+codes, counts and dates, no path or address. The Diagnostics zip carries the same answer as `elections-floor.json` again,
+held to 200,000 bytes, and names what it cut when a large snapshot pushes it over (the per-country entry lists first).
+`python3 scripts/elections_readback.py <file>` prints the snapshot's state, date, age, staleness and counts, the floor's
+four states and the tier report's counts; an absent figure gives its reason, never 0. K13 reads the same age. Pinned by
+`tests/test_elections_snapshot_freshness.py` and `tests/test_elections_readback_row266.py`. **Still owed (operator):** the
+networked snapshot run itself, read back from the file it sends.
+
 **Progress 2026-11-13 (PR #1935, R661 + R662): the climate half has its surface; the row stays OPEN.** The six keyless
 series now have one Climate main tab, a subtab each, fetched only through the consent gate and read back offline, with
 source, licence, last fetch, gaps and parse diagnostics shown per series. A re-fetch keeps every vintage (R662). Still
@@ -228,6 +239,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-17 | **Row A, register ruling G4 built (row 121): the operator curates suggested predictions in a stored IPCC SPM.** Settings → Advanced → IPCC reports → "Suggested predictions" on a stored report lists, in the report's order, every sentence carrying an IPCC calibrated likelihood or confidence term AND a future-looking word (projected, will, a year after the approval, a scenario name), with the words that matched on the row (`src/ingest/ipcc_predictions.py`, deterministic, `METHOD_VERSION` 1). The operator keeps a sentence as a prediction or sets it aside; only that decision is stored (`ipcc_predictions`, keyed by the SPM key and the sentence hash, the sentence copied from the stored report by the server, never from the caller), and a restore carries it with local winning. The short caveat is visible and the method one click away; both routes are local. The suggestion rule was checked on wording in the SPMs' shape, NOT on a downloaded SPM (the build sandbox has no route to www.ipcc.ch), so its count per report is unmeasured. The row's status is unchanged. | session (Lane F) |
 | 2026-11-18 | **Gate text brought up to the rulings it predates; no row changed status.** The header and §4 said Q823 still governs OSM rows leaving the machine: Q823 = a since 2026-09-29. Row C said Q925 was still pending: Q925 = a the same day. Row A's G6 (raw poll data) was left as a tension in the 2026-09-15 log row: RC12 = c (2026-09-29) places poll data in 0.8, so it is not a 0.6 item. Row D gained its progress note. R418's window is closed: the registry classification (c9b1e6372, 2026-11-04) and WAL's carry (f34c8b34d, 2026-11-07, R415) are both on main after `v0.5.0`, so no tag can fall between them. | recorded from OPEN_QUEUE.md (the 37-question list, items 29 and 35) and git history · Lane U |
 | 2026-11-21 | **Row D: the read-back path for its first operator run is named; no row changed status.** The Field data button now saves the Wikipedia coverage file and `scripts/wiki_coverage_readback.py` reads it back for all twelve editions (row 260, PR #2223); an absent edition total says why (row 257, R774, PR #2218). | session (Lane O) |
+| 2026-11-21 | **Row A: the read-back path for the operator's election snapshot run is named; no row changed status.** The snapshot states its age and is called stale past 90 days (row 258, PR #2221); the Field data button saves the elections-floor answer, the Diagnostics zip carries it again as `elections-floor.json` (at most 200,000 bytes, any cut named) and `scripts/elections_readback.py` reads it back (row 266). | session (Lane U) |
 
 ---
 
