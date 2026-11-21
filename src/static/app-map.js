@@ -3398,6 +3398,9 @@
       if (d.status === "downloading") return `<span class="pill">${esc(t("Downloading"))} ${ooLtrIsolate((d.percent || 0) + "%")}</span>`;
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span>`;
       if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${btn("Resume", "resumeOsm")}`;
+      // R768/R769: stopped by a transport change; the hover says what Resume will do
+      if (d.status === "paused" && d.paused_by === "protected") return `<span class="pill warn" title="${esc(t("Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads the rest through your proxy."))}">${esc(t("Paused: protected mode was switched on"))}</span> ${btn("Resume", "resumeOsm")}`;
+      if (d.status === "paused" && d.paused_by === "settings") return `<span class="pill warn" title="${esc(t("Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read."))}">${esc(t("Paused: the settings could not be read"))}</span> ${btn("Resume", "resumeOsm")}`;
       const label = d.status === "error" ? t("Failed") : t("Paused");
       return `<span class="pill ${d.status === "error" ? "err" : "warn"}" title="${esc(d.error || "")}">${esc(label)}</span> ${btn("Resume", "resumeOsm")}`;
     }
@@ -4463,6 +4466,9 @@
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span> <button class="tiny secondary" data-on-click="deleteOsm(${c})">${esc(t("Cancel"))}</button>`;
       const resume = `<button class="tiny secondary" data-on-click="resumeOsm(${c}, this)">${esc(t("Resume"))}</button> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;
       if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${resume}`;
+      // R768/R769: stopped by a transport change; the hover says what Resume will do
+      if (d.status === "paused" && d.paused_by === "protected") return `<span class="pill warn" title="${esc(t("Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads the rest through your proxy."))}">${esc(t("Paused: protected mode was switched on"))}</span> ${resume}`;
+      if (d.status === "paused" && d.paused_by === "settings") return `<span class="pill warn" title="${esc(t("Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read."))}">${esc(t("Paused: the settings could not be read"))}</span> ${resume}`;
       return `<span class="pill ${d.status === "error" ? "err" : "warn"}" title="${esc(d.error || "")}">${esc(d.status === "error" ? t("Failed") : t("Paused"))}</span> ${resume}`;
     }
     function _osmHistCutLine(c) {

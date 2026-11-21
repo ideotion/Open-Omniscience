@@ -85,6 +85,9 @@
       if (r.failed) {
         msg += " " + (r.failed.error === "airplane_mode"
           ? _t("Stopped: airplane mode is on.")
+          // R768/R769: stopped by a transport change, the server's fixed sentence
+          : (r.failed.error === "protected_mode" || r.failed.error === "settings_unreadable")
+          ? _t(r.failed.reason || "")
           : _tf("Stopped at {file}: {error}. Files are applied in NLM's order, so this one is tried again first next time.",
               {file: r.failed.file, error: r.failed.reason || r.failed.error}));
       }

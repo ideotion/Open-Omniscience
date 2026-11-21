@@ -37,6 +37,7 @@ from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.ingest.ssrf_guard import BlockedConnectTarget, connect_scope
 from src.monitoring.secret_scrub import record_text
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
+from src.safety.transport_watch import TransportStopped, TransportWatch  # noqa: F401 - TransportStopped re-exported for the downloads
 
 # The SOCKS proxy schemes requests[socks]/PySocks understand. Shared by the
 # stream-isolation helper below and the C10 (2026-07-24 throughput brief)
@@ -364,6 +365,10 @@ class GuardedSession(requests.Session):
     #: The directories on those hosts this session may talk to (:func:`_checked_path_prefixes`), or ``None`` for no list. Checked in
     #: :meth:`send` beside ``allowed_hosts`` and for the same reason: a redirect hop to another directory is refused before it is sent.
     allowed_path_prefixes: tuple[str, ...] | None = None
+    #: The transport this session was built on, and whether it must stop now (R768, R769): checked before every request, every
+    #: redirect hop and every chunk of every body, so a download that started direct does not go on direct once protected mode is
+    #: switched on, and nothing goes on once the settings cannot be read. ``None`` on a session built without a snapshot.
+    transport_watch: TransportWatch | None = None
 
     def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
         # NOTE for anyone writing a test here: this reads the MODULE-LEVEL
@@ -390,6 +395,8 @@ class GuardedSession(requests.Session):
         return self._send(method, url, *args, **kwargs)
 
     def send(self, request, **kwargs) -> requests.Response:  # type: ignore[override]
+        if self.transport_watch is not None:
+            self.transport_watch.check()  # every redirect hop too: ``requests`` sends each through here
         if self.allowed_hosts is not None:
             refuse_unlisted_host(request.url or "", self.allowed_hosts)
         if self.allowed_path_prefixes is not None:
@@ -433,7 +440,38 @@ class GuardedSession(requests.Session):
                 kwargs["proxies"] = _pool_proxies(url, self.proxy_pool, self.isolation_token)
             elif self.transport_proxy:
                 kwargs["proxies"] = {"http": self.transport_proxy, "https": self.transport_proxy}
-        return super().request(method, url, *args, **kwargs)
+        watch = self.transport_watch
+        if watch is None:
+            return super().request(method, url, *args, **kwargs)
+        watch.check()
+        # R768: the body is read through the watch, chunk by chunk, whether or not the caller streams: a caller that did not ask
+        # for a stream gets the whole body read here, as ``requests`` would have read it, but stopped at the first chunk after
+        # the transport changed rather than after the last.
+        wanted_stream = bool(kwargs.get("stream"))
+        kwargs["stream"] = True
+        resp = super().request(method, url, *args, **kwargs)
+        _read_through_watch(resp, watch)
+        if not wanted_stream:
+            try:
+                resp.content  # noqa: B018 - reads the body now, through the watch
+            except BaseException:
+                resp.close()
+                raise
+        return resp
+
+
+def _read_through_watch(resp: requests.Response, watch: TransportWatch) -> None:
+    """Make every read of ``resp``'s body go through ``watch`` (``content``, ``text`` and ``json`` read through ``iter_content``)."""
+    if not isinstance(resp, requests.Response):
+        return
+    chunks = resp.iter_content
+
+    def iter_content(*args, **kwargs):
+        for chunk in chunks(*args, **kwargs):
+            watch.check()
+            yield chunk
+
+    resp.iter_content = iter_content  # type: ignore[method-assign]
 
 
 #: A token at most this long, made only of ``[A-Za-z0-9_.-]``, is its own SOCKS credential, as written (a host key, ``dl-1``).
@@ -661,6 +699,7 @@ def _session_for(
     s.allowed_hosts = _checked_hosts(allowed_hosts)  # before the early return below: the list holds in transparent mode too
     s.allowed_path_prefixes = _checked_path_prefixes(allowed_path_prefixes)  # likewise
     s.headers["User-Agent"] = user_agent
+    s.transport_watch = TransportWatch.for_settings(settings)  # R768/R769: the transport it was built on, checked as it goes
     if not settings.is_protected:
         return s
     # R657: protected mode names the app to Wikimedia's hosts only; send() picks the agent per request and per redirect hop.

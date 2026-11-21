@@ -281,6 +281,14 @@ def run_fetch(
             body = _get(http, UPDATE_BASE + name, MAX_FILE_BYTES)
             applied.append(apply_body(name, body, _expected_md5(http, name), wanted))
         except Exception as exc:  # noqa: BLE001 - recorded on the file's row and named in the result
+            from src.safety.transport_watch import TransportStopped
+
+            if isinstance(exc, TransportStopped):
+                # R768/R769: protected mode was switched on under a direct run, or the settings could not be read. Named, and not
+                # charged to the file; the run never goes on, on that transport or another, until the operator starts it again.
+                failed = {"file": name, "error": "protected_mode" if exc.reason == "protected" else "settings_unreadable",
+                          "reason": str(exc)}
+                break
             if kill_switch_active():
                 # Airplane mode came on mid-run: named as such (#14e), and not charged to the file, which did nothing wrong.
                 failed = {"file": name, "error": "airplane_mode", "reason": NETWORK_REFUSED}

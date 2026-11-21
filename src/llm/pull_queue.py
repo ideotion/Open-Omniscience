@@ -153,9 +153,18 @@ class ModelPullManager:
                         self._progress = _progress_of(nxt, prog)
             except Exception as exc:  # noqa: BLE001 - surface, never crash the pump
                 status, err = "error", record_text(exc)
+                from src.llm.install_transport import (
+                    AI_INSTALL_STOPPED_NOTE,
+                    AI_INSTALL_UNREADABLE_NOTE,
+                )
+
                 with self._lock:
                     if nxt in self._cancel:  # R765: stopped on purpose, so it reads as cancelled with its reason, not as a failure
                         status, err = "cancelled", None
+                    elif str(exc) in (AI_INSTALL_STOPPED_NOTE, AI_INSTALL_UNREADABLE_NOTE):
+                        # R769: the pull's own watch stopped it (the settings could not be read): the same, with that reason
+                        status, err = "cancelled", None
+                        self._notes[nxt] = str(exc)
             # D6: what ARRIVED, against what was PINNED. Ollama's own /api/tags digest is
             # the only content commitment on this path -- a tag can be re-pointed, so a
             # pull "succeeding" says nothing about which bytes landed. Checked only on a

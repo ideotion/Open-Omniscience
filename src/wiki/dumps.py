@@ -667,7 +667,17 @@ class DumpDownloadManager:
             entry.status = "done"
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
-            if isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
+            from src.safety.transport_watch import TransportStopped
+
+            if isinstance(exc, TransportStopped):
+                # R768/R769: the session's watch stopped it (protected mode switched on under a direct download, or the settings
+                # no longer readable). PAUSED with that reason and the partial file kept: it never goes on, on that transport or
+                # another, until the operator resumes it under the rules then in force.
+                entry.status = "paused"
+                entry.error = None
+                entry.paused_by = "protected" if exc.reason == "protected" else "settings"
+                stopped = True
+            elif isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
                 # R617 (R320, R614): the Stop refused or cut this attempt, still engaged or cleared again before the failure
                 # arrived. ``NetworkBlocked`` is raised only by the switch, so it also covers a Stop that landed after start()'s
                 # check and before this worker opened its window. Stored as "error" the entry would wait for the operator; it is

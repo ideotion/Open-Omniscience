@@ -262,6 +262,9 @@
       if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
       else if (j.paused_by === "operator") line = t("Paused by you.");
       else if (j.paused_by === "restart") line = t("Paused when the app stopped mid-download; the partial file is kept.");
+      // R768/R769: a transport change stopped it; it never resumed on its own
+      else if (j.paused_by === "protected") line = t("Paused because protected mode was switched on: this download had started over a direct connection. Resume downloads the rest through your proxy.");
+      else if (j.paused_by === "settings") line = t("Paused because the safety settings could not be read: nothing is sent until they can be read again. Resume once they can be read.");
     } else if (j.state === "failed" && j.error) {
       // The keyed label frame app-core.js's _jobWhy uses (ooLabelText), so zh/ja take
       // their full-width colon with no Latin space after it (re-walk O-5).
