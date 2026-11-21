@@ -148,6 +148,27 @@
   "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "计数依据各来源声明的语言，且只针对最新的文章。筛选还会找到根据正文检测出语言的文章，因此计数可能与结果不同。",
   "Articles counted": "已计数的文章",
   "candidates not yet checked": "尚未检查的候选",
-  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "候选是应用找到或收到但尚未检查的网站。不会从中收集内容，也不计为来源。"
+  "A candidate is a site the app found or was given but has not checked yet. It is not collected from and is not counted as a source.": "候选是应用找到或收到但尚未检查的网站。不会从中收集内容，也不计为来源。",
+  "refused by airplane mode; no request was sent": "被飞行模式拒绝；未发送任何请求",
+  "the site's robots.txt disallows it": "该网站的 robots.txt 禁止此操作",
+  "the site's robots.txt could not be read, so nothing was fetched": "无法读取该网站的 robots.txt，因此未获取任何内容",
+  "the address or a redirect was refused (off the publisher's site, or not public)": "地址或某次重定向被拒绝（超出发布者网站，或非公开地址）",
+  "stopped because the network mode changed during the fetch": "获取期间网络模式发生变化，因此已停止",
+  "the answer was larger than this table allows": "响应超出了此表允许的大小",
+  "the publisher answered 403 (forbidden)": "发布者返回 403（禁止访问）",
+  "the publisher answered 404 (not found)": "发布者返回 404（未找到）",
+  "the publisher answered 429 (too many requests)": "发布者返回 429（请求过多）",
+  "the publisher refused the request (another 4xx status)": "发布者拒绝了请求（其他 4xx 状态）",
+  "the publisher's server failed (a 5xx status)": "发布者的服务器出错（5xx 状态）",
+  "the publisher did not answer in time": "发布者未能及时响应",
+  "no connection could be made": "无法建立连接",
+  "an answer came, but not the documented table": "收到了响应，但不是文档所述的表格",
+  "another error, not recognised": "其他错误，无法识别",
+  "Latest attempt failed": "最近一次尝试失败",
+  "Why": "原因",
+  "Stored": "已存储",
+  "Nothing stored was changed: the values counted here are kept as they were.": "已存储的内容没有任何变化：这里计数的数值保持原样。",
+  "{n} of {m} series": "{m} 个系列中的 {n} 个",
+  "Most recent failure": "最近一次失败"
  }
 }
