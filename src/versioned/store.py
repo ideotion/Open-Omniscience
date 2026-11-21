@@ -270,6 +270,8 @@ def _held(
     for conn_id, (ref, entry_where) in list(entries.items()):
         if ref() is None:
             entries.pop(conn_id, None)
+            if table is _live:
+                (_by.get(kind) or {}).pop(conn_id, None)
         elif _on(entry_where, where):
             held += 1
     return held
@@ -324,7 +326,6 @@ def held_for_swap(kind: str) -> Iterator[None]:
     name the new file then owns. Not re-entrant (:class:`LaneAlreadyHeld`)."""
     token = object()
     try:
-        where = _file_of(kind)  # the file this hold keeps still: connections to another file hold nothing of it
         with _swap_lock:
             if kind in _swapping:
                 raise LaneAlreadyHeld("this store is already held for a switch")
@@ -338,6 +339,9 @@ def held_for_swap(kind: str) -> Iterator[None]:
         while True:
             for eng in engines:
                 eng.dispose()  # a connection that came back (or finished opening) since the last pass is idle now: closed here
+            # The file this hold keeps still, read on every pass AFTER the kind was marked as switching, so it is the file that is
+            # there now: connections to another file hold nothing of it.
+            where = _file_of(kind)
             with _swap_lock:
                 left = _open_now(kind, where)
                 if not left:
