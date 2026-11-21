@@ -47,6 +47,7 @@ def test_the_law_table_badges_it_as_a_warning_with_its_own_words():
         "const window = {};\n"
         "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n"
         "const _LAW_VERDICT_PILL = " + object_literal(js, "_LAW_VERDICT_PILL") + ";\n"
+        + function_source(js, "lawVerdictLabel")
         + function_source(js, "lawVerdictBadge")
         + "\nconsole.log(lawVerdictBadge({verdict: 'robots_unread', last_status: 'fetch error: robots.txt for h could not be determined (unreachable); refusing to fetch'}));"
         + "\nconsole.log(lawVerdictBadge({verdict: 'robots_blocked', last_status: 'fetch error: robots.txt disallows h'}));"
@@ -54,4 +55,5 @@ def test_the_law_table_badges_it_as_a_warning_with_its_own_words():
     out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout.splitlines()  # noqa: S607
     assert 'class="pill warn"' in out[0] and ">robots.txt not readable<" in out[0]
     assert "could not be determined (unreachable)" in out[0], "the stored reason stays on hover"
-    assert ">robots-blocked<" in out[1]
+    # Row 283: the site's own rule is named as such, never "robots-blocked" shorthand or a failure.
+    assert ">blocked by the site's robots.txt<" in out[1]
