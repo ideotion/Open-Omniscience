@@ -117,10 +117,11 @@ def elections_coverage_floor() -> dict:
         if "counts_from" in out:  # row 273 (R696): the curated catalogue was not read; these are the snapshot's alone
             out["tier_report"].update(catalogue=dict(catalogue), counts_from=out["counts_from"])
     else:
-        # Row 273: neither the curated catalogue nor a snapshot was read, so there are no per-country states to
+        # Row 273: neither the curated catalogue nor a snapshot was read (or, row 279, no floor), so there are no per-country states to
         # report; every count is None beside the catalogue's state, never 0 and never "missing".
-        out["tier_report"] = {"floor_countries": len(floor), "counts": None, "countries": None,
-                              "catalogue": dict(catalogue)}
+        # Row 279: when the floor itself was not read, its size is None too and its state rides beside the catalogue's.
+        out["tier_report"] = {"floor_countries": out.get("floor_countries"), "counts": None, "countries": None,
+                              "catalogue": dict(catalogue), "floor": dict(out.get("floor") or {})}
     out["snapshot"] = snapshot
     return out
 

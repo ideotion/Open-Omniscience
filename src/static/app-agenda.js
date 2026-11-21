@@ -1800,8 +1800,9 @@
         return;
       }
       const floor = _agCov, rep = floor.tier_report, counts = rep.counts || {};
-      const catLine = agCatalogueLine(floor.catalogue);
-      const snapOnly = floor.counts_from === "snapshot_only";
+      const floorLine = agFloorLine(floor.floor, T);
+      const catLine = floorLine || agCatalogueLine(floor.catalogue);
+      const snapOnly = !floorLine && floor.counts_from === "snapshot_only";
       if (catLine && !snapOnly) {
         // Row 273: the catalogue was not read (or holds nothing), so there are no per-country states to
         // draw: the line says why, and no 0 chip claims every floor country is missing.
@@ -1856,6 +1857,15 @@
     // Where the election dates come from: the hand-curated list, and the Wikidata snapshot only
     // when the operator's networked run has written one. An absent snapshot is said, never read
     // as "no elections"; counts only.
+    // Row 279: one line when the language-to-country list (configs/language_countries.yml) was not read as a list
+    // with countries ("" when it was). Absent, empty and unreadable are three different facts and are said apart.
+    function agFloorLine(fl, t) {
+      const st = fl && fl.state;
+      if (!st || st === "present") return "";
+      if (st === "absent") return t("The language-to-country list was not found on this install, so no country is counted from it.");
+      if (st === "empty") return t("The language-to-country list on this install was read and lists no country.");
+      return t("The language-to-country list on this install could not be read, so no country is counted from it.");
+    }
     // Row 273: one short line when the curated events catalogue was not read as a catalogue with events
     // ("" when it was). Absent, unreadable and empty are three different facts and are said apart.
     function agCatalogueLine(cat) {

@@ -64,16 +64,53 @@ LANGUAGE_COUNTRIES_AS_OF = "2026-09-07"
 VALID_BASES: tuple[str, ...] = ("official", "de-facto", "regional")
 
 
+#: The floor file's read state (row 279): ``present``, ``absent`` (no file), ``empty`` (read, lists no usable country) or
+#: ``unreadable`` (the error named by its class, never the path). An unread floor is never a floor of nothing: every
+#: count over it would read 0 of 0, which looks complete.
+FLOOR_STATES = ("present", "absent", "empty", "unreadable")
+
+
 @lru_cache(maxsize=1)
-def _raw() -> dict[str, Any]:
+def _read_floor() -> tuple[dict[str, Any], dict[str, Any]]:
+    """``(raw, state)`` from ONE read of the floor file. Never raises."""
     if not FLOOR_PATH.exists():
-        return {}
-    loaded = yaml.safe_load(FLOOR_PATH.read_text("utf-8"))
-    return loaded if isinstance(loaded, dict) else {}
+        return {}, {"state": "absent"}
+    try:
+        loaded = yaml.safe_load(FLOOR_PATH.read_text("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError, yaml.YAMLError) as exc:
+        return {}, {"state": "unreadable", "error": type(exc).__name__}
+    if loaded is None:
+        return {}, {"state": "empty"}
+    if not isinstance(loaded, dict):
+        return {}, {"state": "unreadable", "error": f"not a mapping ({type(loaded).__name__})"}
+    languages = loaded.get("languages")
+    if languages is not None and not isinstance(languages, dict):
+        return {}, {"state": "unreadable", "error": f"languages is not a mapping ({type(languages).__name__})"}
+    return loaded, {"state": "present"}  # "empty" is decided by load_floor, once the rows are parsed
+
+
+def _raw() -> dict[str, Any]:
+    return _read_floor()[0]
+
+
+_raw.cache_clear = _read_floor.cache_clear  # type: ignore[attr-defined]  # callers (and tests) clear the read by this name
+
+
+def load_floor() -> dict[str, Any]:
+    """The parsed floor (cached; see :func:`_load_floor`). ``load_floor.cache_clear()`` clears the file read too."""
+    return _load_floor()
+
+
+def _clear_floor_caches() -> None:
+    _load_floor.cache_clear()
+    _read_floor.cache_clear()
+
+
+load_floor.cache_clear = _clear_floor_caches  # type: ignore[attr-defined]
 
 
 @lru_cache(maxsize=1)
-def load_floor() -> dict[str, Any]:
+def _load_floor() -> dict[str, Any]:
     """The parsed floor: per-language country rows, plus every refusal the parse made.
 
     Returns ``{as_of, verification_status, method, languages, countries, invalid,
@@ -86,7 +123,7 @@ def load_floor() -> dict[str, Any]:
     # countries and must never enter a per-country floor.
     from src.catalog.countries import ISO_3166_1_ALPHA2
 
-    raw = _raw()
+    raw, read = _raw(), _read_floor()[1]  # through _raw by name, so a test that stands in for the file still reaches here
     langs: dict[str, Any] = {}
     countries: set[str] = set()
     invalid: list[dict[str, str]] = []
@@ -96,7 +133,8 @@ def load_floor() -> dict[str, Any]:
         if not isinstance(block, dict):
             continue
         rows = []
-        for row in block.get("countries") or []:
+        rows_in = block.get("countries")
+        for row in rows_in if isinstance(rows_in, list) else []:
             if not isinstance(row, dict):
                 continue
             cc = str(row.get("cc") or "").strip().lower()
@@ -125,6 +163,11 @@ def load_floor() -> dict[str, Any]:
             "countries": rows,
         }
 
+    if read["state"] == "present" and not countries:
+        # Read, but no row survived. Rows that were there and all refused are "unreadable" (they are named in invalid),
+        # never "empty", which would say the file lists no country.
+        read = ({"state": "unreadable", "error": f"no usable country row ({len(invalid)} refused)"} if invalid
+                else {"state": "empty"})
     return {
         "as_of": str(raw.get("as_of") or ""),
         "verification_status": str(raw.get("verification_status") or ""),
@@ -133,7 +176,22 @@ def load_floor() -> dict[str, Any]:
         "countries": sorted(countries),
         "invalid": invalid,
         "contested": contested,
+        "read": dict(read),
     }
+
+
+load_floor.__wrapped__ = _load_floor.__wrapped__  # type: ignore[attr-defined]  # the uncached body, as an lru_cache gives
+
+
+def floor_state(floor: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The floor's read state (a copy): see :data:`FLOOR_STATES`. ``floor`` defaults to :func:`load_floor`; a floor a
+    caller built by hand without a ``read`` block is ``present`` when it lists a country and ``empty`` when it does not."""
+    floor = load_floor() if floor is None else floor
+    read = floor.get("read")
+    if isinstance(read, dict) and read.get("state"):
+        return dict(read)
+    return {"state": "present" if floor.get("countries") else "empty"}
+
 
 
 def floor_countries() -> set[str]:
@@ -163,6 +221,7 @@ def floor_coverage(
     today = today or date.today()
     floor = load_floor()
     wanted = set(floor["countries"])
+    floor_read = floor_state(floor)
     if events is None:
         _layered, snapshot, catalogue = layered_read(today)  # the snapshot's and the catalogue's read states
         events = load_events()  # the events as before (the same cached layered read)
@@ -172,8 +231,11 @@ def floor_coverage(
     # counts are the snapshot's alone, said so by counts_from. Neither read: every count is None, never 0 or "missing".
     # A snapshot the caller did not hand over is not known to have been read.
     curated_read = catalogue.get("state") == "present"
+    if floor_read["state"] != "present":
+        # Row 279: no floor was read, so there is no denominator: every count, the floor's size included, is None.
+        return _not_read(floor, wanted, catalogue, floor_read)
     if not curated_read and (snapshot or {}).get("state") != "present":
-        return _not_read(floor, wanted, catalogue)
+        return _not_read(floor, wanted, catalogue, floor_read)
 
     with_date: set[str] = set()
     live: set[str] = set()
@@ -248,6 +310,7 @@ def floor_coverage(
         "invalid_rows": floor["invalid"],
         "contested_rows": floor["contested"],
         "catalogue": dict(catalogue),
+        "floor": floor_read,
         **({} if curated_read else {"counts_from": "snapshot_only"}),
     }
 
@@ -256,19 +319,24 @@ def floor_coverage(
 _STATE_KEYS = ("covered", "only_passed_projection", "present_but_dateless", "missing")
 
 
-def _not_read(floor: dict[str, Any], wanted: set[str], catalogue: dict[str, Any]) -> dict[str, Any]:
-    """The floor when the curated catalogue was not read (row 273): the denominator is known, every count is
+def _not_read(
+    floor: dict[str, Any], wanted: set[str], catalogue: dict[str, Any], floor_read: dict[str, Any]
+) -> dict[str, Any]:
+    """The floor when the curated catalogue was not read (row 273), or the floor itself was not (row 279, then the
+    denominator is None too): every count is
     ``None`` and ``catalogue`` says why. Never 0 and never "missing": that would say the calendar holds no
     entry for a country, which nobody looked up. An ``empty`` catalogue WAS read and holds nothing; its state
     says exactly that."""
     out: dict[str, Any] = {
         "as_of": floor["as_of"],
         "verification_status": floor["verification_status"],
-        "floor_countries": len(wanted),
+        # Row 279: the floor's size is known only when the floor was read; otherwise it is None, never 0.
+        "floor_countries": len(wanted) if floor_read["state"] == "present" else None,
         "covered_outside_floor": None,
         "invalid_rows": floor["invalid"],
         "contested_rows": floor["contested"],
         "catalogue": dict(catalogue),
+        "floor": dict(floor_read),
     }
     for key in _STATE_KEYS:
         out[key] = None

@@ -177,9 +177,12 @@
       const reason = kpiFramesText(b.reason_i18n, b.reason, h);
       // Row 273: why the elections counts are unknown, or whose they are, when the curated catalogue was not read.
       const catReason = kpiFramesText(b.catalogue_reason_i18n, b.catalogue_reason, h);
+      // Row 279: why the elections figures are unknown when the language floor itself was not read.
+      const floorReason = kpiFramesText(b.floor_reason_i18n, b.floor_reason, h);
       return `<div class="kpi-block" style="margin:3px 0 3px 14px;font-size:11.5px"${method ? ` title="${esc(method)}"` : ""}>`
         + `<div>${esc(name)} <span class="muted">· ${top.join(" · ")}</span></div>`
         + (figs.length ? `<div class="muted">${figs.join(" · ")}</div>` : "")
+        + (floorReason ? `<div class="muted">${esc(floorReason)}</div>` : "")
         + (catReason ? `<div class="muted">${esc(catReason)}</div>` : "")
         + (reason ? `<div class="muted">${esc(reason)}</div>` : "")
         + `</div>`;

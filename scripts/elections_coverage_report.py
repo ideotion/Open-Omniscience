@@ -57,7 +57,8 @@ def build_report(today: date) -> str:
     out.append("Generated offline by `scripts/elections_coverage_report.py` from the shipped catalogue. "
                "Counts and reasons only; no score.")
     out.append("")
-    out.append(f"- Floor: {rep['floor_countries']} countries, country list as of {cov.get('as_of') or floor.get('as_of') or 'unknown'}.")
+    if rep["floor_countries"] is not None:
+        out.append(f"- Floor: {rep['floor_countries']} countries, country list as of {cov.get('as_of') or floor.get('as_of') or 'unknown'}.")
     if cov.get("caveat"):
         out.append(f"- Floor caveat: {_cell(cov['caveat'])}")
     if snap.get("state") == "present":
@@ -75,6 +76,17 @@ def build_report(today: date) -> str:
     else:
         out.append("- Wikidata snapshot: not generated yet (it needs a networked run of "
                    "`scripts/generate_wikidata_elections.py`); only the hand-curated list is counted.")
+    fl = cov.get("floor") or {}
+    if fl.get("state") not in (None, "present"):
+        # Row 279: no floor was read, so there is no denominator and no table.
+        error = f" ({fl['error']})" if fl.get("error") else ""
+        out.append(f"- Language floor (configs/language_countries.yml): {fl.get('state')}{error}; no floor state was "
+                   "counted, so no table follows.")
+        if catalogue.get("state") != "present":
+            cat_error = f" ({catalogue['error']})" if catalogue.get("error") else ""
+            out.append(f"- Curated catalogue: {catalogue.get('state')}{cat_error}.")
+        out.append("")
+        return "\n".join(out)
     if catalogue.get("state") != "present":
         error = f" ({catalogue['error']})" if catalogue.get("error") else ""
         out.append(f"- Curated catalogue: {catalogue.get('state')}{error}; "
