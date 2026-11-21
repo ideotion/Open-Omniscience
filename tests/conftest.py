@@ -418,6 +418,19 @@ def _early_boot_wal_reading_not_leaked():
 
 
 @pytest.fixture(autouse=True)
+def _wiki_lane_approval_not_leaked():
+    """R772(a): ``src.wiki.service`` remembers the transport the lane was last approved under (``_APPROVED``) and any hold
+    (``_HELD``), process-wide. A test that starts the real lane leaves them set for the next test on the same worker, which would
+    then see a hold it never caused as soon as it changed the transport. Reset after each test, only when the module is loaded
+    (importing it here would load the whole lane for every test)."""
+    yield
+    service = sys.modules.get("src.wiki.service")
+    if service is not None:
+        service._APPROVED = None
+        service.clear_hold()
+
+
+@pytest.fixture(autouse=True)
 def _pending_resume_not_leaked():
     """SCHED-1's resume watcher is a process-global daemon: any test whose resume
     runs out of retries hands off to one, and it polls every RESUME_POLL_S for the

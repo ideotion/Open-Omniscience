@@ -2327,10 +2327,13 @@
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
       const protectedSay = t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+      // R766: settings that could not be read are refused as protected, but said as what they are.
+      const unreadableSay = t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.");
       // Protected mode is refused by the server anyway: say so BEFORE the consent popup, which would otherwise take the app online for nothing.
       try {
         const st = await api("/api/system/update/status", { polled: true });
         if (st && st.blocked === "protected") { if (msg) msg.textContent = protectedSay; return; }
+        if (st && st.blocked === "settings_unreadable") { if (msg) msg.textContent = unreadableSay; return; }
       } catch (_e) { /* the server's own refusal below still names it */ }
       // The helper downloads after this app has stopped, where no socket guard reaches: so the ONE consent popup comes first (invariant #14),
       // and the server refuses the apply anyway while airplane mode is on.
@@ -2348,6 +2351,7 @@
         let say = t("The update could not start; nothing was changed.");
         if (e && typeof e.detail === "string" && e.detail) say += " (" + e.detail + ")";  // the server's own reason, a fixed sentence
         if (code === "protected") say = protectedSay;
+        else if (code === "settings_unreadable") say = unreadableSay;
         else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
         if (msg) msg.textContent = say;
         if (go) go.disabled = false;

@@ -950,8 +950,8 @@ def _listen_target_or_problem(url: str) -> tuple[tuple[str, int] | None, str | N
     (row 247), or ``(None, sentence)`` when no server could listen there.
 
     ONE rule for both, so the probe can never look somewhere the server is not. The port defaults as the client's own
-    URL does (``http`` 80, ``https`` 443); the alias names the loopback rule accepts besides ``localhost`` become their
-    literal address (``localhost`` itself stays the name, as for Ollama under R771). Refused, with a sentence of our
+    URL does (``http`` 80, ``https`` 443); the host is a loopback literal or ``localhost``, the only names R767's
+    loopback rule lets through (``localhost`` stays the name, as for Ollama under R771). Refused, with a sentence of our
     own words (never an exception's text): an address that cannot be read, port 0, or an IPv6 address with a zone
     (``%``), which no server binds as written. The caller has already applied the loopback rule."""
     from urllib.parse import urlparse
@@ -974,7 +974,7 @@ def _listen_target_or_problem(url: str) -> tuple[tuple[str, int] | None, str | N
     host = parsed.hostname or DEFAULT_HOST
     if "%" in host:
         return None, "OO_VLLM_URL names an IPv6 address with a zone (%), which vLLM cannot listen on as written; use [::1]."
-    return ({"localhost.localdomain": "127.0.0.1", "ip6-localhost": "::1"}.get(host, host), port), None
+    return (host, port), None
 
 
 def bind_address(url: str | None = None) -> tuple[str, int]:
@@ -1051,7 +1051,6 @@ def port_occupant(*, timeout: float = 2.0, url: str | None = None) -> dict:
     below, after which the raw ``connect_ex`` opened a TCP connection to that host on every
     Settings read, with no click, past the rule every other local-AI call obeys.
     """
-    import socket as _socket
     from urllib.parse import urlparse
 
     from src.llm.ollama import _loopback_refusal
@@ -1060,11 +1059,17 @@ def port_occupant(*, timeout: float = 2.0, url: str | None = None) -> dict:
     url = base_url() if url is None else url
     refused = _loopback_refusal(url, setting="OO_VLLM_URL")  # first: it also fails closed on an address it cannot read
     if refused is not None:
+        from src.llm.loopback import alias_literal
+
         try:
             port = urlparse(url).port or 0
         except ValueError:
             port = 0
-        return {"state": "refused", "port": port, "detail": refused}
+        out: dict = {"state": "refused", "port": port, "detail": refused}
+        literal = alias_literal(url)
+        if literal is not None:  # R767: a name local only by the hosts file; say which literal to use instead
+            out["use_instead"] = literal
+        return out
     # Where the server this app starts listens (row 247): the same rule, so the two never look at different places.
     target, problem = _listen_target_or_problem(url)
     if target is None:  # never raise, never connect
@@ -1076,13 +1081,14 @@ def port_occupant(*, timeout: float = 2.0, url: str | None = None) -> dict:
     except Exception:  # noqa: BLE001 - a probe must never raise
         pass
     # Nothing vLLM-shaped answered. Is ANYTHING listening?
-    try:
-        family = _socket.AF_INET6 if ":" in host else _socket.AF_INET  # an IPv6 literal ([::1]) needs an IPv6 socket
-        with _socket.socket(family) as s:
-            s.settimeout(timeout)
-            connected = s.connect_ex((host, port)) == 0
-    except OSError:
+    # R767: every answer the name resolves to is checked loopback on the socket itself (fail closed); the host is the one
+    # the server listens on (row 247), so an IPv6 literal is tried with an IPv6 socket.
+    from src.llm.loopback import connect_ex_loopback
+
+    code = connect_ex_loopback(host, port, timeout=timeout)
+    if code is None:
         return {"state": "unknown", "port": port, "detail": f"could not probe {shown_address(url)}."}
+    connected = code == 0
     if not connected:
         # Said only when it is so: a bundle on a machine without vLLM read "installed but not started" beside
         # ``installed: false`` (field report 2026-11-14, row 74).

@@ -1171,7 +1171,7 @@ def test_going_online_releases_what_starting_collection_releases_and_starts_the_
     monkeypatch.setattr(runner, "get_scheduler", lambda: _Sched())
     monkeypatch.setattr(wiki_service, "_state_of", lambda: lane_setting)
     monkeypatch.setattr(wiki_service, "_RUNNER", None)
-    monkeypatch.setattr(wiki_service, "_build", lambda: _Lane())
+    monkeypatch.setattr(wiki_service, "_build", lambda *_a: _Lane())
     monkeypatch.setattr(wiki_service, "stop_wiki_lane", lambda: None)
     try:
         _all_three_latched(registry)
@@ -1195,7 +1195,7 @@ def test_the_wikipedia_lanes_own_start_releases_its_file_and_nothing_else(regist
 
     monkeypatch.setattr(service, "_state_of", lambda: "running")
     monkeypatch.setattr(service, "_RUNNER", None)
-    monkeypatch.setattr(service, "_build", lambda: _Lane())
+    monkeypatch.setattr(service, "_build", lambda *_a: _Lane())
     _all_three_latched(registry)
     service.start_wiki_lane()
     assert started.get("yes") and registry.state()["latched"] == [FILE_CORPUS, "law"]

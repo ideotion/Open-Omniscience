@@ -63,8 +63,6 @@ def _flag(argv: list[str], name: str) -> str:
         ("http://localhost:9001", "localhost", 9001),
         ("http://[::1]:9002", "::1", 9002),
         ("http://127.0.0.1", "127.0.0.1", 80),  # the port the client itself uses
-        ("http://localhost.localdomain:9003", "127.0.0.1", 9003),  # an alias goes as its literal: no DNS
-        ("http://ip6-localhost:9004", "::1", 9004),
     ],
 )
 def test_the_server_listens_on_the_configured_loopback_address(url, host, port, monkeypatch, spawned):
@@ -105,6 +103,8 @@ def test_the_address_is_read_when_asked_not_frozen_at_import(monkeypatch):
         ("http://[::]:8001", "must be loopback"),
         ("http://[::1%25lo]:8001", "zone"),  # no server binds a scoped address as written
         ("http://[::1:8001", "OO_VLLM_URL"),  # a broken IPv6 address: a sentence, never a ValueError
+        ("http://ip6-localhost:9004", "::1"),  # R767: an alias is refused, naming the literal to use instead
+        ("http://localhost.localdomain:9003", "127.0.0.1"),
     ],
 )
 def test_an_address_the_server_cannot_serve_starts_nothing(url, said, monkeypatch, spawned):
@@ -154,75 +154,36 @@ def test_the_status_probe_looks_where_the_server_listens(monkeypatch):
     assert occ["port"] == port and occ["state"] == "foreign", occ
 
 
-def test_an_address_with_no_port_is_probed_on_the_port_the_server_uses(monkeypatch):
+def _record_probe(monkeypatch) -> list[tuple]:
+    """The raw probe's (host, port), through R767's ``connect_ex_loopback``; nothing is connected."""
+    import src.llm.loopback as L
+
     seen: list[tuple] = []
 
-    class _Sock:
-        def __init__(self, *a, **k):
-            pass
+    def probe(host, port, *, timeout):
+        seen.append((host, port))
+        return 111
 
-        def __enter__(self):
-            return self
+    monkeypatch.setattr(L, "connect_ex_loopback", probe)
+    return seen
 
-        def __exit__(self, *a):
-            return False
 
-        def settimeout(self, t):
-            pass
-
-        def connect_ex(self, address):
-            seen.append(address)
-            return 111
-
-    import socket
-
-    monkeypatch.setattr(socket, "socket", _Sock)
+def test_an_address_with_no_port_is_probed_on_the_port_the_server_uses(monkeypatch):
+    seen = _record_probe(monkeypatch)
     monkeypatch.setenv("OO_VLLM_URL", "http://127.0.0.1")
     occ = _REAL_PORT_OCCUPANT(timeout=0.2)
     assert occ["port"] == 80 == V.bind_address()[1]
     assert seen == [("127.0.0.1", 80)]
 
 
-@pytest.mark.parametrize(
-    ("url", "ipv6", "address"),
-    [
-        ("http://[::1]:9002", True, ("::1", 9002)),
-        ("http://127.0.0.1:9002", False, ("127.0.0.1", 9002)),
-        ("http://ip6-localhost:9004", True, ("::1", 9004)),  # probed at the literal the server listens on, not the name
-        ("http://localhost.localdomain:9003", False, ("127.0.0.1", 9003)),
-    ],
-)
-def test_the_probe_opens_the_socket_family_of_the_address(url, ipv6, address, monkeypatch):
-    """Runs where IPv6 is absent too: an IPv6 literal gets an AF_INET6 socket, an IPv4 one AF_INET, at the very address
-    the server is started on (``bind_address``)."""
-    import socket
-
-    families: list[int] = []
-    addresses: list[tuple] = []
-    real_family6, real_family4 = socket.AF_INET6, socket.AF_INET
-
-    class _Sock:
-        def __init__(self, family=real_family4, *a, **k):
-            families.append(family)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def settimeout(self, t):
-            pass
-
-        def connect_ex(self, address):
-            addresses.append(address)
-            return 111
-
-    monkeypatch.setattr(socket, "socket", _Sock)
+@pytest.mark.parametrize("url", ["http://[::1]:9002", "http://127.0.0.1:9002", "http://localhost:9005"])
+def test_the_probe_looks_at_the_address_the_server_listens_on(url, monkeypatch):
+    """The raw probe is handed exactly the (host, port) the server is started on (``bind_address``): ``::1`` without
+    its brackets, so the socket family follows the address."""
+    seen = _record_probe(monkeypatch)
     monkeypatch.setenv("OO_VLLM_URL", url)
     _REAL_PORT_OCCUPANT(timeout=0.2)
-    assert families[-1] == (real_family6 if ipv6 else real_family4)  # the raw probe (the httpx check opens its own first)
-    assert addresses == [address] == [V.bind_address()]
+    assert seen == [V.bind_address()]
 
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1:0", "http://[::1:8001", "http://[::1%25lo]:8001"])

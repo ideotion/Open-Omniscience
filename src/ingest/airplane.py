@@ -115,6 +115,7 @@ from typing import Any, cast
 
 from src.ingest import dns_stale, kill_switch_active
 from src.ingest.egress_window import any_window_open, socket_exempt_here
+from src.ingest.loopback_scope import check_loopback_connect, check_loopback_lookup
 from src.ingest.ssrf_guard import (
     check_connect_target,
     check_resolution,
@@ -349,6 +350,7 @@ def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     if _is_local_host(host) and not _lookup_exempt(host):
         _guard(_ALIAS_LOOKUP_TARGET)
     _guard(host)
+    check_loopback_lookup(host)  # R767: inside the local AI's scope, nothing but this computer is looked up
     with native_call("dns"):
         if _airplane_armed and kill_switch_active() and _is_localhost_name(host):
             infos = _localhost_in_process(args, kwargs)
@@ -402,6 +404,7 @@ def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-unt
     _name_rule_for_connect(address, None)
     _guard(_addr_host(address))
     check_connect_target(address)
+    check_loopback_connect(address, name_allowed=True)  # R767: the numeric answers are checked again at connect()
     return _orig_create_connection(address, *args, **kwargs)
 
 
@@ -411,6 +414,7 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
+        check_loopback_connect(address)
     with native_call("connect"):
         return _orig_connect(self, address)
 
@@ -420,6 +424,7 @@ def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
+        check_loopback_connect(address)
     with native_call("connect"):
         return _orig_connect_ex(self, address)
 
@@ -747,6 +752,7 @@ def _guarded_proactor_connect(self, conn, address):  # type: ignore[no-untyped-d
         address = _name_rule_for_connect(address, getattr(conn, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
+        check_loopback_connect(address)
     return _orig_proactor_connect(self, conn, address)
 
 
@@ -892,6 +898,15 @@ def ensure_connect_guard_installed() -> bool:
         return False
     _install_patches()
     return True
+
+
+def ensure_loopback_guard_installed() -> None:
+    """Install the same patch points for the local AI's loopback-only scope (R767).
+
+    Not gated on any opt-out: ``OO_AIRPLANE_SOCKET_GUARD`` and ``OO_SSRF_CONNECT_GUARD`` switch off OTHER gates, and the
+    loopback check is inert outside :func:`src.ingest.loopback_scope.loopback_only`. Fail closed: if the patches cannot
+    be installed, the error reaches the caller and nothing is sent."""
+    _install_patches()
 
 
 def uninstall_airplane_socket_guard() -> None:
