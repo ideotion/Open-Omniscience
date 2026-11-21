@@ -184,7 +184,7 @@ def test_a_failure_raised_from_none_after_a_refusal_is_recorded_as_itself(caplog
     assert st["error"] == "ValueError: the fallback failed on its own"
 
 
-# --- the count a switch reads never names a connection that no longer exists -------------------------------------------------------
+# --- the count a switch reads: never a connection that no longer exists, always one that may still be open (fails closed) ------------
 
 
 class _Record:
@@ -198,42 +198,93 @@ class _Conn:
     pass
 
 
-def test_a_connection_freed_without_a_close_event_is_not_counted():
-    # The CI failure of row 256's own test (2026-11-21, shard 2): an id left in the open set by a connection that was freed with no
-    # ``close`` event, and later reused by an unrelated object (it resolved to a ``deque``), so the switch refused a lane nothing had
-    # open. The entry now names the pool record weakly, and an entry whose record is gone is not counted.
+@contextlib.contextmanager
+def _noted(conn, record, **flags):
+    store._note("osm", id(conn), record=record, **flags)
+    try:
+        yield
+    finally:
+        store._note("osm", id(conn), live=False, out=False)
+
+
+def test_a_connection_whose_pool_record_was_collected_is_not_counted():
+    # The CI failure of row 256's own test (2026-11-21, shard 2 on three PRs): an id left in the open set by a connection that was
+    # freed with no ``close`` event, later reused by an unrelated object (it resolved to a ``deque``), so the switch refused a lane
+    # nothing had open.
+    import gc
+
     conn = _Conn()
-    rec = _Record(conn)
-    store._note("osm", id(conn), live=True, out=True, record=rec)
+    holder = [_Record(conn)]  # the test's one reference: the store keeps only a weak one
+    store._note("osm", id(conn), live=True, out=True, record=holder[0])
     try:
         assert store.in_use("osm") == 1 and not store.quiet("osm")
-        del rec  # the record is collected with no close event
+        holder.clear()
+        gc.collect()
         assert store.in_use("osm") == 0 and store.quiet("osm")
     finally:
         store._note("osm", id(conn), live=False, out=False)
 
 
-def test_an_entry_whose_record_now_holds_another_connection_is_not_counted():
+def test_a_record_that_now_holds_another_connection_drops_the_old_one():
     first, second = _Conn(), _Conn()
     rec = _Record(first)
-    store._note("osm", id(first), live=True, record=rec)
-    try:
+    with _noted(first, rec, live=True):
         assert not store.quiet("osm")
-        rec.dbapi_connection = None  # closed and forgotten by the pool without telling us
+        rec.dbapi_connection = second
         assert store.quiet("osm")
-        store._note("osm", id(first), live=True, record=rec)
-        rec.dbapi_connection = second  # the same record now holds another connection; the id named is not it
+
+
+def test_what_cannot_be_read_still_counts_as_open():
+    # fail closed: a record holding no connection right now is uncertain, and an entry with no record at all is never dropped
+    conn, other = _Conn(), _Conn()
+    rec = _Record(conn)
+    with _noted(conn, rec, live=True, out=True):
+        rec.dbapi_connection = None
+        assert store.in_use("osm") == 1 and not store.quiet("osm")
+    with _noted(other, None, live=True, out=True):
+        assert store.in_use("osm") == 1 and not store.quiet("osm")
+    assert store.quiet("osm")
+
+
+def _real_engine(tmp_path):
+    return store._build_engine(store.lane("osm"), tmp_path / "osm-probe.db")
+
+
+def test_on_a_real_pool_a_checked_out_connection_counts_and_an_idle_one_counts_until_closed(data_dir):
+    eng = _real_engine(data_dir)
+    try:
+        conn = eng.connect()
+        assert store.in_use("osm") == 1 and not store.quiet("osm")
+        conn.close()
+        assert store.in_use("osm") == 0 and not store.quiet("osm")  # idle in its pool, still open on the file
+        eng.dispose()
         assert store.quiet("osm")
     finally:
-        store._note("osm", id(first), live=False, out=False)
+        eng.dispose()
 
 
-def test_a_connection_its_record_still_holds_is_counted_until_its_close_event():
-    conn = _Conn()
-    rec = _Record(conn)
-    store._note("osm", id(conn), live=True, out=True, record=rec)
-    assert store.in_use("osm") == 1 and not store.quiet("osm")
-    store._note("osm", id(conn), out=False)
-    assert store.in_use("osm") == 0 and not store.quiet("osm")  # idle in its pool: still open on the file
-    store._note("osm", id(conn), live=False)
+def test_on_a_real_pool_a_detached_connection_counts_until_it_is_closed(data_dir):
+    eng = _real_engine(data_dir)
+    try:
+        raw = eng.raw_connection()
+        raw.detach()
+        raw.cursor().execute("SELECT 1")  # still open on the file
+        assert store.in_use("osm") == 1 and not store.quiet("osm")
+        eng.dispose()
+        assert not store.quiet("osm")  # a disposal does not close a detached connection
+        raw.close()
+        assert store.quiet("osm")
+    finally:
+        eng.dispose()
+
+
+def test_on_a_real_pool_a_connection_freed_with_no_close_event_is_not_counted(data_dir):
+    import gc
+
+    eng = _real_engine(data_dir)
+    with eng.connect():
+        pass
+    assert not store.quiet("osm")  # idle in the pool
+    del eng  # the pool goes with its engine, never disposed: its connection is freed, and no ``close`` event fires
+    gc.collect()
     assert store.quiet("osm")

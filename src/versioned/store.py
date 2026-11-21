@@ -113,6 +113,16 @@ _swap_cond = threading.Condition(_swap_lock)
 _opening: dict[str, int] = {}
 _live: dict[str, dict[int, weakref.ref[Any]]] = {}
 _out: dict[str, dict[int, weakref.ref[Any]]] = {}
+#: Connections DETACHED from their pool (``detach`` event): still open on the file until their ``close_detached`` event, and their
+#: record no longer names them, so they are counted here, by id, with no check that could drop them.
+_detached: dict[str, set[int]] = {}
+
+
+class _Pinned:
+    """A record that never dies and names no connection: an entry added without the pool's record is always counted (fail closed)."""
+
+
+_PINNED = _Pinned()
 #: Moved by every disposal of a kind's engines (a hold, ``dispose_lane``). A connection made under an earlier generation is
 #: CLOSED when it comes back (``checkin``) instead of going idle: its engine's pool was replaced while it was out, so it would
 #: otherwise sit open in a pool nothing reaches any more, on the file a switch may have moved away.
@@ -181,23 +191,39 @@ def _note(kind: str, conn_id: int, *, live: bool | None = None, out: bool | None
             if flag is None:
                 continue
             entries = table.setdefault(kind, {})
-            if flag and record is not None:
-                entries[conn_id] = weakref.ref(record)
-            elif not flag:
+            if flag:
+                entries[conn_id] = weakref.ref(record if record is not None else _PINNED)
+            else:
                 entries.pop(conn_id, None)
+        if live is False:
+            _detached.setdefault(kind, set()).discard(conn_id)
+        _swap_cond.notify_all()
+
+
+def _note_detached(kind: str, conn_id: int) -> None:
+    """The pool let go of a connection that stays open (``detach``): counted as open AND handed out until its ``close_detached``."""
+    with _swap_lock:
+        _detached.setdefault(kind, set()).add(conn_id)
+        _live.setdefault(kind, {}).pop(conn_id, None)
+        _out.setdefault(kind, {}).pop(conn_id, None)
         _swap_cond.notify_all()
 
 
 def _held(table: dict[str, dict[int, weakref.ref[Any]]], kind: str) -> int:
-    """How many of ``table``'s entries for ``kind`` are still a connection their pool record holds; the others are dropped (call
-    with ``_swap_lock``). A record that was collected, or whose connection is gone or is another one, means the connection it
-    named was freed without a ``close`` event."""
+    """How many of ``table``'s entries for ``kind`` may still be open (call with ``_swap_lock``). FAILS CLOSED: an entry is dropped
+    only when its connection is POSITIVELY known gone -- the pool's record of it was collected (its pool with it; a sqlite
+    connection closes when it is freed), or the record now holds ANOTHER connection (the one named was replaced, which closes it).
+    A record that holds no connection right now is uncertain and still counts (a detached connection is counted separately,
+    :data:`_detached`)."""
     entries = table.get(kind) or {}
     for conn_id, ref in list(entries.items()):
         rec = ref()
-        conn = getattr(rec, "dbapi_connection", None) if rec is not None else None
-        if conn is None or id(conn) != conn_id:
-            del entries[conn_id]
+        if rec is None:
+            entries.pop(conn_id, None)
+            continue
+        conn = getattr(rec, "dbapi_connection", None)
+        if conn is not None and id(conn) != conn_id:
+            entries.pop(conn_id, None)
     return len(entries)
 
 
@@ -205,12 +231,12 @@ def in_use(kind: str) -> int:
     """How many connections to this lane are handed out right now, or being opened (0 for a lane nobody opened). Idle connections
     in a pool are not counted: they hold nothing, and a hold closes them."""
     with _swap_lock:
-        return _held(_out, kind) + _opening.get(kind, 0)
+        return _held(_out, kind) + len(_detached.get(kind, ())) + _opening.get(kind, 0)
 
 
 def _open_now(kind: str) -> int:
     """Every connection the pools have open on this lane, idle or handed out, plus the opens under way (call with ``_swap_cond``)."""
-    return _held(_live, kind) + _opening.get(kind, 0)
+    return _held(_live, kind) + len(_detached.get(kind, ())) + _opening.get(kind, 0)
 
 
 def quiet(kind: str) -> bool:
@@ -430,6 +456,10 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     @event.listens_for(eng, "close")
     def _lane_closed(dbapi_connection, _record) -> None:
         _note(spec.kind, id(dbapi_connection), live=False, out=False)
+
+    @event.listens_for(eng, "detach")
+    def _lane_detached(dbapi_connection, _record) -> None:
+        _note_detached(spec.kind, id(dbapi_connection))
 
     @event.listens_for(eng, "close_detached")
     def _lane_closed_detached(dbapi_connection) -> None:
