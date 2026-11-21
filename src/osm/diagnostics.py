@@ -71,9 +71,61 @@ def _tables(s: Any) -> set[str]:
     return set(inspect(s.get_bind()).get_table_names())
 
 
+#: The tag-level counts a file's rows add up to (S06-01 S2, Q813). Keys of the change, never a tag's key or value (R734/R736).
+TAG_CHANGES = ("added", "removed", "modified")
+#: How an object took part, from ``osm_tag_changes.object_event``: ``tags_changed`` is a NULL event (a key change on an object the lane held).
+OBJECT_PARTS = ("created", "deleted", "left_class", "tags_changed")
+
+
+def _tag_counts(s: Any, alpha3: str) -> dict[Any, dict[str, int]]:
+    """Row 276: per file time, how many tag rows this country's files wrote, by change, and how many objects took part, by how.
+
+    Counts only, read through the member's own lane session: a key, a value or an object id never leaves this function. A row whose
+    file stated no time is keyed ``None``; it is counted for the country and cannot be given to one file.
+    """
+    from sqlalchemy import String, cast, func, select
+
+    from src.osm.lane_models import OsmTagChange as T
+
+    out: dict[Any, dict[str, int]] = {}
+
+    def slot(when: Any) -> dict[str, int]:
+        return out.setdefault(when, {"rows": 0, **dict.fromkeys(TAG_CHANGES, 0), **{f"objects_{p}": 0 for p in OBJECT_PARTS}})
+
+    for when, change, n in s.execute(
+        select(T.diff_timestamp, T.change, func.count()).where(T.country_alpha3 == alpha3).group_by(T.diff_timestamp, T.change)
+    ):
+        row = slot(when)
+        row["rows"] += int(n)
+        if change in TAG_CHANGES:
+            row[change] += int(n)
+    obj = T.osm_type + ":" + cast(T.osm_id, String)  # one object, counted once per file time (its id is never returned)
+    for when, event, n in s.execute(
+        select(T.diff_timestamp, T.object_event, func.count(func.distinct(obj)))
+        .where(T.country_alpha3 == alpha3)
+        .group_by(T.diff_timestamp, T.object_event)
+    ):
+        part = "tags_changed" if event is None else str(event)
+        if part in OBJECT_PARTS:
+            slot(when)[f"objects_{part}"] += int(n)
+    return out
+
+
+def _run_tags(when: Any, tags: dict[Any, dict[str, int]] | None, reason: str | None, shared: set[Any]) -> dict[str, Any]:
+    """One run's tag counts (row 276), joined on the file's own time; null with the reason whenever the rows cannot be given to it."""
+    if tags is None:
+        return {"tag_changes": None, "tag_changes_reason": reason}
+    if when is None:
+        return {"tag_changes": None, "tag_changes_reason": "this file states no time, so its tag rows cannot be told apart"}
+    if when in shared:
+        return {"tag_changes": None, "tag_changes_reason": "another recorded file carries the same time, so its tag rows cannot be told apart"}
+    zero = {"rows": 0, **dict.fromkeys(TAG_CHANGES, 0), **{f"objects_{p}": 0 for p in OBJECT_PARTS}}
+    return {"tag_changes": dict(tags.get(when, zero))}  # a file found with no row wrote none: a counted 0, the table was read
+
+
 def _country(s: Any, c: Any, have: set[str]) -> dict[str, Any]:
     from src.osm.apply import FEED_PREFIX, _position
-    from src.osm.lane_models import OsmDiffRun
+    from src.osm.lane_models import OsmDiffRun, OsmTagChange
     from src.versioned.feed import cursor_row
     from src.versioned.models import VersionedCursor, VersionedGap
 
@@ -85,6 +137,15 @@ def _country(s: Any, c: Any, have: set[str]) -> dict[str, Any]:
     runs = list(s.query(OsmDiffRun).filter_by(alpha3=c.alpha3).order_by(OsmDiffRun.applied_at.desc(), OsmDiffRun.id.desc())) if has_runs else []
     gaps = list(s.query(VersionedGap).filter_by(feed=feed).order_by(VersionedGap.detected_at.desc(), VersionedGap.id.desc())) if has_gaps else []
     cur = cursor_row(s, feed) if has_cursor else None
+    tags: dict[Any, dict[str, int]] | None = None
+    tags_reason: str | None = None
+    if OsmTagChange.__tablename__ not in have:
+        tags_reason = _OLD_LANE
+    else:
+        try:
+            tags = _tag_counts(s, c.alpha3)
+        except Exception as exc:  # noqa: BLE001 - one unreadable count never blanks the country's record
+            tags_reason = f"the tag rows could not be counted ({type(exc).__name__})"
     if c.diff_sequence is not None:
         source, source_reason = "change file", None
     elif pos is not None:
@@ -115,6 +176,17 @@ def _country(s: Any, c: Any, have: set[str]) -> dict[str, Any]:
         ],
         "gaps_not_shown": max(0, len(gaps) - GAPS_KEPT),
     }
+    # Row 276: what the files did, for the whole country (every file time, the oldest included). A count the lane cannot give is null
+    # with its reason, never a 0; rows whose file stated no time are counted here and in no run.
+    if tags is None:
+        out["tag_changes_total"], out["tag_changes_reason"] = None, tags_reason
+    else:
+        total = {"rows": 0, **dict.fromkeys(TAG_CHANGES, 0), **{f"objects_{p}": 0 for p in OBJECT_PARTS}}
+        for block in tags.values():
+            for k, v in block.items():
+                total[k] += v
+        out["tag_changes_total"] = total
+        out["tag_rows_time_not_recorded"] = tags.get(None, {}).get("rows", 0)
     if source_reason:
         out["position"]["reason"] = source_reason
     elif pos_ts is None:
@@ -145,6 +217,7 @@ def _country(s: Any, c: Any, have: set[str]) -> dict[str, Any]:
         if unmeasured:
             cost["unmeasured"] = dict.fromkeys(unmeasured, "no recorded change file carries this measurement")
         out["cost"] = cost
+        shared = {r.diff_timestamp for r in runs if r.diff_timestamp is not None and sum(1 for o in runs if o.diff_timestamp == r.diff_timestamp) > 1}
         out["runs"] = [
             {
                 "sequence": r.sequence,
@@ -153,6 +226,7 @@ def _country(s: Any, c: Any, have: set[str]) -> dict[str, Any]:
                 "bytes_fetched": r.bytes_fetched,
                 "fetch_seconds": r.fetch_seconds,
                 "apply_seconds": r.apply_seconds,
+                **_run_tags(r.diff_timestamp, tags, tags_reason, shared),
             }
             for r in runs[:RUNS_KEPT]
         ]
@@ -233,7 +307,9 @@ def _build() -> dict[str, Any]:
     out: dict[str, Any] = {
         "method": (
             "the lane's osm_countries rows, its osm_diff_runs (one per change file applied, measured where the work ran) and the "
-            "substrate feed's cursor and gaps; a retention gap is a re-baseline, a budget gap a hand re-cut"
+            "substrate feed's cursor and gaps; a retention gap is a re-baseline, a budget gap a hand re-cut. Per file, the tag rows it wrote "
+            "(osm_tag_changes, joined on the file's own time and the country): counts by change and by how each object took part, never a "
+            "key, a value or an id"
         ),
         "measured_on": _machine(),
         "countries": [],
@@ -288,6 +364,8 @@ def diagnostics_member(max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
     which a sixth fully-populated country starts to cost the oldest runs, and ``test_the_member_is_cut_to_its_budget...`` holds a
     60-run country to it. The slot row states the number the bundle gives it. (Measured before ``street_view`` existed; that slot adds about
     0.2 KB unmeasured and 0.5 KB measured to the fixed part, 2026-11-19, which costs the sixth country a few more of its oldest runs.)
+    Row 276's tag counts add about 170 bytes to each shown run and 223 to each country (measured 2026-11-21 with 4- to 7-digit counts):
+    a run carries its counts, so the cut that drops the oldest run drops its counts with it, and the country's total stays.
     """
     try:
         budget = int(max_bytes)
