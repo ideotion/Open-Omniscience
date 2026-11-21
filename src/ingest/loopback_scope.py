@@ -43,12 +43,13 @@ def loopback_only() -> Iterator[None]:
     first (not gated on ``OO_AIRPLANE_SOCKET_GUARD`` or ``OO_SSRF_CONNECT_GUARD``: those are opt-outs of other gates)."""
     from src.ingest.airplane import ensure_loopback_guard_installed
 
-    ensure_loopback_guard_installed()
-    _state.depth = _depth() + 1
+    base = _depth()
     try:
+        ensure_loopback_guard_installed()
+        _state.depth = base + 1
         yield
     finally:
-        _state.depth = _depth() - 1
+        _state.depth = base  # idempotent: an interrupt anywhere above leaves the depth as it was found (R161 shape)
 
 
 def _literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
