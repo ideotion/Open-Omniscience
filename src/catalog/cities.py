@@ -299,7 +299,7 @@ def parse_cities_sparql(payload: dict) -> list[City]:
         pop_raw = (b.get("population") or {}).get("value")
         try:
             pop = int(float(pop_raw)) if pop_raw else None
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             pop = None
         out.append(
             City(name=name, lat=lat, lon=lon, country=(cc.lower() if cc else None), population=pop)

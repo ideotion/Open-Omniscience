@@ -400,7 +400,7 @@ FRAME_OVERRIDE_VERIFYING = (
 def _env_mb(name: str) -> int | None:
     try:
         v = int(float(os.getenv(name, "") or 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # row 252: "inf" in the variable
         return None
     return v * MIB if v > 0 else None
 

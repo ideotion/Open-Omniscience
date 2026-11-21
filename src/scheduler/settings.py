@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import asdict, dataclass, field, fields
 
 _LOG = logging.getLogger(__name__)
@@ -415,17 +416,30 @@ def _read_raw_strict() -> dict | None:
 
 
 def _coerce_int(value, fallback: int, lo: int, hi: int) -> int:
+    """A stored integer clamped to [lo, hi], or ``fallback`` for anything that is not a finite number.
+
+    Row 252: a stored ``1e999`` reads back from JSON as infinity, and ``int(inf)`` raises ``OverflowError``, which no
+    caller caught, so one hand-edited or damaged field made every settings read fail. NaN and infinity are not a
+    number of anything here, and take the fallback like any other unreadable value.
+    """
     try:
+        if isinstance(value, float) and not math.isfinite(value):
+            return fallback
         return max(lo, min(hi, int(value)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return fallback
 
 
 def _coerce_float(value, fallback: float, lo: float, hi: float) -> float:
+    """A stored number clamped to [lo, hi], or ``fallback`` for anything that is not a finite number (row 252: NaN
+    used to come out as ``hi`` or ``lo`` depending on argument order, and infinity as a bound, both silently)."""
     try:
-        return max(lo, min(hi, float(value)))
-    except (TypeError, ValueError):
+        f = float(value)
+    except (TypeError, ValueError, OverflowError):
         return fallback
+    if not math.isfinite(f):
+        return fallback
+    return max(lo, min(hi, f))
 
 
 def _coerce_target(value) -> dict:
@@ -440,10 +454,10 @@ def _coerce_target(value) -> dict:
     for k, v in value.items():
         try:
             w = float(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         key = str(k).strip().lower()
-        if key and w > 0:
+        if key and w > 0 and math.isfinite(w):  # row 252: an infinite weight swallowed every other share
             out[key] = w
     return out
 
@@ -1100,9 +1114,13 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
 
     def _ranged(key: str, lo: int, hi: int, label: str) -> None:
         if key in updates and updates[key] is not None:
+            raw_v = updates[key]
+            if isinstance(raw_v, float) and not math.isfinite(raw_v):
+                # row 252: int(inf) raised OverflowError past this refusal (a 500, not a 400); NaN too
+                raise SchedulerSettingsError(f"{label} must be an integer")
             try:
-                v = int(updates[key])
-            except (TypeError, ValueError):
+                v = int(raw_v)
+            except (TypeError, ValueError, OverflowError):
                 raise SchedulerSettingsError(f"{label} must be an integer") from None
             if not (lo <= v <= hi):
                 raise SchedulerSettingsError(f"{label} must be between {lo} and {hi}")
@@ -1151,7 +1169,7 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
     if "equilibrium_floor" in updates and updates["equilibrium_floor"] is not None:
         try:
             f = float(updates["equilibrium_floor"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise SchedulerSettingsError("equilibrium_floor must be a number") from None
         if not (0.0 <= f <= 1.0):
             raise SchedulerSettingsError("equilibrium_floor must be between 0 and 1")
