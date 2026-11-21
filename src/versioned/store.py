@@ -57,6 +57,7 @@ import contextlib
 import logging
 import threading
 import time
+import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -102,11 +103,16 @@ _swap_cond = threading.Condition(_swap_lock)
 #:     sees it, and an open that has not passed the check yet waits for the hold to end;
 #:   * ``_live``: every connection the pools hold, idle or handed out (the pool's ``connect`` event adds it, its ``close`` and
 #:     ``close_detached`` events remove it);
-#:   * ``_out``: the ones handed out right now (``checkout`` adds, ``checkin`` and a close remove). Sets of ids rather than
-#:     counters, so an unpaired event (a ``checkin`` for a checkout that failed) can never take the figure below the truth.
+#:   * ``_out``: the ones handed out right now (``checkout`` adds, ``checkin`` and a close remove). Keyed by the connection's id
+#:     rather than counted, so an unpaired event (a ``checkin`` for a checkout that failed) can never take the figure below the
+#:     truth; and each entry keeps a WEAK reference to the pool's record of the connection (row 264), so an entry whose record is
+#:     gone, or now holds another connection, is not counted (:func:`_held`). SQLAlchemy can free a connection with no ``close``
+#:     event: a session never closed whose connection the garbage collector hands back to a pool already disposed, and that pool
+#:     then collected. Its id stayed here and was later reused by an unrelated object, so a switch counted a connection that did
+#:     not exist and refused (measured: a suite run, the id resolving to a ``deque``).
 _opening: dict[str, int] = {}
-_live: dict[str, set[int]] = {}
-_out: dict[str, set[int]] = {}
+_live: dict[str, dict[int, weakref.ref[Any]]] = {}
+_out: dict[str, dict[int, weakref.ref[Any]]] = {}
 #: Moved by every disposal of a kind's engines (a hold, ``dispose_lane``). A connection made under an earlier generation is
 #: CLOSED when it comes back (``checkin``) instead of going idle: its engine's pool was replaced while it was out, so it would
 #: otherwise sit open in a pool nothing reaches any more, on the file a switch may have moved away.
@@ -168,25 +174,43 @@ def _end_open(kind: str) -> None:
         _swap_cond.notify_all()
 
 
-def _note(kind: str, conn_id: int, *, live: bool | None = None, out: bool | None = None) -> None:
+def _note(kind: str, conn_id: int, *, live: bool | None = None, out: bool | None = None, record: Any = None) -> None:
+    """Add (``True``) or forget (``False``) one connection in ``_live``/``_out``. An add needs the pool's ``record`` of it."""
     with _swap_lock:
-        if live is not None:
-            (_live.setdefault(kind, set()).add if live else _live.setdefault(kind, set()).discard)(conn_id)
-        if out is not None:
-            (_out.setdefault(kind, set()).add if out else _out.setdefault(kind, set()).discard)(conn_id)
+        for table, flag in ((_live, live), (_out, out)):
+            if flag is None:
+                continue
+            entries = table.setdefault(kind, {})
+            if flag and record is not None:
+                entries[conn_id] = weakref.ref(record)
+            elif not flag:
+                entries.pop(conn_id, None)
         _swap_cond.notify_all()
+
+
+def _held(table: dict[str, dict[int, weakref.ref[Any]]], kind: str) -> int:
+    """How many of ``table``'s entries for ``kind`` are still a connection their pool record holds; the others are dropped (call
+    with ``_swap_lock``). A record that was collected, or whose connection is gone or is another one, means the connection it
+    named was freed without a ``close`` event."""
+    entries = table.get(kind) or {}
+    for conn_id, ref in list(entries.items()):
+        rec = ref()
+        conn = getattr(rec, "dbapi_connection", None) if rec is not None else None
+        if conn is None or id(conn) != conn_id:
+            del entries[conn_id]
+    return len(entries)
 
 
 def in_use(kind: str) -> int:
     """How many connections to this lane are handed out right now, or being opened (0 for a lane nobody opened). Idle connections
     in a pool are not counted: they hold nothing, and a hold closes them."""
     with _swap_lock:
-        return len(_out.get(kind, ())) + _opening.get(kind, 0)
+        return _held(_out, kind) + _opening.get(kind, 0)
 
 
 def _open_now(kind: str) -> int:
     """Every connection the pools have open on this lane, idle or handed out, plus the opens under way (call with ``_swap_cond``)."""
-    return len(_live.get(kind, ())) + _opening.get(kind, 0)
+    return _held(_live, kind) + _opening.get(kind, 0)
 
 
 def quiet(kind: str) -> bool:
@@ -365,7 +389,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         # open counted, which refuses this lane's later rebuilds until a restart (a refusal, never a loss).
         with _swap_lock:
             pool_entry.info[_GEN_KEY] = getattr(_open_gen, "value", _gen.get(spec.kind, 0))
-        _note(spec.kind, id(dbapi_connection), live=True)
+        _note(spec.kind, id(dbapi_connection), live=True, record=pool_entry)
         _end_open(spec.kind)
 
     @event.listens_for(eng, "handle_error")
@@ -390,8 +414,8 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     # R702 part 2: what the lane's switch must know is open (``_live``, ``_out``). The checkout listener is registered AFTER
     # ``file_identity``'s own, so a connection it drops at checkout (one on a replaced file) is never counted as handed out.
     @event.listens_for(eng, "checkout")
-    def _lane_checked_out(dbapi_connection, _record, _proxy) -> None:
-        _note(spec.kind, id(dbapi_connection), out=True)
+    def _lane_checked_out(dbapi_connection, pool_entry, _proxy) -> None:
+        _note(spec.kind, id(dbapi_connection), out=True, record=pool_entry)
 
     @event.listens_for(eng, "checkin")
     def _lane_checked_in(dbapi_connection, pool_entry) -> None:

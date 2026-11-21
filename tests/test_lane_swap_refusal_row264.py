@@ -182,3 +182,58 @@ def test_a_failure_raised_from_none_after_a_refusal_is_recorded_as_itself(caplog
     caplog.set_level(logging.DEBUG)
     st = _run(BackgroundJob("test-row264-from-none", "T", worker))
     assert st["error"] == "ValueError: the fallback failed on its own"
+
+
+# --- the count a switch reads never names a connection that no longer exists -------------------------------------------------------
+
+
+class _Record:
+    """Stands in for SQLAlchemy's pool record: the count reads only its ``dbapi_connection``."""
+
+    def __init__(self, conn) -> None:
+        self.dbapi_connection = conn
+
+
+class _Conn:
+    pass
+
+
+def test_a_connection_freed_without_a_close_event_is_not_counted():
+    # The CI failure of row 256's own test (2026-11-21, shard 2): an id left in the open set by a connection that was freed with no
+    # ``close`` event, and later reused by an unrelated object (it resolved to a ``deque``), so the switch refused a lane nothing had
+    # open. The entry now names the pool record weakly, and an entry whose record is gone is not counted.
+    conn = _Conn()
+    rec = _Record(conn)
+    store._note("osm", id(conn), live=True, out=True, record=rec)
+    try:
+        assert store.in_use("osm") == 1 and not store.quiet("osm")
+        del rec  # the record is collected with no close event
+        assert store.in_use("osm") == 0 and store.quiet("osm")
+    finally:
+        store._note("osm", id(conn), live=False, out=False)
+
+
+def test_an_entry_whose_record_now_holds_another_connection_is_not_counted():
+    first, second = _Conn(), _Conn()
+    rec = _Record(first)
+    store._note("osm", id(first), live=True, record=rec)
+    try:
+        assert not store.quiet("osm")
+        rec.dbapi_connection = None  # closed and forgotten by the pool without telling us
+        assert store.quiet("osm")
+        store._note("osm", id(first), live=True, record=rec)
+        rec.dbapi_connection = second  # the same record now holds another connection; the id named is not it
+        assert store.quiet("osm")
+    finally:
+        store._note("osm", id(first), live=False, out=False)
+
+
+def test_a_connection_its_record_still_holds_is_counted_until_its_close_event():
+    conn = _Conn()
+    rec = _Record(conn)
+    store._note("osm", id(conn), live=True, out=True, record=rec)
+    assert store.in_use("osm") == 1 and not store.quiet("osm")
+    store._note("osm", id(conn), out=False)
+    assert store.in_use("osm") == 0 and not store.quiet("osm")  # idle in its pool: still open on the file
+    store._note("osm", id(conn), live=False)
+    assert store.quiet("osm")
