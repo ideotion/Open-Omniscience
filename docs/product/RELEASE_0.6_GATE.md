@@ -173,6 +173,16 @@ steps.** Of the three closing conditions:
   stacked consonant or a vowel written before its consonant), tested on real Khmer, Lao and Burmese words, so the three are
   scored, every hit ≈; the stated limit is that syllable edges are checked and word edges are not.
 
+**Progress 2026-11-21 (row 267; the row stays OPEN on the operator's live verification).** The coverage report the row closes
+on can now come back from the operator's machine. One press of the Field data button saves `oo-field-*-law-coverage.json`,
+`/api/diagnostics/law-coverage` in its export envelope (the Diagnostics zip's `law-coverage.json`), measured at 37,397 bytes on
+the 140-country floor with the shipped catalogue. `python3 scripts/law_coverage_readback.py <file>` prints every floor country by
+state, the order within a state and its source and date (or "by code" and why), the twelve-language tally with zh on its own
+line beside Hong Kong and Macau, the many-country sources as counts, the world block and the catalogue's official counts. It also
+reads a piece set, the member out of a Diagnostics zip or the zip itself. An absent figure prints its reason, never 0, and only
+codes, states, counts and dates are printed. Pinned by `tests/test_law_coverage_readback_row267.py`, including a fixture that
+holds reasons and no figures.
+
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
 **What it must demonstrate.** Per edition: pages seen / edition total (from `siteinfo` statistics), full-text
@@ -237,6 +247,7 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-18 | **Gate text brought up to the rulings it predates; no row changed status.** The header and §4 said Q823 still governs OSM rows leaving the machine: Q823 = a since 2026-09-29. Row C said Q925 was still pending: Q925 = a the same day. Row A's G6 (raw poll data) was left as a tension in the 2026-09-15 log row: RC12 = c (2026-09-29) places poll data in 0.8, so it is not a 0.6 item. Row D gained its progress note. R418's window is closed: the registry classification (c9b1e6372, 2026-11-04) and WAL's carry (f34c8b34d, 2026-11-07, R415) are both on main after `v0.5.0`, so no tag can fall between them. | recorded from OPEN_QUEUE.md (the 37-question list, items 29 and 35) and git history · Lane U |
 | 2026-11-21 | **Row D: the read-back path for its first operator run is named; no row changed status.** The Field data button now saves the Wikipedia coverage file and `scripts/wiki_coverage_readback.py` reads it back for all twelve editions (row 260, PR #2223); an absent edition total says why (row 257, R774, PR #2218). | session (Lane O) |
 | 2026-11-21 | **Row B: the read-back path for the measured daily diff cost is named; no row changed status.** `scripts/osm_change_files_readback.py` reads the OSM change-file cost the Field data button saves (row 117) back per country (row 263). | session (Lane O) |
+| 2026-11-21 | **Row C: the coverage report comes back through Field data; no row changed status.** The button saves `/api/diagnostics/law-coverage` and `scripts/law_coverage_readback.py` prints every floor country by state with the twelve-language tally (row 267). | session (Lane O) |
 
 ---
 
