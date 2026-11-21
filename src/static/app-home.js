@@ -45,24 +45,27 @@
     // counts, and that it is one part of the total. The visible surface keeps the
     // predicate; the total and the "collection does not reach them" live here.
     const HOME_SOURCE_SPLIT_HOVER = {
-      sources_qualified: "{n} of your {total} sources: enabled AND qualified — what collection actually reaches. This is the headline source count.",
-      sources_pending: "{n} of your {total} sources: enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
-      sources_candidates: "{n} of your {total} sources: not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.",
+      sources_qualified: "{n} of the {rows} sites in your list ({total} of them count as sources): enabled AND qualified — what collection actually reaches.",
+      sources_pending: "{n} of the {rows} sites in your list ({total} of them count as sources): enabled but not qualified — awaiting a verdict, or judged and refused. Collection does not reach them.",
+      sources_candidates: "{n} of the {rows} sites in your list ({total} of them count as sources): not enabled — discovered candidates awaiting review, and any source switched off or whose admission was undone. Collection does not reach them.",
     };
     const HOME_SOURCE_SPLIT_KEYS = ["sources_qualified", "sources_pending", "sources_candidates"];
     function homeStatLabel(k) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return t(HOME_STAT_LABELS[k] || k.replace(/_/g, " "));
     }
-    // The hover for one split figure, or "" for any other key. `total` is the flat
+    // The hover for one split figure, or "" for any other key. `rows` is the flat
     // COUNT(*) when the payload has it, else the sum -- the same number, since the three
-    // partition the table.
+    // partition the table; `total` is the R773 source count.
     function homeSourceSplitHover(k, counts) {
       const frame = HOME_SOURCE_SPLIT_HOVER[k];
       if (!frame) return "";
       const c = counts || {};
-      const total = (typeof c.sources === "number") ? c.sources
+      const rows = (typeof c.sources === "number") ? c.sources
         : HOME_SOURCE_SPLIT_KEYS.reduce((a, sk) => a + (c[sk] || 0), 0);
+      // R773: {total} is the SOURCE count (collected from, or enabled and qualified), never the row count, which
+      // also holds candidates nobody has checked; {rows} names the list the three parts split.
+      const total = (typeof c.sources_counted === "number") ? c.sources_counted : (c.sources_qualified || 0);
       const F = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, x) => (v && v[x] != null ? String(v[x]) : m)));
@@ -70,7 +73,7 @@
       // language switcher never changes, so a French strip read "6,402" (click-through
       // B14). Guarded, because node suites extract this function without the formatter.
       const N = (x) => (typeof fmtNum === "function") ? fmtNum(x || 0, 0) : String(x || 0);
-      return F(frame, {n: N(c[k]), total: N(total)});
+      return F(frame, {n: N(c[k]), rows: N(rows), total: N(total)});
     }
     // The strip's entries, in the server's order, except that the flat "sources" figure
     // is REPLACED IN PLACE by its three-way split (S4). Q1114 = a: the flat COUNT(*) blends

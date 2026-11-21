@@ -2306,7 +2306,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       return [
         { id: "sources", label: t("Sources"), unit: t("sources"), scale: "sequential",
-          caveat: t("Catalogued sources based in each country — counts only, no score.") },
+          // R773: a source is one the app collected from or may collect from now; a candidate not yet checked is not one.
+          caveat: t("Sources based in each country: sites the app collected from or may collect from now. Candidates not yet checked are not counted. Counts only, no score.") },
         { id: "articles", label: t("Articles"), unit: t("articles"), scale: "sequential",
           caveat: t("Articles collected from sources in each country — counts only, no score.") },
         { id: "keywords", label: t("Keyword mentions"), unit: t("mentions"), scale: "sequential",
@@ -2331,7 +2332,9 @@
         let v;
         if (continentMode) { const ca = r.continent && contAgg[r.continent]; if (!ca) return; v = ca.value; }
         else v = r[dim.id];
-        if (v != null && isFinite(v)) {
+        // R773: a country whose only rows are candidates not yet checked has NO source, so it is drawn as no data and
+        // never counted among the countries with data (a 0 would paint it as covered).
+        if (v != null && isFinite(v) && !(dim.id === "sources" && v === 0)) {
           values[key] = v;
           if (r.lat != null && r.lon != null) points.push({ iso2: key, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[key]) });
         }
@@ -2347,6 +2350,8 @@
           : _mapTf("{n} countries with data", { n: fmtNum(nWith, 0) })}.`;
       let caveat = dim.caveat
         + (unloc ? `  ${_mapTf("{count} with no country — counted, not mapped.", { count: _ooMapCount(dim.id, unloc) })}` : "");
+      const nCand = dim.id === "sources" ? (_ooMapPayload.candidates_not_checked || 0) : 0;
+      if (nCand) caveat += `  ${ooLabelText(t("Candidates not yet checked"), fmtNum(nCand, 0))}.`;
       if (_ooMapPlacesOn) caveat += `  ${t("Mentioned places: deduced from text, never confirmed.")}`;
       // Server-IP layer (slice 6c): offline-geolocated captured server IPs, distinct
       // from the editorial source-country choropleth; the endpoint's own caveat travels.
@@ -2646,6 +2651,7 @@
         </div>
         <div style="margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px">
           ${line(t("Sources"), row.sources)}
+          ${row.candidates ? line(t("Candidates not yet checked"), row.candidates) : ""}
           ${line(t("Articles"), row.articles)}
           ${line(t("Keyword mentions"), row.keywords)}
           ${tone}

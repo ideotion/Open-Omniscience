@@ -740,6 +740,15 @@ and *Discovered candidates* (still disabled — see below) — because blending 
 one number made a machine-grown discovery backlog of tens of thousands of candidates
 read as if the app were already gathering from all of them.
 
+**Sources and candidates, everywhere a count is shown (R773):** a *source* is a site the
+app has collected from, or one collection may take now (enabled **and** qualified). A
+*candidate not yet checked* is a site the app found or was given but has not judged yet: it
+is not collected from and is not counted as a source. Country coverage, the regional floors,
+the map, the per-country table, the simple view and the diagnostics files count sources only
+and show the candidates as their own figure beside them, so a country reached only by
+unchecked discovery finds reads as **not covered**. Sites judged and refused, or switched
+off, that never gave an article are in neither figure; the Library tiles list them.
+
 #### Re-verification — a stamp does not last forever
 
 A verdict is a measurement, and a measurement ages. **A qualified stamp is re-checked
