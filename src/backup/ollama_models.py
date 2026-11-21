@@ -139,7 +139,11 @@ def _read_refused(mroot: Path) -> bool:
             break
         for dirpath, _dirs, files in os.walk(mroot, onerror=refused.append):
             # A manifest we can list but not open is refused too (files owned by the service user).
-            if refused or any(not os.access(os.path.join(dirpath, f), os.R_OK) for f in files):
+            # A dangling link is not a refusal (os.path.exists follows it and says False).
+            if refused or any(
+                os.path.exists(fp) and not os.access(fp, os.R_OK)
+                for fp in (os.path.join(dirpath, f) for f in files)
+            ):
                 return True
     except OSError:
         return True
