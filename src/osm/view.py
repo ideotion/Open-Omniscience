@@ -38,6 +38,7 @@ NOTHING HERE TOUCHES THE NETWORK: it reads ``osm.db`` and nothing else.
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -261,6 +262,9 @@ def view(w: float, s: float, e: float, n: float) -> dict[str, Any]:
         if not ses.query(OsmViewIndex).count():
             return {**out, "status": "not-indexed", "total": 0, "seconds": 0.0}
         _ensure(ses)
+        # Every map states the date of the OpenStreetMap data it draws (0.6 gate, row 259): the
+        # street layer always did; the object and cluster layers drew undated.
+        out["vintage"] = _vintage(_countries_in_box(ses, w, s, e, n))
         few: int = ses.execute(
             text(f"SELECT count(*) FROM (SELECT 1 FROM osm_rtree WHERE {hit} LIMIT :cap)"),  # nosec B608 # hit is a constant clause; values are bound
             {**p, "cap": POINTS_PER_VIEW + 1},
@@ -385,6 +389,39 @@ def _iso(d: datetime | None) -> str | None:
     return (d if d.tzinfo else d.replace(tzinfo=UTC)).isoformat()
 
 
+def _vintage(rows: list[Any]) -> list[dict[str, Any]]:
+    """Each country's data date as the legend states it: the extract's and the last diff applied."""
+    return [{
+        "alpha3": c.alpha3, "extract_date": _iso(c.extract_vintage),
+        "last_diff": _iso(c.diff_timestamp), "diff_sequence": c.diff_sequence,
+    } for c in rows]
+
+
+def _countries_in_box(ses: Any, w: float, s: float, e: float, n: float) -> list[Any]:
+    """The lane's countries whose data can be in the box: their border's box meets it.
+
+    Read from the country rows (a handful), never from the objects, so the cluster view that
+    reads no object still names its data's date. A row whose border box is not recorded (a cut
+    still running, or one that failed before its border) is KEPT: its objects may be on the map,
+    and listing a date too many is honest where leaving one out is not. Any status is kept for
+    the same reason: a cut's objects are written as it goes, under the extract date of its row.
+    """
+    from src.osm.lane_models import OsmCountry
+
+    out = []
+    for c in ses.query(OsmCountry).order_by(OsmCountry.alpha3):
+        try:
+            box = (json.loads(c.border_json) if c.border_json else {}).get("bbox")
+        except (ValueError, AttributeError):
+            box = None
+        if isinstance(box, list) and len(box) == 4:
+            min_lat, min_lon, max_lat, max_lon = (float(x) for x in box)   # Border.bbox's order
+            if max_lon < w or min_lon > e or max_lat < s or min_lat > n:
+                continue
+        out.append(c)
+    return out
+
+
 def streets(west: float, south: float, east: float, north: float) -> dict[str, Any]:
     """The roads to draw in the box ``west, south, east, north``, under the published caps. Reads ``osm.db`` only.
 
@@ -437,14 +474,10 @@ def streets(west: float, south: float, east: float, north: float) -> dict[str, A
         total = sum(counts)
         out["counts"] = dict(zip(out["classes"], counts, strict=True))
         out["total"] = total
-        vint = []
-        if countries:
-            for c in ses.query(OsmCountry).filter(OsmCountry.alpha3.in_(sorted(countries))).order_by(OsmCountry.alpha3):
-                vint.append({
-                    "alpha3": c.alpha3, "extract_date": _iso(c.extract_vintage),
-                    "last_diff": _iso(c.diff_timestamp), "diff_sequence": c.diff_sequence,
-                })
-        out["vintage"] = vint
+        out["vintage"] = _vintage(
+            ses.query(OsmCountry).filter(OsmCountry.alpha3.in_(sorted(countries))).order_by(OsmCountry.alpha3).all()
+            if countries else []
+        )
         if not total:
             out.update(status="no-roads", roads=[], dropped=[])
             out["seconds"] = round(time.monotonic() - t0, 3)
