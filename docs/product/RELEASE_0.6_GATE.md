@@ -77,8 +77,9 @@ not weakened here. No new board row; the placement is what was assumed. Reversed
 snapshot run is on main. The snapshot states its age, and one past 90 days, or dated after today, is called stale in the
 Agenda, the coverage report and the external-artifact registry (row 258). One press of the Field data button saves
 `oo-field-*-elections-floor.json`, the `/api/diagnostics/elections-floor` answer with the snapshot layered in: country
-codes, counts and dates, no path or address. The Diagnostics zip carries the same answer as `elections-floor.json` again,
-held to 200,000 bytes, and names what it cut when a large snapshot pushes it over (the per-country entry lists first).
+codes, counts, dates, entry titles and the reasons a date is absent, no path or address. The Diagnostics zip carries the
+same answer as `elections-floor.json` again, held to 200,000 bytes: it names what it cut when a large snapshot pushes it
+over (the per-country entry lists first), and says so with the size written if even that does not fit.
 `python3 scripts/elections_readback.py <file>` prints the snapshot's state, date, age, staleness and counts, the floor's
 four states and the tier report's counts; an absent figure gives its reason, never 0. K13 reads the same age. Pinned by
 `tests/test_elections_snapshot_freshness.py` and `tests/test_elections_readback_row266.py`. **Still owed (operator):** the
