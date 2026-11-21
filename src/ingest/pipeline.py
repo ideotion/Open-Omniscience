@@ -697,7 +697,7 @@ def ingest_source(
     """Ingest a source's RSS/Atom feed (the feed is fetched through the ethical path).
 
     ``entry_site`` (R773 (3), a candidate's qualification trial on a feed its own page named): only entries whose
-    address is on that site (the domain or a subdomain) are fetched; the others are counted in ``off_site_entries``
+    address is on that site (the same host, `www.` ignored, the crawler's rule: a subdomain is another site) are fetched; the others are counted in ``off_site_entries``
     and never asked for, so a trial reaches the candidate and nothing else. None (every collection pass) changes
     nothing.
 

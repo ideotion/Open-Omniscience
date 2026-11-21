@@ -64,13 +64,15 @@ class _Recorder:
     def __init__(self, pages: dict[str, tuple[str, str]]):
         self.pages = pages
         self.log: list[str] = []
+        self.headers: dict[str, dict] = {}
 
     def declared_sitemaps(self, url: str) -> list[str]:
         self.log.append(url.rstrip("/") + "/robots.txt")
         return []
 
-    def fetch(self, url: str, *, require_html: bool = True, **_kw) -> FetchResult:
+    def fetch(self, url: str, *, require_html: bool = True, extra_headers=None, **_kw) -> FetchResult:
         self.log.append(url)
+        self.headers[url] = dict(extra_headers or {})
         if url not in self.pages:
             raise FetchFailed(f"404 for {url}")
         content, ctype = self.pages[url]
@@ -107,11 +109,13 @@ def _candidate(db, domain="cand.example") -> Source:
 
 
 HOME = "https://cand.example/"
+ARTICLE = ("<html><body><p>story</p></body></html>", "text/html")
 PAGE = (
     "<html><head>"
     '<link rel="alternate" type="application/rss+xml" href="/feed-one.xml">'
     '<link rel="alternate" type="application/atom+xml" href="https://news.cand.example/two.atom">'
     '<link rel="alternate" type="application/rss+xml" href="/feed-three.xml">'
+    '<link rel="alternate" type="application/rss+xml" href="/feed-four.xml">'
     '<link rel="alternate" type="application/rss+xml" href="https://feeds.elsewhere.test/x.rss">'
     "</head><body>home</body></html>",
     "text/html",
@@ -124,6 +128,8 @@ def test_a_found_feed_is_tried_and_only_its_same_site_entries_are_fetched(db, ar
         HOME: PAGE,
         "https://cand.example/feed-one.xml": (_rss("https://cand.example/a1", "https://elsewhere.test/b",
                                                    "https://www.cand.example/a2"), "application/rss+xml"),
+        "https://cand.example/a1": ARTICLE,
+        "https://www.cand.example/a2": ARTICLE,
     })
     out = q.trial_fetch(db, src, rec, max_items=5)
     assert out["channel"] == "feed" and out["feed_found_on_page"] is True
@@ -141,7 +147,9 @@ def test_the_trial_reaches_only_what_the_disclosure_names(db, articles):
     rec = _Recorder({
         HOME: PAGE,
         "https://cand.example/feed-one.xml": (_rss(), "application/rss+xml"),
-        "https://news.cand.example/two.atom": (_rss("https://elsewhere.test/only-off-site"), "application/rss+xml"),
+        "https://cand.example/feed-three.xml": (_rss("https://elsewhere.test/only-off-site",
+                                                     "https://news.cand.example/a-subdomain-is-another-site"),
+                                                "application/rss+xml"),
         "https://cand.example/sitemap.xml": (
             '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
             "<url><loc>https://cand.example/story-1</loc></url>"
@@ -153,13 +161,13 @@ def test_the_trial_reaches_only_what_the_disclosure_names(db, articles):
     assert out["channel"] == "sitemap"
     assert src.rss_url is None, "a feed that yielded nothing is put back"
     hosts = {urlsplit(u).hostname for u in rec.log}
-    assert hosts <= {"cand.example", "news.cand.example"}, sorted(hosts)
+    assert hosts <= {"cand.example"}, sorted(hosts)
     feeds = [u for u in rec.log if u.endswith((".xml", ".atom")) and "sitemap" not in u]
-    assert feeds == ["https://cand.example/feed-one.xml", "https://news.cand.example/two.atom"]
+    assert feeds == ["https://cand.example/feed-one.xml", "https://cand.example/feed-three.xml"]
     assert len(feeds) <= ff.TRIAL_FEED_LINKS_MAX
-    allowed_paths = {"/robots.txt", "/", "/feed-one.xml", "/two.atom", "/story-1", *sitemap._CONVENTIONAL_PATHS}
+    allowed_paths = {"/robots.txt", "/", "/feed-one.xml", "/feed-three.xml", "/story-1", *sitemap._CONVENTIONAL_PATHS}
     assert {urlsplit(u).path for u in rec.log} <= allowed_paths
-    assert "https://cand.example/feed-three.xml" not in rec.log, "the third link is past TRIAL_FEED_LINKS_MAX"
+    assert "https://cand.example/feed-four.xml" not in rec.log, "the third same-site link is past TRIAL_FEED_LINKS_MAX"
 
 
 def test_a_page_with_no_feed_link_guesses_none(db, articles):
@@ -191,14 +199,24 @@ def test_feed_links_are_read_in_order_and_held_to_the_site():
     html = PAGE[0]
     links = ff.feed_links_in_page(html, HOME)
     assert links == ["https://cand.example/feed-one.xml", "https://news.cand.example/two.atom",
-                     "https://cand.example/feed-three.xml", "https://feeds.elsewhere.test/x.rss"]
+                     "https://cand.example/feed-three.xml", "https://cand.example/feed-four.xml",
+                     "https://feeds.elsewhere.test/x.rss"]
     assert ff.same_site("https://www.cand.example/x", "cand.example")
-    assert ff.same_site("https://news.cand.example/x", "www.cand.example")
+    assert ff.same_site("https://cand.example:8443/x", "www.cand.example")
+    # the crawler's rule (security read, row 249): a subdomain is ANOTHER site, as for sitemaps (R627) ...
+    assert not ff.same_site("https://news.cand.example/x", "www.cand.example")
+    assert not ff.same_site("https://news.cand.example/x", "cand.example")
+    # ... a shared host's other tenants are other sites ...
+    assert not ff.same_site("https://other.wordpress.com/feed", "cand.wordpress.com")
+    # ... and an address carrying userinfo is refused whichever side of the @ names the site
+    assert not ff.same_site("https://cand.example@evil.test/x", "cand.example")
+    assert not ff.same_site("https://user@cand.example/x", "cand.example")
     assert not ff.same_site("https://cand.example.evil.test/x", "cand.example")
     assert not ff.same_site("https://notcand.example/x", "cand.example")
     assert not ff.same_site("http://[::1/x", "cand.example")
     rep = ff.find_trial_feed(_Recorder({HOME: PAGE}), "cand.example")
-    assert rep.feeds == links[:2] and rep.off_site == 1 and rep.error is None
+    assert rep.feeds == ["https://cand.example/feed-one.xml", "https://cand.example/feed-three.xml"]
+    assert rep.off_site == 2 and rep.error is None
 
 
 def test_a_refused_home_page_is_reported_and_yields_no_feed():
@@ -244,3 +262,83 @@ def test_the_disclosure_sentence_is_keyed_and_translated(path: Path):
     assert "robots.txt" in d[HOVER]
     if path.stem != "en":
         assert d[HOVER] != HOVER, f"{path.stem} leaves the trial disclosure in English"
+
+
+def test_a_later_trial_of_a_kept_feed_still_fetches_only_same_site_entries(db, articles):
+    """Security read 1 (blocking): a feed one trial found and kept is the source's ``rss_url``, so the NEXT trial took
+    the plain feed path and fetched every entry. Every trial judges this site, the second as much as the first."""
+    src = _candidate(db)
+    feed = "https://cand.example/feed-one.xml"
+    rec = _Recorder({HOME: PAGE, feed: (_rss("https://cand.example/a1"), "application/rss+xml"),
+                     "https://cand.example/a1": ARTICLE, "https://cand.example/a3": ARTICLE})
+    q.trial_fetch(db, src, rec, max_items=5)
+    assert src.rss_url == feed
+    rec.pages[feed] = (_rss("https://cand.example/a3", "https://elsewhere.test/later", "https://news.cand.example/s"),
+                       "application/rss+xml")
+    rec.log.clear()
+    out = q.trial_fetch(db, src, rec, max_items=5)
+    assert rec.log == [feed, "https://cand.example/a3"], rec.log
+    assert out["off_site_entries"] == 2
+
+
+def test_a_feed_with_entries_but_nothing_to_judge_is_not_kept(db, articles):
+    """Security read 2 (N4): entries that all fail to fetch are no evidence the feed serves the site; it is put back."""
+    src = _candidate(db)
+    rec = _Recorder({HOME: PAGE,
+                     "https://cand.example/feed-one.xml": (_rss("https://cand.example/gone"), "application/rss+xml")})
+    out = q.trial_fetch(db, src, rec, max_items=5)
+    assert out.get("channel") == "sitemap"
+    assert src.rss_url is None
+
+
+def test_a_feed_not_kept_leaves_no_address_or_fetch_state_once_committed(db, articles):
+    """Security read 2 (S1, S2): ``ingest_source`` commits its own bookkeeping, so a feed put back only in memory came
+    back on the next commit; and the conditional-GET state of one feed tried was sent with the next. Read back after rolling
+    back whatever was left uncommitted: nothing of a feed not kept is left, and no feed tried is asked with old validators."""
+    from src.database.models import FeedFetchState
+
+    src = _candidate(db)
+    db.add(FeedFetchState(source_id=src.id, etag='"stale"', last_modified="Mon, 01 Jan 2024 00:00:00 GMT",
+                          consecutive_unchanged=4))
+    db.commit()
+    feed_one, feed_three = "https://cand.example/feed-one.xml", "https://cand.example/feed-three.xml"
+    rec = _Recorder({HOME: PAGE, feed_one: (_rss(), "application/rss+xml"),
+                     feed_three: (_rss(), "application/rss+xml")})
+    q.trial_fetch(db, src, rec, max_items=5)
+    assert rec.headers[feed_one] == {} and rec.headers[feed_three] == {}, rec.headers
+    db.rollback()  # anything not committed is gone (an in-memory database shares one connection, so a second
+    db.expire_all()  # session would see the uncommitted writes too)
+    assert db.get(Source, src.id).rss_url is None
+    assert db.get(FeedFetchState, src.id) is None
+
+
+def test_a_feed_not_kept_is_put_back_even_when_the_trial_raises(db, articles, monkeypatch):
+    src = _candidate(db)
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("extraction exploded")
+
+    monkeypatch.setattr(pipeline, "ingest_url", boom)
+    rec = _Recorder({HOME: PAGE, "https://cand.example/a1": ARTICLE,
+                     "https://cand.example/feed-one.xml": (_rss("https://cand.example/a1"), "application/rss+xml")})
+    with pytest.raises(RuntimeError):
+        q.trial_fetch(db, src, rec, max_items=5)
+    db.rollback()
+    db.expire_all()
+    assert db.get(Source, src.id).rss_url is None
+
+
+def test_a_page_full_of_feed_links_is_read_in_bounded_time():
+    """Security read 1: the dedupe was quadratic, so a 10 MB home page of links took about 100 s. Reading stops at
+    ``PAGE_FEED_LINKS_READ_MAX`` distinct links, and a repeated link is one set lookup."""
+    import time
+
+    many = "".join(f'<link rel="alternate" type="application/rss+xml" href="/f{i}.xml">' for i in range(20000))
+    same = '<link rel="alternate" type="application/rss+xml" href="/same.xml">' * 20000
+    start = time.perf_counter()
+    links = ff.feed_links_in_page(f"<html><head>{many}</head></html>", HOME)
+    repeated = ff.feed_links_in_page(f"<html><head>{same}</head></html>", HOME)
+    assert time.perf_counter() - start < 5
+    assert len(links) == ff.PAGE_FEED_LINKS_READ_MAX
+    assert links[0] == "https://cand.example/f0.xml"
+    assert repeated == ["https://cand.example/same.xml"]

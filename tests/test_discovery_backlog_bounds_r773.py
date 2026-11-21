@@ -113,7 +113,8 @@ def test_the_gate_names_the_held_countries_largest_first(db):
     _add(db, 9, country=None, prefix="x")
     g = discovery_gate(db, bound=100, country_bound=4)
     assert g == {"paused": False, "backlog": 20, "bound": 100, "country_bound": 4,
-                 "held_countries": [{"country": "fr", "unjudged": 6}, {"country": "jp", "unjudged": 4}]}
+                 "held_countries": [{"country": "fr", "unjudged": 6}, {"country": "jp", "unjudged": 4}],
+                 "tried_without_evidence": 0}
     assert unjudged_by_country(db) == {"fr": 6, "jp": 4, "ke": 1}
 
 
@@ -150,3 +151,38 @@ def test_the_pace_is_measured_from_first_verdicts_and_gives_no_date_without_one(
     db.commit()
     p = judging_pace(db, backlog=7, now=now)
     assert p["judged"] == 2 and p["per_day"] == pytest.approx(2 / 7, abs=0.05) and p["eta_days"] == pytest.approx(24.5)
+
+
+def test_a_candidate_a_trial_already_reached_never_holds_discovery(db):
+    """Security read 2 (S3): a site tried that gave nothing to judge stays unchecked and is tried again later by the
+    ladder; counting it would let a run of silent sites hold discovery for good and make the estimate promise a drain
+    judging cannot deliver. It is counted on its own line instead, and no row is deleted."""
+    _add(db, 3, country="fr", prefix="new")
+    _add(db, 2, country="fr", prefix="silent")
+    for s in db.query(Source).filter(Source.name.like("silent%")).all():
+        db.add(SourceQualificationAttempt(source_id=s.id, attempted_at=datetime.now(UTC), verdict="no_evidence",
+                                          criteria_version="t"))
+    db.commit()
+    assert unjudged_backlog(db) == 3
+    assert unjudged_by_country(db) == {"fr": 3}
+    g = discovery_gate(db, bound=4, country_bound=3)
+    assert g["paused"] is False and g["backlog"] == 3 and g["tried_without_evidence"] == 2
+    assert g["held_countries"] == [{"country": "fr", "unjudged": 3}]
+    assert discovery_gate(db, bound=3, country_bound=0)["paused"] is True
+    assert db.query(Source).count() == 5
+
+
+def test_the_pace_counts_first_checks_and_divides_by_the_days_the_records_cover(db):
+    """Security read 2 (S3, N1): leaving the backlog is a source's FIRST attempt, whatever its verdict; and an install
+    whose records are two days old divides by two, never by the seven-day window, so the rate is not understated."""
+    now = datetime(2026, 11, 21, 12, tzinfo=UTC)
+    _add(db, 4, country="fr", prefix="s")
+    ids = [s.id for s in db.query(Source).all()]
+    for sid, verdict in zip(ids, ("qualified", "disqualified", "no_evidence", "no_evidence"), strict=True):
+        db.add(SourceQualificationAttempt(source_id=sid, attempted_at=now - timedelta(days=2), verdict=verdict,
+                                          criteria_version="t"))
+    db.commit()
+    p = judging_pace(db, backlog=10, now=now)
+    assert p["judged"] == 4 and p["per_day"] == pytest.approx(2.0) and p["eta_days"] == pytest.approx(5.0)
+    young = judging_pace(db, backlog=10, now=now - timedelta(days=2) + timedelta(hours=3))
+    assert young["per_day"] == pytest.approx(4.0), "never divided by less than one day"

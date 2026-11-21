@@ -419,17 +419,17 @@
     // the one date is when the next qualified source JOINS the line, never a judging ETA.
     // R773 (2) and (4), row 249: whether world discovery is waiting for the line above, by the
     // numbers the ride-along itself reads, and how fast the line has actually moved. The
-    // estimate is the MEASURED pace only: no first verdict in the window means no date, said so.
+    // estimate is the MEASURED pace only: no first check in the window means no date, said so.
     function _qualDiscoveryRows(dg, pc, n, t, tf) {
       if (!dg || dg.backlog === undefined) return "";   // an older server: say nothing rather than guess
       const out = [];
       const state = !dg.ride_along_on
         ? t("Switched off in the scheduler settings.")
         : dg.paused
-          ? tf("Paused: {n} sources wait for a first verdict, at or above the bound of {bound}. It resumes by itself once fewer wait.",
+          ? tf("Paused: {n} found sites have not been checked yet, at or above the bound of {bound}. It resumes by itself once fewer wait.",
                {n: n(dg.backlog), bound: n(dg.bound)})
           : (Number(dg.bound) > 0
-            ? tf("Running: {n} sources wait for a first verdict; it pauses at {bound}.", {n: n(dg.backlog), bound: n(dg.bound)})
+            ? tf("Running: {n} found sites have not been checked yet; it pauses at {bound}.", {n: n(dg.backlog), bound: n(dg.bound)})
             : t("Running, with no bound on the sources waiting."));
       out.push(`<div>` + ooLabelHtml(esc(t("World discovery")), esc(state)) + `</div>`);
       const held = dg.held_countries || [];
@@ -438,17 +438,17 @@
         const shown = held.slice(0, 20).map((h) => `${ooCountryCell(h.country)} (${n(h.unjudged)})`);
         const more = held.length > 20 ? " " + esc(tf("and {n} more", {n: n(held.length - 20)})) : "";
         out.push(`<div class="muted">` + ooLabelHtml(
-          `<span title="${esc(tf("A country with {bound} or more sources waiting is skipped until its line is shorter, then asked again.", {bound: n(dg.country_bound)}))}">${esc(t("Passed over until their line is shorter"))}</span>`,
+          `<span title="${esc(tf("A country with {bound} or more found sites not checked yet is skipped until fewer wait, then asked again.", {bound: n(dg.country_bound)}))}">${esc(t("Passed over until their line is shorter"))}</span>`,
           shown.join(", ") + more) + `</div>`);
       }
       if (pc && pc.days) {
         const est = (pc.eta_days === null || pc.eta_days === undefined)
-          ? tf("No source got a first verdict in the last {days} days, so there is no estimate.", {days: n(pc.days)})
-          : tf("{judged} sources got a first verdict in the last {days} days, about {per_day} a day: the {n} waiting would take about {eta} days.",
+          ? tf("No found site was checked for the first time in the last {days} days, so there is no estimate.", {days: n(pc.days)})
+          : tf("{judged} found sites were checked for the first time in the last {days} days, about {per_day} a day: the {n} not checked yet would take about {eta} days.",
                {judged: n(pc.judged), days: n(pc.days), per_day: fmtNum(Number(pc.per_day) || 0, 1),
                 n: n(dg.backlog), eta: fmtNum(Number(pc.eta_days) || 0, 0)});
         out.push(`<div>` + ooLabelHtml(
-          `<span title="${esc(t("Counted from the qualification records: sources whose first verdict, qualified or disqualified, fell in the window. The time is the waiting count divided by that daily rate, and assumes the pace stays as it was."))}">${esc(t("At the current pace"))}</span>`,
+          `<span title="${esc(t("Counted from the qualification records: found sites whose first check, whatever its result, fell in the window, divided by the days the records cover (at most the window). A site already checked that gave nothing to judge yet is not counted as waiting: it is checked again later. The time assumes the pace stays as it was."))}">${esc(t("At the current pace"))}</span>`,
           esc(est)) + `</div>`);
       }
       return out.join("");

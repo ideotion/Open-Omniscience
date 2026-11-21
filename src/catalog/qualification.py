@@ -383,7 +383,10 @@ def trial_fetch(session: Session, source: Source, fetcher: EthicalFetcher,
     from src.ingest.pipeline import ingest_source
 
     if getattr(source, "rss_url", None):
-        return ingest_source(session, source, fetcher=fetcher, max_items=max_items)
+        # A trial judges THIS site, also on a later trial of a feed an earlier one found and
+        # kept: entries elsewhere are counted, never fetched (security read, row 249).
+        return ingest_source(session, source, fetcher=fetcher, max_items=max_items,
+                             entry_site=source.domain)
 
     found = _trial_feed_ingest(session, source, fetcher, max_items=max_items)
     if found is not None:
@@ -397,8 +400,12 @@ def trial_fetch(session: Session, source: Source, fetcher: EthicalFetcher,
 def _trial_feed_ingest(session: Session, source: Source, fetcher: EthicalFetcher,
                        *, max_items: int) -> dict | None:
     """The feed half of a feedless candidate's trial: the tally of the first same-site feed its
-    home page names that yields entries, with that feed kept as the source's ``rss_url``; or
-    None when the page names none that does (the source is left exactly as it was)."""
+    home page names that gives something to judge (an article stored, or one already held),
+    with that feed kept as the source's ``rss_url``; or None when the page names none that
+    does. A feed tried and not kept leaves nothing behind: its address is taken off the row
+    and its conditional-GET and backoff state deleted, both COMMITTED (``ingest_source``
+    commits its own bookkeeping, so a revert only in memory would be undone by the next
+    commit), and each feed tried starts with no state of another's."""
     from src.database.feed_key import feed_key
     from src.database.models import Source as _Source
     from src.ingest.feed_find import find_trial_feed
@@ -414,12 +421,42 @@ def _trial_feed_ingest(session: Session, source: Source, fetcher: EthicalFetcher
                  .first())
         if owner is not None:
             continue
+        _forget_feed_state(session, int(source.id))
         source.rss_url = url
-        tally = ingest_source(session, source, fetcher=fetcher, max_items=max_items, entry_site=source.domain)
-        if int(tally.get("entries") or 0) > 0:
+        kept = False
+        try:
+            tally = ingest_source(session, source, fetcher=fetcher, max_items=max_items,
+                                  entry_site=source.domain)
+            judged = int(tally.get("stored") or 0) + int(tally.get("duplicate") or 0)
+            kept = judged > 0
+        finally:
+            if not kept:
+                _put_feed_back(session, source)
+        if kept:
             return {**tally, "channel": "feed", "feed_found_on_page": True}
-        source.rss_url = None
     return None
+
+
+def _forget_feed_state(session: Session, source_id: int) -> None:
+    """Delete one source's conditional-GET validators and backoff (``FeedFetchState``), so the
+    next feed tried for it is asked with no ETag, Last-Modified or skip deadline of another."""
+    from src.database.models import FeedFetchState
+
+    session.query(FeedFetchState).filter(FeedFetchState.source_id == source_id).delete(
+        synchronize_session="fetch")
+
+
+def _put_feed_back(session: Session, source: Source) -> None:
+    """Undo a feed that was tried and not kept, and commit it: no ``rss_url``, no feed state."""
+    try:
+        source.rss_url = None
+        _forget_feed_state(session, int(source.id))
+        session.commit()
+    except Exception:
+        session.rollback()
+        source.rss_url = None
+        _forget_feed_state(session, int(source.id))
+        session.commit()
 
 
 def select_unqualified(session: Session, *, limit: int) -> list[Source]:
