@@ -83,6 +83,86 @@ _engines: dict[tuple[str, str], Engine] = {}
 _factories: dict[tuple[str, str], sessionmaker] = {}
 _lock = threading.Lock()
 
+#: R702 part 2 (row 256): the lanes whose file is being switched for its rebuilt copy right now (``held_for_swap``). While a kind
+#: is here no connection to its file is OPENED: the engine's creator waits for the switch to end (it lasts a moment: the log is
+#: folded, a second name is given, the new file is moved in) and is refused by name after :data:`SWAP_WAIT_S`. A connection
+#: opened in that moment would bind the old file's log names to the new file, or keep the old file's log open under a name the
+#: new file then owns.
+_swapping: set[str] = set()
+_swap_cond = threading.Condition()
+#: The connections each kind's engines have handed out and not yet taken back, counted by the pool's own checkout and checkin
+#: events. Kept per KIND, not per engine, so it survives an engine being disposed and forgotten: a connection taken from a pool
+#: that has since been disposed is still open on the file, and the switch must know it is there.
+_in_use: dict[str, int] = {}
+#: How long a connection waits for a lane's switch to end before it is refused (seconds).
+SWAP_WAIT_S = 30.0
+
+
+class LaneSwapping(RuntimeError):
+    """The lane's file was being switched for its rebuilt copy (R702 part 2) for longer than a connection waits: nothing was
+    opened, so nothing was read or saved. Fixed words; do it again."""
+
+
+#: Fixed words for :class:`LaneSwapping` (keyed in every locale).
+SWAPPING_WORDS = "this store's file was being switched for its rebuilt copy, so nothing was opened; do it again"
+
+
+class LaneInUse(RuntimeError):
+    """A connection to the lane was still open when its switch was to begin, so nothing was switched. ``count`` says how many."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(f"{count} connection(s) to this store were still open")
+        self.count = count
+
+
+def _wait_not_swapping(kind: str) -> None:
+    """Called by a lane engine's creator before it opens the file: wait while this kind's file is being switched, then go on,
+    or after :data:`SWAP_WAIT_S` refuse with :class:`LaneSwapping`."""
+    with _swap_cond:
+        if kind not in _swapping:
+            return
+        if not _swap_cond.wait_for(lambda: kind not in _swapping, timeout=SWAP_WAIT_S):
+            raise LaneSwapping(SWAPPING_WORDS)
+
+
+def _count_checkout(kind: str, delta: int) -> None:
+    with _swap_cond:
+        _in_use[kind] = max(0, _in_use.get(kind, 0) + delta)
+
+
+def in_use(kind: str) -> int:
+    """How many connections this kind's engines have handed out and not taken back (0 for a lane nobody opened)."""
+    with _swap_cond:
+        return _in_use.get(kind, 0)
+
+
+@contextmanager
+def held_for_swap(kind: str) -> Iterator[None]:
+    """Hold this lane's file still for a switch (R702 part 2): no connection to it is opened while held (an opener waits, see
+    :func:`_wait_not_swapping`), every engine of the kind is forgotten and disposed (its idle connections closed), and the hold is
+    REFUSED with :class:`LaneInUse` when a connection handed out before is still open, because that connection would go on using the
+    old file (and its log, by a name the new file then owns). Not re-entrant: a second hold of the same kind is refused."""
+    with _swap_cond:
+        if kind in _swapping:
+            raise LaneInUse(0)
+        _swapping.add(kind)
+    try:
+        with _lock:
+            keys = _keys_of(kind)
+            engines = [_engines.pop(k) for k in keys]
+            for k in keys:
+                _factories.pop(k, None)
+        for eng in engines:
+            eng.dispose()
+        busy = in_use(kind)
+        if busy:
+            raise LaneInUse(busy)
+        yield
+    finally:
+        with _swap_cond:
+            _swapping.discard(kind)
+            _swap_cond.notify_all()
+
 
 class PlaintextLaneRefused(RuntimeError):
     """A lane would have been created in the clear beside an encrypted corpus.
@@ -174,6 +254,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     def _open():
         from src.database.connect import connect
 
+        _wait_not_swapping(spec.kind)  # R702 part 2: never opened while its file is being switched for the rebuilt copy
         # No ``key=``, no ``create_encrypted=``: the factory's own precedence is the
         # ruling (Q720/Q1005). Passing either here would be this module deciding a
         # lane's at-rest state, which is the one thing it must not do.
@@ -211,6 +292,17 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
 
     damage.attach(eng, spec.kind)
     file_identity.attach(eng, path)
+
+    # R702 part 2: a switch refuses while a connection handed out is still open. Registered AFTER ``file_identity``'s own checkout
+    # listener on purpose: a connection it drops at checkout (one on a replaced file) is never counted, so the count cannot climb
+    # on a checkout that did not happen.
+    @event.listens_for(eng, "checkout")
+    def _lane_checked_out(_dbapi_connection, _record, _proxy) -> None:
+        _count_checkout(spec.kind, 1)
+
+    @event.listens_for(eng, "checkin")
+    def _lane_checked_in(_dbapi_connection, _record) -> None:
+        _count_checkout(spec.kind, -1)
 
     @event.listens_for(eng, "connect")
     def _lane_pragmas(dbapi_connection, _record) -> None:

@@ -23,8 +23,18 @@ How, and why this way (the design note: /mnt/project-files/lanes-2026-11-14/lane
   lost by the switch. It is never removed on its own (R702 Q-a): the Maintenance panel shows it with its size and date and offers
   to remove it, and a later rebuild's free-space check names it.
 
-STATED LIMITS: the main library only (R702 Q-b: the other stores follow in a later change, and the panel says so). A file system
-that cannot give a file a second name is refused before anything is copied. A reader that is still reading when the swap comes is
+THE SEPARATE STORES (R702 part 2, row 256): each lane file (``wiki.db``, ``law.db``, ``osm.db``, ``medical.db``) is rebuilt the
+same way, one at a time and only from its own button: the same copy, the same check, the same kept second name, the same
+"never removed on its own". What differs is what keeps it still. The single-writer gate does not hold a lane's saves, so a lane is
+not waited for: one that is BUSY is refused with the reason (the Wikipedia stream running, an OSM update running or queued, a
+connection to it still open), never paused for the operator. Its switch runs under the lane's own hold
+(``versioned.store.held_for_swap``): no connection to it is opened meanwhile (an opener waits a moment, then is refused by name), every
+engine of the lane is disposed, and the switch is refused if one handed out before is still open. The probe's data version is read
+inside that hold, the probe is closed BEFORE the new file is moved in (so no connection of this process is left on the old file to
+fold its log into a name the new file owns), and a log another process still holds open refuses the switch. Nothing schedules a
+rebuild and nothing runs one at start: the only caller is the operator's click (``start``).
+
+STATED LIMITS: one store at a time. A file system that cannot give a file a second name is refused before anything is copied. A reader that is still reading when the swap comes is
 refused from its next statement, as at a restore or a repair. A Stop takes effect up to the moment the switch begins, never
 after it. A second server on the same data folder is not held by this process's swap window (the R176 limit a restore and a
 repair share): its writes after the switch land in the kept file, not the library.
@@ -66,6 +76,10 @@ QUIESCE_S = 180.0
 BACKUP_ANSWERS = ("have_backup", "no_backup_understood")
 
 FRAME_COPYING = "Copying the library into a new file at the current settings ({mb} MB in use)"
+FRAME_COPYING_STORE = "Copying the {store} store into a new file at the current settings ({mb} MB in use)"
+
+#: The store a rebuild is asked for: the library, or one lane by its kind (``versioned.lanes.KINDS``).
+LIBRARY = "library"
 FRAME_CHECKING = "Checking the new file before it is switched in"
 FRAME_SWITCHING = "Switching the new file in"
 
@@ -94,6 +108,18 @@ class Stopped(RuntimeError):
 
 _LOCK = threading.Lock()
 _LAST: dict[str, Any] = {}
+#: The store the running rebuild was started for (read by the panel to place its progress line); None when none runs.
+_RUNNING_STORE: list[str | None] = [None]
+
+
+def _running_store() -> str | None:
+    with _LOCK:
+        return _RUNNING_STORE[0]
+
+
+def _set_running_store(store: str | None) -> None:
+    with _LOCK:
+        _RUNNING_STORE[0] = store
 
 
 def _record(report: dict[str, Any]) -> None:
@@ -111,6 +137,37 @@ def corpus_path() -> Path | None:
     from src.database import repair
 
     return repair.corpus_path()
+
+
+def lane_kinds() -> tuple[str, ...]:
+    from src.versioned.lanes import KINDS
+
+    return tuple(KINDS)
+
+
+def stores() -> tuple[str, ...]:
+    """Every store a rebuild can be asked for: the library first, then each lane kind."""
+    return (LIBRARY, *lane_kinds())
+
+
+def store_label(store: str) -> str:
+    if store == LIBRARY:
+        return "library"
+    from src.versioned.lanes import lane
+
+    return lane(store).label
+
+
+def store_path(store: str) -> Path | None:
+    """The file of ``store``: the library's, or the lane's (where it is, whether or not it exists). Refuses a store it does not
+    know, by a fixed sentence (the request's text is never echoed)."""
+    if store == LIBRARY:
+        return corpus_path()
+    if store not in lane_kinds():
+        raise Declined("unknown-store", "that is not a store this app keeps")
+    from src.versioned.store import lane_path
+
+    return lane_path(store)
 
 
 def _partial_name(target: Path, stamp: str) -> Path:
@@ -171,12 +228,12 @@ def kept_copies(target: Path | None = None) -> list[dict[str, Any]]:
     return sorted(out, key=lambda k: str(k["made_at"]), reverse=True)
 
 
-def remove_kept_copy(name: str) -> dict[str, Any]:
-    """Remove one file an earlier rebuild kept, on the operator's own request. Only a name :func:`kept_copies` lists now is
-    removed (with its side files); anything else is refused. Answers ``{"removed": name, "bytes": n}``."""
+def remove_kept_copy(name: str, store: str = LIBRARY) -> dict[str, Any]:
+    """Remove one file an earlier rebuild of ``store`` kept, on the operator's own request. Only a name :func:`kept_copies` lists
+    now for that store is removed (with its side files); anything else is refused. Answers ``{"removed": name, "bytes": n}``."""
     if REBUILD_JOB.status().get("state") == "running":
         raise Running("running", "a rebuild is running; remove the kept file once it has finished")
-    target = corpus_path()
+    target = store_path(store)
     listed = {k["name"]: k for k in kept_copies(target)}
     if target is None or name not in listed:
         raise Declined("not-a-kept-copy", "that is not a file an earlier rebuild kept")
@@ -267,16 +324,20 @@ def _mb(n: int) -> int:
     return -(-int(n) // 1_000_000)
 
 
-def status() -> dict[str, Any]:
-    """What the Maintenance panel shows: the library's settings now and the ones a rebuild gives it, whether one would change
+def status(store: str = LIBRARY) -> dict[str, Any]:
+    """What the Maintenance panel shows for ``store``: its settings now and the ones a rebuild gives it, whether one would change
     anything, the files earlier rebuilds kept, and the last rebuild's report. Never raises; a figure that cannot be read is None and
-    says so."""
+    says so. A lane that has no file is ``supported: False`` and opened by nothing (a status must never create a lane)."""
     from src.database.connect import is_encrypted_file
 
-    target = corpus_path()
+    try:
+        target = store_path(store)
+    except Declined:
+        target = None
     out: dict[str, Any] = {
         "supported": target is not None,
-        "scope": "main library only",
+        "store": store,
+        "label": store_label(store) if store in stores() else store,
         "target": target_settings(),
         "current": None,
         "needed": None,
@@ -284,7 +345,7 @@ def status() -> dict[str, Any]:
         "job": REBUILD_JOB.status(),
         "last": last_report(),
     }
-    if target is None or is_encrypted_file(target) is None:
+    if target is None or not target.is_file() or is_encrypted_file(target) is None:
         out["supported"] = False
         return out
     if out["job"].get("state") == "running":
@@ -304,6 +365,17 @@ def status() -> dict[str, Any]:
     out["bytes_in_use"] = now["bytes_in_use"]
     out["needed"] = any(now[k] != v for k, v in out["target"].items())
     out["preflight"] = preflight(target, now["bytes_in_use"])
+    return out
+
+
+def status_all() -> dict[str, Any]:
+    """The library's status with ``lanes``: the status of every lane that has a file, in the registry's order. A lane with no
+    file is left out (there is nothing to rebuild, and nothing is opened to find that out)."""
+    from src.versioned.store import lane_exists
+
+    out = status(LIBRARY)
+    out["running_store"] = _running_store() if out["job"].get("state") == "running" else None
+    out["lanes"] = [status(kind) for kind in lane_kinds() if lane_exists(kind)]
     return out
 
 
@@ -336,6 +408,50 @@ def _manager_running(which: str) -> bool:
 
         return bool(get_volume_manager().status().get("running"))
     except Exception:  # noqa: BLE001 - the class is not needed: the answer is "running" either way
+        return True
+
+
+def _lane_busy(kind: str) -> list[str]:
+    """What is writing to (or holds open) the lane ``kind`` right now, by name. A lane's saves are not held by the single-writer
+    gate, so a busy lane is REFUSED with these names rather than paused (row 256): the operator stops it, then rebuilds. A source
+    that cannot say is counted as busy, never as idle."""
+    busy: list[str] = []
+    if kind == "wiki":
+        try:
+            from src.wiki.service import lane_runner
+
+            runner = lane_runner()
+            if runner is not None and not runner.stopped:
+                busy.append("the Wikipedia stream (stop it in Living sources first)")
+        except Exception:  # noqa: BLE001 - the class is not needed: the answer is "busy" either way
+            busy.append("the Wikipedia stream (its state could not be read)")
+    if kind == "osm":
+        try:
+            from src.osm.update_job import jobs as osm_update_jobs
+
+            if any(j.get("state") in ("running", "queued") for j in osm_update_jobs()):
+                busy.append("an OSM daily update (running or queued)")
+        except Exception:  # noqa: BLE001
+            busy.append("an OSM daily update (its state could not be read)")
+    try:
+        from src.versioned.store import in_use
+
+        n = in_use(kind)
+    except Exception:  # noqa: BLE001
+        n = 1
+    if n:
+        busy.append(f"{n} open connection(s) to this store")
+    return busy
+
+
+def _lane_damaged(kind: str) -> bool:
+    """Whether the lane is marked damaged (``database/damage.py``): a damaged file is not copied into a new one that would then
+    read as healthy. A registry that cannot say counts as damaged."""
+    try:
+        from src.database import damage
+
+        return bool(damage.registry.latched(kind))
+    except Exception:  # noqa: BLE001
         return True
 
 
@@ -383,30 +499,35 @@ def _check_copy(copy: Path, target: Path) -> dict[str, Any]:
         old.close()
 
 
-def run(backup_answer: str, ctx: JobContext | None = None) -> dict[str, Any]:
+def run(backup_answer: str, ctx: JobContext | None = None, store: str = LIBRARY) -> dict[str, Any]:
     """Do the rebuild. Raises :class:`Declined` for a refusal and :class:`Stopped` for a stop, both with every file as it was, and
     for any other failure a ``RuntimeError`` that carries the failure's CLASS only: the copy runs on keyed connections and a driver's
     words can quote a statement that holds the passphrase, so the original is neither its text, its cause nor its context (it is
     raised outside the handler, so nothing chains it)."""
+    if store not in stores():
+        raise Declined("unknown-store", "that is not a store this app keeps")  # before any log line: the name is the caller's
     failed: str | None = None
     try:
-        return _run(backup_answer, ctx)
+        return _run(backup_answer, ctx, store)
     except (Declined, Stopped):
         raise
     except Exception as exc:  # noqa: BLE001 - re-raised below as its class, never its words
         failed = type(exc).__name__
-    raise RuntimeError(f"the rebuild failed ({failed}); the library is as it was unless the report says it was switched")
+    raise RuntimeError(f"the rebuild failed ({failed}); the store is as it was unless the report says it was switched")
 
 
-def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
+def _run(backup_answer: str, ctx: JobContext | None, store: str = LIBRARY) -> dict[str, Any]:
     from src.database import after_shutdown, repair
     from src.database.connect import SnapshotStopped, copy_at_current_settings, is_encrypted_file
     from src.database.writer import gate_enabled, write_lock
 
     started = time.monotonic()
-    report: dict[str, Any] = {"outcome": "failed", "started_at": datetime.now(UTC).isoformat(timespec="seconds"), "backup_answer": backup_answer}
+    report: dict[str, Any] = {
+        "outcome": "failed", "started_at": datetime.now(UTC).isoformat(timespec="seconds"), "backup_answer": backup_answer, "store": store,
+    }
     stamp = datetime.now(UTC).strftime(STAMP_FORMAT)
-    target = corpus_path()
+    lane = store != LIBRARY
+    target: Path | None = None
     partial: Path | None = None
     kept: Path | None = None
     switched = False
@@ -419,27 +540,33 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
             ctx.set_progress(detail=Framed(frame.format(**values), frame, **values))
 
     try:
+        target = store_path(store)
         if backup_answer not in BACKUP_ANSWERS:
             raise Declined("no-backup-answer", "the rebuild starts only once you have said whether you made a backup first")
+        if lane and (target is None or not target.is_file() or is_encrypted_file(target) is None):
+            raise Declined("no-store", "this store has no file to rebuild")
         if target is None or is_encrypted_file(target) is None:
             raise Declined("no-library", "there is no library file to rebuild")
         if target.is_symlink():
             raise Declined(
                 "library-is-a-link",
-                "the library's name is a link to a file elsewhere; the switch would replace the link itself, so nothing was started",
+                ("this store's" if lane else "the library's")
+                + " name is a link to a file elsewhere; the switch would replace the link itself, so nothing was started",
             )
-        if not gate_enabled():
+        if not lane and not gate_enabled():
             raise Declined(
                 "write-gate-off",
                 "the single-writer gate is switched off (OO_WRITE_GATE=0), so a save made while the library is copied could not be held back",
             )
-        busy = _others_running()
+        busy = _others_running() + (_lane_busy(store) if lane else [])
         if busy:
             raise Declined("busy", "the rebuild waits until nothing else is running: " + "; ".join(busy), running=busy)
+        if lane and _lane_damaged(store):
+            raise Declined("damaged", _DAMAGED_WORDS)
         now = _settings_of(target)
         report["before"] = {"page_size": now["page_size"], "auto_vacuum": now["auto_vacuum"]}
         if all(now[k] == v for k, v in target_settings().items()):
-            raise Declined("nothing-to-change", "the library already has the current settings")
+            raise Declined("nothing-to-change", "this store already has the current settings" if lane else "the library already has the current settings")
         room = preflight(target, now["bytes_in_use"])
         report["preflight"] = room
         if room.get("sufficient") is False:
@@ -449,13 +576,18 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
         kept = _kept_name(target, stamp)
         with repair._exclusive_window():
             _quiet(stopping)
-            with write_lock():
+            # The library's saves wait at the single-writer gate for the whole copy. A lane's do not (the gate does not see them), so
+            # it is not taken for a lane: a save to the lane during the copy is caught by the probe and refuses the switch.
+            with (contextlib.nullcontext() if lane else write_lock()):
                 origin = _identity(target)  # the FILE the probe watches: a library replaced under its name is not one it can see
                 watch = repair._Probe(target)  # opened BEFORE the copy reads its first row
                 try:
                     if _replaced_since(target, origin):  # replaced between the two looks: the probe may watch either file
                         raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
-                    progress(FRAME_COPYING, mb=_mb(now["bytes_in_use"]))
+                    if lane:
+                        progress(FRAME_COPYING_STORE, store=store_label(store), mb=_mb(now["bytes_in_use"]))
+                    else:
+                        progress(FRAME_COPYING, mb=_mb(now["bytes_in_use"]))
                     t0 = time.monotonic()
                     try:
                         copy_at_current_settings(target, partial, should_stop=stopping)
@@ -471,7 +603,10 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
                     if stopping():
                         raise Stopped("the rebuild was stopped before the switch")  # the last point a stop can take effect
                     progress(FRAME_SWITCHING)
-                    switched = _switch(target, partial, kept, watch, origin)
+                    if lane:
+                        switched = _switch_lane(store, target, partial, kept, watch, origin)
+                    else:
+                        switched = _switch(target, partial, kept, watch, origin)
                 finally:
                     watch.close()
         report["outcome"] = "rebuilt"
@@ -480,12 +615,12 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
             report["kept_file_bytes"] = int(kept.stat().st_size)
         with contextlib.suppress(Exception):
             report["after"] = {k: v for k, v in _settings_of(target).items() if k != "bytes_in_use"}
-        _LOG.warning("database rebuild: the library now has the current settings; the old file is kept as %s", kept.name)
+        _LOG.warning("database rebuild: the %s now has the current settings; the old file is kept as %s", store, kept.name)
         return report
     except Declined as refusal:
         code = refusal.code
         report.update(outcome="declined", reason=code, reason_text=_words_of(refusal))
-        _LOG.warning("database rebuild: not done (%s)", code)
+        _LOG.warning("database rebuild of the %s: not done (%s)", store, code)
         raise
     except Stopped:
         report["outcome"] = "stopped"
@@ -497,7 +632,7 @@ def _run(backup_answer: str, ctx: JobContext | None) -> dict[str, Any]:
         # the files, not from how far the code got.
         switched = switched or (kept is not None and kept.exists() and not _same_file(kept, target))
         report.update(outcome="failed", failure=type(exc).__name__, switched=switched)
-        _LOG.warning("database rebuild failed (%s)", type(exc).__name__)
+        _LOG.warning("database rebuild of the %s failed (%s)", store, type(exc).__name__)
         raise
     finally:
         report["seconds"] = round(time.monotonic() - started, 1)
@@ -628,6 +763,105 @@ def _switch(target: Path, finished: Path, kept: Path, watch: Any, origin: tuple[
     return True
 
 
+def _switch_lane(kind: str, target: Path, finished: Path, kept: Path, watch: Any, origin: tuple[int, int, bool | None]) -> bool:
+    """The lane's switch (R702 part 2): under the lane's own hold (``versioned.store.held_for_swap``: nothing opens the file, every
+    engine of the lane disposed, refused while a connection handed out before is still open), fold the old file's log, read whether
+    anything was saved to it since the copy began, close the probe, give the old file its second name, and move the new file in.
+    Returns True once the lane IS the new file.
+
+    THE ORDER IS THE POINT. The probe is the last connection of this process on the old file, and it is closed BEFORE the new file
+    takes the name: SQLite removes a log BY NAME when the last connection to a file closes, so a connection left on the old file
+    would one day remove the new file's log. A log that is still there after the probe closed belongs to a connection of another
+    process (a second server on the same folder), and the switch is refused before anything is renamed."""
+    from src.database import repair
+    from src.database.at_rest_state import probes_held
+    from src.database.connect import _last_good_page_size
+    from src.versioned import store as lane_store
+
+    if repair._CANCEL.is_set():
+        raise Stopped("the app is shutting down")
+    try:
+        with lane_store.held_for_swap(kind), probes_held():  # probes_held: no status probe on the file while it is switched (row 149)
+            _switch_lane_held(target, finished, kept, watch, origin)
+    except lane_store.LaneInUse as held:  # raised only as the hold begins, before anything was changed
+        raise Declined(
+            "store-in-use",
+            f"{held.count} connection(s) to this store were still open when the switch was to begin, so nothing was switched; "
+            "start the rebuild again",
+        ) from None
+    # From here the lane IS the new file: what follows is best effort, logged by its class, and never turns a switch that
+    # happened into one reported as failed.
+    with contextlib.suppress(Exception):
+        _last_good_page_size.pop(str(target.resolve()), None)  # the size cached for the old file is not the new one's
+    for step in (lambda: repair._fsync_dir(target.parent), lambda: _forget_damage_verdict(kind)):
+        try:
+            step()
+        except Exception as exc:  # noqa: BLE001 - the TYPE only
+            _LOG.warning("database rebuild: a step after the %s switch failed (%s)", kind, type(exc).__name__)
+    return True
+
+
+def _switch_lane_held(target: Path, finished: Path, kept: Path, watch: Any, origin: tuple[int, int, bool | None]) -> None:
+    """The body of :func:`_switch_lane`, under the lane's hold. Raises :class:`Declined` (or :class:`Stopped`) with the lane's file
+    as it was; returns once the new file has the name."""
+    from src.database import repair, salvage
+    from src.database.connect import invalidate_header_cache
+    from src.database.file_identity import note_replaced
+
+    stopped = refused = None
+    try:
+        repair._empty_the_log(target, watch)
+    except salvage.SalvageStopped:
+        stopped = True
+    except repair.Declined as theirs:
+        refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words
+    if stopped:
+        raise Stopped("the app is shutting down")
+    if refused is not None:
+        raise Declined(refused, "a reader kept this store's log open, so it could not be folded before the switch; nothing was switched")
+    moved, failed = False, None
+    try:
+        moved = watch.moved()
+    except Exception as exc:  # noqa: BLE001 - the type only: the connection is keyed
+        failed = type(exc).__name__
+    if failed is not None:  # raised outside the handler, so the keyed connection's error is not carried as the context
+        raise Declined("writer-busy", f"another connection kept this store's write lock, so it could not be told whether it was written to ({failed})")
+    if _replaced_since(target, origin):
+        raise Declined("replaced-during-the-copy", _REPLACED_WORDS)
+    if moved:
+        raise Declined("saved-during-the-copy", "something was saved to this store while it was copied, so nothing was switched; start the rebuild again")
+    watch.close()  # the last connection of this process on the old file: SQLite folds and removes its log by name, NOW, not later
+    for side in ("-wal", "-shm"):
+        left = Path(str(target) + side)
+        size = None
+        with contextlib.suppress(OSError):
+            size = left.stat().st_size
+        if side == "-wal" and size:
+            raise Declined("store-in-use", "another program still has this store's log open, so nothing was switched; start the rebuild again")
+        if size is not None:
+            left.unlink()  # an empty log or an index nobody holds: the new file must never be opened beside them
+    try:
+        os.link(target, kept)
+    except FileExistsError:
+        raise Declined("name-taken", "a file already has the name the old store would be kept under; start the rebuild again") from None
+    except OSError:
+        raise Declined("no-hard-links", "the drive cannot give this store a second name, so the old file could not be kept") from None
+    repair._fsync_dir(target.parent)
+    try:
+        os.replace(finished, target)  # atomic on the same file system
+    finally:
+        note_replaced()  # a connection still on the old file is refused at its next statement (``file_identity``, row 148)
+        invalidate_header_cache()
+
+
+def _forget_damage_verdict(kind: str) -> None:
+    from src.database import damage
+
+    damage.registry.verification_forget(kind)  # an earlier check's verdict is about the file that was switched out
+
+
+_DAMAGED_WORDS = "this store is marked as damaged; a copy of it would read as healthy, so repair or restore it first"
+
 _REPLACED_WORDS = (
     "another step (encrypting the library, or a restore) put a different file under the library's name while it was copied, "
     "so nothing was switched; start the rebuild again"
@@ -648,32 +882,42 @@ def _kv_invalidate() -> None:
     kv_invalidate()  # the settings the old file held are read again from the new one
 
 
-def _worker(ctx: JobContext, *, backup_answer: str) -> dict[str, Any]:
+def _worker(ctx: JobContext, *, backup_answer: str, store: str = LIBRARY) -> dict[str, Any]:
     """A refusal and a stop are ordinary outcomes, not crashes: the job ends with the report (the panel reads it from
     :func:`last_report`), so the task manager never shows "nothing to change" or a Stop as an error."""
+    _set_running_store(store)
     try:
-        return run(backup_answer, ctx)
+        return run(backup_answer, ctx, store)
     except (Declined, Stopped):
         return last_report()
+    finally:
+        _set_running_store(None)
 
 
 REBUILD_JOB = register_job(BackgroundJob(JOB_KIND, LABEL, _worker, is_writer=True, cancellable=True))
 
 
-def start(backup_answer: str) -> dict[str, Any]:
-    """Start the rebuild as a background job after the quick checks a page can be answered on at once (the backup answer, nothing
-    else running, the settings, the free space); the job checks every one of them again before it copies."""
+def start(backup_answer: str, store: str = LIBRARY) -> dict[str, Any]:
+    """Start the rebuild of ``store`` (the library, or one lane by its kind) as a background job after the quick checks a page can
+    be answered on at once (the store, the backup answer, nothing else running, the lane not busy nor damaged, the settings, the
+    free space); the job checks every one of them again before it copies. THE ONLY CALLER IS THE OPERATOR'S CLICK (the route):
+    nothing schedules a rebuild and nothing starts one at boot (row 256)."""
+    if store not in stores():
+        raise Declined("unknown-store", "that is not a store this app keeps")
+    lane = store != LIBRARY
     if backup_answer not in BACKUP_ANSWERS:
         raise Declined("no-backup-answer", "the rebuild starts only once you have said whether you made a backup first")
-    busy = _others_running()
+    busy = _others_running() + (_lane_busy(store) if lane else [])
     if busy:
         raise Declined("busy", "the rebuild waits until nothing else is running: " + "; ".join(busy), running=busy)
-    st = status()
+    if lane and _lane_damaged(store):
+        raise Declined("damaged", _DAMAGED_WORDS)
+    st = status(store)
     if not st["supported"]:
-        raise Declined("no-library", "there is no library file to rebuild")
+        raise Declined("no-store", "this store has no file to rebuild") if lane else Declined("no-library", "there is no library file to rebuild")
     if st["needed"] is False:
-        raise Declined("nothing-to-change", "the library already has the current settings")
+        raise Declined("nothing-to-change", "this store already has the current settings" if lane else "the library already has the current settings")
     room = st.get("preflight") or {}
     if room.get("sufficient") is False:
         raise NoRoom("no-room", room["detail"])
-    return REBUILD_JOB.start(backup_answer=backup_answer)
+    return REBUILD_JOB.start(backup_answer=backup_answer, store=store)

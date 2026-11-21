@@ -3698,7 +3698,7 @@
       <div id="rebuild-panel" style="margin-top:14px">
         <h4 style="margin:0 0 4px">Rebuild at the current storage settings</h4>
         <p class="muted" style="margin-top:0"><span>A library keeps the storage settings it was created with. A rebuild copies it into a new file at today's settings (16 KiB pages, space given back gradually), checks the copy, then switches it in. The old file is kept beside it until you remove it below. Collection and every other job wait while it runs.</span>
-          <span>This covers the main library only: the separate stores for maps, Wikipedia and lanes keep their settings.</span>
+          <span>The separate stores (Wikipedia, law, maps, medical papers) are listed below, each with its own Rebuild button. A store that is in use is not rebuilt: stop what uses it, then try again.</span>
           <span>The kept file is the library as it was: encrypted if the library was, under the passphrase it had then. Changing the passphrase later does not change it. It stays until you remove it.</span></p>
         <div id="rebuild-status" class="hint">—</div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center">
@@ -3708,6 +3708,7 @@
         </div>
         <div id="rebuild-result" class="hint" role="status"></div>
         <div id="rebuild-kept" style="margin-top:6px"></div>
+        <div id="rebuild-lanes" style="margin-top:10px"></div>
       </div>
 
       <hr>
