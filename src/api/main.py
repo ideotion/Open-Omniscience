@@ -81,6 +81,7 @@ from src.monitoring.secret_scrub import http_detail, is_driver_text, log_failure
 from src.utils.access_log import install_access_line_filter
 from src.utils.logging_config import setup_logging, uvicorn_log_config
 from src.utils.url_utils import fetched_host_fields, off_the_source_site
+from src.versioned.store import SWAPPING_WORDS, LaneSwapping
 
 # Import security utilities
 
@@ -1477,6 +1478,15 @@ async def store_replaced_handler(request: Request, refused: StoreReplacedError):
     """Row 148: a save through a custody or lane connection whose file was replaced (encrypted) since it was opened, refused with
     nothing written. A 409 with the fixed words (keyed in every locale), never a 500: the operator does it again."""
     return JSONResponse(status_code=409, content={"detail": REPLACED_WORDS})
+
+
+@app.exception_handler(LaneSwapping)
+async def lane_swapping_handler(request: Request, refused: LaneSwapping):
+    """Row 264: a request that met a separate store's switch for its rebuilt copy (R702 part 2) and waited past ``SWAP_WAIT_S``:
+    nothing was opened, so nothing was read or saved. A 409 with the fixed words (keyed in every locale) and no traceback, never the
+    catch-all's 500: it is a refusal the operator answers by doing it again, as :class:`StoreReplacedError`'s is."""
+    logger.info("a request met a store switch and was refused (%s)", type(refused).__name__)
+    return JSONResponse(status_code=409, content={"detail": SWAPPING_WORDS})
 
 
 @app.exception_handler(KvWriteRefused)

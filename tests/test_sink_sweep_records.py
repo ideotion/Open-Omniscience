@@ -1064,6 +1064,9 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/jobs/background.py': {
         # kept to be re-raised on the caller's side: not written
         ('BackgroundJob._run', 'failure = exc'): 1,
+        # row 264: the chain is walked for the store switch's class (isinstance only); what is kept is the fixed SWAPPING_WORDS
+        ('BackgroundJob._run', 'swapping = _swapping_words(exc)'): 1,
+        ('_swapping_words', 'cur: BaseException | None = exc'): 1,
     },
     'src/jobs/llm_bulk_queue.py': {
         # the status code chooses between a fixed phrase and the scrubbed detail (http_detail): the selection's words are never kept
