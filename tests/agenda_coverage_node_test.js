@@ -112,5 +112,13 @@ const REPORT = {
   assert(h.includes("THE METHOD") && /scheduled<\/span> 1/.test(h) && h.includes("France (FR)"), "and the counts with it");
   answer = { ...REPORT, catalogue: { state: "present" } }; P.reset(); P.render(); await tick(); await tick();
   assert(!box.innerHTML.includes("snapshot only"), "a read catalogue carries no label");
+  // 9. Row 279: a language floor that was not read draws its own line, before any catalogue line, and no chip or count.
+  answer = { as_of: "", floor_countries: null, missing_n: null, floor: { state: "unreadable", error: "ParserError" },
+    catalogue: { state: "present" }, snapshot: { state: "absent" },
+    tier_report: { floor_countries: null, counts: null, countries: null, floor: { state: "unreadable" } } };
+  P.reset(); P.render(); await tick(); await tick();
+  h = box.innerHTML;
+  assert(h.includes("The language-to-country list on this install could not be read, so no country is counted from it."));
+  assert(!/aria-pressed|<table|floor countries|> 0</.test(h), "no chip, no table, no count");
   console.log("agenda coverage node test: ok");
 })().catch((e) => { console.error(e); process.exit(1); });
