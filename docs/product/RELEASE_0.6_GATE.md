@@ -180,6 +180,16 @@ steps.** Of the three closing conditions:
   stacked consonant or a vowel written before its consonant), tested on real Khmer, Lao and Burmese words, so the three are
   scored, every hit ≈; the stated limit is that syllable edges are checked and word edges are not.
 
+**Progress 2026-11-21 (row 267; the row stays OPEN on the operator's live verification).** The coverage report the row closes
+on can now come back from the operator's machine. One press of the Field data button saves `oo-field-*-law-coverage.json`,
+`/api/diagnostics/law-coverage` in its export envelope (the Diagnostics zip's `law-coverage.json`), measured at 37,397 bytes on
+the 140-country floor with the shipped catalogue. `python3 scripts/law_coverage_readback.py <file>` prints every floor country by
+state, the order within a state and its source and date (or "by code" and why), the twelve-language tally with zh on its own
+line beside Hong Kong and Macau, the many-country sources as counts, the world block and the catalogue's official counts. It also
+reads a piece set, the member out of a Diagnostics zip or the zip itself. An absent figure prints its reason, never 0, and only
+codes, states, counts and dates are printed. Pinned by `tests/test_law_coverage_readback_row267.py`, including a fixture that
+holds reasons and no figures.
+
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
 **What it must demonstrate.** Per edition: pages seen / edition total (from `siteinfo` statistics), full-text
@@ -245,6 +255,8 @@ the row; tranches 2 and 3 stay *proposed* for 0.7 and 0.8.
 | 2026-11-21 | **Row D: the read-back path for its first operator run is named; no row changed status.** The Field data button now saves the Wikipedia coverage file and `scripts/wiki_coverage_readback.py` reads it back for all twelve editions (row 260, PR #2223); an absent edition total says why (row 257, R774, PR #2218). | session (Lane O) |
 | 2026-11-21 | **Row B: the read-back path for the measured daily diff cost is named; no row changed status.** `scripts/osm_change_files_readback.py` reads the OSM change-file cost the Field data button saves (row 117) back per country (row 263). | session (Lane O) |
 | 2026-11-21 | **Exit text, two rows proven (row 259): the OSM vintage stated on every map; a contested border rendering as contested.** One renderer (`ooMap`) draws every world map and its border-source legend unconditionally, pinned by `tests/test_map_vintage_r259.py`; the legend's text for every source and the contested hatch under the default worldview run as real code in `tests/map_vintage_r259_node_test.js`. Two OSM layers drew undated and were fixed in the same PR: the lane's object and cluster views (now dated per country in view) and the downloaded-region preview (its borders were credited to Natural Earth; now "Offline OSM preview, as of {date}" from the file's own header). Chromium walk, both with and without an OSM border file: `docs/audit/map-vintage-r259-2026-11-21/` (four surfaces, 28 of 28 disputed areas hatched and none attributed on each). | session (row 259) · Lane I |
+| 2026-11-21 | **Row D, a located address's provenance reaches a touch reader (row 268).** The infobox-address square's hover (address, field, page and edition, OSM object, extract date or "the extract states no date") rode an SVG `<title>` child, which only a mouse reaches; on a phone, a long-press on the square showed a country's bubble instead. Every marker `app-map.js` draws (wiki pages and addresses, mentioned places, server IPs, signals, the Insights cities map) now carries its hover in a `title` attribute, so the #oo-tip bubble (invariant #17) opens on long-press too (walked in Chromium for the page and address markers; the other markers are run by the node test); `tests/map_marker_titles_r268_node_test.js` and `tests/wiki_map_layer_node_test.js` run each marker and fail on a `<title>` child. Chromium walk, desktop hover and phone long-press, before and after: `docs/audit/map-marker-titles-r268-2026-11-21/`. | session (row 268) · Lane I |
+| 2026-11-21 | **Row C: the coverage report comes back through Field data; no row changed status.** The button saves `/api/diagnostics/law-coverage` and `scripts/law_coverage_readback.py` prints every floor country by state with the twelve-language tally (row 267). | session (Lane O) |
 
 ---
 

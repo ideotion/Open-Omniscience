@@ -1,0 +1,81 @@
+{
+ "desktop": {
+  "markers": [
+   {
+    "tag": "circle",
+    "title": "Rome (en)",
+    "tip_target": true,
+    "title_children": 0
+   },
+   {
+    "tag": "rect",
+    "title": "2 Rue Fixture, Paris, from the adresse field of Salle Fixture (fr). Located at OpenStreetMap way/42, extract of 2026-10-01.",
+    "tip_target": true,
+    "title_children": 0
+   },
+   {
+    "tag": "rect",
+    "title": "Fixturestraße 7, Berlin, from the adresse field of Haus Fixture (de). Located at OpenStreetMap node/7; the extract states no date.",
+    "tip_target": true,
+    "title_children": 0
+   }
+  ],
+  "hover": [
+   {
+    "sel": "rect[title*=\"Rue Fixture\"]",
+    "text": "2 Rue Fixture, Paris, from the adresse field of Salle Fixture (fr). Located at OpenStreetMap way/42, extract of 2026-10-01.",
+    "opacity": "1",
+    "aria_hidden": null,
+    "file": "desktop-hover-dated-address.jpg",
+    "bytes": 13822
+   },
+   {
+    "sel": "rect[title*=\"Fixturestraße\"]",
+    "text": "Fixturestraße 7, Berlin, from the adresse field of Haus Fixture (de). Located at OpenStreetMap node/7; the extract states no date.",
+    "opacity": "1",
+    "aria_hidden": null,
+    "file": "desktop-hover-undated-address.jpg",
+    "bytes": 14010
+   },
+   {
+    "sel": "circle[title=\"Rome (en)\"]",
+    "text": "Rome (en)",
+    "opacity": "1",
+    "aria_hidden": null,
+    "file": "desktop-hover-page.jpg",
+    "bytes": 4777
+   }
+  ],
+  "page_errors": []
+ },
+ "phone": {
+  "markers": [
+   {
+    "tag": "circle",
+    "title": "Rome (en)",
+    "tip_target": true,
+    "title_children": 0
+   },
+   {
+    "tag": "rect",
+    "title": "2 Rue Fixture, Paris, from the adresse field of Salle Fixture (fr). Located at OpenStreetMap way/42, extract of 2026-10-01.",
+    "tip_target": true,
+    "title_children": 0
+   },
+   {
+    "tag": "rect",
+    "title": "Fixturestraße 7, Berlin, from the adresse field of Haus Fixture (de). Located at OpenStreetMap node/7; the extract states no date.",
+    "tip_target": true,
+    "title_children": 0
+   }
+  ],
+  "long_press": {
+   "text": "2 Rue Fixture, Paris, from the adresse field of Salle Fixture (fr). Located at OpenStreetMap way/42, extract of 2026-10-01.",
+   "opacity": "1",
+   "aria_hidden": null,
+   "file": "phone-long-press-dated-address.jpg",
+   "bytes": 13514
+  },
+  "page_errors": []
+ }
+}
