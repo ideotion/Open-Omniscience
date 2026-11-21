@@ -33,7 +33,7 @@ def stored(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("bad", ["1e999", "-1e999", "NaN", "Infinity", "-Infinity"])
 def test_a_stored_non_finite_integer_reads_as_its_default(stored, bad):
-    stored('{"crawl_per_pass": %s, "collect_parallelism": %s, "crawl_max_pages": 9}' % (bad, bad))
+    stored(f'{{"crawl_per_pass": {bad}, "collect_parallelism": {bad}, "crawl_max_pages": 9}}')
     d = sch.SchedulerSettings()
     s = sch.load_settings()
     assert s.crawl_per_pass == d.crawl_per_pass
@@ -43,7 +43,7 @@ def test_a_stored_non_finite_integer_reads_as_its_default(stored, bad):
 
 @pytest.mark.parametrize("bad", ["NaN", "1e999", "-1e999"])
 def test_a_stored_non_finite_float_reads_as_its_default_never_as_a_bound(stored, bad):
-    stored('{"equilibrium_floor": %s}' % bad)
+    stored(f'{{"equilibrium_floor": {bad}}}')
     assert sch.load_settings().equilibrium_floor == sch.SchedulerSettings().equilibrium_floor
 
 
