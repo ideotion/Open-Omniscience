@@ -3173,6 +3173,10 @@
       // soak-window.json read them -- counts, dates, edition codes and reason tokens, no title, text or address -- so the report for
       // the twelve editions can be read back from a real run (scripts/wiki_coverage_readback.py).
       {kind: "file", url: "/api/wiki/lane/counters", name: "oo-field-{press}-wiki-coverage.json"},
+      // Elections (row 266, 0.6 gate row A): the elections floor with the Wikidata snapshot run layered in -- the snapshot's
+      // state, date, age and counts, the floor's four states -- country codes, counts and dates, no path or address
+      // (scripts/elections_readback.py).
+      {kind: "file", url: "/api/diagnostics/elections-floor", name: "oo-field-{press}-elections-floor.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte

@@ -105,6 +105,7 @@ from .system import (
     _p0_validation_last,
     columnar_status,
     data_dir_persistence_report,
+    elections_coverage_floor,
     external_freshness,
     frontend_errors,
     law_coverage,
@@ -1335,6 +1336,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("month-occupancy.json", lambda: month_occupancy(sample=400, download=False, db=db)),
         ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
         ("kpi.json", lambda: kpi(download=False)),
+        # Row 266: the elections floor with the operator's Wikidata snapshot run layered in (its state,
+        # date, age and counts), held to one Field data piece; scripts/elections_readback.py reads it back.
+        ("elections-floor.json", lambda: _elections_floor_member()),
         # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
         # instrument_search is wired into the search endpoint on the operator's rig).
         ("search-timing.json", lambda: search_timing(download=False)),
@@ -1762,6 +1766,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/recursive-loop": "selftests.json",
     "/merge": "merge-diag.json",
     "/kpi": "kpi.json",
+    "/elections-floor": "elections-floor.json",
     "/search-timing": "search-timing.json",
     "/run-journal": "run-journal.json",
     "/run-timeline": "run-timeline.json",
@@ -1836,10 +1841,6 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
 }
 _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/power-profile": (
-        "a table shipped in the code, identical on all 17 instances read (R119): the build the "
-        "manifest's `machine` block names identifies it, so it is not written into every archive"
-    ),
-    "/elections-floor": (
         "a table shipped in the code, identical on all 17 instances read (R119): the build the "
         "manifest's `machine` block names identifies it, so it is not written into every archive"
     ),
@@ -1977,6 +1978,48 @@ def _wiki_lane_history_member() -> dict:
     from src.wiki.service import lane_history
 
     return lane_history()
+
+
+#: The elections-floor member's bound (row 266): one Field data piece (app-diagnostics.js FIELD_PART_BYTES), so the file
+#: the operator sends back is never cut. The route itself still answers in full.
+ELECTIONS_FLOOR_MEMBER_MAX_BYTES = 200 * 1000
+
+
+def _elections_floor_member(limit: int = ELECTIONS_FLOOR_MEMBER_MAX_BYTES) -> dict:
+    """``/elections-floor`` as a bundle member, held to ``limit`` bytes with any cut NAMED (row 266).
+
+    The answer is no longer the same on every instance: it layers the operator's Wikidata snapshot, whose
+    state, date, age and counts are what this member exists to carry back. A large snapshot can push the
+    per-country entry lists past one piece, so they go first, each replaced by its count; if that is still
+    too much, the per-country rows go too, their counts kept. The snapshot block, the floor's counts and its
+    country lists are never cut. ``cut`` says what was taken out, the size before and the limit."""
+    try:
+        out = elections_coverage_floor()
+    except Exception as exc:  # noqa: BLE001 - a member that fails says so, never blanks
+        return {"available": False, "error": _all_diag_err_str(exc, typed=True)}
+    before = _wire_json_len(out)
+    if before <= limit:
+        return out
+    cut: list[str] = []
+    rep = out.get("tier_report")
+    rows = rep.get("countries") if isinstance(rep, dict) else None
+    if isinstance(rep, dict) and isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("entries"), list):
+                row["entries_n"] = len(row.pop("entries"))
+        cut.append("tier_report.countries[].entries (each replaced by entries_n, its count)")
+        if _wire_json_len(out) > limit:
+            rep["countries_n"] = len(rows)
+            rep.pop("countries")
+            cut.append("tier_report.countries (replaced by countries_n; tier_report.counts kept)")
+    out["cut"] = {
+        "what": cut,
+        "bytes_before": before,
+        "limit_bytes": limit,
+        "reason": "the member is held to one Field data piece so the file sent back is never cut",
+        "how_to_get_it": "the /api/diagnostics/elections-floor route answers in full",
+    }
+    return out
 
 
 def _chronology_member() -> dict:
