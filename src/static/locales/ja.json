@@ -5520,6 +5520,8 @@
   "The PubMed records your analysed articles link to, kept in medical.db, shown beside the news and never mixed into it. Each carries the class its record states (journal, preprint, retracted). This app never gives medical advice.": "分析した記事がリンクしている PubMed の記録です。medical.db に保存され、ニュースの横に表示され、ニュースと混ざることはありません。それぞれ記録が示す区分（学術誌、プレプリント、撤回済み）を持ちます。このアプリが医療上の助言をすることはありません。",
   "The Search tab's grammar: AND, OR, NOT, \"phrases\" and brackets. Blank takes the claim's content words and joins them with OR.": "「検索」タブの文法：AND、OR、NOT、\"フレーズ\"、括弧。空欄の場合は主張の内容語を取り出し、OR で結びます。",
   "The USGS ComCat catalogue through its FDSN event service: the service's own count for the window first, then every event of type earthquake at or above magnitude 6.0, counted by origin time in UTC.": "USGS ComCat カタログを FDSN イベントサービス経由で取得：まず期間についてのサービス自身の件数、次にマグニチュード 6.0 以上の地震タイプの全イベントを、UTC の発生時刻で数えます。",
+  "The Wikidata election snapshot is dated after today, so its age cannot be read: elections called recently may be missing. Run the snapshot again.": "Wikidata の選挙スナップショットの日付が今日より後のため、古さを判断できません。最近決まった選挙が欠けている可能性があります。スナップショットを作り直してください。",
+  "The Wikidata election snapshot is {days} days old, past the {limit}-day limit: elections called since {date}, snap elections above all, are not in it. Run the snapshot again.": "Wikidata の選挙スナップショットは {days} 日前のもので、{limit} 日の上限を超えています。{date} 以降に決まった選挙、特に解散・前倒し選挙は含まれていません。スナップショットを作り直してください。",
   "The Wikidata election snapshot on this install could not be read; only the hand-curated list is shown.": "このインストールの Wikidata 選挙スナップショットを読み取れませんでした。手作業のリストのみを表示しています。",
   "The Wikipedia lane could not be read just now.": "Wikipediaレーンを今は読み取れませんでした。",
   "The Wikipedia lane has not run on this machine yet.": "Wikipediaレーンはこのマシンでまだ実行されていません。",
