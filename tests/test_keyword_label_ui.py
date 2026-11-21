@@ -280,10 +280,13 @@ def test_the_sense_picker_sits_outside_the_chip_and_a_pick_is_read_m4() -> None:
     app = app_js()
     chips = strip_comments(function_body(app, "anRenderKwChips"))
     assert "kwLabelHtml(term, {inButton: true})" in chips
-    assert "</button>${kwSensesAfterHtml(term, pins)}" in chips, "the picker is not drawn after the chip"
+    assert "</button>${kwSensesAfterHtml(term, pins)}${kwQidHtml(term, {noDossier: true})}" in chips, "the picker and the QID are not drawn after the chip"
     insights = (_ROOT / "src" / "static" / "app-insights.js").read_text(encoding="utf-8")
-    assert "kwLabelHtml(f, {inButton: true})" in insights and "</button>${kwSensesAfterHtml(f)}" in insights, (
+    assert "kwLabelHtml(f, {inButton: true})" in insights and "</button>${kwSensesAfterHtml(f)}${kwQidHtml(f, {noDossier: true})}" in insights, (
         "the landscape chip is a <button> too"
+    )
+    assert "</button>${kwSensesAfterHtml(m)}${kwQidHtml(m, {noDossier: true})}${mapLink}" in insights, (
+        "row 231: a family member's chip is a <button> too, so its QID link is drawn beside it"
     )
     clicks = event_listener_bodies(app, "click")
     assert any("[data-kwpin]" in h and "kwPickSense(" in h and "stopPropagation" in h for h in clicks), (

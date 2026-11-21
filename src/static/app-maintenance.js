@@ -171,7 +171,7 @@
         + `<td>${esc(ooIsoDate(r.confirmed_at || "?"))}</td><td dir="auto">${esc(r.note || "")}</td>`
         + `<td>${maintPairButtonHtml({ source_id: r.source_id, article_site: r.article_site, state: "confirmed" }, t)}</td></tr>`).join("");
       return `<div>${esc(tf(t("{n} confirmed"), { n: fmtNum(d.confirmed != null ? d.confirmed : rows.length) }))}</div>`
-        + `<table class="maint-tally"><thead><tr><th>${esc(t("Source number"))}</th><th>${esc(t("Site"))}</th><th>${esc(t("Confirmed"))}</th><th>${esc(t("Note"))}</th><th></th></tr></thead>`
+        + `<table class="maint-tally"><thead><tr><th>${esc(t("Source number"))}</th><th>${esc(t("Site"))}</th><th>${esc(t("Confirmed"))}</th><th>${esc(t("Note"))}</th><th><span class="sr-only">${esc(t("Actions"))}</span></th></tr></thead>`
         + `<tbody>${body}</tbody></table>` + cav;
     }
 
@@ -211,7 +211,7 @@
       const rows = c.map((r) =>
         `<tr><td dir="auto">${esc(r.line)}</td><td class="num">${esc(fmtNum(r.articles))}</td>`
         + `<td>${r.known ? esc(t("already stripped by the rules")) : ""}</td></tr>`).join("");
-      return head + `<table class="maint-tally"><thead><tr><th>${esc(t("Line"))}</th><th>${esc(t("Articles"))}</th><th></th></tr></thead>`
+      return head + `<table class="maint-tally"><thead><tr><th>${esc(t("Line"))}</th><th>${esc(t("Articles"))}</th><th><span class="sr-only">${esc(t("Note"))}</span></th></tr></thead>`
         + `<tbody>${rows}</tbody></table>` + _maintMethodHtml(d, t, tf);
     }
 

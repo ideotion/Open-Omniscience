@@ -115,6 +115,9 @@ def request_update(
         raise ConsentRefused("this fetch needs the online consent; it was not given")
     if (kill_switch or kill_switch_active)():
         raise KillSwitchRefused(KILL_SWITCH_TEXT)
+    from src.safety.transport_watch import queue_mode
+
+    qmode = queue_mode()  # R768/R772: the transport this click approved, read before the lock
     with _LOCK:
         job = _JOBS.get(alpha3)
         if job is not None and job["state"] in ("queued", "running"):
@@ -133,6 +136,10 @@ def request_update(
             "from_sequence": None,
             "to_sequence": None,
             "owed_remaining": None,
+            # R768/R772: why a queued update is HELD instead of started ("protected", "unprotected", "proxy", "settings",
+            # "unverified"); only "Resume the queue" lifts it. The transport it was approved under stays private (``_``).
+            "held_by": None,
+            "_queued_mode": qmode,
             "_args": {"source_for": source_for or _default_source_for, "kill_switch": kill_switch, "run": run},
         }
         _JOBS[alpha3] = job
@@ -163,15 +170,29 @@ def _ensure_worker() -> None:
 def _work() -> None:
     global _WORKER
     from src.osm.apply import update_country
+    from src.safety import transport_watch as tw
 
     me = threading.current_thread()
     try:
         while True:
+            mode = tw.mode_now()  # one reading for this pick, outside the lock (it reads the settings)
             with _LOCK:
-                if not _QUEUE:
+                alpha3 = None
+                for a in _QUEUE:
+                    queued = _JOBS[a]
+                    if queued.get("held_by"):
+                        continue
+                    # R768/R772: a country queued under another transport than the one in force waits, named, for the click.
+                    reason = tw.hold_reason(queued.get("_queued_mode"), mode)
+                    if reason is not None:
+                        queued["held_by"] = reason
+                        continue
+                    alpha3 = a
+                    break
+                if alpha3 is None:
                     _WORKER = None  # under the lock the enqueuer also holds, so a job queued now starts a new worker
                     return
-                alpha3 = _QUEUE.pop(0)
+                _QUEUE.remove(alpha3)
                 job = _JOBS[alpha3]
                 job["state"], job["started_at"] = "running", _now()
                 args = dict(job["_args"])
@@ -181,12 +202,15 @@ def _work() -> None:
                     _job["applied"], _job["owed"] = applied, owed
 
             ended: dict[str, Any] = {"outcome": "failed", "error_class": "BaseException"}
+            watch: tw.TransportWatch | None = None
             try:
                 runner = args["run"] or update_country
                 kwargs: dict[str, Any] = {"source_for": args["source_for"], "on_progress": progress}
                 if args["kill_switch"] is not None:
                     kwargs["kill_switch"] = args["kill_switch"]
-                report = runner(alpha3, **kwargs)
+                watch = tw.for_launch(mode)  # the run is bound to the transport its pick read (R768/R772)
+                with tw.run(watch):
+                    report = runner(alpha3, **kwargs)
                 ended = {
                     "outcome": report.outcome,
                     "from_sequence": report.from_sequence,
@@ -201,13 +225,40 @@ def _work() -> None:
                 raise
             finally:
                 # Whatever ended the run, an interrupt included, the job is not left "running": the page would poll it for ever.
+                stopped_by = watch.stop_reason() if watch is not None and watch.latched else None
                 with _LOCK:
-                    job.update(ended)
-                    job["state"], job["finished_at"] = "done", _now()
+                    if stopped_by is not None and ended.get("outcome") != "applied":
+                        # R768/R772: a run stopped by a transport change goes back to the HEAD of the queue, held and named; its
+                        # files already applied stay applied, and the operator's "Resume the queue" continues from there.
+                        job.update(state="queued", started_at=None, held_by=tw.held_by_for(stopped_by), _queued_mode=mode)
+                        _QUEUE.insert(0, alpha3)
+                    else:
+                        job.update(ended)
+                        job["state"], job["finished_at"] = "done", _now()
     finally:
         with _LOCK:
             if _WORKER is me:
                 _WORKER = None
+
+
+def resume_held(mode: str | None = None) -> int:
+    """R768's queue ruling for the daily updates: the operator's "Resume the queue" re-stamps every queued country with the
+    transport of that click (``mode``, the identity its token was checked against) and lifts its hold; the worker then starts them
+    in order, each held again by the next pick if the transport changed meanwhile. Returns how many were held."""
+    from src.safety.transport_watch import queue_mode
+
+    qmode = queue_mode() if mode is None else mode
+    held = 0
+    with _LOCK:
+        for a in _QUEUE:
+            job = _JOBS[a]
+            if job.get("held_by"):
+                held += 1
+            job["held_by"] = None
+            job["_queued_mode"] = qmode
+        if _QUEUE:
+            _ensure_worker()
+    return held
 
 
 def jobs() -> list[dict[str, Any]]:

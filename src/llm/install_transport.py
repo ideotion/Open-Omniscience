@@ -40,3 +40,215 @@ def refuse_if_protected(exc_type: type[Exception]) -> None:
     error type, so the refusal reaches the user on the path that module already reports through."""
     if ai_install_protected():
         raise exc_type(AI_INSTALL_PROTECTED_REFUSAL)
+
+
+# --------------------------------------------------------------------------- #
+# R765: switching to protected mode stops an AI install that is already running. #
+# --------------------------------------------------------------------------- #
+# The refusals above only stop a step from STARTING. A step already running when the operator switches protected mode on (pip
+# fetching wheels, the Hugging Face snapshot, the Ollama script, a daemon pull) would go on downloading over the direct
+# connection the operator has just chosen to stop using. So the save that turns protected mode on stops them: the mode is written
+# first, then each running step is asked to stop (a spawned child is terminated, waited for within a bound, then killed), and no
+# later step starts because the refusals above now apply. The save never waits for the install and never fails because of it.
+
+AI_INSTALL_STOPPED_NOTE = (
+    "Stopped because protected mode was switched on: this download goes over a direct connection, not through your proxy. "
+    "What it had downloaded is not used as finished. Switch protected mode off and start it again to finish."
+)
+AI_INSTALLER_STOPPED_NOTE = (
+    "Stopped because protected mode was switched on: the Ollama installer downloads over a direct connection, not through your "
+    "proxy. The install was interrupted and may be incomplete: switch protected mode off and run it again."
+)
+
+#: R769: the same stops when the stored settings cannot be read: the choice in force is unknown, so nothing goes on (fail closed).
+#: The reason named is the settings, not protected mode (R766).
+AI_INSTALL_UNREADABLE_NOTE = (
+    "Stopped because the safety settings could not be read: this download goes over a direct connection, and the transport "
+    "you chose is unknown until they can be read again. What it had downloaded is not used as finished. Start it again once "
+    "they can be read."
+)
+AI_INSTALLER_UNREADABLE_NOTE = (
+    "Stopped because the safety settings could not be read: the Ollama installer downloads over a direct connection, and the "
+    "transport you chose is unknown until they can be read again. The install was interrupted and may be incomplete: run it "
+    "again once they can be read."
+)
+
+import threading as _threading  # noqa: E402 - kept beside the R765 block it serves
+
+_STOP_LOCK = _threading.Lock()
+_STOPPED_AT: dict[str, tuple[float, str]] = {}  # kind -> (when, reason) of the last stop by a transport change
+_PROCS: dict = {}  # spawned install child -> True when it leads its own process group
+_ACTIVE_PULLS = 0  # daemon pulls streaming now, through the queue or the direct route
+_TERMINATE_WAIT_S = 10.0
+
+
+def note_for(reason: str | None, *, installer: bool = False) -> str:
+    """The fixed note for a stop by ``reason`` (``"protected"`` or ``"unreadable"``, :mod:`src.safety.transport_watch`)."""
+    if reason == "unreadable":
+        return AI_INSTALLER_UNREADABLE_NOTE if installer else AI_INSTALL_UNREADABLE_NOTE
+    return AI_INSTALLER_STOPPED_NOTE if installer else AI_INSTALL_STOPPED_NOTE
+
+
+def record_stop(kind: str, reason: str) -> None:
+    """Remember that the run of ``kind`` going now was stopped by a transport change, so its status can say why."""
+    import time
+
+    with _STOP_LOCK:
+        _STOPPED_AT[kind] = (time.time(), reason)
+
+
+def stop_note(kind: str, started_at: float | None) -> str | None:
+    """The stop note when the run of ``kind`` that started at ``started_at`` was stopped by a transport change, else None."""
+    with _STOP_LOCK:
+        hit = _STOPPED_AT.get(kind)
+    if hit is None or started_at is None or started_at > hit[0]:  # a run with no start time cannot be placed before the stop
+        return None
+    return note_for(hit[1], installer=kind == "ollama-installer")
+
+
+def register_child(proc, *, group: bool = False) -> None:
+    """A spawned install child the switch must be able to stop (the Ollama script runs outside any job). ``group``: the child leads
+    its own process group, and the stop signals the whole group."""
+    with _STOP_LOCK:
+        _PROCS[proc] = group
+
+
+def unregister_child(proc) -> None:
+    with _STOP_LOCK:
+        _PROCS.pop(proc, None)
+
+
+def pull_started() -> None:
+    """A daemon pull began streaming (``OllamaClient.pull``), so a stop can name it even when it did not come from the queue."""
+    global _ACTIVE_PULLS
+    with _STOP_LOCK:
+        _ACTIVE_PULLS += 1
+
+
+def pull_ended() -> None:
+    global _ACTIVE_PULLS
+    with _STOP_LOCK:
+        _ACTIVE_PULLS = max(0, _ACTIVE_PULLS - 1)
+
+
+def _signal(proc, sig, group: bool) -> None:
+    import os
+
+    if group and hasattr(os, "killpg"):
+        try:
+            os.killpg(proc.pid, sig)
+            return
+        except OSError:
+            pass  # the group is gone or not ours: the child itself below
+    proc.send_signal(sig)
+
+
+def _terminate(proc, *, group: bool = False) -> None:
+    """SIGTERM, a bounded wait, then SIGKILL; to the whole process group when ``group``. Never raises."""
+    import contextlib
+    import signal
+    import subprocess
+
+    try:
+        if proc.poll() is not None and not group:
+            return
+        _signal(proc, signal.SIGTERM, group)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=_TERMINATE_WAIT_S)
+        if group or proc.poll() is None:  # the leader may be gone while a child it was waiting on still downloads
+            _signal(proc, getattr(signal, "SIGKILL", signal.SIGTERM), group)
+            proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001, S110 - best effort: the child may already be gone
+        pass
+
+
+# An Ollama install the switch cut short may have unpacked part of the program. Until a run finishes, the binary it may have left
+# is not reported as installed. The marker's time is compared with the binary's ctime (which unpacking sets and nothing can set
+# back): a binary written after the marker came from a later install, by this app or by hand, and is believed.
+
+
+def _interrupted_marker():
+    from src.paths import data_dir
+
+    return data_dir() / "ollama_install_interrupted"
+
+
+def mark_ollama_install_interrupted() -> None:
+    try:
+        from src.safety.file_lock import atomic_replace
+
+        marker = _interrupted_marker()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        atomic_replace(marker, "stopped because protected mode was switched on\n")
+    except OSError:
+        pass  # the stop is said in the install's own note either way
+
+
+def clear_ollama_install_interrupted() -> None:
+    import contextlib
+
+    with contextlib.suppress(OSError):
+        _interrupted_marker().unlink(missing_ok=True)
+
+
+def ollama_install_interrupted(binary: str | None) -> bool:
+    """True while the binary at ``binary`` may be one a stopped install left half unpacked."""
+    import os
+
+    try:
+        marked = _interrupted_marker().stat().st_mtime
+    except OSError:
+        return False
+    if binary is None:
+        return True
+    try:
+        return os.stat(binary).st_ctime <= marked
+    except OSError:
+        return True
+
+
+def stop_running_installs() -> list[str]:
+    """Stop every AI-install step that is running, without waiting for any of them. Returns what was asked to stop (kinds only).
+
+    Called after protected mode is saved. Never raises: the switch must not fail because of an install."""
+    import time
+
+    from src.safety.transport_watch import bump
+
+    stopped: list[str] = []
+    now = time.time()
+    bump()  # every running step's watch re-reads the mode at its next boundary
+    with _STOP_LOCK:
+        procs = list(_PROCS.items())
+    try:
+        from src.jobs.background import get_job
+
+        for kind in ("vllm-install", "vllm-model-download"):
+            job = get_job(kind)
+            if job is not None and job.status().get("running"):
+                if not job.stop_requested():  # a run the operator already cancelled keeps reading as theirs
+                    with _STOP_LOCK:
+                        _STOPPED_AT[kind] = (now, "protected")
+                job.cancel()  # its runner terminates the child (SIGTERM, bounded wait, SIGKILL) at its next poll
+                stopped.append(kind)
+    except Exception:  # noqa: BLE001, S110 - one source of installs never hides the others
+        pass
+    try:
+        from src.llm.pull_queue import get_pull_manager
+
+        queued = get_pull_manager().stop_all(AI_INSTALL_STOPPED_NOTE)
+    except Exception:  # noqa: BLE001, S110
+        queued = False
+    with _STOP_LOCK:
+        streaming = _ACTIVE_PULLS > 0
+    if queued or streaming:  # a pull on the direct route is stopped by the generation above and named here
+        stopped.append("ollama-pull")
+    if procs:
+        with _STOP_LOCK:
+            _STOPPED_AT["ollama-installer"] = (now, "protected")
+        stopped.append("ollama-installer")
+        for proc, group in procs:
+            _threading.Thread(
+                target=_terminate, args=(proc,), kwargs={"group": group}, name="ai-install-stop", daemon=True
+            ).start()
+    return stopped

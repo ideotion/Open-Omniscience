@@ -22,6 +22,7 @@ import ast
 import hashlib
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -112,6 +113,7 @@ def test_every_engine_and_download_spawner_starts_from_an_environment_without_th
     assert spawned["env"]["OO_TEST_KEEP"] == "kept"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the scripted Ollama install runs on Linux only (installer.platform_support); its reader selects on a pipe, which Windows refuses")
 def test_the_installer_script_does_not_inherit_the_passphrase_and_keeps_the_rest_of_the_environment(engine_env, tmp_path):
     """MUTATION TARGET: ``env=`` left out of the installer's ``Popen``, which hands the script the server's whole environment. The
     script is a real ``sh`` that reports what it was given."""

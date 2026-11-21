@@ -265,3 +265,134 @@ def test_an_inherited_origins_setting_never_reaches_the_daemon(monkeypatch, spaw
     monkeypatch.setenv("OLLAMA_ORIGINS", "*")
     life.start(wait=False)
     assert "OLLAMA_ORIGINS" not in spawn_env[0]
+
+
+
+def _sweep_evasions(root) -> None:
+    """Fails on any way round the keyword sweep above in ``root``: a client built through an alias, a subclass or
+    ``getattr``, or given its own proxy, mounts or transport (security read of R770)."""
+    import ast
+
+    builders = {"Client", "AsyncClient"}
+    routes = {"proxy", "proxies", "mounts", "transport"}
+    for path in sorted(root.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "httpx" not in text:
+            continue
+        tree = ast.parse(text)
+        names = {"httpx"}
+        direct: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names |= {a.asname or a.name for a in node.names if a.name.split(".")[0] == "httpx"}
+            elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "httpx":
+                direct |= {(a.asname or a.name): a.name for a in node.names}
+        rel = path.relative_to(root).as_posix()
+
+        def httpx_name(n: ast.AST, names=names, direct=direct) -> str | None:
+            if isinstance(n, ast.Attribute):
+                base = n.value
+                while isinstance(base, ast.Attribute):  # httpx._client.Client
+                    base = base.value
+                if isinstance(base, ast.Name) and base.id in names:
+                    return n.attr
+            if isinstance(n, ast.Name) and n.id in direct:
+                return direct[n.id]
+            return None
+
+        called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+        annotations: list[ast.AST] = []  # a type annotation names the class without building one
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.arg) and n.annotation is not None) or isinstance(n, ast.AnnAssign):
+                annotations.append(n.annotation)
+            elif isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.returns is not None:
+                annotations.append(n.returns)
+        called |= {id(sub) for a in annotations for sub in ast.walk(a)}
+        for node in ast.walk(tree):
+            what = httpx_name(node)
+            if what in builders:
+                assert id(node) in called, f"{rel}:{node.lineno} refers to httpx.{what} without calling it (an alias)"
+            if isinstance(node, ast.ClassDef):
+                assert not any(httpx_name(b) for b in node.bases), f"{rel}:{node.lineno} subclasses an httpx class"
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            if isinstance(f, ast.Name) and f.id == "getattr" and node.args:
+                first = node.args[0]
+                assert not (isinstance(first, ast.Name) and first.id in names), (
+                    f"{rel}:{node.lineno} reaches into httpx through getattr"
+                )
+            inner = httpx_name(f)
+            assert inner not in {"HTTPTransport", "AsyncHTTPTransport", "Proxy"}, (
+                f"{rel}:{node.lineno} builds httpx.{inner}, which can carry a proxy"
+            )
+            if inner in builders:
+                given = {k.arg for k in node.keywords} & routes
+                assert not given, f"{rel}:{node.lineno} gives httpx.{inner} its own route: {sorted(given)}"
+
+
+def test_the_sweep_also_refuses_the_ways_round_it():
+    from pathlib import Path
+
+    _sweep_evasions(Path(__file__).resolve().parents[1] / "src")
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import httpx\nC = httpx.Client\nc = C(trust_env=False)\n",
+        "import httpx\ndef f(c: httpx.Client = httpx.Client) -> None:\n    pass\n",  # a default, not an annotation
+        "from httpx import Client\nC = Client\n",
+        "import httpx\nclass C(httpx.Client):\n    pass\n",
+        "import httpx\nc = getattr(httpx, 'Client')()\n",
+        "import httpx\nc = httpx._client.Client\n",
+        "import httpx\nt = httpx.HTTPTransport(proxy='http://p')\n",
+        "import httpx\nc = httpx.Client(trust_env=False, proxy='http://p')\n",
+        "import httpx as h\nc = h.Client(trust_env=False, mounts={})\n",
+    ],
+)
+def test_the_sweep_catches_each_way_round_it(code, tmp_path):
+    """The control: each evasion, planted in a scratch tree, is caught."""
+    (tmp_path / "m.py").write_text(code, encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _sweep_evasions(tmp_path)
+
+
+def test_a_daemon_that_already_answers_is_reported_running_whatever_a_new_one_would_need(monkeypatch, spawn_env):
+    """Security read of R771: an https address in front of a running daemon read as an error, not "already running"."""
+    monkeypatch.setenv("OO_OLLAMA_URL", "https://127.0.0.1:11434")
+    monkeypatch.setattr(life, "is_running", lambda **kw: True)
+    out = life.start(wait=False)
+    assert out["started"] is False and out["reason"] == "already running" and spawn_env == []
+
+
+@pytest.mark.parametrize("url", ["https://127.0.0.1:11434", "http://127.0.0.1:0", "http://127.0.0.1:99999"])
+def test_the_gpu_handover_refuses_an_address_start_would_refuse_before_releasing_anything(url, monkeypatch, spawn_env):
+    """Security read of R771: these pass the loopback rule, so the handover released vLLM and THEN start() refused."""
+    from src.llm import arbitration
+
+    released: list[str] = []
+    monkeypatch.setattr(arbitration, "release_backend", lambda b: released.append(b) or {"backend": b})
+    monkeypatch.setattr(arbitration, "free_vram_mb", lambda: None)
+    monkeypatch.setenv("OO_OLLAMA_URL", url)
+    out = arbitration.hand_gpu_to("ollama")
+    assert released == [] and out["ready"] is False and out["reason"] and spawn_env == []
+
+
+def test_a_handover_without_a_start_reports_no_start(monkeypatch):
+    from src.llm import arbitration
+
+    monkeypatch.setattr(arbitration, "release_backend", lambda b: {"backend": b})
+    monkeypatch.setattr(arbitration, "free_vram_mb", lambda: None)
+    monkeypatch.setenv("OO_OLLAMA_URL", "http://203.0.113.7:11434")
+    out = arbitration.hand_gpu_to("ollama", start=False)
+    assert out["started"] is None and "must be loopback" in out["reason"]
+
+
+def test_a_daemon_asked_for_a_low_port_that_never_answers_says_why(monkeypatch, spawn_env):
+    """An address with no port means port 80, which an unprivileged daemon cannot listen on: the note says so."""
+    monkeypatch.setenv("OO_OLLAMA_URL", "http://127.0.0.1")
+    out = life.start(wait=True, timeout=0)
+    assert out["ready"] is False and "port 80" in out["note"] and "11434" in out["note"]
+    monkeypatch.setenv("OO_OLLAMA_URL", "http://127.0.0.1:12345")
+    assert "administrator" not in life.start(wait=True, timeout=0)["note"]

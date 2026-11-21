@@ -1151,7 +1151,10 @@
     // `opts.inButton`: the caller draws the label INSIDE a <button>, where the sense
     // picker's own buttons cannot go (the parser closes the outer button at the first
     // nested one, M4), so it is left out here and the caller draws
-    // `kwSensePickerHtml(row)` after its closing tag.
+    // `kwSensePickerHtml(row)` after its closing tag. The QID's link is left out for the
+    // same reason (row 231: axe's nested-interactive, a focusable link inside a button):
+    // the caller draws `kwQidHtml(row, {noDossier: true})` after its closing tag, beside
+    // the button, where it stays reachable (row 178 keeps the link).
     // `opts.inLink`: the caller draws the label INSIDE an <a>, where the QID's own anchor
     // cannot go -- the parser closes the outer link at the nested one, so the rest of the
     // row falls out of it -- so the QID is left out here and the caller draws
@@ -1166,7 +1169,7 @@
           + esc(p.tag) + `</span>`;
         if (p.tagClass === "kw-senses" && !(opts && opts.inButton)) html += kwSensePickerHtml(row);
       }
-      return html + ((opts && opts.inLink) ? "" : kwQidHtml(row, {noDossier: !!(opts && opts.inButton)}));
+      return html + ((opts && (opts.inLink || opts.inButton)) ? "" : kwQidHtml(row));
     }
 
     // Q412 = a's picker. A refusal that names a choice and offers no way to make it is a
@@ -1659,7 +1662,7 @@
       const chips = d.terms.map((term) =>
         `<button class="chip" data-kwstat="${esc(term.term)}"${kwTipExtraAttr(term)} data-on-click="openCorpus(${esc(JSON.stringify(term.term))})"`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term, {inButton: true})}`
-        + ` <span class="muted">${term.articles}</span></button>${kwSensesAfterHtml(term, pins)}${sgChips(term)}`).join(" ");
+        + ` <span class="muted">${term.articles}</span></button>${kwSensesAfterHtml(term, pins)}${kwQidHtml(term, {noDossier: true})}${sgChips(term)}`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
       // are unreliable; surface it when CJK terms are present.
       const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));

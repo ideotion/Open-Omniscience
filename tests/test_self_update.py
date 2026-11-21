@@ -57,7 +57,8 @@ def test_check_compares_against_the_newest_tag_and_never_moves_backwards(monkeyp
     assert not older["update_available"]
 
 
-def test_check_falls_back_to_main_only_when_no_tag_exists(monkeypatch):
+def test_with_no_release_tag_the_check_says_so_and_offers_nothing_else(monkeypatch):
+    """Tags only (Q1136, R760): red before, when a repository with no vX.Y.Z tag fell back to main's tip and offered it as an update."""
     monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
     monkeypatch.setattr(su, "_local_head", lambda root: SHA_A)
     monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
@@ -68,10 +69,100 @@ def test_check_falls_back_to_main_only_when_no_tag_exists(monkeypatch):
         return [] if url == su.TAGS_URL else {"sha": SHA_B}
 
     out = su.check(fetch)
-    assert seen == [su.TAGS_URL, su.MAIN_URL]
-    assert out["kind"] == "main" and out["update_available"] and out["sha"] == SHA_B
-    with pytest.raises(su.UpdateError):
-        su.check(lambda url: [] if url == su.TAGS_URL else {"sha": "zz"})
+    assert seen == [su.TAGS_URL], "nothing but the tags list is read"
+    assert out["no_release"] is True and out["kind"] == "none" and not out["update_available"]
+    assert out["ref"] == "" and out["sha"] == "" and out["latest"] == ""
+    assert not hasattr(su, "MAIN_URL")
+    for ref, sha in (("main", SHA_B), ("", "")):
+        with pytest.raises(su.UpdateError):
+            su.validate_apply(ref, sha)
+    # A tags answer that is not a list (an error body served with 200) is a read failure, never "no release" and never an offer.
+    with pytest.raises(su.UpdateError, match="could not read"):
+        su.check(lambda url: {"message": "rate limited"})
+
+
+def test_the_tag_and_sha_rules_take_ascii_digits_and_no_trailing_newline():
+    """R760 security read: ``\\d`` matched any Unicode digit and ``$`` matched before a final newline, in both files."""
+    h = _helper()
+    for rx in (su.TAG_RE, h.TAG_RE):
+        assert rx.match("v0.6.0") and rx.match("v10.20.30")
+        for bad in ("v0.6.0\n", "v\u0669.0.0", "v0.6.0-rc1", "main", "refs/tags/v0.6.0", " v0.6.0"):
+            assert not rx.match(bad), (rx.pattern, bad)
+    for rx in (su.SHA_RE, h.SHA_RE):
+        assert rx.match(SHA_B) and not rx.match(SHA_B + "\n")
+    assert su.pick_newest_tag(_tags(("v\u0669.0.0", SHA_A), ("v0.6.0", SHA_B))) == ("v0.6.0", SHA_B)
+
+
+def test_a_ref_that_is_not_a_release_tag_never_reaches_the_apply(monkeypatch):
+    """Red before: a remembered check whose ref was main (the old fallback) validated, since only kind "tag" answers were held to the tag rule."""
+    ok = {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []}
+    monkeypatch.setattr(su, "install_status", lambda root=None: ok)
+    for kind, ref in (("main", "main"), ("tag", "main"), ("tag", "v0.6.0-rc1"), ("none", "v0.6.0"), ("tag", "refs/heads/main")):
+        su._LAST_CHECK.clear()
+        su._LAST_CHECK.update({"ref": ref, "sha": SHA_B, "kind": kind, "update_available": True, "checked_at": 1000.0})
+        with pytest.raises(su.UpdateError, match="not a release tag"):
+            su.validate_apply(ref, SHA_B, now=1100.0)
+    su._LAST_CHECK.clear()
+    spawned = []
+    for kind, ref in (("main", "main"), ("tag", "main"), ("none", "v0.6.0")):
+        with pytest.raises(su.UpdateError, match="not a release tag"):
+            su.launch_helper(ref, SHA_B, kind, popen=lambda *a, **k: spawned.append(a))
+    assert spawned == []
+
+
+def test_the_helper_refuses_a_plan_that_is_not_a_release_tag_before_asking_git_anything(tmp_path):
+    """Red before: the helper accepted ref "main" and fetched refs/heads/main."""
+    h = _helper()
+    asked = []
+
+    def git(root, *args, **kw):
+        asked.append(args)
+        raise AssertionError("git was asked something")
+
+    for plan in ({"ref": "main", "kind": "main"}, {"ref": "main", "kind": "tag"}, {"ref": "v0.6.0", "kind": "main"}, {"ref": "v0.6.0"}):
+        assert h.apply({"root": str(tmp_path), "sha": SHA_B, "python": "python", **plan}, git=git) == ("bad_plan", "")
+    # A plan with no ref or sha, or one that is not a string, is the same refusal (it raised before, which main() caught as helper_failed).
+    for plan in ({"kind": "tag", "sha": SHA_B}, {"kind": "tag", "ref": "v0.6.0"}, {"kind": "tag", "ref": ["v0.6.0"], "sha": SHA_B},
+                 {"kind": "tag", "ref": "v0.6.0", "sha": 5}):
+        assert h.apply({"root": str(tmp_path), "python": "python", **plan}, git=git) == ("bad_plan", "")
+    assert asked == []
+
+
+def test_a_tags_page_after_the_first_that_fails_is_a_read_failure_never_no_release(monkeypatch):
+    """R760 second security read: a later page that failed (or a walk cut by the page cap) read as "no release published"."""
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    full_without_release = _tags(*((f"nightly-{i}", SHA_A) for i in range(100)))
+    with pytest.raises(su.UpdateError, match="could not read"):
+        su.check(lambda url: full_without_release if url == su.TAGS_URL else {"message": "rate limited"})
+    with pytest.raises(su.UpdateError, match="could not read"):
+        su.check(lambda url: full_without_release)  # every page full: the cap ends the walk unfinished
+    assert su.check(lambda url: _tags(("nightly", SHA_A)))["no_release"] is True  # a short first page with no release tag is the answer
+
+
+def test_the_apply_endpoint_refuses_a_no_release_answer_and_starts_nothing(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    started = []
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    monkeypatch.setattr(su, "launch_helper", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(su, "refuse_offline_or_protected", lambda: None)
+    monkeypatch.setattr(su, "_APPLYING", None)
+    monkeypatch.setattr(su, "_LAST_CHECK", {})
+    assert su.check(lambda url: [])["no_release"] is True
+    client = TestClient(app, base_url="http://127.0.0.1")
+    for ref, sha in (("", ""), ("main", SHA_B)):
+        r = client.post("/api/system/update/apply", json={"confirm": True, "ref": ref, "sha": sha})
+        assert r.status_code == 409, r.text
+    assert started == []
+
+
+def test_the_manual_steps_name_a_release_tag_never_mains_tip(tmp_path):
+    steps = "\n".join(su.install_status(tmp_path)["manual_steps"])
+    assert "git pull" not in steps and "merge --ff-only vX.Y.Z" in steps
 
 
 def test_apply_needs_the_exact_checked_ref_and_sha_and_a_fresh_check(monkeypatch):
@@ -152,7 +243,7 @@ def repos(tmp_path):
 
 
 def _plan(inst, sha, ref="v0.6.0"):
-    return {"root": str(inst), "ref": ref, "sha": sha, "python": "python"}
+    return {"root": str(inst), "ref": ref, "sha": sha, "kind": "tag", "python": "python"}
 
 
 def test_helper_fast_forwards_to_the_checked_commit(repos):
@@ -1123,3 +1214,16 @@ def test_a_timed_out_merge_lock_is_left_alone_on_windows():
     apply_fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "apply")
     unlinks = [n for f in (wait, apply_fn) for n in ast.walk(f) if isinstance(n, ast.Attribute) and n.attr == "unlink"]
     assert len(unlinks) == 2, "a new index.lock removal must be read against R748 first"
+
+
+def test_the_settings_page_says_no_release_exists_before_anything_else():
+    """R760: the no-release answer is said in its own words (x12), ahead of "up to date", and never shows the apply button."""
+    import json as _json
+
+    js = (ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
+    say = "No release has been published yet, so there is nothing to update to."
+    branch = js.index("if (_updCheck.no_release)")
+    assert js.index(f't("{say}")') > branch and branch < js.index('t("You are up to date.")') < js.index('t("A newer version is available.")')
+    assert "go.hidden = !(" in js[js.index('t("A newer version is available.")'):], "the apply button is shown only after a real newer release"
+    for loc in sorted((ROOT / "src" / "static" / "locales").glob("*.json")):
+        assert _json.loads(loc.read_text(encoding="utf-8")).get(say), loc.name

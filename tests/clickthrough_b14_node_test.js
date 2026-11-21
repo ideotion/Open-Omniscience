@@ -113,7 +113,7 @@ async function run() {
 
   await test("Z1: the Home split hover groups its counts with the ruled formatter, not the browser's", async () => {
     const hover = homeHover("fr", true)("sources_qualified",
-      {sources: 12806, sources_qualified: 6402, sources_pending: 6000, sources_candidates: 404});
+      {sources: 12806, sources_counted: 6500, sources_qualified: 6402, sources_pending: 6000, sources_candidates: 404});
     assert(hover.indexOf("6" + NNBSP + "402") !== -1, "the count is not fmtNum-grouped: " + hover);
     assert(hover.indexOf("12" + NNBSP + "806") !== -1, "the total is not fmtNum-grouped: " + hover);
     assert(hover.indexOf("6,402") === -1 && hover.indexOf("6 402") === -1,
@@ -122,7 +122,7 @@ async function run() {
 
   await test("Z1: extracted without the formatter (a node harness) the hover still renders", async () => {
     const hover = homeHover("en", false)("sources_pending", {sources_qualified: 1, sources_pending: 2});
-    assert(hover.indexOf("2 of your 3 sources") !== -1, hover);
+    assert(hover.indexOf("2 of the 3 sites in your list (1 of them count as sources)") !== -1, hover);
   });
 
   // ======================= Z3: the locale's own separator ==================== //

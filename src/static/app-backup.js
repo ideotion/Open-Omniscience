@@ -3174,7 +3174,7 @@
       return `<div style="margin-top:8px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("How your corpus grew"))}</div>`
         + `<table style="width:100%;font-size:13px;border-collapse:collapse">`
-        + `<thead><tr><th></th><th style="text-align:right">${esc(t("Before"))}</th><th style="text-align:right">${esc(t("After"))}</th><th></th></tr></thead>`
+        + `<thead><tr><th><span class="sr-only">${esc(t("Measure"))}</span></th><th style="text-align:right">${esc(t("Before"))}</th><th style="text-align:right">${esc(t("After"))}</th><th><span class="sr-only">${esc(t("Difference"))}</span></th></tr></thead>`
         + `<tbody>${rows}${dateRow}</tbody></table></div>`;
     }
 
@@ -3840,8 +3840,12 @@
       if ((body.fetch_mode === "protected" || body.http_proxy) &&
           !confirm(t("Send every fetch through this proxy? You must run and trust the proxy yourself; protected mode cannot guarantee anonymity."))) return;
       try {
-        await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
+        const r = await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
         toast("Fetch mode saved.");
+        // R765: the switch stopped an AI install that was downloading over a direct connection. Said, never silent.
+        if (r && Array.isArray(r.stopped_ai_installs) && r.stopped_ai_installs.length) {
+          toast(t("Protected mode is on, so the AI install that was running was stopped: it was downloading over a direct connection, not through your proxy. Switch protected mode off and start it again to finish."), "warn");
+        }
       } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
     //: The state the discovery result line last reported (null: nothing saved yet), so a
@@ -3855,7 +3859,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // The disclosure of an egress is a consent string: it ships x12 like the box beside it.
       box.textContent = _discoveryResultOn
-        ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo.")
+        ? t("Enabled: topic-discovery queries will be sent to DuckDuckGo, and each site it returns will be visited.")
         : t("Disabled (the default): no topic query leaves this machine.");
     }
     async function saveDiscoveryExternal(box) {
@@ -3865,7 +3869,7 @@
       // one) changes nothing (audit A-004).
       if (!box || box.id !== "discovery-external" || box.type !== "checkbox") return;
       const on = box.checked;
-      if (on && !confirm(t("Send your topic-discovery queries to DuckDuckGo? Your query leaves this machine."))) {
+      if (on && !confirm(t("Send your topic-discovery queries to DuckDuckGo and visit each site it returns? Your query leaves this machine, and each of those sites sees your visit."))) {
         box.checked = false;
         return;
       }

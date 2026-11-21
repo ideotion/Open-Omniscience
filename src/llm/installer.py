@@ -150,8 +150,11 @@ class InstallerFetchFailed(InstallerVerificationError):
 
 
 def ollama_present() -> bool:
-    """True if an ``ollama`` binary is already on PATH (nothing to install)."""
-    return shutil.which("ollama") is not None
+    """True if an ``ollama`` binary is already on PATH (nothing to install), and no install of it was cut short (R765)."""
+    from src.llm.install_transport import ollama_install_interrupted
+
+    path = shutil.which("ollama")
+    return path is not None and not ollama_install_interrupted(path)
 
 
 def _is_root() -> bool:
@@ -413,8 +416,15 @@ def run_installer(path: str) -> Iterator[str]:
     p = _validate_staged(path)
     _check_online()
     # R763: the script downloads the binary itself, outside the proxy protected mode routes this app through
-    from src.llm.install_transport import refuse_if_protected
+    from src.llm.install_transport import (
+        note_for,
+        refuse_if_protected,
+        register_child,
+        unregister_child,
+    )
+    from src.safety.transport_watch import TransportWatch
 
+    watch = TransportWatch()  # R765/R769: taken before the check, so a switch between the two still stops the script
     refuse_if_protected(InstallerUnavailable)
     if _is_root():
         cmd = ["sh", str(p)]
@@ -443,22 +453,91 @@ def run_installer(path: str) -> Iterator[str]:
         # takes ``model_store.launch_env``.
         from src.llm.model_store import child_env
 
+        root = cmd[0] == "sh"
         proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, verified script
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            bufsize=0,
             env=child_env(),
+            # R765: as root the script gets its own process group, so the stop can end the whole tree (the curl and tar it
+            # waits on as well as its shell). Not under sudo: a new session drops the terminal a cached sudo ticket is tied to.
+            start_new_session=root,
         )
         assert proc.stdout is not None
+        # R765: the switch to protected mode terminates this child from its own thread (SIGTERM to the group as root, a bounded
+        # wait, SIGKILL). Under sudo the signal may not reach the root-owned curl at all, so this loop also watches for the stop
+        # between reads (at most _READ_POLL_S apart, whatever the script prints) and then closes the pipe: curl writes its
+        # progress meter into that pipe, and its next write fails and ends it.
+        register_child(proc, group=root)
+        stopped = False
+        ended_first: int | None = None  # the script's exit code when it had already exited as the stop was seen
         try:
-            for line in proc.stdout:
-                yield line.rstrip("\n")
+            for line in _lines(proc.stdout.fileno(), lambda: watch.stop_reason() is not None):
+                if line is None:
+                    stopped = True
+                    ended_first = proc.poll()
+                    break
+                yield line
         finally:
+            unregister_child(proc)
             proc.stdout.close()
+            if stopped and ended_first is None:
+                from src.llm.install_transport import _terminate
+
+                _terminate(proc, group=root)
             code = proc.wait()
+        # A script that exited 0 finished before the switch reached it, and is reported as the finished install it is; one that
+        # had already failed on its own (an exit code, not a signal) reports its own failure.
+        own_end = ended_first is not None and ended_first >= 0
+        reason = watch.stop_reason()
+        if code != 0 and not own_end and (stopped or reason is not None):
+            # What it unpacked may be cut short, so the binary is not reported as installed until a run finishes (R765).
+            from src.llm.install_transport import mark_ollama_install_interrupted
+
+            mark_ollama_install_interrupted()
+            raise InstallerUnavailable(note_for(reason, installer=True))
+        if code == 0:
+            from src.llm.install_transport import clear_ollama_install_interrupted
+
+            clear_ollama_install_interrupted()
         yield f"__exit__ {code}"
+
+
+#: How often the installer's reader looks for a stop while the script prints nothing (R765).
+_READ_POLL_S = 0.5
+
+
+def _lines(fd: int, stop: Callable[[], bool]) -> Iterator[str | None]:
+    """The script's output as text lines (``\\n``, ``\\r\\n`` and a progress meter's bare ``\\r`` all end a line), read with a
+    timeout so a silent script still sees the stop. Yields None once ``stop()`` is true, then ends."""
+    import re
+    import selectors
+
+    buf = b""
+    with selectors.DefaultSelector() as sel:  # not select.select, which refuses a descriptor past 1023
+        sel.register(fd, selectors.EVENT_READ)
+        while True:
+            if stop():
+                yield None
+                return
+            if not sel.select(_READ_POLL_S):
+                continue
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            buf += chunk
+            # a "\r" that ends the read may be the first half of a "\r\n": it waits for the next read
+            held = buf.endswith(b"\r")
+            parts = re.split(rb"\r\n|\r|\n", buf[:-1] if held else buf)
+            buf = parts.pop() + (b"\r" if held else b"")
+            for part in parts:
+                if stop():
+                    yield None
+                    return
+                yield part.decode("utf-8", "replace")
+    if buf:
+        yield buf.removesuffix(b"\r").decode("utf-8", "replace")
 
 
 # -- real fetchers (through the guarded factory) ----------------------------- #
