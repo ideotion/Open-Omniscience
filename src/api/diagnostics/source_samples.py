@@ -185,16 +185,31 @@ def _newsletter_source_ids(db: Session) -> set[int]:
 #: Booleans and short codes only: never an address (R734), never free text, so a row grows by a few bytes.
 CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status"]
 _KNOWN_STATUS = ("qualified", "unqualified", "disqualified")
-_VIA = re.compile(r"via:([a-z0-9][a-z0-9-]{0,39})")
 _VERDICT = re.compile(r"[a-z_]{1,20}")
+#: The whole-set tally lists at most this many classes (about 80 bytes each), so it can never crowd the first zip.
+_TALLY_MAX_CLASSES = 150
+_FEED_STATUS_NOTE = ("last_feed_status: null = the collector never checked this source's feed; 0 = it checked and got "
+                     "no HTTP status (a network error or a refusal); any other number is the HTTP status it saw")
+
+
+def _known_via() -> frozenset[str]:
+    """The provenances the app's own code stamps: the shipped catalogues, the generated law catalogue and
+    world discovery. A catalogue entry can carry a ``via:`` tag of its own, so the value is matched against
+    this fixed set and never copied out (review of #2203)."""
+    from src.catalog.discover import _PROVENANCE as discovery
+    from src.catalog.provenance_scope import APP_PROVIDED_PROVENANCES, CURATED_PROVENANCES
+
+    return frozenset(APP_PROVIDED_PROVENANCES | CURATED_PROVENANCES | {discovery})
 
 
 def _via(tags: str | None) -> str | None:
-    """The source's provenance class from its ``via:`` tag (set by code, never typed); anything else reads as ``other``."""
-    found = sorted({m.group(1) for m in _VIA.finditer(tags or "")})
-    if not found:
-        return "other" if "via:" in (tags or "") else None
-    return found[0]
+    """The source's provenance class from its whole ``via:`` tag: a known code, ``other`` for any other
+    ``via:`` value, None when there is no ``via:`` tag. Never free text."""
+    vias = [t.strip()[4:] for t in (tags or "").split(",") if t.strip().startswith("via:")]
+    if not vias:
+        return None
+    known = sorted(v for v in vias if v in _known_via())
+    return known[0] if known else "other"
 
 
 def _last_by_source(db: Session, ids: list[int]) -> tuple[dict[int, str], dict[int, int | None]]:
@@ -240,12 +255,17 @@ def never_collected_in_set(db: Session) -> dict[str, Any]:
             k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)))
             counts[k] = counts.get(k, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], [str(x) for x in kv[0]]))
+    kept, left = ordered[:_TALLY_MAX_CLASSES], ordered[_TALLY_MAX_CLASSES:]
     return {
         "note": "every source in the set with no stored article, counted by class; a source is collected only when it is "
                 "enabled and qualified, so a disabled or unjudged one is a candidate, not a failing feed",
+        "feed_status_note": _FEED_STATUS_NOTE,
         "sources": len(rows),
         "columns": CLASS_COLUMNS + ["sources"],
-        "rows": [list(k) + [n] for k, n in ordered],
+        "rows": [list(k) + [n] for k, n in kept],
+        # the largest classes are listed; the rest are counted, so the tally stays a few KB whatever the set holds
+        "classes_left_out": len(left),
+        "sources_in_classes_left_out": sum(n for _, n in left),
     }
 
 
@@ -326,7 +346,7 @@ def build_sample_zip(
                     entry = row
                 row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
                 if new_class is not None:   # a class is written once, beside its count
-                    row_bytes += len(json.dumps(list(new_class) + [0], separators=(",", ":"), default=str).encode("utf-8")) + 1
+                    row_bytes += len(json.dumps(list(new_class) + [99999], separators=(",", ":"), default=str).encode("utf-8")) + 1
                 used = buf.tell() + _RESERVE_BYTES + rows_bytes + row_bytes
                 if (manifest or empty) and used + len(data or b"") > cap:   # empty sources count too: their rows add up
                     full = True   # nothing is added that could breach the cap; the next request resumes here
@@ -366,6 +386,7 @@ def build_sample_zip(
                 "rows": empty,
                 # ``class`` indexes these rows; why a source has no article is read here, not guessed (row 248)
                 "classes": {
+                    "feed_status_note": _FEED_STATUS_NOTE,
                     "columns": CLASS_COLUMNS + ["sources_in_this_zip"],
                     "rows": [list(k) + [class_counts[i]] for k, i in sorted(classes.items(), key=lambda kv: kv[1])],
                 },

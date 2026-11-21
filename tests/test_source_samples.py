@@ -290,3 +290,29 @@ def test_a_via_tag_is_a_code_or_other_never_free_text():
     assert _via("news,via:wikidata-discovery") == "wikidata-discovery"
     assert _via("via:Some Free Text, typed") == "other"
     assert _via("news") is None and _via(None) is None
+    # Review of #2203: a lowercase slug a catalogue entry typed itself is not copied out, a tag that merely
+    # contains "via:" is not a provenance, and the known codes win over an unknown one on the same row.
+    assert _via("via:alice-hunter2-at-host") == "other"
+    assert _via("via:some free text") == "other"
+    assert _via("trivia:quiz") is None
+    assert _via("via:curated,via:zz-token") == "curated"
+    assert _via("x, via:legal-generated ") == "legal-generated"
+
+
+def test_the_whole_set_tally_lists_its_largest_classes_and_counts_the_rest(db, monkeypatch):
+    import importlib
+
+    ss = importlib.import_module("src.api.diagnostics.source_samples")
+
+    monkeypatch.setattr(ss, "_TALLY_MAX_CLASSES", 2)
+    # three never-collected classes: by feed (2 sources), by status (1), and the plain one (3)
+    for sid in range(1, 4):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.example"))
+    for sid in range(4, 6):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.example", rss_url=f"https://s{sid}.example/rss"))
+    db.add(Source(id=6, name="S6", domain="s6.example", status="disqualified"))
+    db.commit()
+    tally = ss.never_collected_in_set(db)
+    assert [r[-1] for r in tally["rows"]] == [3, 2]
+    assert tally["classes_left_out"] == 1 and tally["sources_in_classes_left_out"] == 1
+    assert tally["sources"] == 6 and "null = the collector never checked" in tally["feed_status_note"]
