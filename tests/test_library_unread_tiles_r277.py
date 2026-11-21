@@ -26,6 +26,7 @@ from src.api.library import (
     _downloads_done,
     _models_tile,
 )
+from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,7 +154,10 @@ def test_a_store_whose_manifests_cannot_be_opened_is_not_read(overview, monkeypa
             return False
         return real_access(path, mode, *a, **k)
 
-    monkeypatch.setattr(os, "access", fake_access)
+    from src.backup import ollama_models
+
+    # Scoped to the module under test (R351): never os.access for the whole process.
+    scope_os(monkeypatch, ollama_models, access=fake_access)
     assert overview()["downloaded"]["models"]["reason"] == PROTECTED_MODELS
     assert overview()["downloaded"]["models"]["count"] is None
 
