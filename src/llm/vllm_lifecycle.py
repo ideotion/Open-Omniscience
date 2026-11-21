@@ -4196,6 +4196,11 @@ def _default_runner(
     import queue as _queue
     import threading as _threading
 
+    if should_stop is not None and should_stop():
+        # R765: a stop that came before this step began spawns nothing. One heartbeat wakes the caller so ITS stop check runs
+        # (the uv step falls back to pip on a stop, and pip must not then be started over a connection the operator turned away from).
+        yield _HEARTBEAT
+        return
     proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
         argv,
         stdout=subprocess.PIPE,
