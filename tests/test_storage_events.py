@@ -2466,7 +2466,6 @@ def test_every_poll_of_the_journal_reads_it_through_the_helper_that_tolerates_a_
     """Row 237: a predicate handed to _wait_until that reads the journal itself raises when its read meets the writer's os.replace on
     Windows (sharing violation), ending the poll with an error instead of "not yet". Polls read through _file_total."""
     import ast
-
     from pathlib import Path
 
     tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
