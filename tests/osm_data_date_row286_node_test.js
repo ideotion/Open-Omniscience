@@ -59,7 +59,12 @@ const EXTRACT = "2026-10-01T21:00:00+00:00";
 const NONE = { extract: EXTRACT, last_diff: null, diff_sequence: null, updates: "none" };
 const DATED = { extract: EXTRACT, last_diff: "2026-11-19T21:00:00+00:00", diff_sequence: 4321, updates: "dated" };
 const UNREAD = { extract: EXTRACT, last_diff: null, diff_sequence: 4321, updates: "date_not_read" };
-const strip = (h) => h.replace(/<[^>]*>/g, "");
+// The text a reader sees: tags removed until none is left (a test helper reading this app's own output, never a sanitizer).
+function strip(h) {
+  let prev;
+  do { prev = h; h = h.replace(/<[^>]*>/g, ""); } while (h !== prev);
+  return h;
+}
 
 test("no file applied: every surface reads exactly as before, the extract's date alone", () => {
   const f = build("en");

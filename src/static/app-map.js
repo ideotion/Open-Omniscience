@@ -3597,9 +3597,6 @@
       _osmGeoRender();
     });
     function openSettingsOsm() { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("offlinemap"); }
-    // Q828: the World map states the vintage of the OpenStreetMap data and links to where it
-    // is chosen. Read from the lane's own record (the extract header's timestamp), never
-    // assumed; a country the extract gave no date for says so.
     // "{country}, as of {date}" (the extract's date, nothing applied since) or, once a daily change file was applied,
     // "{country}: extract of {date}" followed by the last applied file's own date (row 286, R775). Returns HTML.
     function _osmVintageHead(country, vintage, dd, noDateSaid) {
@@ -3611,9 +3608,11 @@
         : osmTf("{country}, as of {date}", { country, date: ooIsoDate(vintage) });
       return esc(head) + ooOsmUpdatesHtml(dd);
     }
+    // Q828: the World map states the vintage of the OpenStreetMap data and links to where it
+    // is chosen. Read from the lane's own record (the extract header's timestamp), never
+    // assumed; a country the extract gave no date for says so.
     async function loadOsmVintage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
       const el = $("oomap-osm-vintage"); if (!el) return;
       let lane = null;
       try { lane = await api("/api/osm/lane"); } catch (e) { el.textContent = ""; return; }
