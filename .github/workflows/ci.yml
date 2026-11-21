@@ -1043,6 +1043,19 @@ jobs:
           overwrite: true
           if-no-files-found: warn
 
+      # The same per-file costs, printed to the job log (row 238): the artifact's download address is a storage host a reader of the run cannot always
+      # reach, and the log is read through the API itself. One compact JSON line per leg between the two markers; the six lines of one run where all six
+      # legs finished merge into configs/ci_shard_costs_windows.json (docs/maintenance/CI_SHARDS.md). An observation: it never turns a leg red.
+      - name: Print this leg's file costs (the Windows cost table's source, in the log)
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -s junit.xml ]; then
+            echo "windows-costs-shard-${{ matrix.shard }} begin"
+            python scripts/ci_shard.py costs --stdout --min-seconds 0.5 junit.xml
+            echo "windows-costs-shard-${{ matrix.shard }} end"
+          fi
+
       - name: Name a test that hung, and the slow tests
         if: always()
         run: |

@@ -922,6 +922,10 @@ def _windows_problems(wf: dict) -> list[str]:
         found.append("portability-windows: the upload step must say `retention-days` and `overwrite: true`")
     if pytest_at and not pytest_at[0] < uploads[0]:
         found.append("portability-windows: the upload step must come after the pytest step")
+    printed = [s for s in steps if "ci_shard.py costs --stdout" in str(s.get("run") or "")]
+    if len(printed) != 1 or printed[0].get("if") != "always()" or printed[0].get("continue-on-error") is not True:
+        found.append("portability-windows: one step must print the leg's costs to the log (`ci_shard.py costs --stdout`, `if: always()`, "
+                     "`continue-on-error: true`): the artifact's storage host is not always reachable, the log is")
     return found
 
 
@@ -937,6 +941,7 @@ def test_the_windows_legs_keep_their_junit_report_under_a_120_minute_cap():
         ("upload gone", lambda j: j["steps"].remove(next(s for s in j["steps"] if "upload-artifact" in str(s.get("uses") or ""))), "exactly one step that uploads"),
         ("named like the Linux legs", lambda j: next(s for s in j["steps"] if "upload-artifact" in str(s.get("uses") or ""))["with"].__setitem__("name", "junit-test-shard-${{ matrix.shard }}"), "junit-windows-shard"),
         ("upload turns the leg red", lambda j: next(s for s in j["steps"] if "upload-artifact" in str(s.get("uses") or "")).pop("continue-on-error"), "continue-on-error"),
+        ("costs not printed", lambda j: j["steps"].remove(next(s for s in j["steps"] if "costs --stdout" in str(s.get("run") or ""))), "print the leg's costs"),
     ],
 )
 def test_the_windows_checker_names_each_broken_property(label, break_it, says):
