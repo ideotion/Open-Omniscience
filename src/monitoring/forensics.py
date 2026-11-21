@@ -161,8 +161,10 @@ def _tree_measure(root: Path) -> tuple[int, int, int]:
         for name in names:
             try:
                 fst = os.lstat(os.path.join(dirpath, name))
-            except OSError as exc:
-                _refused(exc)
+            except FileNotFoundError:
+                continue  # gone mid-walk, not unread
+            except OSError:
+                unread += 1
                 continue
             if stat.S_ISREG(fst.st_mode):
                 total += fst.st_size
