@@ -78,6 +78,9 @@ def test_the_reader_headings_do_not_skip_a_level():
     groups = re.findall(r"<div class='mgrp[^']*'><(h\d)>", src)
     assert groups and set(groups) == {"h2"}, groups
     assert ".mgrp h3" not in src and ".mgrp h2 {{" in src and ".mgrp.deduced h2 {{" in src
+    # The release click-through reads these headings to verify the provenance classes; it must follow the tag.
+    walk = (ROOT / "scripts" / "ui_clickthrough_run.py").read_text(encoding="utf-8")
+    assert "'.mgrp > h2'" in walk and ".mgrp h3" not in walk
 
 
 def test_the_time_map_rank_box_takes_keyboard_focus():
