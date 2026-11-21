@@ -736,12 +736,12 @@
           const fam = (n.members || []).length > 1;
           const tip = [n.lp.tag ? n.lp.tag + " — " + n.lp.hover : "", fam ? (n.members || []).join(", ") : ""]
             .filter(Boolean).join(" — ");
-          const title = tip ? `<title>${esc(tip)}</title>` : "";
+          const title = tip ? ` title="${esc(tip)}"` : "";
           const tag = n.lp.tag
             ? `<text class="mm-tag" text-anchor="middle" dominant-baseline="central" y="${(n.fs * 0.95).toFixed(1)}"`
               + ` font-size="${tagFsOf(n).toFixed(1)}" fill="var(--muted)">${esc(n.lp.tag)}</text>`
             : "";
-          return `<g class="mm-node" data-i="${i}" data-i18n-dyn style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
+          return `<g class="mm-node" data-i="${i}" data-i18n-dyn style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})"${title}>` +
             `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.lp.shown || n.label)}</text>${tag}</g>`;
         }).join("");
 
@@ -2043,7 +2043,7 @@
           if (a.missing || b.missing) continue;   // break at gaps, never bridge
           segs += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="${col}" stroke-width="1.6" opacity="0.85"/>`;
         }
-        const dots = finite.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="${col}"><title>${esc(se.label)}: ${fmtNum(p.value)}</title></circle>`).join("");
+        const dots = finite.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="${col}" title="${esc(se.label)}: ${esc(fmtNum(p.value))}"></circle>`).join("");
         const lp = finite[finite.length - 1];
         const lbl = `<text x="${(lp.x + 5).toFixed(1)}" y="${(lp.y + 3).toFixed(1)}" font-size="9" fill="var(--fg)" style="cursor:pointer" data-on-click='openAnalysisFor(${esc(JSON.stringify(se.label))});return false'>${esc(se.label)}</text>`;
         return segs + dots + lbl;
@@ -2109,7 +2109,8 @@
         // THE PANEL READS ON ITS OWN (journalist review 4d): the shared max is written at its
         // dashed line and the first and last real dates under the baseline, so a panel is no
         // longer a bare trace with its scale in a footnote; each mark carries its date and
-        // count as an SVG <title> (no words, so nothing to translate).
+        // count as a title attribute (no words, so nothing to translate), which the #oo-tip bubble opens on
+        // hover and touch long-press (row 269; an SVG <title> child reached only a mouse).
         const dt = (v) => {
           const sv = String(v == null ? "" : v);
           const day = (x) => String(x == null ? "" : x).split("T")[0];
@@ -2117,7 +2118,7 @@
           const same = real.length > 1 && day(real[0].date) === day(real[real.length - 1].date);
           return same && sv.includes("T") && typeof ooIsoDateTime === "function" ? ooIsoDateTime(sv) : short;
         };
-        const tip = (pt) => `<title>${esc((pt.date != null ? dt(pt.date) + " · " : "") + fmtNum(pt.count))}</title>`;
+        const tip = (pt) => ` title="${esc((pt.date != null ? dt(pt.date) + " · " : "") + fmtNum(pt.count))}"`;
         const body = lineMode
           // A HOLE IS DRAWN AS A HOLE. This renderer was missed by the honest-gaps
           // pass that fixed dashChartSvg and ooChart: one unbroken <polyline> over
@@ -2128,10 +2129,10 @@
               run.length === 1
                 // A single surviving point between two holes has no line to draw;
                 // a dot keeps it visible instead of vanishing.
-                ? `<circle cx="${X(run[0]).toFixed(1)}" cy="${Y(pts[run[0]].count).toFixed(1)}" r="1.6" fill="${col}">${tip(pts[run[0]])}</circle>`
+                ? `<circle cx="${X(run[0]).toFixed(1)}" cy="${Y(pts[run[0]].count).toFixed(1)}" r="1.6" fill="${col}"${tip(pts[run[0]])}></circle>`
                 : `<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${run.map(i => `${X(i).toFixed(1)},${Y(pts[i].count).toFixed(1)}`).join(" ")}"/>`
                   // an invisible hover target on every real point, so the line answers a hover too
-                  + run.map(i => `<circle cx="${X(i).toFixed(1)}" cy="${Y(pts[i].count).toFixed(1)}" r="${Math.max(1.5, Math.min(slot / 2, 4)).toFixed(1)}" fill="transparent">${tip(pts[i])}</circle>`).join("")
+                  + run.map(i => `<circle cx="${X(i).toFixed(1)}" cy="${Y(pts[i].count).toFixed(1)}" r="${Math.max(1.5, Math.min(slot / 2, 4)).toFixed(1)}" fill="transparent"${tip(pts[i])}></circle>`).join("")
             ).join("")
           : pts.map((pt, i) => {
               if (_missing(pt.count)) return "";   // no bar for a gap, never a zero-height one
@@ -2144,8 +2145,8 @@
               // only mode this renderer actually reaches. Same 2px value-cap
               // dashChartSvg uses to keep a flush-minimum bar visible; it marks the
               // true value and never invents height.
-              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${hgt.toFixed(1)}" fill="${col}" opacity="0.72">${tip(pt)}</rect>`
-                + (hgt < 2 ? `<rect x="${x0.toFixed(1)}" y="${(by - 1).toFixed(1)}" width="${bwc}" height="2" fill="${col}">${tip(pt)}</rect>` : "");
+              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${hgt.toFixed(1)}" fill="${col}" opacity="0.72"${tip(pt)}></rect>`
+                + (hgt < 2 ? `<rect x="${x0.toFixed(1)}" y="${(by - 1).toFixed(1)}" width="${bwc}" height="2" fill="${col}"${tip(pt)}></rect>` : "");
             }).join("");
         const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
           + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`

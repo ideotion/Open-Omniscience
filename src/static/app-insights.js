@@ -309,7 +309,7 @@
         const cy = (padT + i * rowH + rowH / 2).toFixed(1);
         const xa = x(r.articles || 0), xm = x(r.mentions || 0);
         const lo = Math.min(xa, xm).toFixed(1), hi = Math.max(xa, xm).toFixed(1);
-        // Q302 in an SVG: the axis label is the alpha-3 CODE, and the <title> IS the
+        // Q302 in an SVG: the axis label is the alpha-3 CODE, and the title attribute IS the
         // hover, so the localised NAME goes there -- same split as `ooCountryCell`,
         // expressed in the two SVG nodes that play those parts. The server's own
         // `names` map wins over the browser's when it has an entry (it is the one
@@ -319,11 +319,11 @@
         const nm = esc((names && names[ooCountryKey(r.country)]) || ooCountryName(r.country, "") || cc);
         const clickable = ringId
           ? ` style="cursor:pointer" data-on-click="_conceptDrillCountry(${esc(JSON.stringify(ringId))},${esc(JSON.stringify(r.country))})"` : "";
-        return `<g${clickable}><title>${nm}</title>`
+        return `<g${clickable} title="${nm}">`
           + `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${cc}</text>`
           + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
-          + `<circle cx="${xa.toFixed(1)}" cy="${cy}" r="4" fill="var(--accent)"><title>${nm}: ${r.articles} ${esc(t("articles"))}</title></circle>`
-          + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)"><title>${nm}: ${r.mentions} ${esc(t("mentions"))}</title></circle></g>`;
+          + `<circle cx="${xa.toFixed(1)}" cy="${cy}" r="4" fill="var(--accent)" title="${nm}: ${r.articles} ${esc(t("articles"))}"></circle>`
+          + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)" title="${nm}: ${r.mentions} ${esc(t("mentions"))}"></circle></g>`;
       }).join("");
       const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--accent)">●</span> ${esc(t("articles"))} · <span style="color:var(--muted)">●</span> ${esc(t("mentions"))}`
         + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
