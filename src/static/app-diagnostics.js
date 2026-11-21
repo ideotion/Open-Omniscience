@@ -3169,6 +3169,10 @@
       // OSM daily change files (row 117, 0.6 gate row B): what each applied file cost (bytes, fetch and apply seconds), the
       // Diagnostics zip's own osm-change-files.json member (about 20 KB), so the measured daily diff cost can be sent back.
       {kind: "file", url: "/api/osm/change-files", name: "oo-field-{press}-osm-change-files.json"},
+      // Wikipedia coverage per edition (row 260, 0.6 gate row D): the lane's counters as Living sources and the Diagnostics zip's
+      // soak-window.json read them -- counts, dates, edition codes and reason tokens, no title, text or address -- so the report for
+      // the twelve editions can be read back from a real run (scripts/wiki_coverage_readback.py).
+      {kind: "file", url: "/api/wiki/lane/counters", name: "oo-field-{press}-wiki-coverage.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte
