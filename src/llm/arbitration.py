@@ -193,9 +193,10 @@ def hand_gpu_to(
     lifecycle's own tri-state says the server EXITED, so a dead start is reported in
     seconds rather than waited out.
     """
-    if backend == "ollama" and start:
+    if backend == "ollama":
         # Row 234: an OO_OLLAMA_URL on another computer is refused BEFORE anything is released -- tearing down a working
         # vLLM for an Ollama the app will never start or contact would only lose the card -- and the refusal is the reason.
+        # With start=False too: the card would still be handed to a daemon the app never talks to.
         from src.llm.ollama_lifecycle import refusal
 
         refused_addr = refusal()
