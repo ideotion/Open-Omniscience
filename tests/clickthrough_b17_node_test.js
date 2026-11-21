@@ -454,6 +454,7 @@ async function run() {
     // The reader's own esc() goes through a DOM node; the shared text escape stands in.
     const src = [ESC, extract("fmtNum", null, READER), extract("num", null, READER),
       extract("T", null, READER), extract("TF", null, READER),
+      extract("uiLang", null, READER), extract("rdSaid", null, READER), extract("rdSaidHtml", null, READER),
       extract("renderSubjectivity", null, READER), extract("renderMindmap", null, READER),
       "return {sub: renderSubjectivity, mm: renderMindmap};"].join("\n");
     // eslint-disable-next-line no-new-func
