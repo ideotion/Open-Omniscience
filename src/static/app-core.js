@@ -113,20 +113,26 @@
       const frames = obj && obj[field + "_i18n"];
       if (Array.isArray(frames)) {
         let unkeyed = false;
-        const out = frames.filter(f => f && typeof f.t === "string").map(f => {
+        // One frame, and every frame nested in a hole (a reason that quotes what each probe said): each part reads in
+        // the page's language, and any part this locale does not hold marks the whole as English.
+        const one = (f, depth) => {
           // A template this page's locale does not hold (a newer server, a cached older page) fills in ENGLISH:
           // tf gives no sign of it, so ask t() -- and label the result rather than pass it off as translated.
           if (t(f.t) === f.t) unkeyed = true;
           const v = {}, src = (f.v && typeof f.v === "object") ? f.v : {};
           const tr = Array.isArray(f.tr) ? f.tr : [];
           Object.keys(src).forEach(k => {
-            if (src[k] == null) return;
-            if (tr.indexOf(k) !== -1) v[k] = t(String(src[k]));
-            else if (typeof src[k] === "number" && typeof fmtNum === "function") v[k] = fmtNum(src[k]);
-            else v[k] = String(src[k]);
+            const x = src[k];
+            if (x == null) return;
+            if (typeof x === "object" && typeof x.t === "string" && depth < 4) v[k] = one(x, depth + 1);
+            else if (typeof x === "object") return;
+            else if (tr.indexOf(k) !== -1) v[k] = t(String(x));
+            else if (typeof x === "number" && typeof fmtNum === "function") v[k] = fmtNum(x);
+            else v[k] = String(x);
           });
           return tf(f.t, v);
-        }).filter(Boolean).join(" ");
+        };
+        const out = frames.filter(f => f && typeof f.t === "string").map(f => one(f, 0)).filter(Boolean).join(" ");
         if (out) return {text: out, english: unkeyed && lang !== "en"};
       }
       const s = (obj && obj[field] != null) ? String(obj[field]) : "";
