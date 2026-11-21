@@ -90,7 +90,7 @@ def update_check() -> dict:
     """Ask GitHub for the newest published version (the ONE in-process fetch of the update path; guarded session, kill-switch gated)."""
     from src.maintenance.self_update import UpdateError, check
     from src.safety.fetcher import NetworkBlocked, TransportUnavailable
-    from src.safety.transport_watch import TransportStopped
+    from src.safety.transport_watch import TransportStopped, stop_text_of
 
     try:
         return check()
@@ -105,7 +105,7 @@ def update_check() -> dict:
         ) from None
     except TransportStopped as exc:
         # R768/R769: protected mode was switched on, or the settings stopped reading, while the check ran: the fixed note, never a 500
-        raise HTTPException(status_code=409, detail={"code": "transport_stopped", "message": str(exc)}) from None
+        raise HTTPException(status_code=409, detail={"code": "transport_stopped", "message": stop_text_of(exc)}) from None
     except UpdateError as exc:
         raise HTTPException(status_code=502, detail=http_detail(exc)) from None
 

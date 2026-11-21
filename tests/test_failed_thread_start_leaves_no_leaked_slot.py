@@ -44,6 +44,7 @@ from src.database.models import Article, Base
 from src.geo import osm_downloads
 from src.ingest import import_job
 from src.llm import pull_queue
+from src.safety import transport_watch as tw
 from src.wiki import dump_index
 from src.wiki import dumps as wiki_dumps
 from tests.wallclock_helpers import wait_until
@@ -164,6 +165,7 @@ def test_a_pump_goes_on_past_a_launch_that_cannot_start(monkeypatch, tmp_path, m
     for code in codes:
         entry = entry_for(mgr, code)
         entry.status = "queued"
+        entry.queued_mode = tw.queue_mode()  # queued under the transport in force (R772): an entry with none is held unverified
         mgr._order.append(entry.key)
     _cannot_start(monkeypatch, module, fail_first=1)
     mgr._pump()  # must not raise: it runs on the thread of a download that has just finished
@@ -180,6 +182,7 @@ def test_a_pump_whose_every_launch_fails_leaves_nothing_downloading(monkeypatch,
     for code in codes:
         entry = entry_for(mgr, code)
         entry.status = "queued"
+        entry.queued_mode = tw.queue_mode()  # queued under the transport in force (R772): an entry with none is held unverified
         mgr._order.append(entry.key)
     _cannot_start(monkeypatch, module, fail_first=3)
     mgr._pump()
@@ -324,6 +327,7 @@ def test_a_pump_does_not_swallow_an_interrupt(monkeypatch, tmp_path, module, cls
     for code in codes:
         entry = entry_for(mgr, code)
         entry.status = "queued"
+        entry.queued_mode = tw.queue_mode()  # queued under the transport in force (R772): an entry with none is held unverified
         mgr._order.append(entry.key)
     _cannot_start(monkeypatch, module, error=KeyboardInterrupt())
     with pytest.raises(KeyboardInterrupt):

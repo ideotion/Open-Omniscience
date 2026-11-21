@@ -85,6 +85,21 @@ class TransportStopped(RuntimeError):
         super().__init__(stop_message(reason))
 
 
+#: The four reasons a watch can give. A :class:`TransportStopped` carries one of them and the fixed note for it, never text from a server.
+REASONS = ("protected", "unprotected", "proxy", "unreadable")
+
+
+def stop_reason_of(exc: BaseException) -> str:
+    """The fixed reason token of a :class:`TransportStopped` (``"unreadable"`` for anything else): what a record may keep of it."""
+    reason = getattr(exc, "reason", None)
+    return reason if reason in REASONS else "unreadable"
+
+
+def stop_text_of(exc: BaseException) -> str:
+    """The fixed note of a :class:`TransportStopped`, rebuilt from its reason: never the exception's own words."""
+    return stop_message(stop_reason_of(exc))
+
+
 def stop_message(reason: str) -> str:
     return {"unreadable": UNREADABLE_STOP, "unprotected": UNPROTECTED_STOP, "proxy": PROXY_STOP}.get(reason, PROTECTED_STOP)
 

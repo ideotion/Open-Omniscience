@@ -224,13 +224,13 @@ class GuardedDiffSource:
         from src.ingest.airplane import AirplaneModeError
         from src.monitoring.secret_scrub import record_text
         from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
-        from src.safety.transport_watch import TransportStopped
+        from src.safety.transport_watch import TransportStopped, stop_text_of
 
         epoch = kill_switch_epoch()  # the request's window (R617, R614)
         try:
             resp = self._session(url).get(url, stream=True, timeout=self._timeout)
         except TransportStopped as exc:
-            raise DiffRefused(str(exc)) from None  # the operator's own setting (R768/R769, #14e), never "the mirror is unavailable"
+            raise DiffRefused(stop_text_of(exc)) from None  # the operator's own setting (R768/R769, #14e), never "the mirror is unavailable"
         except (NetworkBlocked, AirplaneModeError):
             raise DiffRefused(KILL_SWITCH_TEXT) from None
         except TransportUnavailable as exc:
@@ -257,13 +257,13 @@ class GuardedDiffSource:
 
     def fetch_state(self, sequence: int | None = None) -> str:
         url = f"{self.base}/state.txt" if sequence is None else f"{self.base}/{sequence_path(sequence)}.state.txt"
-        from src.safety.transport_watch import TransportStopped
+        from src.safety.transport_watch import TransportStopped, stop_text_of
 
         resp = self._get(url)
         try:
             return resp.text  # read through the run's watch, chunk by chunk
         except TransportStopped as exc:
-            raise DiffRefused(str(exc)) from None  # R768/R769: named here too, never a bare "failed"
+            raise DiffRefused(stop_text_of(exc)) from None  # R768/R769: named here too, never a bare "failed"
         finally:
             resp.close()
 
@@ -280,10 +280,10 @@ class GuardedDiffSource:
         except Exception as exc:  # noqa: BLE001 - a body that stops half-way is a failed fetch, and the half file is not kept
             dest.unlink(missing_ok=True)
             from src.monitoring.secret_scrub import record_text
-            from src.safety.transport_watch import TransportStopped
+            from src.safety.transport_watch import TransportStopped, stop_text_of
 
             if isinstance(exc, TransportStopped):
-                raise DiffRefused(str(exc)) from None  # R768/R769: stopped by the operator's own setting, never the mirror's failure
+                raise DiffRefused(stop_text_of(exc)) from None  # R768/R769: stopped by the operator's own setting, never the mirror's failure
 
             raise DiffUnavailable(record_text(exc)) from None
         finally:

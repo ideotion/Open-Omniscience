@@ -727,9 +727,9 @@ class OsmDownloadManager:
                 entry.status = "queued"
                 entry.error = None
                 entry.paused_by = None
-                from src.safety.transport_watch import held_by_for
+                from src.safety.transport_watch import held_by_for, stop_reason_of
 
-                entry.held_by = held_by_for(exc.reason)
+                entry.held_by = held_by_for(stop_reason_of(exc))
                 mine = getattr(entry, "_launch_seq", 0) or 0
                 entry._stopped_seq = mine  # type: ignore[attr-defined]
                 with self._lock:
