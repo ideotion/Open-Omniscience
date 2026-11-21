@@ -285,7 +285,7 @@ test("H-2: the discovery result line goes through t() and redraws from the saved
   mod.paint();
   assert.strictEqual(box.textContent, "", "a line drawn before anything was saved");
   mod.set(true); mod.paint();
-  assert.strictEqual(box.textContent, "«Enabled: topic-discovery queries will be sent to DuckDuckGo.»");
+  assert.strictEqual(box.textContent, "«Enabled: topic-discovery queries will be sent to DuckDuckGo, and each site it returns will be visited.»");
   mod.set(false); mod.paint();
   assert.strictEqual(box.textContent, "«Disabled (the default): no topic query leaves this machine.»");
 });
