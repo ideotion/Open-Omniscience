@@ -135,6 +135,8 @@
         const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
         const deduced = (ded.events || []).map(mapDeducedToAgenda).filter(e => !excl.has(e.calendar));
         AG.events = ev.events.concat(imported, deduced); AG.caveat = ev.caveat; AG.caveat_i18n = ev.caveat_i18n; AG.cals = fac.calendars;
+        // Row 273: whether the curated catalogue was read at all, so an unread one is said, never drawn as an empty month.
+        AG.catalogue = ev.catalogue || null;
         // Category chips = the REAL event kinds (holidays / religion / civic / …),
         // never a useless "imported" bucket (maintainer 2026-06-18). Imported events
         // each carry their feed's kind; deduced stays its own honest class. De-duped,
@@ -1798,6 +1800,16 @@
         return;
       }
       const floor = _agCov, rep = floor.tier_report, counts = rep.counts || {};
+      const catLine = agCatalogueLine(floor.catalogue);
+      const snapOnly = floor.counts_from === "snapshot_only";
+      if (catLine && !snapOnly) {
+        // Row 273: the catalogue was not read (or holds nothing), so there are no per-country states to
+        // draw: the line says why, and no 0 chip claims every floor country is missing.
+        box.innerHTML = `<h3 style="font-size:14px;margin:4px 0 6px">${esc(T("Elections coverage of the language floor"))}</h3>`
+          + `<p style="color:var(--caveat);margin:0 0 6px">${esc(catLine)}</p>`
+          + `<p class="hint" style="margin:0 0 8px">${esc(agSnapshotLine(floor.snapshot, T, TF))}</p>`;
+        return;
+      }
       const meta = {};
       for (const [k, label, cls] of _AG_COV_STATES) meta[k] = { label, cls };
       const chips = _AG_COV_STATES.map(([k, label, cls]) => {
@@ -1826,6 +1838,8 @@
       }).join("");
       box.innerHTML = `<h3 style="font-size:14px;margin:4px 0 6px">${esc(T("Elections coverage of the language floor"))}</h3>`
         + `<p class="muted" style="margin:0 0 6px">${esc(TF("{n} floor countries · country list as of {date}", { n: rep.floor_countries || 0, date: floor.as_of ? ooIsoDate(floor.as_of) : "?" }))}</p>`
+        // Row 273 (R696): the curated catalogue was not read but the snapshot was, so the counts are the snapshot's alone.
+        + (snapOnly ? `<p style="color:var(--caveat);margin:0 0 4px">${esc(catLine)} ${esc(T("These counts come from the Wikidata election snapshot only."))}</p>` : "")
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(floor.caveat || ""))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(rep.caveat || ""))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.gap || ""))}</p>`
@@ -1842,6 +1856,16 @@
     // Where the election dates come from: the hand-curated list, and the Wikidata snapshot only
     // when the operator's networked run has written one. An absent snapshot is said, never read
     // as "no elections"; counts only.
+    // Row 273: one short line when the curated events catalogue was not read as a catalogue with events
+    // ("" when it was). Absent, unreadable and empty are three different facts and are said apart.
+    function agCatalogueLine(cat) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const st = cat && cat.state;
+      if (!st || st === "present") return "";
+      if (st === "absent") return T("No events catalogue was found on this install, so its events are not shown.");
+      if (st === "empty") return T("The events catalogue on this install was read and holds no events.");
+      return T("The events catalogue on this install could not be read, so its events are not shown.");
+    }
     function agSnapshotLine(sn, T, TF) {
       const st = sn && sn.state;
       if (st === "present") {
@@ -2137,8 +2161,9 @@
       // name said it twice on one screen (the 2026-09-30 journalist walk, item 7), so
       // this slot stays for a caveat that says something the intro does not.
       const _agIntro = "A forward-looking agenda of major recurring events.";
-      $("agenda-monthhint").textContent =
-        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? ooSaidText(AG, "caveat") : "";
+      const _agCatLine = agCatalogueLine(AG.catalogue);
+      $("agenda-monthhint").textContent = [_agCatLine,
+        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? ooSaidText(AG, "caveat") : ""].filter(Boolean).join(" ");
       if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
       if (isMonth) {
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));

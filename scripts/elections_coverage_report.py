@@ -44,12 +44,14 @@ def _cell(text: Any) -> str:
 def build_report(today: date) -> str:
     from src.civic.calendar_report import country_tier_report
     from src.civic.coverage_floor import floor_coverage, load_floor
-    from src.events.catalog import layered_events
+    from src.events.catalog import layered_read
 
-    events, snap = layered_events(today)  # one read and one date for every table below
+    events, snap, catalogue = layered_read(today)  # one read and one date for every table below
     floor = load_floor()
-    cov = floor_coverage(today, events=events)
-    rep = country_tier_report(events, set(floor["countries"]), today)
+    cov = floor_coverage(today, events=events, catalogue=catalogue, snapshot=snap)
+    counted = cov.get("covered_n") is not None  # row 273: neither source read means no state was counted
+    rep = (country_tier_report(events, set(floor["countries"]), today) if counted
+           else {"floor_countries": cov.get("floor_countries"), "counts": None, "countries": None})
 
     out = [f"# Elections coverage of the language floor, {today.isoformat()}", ""]
     out.append("Generated offline by `scripts/elections_coverage_report.py` from the shipped catalogue. "
@@ -73,6 +75,14 @@ def build_report(today: date) -> str:
     else:
         out.append("- Wikidata snapshot: not generated yet (it needs a networked run of "
                    "`scripts/generate_wikidata_elections.py`); only the hand-curated list is counted.")
+    if catalogue.get("state") != "present":
+        error = f" ({catalogue['error']})" if catalogue.get("error") else ""
+        out.append(f"- Curated catalogue: {catalogue.get('state')}{error}; "
+                   + ("the counts below come from the Wikidata snapshot only." if counted
+                      else "no floor state was counted, so no table follows."))
+    if not counted:
+        out.append("")
+        return "\n".join(out)
     out.append(f"- Method: {_cell(rep.get('method'))}")
     if rep.get("caveat"):
         out.append(f"- Caveat: {_cell(rep['caveat'])}")
