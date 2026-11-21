@@ -244,7 +244,7 @@
       const btn = `<button type="button" class="tiny secondary" data-on-click="livingWalkOn(this)">${esc(t("Turn the page walk on"))}</button>`;
       return { label: t("Page walk"), html: true,
         value: btn + ` <span class="muted">${esc(t("Slow and long: 50 titles a request, one request at a time, and one request per edition for its article count. It keeps titles, sizes and Wikidata ids, never text, and runs only while the stream runs."))}</span>`,
-        hover: t("The article totals come only from the page walk, so none is read while it is off. It reads them from each edition's own Wikipedia address, the same one the stream's pages come from.") };
+        hover: t("The article totals come only from the page walk, so none is read while it is off. It reads each one from that edition's own Wikipedia address, the host the walk itself uses, once per edition.") };
     }
 
     async function livingWalkOn(btn) {
