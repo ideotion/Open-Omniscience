@@ -137,7 +137,8 @@ def dataset_line(name: str, d: Any) -> str:
 def report(doc: dict[str, Any]) -> list[str]:
     lines = [f"read at {_when(doc.get('read_at'))}"]
     if doc.get("measured") is not True:
-        return lines + [f"the climate fetch records were not read: {doc.get('reason') or 'no reason given'}"]
+        why = {"library_unreadable": "the library could not be read (locked or unavailable)"}.get(str(doc.get("reason")), doc.get("reason"))
+        return lines + [f"the climate fetch records were not read: {why or 'no reason given'}"]
     listed = [str(x) for x in doc.get("datasets_listed") or [] if isinstance(x, str)]
     per = _dict(doc.get("datasets"))
     lines.append(f"{len(listed)} datasets offered")

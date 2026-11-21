@@ -248,8 +248,8 @@ def test_a_library_that_cannot_be_read_is_said_never_read_as_nothing_fetched(mon
     app = FastAPI()
     app.include_router(climate_api.router)
     body = TestClient(app).get("/api/climate/fetch-record").json()
-    assert body["measured"] is False and "datasets" not in body
-    assert "were not read" in "\n".join(R.report(body))
+    assert body["measured"] is False and "datasets" not in body and body["reason"] == "library_unreadable"
+    assert "were not read: the library could not be read (locked or unavailable)" in "\n".join(R.report(body))
 
 
 def test_the_route_lists_every_dataset_and_stays_small(client, maker):

@@ -211,4 +211,4 @@ def climate_fetch_record() -> dict:
         with session_scope() as db:
             return base | {"measured": True, "datasets": fetch_outcomes(db)}
     except Exception:  # noqa: BLE001 - a locked or unreadable library is said, never read as "nothing fetched"
-        return base | {"measured": False, "reason": "the library could not be read (locked or unavailable)"}
+        return base | {"measured": False, "reason": "library_unreadable"}
