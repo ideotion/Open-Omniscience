@@ -121,7 +121,48 @@ def test_the_helper_refuses_a_plan_that_is_not_a_release_tag_before_asking_git_a
 
     for plan in ({"ref": "main", "kind": "main"}, {"ref": "main", "kind": "tag"}, {"ref": "v0.6.0", "kind": "main"}, {"ref": "v0.6.0"}):
         assert h.apply({"root": str(tmp_path), "sha": SHA_B, "python": "python", **plan}, git=git) == ("bad_plan", "")
+    # A plan with no ref or sha, or one that is not a string, is the same refusal (it raised before, which main() caught as helper_failed).
+    for plan in ({"kind": "tag", "sha": SHA_B}, {"kind": "tag", "ref": "v0.6.0"}, {"kind": "tag", "ref": ["v0.6.0"], "sha": SHA_B},
+                 {"kind": "tag", "ref": "v0.6.0", "sha": 5}):
+        assert h.apply({"root": str(tmp_path), "python": "python", **plan}, git=git) == ("bad_plan", "")
     assert asked == []
+
+
+def test_a_tags_page_after_the_first_that_fails_is_a_read_failure_never_no_release(monkeypatch):
+    """R760 second security read: a later page that failed (or a walk cut by the page cap) read as "no release published"."""
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    full_without_release = _tags(*((f"nightly-{i}", SHA_A) for i in range(100)))
+    with pytest.raises(su.UpdateError, match="could not read"):
+        su.check(lambda url: full_without_release if url == su.TAGS_URL else {"message": "rate limited"})
+    with pytest.raises(su.UpdateError, match="could not read"):
+        su.check(lambda url: full_without_release)  # every page full: the cap ends the walk unfinished
+    assert su.check(lambda url: _tags(("nightly", SHA_A)))["no_release"] is True  # a short first page with no release tag is the answer
+
+
+def test_the_apply_endpoint_refuses_a_no_release_answer_and_starts_nothing(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    started = []
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    monkeypatch.setattr(su, "launch_helper", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(su, "refuse_offline_or_protected", lambda: None)
+    monkeypatch.setattr(su, "_APPLYING", None)
+    monkeypatch.setattr(su, "_LAST_CHECK", {})
+    assert su.check(lambda url: [])["no_release"] is True
+    client = TestClient(app, base_url="http://127.0.0.1")
+    for ref, sha in (("", ""), ("main", SHA_B)):
+        r = client.post("/api/system/update/apply", json={"confirm": True, "ref": ref, "sha": sha})
+        assert r.status_code == 409, r.text
+    assert started == []
+
+
+def test_the_manual_steps_name_a_release_tag_never_mains_tip(tmp_path):
+    steps = "\n".join(su.install_status(tmp_path)["manual_steps"])
+    assert "git pull" not in steps and "merge --ff-only vX.Y.Z" in steps
 
 
 def test_apply_needs_the_exact_checked_ref_and_sha_and_a_fresh_check(monkeypatch):

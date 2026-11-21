@@ -144,7 +144,8 @@ def install_status(root: Path | None = None) -> dict[str, Any]:
     root = root or repo_root()
     manual = [
         f"git clone {REPO_URL_HTTPS}.git   (or open your install folder)",
-        "git checkout main && git pull --ff-only",
+        "git checkout main && git fetch --tags origin",
+        "git merge --ff-only vX.Y.Z   (the newest release tag, shown as Latest above; never main's tip: releases only, R760)",
         "re-run ./install.sh (Windows: install.ps1) so dependencies match, then start the app again",
     ]
     out: dict[str, Any] = {"kind": "other", "can_apply": False, "reason": "", "manual_steps": manual, "root": None}
@@ -215,16 +216,20 @@ _TAG_PAGES_MAX = 10
 
 def _all_tags(fetch: Any) -> Any:
     """Every tag row, page after page until a short page (``TAGS_URL`` itself is page one). A page that is not a list ends the walk; when the
-    FIRST one is not, that answer goes to :func:`pick_newest_tag` unchanged (which reads it as no tags)."""
+    FIRST one is not, that answer is returned unchanged and :func:`check` reports a read failure. A LATER page that is not a list is a read
+    failure too (R760 security read): the walk would otherwise stop on what it had, and 100 rows with no release tag among them would read as
+    "no release published" when the release could sit on the page that failed. A walk that reaches the page cap is the same."""
     rows: list[Any] = []
     for page in range(1, _TAG_PAGES_MAX + 1):
         body = fetch(TAGS_URL if page == 1 else f"{TAGS_URL}&page={page}")
         if not isinstance(body, list):
-            return body if page == 1 else rows
+            if page == 1:
+                return body
+            raise UpdateError("The update check could not read a version from GitHub.")
         rows.extend(body)
         if len(body) < 100:
-            break
-    return rows
+            return rows
+    raise UpdateError("The update check could not read a version from GitHub.")
 
 
 def check(get_json: Any = None, *, root: Path | None = None, now: float | None = None) -> dict[str, Any]:

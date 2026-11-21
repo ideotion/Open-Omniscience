@@ -297,7 +297,9 @@ def wait_for_index_lock(root: Path, *, wait_s: float = LOCK_RELEASE_WAIT_S, poll
 def apply(plan: dict, *, git=_git, run=_run, windows: bool | None = None, sleep=time.sleep, lock_wait=wait_for_index_lock) -> tuple[str, str]:
     """Do steps 2-6. Returns ``(status, old_head)``; ``status`` is ``updated``, ``already_current`` or one fixed refusal word."""
     root = Path(plan["root"])
-    ref, sha = plan["ref"], plan["sha"]
+    ref, sha = plan.get("ref"), plan.get("sha")
+    if not isinstance(ref, str) or not isinstance(sha, str):
+        return "bad_plan", ""
     # Tags only (Q1136, R760): a plan naming anything but a vX.Y.Z tag (``main`` included) is refused before git is asked anything.
     if not SHA_RE.match(sha) or not TAG_RE.match(ref) or plan.get("kind") != "tag":
         return "bad_plan", ""
