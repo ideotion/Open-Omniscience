@@ -75,6 +75,11 @@ class ProtectedRefused(UpdateError):
     """The apply was refused because protected mode is chosen (``code: "protected"``)."""
 
 
+class SettingsUnreadableRefused(ProtectedRefused):
+    """R766: refused because the settings could not be read (``code: "settings_unreadable"``). A ``ProtectedRefused``, so
+    every caller that refuses protected mode refuses this too; only the words and the code differ."""
+
+
 def current_version() -> str:
     try:
         return _pkg_version("open-omniscience")
@@ -326,15 +331,37 @@ PROTECTED_REFUSAL = (
 )
 
 
-def protected_mode_chosen() -> bool:
-    """True when protected mode is chosen, or the settings cannot be read (the app's own rule, R117: then it is protected)."""
+#: R766: the refusal when the settings could not be read. What is refused does not change (R117: unreadable counts as
+#: protected); what it SAYS does, because "Protected mode is on" would be a claim about a choice nobody can read.
+SETTINGS_UNREADABLE_REFUSAL = (
+    "The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. "
+    "Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."
+)
+
+#: The two reason codes :func:`protected_reason` answers, shared with the endpoints and the UI.
+BLOCKED_PROTECTED = "protected"
+BLOCKED_SETTINGS_UNREADABLE = "settings_unreadable"
+
+
+def protected_reason() -> str | None:
+    """Why a direct-connection step is refused (R766): ``"protected"`` when protected mode is chosen,
+    ``"settings_unreadable"`` when the settings cannot be read (refused as protected, R117, but never SAID to be protected),
+    or ``None`` when nothing refuses it."""
     try:
         from src.safety.settings import load_settings
 
         st = load_settings()
-        return bool(st.is_protected or st.read_failed)
-    except Exception:  # noqa: BLE001 - unreadable settings: protected, never assume a direct connection is allowed
-        return True
+    except Exception:  # noqa: BLE001 - unreadable settings: refused, never assume a direct connection is allowed
+        return BLOCKED_SETTINGS_UNREADABLE
+    if getattr(st, "mode_unknown", False) or getattr(st, "read_failed", False):
+        return BLOCKED_SETTINGS_UNREADABLE
+    return BLOCKED_PROTECTED if st.is_protected else None
+
+
+def protected_mode_chosen() -> bool:
+    """True when protected mode is chosen, or the settings cannot be read (the app's own rule, R117: then it is protected).
+    :func:`protected_reason` says which of the two it is."""
+    return protected_reason() is not None
 
 
 def refuse_offline_or_protected() -> None:
@@ -346,7 +373,10 @@ def refuse_offline_or_protected() -> None:
 
     if kill_switch_active():
         raise AirplaneRefused(AIRPLANE_REFUSAL)
-    if protected_mode_chosen():
+    reason = protected_reason()
+    if reason == BLOCKED_SETTINGS_UNREADABLE:
+        raise SettingsUnreadableRefused(SETTINGS_UNREADABLE_REFUSAL)
+    if reason is not None:
         raise ProtectedRefused(PROTECTED_REFUSAL)
 
 

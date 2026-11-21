@@ -27,6 +27,30 @@ AI_INSTALL_PROTECTED_REFUSAL = (
 )
 
 
+#: R766: the refusal when the settings could not be read. Refused all the same (R117), but never said to be protected mode.
+AI_INSTALL_SETTINGS_UNREADABLE_REFUSAL = (
+    "The settings could not be read, so the AI install did not start: network actions are refused as if protected mode were "
+    "on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."
+)
+
+
+def ai_install_block_reason() -> str | None:
+    """``"protected"``, ``"settings_unreadable"`` or ``None``: the update's own :func:`protected_reason` (R766)."""
+    from src.maintenance.self_update import protected_reason
+
+    return protected_reason()
+
+
+def ai_install_refusal() -> str | None:
+    """The sentence an AI-install step is refused with, or ``None`` when it may run."""
+    from src.maintenance.self_update import BLOCKED_SETTINGS_UNREADABLE
+
+    reason = ai_install_block_reason()
+    if reason is None:
+        return None
+    return AI_INSTALL_SETTINGS_UNREADABLE_REFUSAL if reason == BLOCKED_SETTINGS_UNREADABLE else AI_INSTALL_PROTECTED_REFUSAL
+
+
 def ai_install_protected() -> bool:
     """True when an AI install step that runs outside this process must be refused: protected mode is chosen, or the settings
     cannot be read (R117). The update's own rule, the one function, so the two refusals cannot drift apart."""
@@ -36,7 +60,8 @@ def ai_install_protected() -> bool:
 
 
 def refuse_if_protected(exc_type: type[Exception]) -> None:
-    """Raise ``exc_type(AI_INSTALL_PROTECTED_REFUSAL)`` when :func:`ai_install_protected`. Each caller passes its own module's
-    error type, so the refusal reaches the user on the path that module already reports through."""
-    if ai_install_protected():
-        raise exc_type(AI_INSTALL_PROTECTED_REFUSAL)
+    """Raise ``exc_type(<refusal>)`` when :func:`ai_install_protected`, naming the real reason (R766). Each caller passes its own
+    module's error type, so the refusal reaches the user on the path that module already reports through."""
+    refusal = ai_install_refusal()
+    if refusal is not None:
+        raise exc_type(refusal)

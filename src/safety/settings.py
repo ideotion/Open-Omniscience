@@ -83,6 +83,11 @@ class SafetySettings:
     #: starts (R117), until the store reads again.
     read_failed = False
 
+    #: True when the stored choice could not be READ and the environment names no mode (R766): the mode is then UNKNOWN. It
+    #: is refused as protected all the same, but a refusal says the settings could not be read, never "Protected mode is on".
+    #: ``read_failed`` alone misses the case where the environment names a proxy: the store is just as unreadable then.
+    mode_unknown = False
+
 
 # The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
 _KV_KEY = "settings.safety"
@@ -205,6 +210,7 @@ def load_settings() -> SafetySettings:
         if os.getenv("OO_FETCH_MODE") not in VALID_MODES:
             s.fetch_mode = "protected"
             s.read_failed = not (s.http_proxy or s.http_proxies)
+            s.mode_unknown = True
         return s
     return _settings_from(raw)
 

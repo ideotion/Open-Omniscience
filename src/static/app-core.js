@@ -1776,6 +1776,10 @@
           toast(t("Protected mode is on, so the AI install did not start: it would download over a direct connection, not through your proxy. Switch to standard mode to install, or install by hand through your proxy."), "err");
           return false;
         }
+        if (st.ai_install_blocked === "settings_unreadable") {  // R766: refused the same, said as what it is
+          toast(t("The settings could not be read, so the AI install did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked, or set the network fetch mode again in Settings and save it, then try again."), "err");
+          return false;
+        }
       } catch (_e) { /* fall through and ask; the server refuses protected mode on its own */ }
       // One dialog for a whole chain: its later steps do not ask again while what it allowed is still in place.
       if (opts && opts.alreadyAsked && (online || windowOpen)) return true;
