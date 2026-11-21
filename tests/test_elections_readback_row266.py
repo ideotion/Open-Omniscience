@@ -24,7 +24,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "elections_readback.py"
 PART = 200 * 1000  # the Field data button's piece size (app-diagnostics.js FIELD_PART_BYTES)
-TODAY = date.today()
+
+
+def _today() -> date:
+    """Read per test, never at import: a suite that crosses midnight must not age a snapshot by a day it did not see."""
+    return date.today()
 
 
 def _script():
@@ -41,11 +45,15 @@ def _rows(n: int) -> list[dict]:
     from src.civic.coverage_floor import load_floor
 
     cs = sorted(load_floor()["countries"])
-    return [
+    out = [
         {"country": cs[i % len(cs)], "office": f"National Legislative Assembly of the Republic {i}", "qid": f"Q{1000 + i}",
-         "point_in_time": f"{TODAY.year + 1 + i % 6}-0{1 + i % 9}-01", "precision": "month"}
+         "point_in_time": f"{_today().year + 1 + i % 6}-0{1 + i % 9}-01", "precision": "month"}
         for i in range(n)
     ]
+    for i, row in enumerate(out[:5]):  # the field that DOES hold an address, at day precision, so the leak test sees it
+        row.update(precision="day", point_in_time=f"{_today().year + 1}-0{1 + i}-1{i}",
+                   official_url=f"https://elections.example.org/{i}")
+    return out
 
 
 @pytest.fixture()
@@ -86,7 +94,7 @@ def _wire(doc: dict) -> bytes:
 
 
 def test_the_member_carries_the_snapshot_run_and_no_path_or_address(snapshot, tmp_path):
-    snapshot(TODAY - timedelta(days=20), _rows(30))
+    snapshot(_today() - timedelta(days=20), _rows(30))
     doc = _member()
     snap = doc["snapshot"]
     assert snap["state"] == "present" and snap["rows"] == 30
@@ -98,11 +106,12 @@ def test_the_member_carries_the_snapshot_run_and_no_path_or_address(snapshot, tm
     # a repo-relative name in the method text (configs/language_countries.yml) is the build's, not the install's
     for leak in (str(tmp_path), "elections_snapshot", "/home/", "/tmp/", "/root/", "/Users/", "file:"):
         assert leak not in text, f"{leak!r} reached the member"
+    assert "example.org" not in text
     assert not re.search(r"https?://|\b\d{1,3}(\.\d{1,3}){3}\b|[A-Za-z]:\\\\", text), "an address or a path reached the member"
 
 
 def test_a_large_snapshot_is_cut_to_one_piece_and_the_cut_is_named(snapshot):
-    snapshot(TODAY - timedelta(days=5), _rows(2000))
+    snapshot(_today() - timedelta(days=5), _rows(2000))
     from src.api.diagnostics.system import elections_coverage_floor
 
     full = elections_coverage_floor()
@@ -122,7 +131,7 @@ def test_a_large_snapshot_is_cut_to_one_piece_and_the_cut_is_named(snapshot):
 
 
 def test_when_the_entry_counts_still_do_not_fit_the_rows_go_and_that_is_named_too(snapshot):
-    snapshot(TODAY - timedelta(days=5), _rows(10))
+    snapshot(_today() - timedelta(days=5), _rows(10))
     doc = _member(limit=15_000)
     assert [w.split(" ")[0] for w in doc["cut"]["what"]] == ["tier_report.countries[].entries", "tier_report.countries"]
     assert "countries" not in doc["tier_report"] and doc["tier_report"]["countries_n"] == doc["floor_countries"]
@@ -154,10 +163,10 @@ def test_the_bundle_lists_the_member_and_the_route_maps_to_it():
 
 
 @pytest.mark.parametrize(
-    ("as_of", "age", "stale"),
-    [(TODAY - timedelta(days=20), 20, False), (TODAY - timedelta(days=200), 200, True), (TODAY + timedelta(days=3), None, True)],
+    ("days_ago", "age", "stale"), [(20, 20, False), (200, 200, True), (-3, None, True)],
 )
-def test_k13_reports_the_snapshot_s_own_age_and_staleness(snapshot, as_of, age, stale):
+def test_k13_reports_the_snapshot_s_own_age_and_staleness(snapshot, days_ago, age, stale):
+    as_of = _today() - timedelta(days=days_ago)
     from src.events.catalog import layered_events
     from src.monitoring import kpi as K
 
@@ -194,10 +203,10 @@ def _route_file(tmp_path: Path) -> Path:
 
 
 def test_the_readback_prints_the_snapshot_run_and_the_floor(snapshot, tmp_path):
-    snapshot(TODAY - timedelta(days=200), _rows(4))
+    snapshot(_today() - timedelta(days=200), _rows(4))
     doc = R.load(_route_file(tmp_path))
     text = "\n".join(R.report(doc))
-    assert f"snapshot: present, dated {(TODAY - timedelta(days=200)).isoformat()}" in text
+    assert f"snapshot: present, dated {(_today() - timedelta(days=200)).isoformat()}" in text
     assert "age: 200 days, past the 90-day limit: STALE, run the snapshot again" in text
     assert "counts: 4 rows in the file · 4 added to the calendar · 0 shadowed by a curated entry" in text
     assert f"floor: {doc['floor_countries']:,} countries" in text
@@ -236,7 +245,7 @@ def test_an_absent_figure_is_printed_with_its_reason_never_as_zero(snap, want):
 
 
 def test_the_member_is_read_out_of_a_diagnostics_zip_and_a_cut_is_printed(snapshot, tmp_path):
-    snapshot(TODAY - timedelta(days=5), _rows(10))
+    snapshot(_today() - timedelta(days=5), _rows(10))
     zpath = tmp_path / "oo-all-diagnostics.zip"
     with zipfile.ZipFile(zpath, "w") as zf:
         zf.writestr("elections-floor.json", _wire(_member(limit=15_000)))
@@ -257,7 +266,7 @@ def test_a_zip_without_the_member_and_an_omitted_member_are_named(tmp_path):
 
 
 def test_a_piece_set_is_joined_and_a_missing_piece_is_named_never_guessed(snapshot, tmp_path):
-    snapshot(TODAY - timedelta(days=5), _rows(4))
+    snapshot(_today() - timedelta(days=5), _rows(4))
     data = _route_file(tmp_path).read_bytes()
     cut = len(data) // 2
     p1 = tmp_path / "oo-field-x-elections-floor-part-001-of-002.json"
@@ -271,7 +280,7 @@ def test_a_piece_set_is_joined_and_a_missing_piece_is_named_never_guessed(snapsh
 
 
 def test_the_script_runs_from_the_command_line(snapshot, tmp_path, capsys):
-    snapshot(TODAY - timedelta(days=5), _rows(2))
+    snapshot(_today() - timedelta(days=5), _rows(2))
     path = _route_file(tmp_path)
     assert R.main([str(path)]) == 0
     assert "snapshot: present" in capsys.readouterr().out
@@ -286,5 +295,77 @@ def test_the_script_runs_from_the_command_line(snapshot, tmp_path, capsys):
 def test_the_script_is_stdlib_only():
     src = SCRIPT.read_text(encoding="utf-8")
     imported = set(re.findall(r"^(?:from|import) (\w+)", src, re.M))
-    assert imported <= {"__future__", "argparse", "importlib", "io", "json", "sys", "zipfile", "pathlib", "typing"}
+    assert imported <= {"__future__", "argparse", "importlib", "io", "json", "sys", "zipfile", "zlib", "pathlib", "typing"}
     assert io  # the zip path is read in memory, never extracted to disk
+
+
+def test_the_written_member_never_passes_the_limit_whatever_the_snapshot_s_size(snapshot):
+    """Swept across the sizes where a cut starts, including the ones that land just under the limit once the entry
+    lists go: the cut block is measured with the member, so adding it can never push the written member over."""
+    from src.api.diagnostics.bundle import _elections_floor_member
+
+    snapshot(_today() - timedelta(days=5), _rows(40))
+    full = _member(limit=10**9)
+    for row in full["tier_report"]["countries"]:
+        row["entries_n"] = len(row.pop("entries"))
+    bare = len(_wire(full))  # the member once its entry lists go, before any cut block is added
+    for limit in [*range(bare - 50, bare + 800, 7), bare + 5_000]:
+        doc = _elections_floor_member(limit=limit)
+        size = len(_wire(doc))
+        if "cut" not in doc:
+            assert size <= limit
+        elif doc["cut"].get("still_over"):
+            assert doc["cut"]["bytes_after"] == size and size > limit
+        else:
+            assert size <= limit, (limit, size, doc["cut"]["what"])
+
+
+def test_a_member_that_still_does_not_fit_says_so_with_the_size_written(snapshot):
+    snapshot(_today() - timedelta(days=5), _rows(10))
+    doc = _member(limit=1_000)
+    assert doc["cut"]["still_over"] is True and doc["cut"]["bytes_after"] == len(_wire(doc))
+    assert doc["snapshot"]["rows"] == 10  # never cut
+    text = "\n".join(R.report(doc))
+    assert f"still over the limit after the cut: {len(_wire(doc)):,} bytes written" in text
+
+
+def test_the_script_s_tier_states_are_the_report_s():
+    from src.civic.calendar_report import STATES
+
+    assert R._TIER_STATES == STATES
+
+
+def test_a_missing_tier_count_and_an_odd_field_are_said_not_dropped():
+    lines = R.report({"floor_countries": 3, "covered_n": 1, "only_passed_projection_n": 0, "present_but_dateless_n": 0,
+                      "missing_n": 2, "covered_outside_floor": "x", "tier_report": {"counts": {"scheduled": 1, "window": None}}})
+    text = "\n".join(lines)
+    assert "covered outside the floor: not a list in this file (str)" in text
+    assert "window: not a count in this file (None)" in text
+    assert "missing: not recorded in this file" in text and "1 scheduled" in text
+    assert "age: not a count in this file ('3')" in "\n".join(R.snapshot_lines(
+        {"state": "present", "as_of": "2026-11-01", "age_days": "3", "stale": False}))
+
+
+@pytest.mark.parametrize("damage", ["truncated", "deep"])
+def test_a_damaged_file_is_named_never_a_traceback(tmp_path, capsys, damage):
+    path = tmp_path / "oo-all-diagnostics.zip"
+    if damage == "truncated":
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("elections-floor.json", json.dumps({"x": "y" * 50_000}))
+        data = bytearray(buf.getvalue())
+        start = data.index(b"elections-floor.json") + len("elections-floor.json")
+        data[start + 10 : start + 200] = b"\x00" * 190  # the member's compressed stream, damaged
+        path.write_bytes(bytes(data))
+    else:
+        path = tmp_path / "deep.json"
+        path.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+    assert R.main([str(path)]) == 2
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_json_mode_says_when_there_is_no_snapshot_block(tmp_path, capsys):
+    path = tmp_path / "f.json"
+    path.write_text(json.dumps({"available": False, "error": "RuntimeError"}), encoding="utf-8")
+    assert R.main([str(path), "--json"]) == 1
+    assert "no snapshot block in this file (elections-floor.json could not be built" in capsys.readouterr().err

@@ -26,6 +26,7 @@ import io
 import json
 import sys
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,9 @@ _FLOOR_STATES = (
     ("present but dateless", "present_but_dateless_n"),
     ("missing", "missing_n"),
 )
+
+#: The tier report's states, in src/civic/calendar_report.py STATES order (a state missing from a file is said so).
+_TIER_STATES = ("scheduled", "window", "projected_upcoming", "passed", "projected_passed", "dateless", "missing")
 
 #: The snapshot counts, in print order, with the words each is printed under.
 _SNAPSHOT_COUNTS = (
@@ -75,11 +79,12 @@ def load(path: Path) -> dict[str, Any]:
                 if MEMBER not in zf.namelist():
                     raise ValueError(f"{path.name}: the zip has no {MEMBER} member (a build before row 266)")
                 data = zf.read(MEMBER)
-        except zipfile.BadZipFile as exc:
-            raise ValueError(f"{path.name}: not a readable zip ({exc})") from exc
+        except (zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError, zlib.error) as exc:
+            # a damaged, encrypted or unsupported-compression member: said, never a traceback
+            raise ValueError(f"{path.name}: the zip's {MEMBER} member could not be read ({type(exc).__name__})") from exc
     try:
         doc = json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError(f"{path.name}: not a JSON file ({type(exc).__name__})") from exc
     if not isinstance(doc, dict):
         raise ValueError(f"{path.name}: not an elections-floor reading (a JSON object was expected)")
@@ -123,8 +128,11 @@ def snapshot_lines(snap: Any) -> list[str]:
     else:
         age, limit = _int(snap.get("age_days")), _int(snap.get("stale_after_days"))
         limit_words = f"the {limit:,}-day limit" if limit is not None else "a limit this file does not state"
-        if age is None:
+        raw = snap.get("age_days")
+        if raw is None and snap.get("stale") is True:
             lines.append("age: not computable: the snapshot is dated after the day it was read, so the app treats it as stale")
+        elif age is None:
+            lines.append(f"age: not a count in this file ({raw!r}); staleness as recorded: {snap.get('stale')!r}")
         elif snap.get("stale") is True:
             lines.append(f"age: {age:,} days, past {limit_words}: STALE, run the snapshot again")
         elif snap.get("stale") is False:
@@ -145,6 +153,10 @@ def floor_lines(doc: dict[str, Any]) -> list[str]:
     outside = doc.get("covered_outside_floor")
     if isinstance(outside, list):
         lines.append(f"covered outside the floor: {len(outside):,}")
+    elif "covered_outside_floor" not in doc:
+        lines.append("covered outside the floor: not recorded in this file")
+    else:
+        lines.append(f"covered outside the floor: not a list in this file ({type(outside).__name__})")
     return lines
 
 
@@ -154,15 +166,21 @@ def tier_lines(rep: Any) -> list[str]:
     counts = rep.get("counts")
     if not isinstance(counts, dict) or not counts:
         return ["tier report: no state counts in this file"]
-    return ["tier report: " + " · ".join(f"{k} {_n(v)}" for k, v in counts.items())]
+    known = [k for k in _TIER_STATES if k in counts] + [k for k in counts if k not in _TIER_STATES]
+    parts = [_count(counts, k, k) for k in known]
+    parts += [f"{k}: not recorded in this file" for k in _TIER_STATES if k not in counts]
+    return ["tier report: " + " · ".join(parts)]
 
 
 def cut_lines(cut: Any) -> list[str]:
     if not isinstance(cut, dict):
         return []
     what = cut.get("what") if isinstance(cut.get("what"), list) else []
-    return [f"cut to fit {_n(cut.get('limit_bytes'))} bytes (was {_n(cut.get('bytes_before'))}): "
-            + ("; ".join(map(str, what)) if what else "nothing named")]
+    lines = [f"cut to fit {_n(cut.get('limit_bytes'))} bytes (was {_n(cut.get('bytes_before'))}): "
+             + ("; ".join(map(str, what)) if what else "nothing named")]
+    if cut.get("still_over") is True:
+        lines.append(f"still over the limit after the cut: {_n(cut.get('bytes_after'))} bytes written")
+    return lines
 
 
 def report(doc: dict[str, Any]) -> list[str]:
@@ -185,7 +203,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot read {args.file.name}: {exc}", file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps(doc.get("snapshot"), indent=2, ensure_ascii=False))
+        if not isinstance(doc.get("snapshot"), dict):
+            print("no snapshot block in this file (" + "; ".join(report(doc)[:1]) + ")", file=sys.stderr)
+            return 1
+        print(json.dumps(doc["snapshot"], indent=2, ensure_ascii=False))
     else:
         print("\n".join(report(doc)))
     return 0

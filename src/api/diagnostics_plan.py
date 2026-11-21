@@ -132,6 +132,7 @@ MEMBER_AREAS: dict[str, str] = {
     "request-latency.json": "interface",
     "search-timing.json": "interface",
     "kpi.json": "interface",
+    "elections-floor.json": "sources",
     "leads-quality.json": "interface",
     "keyword-engine.json": "keywords",
     "keyword-log-digest.json": "keywords",

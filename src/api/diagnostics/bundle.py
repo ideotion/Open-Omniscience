@@ -1992,7 +1992,8 @@ def _elections_floor_member(limit: int = ELECTIONS_FLOOR_MEMBER_MAX_BYTES) -> di
     state, date, age and counts are what this member exists to carry back. A large snapshot can push the
     per-country entry lists past one piece, so they go first, each replaced by its count; if that is still
     too much, the per-country rows go too, their counts kept. The snapshot block, the floor's counts and its
-    country lists are never cut. ``cut`` says what was taken out, the size before and the limit."""
+    country lists are never cut. ``cut`` says what was taken out, the size before and the limit, and
+    ``still_over`` with the size written if even that did not fit."""
     try:
         out = elections_coverage_floor()
     except Exception as exc:  # noqa: BLE001 - a member that fails says so, never blanks
@@ -2000,25 +2001,38 @@ def _elections_floor_member(limit: int = ELECTIONS_FLOOR_MEMBER_MAX_BYTES) -> di
     before = _wire_json_len(out)
     if before <= limit:
         return out
-    cut: list[str] = []
+    # The cut block goes in BEFORE each measure, so the member that is measured is the member that is written.
+    what: list[str] = []
+    out["cut"] = {
+        "what": what,
+        "bytes_before": before,
+        "limit_bytes": limit,
+        "reason": "the member is held to one Field data piece so the file sent back is never cut",
+        "how_to_get_it": "the /api/diagnostics/elections-floor route answers in full",
+    }
     rep = out.get("tier_report")
     rows = rep.get("countries") if isinstance(rep, dict) else None
     if isinstance(rep, dict) and isinstance(rows, list):
         for row in rows:
             if isinstance(row, dict) and isinstance(row.get("entries"), list):
                 row["entries_n"] = len(row.pop("entries"))
-        cut.append("tier_report.countries[].entries (each replaced by entries_n, its count)")
+        what.append("tier_report.countries[].entries (each replaced by entries_n, its count)")
         if _wire_json_len(out) > limit:
             rep["countries_n"] = len(rows)
             rep.pop("countries")
-            cut.append("tier_report.countries (replaced by countries_n; tier_report.counts kept)")
-    out["cut"] = {
-        "what": cut,
-        "bytes_before": before,
-        "limit_bytes": limit,
-        "reason": "the member is held to one Field data piece so the file sent back is never cut",
-        "how_to_get_it": "the /api/diagnostics/elections-floor route answers in full",
-    }
+            what.append("tier_report.countries (replaced by countries_n; tier_report.counts kept)")
+    after = _wire_json_len(out)
+    if after > limit:
+        # Nothing else is cut: the snapshot block and the floor's own counts and lists are what the member is for.
+        # Said, with the size written, rather than left to look as if it fit. The figure is part of what it
+        # measures, so it is settled by re-measuring until it stops moving (its digit count changes at most twice).
+        out["cut"]["still_over"] = True
+        for _ in range(4):
+            out["cut"]["bytes_after"] = after
+            measured = _wire_json_len(out)
+            if measured == after:
+                break
+            after = measured
     return out
 
 

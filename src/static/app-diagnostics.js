@@ -3174,8 +3174,8 @@
       // the twelve editions can be read back from a real run (scripts/wiki_coverage_readback.py).
       {kind: "file", url: "/api/wiki/lane/counters", name: "oo-field-{press}-wiki-coverage.json"},
       // Elections (row 266, 0.6 gate row A): the elections floor with the Wikidata snapshot run layered in -- the snapshot's
-      // state, date, age and counts, the floor's four states -- country codes, counts and dates, no path or address
-      // (scripts/elections_readback.py).
+      // state, date, age and counts, the floor's four states -- country codes, counts, dates, entry titles and the reasons a
+      // date is absent; no path or address (scripts/elections_readback.py).
       {kind: "file", url: "/api/diagnostics/elections-floor", name: "oo-field-{press}-elections-floor.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
