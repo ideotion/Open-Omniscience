@@ -223,6 +223,18 @@ def osm_region_preview(
     with open(path, "rb") as fh:
         data = fh.read(cap)
     total = path.stat().st_size
+    # The DATE of the data, so the map that draws it can state it (0.6 gate, row 259): the
+    # extract's replication timestamp, read from its header block alone. A file that does not
+    # stamp one, or whose header cannot be read, says "unknown": never today's date.
+    extract_date = "unknown"
+    try:
+        from src.osm.pbf import read_header
+
+        stamp = read_header(path).replication_timestamp
+        if stamp is not None:
+            extract_date = stamp.date().isoformat()
+    except Exception as exc:  # noqa: BLE001 - the preview is still served; the date is said to be unknown
+        log_failure(_LOG, f"the header of the downloaded region {code} could not be read for its date", exc, level=logging.INFO)
     return Response(
         content=data,
         media_type="application/octet-stream",
@@ -230,5 +242,6 @@ def osm_region_preview(
             "X-OO-Region-Total-Bytes": str(total),
             "X-OO-Region-Preview-Bytes": str(len(data)),
             "X-OO-Region-Truncated": "1" if len(data) < total else "0",
+            "X-OO-Region-Extract-Date": extract_date,
         },
     )

@@ -288,6 +288,12 @@ def layer(
 #: the app says so rather than reading the absence as "no elections".
 SNAPSHOT_PATH = Path(__file__).resolve().parents[2] / "configs" / "elections_snapshot.json"
 
+#: Past this many days the snapshot is said to be STALE (docket row 258, brief S06-04 S1, V1-3): an
+#: election called since its ``as_of`` (a snap vote above all) is not in it, and that is stated beside
+#: its counts rather than left to the reader to work out from a date. The registry entry
+#: ``wikidata-elections-snapshot`` carries the same window in months (a test holds them together).
+SNAPSHOT_STALE_DAYS = 90
+
 _CATALOG_DEFAULTS: dict[str, Any] = {
     "region": None, "cadence": "once", "weekday": None, "week": None, "end_month": None, "end_day": None,
 }
@@ -331,17 +337,29 @@ def with_snapshot(
 
     Returns ``(events, info)``. ``info`` states the snapshot's state and, when present, its
     ``as_of`` and the counts of rows added, shadowed by a curated entry and refused, so a reader
-    can tell "no snapshot yet" from "the snapshot found nothing"."""
+    can tell "no snapshot yet" from "the snapshot found nothing".
+
+    Its AGE travels with it (row 258): ``age_days`` from ``as_of`` to ``today``, and ``stale``
+    when that passes :data:`SNAPSHOT_STALE_DAYS`, so an old snapshot is never read as a current
+    one. An ``as_of`` after today cannot be aged: ``age_days`` is ``None`` and ``stale`` is True,
+    because a date the app cannot place is not evidence of freshness."""
     snap, state = load_snapshot(path)
     if snap is None:
         return list(curated), {"state": state}
+    today = today or date.today()
     evs, refused = snapshot_to_events(snap["rows"], today)
     merged, shadowed = layer(curated, [_catalog_shape(e) for e in evs], today)
     added = len(merged) - len(curated)
+    as_of = _iso_date(str(snap.get("as_of") or ""))  # load_snapshot refused a snapshot without one
+    age = (today - as_of).days if as_of is not None else None
+    if age is not None and age < 0:
+        age = None
     return merged, {
         "state": state, "as_of": str(snap.get("as_of")), "rows": len(snap["rows"]),
         "added": added, "shadowed": len(shadowed), "refused": len(refused),
         "generator_refused": len(snap.get("refused") or []),
+        "age_days": age, "stale_after_days": SNAPSHOT_STALE_DAYS,
+        "stale": age is None or age > SNAPSHOT_STALE_DAYS,
     }
 
 

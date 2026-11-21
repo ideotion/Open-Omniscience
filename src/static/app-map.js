@@ -707,19 +707,27 @@
 
     // Which source drew the borders, for the legend: a label and a hover that says
     // exactly how much of the map each source drew. The vintage is the OSM data's date.
-    function _ooBoundarySource(admin0, admin1, osmCountries, regionsShown, strided, neKept) {
+    // `preview` is the offline-OSM overlay's borders ({n, date}), drawn from a downloaded region
+    // in place of Natural Earth's: they are OpenStreetMap data too, so the legend says so and
+    // states their date (0.6 gate, row 259) rather than crediting Natural Earth for them.
+    function _ooBoundarySource(admin0, admin1, osmCountries, regionsShown, strided, neKept, preview) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const tfb = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const doc = osmCountries ? admin0 : (regionsShown ? admin1 : null);
+      const pv = preview && preview.n > 0 ? preview : null;
+      const pvLabel = pv ? " · " + _ooOsmPreviewDated(pv.date) : "";
+      const pvTitle = !pv ? "" : " " + (pv.n === 1
+        ? t("1 country drawn from the offline OSM preview, © OpenStreetMap contributors (ODbL 1.0).")
+        : tfb("{n} countries drawn from the offline OSM preview, © OpenStreetMap contributors (ODbL 1.0).", { n: fmtNum(pv.n, 0) }));
       if (!doc) {
-        return { label: t("Borders: Natural Earth 50m"),
-          title: t("Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.") };
+        return { label: t("Borders: Natural Earth 50m") + pvLabel,
+          title: t("Country borders from Natural Earth 50m (public domain). OpenStreetMap-derived borders replace them once their files have been built.") + pvTitle };
       }
       // A PARTIAL cover is said on the surface, not only in the hover: most of a map
       // drawn by one source must never read as drawn by the other.
       const label = tfb("Borders: OpenStreetMap, as of {date}", { date: doc.vintage || "?" })
-        + (neKept ? " · " + t("Natural Earth 50m elsewhere") : "");
+        + (neKept ? " · " + t("Natural Earth 50m elsewhere") : "") + pvLabel;
       const parts = [
         t("Borders drawn from OpenStreetMap data of the date shown, © OpenStreetMap contributors (ODbL 1.0)."),
         tfb("{n} countries from OpenStreetMap; every other country keeps its Natural Earth border.", { n: fmtNum(osmCountries, 0) }),
@@ -729,7 +737,17 @@
           n: fmtNum(admin1.counts.regions || 0, 0), tagged: fmtNum(admin1.counts.tagged || 0, 0), fallback: fmtNum(admin1.counts.fallback || 0, 0) }));
       }
       if (strided) parts.push(t("Region outlines are simplified further for display on this map."));
-      return { label, title: parts.join(" ") };
+      return { label, title: parts.join(" ") + pvTitle };
+    }
+    // The offline-OSM preview's date as the legend says it: the extract's own replication date,
+    // or that the extract does not state one. Never today's date and never left out.
+    function _ooOsmPreviewDated(date) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const tfd = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))
+        ? tfd("Offline OSM preview, as of {date}", { date })
+        : t("Offline OSM preview, date not stated in the extract");
     }
 
     // THE RANKED TABLE (Q816, S3; the Observatory rule, invariant #31(c)): beside EVERY
@@ -1337,7 +1355,8 @@
       }
       const rankHtml = _ooRankedTable(rankRows, rankGap, opts);
       const neKept = Object.values(eff).filter(c => !c.osmAdmin && !c.osm).length;
-      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, false /* the view-following redraw owns the "drawn thinner" sentence (_ooLodAttach) */, neKept);
+      const _bsrc = _ooBoundarySource(admin0, osmAdmin && osmAdmin.admin1, osmCountries, _adm1.shown, false /* the view-following redraw owns the "drawn thinner" sentence (_ooLodAttach) */, neKept,
+        { n: osmUsed, date: opts.osmGeo && opts.osmGeo.extractDate });
       const hasAdmin1 = !!(osmAdmin && osmAdmin.admin1 && osmAdmin.admin1.regions);
 
       const _sig = _ooSignalLayer(opts);
@@ -1531,7 +1550,7 @@
         ${opts.signalsOn ? `<span data-oomap-sigkinds>${_ooSigKindsHtml(sigKinds)}</span>` : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
         ${opts.osmLane ? `<span class="muted" data-oomap-osmlane data-i18n-dyn>${esc(t("OpenStreetMap: reading the view…"))}</span> <span class="muted">© <a class="ext-link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</span>` : ""}
-        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(t("offline OSM")), esc(_ooOsmCounts(osm)))}</span>` : ""}
+        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${ooLabelHtml(esc(_ooOsmPreviewDated(osm.extractDate)), esc(_ooOsmCounts(osm)))}</span>` : ""}
       </div>
       ${regionVals && !hasAdmin1 ? `<div class="card-caveat" style="margin-top:4px">${esc(t("This measure is by region, but the region boundaries are not built on this install yet: the table below holds every value."))}</div>` : ""}
       ${rankHtml}
@@ -1870,6 +1889,14 @@
         },
       };
     }
+    // What the lane's data is AS OF, per country in sight: the extract's date and the last daily
+    // diff applied, never a claim that it is up to date.
+    function _ooOsmLaneVintage(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const day = (iso) => (iso ? ooIsoDate(iso) : t("not stated in the extract"));
+      return (d.vintage || []).map((v) => _mapTf("Extract date {a}: {d}.", { a: v.alpha3, d: day(v.extract_date) }) + " "
+        + (v.last_diff ? _mapTf("Last applied diff {a}: {d}.", { a: v.alpha3, d: day(v.last_diff) }) : t("No daily diff applied since the extract."))).join(" ");
+    }
     function _ooOsmLaneLegend(host, d, readMs, drawMs) {
       const el = host.querySelector("[data-oomap-osmlane]"); if (!el || !d) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -1897,9 +1924,7 @@
           if (d.subpixel) sline += " " + _mapTf("Too small to see at this zoom: {n}.", { n: fmtNum(d.subpixel, 0) });
           if (d.no_shape) sline += " " + _mapTf("With no stored shape: {n}.", { n: fmtNum(d.no_shape, 0) });
         }
-        const day = (iso) => (iso ? ooIsoDate(iso) : t("not stated in the extract"));
-        const vint = (d.vintage || []).map((v) => _mapTf("Extract date {a}: {d}.", { a: v.alpha3, d: day(v.extract_date) }) + " "
-          + (v.last_diff ? _mapTf("Last applied diff {a}: {d}.", { a: v.alpha3, d: day(v.last_diff) }) : t("No daily diff applied since the extract."))).join(" ");
+        const vint = _ooOsmLaneVintage(d);
         el.textContent = sline + (vint ? " " + vint : "");
         el.title = `${_mapTf(c.streets_method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0) })} ${timing}`;
         return;
@@ -1909,7 +1934,9 @@
       else if (d.status === "clusters") line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.", { n: fmtNum(d.total, 0), c: fmtNum(d.clusters.length, 0) });
       else if (d.shapes === "points") line = _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(d.total, 0) });
       else line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn one by one.", { n: fmtNum(d.total, 0) });
-      el.textContent = line;
+      // Every layer states its data's date (0.6 gate, row 259), not only the street view.
+      const vint = d.status === "no-lane" || d.status === "not-indexed" ? "" : _ooOsmLaneVintage(d);
+      el.textContent = line + (vint ? " " + vint : "");
       el.title = `${_mapTf(c.method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0), grid: c.cluster_grid })} `
         + (d.status === "clusters" && c.cluster_edge ? `${t(c.cluster_edge)} ` : "")
         + timing;
@@ -2827,6 +2854,7 @@
         // BINARY fetch (the bounded prefix). Loopback file read — no network egress.
         const res = await fetch(`/api/geo/regions/${encodeURIComponent(code)}/preview?max_bytes=8388608`);
         if (!res.ok) { toast(t("Could not read the downloaded region."), "err"); return; }
+        const extractDate = res.headers.get("X-OO-Region-Extract-Date") || "unknown";   // the extract's own date (row 259)
         const ab = await res.arrayBuffer();
         // Parse with tags + relations so we can also assemble admin (country)
         // boundaries (THEME-2 #51) — a higher block cap reaches the relations
@@ -2847,7 +2875,7 @@
         const areas = (OOPBF.assembleAdminAreas ? OOPBF.assembleAdminAreas(geo) : []) || [];
         const osmAreas = {};
         for (const a of areas) { if (a && a.iso2 && a.rings && a.rings.length) osmAreas[a.iso2] = { name: a.name, rings: a.rings, source: a.source }; }
-        _ooMapOsmGeo = { region: code, points: geo.nodes, lines, truncated: geo.truncated, blocks: geo.blocks,
+        _ooMapOsmGeo = { region: code, extractDate, points: geo.nodes, lines, truncated: geo.truncated, blocks: geo.blocks,
           areas: osmAreas, areaCount: Object.keys(osmAreas).length };
         _ooMapOsmOn = true;
         _renderOoMapDim();

@@ -140,7 +140,8 @@ def test_a_present_snapshot_is_layered_with_its_counts(tmp_path):
                 "month": 4, "window_year": 2027}]
     events, info = with_snapshot(curated, TODAY, p)
     assert info == {"state": "present", "as_of": "2026-11-01", "rows": 4, "added": 2, "shadowed": 1,
-                    "refused": 1, "generator_refused": 1}
+                    "refused": 1, "generator_refused": 1,
+                    "age_days": (TODAY - date(2026, 11, 1)).days, "stale_after_days": 90, "stale": False}  # row 258
     added = {e["source_qid"]: e for e in events if e.get("source_qid")}
     assert set(added) == {"Q2", "Q4"}
     assert added["Q2"]["origin_year"] == added["Q2"]["until_year"] == 2029
