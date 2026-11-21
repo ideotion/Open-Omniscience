@@ -66,6 +66,11 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # limit (PyYAML 6.0.4, libyaml 0.2.6) from a malformed document, at the helper and its two call sites; the refusal raised is a fixed
     # sentence, nothing of the exception or the document is stored, served or logged
     "src/utils/safe_yaml.py": {"the caught exception 'exc' is used outside a scrubbing call": 3},
+    # Row 265 (R696): ``failure_reason`` reads a failed climate fetch's exception CLASS chain, its status code, and its text only to
+    # recognise our own fixed sentences (the kill-switch refusal, the GISTEMP/USGS size bounds); what it returns, and all that is
+    # stored or served, is one token of ``FAILURE_REASONS``. The API hands the exception to it and re-raises it unchanged.
+    "src/stats/climate.py": {"the caught exception 'exc' is used outside a scrubbing call": 5},
+    "src/api/climate.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
     # R689 (1): ``_await_unless_stopped`` hands a queued generation's exception from its thread to the waiting caller, which
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},

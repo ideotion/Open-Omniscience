@@ -76,12 +76,13 @@ def test_sources_and_articles_come_first_and_every_export_is_a_loopback_read():
         "/api/wiki/lane/counters",
         "/api/diagnostics/law-coverage?download=1",
         "/api/diagnostics/elections-floor",
+        "/api/climate/fetch-record",
     ]
     # same-origin paths only: nothing the button saves goes online
     assert all(u.startswith("/api/") for u in urls)
     # several instances send their files back together: every name carries the press time and the instance
     names = re.findall(r'name: "([^"]+)"', exports)
-    assert len(names) == 9 and all(n.startswith("oo-field-{press}-") for n in names), names
+    assert len(names) == 10 and all(n.startswith("oo-field-{press}-") for n in names), names
     # the cards export reads article text and the candidate list groups the article table, so both are POSTs (R694)
     assert 'method: "POST", url: "/api/diagnostics/field-cards"' in exports
     assert 'method: "POST", url: "/api/diagnostics/field-candidate-sources"' in exports

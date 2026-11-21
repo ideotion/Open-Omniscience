@@ -403,6 +403,154 @@ def load_record(session: Session, dataset: str, param: str | None) -> dict | Non
     return out if isinstance(out, dict) else None
 
 
+#: Why a climate fetch did not store anything (row 265, 0.6 gate row A): a fixed token each, so the record of the operator's
+#: real-host run can say which datasets failed and how, and never holds the exception's own text (an address, a host path,
+#: a station or a server's words: R734/R736). ``kill_switch`` is the person's own airplane mode, named as such (#14e).
+FAILURE_REASONS = (
+    "kill_switch",        # airplane mode / the kill switch refused before or during the request
+    "robots",             # the host's robots.txt disallows the address
+    "robots_unreadable",  # the host's robots.txt could not be read, so the fetch was refused (fail closed)
+    "redirect_refused",   # the fetcher refused the address or a redirect hop (off the dataset's site, or not public)
+    "transport_stopped",  # the network mode (protected mode, proxy) changed during the fetch, so it stopped (R772)
+    "too_large",          # the answer was larger than the table's own shape allows
+    "http_403", "http_404", "http_429", "http_4xx", "http_5xx",
+    "timeout",            # the host did not answer in time
+    "connect",            # the connection could not be made (DNS, refused, reset)
+    "unreadable_answer",  # an answer came, but not the documented table
+    "other",              # anything not recognised above (the total stays honest)
+)
+
+
+def _chain(exc: BaseException):
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        yield cur
+        cur = cur.__cause__ or cur.__context__
+
+
+def _class_names(exc: BaseException) -> set[str]:
+    """Every class ``exc`` is an instance of, by module and name: requests' exceptions are recognised without importing an HTTP
+    client into this module (the socket-importer ratchet, test_network_consent.py)."""
+    return {f"{c.__module__}.{c.__qualname__}" for c in type(exc).__mro__}
+
+
+def failure_reason(exc: BaseException) -> str:
+    """The :data:`FAILURE_REASONS` token for a failed climate fetch. Reads the exception's TYPE and status code, and its text only to
+    recognise our own kill-switch sentences (never a phrase a server wrote): nothing of the text is kept."""
+    from src.ingest import BlockedTarget, RobotsDisallowed, RobotsUnavailable
+    from src.ingest.airplane import AirplaneModeError
+    from src.ingest.fetch_verdict import NETWORK_REFUSED, is_kill_switch_refusal
+    from src.safety.fetcher import ConnectTargetRefused, RedirectRefused
+    from src.safety.transport_watch import TransportStopped
+    from src.stats.fetch import BodyTooLarge
+
+    for e in _chain(exc):
+        text = str(e)
+        if isinstance(e, AirplaneModeError) or text.startswith(NETWORK_REFUSED) or is_kill_switch_refusal(text):
+            return "kill_switch"
+    for e in _chain(exc):
+        if isinstance(e, RobotsDisallowed):
+            return "robots"
+        if isinstance(e, RobotsUnavailable):
+            return "robots_unreadable"
+        if isinstance(e, (RedirectRefused, BlockedTarget, ConnectTargetRefused)):
+            return "redirect_refused"
+        if isinstance(e, TransportStopped):
+            return "transport_stopped"
+        if isinstance(e, BodyTooLarge):
+            return "too_large"
+        names = _class_names(e)
+        if "requests.exceptions.HTTPError" in names:
+            code = getattr(getattr(e, "response", None), "status_code", None)
+            if code in (403, 404, 429):
+                return f"http_{code}"
+            if isinstance(code, int) and 400 <= code < 500:
+                return "http_4xx"
+            if isinstance(code, int) and 500 <= code < 600:
+                return "http_5xx"
+            return "other"
+        if "requests.exceptions.Timeout" in names:
+            return "timeout"
+        if "requests.exceptions.ConnectionError" in names or isinstance(e, ConnectionError):
+            return "connect"
+    if isinstance(exc, ValueError):
+        # The GISTEMP and USGS bounds raise a plain ValueError in OUR OWN fixed sentence (src/stats/fetch.py); a server's words
+        # never reach this text, and nothing of it is kept.
+        return "too_large" if "the table's own shape allows" in str(exc) or " events allow" in str(exc) else "unreadable_answer"
+    return "other"
+
+
+def record_failure(session: Session, dataset: str, param: str | None, reason: str) -> None:
+    """Write down that a fetch of one unit failed, in that unit's own fetch record (row 265, 0.6 gate row A).
+
+    The record is the one :func:`fetch_and_store` keeps per unit in the encrypted library (:func:`save_record`), so nothing
+    new is stored beside it: the failure is one more field, ``last_failure`` = its time and one :data:`FAILURE_REASONS`
+    token, never the exception's text. The unit's last successful fetch stays as it was (the tab still shows it); the next
+    successful fetch writes a fresh record without the field, so ``last_failure`` present means the latest outcome failed."""
+    if dataset not in DATASETS:
+        return
+    rec = load_record(session, dataset, param) or {}
+    rec["last_failure"] = {"failed_at": datetime.now(UTC).isoformat(), "reason": reason if reason in FAILURE_REASONS else "other"}
+    save_record(session, dataset, param, rec)
+
+
+def _sum(values: Iterable[Any]) -> int | None:
+    """The sum of the counts given, or None when not one of them is a count (never a 0 for 'not recorded')."""
+    ints = [v for v in values if isinstance(v, int) and not isinstance(v, bool) and v >= 0]
+    return sum(ints) if ints else None
+
+
+def fetch_outcomes(session: Session) -> dict:
+    """What the fetches on this machine came to, per DATASET, read from the per-unit fetch records (row 265).
+
+    Counts, dates, the publisher's host and reason tokens only. No unit is named: a GHCN station says where someone looks,
+    so stations are a count and their figures a sum (and the fixed units are counted the same way, the stricter reading of
+    "no unit in the record"). A dataset no unit of which was fetched says ``not_fetched_yet``. Never an address or a path."""
+    held: dict[str, list[dict]] = {}
+    for key, value in session.execute(select(AppState.key, AppState.value).where(AppState.key.startswith(RECORD_PREFIX))):
+        name = str(key)[len(RECORD_PREFIX):].partition(".")[0]
+        if name not in DATASETS:
+            continue
+        try:
+            rec = json.loads(value)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(rec, dict):
+            held.setdefault(name, []).append(rec)
+    out: dict[str, dict] = {}
+    for name, ds in sorted(DATASETS.items()):
+        recs = held.get(name, [])
+        fetched = [r for r in recs if isinstance(r.get("fetched_at"), str)]
+        failed = [r["last_failure"] for r in recs if isinstance(r.get("last_failure"), dict)]
+        reasons: dict[str, int] = {}
+        for f in failed:
+            tok = f.get("reason") if f.get("reason") in FAILURE_REASONS else "other"
+            reasons[tok] = reasons.get(tok, 0) + 1
+        offered = None if ds.params == () else (1 if ds.params is None else len(ds.params))
+        stored = [stored_summary(session, name, r.get("param") if isinstance(r.get("param"), str) else None)["stored_rows"]
+                  for r in fetched]
+        tallies: list[dict] = [t if isinstance(t := r.get("tally"), dict) else {} for r in fetched]
+        out[name] = {
+            "host": ds.host,
+            "state": "fetched" if fetched else ("failed" if failed else "not_fetched_yet"),
+            "unit_kind": "station" if ds.params == () else "unit",
+            "units_offered": offered,
+            "units_fetched": len(fetched),
+            "units_last_failed": len(failed),
+            "units_not_fetched_yet": None if offered is None else max(offered - len(fetched), 0),
+            "last_fetched_at": max((r["fetched_at"] for r in fetched), default=None),
+            "last_failed_at": max((str(f.get("failed_at")) for f in failed if f.get("failed_at")), default=None),
+            "figures": _sum(r.get("figures") for r in fetched),
+            "new": _sum(t.get("new") for t in tallies),
+            "revised": _sum(t.get("revised") for t in tallies),
+            "stored_rows": _sum(stored),
+            "reasons": dict(sorted(reasons.items())),
+        }
+    return out
+
+
 def fetch_and_store(
     session: Session, dataset: str, param: str | None, *, fetchers: Any = None,
     progress: Callable[[str], None] | None = None,

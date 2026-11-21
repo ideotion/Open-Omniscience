@@ -3181,6 +3181,10 @@
       // state, date, age and counts, the floor's four states -- country codes, counts, dates, entry titles and the reasons a
       // date is absent; no path or address (scripts/elections_readback.py).
       {kind: "file", url: "/api/diagnostics/elections-floor", name: "oo-field-{press}-elections-floor.json"},
+      // Climate fetches per dataset (row 265, 0.6 gate row A): read from each unit's own fetch record, the publisher's host, counts,
+      // dates and fixed reason tokens (kill_switch, robots, http_403, ...); no unit, address or station is named, so the operator's
+      // real-host run can be read back dataset by dataset (scripts/climate_readback.py). A few kilobytes.
+      {kind: "file", url: "/api/climate/fetch-record", name: "oo-field-{press}-climate-fetches.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte
