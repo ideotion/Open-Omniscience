@@ -169,7 +169,7 @@ the extract's and state beside it the data time of the last file applied in an u
 replication timestamp, never the day it was applied here); applied files whose timestamp was not recorded read "daily updates
 applied, data date not read". With no file applied every surface reads as before. All of them, the view legend, the geography and
 the trends vintages read one function, `country_data_date` (`src/osm/lane_models.py`); the words claim the files were applied, never
-that every object is current to that date (row 286, PR pending).
+that every object is current to that date (row 286, PR #2246).
 
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 
