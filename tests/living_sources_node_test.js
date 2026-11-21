@@ -55,7 +55,7 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingLocatedFact", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
+  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingTotalWhy", "livingWalkSwitchFact", "livingLocatedFact", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
@@ -814,6 +814,56 @@ const WIKI = {
   assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
   const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
   assert.ok(visible(none).includes("Could not be read"), "a payload without a coverage block threw or drew figures");
+}
+
+// --- row 257 / R774: an absent total says why; a total read earlier is dated and "no longer refreshed" -------- //
+{
+  const ed = (code, total, read) => ({ edition: code, has_run: true, pages_seen: 10, edition_articles: total,
+    edition_articles_read: read, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+    last_event_recorded_at: null, gaps: { total: 0, by_reason: {} } });
+  const COV = { measured: true, reason: null,
+    totals: { pages_seen: 50, edition_articles: 500, editions_without_total: 4, editions_with_a_run: 5, gaps: 0 },
+    editions: [
+      ed("en", 500, { state: "stale_walk_off", at: "2026-11-01T10:00:00+00:00" }),
+      ed("fr", null, { state: "not_read_walk_off", at: null }),
+      { edition: "de", has_run: false, reason: "no-run-yet" },
+    ], located: { measured: false, reason: "address-extractor-not-built" } };
+  const off = group(R.livingWikiGroups({ ...WIKI, walk: { enabled: false }, coverage: COV }, t, tf), "Edition coverage");
+  noJunk(off, "the walk-off coverage group"); noVerdict(off, "the walk-off coverage group");
+  const text = visible(off);
+  assert.ok(text.includes("L3(fr) 10 pages seen, total unknown · total not read: the page walk is off"), text);
+  assert.ok(text.includes("L3(en) 10 of 500 pages seen · total read 2026-11-01 10:00 UTC, no longer refreshed: the page walk is off"), text);
+  assert.ok(text.includes("L3(de) No run yet · total not read: the page walk is off"), text);
+  assert.ok(!/of 0 pages|\b0 of\b/.test(text), "an empty total read as a measurement: " + text);
+  // The switch is one click away, beside the cost it starts, and goes through the one save Settings uses.
+  assert.ok(/data-on-click="livingWalkOn\(this\)"/.test(off) && text.includes("Turn the page walk on"), "no walk switch in the coverage group");
+  assert.ok(text.includes("one request per edition for its article count"), "the switch was drawn without its cost: " + text);
+  // Walk on: no switch; a pause and a refused count read are named as what they are, apart from a later batch refusal.
+  const ON = { ...COV, editions: [
+    ed("en", null, { state: "not_read_paused", reason: "network_off", at: null, last_refusal: "service_busy" }),
+    ed("fr", null, { state: "not_read_paused", reason: "transport_unavailable", at: null }),
+    ed("it", null, { state: "not_read_refused", reason: "request_refused", at: "2026-11-20T08:00:00+00:00", last_refusal: "service_busy" }),
+    ed("pt", null, { state: "answer_unreadable", at: "2026-11-20T08:00:00+00:00" }),
+    ed("es", null, { state: "not_read_yet" }),
+    ed("hi", null, { state: "not_read_not_running" }),
+    ed("ru", 900, { state: "read", at: "2026-11-20T08:00:00+00:00" }),
+  ] };
+  const on = group(R.livingWikiGroups({ ...WIKI, walk: { enabled: true }, coverage: ON }, t, tf), "Edition coverage");
+  noJunk(on, "the walk-on coverage group");
+  const otext = visible(on);
+  assert.ok(!otext.includes("Turn the page walk on"), "the switch was offered while the walk is on");
+  assert.ok(otext.includes("L3(en) 10 pages seen, total unknown · total not read: Airplane mode is on."), otext);
+  assert.ok(otext.includes("L3(fr) 10 pages seen, total unknown · total not read: Protected mode has no usable proxy"), otext);
+  assert.ok(otext.includes("L3(it) 10 pages seen, total unknown · total not read (2026-11-20 08:00 UTC): The wiki refused the request."), otext);
+  assert.ok(!/L3\(it\)[^L]*slow down/.test(otext), "a later batch refusal stood in for the count read's own: " + otext);
+  assert.ok(otext.includes("L3(pt) 10 pages seen, total unknown · total not read: the edition's answer held no article count"), otext);
+  assert.ok(/L3\(es\) 10 pages seen, total unknown(?! ·)/.test(otext), "nothing to say was said anyway: " + otext);
+  assert.ok(/L3\(ru\) 10 of 900 pages seen(?! ·)/.test(otext), otext);
+  assert.ok(otext.includes("L3(hi) 10 pages seen, total unknown · total not read: the walk runs only while the live stream runs"), otext);
+  // A switch that could not be read is neither on nor off: no button, and the state says so.
+  const unread = R.livingTotalWhy({ state: "unknown" }, t, tf);
+  assert.strictEqual(unread, "total not read: the walk's switch could not be read");
+  assert.strictEqual(R.livingTotalWhy(undefined, t, tf), "", "an older server's row without the block drew a reason");
 }
 
 // Amendment velocity: the short caveat sits inside the fold BEFORE the counts, every
