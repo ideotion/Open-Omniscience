@@ -239,7 +239,7 @@ def release_vram(*, timeout: float = 8.0) -> dict:
     uninstalled Ollama is a clean no-op with a stated reason, never an error: the
     post-condition wanted is "Ollama is not holding the card", and that already holds.
     """
-    if shutil.which("ollama") is None:  # the program itself: one a stopped install left behind may still be serving (R765)
+    if not is_installed():
         return {"released": [], "reason": "Ollama is not installed", "attempted": False}
     try:
         from src.llm.ollama import OllamaClient

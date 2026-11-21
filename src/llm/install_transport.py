@@ -159,9 +159,11 @@ def _interrupted_marker():
 
 def mark_ollama_install_interrupted() -> None:
     try:
+        from src.safety.file_lock import atomic_replace
+
         marker = _interrupted_marker()
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text("stopped because protected mode was switched on\n", encoding="utf-8")
+        atomic_replace(marker, "stopped because protected mode was switched on\n")
     except OSError:
         pass  # the stop is said in the install's own note either way
 

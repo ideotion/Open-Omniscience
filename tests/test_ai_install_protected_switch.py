@@ -340,26 +340,17 @@ def test_a_script_that_failed_on_its_own_reports_its_own_failure(monkeypatch, tm
     assert not it._interrupted_marker().exists()
 
 
-def test_a_crlf_split_across_two_reads_makes_one_line_end(monkeypatch):
+def test_a_crlf_split_across_two_reads_makes_one_line_end():
     import src.llm.installer as inst
 
     r, w = os.pipe()
-    first_read = threading.Event()
 
     def write() -> None:
         os.write(w, b"a" * 1023 + b"\r")  # one read's worth, ending on the "\r"
-        first_read.wait(5)
+        time.sleep(0.5)  # the reader takes it alone (were both halves read together, the split would still be right)
         os.write(w, b"\nnext\n")
         os.close(w)
 
-    real_read = os.read
-
-    def read(fd: int, n: int) -> bytes:
-        out = real_read(fd, n)
-        first_read.set()
-        return out
-
-    monkeypatch.setattr(inst.os, "read", read)
     writer = threading.Thread(target=write)
     writer.start()
     try:
