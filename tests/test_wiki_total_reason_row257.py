@@ -174,8 +174,10 @@ def test_every_state_the_report_can_give_is_one_the_surface_knows():
     import re
     from pathlib import Path
 
+    from tests.js_source_helper import function_source
+
     js = Path("src/static/app-living.js").read_text(encoding="utf-8")
-    body = js[js.index("function livingTotalWhy("):js.index("function livingWalkSwitchFact(")]
+    body = function_source(js, "livingTotalWhy")
     named = set(re.findall(r'"([a-z_]+)"', body))
     # "read" and "not_read_yet" say nothing beyond the figure itself, on purpose.
     assert set(TOTAL_STATES) - {"read", "not_read_yet"} <= named
