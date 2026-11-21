@@ -73,8 +73,12 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # to count a refused country; the exception carries no text from the backup, and nothing is logged or stored but that name
     "src/backup/lane_merge.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
     # Row 256 (R702 part 2): SQLAlchemy's pool record's own ``info`` dict, holding the lane's generation number for the open (stamped
-    # at connect, compared at checkin); it carries an int, never words, and nothing is logged
-    "src/versioned/store.py": {"pool_entry.info is kept as a name, a log call the scan cannot read": 2},
+    # at connect, compared at checkin); it carries an int, never words, and nothing is logged. Row 271: the same dict holds the
+    # (device, inode) of the file the open reached (stamped at connect, read at checkout and detach): two ints, never words
+    "src/versioned/store.py": {
+        "pool_entry.info is kept as a name, a log call the scan cannot read": 4,
+        "record.info is kept as a name, a log call the scan cannot read": 1,
+    },
     "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     # R695: ``_deadline_stopped(exc)`` answers whether a caught error is a statement deadline's stop: an isinstance test, then the
     # driver text compared to the one fixed word ``interrupted``; it stores nothing and logs nothing, and the two callers only re-raise
@@ -353,6 +357,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # carries (an int, never words).
         ('_switch_lane_held', "refused = theirs.code  # the repair's own refusal (a reader held the log): its code, said in this module's words"): 1,
         ('_switch_lane', 'f"{held.count} connection(s) to this store were still open when the switch was to begin, so nothing was switched; "'): 1,
+        # row 271: the log names the THREADS a refused hold counted (thread names and a fixed state word, built by the store): no
+        # path, no value, no words of an error
+        ('_switch_lane', '_LOG.info("database rebuild: the %s store\'s switch was refused; still open: %s", kind, "; ".join(held.holders) or "(not known)")'): 1,
     },
     # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
     'src/database/encrypt_tool.py': {

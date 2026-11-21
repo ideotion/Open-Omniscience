@@ -66,6 +66,8 @@ from typing import Any, cast
 from sqlalchemy import Engine, Table, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from src.database import file_identity
+from src.database.file_identity import Identity
 from src.monitoring.secret_scrub import log_failure
 from src.versioned.lanes import LaneSpec, lane
 
@@ -111,11 +113,34 @@ _swap_cond = threading.Condition(_swap_lock)
 #:     then collected. Its id stayed here and was later reused by an unrelated object, so a switch counted a connection that did
 #:     not exist and refused (measured: a suite run, the id resolving to a ``deque``).
 _opening: dict[str, int] = {}
-_live: dict[str, dict[int, weakref.ref[Any]]] = {}
-_out: dict[str, dict[int, weakref.ref[Any]]] = {}
+#: Each entry also names the FILE the connection is open on (row 271), by its (device, inode): the identity ``file_identity`` took
+#: of the file the open actually reached, so no spelling of a path (a symlink, a relative path, another letter case, a short name)
+#: can make one file two. A hold counts only the connections to the file it switches: a connection left open on another folder's
+#: copy of the lane (a test's earlier data directory) holds nothing of this one. When either side's identity cannot be read
+#: (``None``), the entry counts (fail closed).
+_live: dict[str, dict[int, tuple[weakref.ref[Any], Identity | None]]] = {}
+_out: dict[str, dict[int, tuple[weakref.ref[Any], Identity | None]]] = {}
 #: Connections DETACHED from their pool (``detach`` event): still open on the file until their ``close_detached`` event, and their
-#: record no longer names them, so they are counted here, by id, with no check that could drop them.
-_detached: dict[str, set[int]] = {}
+#: record no longer names them, so they are counted here, by id (with their file), with no check that could drop them.
+_detached: dict[str, dict[int, Identity | None]] = {}
+#: The name of the thread that last opened or checked out each counted connection, for a refusal's log line (row 271): which
+#: holder kept a switch from starting. Diagnostics only: never read by the count.
+_by: dict[str, dict[int, str]] = {}
+#: The key a lane connection's file identity is kept under in its pool record's ``info`` (read again at checkout and detach).
+_FILE_KEY = "oo_lane_file"
+
+
+def _known(ident: Identity | None) -> Identity | None:
+    """An identity the count may compare, or None. A file system with no inode numbers (``st_ino == 0``) cannot tell two files
+    apart, so its identity is unknown, which counts everywhere."""
+    if ident is None or not ident[1]:
+        return None
+    return ident
+
+
+def _file_of(kind: str) -> Identity | None:
+    """The identity of the file a switch of ``kind`` replaces now (None when it cannot be read: everything then counts)."""
+    return _known(file_identity.identity(lane_path(kind)))
 
 
 class _Pinned:
@@ -154,9 +179,11 @@ class LaneInUse(RuntimeError):
     """A connection to the lane was still open (or being opened) when its switch was to begin, so nothing was switched. ``count``
     says how many."""
 
-    def __init__(self, count: int) -> None:
+    def __init__(self, count: int, holders: tuple[str, ...] = ()) -> None:
         super().__init__(f"{count} connection(s) to this store were still open")
         self.count = count
+        #: For the log, never the operator's words: the thread that opened or checked out each connection still counted (row 271).
+        self.holders = holders
 
 
 class LaneAlreadyHeld(RuntimeError):
@@ -184,62 +211,107 @@ def _end_open(kind: str) -> None:
         _swap_cond.notify_all()
 
 
-def _note(kind: str, conn_id: int, *, live: bool | None = None, out: bool | None = None, record: Any = None) -> None:
-    """Add (``True``) or forget (``False``) one connection in ``_live``/``_out``. An add needs the pool's ``record`` of it."""
+def _note(
+    kind: str,
+    conn_id: int,
+    *,
+    live: bool | None = None,
+    out: bool | None = None,
+    record: Any = None,
+    where: Identity | None = None,
+) -> None:
+    """Add (``True``) or forget (``False``) one connection in ``_live``/``_out``. An add needs the pool's ``record`` of it and the
+    identity of the file it is open on; without the record it is counted always, without the file for every file."""
     with _swap_lock:
         for table, flag in ((_live, live), (_out, out)):
             if flag is None:
                 continue
             entries = table.setdefault(kind, {})
             if flag:
-                entries[conn_id] = weakref.ref(record if record is not None else _PINNED)
+                entries[conn_id] = (weakref.ref(record if record is not None else _PINNED), where)
+                _by.setdefault(kind, {})[conn_id] = threading.current_thread().name
             else:
                 entries.pop(conn_id, None)
         if live is False:
-            _detached.setdefault(kind, set()).discard(conn_id)
+            _detached.setdefault(kind, {}).pop(conn_id, None)
+            _by.setdefault(kind, {}).pop(conn_id, None)
         _swap_cond.notify_all()
 
 
-def _note_detached(kind: str, conn_id: int) -> None:
+def _note_detached(kind: str, conn_id: int, where: Identity | None = None) -> None:
     """The pool let go of a connection that stays open (``detach``): counted as open AND handed out until its ``close_detached``."""
     with _swap_lock:
-        _detached.setdefault(kind, set()).add(conn_id)
+        _detached.setdefault(kind, {})[conn_id] = where
         _live.setdefault(kind, {}).pop(conn_id, None)
         _out.setdefault(kind, {}).pop(conn_id, None)
         _swap_cond.notify_all()
 
 
-def _held(table: dict[str, dict[int, weakref.ref[Any]]], kind: str) -> int:
+def _on(entry_where: Identity | None, where: Identity | None) -> bool:
+    """Whether an entry counts against the file ``where``. If either identity is unknown (None), it counts."""
+    return where is None or entry_where is None or entry_where == where
+
+
+def _detached_on(kind: str, where: Identity | None) -> int:
+    return sum(1 for w in (_detached.get(kind) or {}).values() if _on(w, where))
+
+
+def _held(
+    table: dict[str, dict[int, tuple[weakref.ref[Any], Identity | None]]], kind: str, where: Identity | None = None
+) -> int:
     """How many of ``table``'s entries for ``kind`` may still be open (call with ``_swap_lock``). FAILS CLOSED: an entry is dropped
     only when its connection is POSITIVELY known gone: the pool's record of it was collected, its pool with it, and a sqlite
     connection closes when it is freed (unless something outside the pool, such as a leaked cursor, still holds it). Every live
     record still counts, whatever it holds right now: a replaced connection already left through the pool's ``close`` event, and a
     record seen holding another connection may be one ``detach()`` handed back before its ``detach`` event fired (a detached
-    connection is counted separately, :data:`_detached`)."""
+    connection is counted separately, :data:`_detached`). Only the entries on ``where`` are counted (``None``: all of them)."""
     entries = table.get(kind) or {}
-    for conn_id, ref in list(entries.items()):
+    held = 0
+    for conn_id, (ref, entry_where) in list(entries.items()):
         if ref() is None:
             entries.pop(conn_id, None)
-    return len(entries)
+        elif _on(entry_where, where):
+            held += 1
+    return held
 
 
 def in_use(kind: str) -> int:
-    """How many connections to this lane are handed out right now, or being opened (0 for a lane nobody opened). Idle connections
-    in a pool are not counted: they hold nothing, and a hold closes them."""
+    """How many connections to this lane's file are handed out right now, or being opened (0 for a lane nobody opened). Idle
+    connections in a pool are not counted: they hold nothing, and a hold closes them. An open under way counts whatever its file."""
+    where = _file_of(kind)
     with _swap_lock:
-        return _held(_out, kind) + len(_detached.get(kind, ())) + _opening.get(kind, 0)
+        return _held(_out, kind, where) + _detached_on(kind, where) + _opening.get(kind, 0)
 
 
-def _open_now(kind: str) -> int:
-    """Every connection the pools have open on this lane, idle or handed out, plus the opens under way (call with ``_swap_cond``)."""
-    return _held(_live, kind) + len(_detached.get(kind, ())) + _opening.get(kind, 0)
+def _holders(kind: str, where: Identity | None) -> tuple[str, ...]:
+    """Who holds what :func:`_open_now` counts, one line each (call with ``_swap_cond``): the thread named and the state."""
+    names = _by.get(kind) or {}
+    out_ids = set((_out.get(kind) or {}).keys())
+    lines = []
+    for conn_id, (ref, entry_where) in (_live.get(kind) or {}).items():
+        if ref() is not None and _on(entry_where, where):
+            state = "checked out" if conn_id in out_ids else "idle in its pool"
+            lines.append(f"{names.get(conn_id, 'an unknown thread')} ({state})")
+    for conn_id, entry_where in (_detached.get(kind) or {}).items():
+        if _on(entry_where, where):
+            lines.append(f"{names.get(conn_id, 'an unknown thread')} (detached)")
+    if _opening.get(kind, 0):
+        lines.append(f"{_opening[kind]} open(s) under way")
+    return tuple(sorted(lines))
+
+
+def _open_now(kind: str, where: Identity | None) -> int:
+    """Every connection the pools have open on this lane's file ``where``, idle or handed out, plus the opens under way, whatever
+    their file (call with ``_swap_cond``)."""
+    return _held(_live, kind, where) + _detached_on(kind, where) + _opening.get(kind, 0)
 
 
 def quiet(kind: str) -> bool:
     """Whether NOTHING of this process is open on the lane file, nor being opened. Read by the switch again right before it gives
     the old file its second name and moves the new one in."""
+    where = _file_of(kind)
     with _swap_lock:
-        return _open_now(kind) == 0
+        return _open_now(kind, where) == 0
 
 
 @contextmanager
@@ -252,6 +324,7 @@ def held_for_swap(kind: str) -> Iterator[None]:
     name the new file then owns. Not re-entrant (:class:`LaneAlreadyHeld`)."""
     token = object()
     try:
+        where = _file_of(kind)  # the file this hold keeps still: connections to another file hold nothing of it
         with _swap_lock:
             if kind in _swapping:
                 raise LaneAlreadyHeld("this store is already held for a switch")
@@ -266,12 +339,12 @@ def held_for_swap(kind: str) -> Iterator[None]:
             for eng in engines:
                 eng.dispose()  # a connection that came back (or finished opening) since the last pass is idle now: closed here
             with _swap_lock:
-                left = _open_now(kind)
+                left = _open_now(kind, where)
                 if not left:
                     break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise LaneInUse(left)
+                    raise LaneInUse(left, _holders(kind, where))
                 _swap_cond.wait(timeout=min(0.05, remaining))
         yield
     finally:
@@ -368,7 +441,6 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     lane from holding fifty SQLCipher page caches open beside the corpus's.
     """
 
-    from src.database import file_identity
 
     def _open():
         from src.database.connect import connect
@@ -411,7 +483,10 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         # open counted, which refuses this lane's later rebuilds until a restart (a refusal, never a loss).
         with _swap_lock:
             pool_entry.info[_GEN_KEY] = getattr(_open_gen, "value", _gen.get(spec.kind, 0))
-        _note(spec.kind, id(dbapi_connection), live=True, record=pool_entry)
+        # Row 271: the file THIS open reached, as ``file_identity`` took it (this listener runs before its own, which consumes it).
+        where = _known(file_identity.taken())
+        pool_entry.info[_FILE_KEY] = where
+        _note(spec.kind, id(dbapi_connection), live=True, record=pool_entry, where=where)
         _end_open(spec.kind)
 
     @event.listens_for(eng, "handle_error")
@@ -437,7 +512,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     # ``file_identity``'s own, so a connection it drops at checkout (one on a replaced file) is never counted as handed out.
     @event.listens_for(eng, "checkout")
     def _lane_checked_out(dbapi_connection, pool_entry, _proxy) -> None:
-        _note(spec.kind, id(dbapi_connection), out=True, record=pool_entry)
+        _note(spec.kind, id(dbapi_connection), out=True, record=pool_entry, where=pool_entry.info.get(_FILE_KEY))
 
     @event.listens_for(eng, "checkin")
     def _lane_checked_in(dbapi_connection, pool_entry) -> None:
@@ -454,8 +529,8 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
         _note(spec.kind, id(dbapi_connection), live=False, out=False)
 
     @event.listens_for(eng, "detach")
-    def _lane_detached(dbapi_connection, _record) -> None:
-        _note_detached(spec.kind, id(dbapi_connection))
+    def _lane_detached(dbapi_connection, record) -> None:
+        _note_detached(spec.kind, id(dbapi_connection), record.info.get(_FILE_KEY))
 
     @event.listens_for(eng, "close_detached")
     def _lane_closed_detached(dbapi_connection) -> None:

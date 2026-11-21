@@ -207,7 +207,7 @@ def _noted(conn, record, **flags):
         store._note("osm", id(conn), live=False, out=False)
 
 
-def test_a_connection_whose_pool_record_was_collected_is_not_counted():
+def test_a_connection_whose_pool_record_was_collected_is_not_counted(data_dir):
     # The CI failure of row 256's own test (2026-11-21, shard 2 on three PRs): an id left in the open set by a connection that was
     # freed with no ``close`` event, later reused by an unrelated object (it resolved to a ``deque``), so the switch refused a lane
     # nothing had open.
@@ -225,7 +225,7 @@ def test_a_connection_whose_pool_record_was_collected_is_not_counted():
         store._note("osm", id(conn), live=False, out=False)
 
 
-def test_a_record_seen_holding_another_connection_still_counts_the_old_one():
+def test_a_record_seen_holding_another_connection_still_counts_the_old_one(data_dir):
     # fail closed: ``detach()`` hands the record back to its pool before its ``detach`` event fires, so for a moment the record
     # may hold a new connection while the detached one is still open; a replaced connection leaves through ``close`` instead
     first, second = _Conn(), _Conn()
@@ -235,7 +235,7 @@ def test_a_record_seen_holding_another_connection_still_counts_the_old_one():
         assert not store.quiet("osm")
 
 
-def test_what_cannot_be_read_still_counts_as_open():
+def test_what_cannot_be_read_still_counts_as_open(data_dir):
     # fail closed: a record holding no connection right now is uncertain, and an entry with no record at all is never dropped
     conn, other = _Conn(), _Conn()
     rec = _Record(conn)
@@ -247,8 +247,9 @@ def test_what_cannot_be_read_still_counts_as_open():
     assert store.quiet("osm")
 
 
-def _real_engine(tmp_path):
-    return store._build_engine(store.lane("osm"), tmp_path / "osm-probe.db")
+def _real_engine(_data_dir, path=None):
+    """An engine on the lane's own file (``data_dir`` points the lane there), or on ``path``, outside the store's cache."""
+    return store._build_engine(store.lane("osm"), store.lane_path("osm") if path is None else path)
 
 
 def test_on_a_real_pool_a_checked_out_connection_counts_and_an_idle_one_counts_until_closed(data_dir):
@@ -289,3 +290,98 @@ def test_on_a_real_pool_a_connection_freed_with_no_close_event_is_not_counted(da
     del eng  # the pool goes with its engine, never disposed: its connection is freed, and no ``close`` event fires
     gc.collect()
     assert store.quiet("osm")
+
+
+def test_a_connection_open_on_another_folders_file_holds_nothing_of_this_one(data_dir, tmp_path_factory):
+    # Row 271, the second CI failure (shard 2, d1148dbbc): an earlier test left a connection open on ITS lane file, in its own
+    # data directory, and the switch of this test's file counted it. A hold counts the connections to the file it switches.
+    eng = _real_engine(data_dir)
+    with eng.connect():
+        pass  # this lane's file exists: its identity can be read
+    eng.dispose()
+    elsewhere = _real_engine(data_dir, tmp_path_factory.mktemp("another-folder") / store.lane("osm").filename)
+    try:
+        with elsewhere.connect():
+            assert store.quiet("osm") and store.in_use("osm") == 0
+            with store.held_for_swap("osm"):
+                pass
+            with eng.connect():  # one on this file still counts
+                assert store.in_use("osm") == 1 and not store.quiet("osm")
+    finally:
+        eng.dispose()
+        elsewhere.dispose()
+
+
+def test_an_entry_whose_file_is_not_known_counts_for_every_file(data_dir):
+    conn = _Conn()
+    rec = _Record(conn)
+    with _noted(conn, rec, live=True, out=True):  # no ``where``: fail closed
+        assert store.in_use("osm") == 1 and not store.quiet("osm")
+
+
+@pytest.mark.parametrize("spelling", ["a symlinked folder", "a relative path"])
+def test_the_same_file_by_another_spelling_still_counts(data_dir, tmp_path_factory, monkeypatch, spelling):
+    # The count compares the (device, inode) of the file each open reached, never a spelling of its path: two names of one file
+    # must never be counted as two files, or a switch could go ahead under an open connection.
+    eng = _real_engine(data_dir)
+    with eng.connect():
+        pass
+    eng.dispose()
+    if spelling == "a symlinked folder":
+        alias = tmp_path_factory.mktemp("alias") / "link"
+        try:
+            alias.symlink_to(data_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("this system cannot make a symbolic link")
+        path = alias / store.lane("osm").filename
+    else:
+        monkeypatch.chdir(data_dir)
+        path = store.lane("osm").filename
+    other = _real_engine(data_dir, path)
+    try:
+        with other.connect():
+            assert store.in_use("osm") == 1 and not store.quiet("osm")
+            with pytest.raises(store.LaneInUse), store.held_for_swap("osm"):
+                pass
+    finally:
+        other.dispose()
+    assert store.quiet("osm")
+
+
+def test_a_lane_file_whose_identity_cannot_be_read_counts_every_connection(data_dir, tmp_path_factory):
+    # fail closed on the hold's side: this lane's file is not there to be read, so a connection on any file of the kind counts
+    assert not store.lane_path("osm").exists()
+    elsewhere = _real_engine(data_dir, tmp_path_factory.mktemp("another-folder") / store.lane("osm").filename)
+    try:
+        with elsewhere.connect():
+            assert store.in_use("osm") == 1 and not store.quiet("osm")
+    finally:
+        elsewhere.dispose()
+
+
+def test_a_file_system_with_no_inode_numbers_gives_an_unknown_identity():
+    assert store._known((5, 0)) is None and store._known(None) is None and store._known((5, 7)) == (5, 7)
+
+
+def test_a_refused_hold_names_the_thread_that_holds_each_connection(data_dir):
+    # row 271: a refusal says WHO kept the switch from starting, for the log (thread names and states only)
+    eng = _real_engine(data_dir)
+    done, release = threading.Event(), threading.Event()
+
+    def holder():
+        with eng.connect():
+            done.set()
+            release.wait(10)
+
+    t = threading.Thread(target=holder, name="row271-holder")
+    t.start()
+    try:
+        assert done.wait(10)
+        with pytest.raises(store.LaneInUse) as refused, store.held_for_swap("osm"):
+            pass
+        assert refused.value.count == 1
+        assert refused.value.holders == ("row271-holder (checked out)",)
+    finally:
+        release.set()
+        t.join(10)
+        eng.dispose()
