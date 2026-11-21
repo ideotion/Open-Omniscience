@@ -68,12 +68,34 @@ def test_a_direct_start_stops_when_protected_mode_is_switched_on(monkeypatch):
     assert exc.value.reason == "protected" and str(exc.value) == tw.PROTECTED_STOP
 
 
-def test_a_download_through_the_proxy_goes_on_while_protected_mode_stays_on(monkeypatch):
+def test_a_download_through_the_proxy_goes_on_while_the_same_proxy_stays_set(monkeypatch):
     _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
     w = tw.TransportWatch()
     tw.bump()
-    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")  # another proxy: not a downgrade
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY, discovery_external_enabled=True)  # another setting
     assert w.stop_reason() is None
+
+
+def test_a_download_through_the_proxy_stops_when_the_proxy_is_changed(monkeypatch):
+    """R772(b): the approved transport is the mode AND the proxy; another proxy is another transport."""
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    w = tw.TransportWatch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")
+    tw.bump()
+    with pytest.raises(tw.TransportStopped) as exc:
+        w.check()
+    assert exc.value.reason == "proxy" and str(exc.value) == tw.PROXY_STOP
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)  # changed back: the stop stands
+    assert w.stop_reason() == "proxy"
+
+
+def test_the_transport_identity_never_carries_the_proxy_address(monkeypatch):
+    st = _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://user:secret@127.0.0.1:9050")
+    tid = tw.transport_id(st)
+    assert tid.startswith("protected:") and "secret" not in tid and "9050" not in tid and "127.0.0.1" not in tid
+    other = tw.transport_id(_settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://user:other@127.0.0.1:9050"))
+    assert other != tid  # the credentials are part of the proxy the user approved
+    assert tw.display_token(tid) != tw.display_token(other) and tid[10:] not in tw.display_token(tid)
 
 
 def test_a_proxy_start_stops_when_protected_mode_is_switched_off(monkeypatch):
@@ -98,10 +120,12 @@ def test_switching_protected_mode_off_tells_every_watch_at_once(monkeypatch, tmp
     monkeypatch.setattr(it, "stop_running_installs", lambda: [])
     settings.save_settings({"fetch_mode": "protected", "http_proxy": _PROXY})
     before = tw.generation()
-    settings.save_settings({"http_proxy": "socks5h://127.0.0.1:9150"})  # protected to protected: no switch
+    settings.save_settings({"http_proxy": _PROXY})  # the same transport: no change
     assert tw.generation() == before
-    settings.save_settings({"fetch_mode": "transparent"})
+    settings.save_settings({"http_proxy": "socks5h://127.0.0.1:9150"})  # R772(b): another proxy is another transport
     assert tw.generation() == before + 1
+    settings.save_settings({"fetch_mode": "transparent"})
+    assert tw.generation() == before + 2
 
 
 @pytest.mark.parametrize("protected", [False, True])
@@ -401,6 +425,46 @@ def test_switching_protected_mode_off_holds_what_was_queued_through_the_proxy(mo
     assert m.resume_held() == 1 and launched == [k]  # the operator's click in direct mode
 
 
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_changing_the_proxy_holds_what_was_queued_through_the_old_one(monkeypatch, tmp_path, kind):
+    """R772(b): a proxy change while protected mode stays on holds the queue, named, until the operator's click."""
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    m = _manager(kind, tmp_path)
+    launched: list[str] = []
+
+    def launch(entry):
+        launched.append(entry.key)
+        entry.status = "done"
+
+    monkeypatch.setattr(m, "_launch", launch)
+    busy = _entry(kind, m, "en" if kind == "dump" else "monaco")
+    busy.status = "downloading"
+    m.start("de", "pages-articles") if kind == "dump" else m.start("andorra")
+    (k,) = m._order
+    busy.status = "done"
+    _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")
+    m._pump()
+    assert launched == [] and m._entries[k].held_by == "proxy"
+    row = next(d for d in m.list() if d["key"] == k)
+    assert row["held_by"] == "proxy" and row["resume_transport"] == "proxy"
+    assert row["resume_token"] == tw.display_token() and "9150" not in json.dumps(row)
+    assert m.resume_held() == 1 and launched == [k]  # the operator's click, under the proxy now set
+
+
+def test_a_launch_decided_through_one_proxy_stops_if_another_is_set_before_its_session(monkeypatch):
+    from src.safety.fetcher import _session_for
+
+    first = _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)
+    decided = tw.transport_id(first)
+    st = _settings(monkeypatch, fetch_mode="protected", http_proxy="socks5h://127.0.0.1:9150")
+    with tw.run(tw.for_launch(decided)), pytest.raises(tw.TransportStopped) as exc:
+        _session_for(st).get("https://dumps.example.org/big")  # refused before anything is sent
+    assert exc.value.reason == "proxy"
+
+
 def test_a_launch_decided_through_the_proxy_stops_if_the_switch_off_lands_first(monkeypatch):
     from src.safety.fetcher import _session_for
 
@@ -484,16 +548,20 @@ def test_downloads_stopped_together_requeue_in_the_order_they_ran(monkeypatch, t
 
 
 def test_the_queue_shows_why_and_one_control_resumes_it(monkeypatch):
+    from fastapi import HTTPException
+
     from src.api import jobs
 
     calls: list[str] = []
+    stamped: list[str | None] = []
 
     class _M:
         def __init__(self, name):
             self.name = name
 
-        def resume_held(self):
+        def resume_held(self, mode=None):
             calls.append(self.name)
+            stamped.append(mode)
             return 1
 
     import src.geo.osm_downloads as osm
@@ -503,7 +571,19 @@ def test_the_queue_shows_why_and_one_control_resumes_it(monkeypatch):
     monkeypatch.setattr(dumps, "get_manager", lambda: _M("dumps"))
     monkeypatch.setattr(osm, "get_manager", lambda: _M("osm"))
     monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
-    assert jobs.resume_held_queue() == {"resumed": 2} and calls == ["dumps", "osm"]
+    _settings(monkeypatch)
+    for body in (None, jobs.ResumeQueueBody(transport=""), jobs.ResumeQueueBody(transport="0" * 16)):
+        with pytest.raises(HTTPException) as exc:
+            jobs.resume_held_queue(body)
+        assert exc.value.status_code == 409 and exc.value.detail == jobs.TRANSPORT_CHANGED
+    assert calls == []
+    token = tw.display_token()
+    _settings(monkeypatch, fetch_mode="protected", http_proxy=_PROXY)  # changed after the page named the direct connection
+    with pytest.raises(HTTPException):
+        jobs.resume_held_queue(jobs.ResumeQueueBody(transport=token))
+    assert calls == []
+    assert jobs.resume_held_queue(jobs.ResumeQueueBody(transport=tw.display_token())) == {"resumed": 2}
+    assert calls == ["dumps", "osm"] and stamped == [tw.mode_now()] * 2
     src = (_ROOT / "src" / "api" / "jobs.py").read_text(encoding="utf-8")
     assert src.count('"held_by": e.get("held_by")') == 2
 
@@ -637,7 +717,8 @@ def test_every_panel_names_the_two_reasons_in_every_language():
         assert pause_p in js and pause_s in js, name
     assert "/api/jobs/queue/resume" in (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     med = (_ROOT / "src" / "static" / "app-medical.js").read_text(encoding="utf-8")
-    assert '"protected_mode"' in med and '"settings_unreadable"' in med
+    assert '"protected_mode"' in med and '"settings_unreadable"' in med and '"proxy_changed"' in med
+    from src.api.jobs import TRANSPORT_CHANGED
     from src.llm import install_transport as it
 
     keys = [
@@ -646,7 +727,9 @@ def test_every_panel_names_the_two_reasons_in_every_language():
         "Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go "
         "on over the direct connection until you resume the queue.", tw.UNPROTECTED_STOP,
         "Resume every held download, in queue order, through the transport now in force.",
-        tw.PROTECTED_STOP, tw.UNREADABLE_STOP, it.AI_INSTALL_UNREADABLE_NOTE, it.AI_INSTALLER_UNREADABLE_NOTE,
+        tw.PROTECTED_STOP, tw.UNREADABLE_STOP, tw.PROXY_STOP, "Held: the proxy was changed",
+        "Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to "
+        "download it through the proxy now set.", TRANSPORT_CHANGED, it.AI_INSTALL_UNREADABLE_NOTE, it.AI_INSTALLER_UNREADABLE_NOTE,
     ]
     for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
         data = json.loads((_ROOT / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))

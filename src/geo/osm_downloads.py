@@ -123,8 +123,9 @@ class OsmDownloadEntry:
     paused_by: str | None = None
     # R768's queue ruling: why a QUEUED download is HELD instead of started -- "protected" (protected mode came on and it was
     # queued, or had started, over the direct connection), "unprotected" (R772: protected mode went off and it was queued, or
-    # had started, through the proxy) or "settings" (the settings could not be read, R769) -- and the
-    # transport it was queued under ("protected" | "direct"). A held download keeps its place and waits for the operator's
+    # had started, through the proxy), "proxy" (R772: the proxy was changed) or "settings" (the settings could not be read,
+    # R769) -- and the transport identity it was queued under (``transport_watch.transport_id``: "direct", "unknown" or
+    # "protected:<digest>", never an address). A held download keeps its place and waits for the operator's
     # "Resume the queue", never for a mode change.
     held_by: str | None = None
     queued_mode: str | None = None
@@ -372,7 +373,7 @@ class OsmDownloadManager:
         from src.ingest import kill_switch_active
         from src.safety.transport_watch import hold_reason, mode_now
 
-        mode = mode_now()  # one reading for the whole queue, taken before the lock
+        mode = mode_now()  # one reading of the transport identity for the whole queue, taken before the lock
         to_launch: list[OsmDownloadEntry] = []
         with self._lock:
             # R617: a worker that airplane mode paused frees its slot and pumps. Under airplane mode EVERY queued entry is
@@ -405,7 +406,7 @@ class OsmDownloadManager:
                     e.paused_by = "airplane"
                 else:
                     e.status = "downloading"  # claim the slot atomically
-                    e._launch_mode = "protected" if mode[0] else "direct"  # type: ignore[attr-defined]  # the reading this decision used
+                    e._launch_mode = mode  # type: ignore[attr-defined]  # the transport identity this decision read
                     self._seq += 1
                     e._launch_seq = self._seq  # type: ignore[attr-defined]
                     to_launch.append(e)
@@ -437,7 +438,7 @@ class OsmDownloadManager:
             self._save()
             return list(self._order)
 
-    def resume_held(self) -> int:
+    def resume_held(self, mode: str | None = None) -> int:
         """R768's queue ruling: the operator's ONE click that resumes the whole queue, in order, under the transport now in force.
 
         Every queued entry is re-stamped with the mode of this click and its hold lifted; each then passes that mode's own rules as
@@ -445,7 +446,7 @@ class OsmDownloadManager:
         reason. Returns how many were held."""
         from src.safety.transport_watch import queue_mode
 
-        qmode = queue_mode()
+        qmode = queue_mode() if mode is None else mode
         held = 0
         with self._lock:
             for k in self._order:
@@ -469,9 +470,13 @@ class OsmDownloadManager:
             ]
 
     def list(self) -> list[dict]:
-        from src.safety.transport_watch import resume_transport
+        from src.safety.transport_watch import display_token, mode_now, resume_transport
 
-        transport = resume_transport()  # read before the lock, as the pump reads the mode
+        # Read before the lock, as the pump reads the mode, and only when something is held (a racy peek: a hold that lands
+        # between the peek and the lock is drawn without the transport for one poll, and a resume without it is refused).
+        held_now = any(e.held_by is not None and e.status == "queued" for e in list(self._entries.values()))
+        tid = mode_now() if held_now else None
+        transport = (resume_transport(tid), display_token(tid)) if tid is not None else (None, None)
         with self._lock:
             order = [
                 k for k in self._order
@@ -489,7 +494,8 @@ class OsmDownloadManager:
                     e.key, total_bytes=e.total_bytes or None, done_bytes=e.downloaded_bytes
                 )
                 if d.get("held_by"):
-                    d["resume_transport"] = transport  # R772: the panel says, before the click, which transport a resume would use
+                    # R772: the panel says, before the click, which transport a resume would use, and sends the token back
+                    d["resume_transport"], d["resume_token"] = transport
                 out.append(d)
             return out
 
@@ -710,7 +716,9 @@ class OsmDownloadManager:
                 entry.status = "queued"
                 entry.error = None
                 entry.paused_by = None
-                entry.held_by = {"protected": "protected", "unprotected": "unprotected"}.get(exc.reason, "settings")
+                from src.safety.transport_watch import held_by_for
+
+                entry.held_by = held_by_for(exc.reason)
                 mine = getattr(entry, "_launch_seq", 0) or 0
                 entry._stopped_seq = mine  # type: ignore[attr-defined]
                 with self._lock:

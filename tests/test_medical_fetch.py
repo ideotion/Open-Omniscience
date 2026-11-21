@@ -286,7 +286,7 @@ def test_airplane_mode_mid_run_is_named_and_not_charged_to_the_file(medical, no_
         assert s.execute(select(MedicalFile)).first() is None, "a refusal by the kill switch is not the file's failure"
 
 
-@pytest.mark.parametrize(("reason", "error"), [("protected", "protected_mode"), ("unprotected", "protected_mode_off"), ("unreadable", "settings_unreadable")])
+@pytest.mark.parametrize(("reason", "error"), [("protected", "protected_mode"), ("unprotected", "protected_mode_off"), ("proxy", "proxy_changed"), ("unreadable", "settings_unreadable")])
 def test_a_transport_change_mid_run_is_named_and_not_charged_to_the_file(medical, no_corpus, monkeypatch, reason, error):
     """R768/R769: protected mode switched on under a direct run, or the settings no longer readable, ends the run, named."""
     from src.safety.transport_watch import TransportStopped, stop_message

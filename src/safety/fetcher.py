@@ -700,7 +700,10 @@ def _session_for(
     s.allowed_path_prefixes = _checked_path_prefixes(allowed_path_prefixes)  # likewise
     s.headers["User-Agent"] = user_agent
     # R768/R769: the transport it was built on, checked as it goes; inside a download run, the run's ONE watch
-    s.transport_watch = current_run() or TransportWatch.for_settings(settings)
+    run = current_run()
+    if run is not None:
+        run.bind(settings)  # a snapshot that already disagrees with the run stops it before this session sends anything
+    s.transport_watch = run or TransportWatch.for_settings(settings)
     if not settings.is_protected:
         return s
     # R657: protected mode names the app to Wikimedia's hosts only; send() picks the agent per request and per redirect hop.

@@ -77,7 +77,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   unasked; one "Resume the queue" click, behind the consent popup, resumes them in order,
   and the button names the transport it resumes over before you click. The other direction
   holds too (R772): switching protected mode off holds every download that began or was
-  queued through the proxy, so none goes on over the direct connection without your click. An OSM update's
+  queued through the proxy, so none goes on over the direct connection without your click. The transport is
+  the mode AND the proxy: changing the proxy while protected mode stays on holds them the same way, named "the proxy
+  was changed" (the comparison uses a digest of the proxy settings, never the address itself). A resume click
+  carries a token of the transport its button named, and is refused if the transport changed since. An OSM update's
   catch-up of several files is one download: a switch between two files ends the run rather
   than moving the rest of it to the proxy. Settings that can no longer be read stop it the
   same way, even when an environment proxy keeps the transport usable. A stopped session is

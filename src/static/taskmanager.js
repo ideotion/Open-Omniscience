@@ -261,7 +261,8 @@
     if (j.state === "queued" && j.held_by) {
       // R768/R769: held by a transport change; it never starts on its own, only by "Resume the queue"
       line = j.held_by === "settings" ? t("Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.")
-        : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
+        : j.held_by === "unprotected" ? t("Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.")
+        : j.held_by === "proxy" ? t("Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.") : t("Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.");
     } else if (j.state === "paused") {
       if (j.paused_by === "airplane") line = t("Paused by airplane mode. Resume asks to go online first.");
       else if (j.paused_by === "operator") line = t("Paused by you.");
@@ -377,7 +378,7 @@
     var heldLabel = !heldJob ? "" : heldJob.resume_transport === "proxy" ? t("Resume the queue through your proxy")
       : heldJob.resume_transport === "direct" ? t("Resume the queue over the direct connection") : t("Resume the queue");
     var held = heldJob
-      ? '<div style="padding:2px 0 6px"><button class="tbtn" data-tm="resume-queue" title="' + esc(t("Resume every held download, in queue order, through the transport now in force.")) + '">' + esc(heldLabel) + "</button></div>"
+      ? '<div style="padding:2px 0 6px"><button class="tbtn" data-tm="resume-queue" data-token="' + esc(heldJob.resume_token || "") + '" title="' + esc(t("Resume every held download, in queue order, through the transport now in force.")) + '">' + esc(heldLabel) + "</button></div>"
       : "";
     var qHtml = '<div class="vsect">' + esc(t("Queue")) + "</div>" + held + (queued.length
       ? queued.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")
@@ -767,12 +768,13 @@
     },
     // The queue's ONE resume (R768): it re-opens fetches, so offline -- or when the state cannot be read -- it is handed over
     // to the app as "/?resume=queue", where the consent popup asks first, as a single download's resume is.
-    resumeQueue: async function () {
+    // ``token`` is the transport the button named (R772); the server refuses the click if it changed since.
+    resumeQueue: async function (token) {
       var online = null;
       try { online = (await api("/api/system/network")).online === true; } catch (e) { online = null; }
-      if (online !== true) { location.href = "/?resume=queue"; return; }
-      try { await api("/api/jobs/queue/resume", { method: "POST" }); toast(t("Resumed.")); }
-      catch (e) { toast(e.message, "err"); }
+      if (online !== true) { location.href = "/?resume=" + encodeURIComponent("queue:" + token); return; }
+      try { await api("/api/jobs/queue/resume", { method: "POST", body: JSON.stringify({ transport: token }) }); toast(t("Resumed.")); }
+      catch (e) { toast(t(e.message), "err"); }
     },
     // The storage guard's "Resume anyway" (R112): the operator's OVERRIDE. The server grants it
     // within its bounds or refuses with a sentence frame, which is shown with the sizes through
@@ -824,7 +826,7 @@
     var act = b.getAttribute("data-tm"), id = b.getAttribute("data-id");
     if (act === "cancel") window.TM.cancel(id);
     else if (act === "resume") window.TM.resume(id, b.getAttribute("data-local") === "1");
-    else if (act === "resume-queue") window.TM.resumeQueue();
+    else if (act === "resume-queue") window.TM.resumeQueue(b.getAttribute("data-token") || "");
     else if (act === "storage-resume") window.TM.storageResume();
     else if (act === "memory-resume") window.TM.memoryResume();
     else if (act === "move") window.TM.move(b.getAttribute("data-key"), Number(b.getAttribute("data-dir")), b.getAttribute("data-kind"));

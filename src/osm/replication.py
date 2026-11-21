@@ -209,8 +209,13 @@ class GuardedDiffSource:
         s = guarded_session(isolation_token=url, allowed_hosts=REPLICATION_HOSTS)
         # R768/R769: one catch-up run is one download. A session per file, but ONE watch for the run, taken at its first request: a
         # switch to protected mode between two files stops the run rather than moving the rest of it to the proxy unasked.
+        own = s.transport_watch
         if self._watch is None:
-            self._watch = s.transport_watch or TransportWatch()
+            self._watch = own or TransportWatch()
+        elif own is not None and own is not self._watch:
+            # This file's session took its transport from its own snapshot: when that is not the mode the run started on, the
+            # run stops here, before the request (R768/R772), whatever the run's watch last read.
+            self._watch.bind_transport(own.started_id)
         s.transport_watch = self._watch
         return s
 

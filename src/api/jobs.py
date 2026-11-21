@@ -17,6 +17,7 @@ stop the other — never a silent pile-up.
 from __future__ import annotations
 
 import functools
+import hmac
 import json
 import logging
 from pathlib import Path
@@ -159,6 +160,7 @@ def _dump_jobs() -> list[dict]:
                 # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
                 "held_by": e.get("held_by"),
                 "resume_transport": e.get("resume_transport"),
+                "resume_token": e.get("resume_token"),
                 "actions": _dl_actions(state),
             }
         )
@@ -210,6 +212,7 @@ def _osm_jobs() -> list[dict]:
                 # R768: why a queued download is held ("protected" / "settings"), only while queued; "Resume the queue" lifts it.
                 "held_by": e.get("held_by"),
                 "resume_transport": e.get("resume_transport"),
+                "resume_token": e.get("resume_token"),
                 "actions": _dl_actions(state),
             }
         )
@@ -1131,18 +1134,35 @@ def reorder_dumps(body: ReorderBody) -> dict:
     return {"queue_order": get_manager().reorder(body.keys)}
 
 
+class ResumeQueueBody(BaseModel):
+    #: The token of the transport the page named on the button (``resume_token``), sent back with the click (R772).
+    transport: str = ""
+
+
+#: R772: the transport changed between the page naming it and the click. Nothing is resumed; the page draws the button again.
+TRANSPORT_CHANGED = "The transport changed since this page was drawn, so nothing was resumed. Look at the button again, then resume."
+
+
 @router.post("/queue/resume")
-def resume_held_queue() -> dict:
+def resume_held_queue(body: ResumeQueueBody | None = None) -> dict:
     """R768's queue ruling: the ONE control that resumes the whole download queue, in order, after protected mode came on (or the
     settings could not be read) under it. Wikipedia dumps first, then map regions, each in its own queue order; every entry then
     starts under the transport now in force and its own rules. The page asks the go-online consent before it calls this."""
     from src.geo.osm_downloads import get_manager as osm_manager
     from src.ingest import kill_switch_active
+    from src.safety.transport_watch import display_token, mode_now
     from src.wiki.dumps import get_manager as dump_manager
 
     if kill_switch_active():
         raise HTTPException(status_code=409, detail="Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
-    held = dump_manager().resume_held() + osm_manager().resume_held()
+    # R772: the click resumes over the transport the button named, or not at all. A click with no token (an older page) is refused
+    # the same way: the page names the transport first, always.
+    # The entries are stamped with the identity the token was checked against, never one read again later: a change landing after
+    # this check holds them again at the pump, with its own reason.
+    tid = mode_now()
+    if body is None or not body.transport or not hmac.compare_digest(body.transport, display_token(tid)):
+        raise HTTPException(status_code=409, detail=TRANSPORT_CHANGED)
+    held = dump_manager().resume_held(tid) + osm_manager().resume_held(tid)
     return {"resumed": held}
 
 

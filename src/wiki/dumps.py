@@ -162,8 +162,9 @@ class DownloadEntry:
     paused_by: str | None = None
     # R768's queue ruling: why a QUEUED download is HELD instead of started -- "protected" (protected mode came on and it was
     # queued, or had started, over the direct connection), "unprotected" (R772: protected mode went off and it was queued, or
-    # had started, through the proxy) or "settings" (the settings could not be read, R769) -- and the
-    # transport it was queued under ("protected" | "direct"). A held download keeps its place and waits for the operator's
+    # had started, through the proxy), "proxy" (R772: the proxy was changed) or "settings" (the settings could not be read,
+    # R769) -- and the transport identity it was queued under (``transport_watch.transport_id``: "direct", "unknown" or
+    # "protected:<digest>", never an address). A held download keeps its place and waits for the operator's
     # "Resume the queue", never for a mode change.
     held_by: str | None = None
     queued_mode: str | None = None
@@ -352,7 +353,7 @@ class DumpDownloadManager:
         from src.ingest import kill_switch_active
         from src.safety.transport_watch import hold_reason, mode_now
 
-        mode = mode_now()  # one reading for the whole queue, taken before the lock
+        mode = mode_now()  # one reading of the transport identity for the whole queue, taken before the lock
         to_launch: list[DownloadEntry] = []
         with self._lock:
             # R617: a worker that airplane mode paused frees its slot and pumps. Under airplane mode EVERY queued entry is
@@ -385,7 +386,7 @@ class DumpDownloadManager:
                     e.paused_by = "airplane"
                 else:
                     e.status = "downloading"  # claim the slot atomically
-                    e._launch_mode = "protected" if mode[0] else "direct"  # type: ignore[attr-defined]  # the reading this decision used
+                    e._launch_mode = mode  # type: ignore[attr-defined]  # the transport identity this decision read
                     self._seq += 1
                     e._launch_seq = self._seq  # type: ignore[attr-defined]
                     to_launch.append(e)
@@ -414,7 +415,7 @@ class DumpDownloadManager:
             self._save()
             return list(self._order)
 
-    def resume_held(self) -> int:
+    def resume_held(self, mode: str | None = None) -> int:
         """R768's queue ruling: the operator's ONE click that resumes the whole queue, in order, under the transport now in force.
 
         Every queued entry is re-stamped with the mode of this click and its hold lifted; each then passes that mode's own rules as
@@ -422,7 +423,7 @@ class DumpDownloadManager:
         reason. Returns how many were held."""
         from src.safety.transport_watch import queue_mode
 
-        qmode = queue_mode()
+        qmode = queue_mode() if mode is None else mode
         held = 0
         with self._lock:
             for k in self._order:
@@ -449,7 +450,7 @@ class DumpDownloadManager:
         with self._lock:
             entries = list(self._entries.values())
         out = []
-        transport: str | None = None
+        transport: tuple[str, str] | None = None
         for e in entries:
             d = e.to_dict()
             # PERF-09: the measurement rides BESIDE the byte counts, and
@@ -458,12 +459,14 @@ class DumpDownloadManager:
                 e.key, total_bytes=e.total_bytes or None, done_bytes=e.downloaded_bytes
             )
             if d.get("held_by"):
-                # R772: the panel says, before the click, which transport "Resume the queue" would use now
+                # R772: the panel says, before the click, which transport "Resume the queue" would use now, and sends its token
+                # back with the click, so a transport that changed in between is refused rather than used
                 if transport is None:
-                    from src.safety.transport_watch import resume_transport
+                    from src.safety.transport_watch import display_token, mode_now, resume_transport
 
-                    transport = resume_transport()
-                d["resume_transport"] = transport
+                    tid = mode_now()
+                    transport = (resume_transport(tid), display_token(tid))
+                d["resume_transport"], d["resume_token"] = transport
             out.append(d)
         return out
 
@@ -738,7 +741,9 @@ class DumpDownloadManager:
                 entry.status = "queued"
                 entry.error = None
                 entry.paused_by = None
-                entry.held_by = {"protected": "protected", "unprotected": "unprotected"}.get(exc.reason, "settings")
+                from src.safety.transport_watch import held_by_for
+
+                entry.held_by = held_by_for(exc.reason)
                 mine = getattr(entry, "_launch_seq", 0) or 0
                 entry._stopped_seq = mine  # type: ignore[attr-defined]
                 with self._lock:
