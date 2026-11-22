@@ -1039,7 +1039,14 @@
     function livingLawFloorHtml(d, t, tf) {
       const f = d && d.floor;
       if (!f) return `<div class="muted">${esc(t("This build reports no language floor."))}</div>`;
-      if (!f.by_state || !f.languages) return `<div class="muted">${lawFloorUnreadHtml(f.floor, t)}</div>`;
+      if (!f.by_state || !f.languages) {
+        // Row 319: the floor file gave no country AND the catalogue could not be read: both are said, the catalogue's
+        // error as data, never one hiding the other.
+        const cat = f.catalog_reason
+          ? `<p class="card-caveat">${esc(t("The law catalogue could not be read either."))} `
+            + `${ooLabelHtml(esc(t("Error")), `<code dir="ltr">${esc(String(f.catalog_reason))}</code>`)}</p>` : "";
+        return `<div class="muted">${lawFloorUnreadHtml(f.floor, t)}</div>${cat}`;
+      }
       const status = String(f.verification_status || "");
       // The status is the floor file's own free text: "drafted..." is the one form any shipped file has used, and it is
       // said as a caveat. Any other value is the file's words, shown as data inside the translated frame (row 317).

@@ -5812,6 +5812,7 @@
   "The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.": "पिछला प्रयास विफल रहा और कुछ नहीं बदला: पहले से संग्रहीत मान दिखाए गए हैं, जैसे थे वैसे ही।",
   "The latest attempt failed, so nothing is stored for this yet.": "पिछला प्रयास विफल रहा, इसलिए इसके लिए अभी कुछ भी संग्रहीत नहीं है।",
   "The latest {n} firings, newest first. Earlier ones are kept but not shown here.": "नवीनतम {n} ट्रिगर, सबसे नए पहले। पुराने सहेजे रहते हैं पर यहाँ नहीं दिखाए जाते।",
+  "The law catalogue could not be read either.": "कानून की सूची भी पढ़ी नहीं जा सकी।",
   "The law catalogue could not be read, so only what is tracked here is counted.": "कानून की सूची पढ़ी नहीं जा सकी, इसलिए केवल वही गिना गया है जो यहाँ ट्रैक किया जा रहा है।",
   "The law catalogue could not be read, so this country was not looked up.": "कानून की सूची पढ़ी नहीं जा सकी, इसलिए इस देश को देखा नहीं गया।",
   "The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.": "आपके द्वारा देखे जा रहे क़ानूनी दस्तावेज़ों की नई संस्करणों के लिए तब जाँच होती है जब बारी आती है, हर एक की दिन में अधिकतम एक बार, और उसके बाद उनके AI परिवर्तन-सारांश बनते हैं; हवाई जहाज़ मोड में कभी नहीं। डिफ़ॉल्ट रूप से चालू। पृष्ठभूमि जाँच रोकने के लिए निशान हटाएँ; «सरकारें → क़ानून» में «अभी बदलाव ट्रैक करें» फिर भी काम करता है।",

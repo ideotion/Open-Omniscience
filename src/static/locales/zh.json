@@ -5812,6 +5812,7 @@
   "The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.": "最近一次尝试失败，未作任何更改：显示的是已存储的数值，保持原样。",
   "The latest attempt failed, so nothing is stored for this yet.": "最近一次尝试失败，因此这里还没有存储任何内容。",
   "The latest {n} firings, newest first. Earlier ones are kept but not shown here.": "最近 {n} 次触发，最新的在前。更早的记录仍保留，但不在此显示。",
+  "The law catalogue could not be read either.": "法律目录也无法读取。",
   "The law catalogue could not be read, so only what is tracked here is counted.": "无法读取法律目录,因此只统计此处已跟踪的内容。",
   "The law catalogue could not be read, so this country was not looked up.": "无法读取法律目录,因此未查询该国家。",
   "The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.": "您关注的法律文件会在到期时重新检查是否有新版本，每份每天最多一次，随后生成 AI 变更摘要，飞行模式下从不执行。默认开启。取消勾选可停止后台检查；“政府 → 法律”中的“立即追踪变更”仍然可用。",

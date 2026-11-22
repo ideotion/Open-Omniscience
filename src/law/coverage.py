@@ -393,6 +393,9 @@ def floor_report(
         "reason": None,
         "as_of": floor.get("as_of") or None,
         "verification_status": floor.get("verification_status") or None,
+        # Row 319: why the law catalogue could not be read, kept beside the floor's own read state. ``reason`` says why the
+        # block is unchecked, and an unread floor file takes it over below; the catalogue's error must not go with it.
+        "catalog_reason": None if catalog is not None else (reason or "the law catalogue could not be read"),
         "countries": len(countries),
         "method": _FLOOR_METHOD,
         "caveat": _FLOOR_CAVEAT,
@@ -457,7 +460,7 @@ def floor_report(
     out["non_law_documents"] = non_law
     out["invalid_rows"] = floor.get("invalid") or []
     if catalog is None:
-        out.update(state="unchecked", reason=reason)
+        out.update(state="unchecked", reason=out["catalog_reason"])  # the same words, so the read-back never says "either" twice
     return out
 
 
