@@ -22,7 +22,6 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
@@ -36,6 +35,7 @@ from src.ingest import (
 )
 from src.ingest.airplane import AirplaneModeError
 from src.law.track import auto_track_due, track_document, track_watched
+from tests._app_engine import app_sqlite_engine
 
 _BODY = " ".join(
     f"Section {i}: every person shall have the right to liberty and security." for i in range(40)
@@ -53,7 +53,7 @@ def _switch_clear():
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

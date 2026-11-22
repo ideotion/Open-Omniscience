@@ -22,13 +22,13 @@ import threading
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.api import heavy
 from src.api import integrity as intg
 from src.api.heavy import run_heavy
 from src.database.maintenance import StatementTimeout
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, watch_flight_followers
 
 
@@ -45,7 +45,7 @@ def _fast_guard(monkeypatch):
 def _sqlite_session() -> Session:
     """A plain (unencrypted) SQLite session so flight_key/statement_deadline have a live DBAPI
     connection — no app DB, no crypto extra (CI-only) touched."""
-    return sessionmaker(bind=create_engine("sqlite://"))()
+    return sessionmaker(bind=app_sqlite_engine(":memory:"))()
 
 
 # The four read handlers + the module attribute each one's heavy compute hangs off, so one

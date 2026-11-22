@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument
@@ -23,6 +22,7 @@ from src.law.coverage import (
     law_coverage_report,
     official_enumerations,
 )
+from tests._app_engine import app_sqlite_engine
 
 # A crafted enumeration map, so the unit tests below are not asserting against the
 # 225-source shipped harvest. ONE guard (the last in this file) deliberately drives the
@@ -75,7 +75,7 @@ def _assert_no_fraction_anywhere(payload, *, tracked: int, enumerated: int) -> N
 
 
 def _session():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

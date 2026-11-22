@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import sqlite3
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import Session
+
+from tests._app_engine import app_sqlite_engine
 
 # No ``importorskip("sqlalchemy")`` here, deliberately. It is a CORE dependency, not an
 # extra, so a guard would trade a loud collection error on a broken install for a silent
@@ -42,7 +44,7 @@ def _production_keyword_statements(db_path: str) -> list[tuple[str, dict]]:
     """Drive the REAL ``_keywords_group`` query shapes and capture what they emit."""
     from src.database.models import Base, Keyword
 
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = app_sqlite_engine(db_path)
     Base.metadata.create_all(engine)
     captured: list[tuple[str, dict]] = []
 

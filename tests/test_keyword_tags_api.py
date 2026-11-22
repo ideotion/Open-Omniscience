@@ -12,7 +12,6 @@ from datetime import date
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.insights import (
@@ -24,11 +23,12 @@ from src.api.insights import (
     remove_keyword_tag,
 )
 from src.database.models import Article, Base, Keyword, KeywordMention, KeywordTag, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

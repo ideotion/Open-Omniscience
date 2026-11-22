@@ -21,7 +21,6 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import (
@@ -36,6 +35,7 @@ from src.ingest import FetchResult
 from src.ingest.pdf import pdf_available
 from src.law.corpus import ensure_law_source, law_canonical_url, sync_watched_laws
 from src.law.track import track_document
+from tests._app_engine import app_sqlite_engine
 
 _PDF_FIX = Path(__file__).parent / "fixtures" / "pdf"
 needs_pypdf = pytest.mark.skipif(not pdf_available(), reason="pypdf ([pdf] extra) not installed")
@@ -74,8 +74,8 @@ class StubFetcher:
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

@@ -12,11 +12,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import triage as T
 from src.database.models import Base, Keyword
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -212,7 +212,7 @@ def test_run_triage_batch_parses_and_measures():
 # Head-scope selection + the EXPORT-ONLY invariant (never writes the trusted index).
 # --------------------------------------------------------------------------- #
 def _db():
-    engine = create_engine("sqlite:///:memory:", future=True,
+    engine = app_sqlite_engine(":memory:", future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

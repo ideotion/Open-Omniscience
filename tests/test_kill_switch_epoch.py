@@ -30,7 +30,6 @@ from urllib.parse import urlparse
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument
@@ -45,6 +44,7 @@ from src.ingest import (
 )
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.law.track import track_document
+from tests._app_engine import app_sqlite_engine
 
 _HOST_KEY = "https://gazette.example"
 _URL = f"{_HOST_KEY}/act1"
@@ -131,7 +131,7 @@ def _sidecar(tmp_path) -> dict:
 
 
 def _db_and_doc():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     doc = LawDocument(

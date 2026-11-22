@@ -32,7 +32,6 @@ import pytest
 
 pytest.importorskip("bs4", reason="the HTML reading runs through the strip stage")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.api.law import _verdict_of  # noqa: E402
@@ -41,6 +40,7 @@ from src.ingest import FetchError, FetchResult  # noqa: E402
 from src.law import track  # noqa: E402
 from src.law.adapters.gii import parse_gii  # noqa: E402
 from src.law.catalog import format_move_targets  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 GG = Path(__file__).parent / "fixtures" / "law" / "gii" / "gg_excerpt.xml"
 HTML_URL = "https://www.gesetze-im-internet.de/gg/BJNR000010949.html"  # the catalogue's own previous_urls
@@ -93,7 +93,7 @@ class Portal:
 def db(monkeypatch):
     monkeypatch.setattr(track, "_ingest_to_corpus", lambda *a, **k: None)
     monkeypatch.setattr(track, "_record_lane", lambda *a, **k: "recorded")
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -395,7 +395,7 @@ def test_a_SOCKET_GUARD_refusal_of_the_xml_read_is_named_as_the_kill_switch(db):
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

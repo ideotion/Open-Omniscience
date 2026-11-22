@@ -34,13 +34,13 @@ pytest.importorskip("sqlalchemy")
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup.merge import merge_corpus  # noqa: E402
 from src.database import country_form as cf  # noqa: E402
 from src.database.models import Base  # noqa: E402
 from src.database.session import get_db  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _META = {"artifact_kind": "oo-backup-3", "origin_fingerprint": "machine-B", "app_version": "0.5.0", "alembic_rev": "head", "manifest": None}
 _URL = "https://law.example/one-spelling"
@@ -69,7 +69,7 @@ def _template_dir(tmp_path_factory):
 
 
 def _build(path: Path, form: str) -> None:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
     if form == "alpha3":
@@ -96,7 +96,7 @@ def _post(monkeypatch, path: Path, form: str, **body):
     """``POST /api/law/documents`` as the install whose store is ``path`` (country form ``form``) would answer it."""
     monkeypatch.setattr(cf, "store_form", lambda: form)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _Blocked())
-    engine = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     Sess = sessionmaker(bind=engine, future=True)
 
     def _db():
@@ -131,7 +131,7 @@ def _seed(path: Path, form: str, held: str, *, watched: bool = True, url: str = 
     """A row as an earlier version of the app (or the catalogue's loader) stored it: ``held`` is the stored spelling, written in ``form``."""
     from src.database.models import LawDocument
 
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     with cf.writing_in(form), sessionmaker(bind=engine, future=True)() as s:
         s.add(LawDocument(jurisdiction=held, title="Loi", url=url, watched=watched))
         s.commit()

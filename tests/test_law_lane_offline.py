@@ -27,12 +27,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "law" / "synthetic"
 
@@ -64,8 +64,8 @@ class _NoModel:
 
 @pytest.fixture
 def corpus(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'corpus.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'corpus.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

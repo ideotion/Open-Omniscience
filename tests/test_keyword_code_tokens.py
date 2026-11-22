@@ -21,7 +21,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import (
@@ -31,6 +30,7 @@ from src.analytics.extract import (
 )
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 # Real digit-bearing terms / designations that must SURVIVE (never dropped). Each is a
 # pure word (0 transitions), a one-transition designation, or an allowlisted exception.
@@ -150,8 +150,8 @@ def test_extract_offsets_unchanged_for_clean_text():
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

@@ -23,7 +23,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import keyword_fold
@@ -46,6 +46,7 @@ from src.database.models import (
     KeywordTag,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(not lemmatizer_available(), reason="simplemma not importable here")
 
@@ -75,7 +76,7 @@ _ARTICLES = [
 
 
 def _engine(tmp_path, name):
-    eng = create_engine(f"sqlite:///{tmp_path / name}", connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(tmp_path / name, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     return eng
 
@@ -508,7 +509,7 @@ def test_the_rules_cover_exactly_the_lemmatised_languages():
 
 
 def _engine_mem():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     return eng
 

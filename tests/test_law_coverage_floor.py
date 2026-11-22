@@ -17,7 +17,6 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.civic.coverage_floor import load_floor
@@ -35,6 +34,7 @@ from src.law.coverage import (
     floor_report,
     law_coverage_report,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import function_body, python_function_source
 
 
@@ -314,7 +314,7 @@ def test_zh_is_its_own_row_and_the_territories_its_seed_names_sit_beside_it_not_
 
 
 def _session():
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
 

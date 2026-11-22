@@ -24,7 +24,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.catalog.qualification import (  # noqa: E402
@@ -33,6 +32,7 @@ from src.catalog.qualification import (  # noqa: E402
     STATUS_UNQUALIFIED,
 )
 from src.database.models import Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 # ONE fixture, built so the four predicates give four DIFFERENT answers:
 #   enabled AND qualified   = 2   (the headline)
@@ -52,7 +52,7 @@ HEADLINE, QUALIFIED_ANY, ENABLED_ANY, ALL_ROWS = 2, 3, 4, 6
 
 @pytest.fixture
 def session(tmp_path) -> Session:
-    engine = create_engine(f"sqlite:///{tmp_path / 'hl.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'hl.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     for domain, enabled, status in _FIXTURE:
@@ -191,7 +191,7 @@ def test_a_corpus_where_every_enabled_source_is_admitted_reports_a_real_zero(
     corpus indistinguishable from one the check never ran on."""
     from src.scheduler.coverage import tag_coverage
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'clean.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'clean.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     s.add(Source(name="x", domain="x.example", enabled=True, status=STATUS_QUALIFIED))

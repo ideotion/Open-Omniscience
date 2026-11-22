@@ -43,6 +43,7 @@ from src.law.catalog import (
     verified_tier,
 )
 from src.law.model import LICENCES
+from tests._app_engine import app_sqlite_engine
 
 # ---------------------------------------------------------------------------
 # Q906 — one adapter per format, and the seam a second one arrives through
@@ -351,12 +352,12 @@ def test_the_migration_moves_catalogue_rows_and_leaves_everything_else_alone(tmp
     entry was later removed — leaving it on the old token forever. The tag answers the
     question actually being asked: did this row come from the law catalogue?
     """
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
     from src.database.maintenance import ensure_law_source_type
     from src.database.models import Base, Source
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'c.db', future=True)
     Base.metadata.create_all(engine)
     with engine.begin() as con:
         for domain, source_type, tags in (

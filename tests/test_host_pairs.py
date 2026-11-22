@@ -16,13 +16,14 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics import quarantine_job as qj
 from src.backup.merge import merge_corpus
 from src.database.models import Article, Base, HostMismatchConfirmed, Source
+from tests._app_engine import app_sqlite_engine
 
 _BODY = "Real article text. " * 30
 _META = {
@@ -33,8 +34,8 @@ _META = {
 
 @pytest.fixture
 def world():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)
@@ -141,7 +142,7 @@ def test_a_confirmation_made_during_a_pause_is_seen_by_the_next_batch(world):
 
 # ------------------------------------------------------------- the merge rule
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

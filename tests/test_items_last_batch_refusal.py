@@ -11,7 +11,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.ring_loader import RateGate
@@ -19,6 +18,7 @@ from src.database.models import Base
 from src.entities import items as IT
 from src.entities.wikidata_items import BATCH_MAX
 from src.ingest import activate_kill_switch, clear_kill_switch
+from tests._app_engine import app_sqlite_engine
 
 
 class _Clock:
@@ -34,7 +34,7 @@ class _Clock:
 
 @pytest.fixture()
 def factory():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng)
 

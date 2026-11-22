@@ -20,7 +20,6 @@ from datetime import date
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import equivalence
@@ -28,6 +27,7 @@ from src.analytics import ring_loader as RL
 from src.analytics.wikidata_rings import wbentities_url, wbsearch_url
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -317,7 +317,7 @@ def test_a_write_invalidates_every_memoised_ring_view(tmp_path, monkeypatch):
 #  5. Q407: which candidates, in which order
 # --------------------------------------------------------------------------- #
 def _sess():
-    e = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    e = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(e)
     return sessionmaker(bind=e, future=True)()
 

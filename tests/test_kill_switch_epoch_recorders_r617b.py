@@ -37,7 +37,7 @@ from contextlib import contextmanager
 
 import pytest
 import requests
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -45,6 +45,7 @@ from src.database.models import Base, MarketExtractionRule, Source, WikiPage, Wi
 from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kill_switch_active
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.safety.fetcher import GuardedSession, RedirectRefused, make_fetcher
+from tests._app_engine import app_sqlite_engine
 
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 #: A host's own reset, no Stop anywhere: the control's failure.
@@ -152,7 +153,7 @@ def _stop_right_after_the_check(monkeypatch, function, loop_line, *, module=None
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:
@@ -768,7 +769,7 @@ def test_field_test_a_step_with_no_stop_is_done_as_before_the_control():
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
 def factory():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng)
 

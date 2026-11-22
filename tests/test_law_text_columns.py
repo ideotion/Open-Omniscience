@@ -9,14 +9,14 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database.models import Base, LawDocument, LawRevision
+from tests._app_engine import app_sqlite_engine
 
 
 def _session() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
 
@@ -82,7 +82,7 @@ def test_ensure_law_document_language_columns_self_heals_a_pre_existing_store():
 
     from src.database.maintenance import ensure_law_document_language_columns
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     with engine.begin() as conn:
         # A pre-fix schema: law_documents WITHOUT language/country.
         conn.execute(text(

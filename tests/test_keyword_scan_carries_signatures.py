@@ -32,12 +32,13 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 import src.analytics.keyword_log_export as kle
 import src.analytics.keyword_log_scan as kls
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 LANGS = ["en", "fr", "de", None, "ru", "es"]
 
@@ -46,7 +47,7 @@ def _store(tmp_path: Path):
     """Articles in six languages (one with none), keywords of every shape: one language, several, an
     orphan, and ties between languages (the dominant one is then the code ascending)."""
     path = tmp_path / "sig.db"
-    eng = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     rnd = random.Random(11)
     with sessionmaker(bind=eng, future=True)() as s:
