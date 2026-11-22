@@ -33,7 +33,17 @@ const R = new Function("esc", "ooLabelHtml", "window", src)(esc, ooLabelHtml, {}
 const seen = new Set();
 const t = (s) => { seen.add(s); return "T[" + s + "]"; };
 const tf = (s, v) => { seen.add(s); return "T[" + String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m) + "]"; };
-const text = (h) => h.replace(/<[^>]*>/g, "");
+// Tags are dropped by a character walk, not a regex replace (CodeQL reads that as an
+// incomplete sanitizer; the same helper as rewalk_b29_node_test.js). Entities stay as written.
+const text = (h) => {
+  let out = "", inTag = false;
+  for (const ch of String(h)) {
+    if (ch === "<") inTag = true;
+    else if (ch === ">" && inTag) inTag = false;
+    else if (!inTag) out += ch;
+  }
+  return out;
+};
 
 // 1. custody anchor: the caveat in words at full strength, the provider as data, an unknown provider's detail as data
 const local = R.custodyAnchorResultHtml({ provider: "local", detail: "Recorded in the local anchor book…" }, t, tf);
