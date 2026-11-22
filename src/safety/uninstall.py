@@ -122,6 +122,10 @@ unlisted_dirs = []
 def unlisted(e):
     if not isinstance(e, FileNotFoundError): unlisted_dirs.append(getattr(e, "filename", None))   # gone mid-walk: nothing in it
 def unreached(p): unlisted_dirs.append(os.path.dirname(p))   # its folder could be listed, not searched (mode r--)
+def there(p):   # never following a link; one that cannot be looked at is there, and named when it is reached (R798)
+    try: os.lstat(p); return True
+    except (FileNotFoundError, NotADirectoryError): return False
+    except OSError: return True
 # R792 (part B): ANOTHER process holding the database (a second copy of the app, a database tool) keeps the unlinked files alive
 # and can go on committing into them, salt included -- measured on this watcher: a process writing in a loop through it kept
 # the salt in 5 runs of 5. Never waited on and never signalled: a descriptor is kept on each SQLite file of an encrypted
@@ -260,7 +264,9 @@ def roots():
     try: keys += [os.path.join(kd, n) for n in os.listdir(kd) if n.endswith(tuple(only.get("key_suffixes", [])))]
     except FileNotFoundError: pass
     except OSError as e: unlisted(e)
-    return tops + [p for p in dict.fromkeys(keys) if os.path.lexists(p)]
+    return tops + [p for p in dict.fromkeys(keys) if there(p)]
+if wd and not os.path.isdir(wd) and there(wd):
+    rec("could not check the data folder %s: THE ERASE MAY BE INCOMPLETE" % tok(wd))   # there, but not a folder it can look at
 if wd and os.path.isdir(wd):
     seen = wiped = not_overwritten = 0
     for top in roots():
@@ -335,11 +341,11 @@ if sd and os.path.isdir(sd):
     sd_wiped = sd_failed = 0
     for nm in ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
         fp = os.path.join(sd, nm)
-        if os.path.exists(fp):
+        if there(fp):
             if not overwrite(fp, True): sd_failed += 1
             try: os.remove(fp); sd_wiped += 1
             except OSError: pass
-    rec("wiped columnar store %s (%d files, header-only%s)" % (tok(sd), sd_wiped, ", %d not overwritten" % sd_failed if sd_failed else ""))
+    rec("wiped columnar store %s (%d files, header-only%s)" % (tok(sd), sd_wiped, "; %d not overwritten, THE ERASE MAY BE INCOMPLETE" % sd_failed if sd_failed else ""))
 af = plan.get("app_folder")
 if af and os.path.isdir(af):
     shutil.rmtree(af, ignore_errors=True)

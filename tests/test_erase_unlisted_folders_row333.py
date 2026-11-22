@@ -332,3 +332,59 @@ def test_the_watcher_with_a_real_unsearchable_folder(tmp_path):
         if locked.exists():
             locked.chmod(0o700)
     assert "salt pages destroyed" not in text and "THE ERASE MAY BE INCOMPLETE" in text, text
+
+
+def test_a_link_that_loops_in_the_keys_folder_is_no_folder_it_could_not_check(tmp_path):
+    data = tmp_path / "OOS data"
+    (data / "keys").mkdir(parents=True)
+    os.symlink("kloop", data / "keys" / "kloop")
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["unlisted_folders"] == 0, report
+
+
+def test_a_failed_overwrite_never_makes_the_configured_data_folder_again(tmp_path, monkeypatch):
+    """The helpers' own log lines are masked against the erase's data folder too, never through src.paths.data_dir."""
+    other = tmp_path / "configured"
+    monkeypatch.setenv("OO_DATA_DIR", str(other))
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    (data / "stuck.bin").write_bytes(b"x" * 100)
+    real_open = os.open
+
+    def refuse(path, *a, **k):
+        if os.fspath(path).endswith("stuck.bin"):
+            raise PermissionError(13, "Permission denied", os.fspath(path))
+        return real_open(path, *a, **k)
+
+    scope_os(monkeypatch, crypto_erase, open=refuse)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert str(data / "stuck.bin") in report["overwrite_failures"], report
+    assert not other.exists()
+
+
+_PRELUDE_KEYS = _PRELUDE_SEARCH.replace('== "locked"', '== "keys"')
+
+
+def test_the_watcher_names_key_files_in_an_unsearchable_keys_folder_of_a_shared_folder(tmp_path):
+    data = tmp_path / "shared"
+    (data / "keys").mkdir(parents=True)
+    (data / "keys" / "signing_ed25519.pem").write_bytes(b"PRIVATE")
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    only = {"names": ["open_omniscience.db"], "prefixes": [], "suffixes": [], "strip": "^$", "reason": "test",
+            "key_suffixes": ["_ed25519.pem"]}
+    text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "app_only": only, "audit_log": str(tmp_path / "audit.log")},
+                       _PRELUDE_KEYS)
+    assert "salt pages destroyed" not in text and "could not check 1 folder(s)" in text, text
+
+
+def test_the_watcher_names_a_columnar_store_it_could_not_look_into(tmp_path):
+    data = tmp_path / "oo-data"
+    data.mkdir()
+    store = tmp_path / "locked"
+    store.mkdir()
+    (store / "analytics.duckdb").write_bytes(b"D" * 8192)
+    plan = {"wipe_data_dir": str(data), "wipe_store_dir": str(store), "audit_log": str(tmp_path / "audit.log")}
+    text = _watch_with(tmp_path, plan, _PRELUDE_SEARCH)
+    line = next(ln for ln in text.splitlines() if "wiped columnar store" in ln)
+    assert "not overwritten, THE ERASE MAY BE INCOMPLETE" in line, text  # each name it could not look at counts

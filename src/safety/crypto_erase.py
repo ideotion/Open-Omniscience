@@ -34,6 +34,8 @@ erasure it cannot deliver — the real guarantee is the destroyed salt.
 from __future__ import annotations
 
 import contextlib
+import contextvars
+import errno
 import itertools
 import logging
 import os
@@ -102,6 +104,10 @@ _LIMIT_NOTE_UNLISTED = (
 )
 
 
+#: The data folder of the erase running in this context, so the log lines of the helpers it calls are masked against it too.
+_ERASE_ROOT: contextvars.ContextVar[Path | None] = contextvars.ContextVar("_ERASE_ROOT", default=None)
+
+
 def _masked(paths: list[str], root: Path | None = None) -> list[str]:
     """``paths`` for a log line (R734/R736): each as its role (``<data>/.../name``, ``<home>/.../name``, ``.../name``), and the
     whole list withheld when the masking itself fails, never written as given. ``root`` is the data folder of the erase: given,
@@ -109,6 +115,7 @@ def _masked(paths: list[str], root: Path | None = None) -> list[str]:
     try:
         from src.monitoring.path_tokens import tokenise_paths
 
+        root = root if root is not None else _ERASE_ROOT.get()
         data_root = None if root is None else str(root)
         return [tokenise_paths(p, data_root=data_root) for p in paths]
     except Exception:  # noqa: BLE001 - a log line never carries a raw path
@@ -430,8 +437,9 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
 
 
 def _absent(exc: OSError) -> bool:
-    """Whether a failed look at a path says it is not there (rather than that it could not be looked at)."""
-    return isinstance(exc, (FileNotFoundError, NotADirectoryError))
+    """Whether a failed look at a path says it is not there (rather than that it could not be looked at). A link that loops
+    holds nothing to overwrite and is no folder the erase could not check (``Path.exists`` said "not there" too)."""
+    return isinstance(exc, (FileNotFoundError, NotADirectoryError)) or exc.errno == errno.ELOOP
 
 
 def _kind(p: Path, unreached=None) -> str:
@@ -779,6 +787,7 @@ def quick_crypto_erase(
     own = not hold_for_rescrub
     generation = new_hold_generation() if own else hold_generation
     missed: list[str] = []
+    root_token = _ERASE_ROOT.set(None)  # the erase sets its data folder; put back as it was when it ends
     try:
         report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
         report["files_not_kept"] = len(missed)  # a count: the names are never reported
@@ -786,6 +795,7 @@ def quick_crypto_erase(
             finish_holder_check(report, generation)
         return report
     finally:
+        _ERASE_ROOT.reset(root_token)
         if own:
             rescrub_held(close=True, generation=generation, settle=False)
 
@@ -817,6 +827,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
 
     paths = _resolve(data_dir)
     base: Path = paths["base"]
+    _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
     # drive root, a mount point, a projects folder) is never walked whole or removed: steps 5b and 6 reach only the entries the app
     # owns there (src/safety/data_scope.py, by name, its common names such as "models" excepted), the keys folder keeps whatever is
