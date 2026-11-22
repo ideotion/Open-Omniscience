@@ -9574,8 +9574,9 @@ def run_restore(
         timings.record(f"stage_a:{_name}", _seconds)
 
     if commit:
-        refuse_while_writer_jobs_run()  # before preparing and merging (R659); the callers that stage a backup also ask before staging
+        # The half-migrated ask first: the writer check stops jobs and restarts them only on its own refusal (row 325).
         refuse_half_migrated_store()
+        refuse_while_writer_jobs_run()  # before preparing and merging (R659); the callers that stage a backup also ask before staging
     _abort_point("prepare_staged")
     with timings.stage("prepare_staged"):
         # SPLIT, because the aggregate cannot be acted on. On the field's largest
@@ -9625,8 +9626,8 @@ def run_restore(
 
     _abort_point("snapshot_working_copy")
     if commit:
-        refuse_while_writer_jobs_run()  # again at the copy: a job started while the backup was being prepared (R659)
         refuse_half_migrated_store()
+        refuse_while_writer_jobs_run()  # again at the copy: a job started while the backup was being prepared (R659)
     # The Q701-note trust answer, resolved ONCE per restore (the per-import override
     # if the operator made one for this import, else their first-launch answer) and
     # recorded in `meta` so the import report says which choice produced the result.

@@ -21,7 +21,7 @@ def test_the_journal_has_its_own_sentence_for_it():
     from src.monitoring import storage_events as se
 
     said = se.RUN_REFUSALS["half-migrated"]
-    assert "migration" in said and "did not finish" in said and "could not be read" in said
+    assert "migration" in said and "unfinished" in said and "still running" in said and "unreadable" in said
     assert "held the corpus" not in said and said != se.RUN_REFUSALS["barrier"]
 
 
@@ -63,3 +63,6 @@ def test_both_staging_paths_ask_before_a_byte_is_decrypted_and_before_the_writer
 def test_run_restore_still_asks_before_preparing_and_at_the_working_copy():
     body = python_function_source((ROOT / "src/backup/merge.py").read_text("utf-8"), "run_restore")
     assert body.count("refuse_half_migrated_store()") == 2
+    # In run_restore too, the half-migrated ask comes before the writer check at both points (row 325 review).
+    for at in (body.index("refuse_half_migrated_store()"), body.rindex("refuse_half_migrated_store()")):
+        assert body.index("refuse_while_writer_jobs_run()", at) - at < 200
