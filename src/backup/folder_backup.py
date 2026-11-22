@@ -714,6 +714,18 @@ class SourceChanged(OSError):
     """A restore member is no longer the file that was checked (R779): it was swapped after the look."""
 
 
+def _category_swapped(cat_root: Path, cat_real: str) -> bool:
+    """Whether the category folder is now a link, or (where the system gives folders a stable identity)
+    no longer the folder its resolved path names. A folder that cannot be looked at counts as swapped."""
+    try:
+        st = os.lstat(cat_root)
+        if is_link_stat(st):
+            return True
+        return os.name != "nt" and not os.path.samestat(st, os.stat(cat_real))
+    except OSError:
+        return True
+
+
 def _category_members(cat_root: Path) -> tuple[list[tuple[Path, os.stat_result]], int]:
     """The regular files a restore may copy from one category folder, each with the ``lstat`` it was
     checked by, sorted, and the number of links met on the way (R779).
@@ -821,13 +833,24 @@ def restore_folder_backup(
         # picked may itself be a link (their choice), and so may a live data folder they moved.
         cat_real = os.path.realpath(cat_root)
         dest_real = os.path.realpath(dest_dir)
+        # The folder measured must be the folder that was checked: a drive that swaps the category
+        # folder for a link between the check above and the line before would otherwise have the
+        # containment measured from the link's target. Checked again after the walk, and the category
+        # folder is part of every member's way below (the check-then-open window stays narrowed, not closed).
+        if _category_swapped(cat_root, cat_real):
+            refused_categories.append(cat)
+            continue
         members, linked_here = _category_members(cat_root)
+        if _category_swapped(cat_root, cat_real):
+            refused_categories.append(cat)
+            continue
         refused_symlinks += linked_here
         for p, seen in members:
             rel = p.relative_to(cat_root)
-            # Belt and braces: whatever the walk handed back, no part of the way from the category
-            # folder to the member may be a link, and its real path may not leave the folder.
-            if link_on_the_way(cat_root, rel.parent) or not stays_inside(p, cat_real):
+            # Belt and braces: whatever the walk handed back, no part of the way from the BACKUP folder
+            # to the member -- the category folder included -- may be a link, and its real path may not
+            # leave the folder.
+            if link_on_the_way(src, Path(cat) / rel.parent) or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
             dst = dest_dir / rel

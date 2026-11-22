@@ -247,3 +247,27 @@ def test_which_windows_reparse_points_count_as_links(attrs, tag, linked):
     if tag is not None:
         st.st_reparse_tag = tag
     assert is_link_stat(st) is linked  # type: ignore[arg-type]
+
+
+@_posix
+def test_a_category_folder_swapped_for_a_link_after_its_check_restores_nothing(tmp_path, monkeypatch):
+    # Security read: the category folder is checked, then a drive swaps it for a link before the
+    # containment is measured. The measure must notice the folder is not the one that was checked.
+    from src.backup import folder_backup
+    from tests.os_scope import scope_os_path
+
+    _touch(tmp_path / "elsewhere" / "private.txt", b"not yours")
+    backup = tmp_path / "backup"
+    _touch(backup / "wiki_dumps" / "a.bz2", b"a")
+    real = os.path.realpath
+
+    def swapping(path, *a, **k):
+        if Path(path) == backup / "wiki_dumps" and (backup / "wiki_dumps").is_dir() and not (backup / "wiki_dumps").is_symlink():
+            shutil.rmtree(backup / "wiki_dumps")
+            os.symlink(tmp_path / "elsewhere", backup / "wiki_dumps")
+        return real(path, *a, **k)
+
+    scope_os_path(monkeypatch, folder_backup, realpath=swapping)
+    tgt = _targets(tmp_path)
+    res = restore_folder_backup(backup, targets=tgt)
+    assert _files(tgt["wiki_dumps"]) == [] and res["refused_categories"] == ["wiki_dumps"] and res["incomplete"] is True
