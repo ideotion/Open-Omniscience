@@ -282,7 +282,9 @@ def test_space_that_cannot_be_measured_is_never_called_reclaimed(monkeypatch, tm
     def _unreadable(_p):
         raise PermissionError("not allowed")
 
-    monkeypatch.setattr(maintenance.os.path, "getsize", _unreadable)
+    from tests.os_scope import scope_os_path
+
+    scope_os_path(monkeypatch, maintenance, getsize=_unreadable)
     disk = maintenance._on_disk_bytes(str(tmp_path / "x.db"))
     assert disk == {"file_bytes": None, "log_bytes": None, "total_bytes": None}
     acc = maintenance._space_account(disk, disk, freed_bytes=4096, journal_mode="wal")
