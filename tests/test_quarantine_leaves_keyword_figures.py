@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, func, text
+from sqlalchemy import func, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -31,6 +31,7 @@ from src.analytics.store import (
 )
 from src.database.derived_views import ensure_derived_views
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 WORD = "zanzibarite"
 BODY = (
@@ -42,8 +43,8 @@ BODY = (
 @pytest.fixture()
 def db(monkeypatch):
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")  # the live path; the rollup has its own tests below
-    engine = create_engine(
-        "sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(engine)
     ensure_derived_views(engine)
@@ -535,12 +536,12 @@ def test_the_upgrade_on_a_store_with_no_quarantined_article_only_writes_its_mark
 
 def test_a_failed_recompute_keeps_the_counters_estimated_and_the_next_start_finishes_it(db, monkeypatch):
     from src.analytics.counter_deferral import is_deferral_open
-    from src.analytics.store import counter_envelope
     from src.analytics.quarantine_transition import (
         R101_TRANSITION_KEY,
         heal_r101_transition,
         prepare_r101_transition,
     )
+    from src.analytics.store import counter_envelope
     from src.database.models import DerivedMeta
 
     _old_store(db)

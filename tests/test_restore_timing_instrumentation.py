@@ -19,11 +19,11 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.backup.merge import merge_corpus
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -35,7 +35,7 @@ _BATCH_META = {
 
 
 def _build_corpus(path: Path, sources: list[dict], articles: list[dict]) -> None:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
     with sessionmaker(bind=engine, future=True)() as s:

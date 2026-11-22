@@ -23,7 +23,7 @@ import time
 import uuid
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.api import database as dbmod
@@ -31,6 +31,7 @@ from src.api import library as libmod
 from src.api import served_cache
 from src.database.models import Article, Base, Source
 from src.database.session import SessionLocal, engine, init_db
+from tests._app_engine import app_sqlite_engine
 
 
 def setup_module(_module):
@@ -289,7 +290,7 @@ def test_a_session_on_another_database_is_never_served_this_ones_counts(tmp_path
     """The bind gate: a process-lifetime singleton must not answer for a database
     it was not built from."""
     _poll()
-    other = create_engine(f"sqlite:///{tmp_path / 'other.db'}")
+    other = app_sqlite_engine(tmp_path / 'other.db')
     Base.metadata.create_all(other)
     other_session = sessionmaker(bind=other)()
     try:

@@ -17,6 +17,7 @@ import yaml
 from src.catalog import qualification_merge as qm
 from src.catalog import qualification_overlay as qo
 from src.utils import safe_yaml
+from tests._app_engine import app_sqlite_engine
 
 _LOADERS = [pytest.param(yaml.SafeLoader, id="pure")]
 if getattr(yaml, "CSafeLoader", None) is not None:
@@ -110,12 +111,11 @@ def test_a_broken_overlay_is_still_an_empty_overlay_not_a_crash(tmp_path):
 @pytest.mark.parametrize("cls", _LOADERS)
 def test_the_status_read_parses_the_overlay_once_and_reports_the_same_header(cls, overlay_path, monkeypatch):
     # Before: load_overlay parsed the file and the header read parsed it again (about 3.9 s for 5,580 rows on the pure loader).
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     used = _spy(monkeypatch, cls)
@@ -127,12 +127,11 @@ def test_the_status_read_parses_the_overlay_once_and_reports_the_same_header(cls
 
 
 def test_the_status_header_of_an_absent_or_broken_overlay_is_unchanged(tmp_path):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     absent = qo.overlay_status(session, path=tmp_path / "nope.yml")

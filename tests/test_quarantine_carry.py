@@ -16,6 +16,7 @@ import sqlite3
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.test_derived_carry import _backup, _merge_only, _scalar, _variant
 
 
@@ -62,14 +63,12 @@ def test_the_carry_delta_reads_the_quarantine_index_not_the_article_rows():
     walk its overflow pages (the column was added by ALTER, so it sits after ``content``)."""
     import inspect
 
-    from sqlalchemy import create_engine
-
     from src.backup import merge
     from src.database.models import Base
 
     # The plan below is of the statement merge.py actually runs: its filter text is pinned here first.
     assert " AND w.new NOT IN (SELECT id FROM main.articles WHERE quarantined IS 1)" in inspect.getsource(merge)
-    eng = create_engine("sqlite://", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     with eng.connect() as c:
         c.exec_driver_sql("CREATE TEMP TABLE carry_win (old INTEGER, new INTEGER, kw INTEGER)")

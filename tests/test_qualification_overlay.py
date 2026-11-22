@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import (
@@ -28,13 +27,14 @@ from src.catalog.qualification import (
 )
 from src.catalog.qualification_overlay import apply_overlay, load_overlay, log_outlet_holds
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

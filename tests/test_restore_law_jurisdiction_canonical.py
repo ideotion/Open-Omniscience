@@ -44,7 +44,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup import alternates  # noqa: E402
@@ -58,6 +57,7 @@ from src.backup.merge import merge_corpus  # noqa: E402
 from src.backup.provenance import ALTERNATE_SPECS  # noqa: E402
 from src.database import country_form as cf  # noqa: E402
 from src.database.models import Base  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _META = {"artifact_kind": "oo-backup-3", "origin_fingerprint": "machine-B", "app_version": "0.5.0", "alembic_rev": "head", "manifest": None}
 _URL = "https://law.example/canonical"
@@ -67,7 +67,7 @@ _URL = "https://law.example/canonical"
 def template(tmp_path_factory) -> Path:
     """The schema once; each case copies the file (building it per case costs 0.4 s)."""
     path = tmp_path_factory.mktemp("law-template") / "template.db"
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
     return path
@@ -409,7 +409,7 @@ def _resolved(path: Path, jurisdiction: str | None, summaries: list[tuple[int, s
     identity = {"document_url": _URL, "revision_content_hash": "hash-a", "model": "m1"}
     if jurisdiction is not None:
         identity["jurisdiction"] = jurisdiction
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with sessionmaker(bind=engine, future=True)() as session:
             return alternates._local_row_id(session, "law_revision_summaries", identity)
@@ -471,7 +471,7 @@ def test_the_merge_and_the_app_resolve_an_alternate_to_the_same_summary(monkeypa
     monkeypatch.setattr(cf, "store_form", lambda: "alpha3")
     summaries = [(i, "m1", f"text-{i}") for i in range(len(revisions))]
     tgt = _store(template, tmp_path / "tgt.db", "alpha3", held, revisions, summaries=summaries)
-    engine = create_engine(f"sqlite:///{tgt}", future=True)
+    engine = app_sqlite_engine(tgt, future=True)
     try:
         with sessionmaker(bind=engine, future=True)() as session:
             app_row = alternates._local_row_id(
@@ -485,7 +485,7 @@ def test_the_merge_and_the_app_resolve_an_alternate_to_the_same_summary(monkeypa
 
 def _app_side_row(path: Path, jurisdiction: str):
     """The summary row ``alternates._local_row_id`` (the app, later, showing or swapping an alternate) points at."""
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with sessionmaker(bind=engine, future=True)() as session:
             return alternates._local_row_id(
@@ -558,7 +558,7 @@ def _where_alternates_went(path: Path, origin: str = "machine-Z") -> list[tuple[
     finally:
         con.close()
     out = []
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with sessionmaker(bind=engine, future=True)() as session:
             for identity, local_row_id in rows:

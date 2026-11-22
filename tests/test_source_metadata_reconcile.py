@@ -17,15 +17,15 @@ reverting that would be a data-loss bug wearing a maintenance task's clothes.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
 from src.ingest.seed_sources import reconcile_source_metadata, seed_sources
+from tests._app_engine import app_sqlite_engine
 
 
 def _session():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

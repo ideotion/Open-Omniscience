@@ -33,6 +33,7 @@ from src.backup.merge import (
     _save_reindex_cursor,
     clear_reindex_cursor,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -186,13 +187,12 @@ def test_the_backlog_reads_a_REAL_pending_batch_off_the_REAL_schema(monkeypatch)
     """
     from contextlib import contextmanager
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.backup import merge as M
     from src.database.models import Base, MergeBatch, MergedRow
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     session = Session(engine)
     # one batch merged and awaiting re-index, one already re-indexed

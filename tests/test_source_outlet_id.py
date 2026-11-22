@@ -13,7 +13,7 @@ import sqlite3
 import threading
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from src.database.models import SOURCE_OUTLET_ID_TRIGGERS, Base
 from src.database.source_identity import (
@@ -21,11 +21,12 @@ from src.database.source_identity import (
     ensure_source_outlet_id,
     install_source_outlet_id,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.test_source_composite_key import _legacy_engine, _seed
 
 
 def _engine(tmp_path, name="o.db"):
-    engine = create_engine(f"sqlite:///{tmp_path / name}", future=True, connect_args={"timeout": 30})
+    engine = app_sqlite_engine(tmp_path / name, future=True, connect_args={"timeout": 30})
 
     @event.listens_for(engine, "connect")
     def _fk_on(dbapi, _rec):
@@ -168,7 +169,7 @@ def test_a_store_that_never_had_the_column_gets_it_and_a_correct_value_for_every
     raw.executemany("INSERT INTO sources (id, name, domain) VALUES (?,?,?)", [(1, "a", "a.com"), (2, "b", "a.com"), (3, "c", "c.com")])
     raw.commit()
     raw.close()
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         assert ensure_source_outlet_id(engine) == {"added": True, "triggers": 3, "healed": 3}
         with engine.connect() as conn:
@@ -178,7 +179,7 @@ def test_a_store_that_never_had_the_column_gets_it_and_a_correct_value_for_every
 
 
 def test_no_sources_table_is_a_named_non_event(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'empty.db', future=True)
     try:
         with engine.connect() as conn:
             assert install_source_outlet_id(conn) == {"state": "absent"}
@@ -356,7 +357,7 @@ def test_the_real_restore_merge_gives_every_restored_source_a_right_outlet_id(tm
         s.close()
         eng.dispose()
     merge_corpus(staged, working, meta)
-    eng = create_engine(f"sqlite:///{working}", future=True)
+    eng = app_sqlite_engine(working, future=True)
     try:
         with eng.connect() as conn:
             assert conn.exec_driver_sql("SELECT COUNT(*) FROM sources").scalar_one() == 4

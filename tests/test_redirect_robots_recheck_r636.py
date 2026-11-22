@@ -42,7 +42,6 @@ from urllib.parse import urlsplit
 import pytest
 import requests
 from requests.adapters import BaseAdapter
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -61,6 +60,7 @@ from src.ingest.pipeline import IngestResult, ingest_url
 from src.monitoring import preflight
 from src.monitoring.feed_preflight import _check_host_robots
 from src.monitoring.secret_scrub import record_text
+from tests._app_engine import app_sqlite_engine
 
 A = "https://a.example"
 H = "http://a.example"
@@ -838,7 +838,7 @@ def test_a_stop_pressed_while_a_ping_hops_robots_is_read_is_skipped_offline_and_
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Good", domain="good.example", language="en", enabled=True))

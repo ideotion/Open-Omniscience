@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, FeedFetchState, Source
@@ -22,11 +22,12 @@ from src.database.source_identity import (
     source_identity_state,
     upgrade_sources_to_composite_key,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _legacy_engine(tmp_path):
     """A store as it was before this slice: sources UNIQUE(domain), no feed_key, foreign keys ON."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'legacy.db', future=True)
 
     @event.listens_for(engine, "connect")
     def _fk_on(dbapi, _rec):  # the app's own pragma
@@ -210,7 +211,7 @@ def test_a_naive_drop_really_does_cascade_the_children():
 
 
 def test_a_fresh_store_is_born_composite():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     with engine.connect() as c:
         assert source_identity_state(c) == "composite"
@@ -241,7 +242,7 @@ def test_the_alembic_revision_takes_the_same_path_on_a_staged_copy(tmp_path):
     from src.database.migrate import _head_revision
 
     assert upgrade_database_file(tmp_path / "legacy.db") == _head_revision()  # the head, never a pinned id a new migration breaks
-    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'legacy.db', future=True)
     try:
         assert _counts(engine) == before
         with engine.connect() as c:
@@ -283,7 +284,7 @@ def test_an_older_build_refuses_a_feed_keyed_backup_by_a_named_error(tmp_path, m
     from src.backup.merge import MergeError, prepare_staged_corpus
     from src.database import migrate
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'corpus.db', future=True)
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
@@ -316,7 +317,7 @@ def test_the_alembic_path_commits_an_earlier_revisions_open_transaction_and_stil
 def test_a_refused_rebuild_still_leaves_the_feed_key_column_the_model_reads(tmp_path):
     """Opus read, finding 5: the additive column and backfill run before any refusal, so a store whose rebuild is
     refused keeps answering queries on ``sources`` (one feed per domain) instead of failing on a missing column."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'odd.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'odd.db', future=True)
     with engine.begin() as conn:
         # no UNIQUE key on the domain at all: ``unreadable``, which the rebuild refuses
         conn.exec_driver_sql("CREATE TABLE sources (id INTEGER PRIMARY KEY, name VARCHAR(255), domain VARCHAR(255), rss_url VARCHAR(500))")

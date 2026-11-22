@@ -18,18 +18,18 @@ import pytest
 
 pytest.importorskip("duckdb")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.analytics import columnar, rollup_marker, rollup_serve  # noqa: E402
 from src.database.models import Base  # noqa: E402
 from src.monitoring.rollup_benchmark import run_rollup_benchmark  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def empty_session():
     """A real, empty corpus: the guard tests must fail on the patched builder (``never``), not on a missing session."""
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

@@ -13,7 +13,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.csv_io import (
@@ -23,11 +22,12 @@ from src.catalog.csv_io import (
     write_csv,
 )
 from src.database.models import Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -103,8 +103,8 @@ def test_write_csv_has_all_columns():
 def test_catalog_api_export_import_roundtrip(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'cat.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'cat.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

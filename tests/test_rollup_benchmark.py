@@ -15,7 +15,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
@@ -23,6 +22,7 @@ from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
 from src.monitoring.rollup_benchmark import run_rollup_benchmark
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -52,7 +52,7 @@ def _guards_pass(monkeypatch):
 
 @pytest.fixture()
 def session():
-    e = create_engine("sqlite:///:memory:", future=True,
+    e = app_sqlite_engine(":memory:", future=True,
                       connect_args={"check_same_thread": False})
     Base.metadata.create_all(e)
     s = sessionmaker(bind=e, future=True)()
@@ -90,6 +90,7 @@ def test_benchmark_shape_parity_and_windows(session):
 
 def test_benchmark_is_read_only(session):
     from sqlalchemy import func, text
+
     from src.database.models import Keyword
 
     arts = session.query(func.count(Article.id)).scalar()

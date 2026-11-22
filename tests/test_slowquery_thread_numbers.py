@@ -14,9 +14,10 @@ from __future__ import annotations
 import time
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from src.monitoring import slowquery, thread_usage
+from tests._app_engine import app_sqlite_engine
 
 RECORD_KEYS = {"at", "duration_ms", "sql", "cpu_ms", "nvcsw", "nivcsw", "majflt", "inblock"}
 
@@ -35,7 +36,7 @@ def engine(tmp_path, monkeypatch):
     monkeypatch.setattr(slowquery, "_installed", False)
     slowquery._RING.clear()
     slowquery._AGG.clear()
-    eng = create_engine(f"sqlite:///{tmp_path / 'slow.db'}")
+    eng = app_sqlite_engine(tmp_path / 'slow.db')
 
     @event.listens_for(eng, "connect")
     def _functions(dbapi, _record):

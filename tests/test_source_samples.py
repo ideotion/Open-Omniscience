@@ -11,16 +11,16 @@ import json
 import zipfile
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.api.diagnostics.source_samples import _SECRETISH, build_sample_zip
 from src.database.models import Article, Base, FeedFetchState, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng, tables=[Source.__table__, Article.__table__, SourceQualificationAttempt.__table__,
                                           FeedFetchState.__table__])
     with Session(eng) as s:

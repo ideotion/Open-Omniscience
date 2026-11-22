@@ -18,7 +18,6 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.catalog.qualification import (
@@ -48,6 +47,7 @@ from src.database.models import (
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.scheduler.runner import select_sources
 from src.scheduler.settings import SchedulerSettings
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -62,8 +62,8 @@ def _a_machine_above_the_floor(monkeypatch):
 
 
 def _engine_session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -137,7 +137,7 @@ def _make_legacy_sqlite_db(path: str) -> None:
 def test_ensure_source_qualification_columns_adds_schema_and_backfills(tmp_path):
     db_path = str(tmp_path / "legacy.db")
     _make_legacy_sqlite_db(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     added = ensure_source_qualification_columns(engine)
     assert set(added) == {
@@ -166,7 +166,7 @@ def test_ensure_source_qualification_columns_adds_schema_and_backfills(tmp_path)
 def test_ensure_source_qualification_columns_idempotent(tmp_path):
     db_path = str(tmp_path / "legacy2.db")
     _make_legacy_sqlite_db(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     first = ensure_source_qualification_columns(engine)
     assert first  # columns were added the first time
@@ -260,7 +260,7 @@ def test_a_dropped_status_column_launders_a_judged_source_BEFORE_THE_FIX(tmp_pat
     """
     db_path = str(tmp_path / "prefix.db")
     _make_legacy_sqlite_db_with_attempts(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "ALTER TABLE sources ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'unqualified'"
@@ -294,7 +294,7 @@ def test_ensure_source_qualification_columns_restores_a_judged_qualified_source_
     as freshly re-checked today."""
     db_path = str(tmp_path / "wire.db")
     _make_legacy_sqlite_db_with_attempts(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     ensure_source_qualification_columns(engine)
 
@@ -317,7 +317,7 @@ def test_ensure_source_qualification_columns_restores_a_judged_disqualified_sour
     No qualified_at/criteria_version stamp survives (evaluate_and_stamp's own rule)."""
     db_path = str(tmp_path / "bad.db")
     _make_legacy_sqlite_db_with_attempts(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     ensure_source_qualification_columns(engine)
 
@@ -337,7 +337,7 @@ def test_ensure_source_qualification_columns_never_judged_with_articles_still_pr
     qualification pass"."""
     db_path = str(tmp_path / "guess.db")
     _make_legacy_sqlite_db_with_attempts(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     ensure_source_qualification_columns(engine)
 
@@ -354,7 +354,7 @@ def test_ensure_source_qualification_columns_never_judged_no_articles_stays_unqu
     """No judging attempt AND no local article: stays honestly unqualified, unchanged."""
     db_path = str(tmp_path / "neither.db")
     _make_legacy_sqlite_db_with_attempts(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     ensure_source_qualification_columns(engine)
 
@@ -368,7 +368,7 @@ def test_ensure_source_qualification_columns_never_judged_no_articles_stays_unqu
 def test_ensure_source_qualification_columns_history_restore_is_idempotent(tmp_path):
     db_path = str(tmp_path / "idem.db")
     _make_legacy_sqlite_db_with_attempts(db_path)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
 
     first = ensure_source_qualification_columns(engine)
     assert first

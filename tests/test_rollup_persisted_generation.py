@@ -14,13 +14,13 @@ guarded engine and the real refresh over an in-memory store.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, rollup_serve
 from src.analytics.extract import BaselineExtractor
 from src.database import library_generation as gen
 from src.database.models import Base, Source
+from tests._app_engine import app_sqlite_engine
 from tests.test_keyword_daily_refresh import _fresh_full, _index
 from tests.test_rollup_generation_check import _World
 
@@ -46,7 +46,7 @@ def world(tmp_path):
 
 @pytest.fixture()
 def ctx():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))

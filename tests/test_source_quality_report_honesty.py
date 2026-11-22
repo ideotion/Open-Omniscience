@@ -36,6 +36,7 @@ from src.analytics.source_quality import (  # noqa: E402
     build_observed,
     pathology_rate_by_source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _outlier(article_id: int, source_id: int, *, pathological: bool) -> dict:
@@ -176,13 +177,12 @@ def test_quarantined_articles_do_not_count_toward_their_sources_verdict(tmp_path
     item, and the source gate then counted that same item toward the source's extraction
     verdict AND toward the cohort baseline. Fixing the filter is what makes showing both
     gates in one panel honest."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.analytics.source_quality import collect_article_stats
     from src.database.models import Article, Base, Source
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'c.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     src = Source(name="S", domain="s.example")
@@ -299,13 +299,12 @@ def test_enrichment_is_not_fabricated_when_the_control_found_nothing() -> None:
 def test_the_cheap_signal_selector_and_the_pre_label_agree(tmp_path) -> None:
     """They must fire on the same articles, or the enrichment figure compares a selector
     against a label that means something else. Shared constants, pinned behaviourally."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.analytics.source_quality import _pre_label, select_cheap_signals
     from src.database.models import Article, ArticleLink, Base, Source
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'c.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     src = Source(name="S", domain="s.example")

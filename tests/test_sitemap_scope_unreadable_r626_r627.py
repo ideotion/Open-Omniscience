@@ -30,7 +30,6 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED
@@ -40,6 +39,7 @@ from src.ingest.crawl import CrawlConfig, _registrable_host, crawl_source
 from src.ingest.fetch_verdict import failure_url
 from src.ingest.sitemap import discover_sitemap_urls, sitemap_trial_ingest
 from src.utils.url_utils import canonicalize_url
+from tests._app_engine import app_sqlite_engine
 
 _EVIL = "evil.example"
 
@@ -113,7 +113,7 @@ def _index(*children: str) -> str:
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Good", domain="good.example", language="en", rss_url=None, enabled=True, status=STATUS_QUALIFIED))
@@ -362,7 +362,7 @@ def test_a_sitemap_index_follows_a_child_written_in_the_other_form(base, child):
 
 @pytest.fixture()
 def idn_db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

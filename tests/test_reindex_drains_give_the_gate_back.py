@@ -24,7 +24,6 @@ import types
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -35,12 +34,13 @@ from src.analytics.reindex_job import ReindexJobManager
 from src.analytics.store import reindex_all_batch
 from src.backup import merge as merge_mod
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def world(tmp_path):
     """Seven articles in a shared in-memory store (the job's own thread sees them) and a clock that moves 5 s per indexed article."""
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, future=True, autoflush=False)
     with maker() as s:

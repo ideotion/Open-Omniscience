@@ -11,18 +11,18 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
 from src.database.models import Base
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 's.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 's.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -204,8 +204,8 @@ def test_list_and_get_source_article_count_avoid_full_article_load(tmp_path):
 
     from src.database.models import Article, Source
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'article_count.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'article_count.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

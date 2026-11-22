@@ -76,12 +76,13 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from src.backup.merge import swap_in_corpus
 from src.database import library_generation as gen
 from src.database import repair
 from src.database.writer import write_gate_waiters, write_lock
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 #: The probe's busy timeout in the forced cases (production: 30 s). The property is the ORDER around it, not the figure.
@@ -114,7 +115,7 @@ class _World:
             return sqlite3.connect(str(self.live), check_same_thread=False)
 
         # A file URL: the pool is a QueuePool, as the app's is (``test_library_generation._engine``).
-        self.engine = create_engine(f"sqlite:///{self.live}", creator=gen.guarded_creator(_open))
+        self.engine = app_sqlite_engine(self.live, creator=gen.guarded_creator(_open))
         gen.attach(self.engine)
         self.working = tmp_path / "working.db"
         self.working.write_bytes(b"a copy the swap never reaches")

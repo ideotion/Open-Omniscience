@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import textwrap
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics.quarantine_job import QuarantineJobManager, default_quarantine_candidates_batch
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _NAV_SOUP_BODY = (
     "News Latest Irish News Mirror Bingo Soccer Golf Rugby Union Sport Business Politics "
@@ -47,8 +47,8 @@ _REAL_PROSE_BODY = (
 
 
 def _env(tmp_path):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)
@@ -410,9 +410,8 @@ def test_the_work_fn_doubles_in_this_file_match_the_real_batch_signature():
     ``state == "error"``, i.e. a failure that looks like a job bug rather than a stale test.
     That is exactly how adding ``index_page_tiers`` first presented. Pin the doubles to the
     real keyword-only parameter set so the next addition reddens HERE, by name."""
-    import inspect
-
     import ast
+    import inspect
 
     real = {
         name for name, p in

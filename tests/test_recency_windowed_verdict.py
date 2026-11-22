@@ -26,7 +26,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.analytics.source_audit import (  # noqa: E402
@@ -36,6 +35,7 @@ from src.analytics.source_audit import (  # noqa: E402
 )
 from src.analytics.source_quality import collect_article_stats  # noqa: E402
 from src.database.models import Article, ArticleLink, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
 OLD = NOW - timedelta(days=400)     # far outside any window
@@ -44,7 +44,7 @@ RECENT = NOW - timedelta(days=10)   # inside a 90-day window
 
 @pytest.fixture
 def db(tmp_path) -> Session:
-    engine = create_engine(f"sqlite:///{tmp_path / 'rc06.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'rc06.db', future=True)
     Base.metadata.create_all(engine)
     return Session(engine, future=True)
 

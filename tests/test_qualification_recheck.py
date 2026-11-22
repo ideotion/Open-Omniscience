@@ -19,7 +19,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import (
@@ -36,6 +35,7 @@ from src.catalog.qualification import (
     select_due_qualified,
 )
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 LONG_AGO = NOW - timedelta(days=400)
@@ -43,7 +43,7 @@ LONG_AGO = NOW - timedelta(days=400)
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

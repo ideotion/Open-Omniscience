@@ -32,7 +32,6 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.pool import QueuePool
 
 from src.database import connect as connect_mod
@@ -40,6 +39,7 @@ from src.database import library_generation as lg
 from src.database import session as session_mod
 from src.database import shutdown_checkpoint as sc
 from src.monitoring import forensics, storage_events
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import CheckpointTimeoutWatch, call_on_thread
 
 _KEY = "a throwaway passphrase for the shutdown write-back test"
@@ -114,8 +114,8 @@ def store(request, tmp_path, monkeypatch):
         conn.commit()
         conn.close()
         assert connect_mod.is_encrypted_file(db) is False
-    eng = create_engine(
-        f"sqlite:///{db}",
+    eng = app_sqlite_engine(
+        db,
         creator=lambda: connect_mod.connect(db, check_same_thread=False),
         poolclass=QueuePool,
         pool_size=4,

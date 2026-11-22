@@ -37,7 +37,7 @@ import types
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 import src.analytics.store as store_mod
@@ -52,6 +52,7 @@ from src.database.writer import (
     _on_orm_execute,
     write_gate,
 )
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # the gate says who is waiting                                                #
@@ -160,7 +161,7 @@ def test_a_queued_writer_cannot_end_a_batch_younger_than_the_minimum_hold(monkey
 def _corpus(*, gated: bool):
     """Seven articles in an in-memory store. ``gated`` attaches the REAL write-gate handlers to the session factory, as
     ``session.py`` does for the app's: ``hold_write_window`` then really takes the gate and the commit really gives it back."""
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, future=True)
     if gated:

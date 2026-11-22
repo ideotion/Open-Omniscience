@@ -28,7 +28,6 @@ import time
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, map_serve, rollup_serve, serve_gate
@@ -36,6 +35,7 @@ from src.analytics.corpus_epoch import bump_corpus_epoch, get_corpus_epoch
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -45,8 +45,8 @@ _WIDE = 100_000  # a window covering the whole fixture (days)
 
 
 def _mk_sessionmaker(tmp_path, name: str):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / name}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / name, future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)

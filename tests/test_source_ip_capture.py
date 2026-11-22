@@ -14,12 +14,13 @@ from datetime import UTC, datetime
 
 import pytest
 import requests
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.maintenance import ensure_article_ip_columns
 from src.database.models import Article, Base, Source
 from src.ingest import EthicalFetcher
+from tests._app_engine import app_sqlite_engine
 
 
 # --- fake live-socket plumbing (no real network) --------------------------- #
@@ -105,8 +106,8 @@ def test_injected_test_session_captures_nothing():
 # --- the columns persist + self-heal --------------------------------------- #
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -136,7 +137,7 @@ def test_ip_columns_round_trip(db):
 
 
 def test_self_heal_adds_ip_columns_no_backfill():
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     with eng.begin() as c:
         c.execute(text("CREATE TABLE articles (id INTEGER PRIMARY KEY, hash VARCHAR(64))"))
         c.execute(text("INSERT INTO articles (id, hash) VALUES (1, 'h')"))
