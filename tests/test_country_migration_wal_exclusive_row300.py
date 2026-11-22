@@ -324,52 +324,60 @@ def test_a_crash_left_wal_is_taken_and_its_rows_are_kept(tmp_path, leg):
         con.close()
 
 
+#: What the audit hook below records: the paths watched, whether the held window is open, and the opens seen inside it.
+_WATCH: dict = {"live": set(), "held": False, "hits": []}
+
+
+def _audit_open(event: str, args: tuple) -> None:
+    """Observes every ``open`` audit event (``builtins.open``, ``io.open``, ``os.open``) of the process without replacing
+    anything (R351: no os function is swapped for every caller). Inert outside the held window of the one test using it."""
+    if event != "open" or not _WATCH["held"] or not args:
+        return
+    p = args[0]
+    if isinstance(p, (str, bytes, os.PathLike)):
+        with contextlib.suppress(Exception):
+            if os.path.realpath(os.fsdecode(p)) in _WATCH["live"]:
+                _WATCH["hits"].append(os.fsdecode(p))
+
+
+_AUDIT_ADDED = [False]
+
+
 def test_nothing_in_python_reopens_the_live_file_while_it_is_held(tmp_path, monkeypatch):
     """POSIX file locks belong to the process: closing ANY descriptor on the store drops the lock SQLite took.
 
     Measured (security read 1, row 300): a Python open()/close() of the live file after take_exclusive silently let
     another process write, and its committed row was lost. Nothing in migrate() does that today; this pins it, so a
     future helper that sniffs the header (is_encrypted_file, a size read, a checksum) inside the held window fails here.
+    SQLite's own opens are in C and raise no audit event; every Python route to the file does.
     """
-    import builtins
-    import io
-
     from src.backup import country_migration as cm
     from tests.test_country_migration import _new_store
 
     db = _new_store(tmp_path / "s.db", articles=30)
     with contextlib.closing(sqlite3.connect(db)) as c:
         assert c.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
-    live = {os.path.realpath(db)}
-    held = [False]
-    hits: list[str] = []
-    real_os_open, real_open = os.open, builtins.open
-
-    def _note(p) -> None:
-        if not held[0] or not isinstance(p, (str, bytes, os.PathLike)):
-            return
-        with contextlib.suppress(Exception):
-            if os.path.realpath(os.fsdecode(p)) in live:
-                hits.append(os.fsdecode(p))
-
-    def _os_open(p, *a, **k):
-        _note(p)
-        return real_os_open(p, *a, **k)
-
-    def _open(p, *a, **k):
-        _note(p)
-        return real_open(p, *a, **k)
-
-    monkeypatch.setattr(os, "open", _os_open)
-    monkeypatch.setattr(builtins, "open", _open)
-    monkeypatch.setattr(io, "open", _open)
+    if not _AUDIT_ADDED[0]:
+        sys.addaudithook(_audit_open)  # cannot be removed; inert while _WATCH["held"] is False
+        _AUDIT_ADDED[0] = True
+    _WATCH.update(live={os.path.realpath(db)}, held=False, hits=[])
     monkeypatch.setattr(cm, "BATCH_ROWIDS", 9)  # several committed windows inside the held span
 
     def _progress(event) -> None:
         if event.get("phase") == "locked":
-            held[0] = True
+            _WATCH["held"] = True
 
-    rep = cm.migrate(db, backup_dir=tmp_path / "bk", progress=_progress)
-    assert held[0], "migrate() no longer reports the 'locked' phase this guard keys on"
+    try:
+        # The hook sees this process's opens: prove it does before trusting its silence.
+        _WATCH["held"] = True
+        with open(db, "rb"):  # noqa: PTH123 - the very route the guard watches for
+            pass
+        assert _WATCH["hits"], "the audit hook saw no open of the live file; the guard below would prove nothing"
+        _WATCH.update(held=False, hits=[])
+        rep = cm.migrate(db, backup_dir=tmp_path / "bk", progress=_progress)
+        saw_lock = _WATCH["held"]
+    finally:
+        _WATCH["held"] = False
+    assert saw_lock, "migrate() no longer reports the 'locked' phase this guard keys on"
     assert rep.state == "done", rep.message
-    assert hits == [], f"Python opened the live store while holding it (drops the POSIX lock): {hits}"
+    assert _WATCH["hits"] == [], f"Python opened the live store while holding it (drops the POSIX lock): {_WATCH['hits']}"
