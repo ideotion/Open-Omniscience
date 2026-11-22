@@ -45,8 +45,8 @@ def test_a_volume_that_links_out_of_the_folder_is_never_read(tmp_path, monkeypat
     import src.backup.stream_backup as sb
 
     opened = []
-    real = sb.stream_key_opens
-    monkeypatch.setattr(sb, "stream_key_opens", lambda p, pw, **kw: opened.append(p) or real(p, pw, **kw))
+    real = sb.stream_key_opens_or_digest  # the probe's key check and checksum are one read since row 329
+    monkeypatch.setattr(sb, "stream_key_opens_or_digest", lambda p, pw, **kw: opened.append(p) or real(p, pw, **kw))
     hashed = []
     real_hash = sb._digest_matches  # the stream reader hashes a volume through this since row 312
     monkeypatch.setattr(sb, "_digest_matches", lambda p, want, **kw: hashed.append(p) or real_hash(p, want, **kw))

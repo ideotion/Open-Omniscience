@@ -378,6 +378,7 @@ def test_the_folder_backup_hash_refuses_a_pipe_or_a_device(tmp_path, kind):
         ("src/backup/stream_backup.py", "verify_stream_backup", "_digest_matches("),
         ("src/safety/crypto.py", "decrypt_stream", "_open_sealed("),
         ("src/safety/crypto.py", "stream_key_opens", "_open_sealed("),
+        ("src/safety/crypto.py", "stream_key_opens_or_digest", "_open_sealed("),
     ],
 )
 def test_no_plain_read_remains_at_a_swept_site(module, fn, must):

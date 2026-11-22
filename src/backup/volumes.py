@@ -33,13 +33,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.backup.regular_file import (
-    NotARegularFile,
-    create_new,
-    file_fingerprint,
-    open_regular,
-    replace_with,
-)
+from src.backup.regular_file import NotARegularFile, create_new, open_regular, replace_with
 from src.safety.crypto import decrypt_file, encrypt_stream_to
 
 MANIFEST_NAME = "volumes.json"
@@ -78,16 +72,13 @@ class _HashingReader:
         return b
 
 
-def _sha256_file(path: Path, fingerprint: list[tuple[int, ...]] | None = None) -> str:
+def _sha256_file(path: Path) -> str:
     """The SHA-256 of a regular file. A link, a pipe or a device raises :class:`NotARegularFile` without a byte read
-    (row 312): a volume's name in a backup folder may be any of them. ``fingerprint`` (row 329) receives the
-    :func:`file_fingerprint` of the very handle that was hashed, so a later reader can open that file and no other."""
+    (row 312): a volume's name in a backup folder may be any of them."""
     h = hashlib.sha256()
     with open_regular(path) as f:
         for blk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(blk)
-        if fingerprint is not None:
-            fingerprint.append(file_fingerprint(os.fstat(f.fileno())))
     return h.hexdigest()
 
 
@@ -98,12 +89,12 @@ def _plain_volume_name(name: object) -> bool:
     return isinstance(name, str) and name not in {"", ".", ".."} and not any(c in name for c in "/\\:\0")
 
 
-def _digest_matches(path: Path, expected: object, *, fingerprint: list[tuple[int, ...]] | None = None) -> bool:
+def _digest_matches(path: Path, expected: object) -> bool:
     """Whether ``path`` is a regular file whose SHA-256 is ``expected``. A name that is a link, a pipe or a device is
     a volume that does not match: reported as bad, so a re-copy or parity recovery deals with it, never read (row
-    312). Any other read error raises as before. ``fingerprint``: see :func:`_sha256_file`."""
+    312). Any other read error raises as before."""
     try:
-        return _sha256_file(path, fingerprint) == expected
+        return _sha256_file(path) == expected
     except NotARegularFile:
         return False
 
@@ -258,7 +249,6 @@ def verify_volume_set(
     *,
     progress_cb: Callable[[dict[str, Any]], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-    fingerprints: dict[str, tuple[int, ...]] | None = None,
 ) -> dict[str, Any]:
     """Check every volume's ciphertext SHA-256 against the manifest WITHOUT decrypting.
 
@@ -274,10 +264,7 @@ def verify_volume_set(
     because after a successful write it means "not re-read", never "not written".
 
     ``checked`` counts the volumes actually hashed, so a stopped run cannot be
-    mistaken for a complete one by a reader who only looks at ``bad``.
-
-    ``fingerprints`` (row 329) receives, by name, the fingerprint of the handle each
-    matching volume was hashed through: a restore decrypts that file and no other."""
+    mistaken for a complete one by a reader who only looks at ``bad``."""
     m = load_manifest(out_dir)
     out = Path(out_dir)
     bad: list[str] = []
@@ -295,12 +282,8 @@ def verify_volume_set(
         if not p.exists():
             bad.append(v["name"])
             missing.append(v["name"])
-        else:
-            fp: list[tuple[int, ...]] = []
-            if not _digest_matches(p, v.get("sha256"), fingerprint=fp):
-                bad.append(v["name"])
-            elif fingerprints is not None and fp:
-                fingerprints[v["name"]] = fp[0]
+        elif not _digest_matches(p, v.get("sha256")):
+            bad.append(v["name"])
         checked += 1
         if progress_cb is not None:
             progress_cb(
@@ -326,30 +309,6 @@ def require_unique_volumes(names: Any) -> None:
         if key in seen:
             raise VolumeError(f"the volume manifest lists the volume {n} more than once; refusing to restore from it")
         seen.add(key)
-
-
-_NEVER_CHECKED = (-1, -1, -1, -1, -1)  # no file's fingerprint: a volume no check hashed is never read
-
-
-def checked_volume(fingerprints: dict[str, tuple[int, ...]], name: str) -> tuple[int, ...]:
-    """The fingerprint a restore decrypts volume ``name`` against (row 329): the handle the checksum pass hashed it
-    through, or one no file has, so a volume that pass never matched is refused rather than read unchecked."""
-    return fingerprints.get(name, _NEVER_CHECKED)
-
-
-def fingerprint_rebuilt_volumes(
-    m: dict[str, Any], out: Path, names: list[str], fingerprints: dict[str, tuple[int, ...]]
-) -> None:
-    """Hash each volume parity just rebuilt, recording the handle it was hashed through (row 329).
-
-    The rebuilt file sits in the backup's folder, which anyone may write to, so it is checked like any other volume
-    before it is read: its bytes must be the manifest's, and the restore then decrypts that file and no other."""
-    want = {str((v or {}).get("name") or ""): (v or {}).get("sha256") for v in m.get("volumes") or []}
-    for name in names:
-        fp: list[tuple[int, ...]] = []
-        if not _digest_matches(out / name, want.get(name), fingerprint=fp) or not fp:
-            raise VolumeError(f"the volume {name} changed after parity rebuilt it; refusing to read it")
-        fingerprints[name] = fp[0]
 
 
 def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str]) -> dict[str, list[str]]:
@@ -450,8 +409,7 @@ def read_volume_set(
     declared = m.get("plaintext_bytes")
     if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
         raise VolumeError("the volume manifest declares no plaintext size; refusing to reassemble an unbounded archive")
-    checked: dict[str, tuple[int, ...]] = {}  # the handle each volume was hashed through (row 329)
-    status = verify_volume_set(out_dir, fingerprints=checked)
+    status = verify_volume_set(out_dir)
     if status["bad"]:
         if recover is not None:
             unrepaired = recover(m, status["bad"])
@@ -468,7 +426,6 @@ def read_volume_set(
                 "corrupt or missing volumes that could not be recovered: "
                 + ", ".join(sorted(unrepaired))
             )
-        fingerprint_rebuilt_volumes(m, out, status["bad"], checked)
 
     # Free space for what is really written: the archive itself plus ONE decrypted volume at a time,
     # which a volume's ciphertext size bounds from above (R686).
@@ -490,9 +447,8 @@ def read_volume_set(
                 # drive, where nothing of ours would ever clean it up (R686).
                 vtmp = Path(dest).with_name(f".{v['name']}.{secrets.token_hex(4)}.plain")
                 try:
-                    # Never through a link, and only the file checked above (row 329); a volume parity rebuilt since
-                    # carries no identity (it is the file this restore wrote).
-                    decrypt_file(out / v["name"], vtmp, passphrase, follow_links=False, identity=checked_volume(checked, v["name"]))
+                    # Never through a link, and only bytes whose checksum is the one the check above found (row 329).
+                    decrypt_file(out / v["name"], vtmp, passphrase, follow_links=False, expect_sha256=str(v.get("sha256") or ""))
                     with open(vtmp, "rb") as vf:
                         while True:
                             blk = vf.read(_COPY_BUF)

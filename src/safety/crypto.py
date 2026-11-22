@@ -13,14 +13,16 @@ transport/stash; it is not a substitute for full-disk encryption of the live mac
 
 from __future__ import annotations
 
+import hashlib
 import os
 import struct
+from typing import Any
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from src.backup.regular_file import NotARegularFile, create_new, file_fingerprint, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular
 from src.monitoring.secret_scrub import passphrase_bytes
 
 # Self-describing container so a file can be decrypted years later without out-of-band
@@ -260,9 +262,7 @@ def _open_stream_header(fin, passphrase: str) -> tuple[AESGCM, bytes, int]:
     return AESGCM(_derive(_key_bytes(passphrase), salt, n, r, p)), prefix, chunk_size + _TAG
 
 
-def _open_sealed(
-    src: str | os.PathLike[str], *, follow_links: bool = True, identity: tuple[int, ...] | None = None
-):
+def _open_sealed(src: str | os.PathLike[str], *, follow_links: bool = True):
     """An encrypted file opened to be read, as a regular file or not at all (row 312).
 
     A backup's volumes sit on a drive anyone may write to: a named pipe in a volume's place held a restore on its
@@ -272,25 +272,25 @@ def _open_sealed(
     ``follow_links`` (row 329): the app's own sealed files may live behind a link and keep the default. A reader of a
     backup folder passes ``False``: it checked the volume's name is not a link earlier, and an open that followed one
     swapped in since would read a file outside the folder; with ``False`` the open itself refuses a link at the name.
-    ``identity`` is the :func:`file_fingerprint` of the handle through which the reader checked the volume: the file
-    opened must be that file, or nothing is read. Either refusal fails closed and never reads as a wrong passphrase."""
+    The refusal fails closed and never reads as a wrong passphrase."""
     try:
-        fh = open_regular(src, follow_links=follow_links)
+        return open_regular(src, follow_links=follow_links)
     except NotARegularFile:
         raise EncryptionError(
             "not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read"
         ) from None
-    if identity is not None:
-        try:
-            same = file_fingerprint(os.fstat(fh.fileno())) == tuple(identity)
-        except OSError:
-            same = False
-        if not same:
-            fh.close()
-            raise EncryptionError(
-                "this file is no longer the one that was checked before reading (it was replaced); nothing was read"
-            )
-    return fh
+
+
+class _HashedReads:
+    """A file read through ``hashlib``: every byte handed out is hashed first (row 329)."""
+
+    def __init__(self, fin: Any, h: Any) -> None:
+        self._fin, self._h = fin, h
+
+    def read(self, n: int = -1) -> bytes:
+        b = self._fin.read(n)
+        self._h.update(b)
+        return b
 
 
 def decrypt_stream(
@@ -299,7 +299,7 @@ def decrypt_stream(
     passphrase: str,
     *,
     follow_links: bool = True,
-    identity: tuple[int, ...] | None = None,
+    expect_sha256: str | None = None,
 ) -> int:
     """Stream-decrypt an OOENC2 file, passing each plaintext chunk to ``write``
     (a ``bytes -> Any`` callable: a file's ``write``, a hasher's ``update``, …).
@@ -307,10 +307,17 @@ def decrypt_stream(
     The sink form lets a VERIFY pass prove a volume decrypts and checksum its
     plaintext WITHOUT writing anything to disk. Returns the plaintext byte count.
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
-    extended stream -- never silently yields a partial archive. ``follow_links`` and ``identity``: see
-    :func:`_open_sealed` (row 329)."""
+    extended stream -- never silently yields a partial archive. ``follow_links``: see :func:`_open_sealed`.
+
+    ``expect_sha256`` (row 329): the SHA-256 the reader's checksum pass found the file to have. The bytes decrypted are
+    hashed as they are read, through the one handle, and must come to that digest, or this raises once the file is read
+    and the caller must discard everything handed to ``write``: a file swapped in after the checksum pass, rebuilt, or
+    rewritten in place is never taken for the file that was checked. This needs no file identity, so it holds on FAT and
+    network drives that give one file a new inode number from one open to the next."""
     total = 0
-    with _open_sealed(src, follow_links=follow_links, identity=identity) as fin:
+    h = hashlib.sha256()
+    with _open_sealed(src, follow_links=follow_links) as raw:
+        fin: Any = raw if expect_sha256 is None else _HashedReads(raw, h)
         aes, prefix, block = _open_stream_header(fin, passphrase)
         counter = 0
         prev = fin.read(block)
@@ -329,12 +336,15 @@ def decrypt_stream(
             if final:
                 break
             prev = cur
+    if expect_sha256 is not None and h.hexdigest() != expect_sha256:
+        raise EncryptionError(
+            "this file is not the one that was checked before reading (it was replaced or changed since); "
+            "what was read must not be used"
+        )
     return total
 
 
-def stream_key_opens(
-    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True, identity: tuple[int, ...] | None = None
-) -> bool:
+def stream_key_opens(src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True) -> bool:
     """Whether ``passphrase`` opens the FIRST chunk of an OOENC2 file, reading only the header and that chunk.
 
     A quick key check before a long pass, never a verification of the file: True says the key is right for this
@@ -342,7 +352,7 @@ def stream_key_opens(
     apart, for example by the file's checksum). A malformed header raises :class:`EncryptionError` as
     :func:`decrypt_stream` does, and so does a refused open (:func:`_open_sealed`): never a ``False``, which would
     read as a wrong key. Nothing decrypted is kept."""
-    with _open_sealed(src, follow_links=follow_links, identity=identity) as fin:
+    with _open_sealed(src, follow_links=follow_links) as fin:
         aes, prefix, block = _open_stream_header(fin, passphrase)
         first = fin.read(block)
         final = not fin.read(1)  # a one-chunk file seals its only chunk as the final one
@@ -353,17 +363,45 @@ def stream_key_opens(
     return True
 
 
+def stream_key_opens_or_digest(
+    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True
+) -> tuple[bool, str | None]:
+    """:func:`stream_key_opens`, and when the key does NOT open, the SHA-256 of the very bytes that were tried.
+
+    ``(True, None)`` when the first chunk opens. ``(False, digest)`` otherwise, the digest taken over the header and
+    chunk the key failed on and the rest of the file, all read once through one handle (row 329): a caller that
+    tells a wrong key from damage by the file's checksum can never be shown one file for the key and another, or
+    the same file rewritten in between, for the checksum. A malformed header or a refused open raises
+    :class:`EncryptionError`, never a ``False``."""
+    h = hashlib.sha256()
+    with _open_sealed(src, follow_links=follow_links) as raw:
+        fin = _HashedReads(raw, h)
+        aes, prefix, block = _open_stream_header(fin, passphrase)
+        first = fin.read(block)
+        rest = fin.read(1)
+        final = not rest
+        try:
+            aes.decrypt(_chunk_nonce(prefix, 0, final), first, None)
+            return True, None
+        except InvalidTag:
+            pass
+        for blk in iter(lambda: fin.read(1 << 20), b""):
+            del blk  # hashed on the way through
+    return False, h.hexdigest()
+
+
 def decrypt_file(
     src: str | os.PathLike[str],
     dst: str | os.PathLike[str],
     passphrase: str,
     *,
     follow_links: bool = True,
-    identity: tuple[int, ...] | None = None,
+    expect_sha256: str | None = None,
 ) -> None:
     """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
 
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
-    extended stream -- never silently yields a partial archive."""
+    extended stream -- never silently yields a partial archive. ``follow_links`` and
+    ``expect_sha256``: see :func:`decrypt_stream`; on a raise the caller discards ``dst``."""
     with create_new(dst) as fout:  # never through a link at its name (row 313)
-        decrypt_stream(src, fout.write, passphrase, follow_links=follow_links, identity=identity)
+        decrypt_stream(src, fout.write, passphrase, follow_links=follow_links, expect_sha256=expect_sha256)

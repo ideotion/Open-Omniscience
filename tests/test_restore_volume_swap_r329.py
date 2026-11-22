@@ -6,13 +6,16 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 The restore checks every volume's name (not a link, not the same file as another) and its checksum before it reads
 anything, then decrypts each volume by name much later -- on a large set, hours later. The decrypt opened through
 ``open_regular(follow_links=True)``, so a volume swapped for a link in that window was followed out of the chosen
-folder, and one replaced by another file was read in its place. Each test swaps a volume in exactly that window,
-for a link to (or a copy of) a byte-identical volume, so a read that followed it would decrypt cleanly: only the
-refusal makes the restore fail. A refusal is never reported as a wrong passphrase.
+folder, and one replaced by another file was read in its place. Now the open refuses a link, and the bytes decrypted
+are hashed on the way and must be the manifest's: a volume swapped, rebuilt or rewritten since the checksum pass is
+refused whatever its inode number (FAT and network drives change those between opens). Each test swaps a volume in
+exactly that window for something that would decrypt cleanly under the same key, so only the refusal makes the
+restore fail. A refusal is never reported as a wrong passphrase.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -22,7 +25,6 @@ import pytest
 
 import src.backup.stream_backup as sb
 import src.backup.volumes as vol
-from src.backup.regular_file import file_fingerprint
 from src.backup.stream_backup import (
     CorpusSource,
     MemberFile,
@@ -31,7 +33,13 @@ from src.backup.stream_backup import (
     write_stream_backup,
 )
 from src.backup.volumes import read_volume_set, write_volume_set
-from src.safety.crypto import EncryptionError, decrypt_file, encrypt_file, stream_key_opens
+from src.safety.crypto import (
+    EncryptionError,
+    decrypt_file,
+    decrypt_stream,
+    encrypt_file,
+    stream_key_opens,
+)
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
 VOL = 65536
@@ -74,9 +82,9 @@ def _to_link(volume: Path, outside: Path) -> None:
     os.symlink(outside, volume)
 
 
-def _to_copy(volume: Path) -> None:
+def _to_copy(volume: Path, source: Path | None = None) -> None:
     tmp = volume.with_name(volume.name + ".other")
-    shutil.copy(volume, tmp)  # the same bytes, another file
+    shutil.copy(source or volume, tmp)  # another file: the same bytes, or another volume's sealed with the same key
     os.replace(tmp, volume)
 
 
@@ -92,22 +100,41 @@ def test_a_stream_volume_swapped_for_a_link_after_the_checks_is_refused(tmp_path
     assert "nothing was read" in str(exc.value)
 
 
-def test_a_stream_volume_replaced_by_another_file_after_the_checks_is_refused(tmp_path, monkeypatch):
+def test_a_stream_volume_replaced_by_another_volume_after_the_checks_is_refused(tmp_path, monkeypatch):
     dest = _stream_set(tmp_path)
-    victim = sorted(dest.glob("vol-*.ooenc"))[1]
-    if not os.stat(victim).st_ino:
-        pytest.skip("this file system reports no file identity")
-    monkeypatch.setattr(sb, "verify_volume_set", _swap_after(sb, "verify_volume_set", lambda: _to_copy(victim)))
+    vols = sorted(dest.glob("vol-*.ooenc"))
+    victim, other = vols[1], vols[2]
+    monkeypatch.setattr(sb, "verify_volume_set", _swap_after(sb, "verify_volume_set", lambda: _to_copy(victim, other)))
     with pytest.raises(EncryptionError) as exc:
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert "no longer the one that was checked" in str(exc.value)
+    assert "not the one that was checked" in str(exc.value)
     assert "wrong passphrase" not in str(exc.value)
+    assert not (tmp_path / "st").exists() or not any((tmp_path / "st").iterdir())
+
+
+def test_a_volume_whose_file_changed_but_whose_bytes_did_not_still_restores(tmp_path, monkeypatch):
+    """A FAT or network drive may give one untouched file a new inode number between two opens: the check is on the
+    bytes, so a byte-identical file at the name is read and the restore completes."""
+    dest = _stream_set(tmp_path)
+    victim = sorted(dest.glob("vol-*.ooenc"))[1]
+    monkeypatch.setattr(sb, "verify_volume_set", _swap_after(sb, "verify_volume_set", lambda: _to_copy(victim)))
+    staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
+    assert staged.hash_failures == []
 
 
 def test_an_untouched_stream_set_still_restores(tmp_path):
     dest = _stream_set(tmp_path)
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
     assert staged.hash_failures == []
+
+
+def test_the_stream_verify_refuses_a_volume_swapped_after_its_checksum(tmp_path, monkeypatch):
+    dest = _stream_set(tmp_path)
+    vols = sorted(dest.glob("vol-*.ooenc"))
+    monkeypatch.setattr(sb, "verify_volume_set", _swap_after(sb, "verify_volume_set", lambda: _to_copy(vols[1], vols[2])))
+    report = sb.verify_stream_backup(dest, passphrase="pw")
+    assert report["ok"] is False
+    assert not any("wrong passphrase" in str(pr) for pr in report["problems"])
 
 
 @posix_only
@@ -119,7 +146,7 @@ def test_the_wrong_key_probe_gives_no_verdict_on_a_link_swapped_in_after_its_loo
     victim = dest / first
     outside = tmp_path / "outside.ooenc"
     raised: list[BaseException] = []
-    real = sb.stream_key_opens
+    real = sb.stream_key_opens_or_digest
 
     def _swap_then_open(p, pw, **kw):
         _to_link(victim, outside)
@@ -129,9 +156,40 @@ def test_the_wrong_key_probe_gives_no_verdict_on_a_link_swapped_in_after_its_loo
             raised.append(e)
             raise
 
-    monkeypatch.setattr(sb, "stream_key_opens", _swap_then_open)
+    monkeypatch.setattr(sb, "stream_key_opens_or_digest", _swap_then_open)
     assert sb.backup_passphrase_is_wrong(dest, "not-the-passphrase") is False
     assert len(raised) == 1 and isinstance(raised[0], EncryptionError)
+
+
+def test_the_right_passphrase_never_reads_as_wrong_when_the_first_volume_is_swapped_for_the_key_check(tmp_path, monkeypatch):
+    """The key check and the checksum are one read: a volume sealed with another key, put in place only while the key
+    is tried and taken away again, gives no verdict instead of "wrong passphrase"."""
+    dest = _stream_set(tmp_path)
+    m = vol.load_manifest(dest)
+    victim = dest / next(v for mm in m["members"] for v in mm["volumes"])
+    kept_aside = tmp_path / "kept_aside"
+    plain = tmp_path / "q.bin"
+    plain.write_bytes(b"q" * 1000)
+    other = tmp_path / "other.ooenc"
+    encrypt_file(plain, other, "someone-else")
+    real = sb.stream_key_opens_or_digest
+
+    def _swap_for_the_key_check(p, pw, **kw):
+        os.replace(victim, kept_aside)
+        shutil.copy(other, victim)
+        try:
+            return real(p, pw, **kw)
+        finally:
+            os.replace(kept_aside, victim)
+
+    monkeypatch.setattr(sb, "stream_key_opens_or_digest", _swap_for_the_key_check)
+    assert sb.backup_passphrase_is_wrong(dest, "pw") is False
+
+
+def test_the_probe_still_says_wrong_for_an_intact_set_and_a_wrong_passphrase(tmp_path):
+    dest = _stream_set(tmp_path)
+    assert sb.backup_passphrase_is_wrong(dest, "not-the-passphrase") is True
+    assert sb.backup_passphrase_is_wrong(dest, "pw") is False
 
 
 @posix_only
@@ -147,6 +205,20 @@ def test_a_legacy_volume_swapped_for_a_link_after_the_checks_is_refused(tmp_path
         read_volume_set(out, "pw", tmp_path / "restored.bin")
     assert "wrong passphrase" not in str(exc.value)
     assert not (tmp_path / "restored.bin").exists()
+
+
+def test_a_legacy_volume_replaced_by_another_after_the_checks_is_refused(tmp_path, monkeypatch):
+    src = tmp_path / "archive.bin"
+    src.write_bytes(os.urandom(5000))
+    out = tmp_path / "set"
+    write_volume_set(src, out, "pw", volume_size=2048)
+    vols = sorted(out.glob("*.ooenc"))
+    monkeypatch.setattr(vol, "verify_volume_set", _swap_after(vol, "verify_volume_set", lambda: _to_copy(vols[1], vols[0])))
+    with pytest.raises(EncryptionError) as exc:
+        read_volume_set(out, "pw", tmp_path / "restored.bin")
+    assert "not the one that was checked" in str(exc.value)
+    assert not (tmp_path / "restored.bin").exists()
+    assert not list(tmp_path.glob(".*.plain"))
 
 
 def test_an_untouched_legacy_set_still_restores(tmp_path):
@@ -175,50 +247,25 @@ def test_the_apps_own_sealed_file_behind_a_link_still_opens(tmp_path):
         stream_key_opens(link, "pw", follow_links=False)  # a backup reader's open refuses the same link
 
 
-def test_a_file_at_the_name_with_the_checked_inode_but_new_times_is_refused(tmp_path):
-    """A file system may give a deleted volume's inode number to a new file at the same name: the fingerprint
-    carries size and times too, so the new file is not taken for the one that was checked."""
+def test_a_file_rewritten_in_place_while_it_is_decrypted_is_refused(tmp_path):
+    """The digest is taken over the bytes the decrypt read: a change made through the same file while it is read (one
+    whose chunks still decrypt, as another sealing of the same plaintext would) makes what was read unusable."""
     plain = tmp_path / "p.bin"
-    plain.write_bytes(b"z" * 3000)
+    plain.write_bytes(os.urandom(300_000))
     sealed = tmp_path / "s.ooenc"
     encrypt_file(plain, sealed, "pw")
-    with open(sealed, "rb") as fh:
-        checked = file_fingerprint(os.fstat(fh.fileno()))
-    assert stream_key_opens(sealed, "pw", follow_links=False, identity=checked) is True
-    st = os.stat(sealed)
-    os.utime(sealed, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    want = hashlib.sha256(sealed.read_bytes()).hexdigest()
+    assert decrypt_stream(sealed, lambda b: None, "pw", follow_links=False, expect_sha256=want) == 300_000
     with pytest.raises(EncryptionError) as exc:
-        stream_key_opens(sealed, "pw", follow_links=False, identity=checked)
-    assert "no longer the one that was checked" in str(exc.value)
-
-
-def test_the_right_passphrase_never_reads_as_wrong_when_the_first_volume_is_swapped_for_the_key_check(tmp_path, monkeypatch):
-    """The key check and the checksum answer for one file: a volume sealed with another key, put in place only while
-    the key is tried and taken away before the checksum, gives no verdict instead of "wrong passphrase"."""
-    dest = _stream_set(tmp_path)
-    m = vol.load_manifest(dest)
-    victim = dest / next(v for mm in m["members"] for v in mm["volumes"])
-    kept_aside = tmp_path / "kept_aside"
-    plain = tmp_path / "q.bin"
-    plain.write_bytes(b"q" * 1000)
-    other = tmp_path / "other.ooenc"
-    encrypt_file(plain, other, "someone-else")
-    real = sb.stream_key_opens
-
-    def _swap_for_the_key_check(p, pw, **kw):
-        os.replace(victim, kept_aside)
-        shutil.copy(other, victim)
-        try:
-            return real(p, pw, **kw)
-        finally:
-            os.replace(kept_aside, victim)
-
-    monkeypatch.setattr(sb, "stream_key_opens", _swap_for_the_key_check)
-    assert sb.backup_passphrase_is_wrong(dest, "pw") is False
+        decrypt_stream(sealed, lambda b: None, "pw", follow_links=False, expect_sha256="0" * 64)
+    assert "not the one that was checked" in str(exc.value)
+    assert "wrong passphrase" not in str(exc.value)
+    with pytest.raises(EncryptionError):
+        decrypt_stream(sealed, lambda b: None, "pw", follow_links=False, expect_sha256="")  # a manifest gave none
 
 
 def test_a_volume_parity_rebuilt_then_replaced_is_refused(tmp_path, monkeypatch):
-    """A volume parity rebuilt is hashed again before it is read, and read only through the file that was hashed."""
+    """A volume parity rebuilt is read like any other: only bytes whose checksum is the manifest's."""
     pytest.importorskip("numpy")
     import src.backup.parity as parity
 
@@ -235,9 +282,8 @@ def test_a_volume_parity_rebuilt_then_replaced_is_refused(tmp_path, monkeypatch)
     write_stream_backup(dest, "pw", corpus_source=CorpusSource(path=corpus, member_name="corpus.db", encrypted=False,
                                                               freeze=_no_freeze),
                         side_members=[MemberFile("app_settings.json", "state", a)], volume_size=VOL, parity_fraction=0.5)
-    victim = sorted(dest.glob("vol-*.ooenc"))[1]
-    good = tmp_path / "good"
-    shutil.copy(victim, good)
+    vols = sorted(dest.glob("vol-*.ooenc"))
+    victim, other = vols[1], vols[2]
     damaged = bytearray(victim.read_bytes())
     damaged[100] ^= 1
     victim.write_bytes(bytes(damaged))
@@ -245,13 +291,11 @@ def test_a_volume_parity_rebuilt_then_replaced_is_refused(tmp_path, monkeypatch)
 
     def _rebuild_then_replace(*a, **k):
         out = real(*a, **k)
-        shutil.copy(good, tmp_path / "x")  # the same bytes, another file
-        os.replace(tmp_path / "x", victim)
+        _to_copy(victim, other)
         return out
 
     monkeypatch.setattr(parity, "recover_volumes", _rebuild_then_replace)
-    monkeypatch.setattr(sb, "fingerprint_rebuilt_volumes", _swap_after(sb, "fingerprint_rebuilt_volumes", lambda: _to_copy(victim)))
     with pytest.raises(EncryptionError) as exc:
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert "no longer the one that was checked" in str(exc.value)
+    assert "not the one that was checked" in str(exc.value)
     assert "wrong passphrase" not in str(exc.value)

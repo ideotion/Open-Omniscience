@@ -96,7 +96,7 @@ if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
 
 from src.backup.hf_layout import HF_LAYOUT
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import create_new, file_fingerprint, open_regular, replace_with
+from src.backup.regular_file import create_new, replace_with
 from src.backup.volumes import (
     MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES,
 )
@@ -107,8 +107,6 @@ from src.backup.volumes import (
     VolumeStopped,
     _digest_matches,
     _plain_volume_name,
-    checked_volume,
-    fingerprint_rebuilt_volumes,
     load_manifest,
     member_in_use,
     verify_volume_set,
@@ -121,7 +119,7 @@ from src.safety.crypto import (
     decrypt_stream,
     encrypt_bytes,
     encrypt_stream_to_hashed,
-    stream_key_opens,
+    stream_key_opens_or_digest,
 )
 from src.utils.interrupts import kept
 
@@ -2133,8 +2131,7 @@ def verify_stream_backup(
     else:
         report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
 
-    checked: dict[str, tuple[int, ...]] = {}  # the handle each volume was hashed through (row 329)
-    status = verify_volume_set(src, fingerprints=checked)
+    status = verify_volume_set(src)
     report["bad_volumes"] = status["bad"]
     report["missing_volumes"] = status["missing"]
     if status["bad"]:
@@ -2200,8 +2197,10 @@ def verify_stream_backup(
 
                 try:
                     for vname in mm.get("volumes") or []:
-                        # Never through a link, and only the file the checksum pass hashed (row 329).
-                        decrypt_stream(src / vname, _sink, passphrase, follow_links=False, identity=checked_volume(checked, vname))
+                        # Never through a link, and only bytes whose checksum is the manifest's (row 329).
+                        decrypt_stream(
+                            src / vname, _sink, passphrase, follow_links=False, expect_sha256=_volume_sha256(m, vname)
+                        )
                 except EncryptionError as exc:
                     # The report goes back to every caller that holds the passphrase (the volume-verify
                     # job serves it on an endpoint, the P0 check writes it into a file the debug bundle
@@ -2286,18 +2285,14 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
     path = src / first
     if path.is_symlink() or not path.is_file():
         return  # a link is never followed out of the chosen folder; the restore refuses it by name
-    # One file answers both questions (row 329): the key check opens the file it first looked at, and the checksum must
-    # come from that same file, or a file swapped in for one question and swapped out for the other would make the right
+    # One read answers both questions (row 329): the checksum is taken over the very bytes the key failed on, through one
+    # handle, so a file swapped in, or rewritten, for the key check and put back for the checksum can never make the right
     # passphrase read as wrong.
     try:
-        with open_regular(path) as fh:
-            seen = file_fingerprint(os.fstat(fh.fileno()))
-        if stream_key_opens(path, passphrase, follow_links=False, identity=seen):
-            return
+        opens, digest = stream_key_opens_or_digest(path, passphrase, follow_links=False)
     except (EncryptionError, OSError):
         return  # an unreadable header, or a refused open, is no verdict on the key: the restore's own pass reports it
-    hashed: list[tuple[int, ...]] = []
-    if not _digest_matches(path, vol_by_name[first].get("sha256"), fingerprint=hashed) or hashed != [seen]:
+    if opens or digest != vol_by_name[first].get("sha256"):
         return
     raise EncryptionError(
         "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "
@@ -2370,8 +2365,7 @@ def read_stream_backup(
     _refuse_a_wrong_backup_passphrase(src, m, passphrase)
     stage_a_timings["passphrase_check"] = round(time.monotonic() - t0, 3)
     t0 = time.monotonic()
-    checked: dict[str, tuple[int, ...]] = {}  # the handle each volume was hashed through (row 329)
-    status = verify_volume_set(src, fingerprints=checked)
+    status = verify_volume_set(src)
     if status["bad"]:
         from src.backup.parity import recover_volumes
 
@@ -2383,7 +2377,6 @@ def read_stream_backup(
                 "corrupt or missing volumes that could not be recovered: "
                 + ", ".join(sorted(unrepaired))
             )
-        fingerprint_rebuilt_volumes(m, src, status["bad"], checked)
     stage_a_timings["verify_and_parity_recover"] = round(time.monotonic() - t0, 3)
 
     root = staging_root or data_dir()
@@ -2424,8 +2417,11 @@ def read_stream_backup(
                             _f.write(b)
                             _h.update(b)
 
-                        # Never through a link, and only the file the checksum pass hashed (or parity rebuilt and hashed) (row 329).
-                        decrypt_stream(src / vname, _sink, passphrase, follow_links=False, identity=checked_volume(checked, vname))
+                        # Never through a link, and only bytes whose checksum is the manifest's: a volume swapped,
+                        # rebuilt or rewritten since the checksum pass is refused, whatever its inode (row 329).
+                        decrypt_stream(
+                            src / vname, _sink, passphrase, follow_links=False, expect_sha256=_volume_sha256(m, vname)
+                        )
                 if h.hexdigest() == mm.get("plaintext_sha256"):  # a guard clause keeps the loop's back-edge inside the try (src/utils/interrupts.py)
                     continue
                 raise VolumeError(
@@ -2461,6 +2457,15 @@ def read_stream_backup(
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+
+
+def _volume_sha256(m: dict[str, Any], name: str) -> str:
+    """The ciphertext SHA-256 the manifest gives volume ``name``, or ``""`` (which no file hashes to) when it gives
+    none: the decrypt then refuses the volume rather than read it unchecked (row 329)."""
+    for v in m.get("volumes") or []:
+        if isinstance(v, dict) and v.get("name") == name:
+            return str(v.get("sha256") or "")
+    return ""
 
 
 def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -> None:
