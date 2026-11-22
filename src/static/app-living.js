@@ -485,7 +485,7 @@
         { label: t("Newest map data"), value: d.newest_data_at ? livingWhen(d.newest_data_at, t) : t("Not recorded"),
           hover: t("The newest data date among the cut countries: the own date of the last daily change file applied, or the extract's own date where none was. Never the day a file was applied here.") },
         { label: t("Oldest map data"), value: d.oldest_data_at ? livingWhen(d.oldest_data_at, t) : t("Not recorded"),
-          hover: t("The cut country whose data is oldest, by the same date. Freshness is shown as dates, never judged.") },
+          hover: t("The oldest data date among the cut countries, read the same way as the newest. Freshness is shown as dates, never judged.") },
       ];
       const unread = d.date_not_read || [];
       if (unread.length) {

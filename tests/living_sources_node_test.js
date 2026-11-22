@@ -274,6 +274,10 @@ const WIKI = {
   const plain = R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null,
     daily: { ...DAILY, newest_data_at: "2026-11-04T23:59:00+00:00", oldest_data_at: "2026-09-01T00:00:00+00:00", date_not_read: [], data_undated: 2 } }, t, tf));
   assert.ok(!visible(plain).includes("Data date not read") && visible(plain).includes("Extract states no date 2"), visible(plain));
+  const allUnread = visible(R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null,
+    daily: { ...DAILY, newest_data_at: null, oldest_data_at: null, date_not_read: ["ITA", "FRA"], data_undated: 0 } }, t, tf)));
+  assert.ok(allUnread.includes("Newest map data Not recorded") && allUnread.includes("Oldest map data Not recorded"),
+    "every cut country undated: no date stands in: " + allUnread);
   for (const d of [undefined, { measured: false, reason: "lane-never-run" }, { ...DAILY, countries_cut: 0 }]) {
     const none = visible(R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null, daily: d }, t, tf)));
     assert.ok(none.includes("Date of the map data Not recorded") && !none.includes("Newest map data"), "no cut country reads as before: " + none);

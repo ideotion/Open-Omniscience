@@ -65,7 +65,7 @@ def test_newest_and_oldest_are_each_countrys_own_data_date_never_the_apply_time(
 
 def test_a_country_applied_without_a_read_date_is_named_apart_and_in_neither_date(cut):
     _country("AAA", extract=datetime(2026, 9, 1, tzinfo=UTC))
-    # CCC: an extract far newer and far older than the rest would move either end if it were (wrongly) read as its data date.
+    # CCC: an extract far older than the rest would move the oldest end if it were (wrongly) read as its data date.
     _country("CCC", extract=datetime(2000, 1, 1, tzinfo=UTC), seq=9, stamp=None)
     got = V.daily_block()
     assert got["date_not_read"] == ["CCC"]
