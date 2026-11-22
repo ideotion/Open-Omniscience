@@ -42,7 +42,7 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     operator racing a seizure was told the wipe failed when the key was already gone."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
-    from src.safety.crypto_erase import new_hold_generation, quick_crypto_erase
+    from src.safety.crypto_erase import finish_holder_check, new_hold_generation, quick_crypto_erase
 
     _close_database_now()
     generation = new_hold_generation()  # this wipe's own kept descriptors, closed by its own late pass (row 36)
@@ -62,13 +62,17 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
 
             log_failure(_LOG, "panic wipe: the settings cache could not be cleared before the erase", exc, level=logging.WARNING)
         try:
-            report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation)
+            report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation,
+                                        settle=False)
         finally:
             # In a `finally` because a partial wipe still removed the store.
             try:
                 _tidy_after_erase(failed)
             finally:
                 _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
+    # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
+    # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
+    finish_holder_check(report, generation)
     if failed:
         report["after_erase_failures"] = failed
     return report

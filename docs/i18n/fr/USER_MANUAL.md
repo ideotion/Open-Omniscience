@@ -2029,6 +2029,7 @@ Les **chiffres** officiels ne sont pas du tout ici — ce sont des données, ils
     de récupération sur SSD/mémoire flash — pour cela, utilisez le chiffrement intégral du disque (LUKS/Qubes/Tails)
     et détruisez la clé. Il existe aussi une commande CLI `panic` et un mode d'exécution `--ephemeral`
     (données en RAM uniquement, effacées à la sortie).
+    **L’effacement n’est complet que si aucun autre programme n’a la base de données ouverte.** Un programme qui l’a encore ouverte (une deuxième copie de l’application, un outil de base de données) peut réécrire sur le disque les éléments de clé de la base pendant l’effacement. Sous Linux et macOS, l’effacement le recherche, continue d’écraser pendant au plus deux secondes tant qu’il est là, et s’il y est encore à la fin, le résultat indique que l’effacement est peut-être incomplet. Un programme qui a la base de données ouverte mais ne détient aucun verrou dessus à ce moment-là ne peut pas être vu, donc la vérification peut le manquer. Sous Windows, et partout où cette vérification échoue, l’effacement ne peut pas le savoir, et le résultat le dit.
   - **Désinstaller l'application** — supprime le **virtualenv** et les **lanceurs de bureau** de l'application,
     puis arrête le serveur (confirmation par saisie). Vos **données sont conservées** (utilisez d'abord l'Effacement d’urgence pour
     les détruire) ; le dossier de l'application est laissé en place, à supprimer manuellement. Équivalent à

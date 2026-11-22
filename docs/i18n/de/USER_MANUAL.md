@@ -1934,6 +1934,7 @@ Amtliche **Zahlen** stehen hier überhaupt nicht — sie sind Daten und liegen d
     Unwiederherstellbarkeit — dafür verwenden Sie eine Vollverschlüsselung der Festplatte (LUKS/Qubes/Tails)
     und vernichten den Schlüssel. Es gibt außerdem ein `panic`-Kommandozeilenwerkzeug und einen Betriebsmodus `--ephemeral`
     (Daten nur im RAM, beim Beenden gelöscht).
+    **Die Löschung ist nur vollständig, wenn kein anderes Programm die Datenbank geöffnet hat.** Ein Programm, das sie noch geöffnet hat (eine zweite Kopie der App, ein Datenbankwerkzeug), kann während der Löschung das Schlüsselmaterial der Datenbank wieder auf die Festplatte schreiben. Unter Linux und macOS sucht die Löschung nach einem solchen Programm, überschreibt höchstens zwei Sekunden lang weiter, solange es da ist, und ist es am Ende noch da, sagt das Ergebnis, dass die Löschung möglicherweise unvollständig ist. Ein Programm, das die Datenbank geöffnet hat, aber in diesem Moment keine Sperre auf ihr hält, ist nicht zu sehen, daher kann die Prüfung es übersehen. Unter Windows und überall, wo diese Prüfung fehlschlägt, kann die Löschung es nicht erkennen, und das Ergebnis sagt das.
   - **App deinstallieren** — entfernt die **virtuelle Umgebung** (virtualenv) und die **Desktop-Starter** der App
     und stoppt dann den Server (Bestätigung durch Eintippen). Ihre **Daten bleiben erhalten** (verwenden Sie zuerst die Notfall-Löschung, um
     sie zu vernichten); der App-Ordner bleibt bestehen und muss von Hand gelöscht werden. Gleichwertig mit
