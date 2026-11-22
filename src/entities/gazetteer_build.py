@@ -123,6 +123,10 @@ class OsmPlace:
     population: int | None
 
 
+#: R776: a country whose daily change files were applied without a recorded date (never replaced by the extract date or a guess).
+LAST_DIFF_NOT_READ = "not-read"
+
+
 def clean_wikidata_tag(value: object) -> str | None:
     """The QID an OSM ``wikidata=*`` value names, or None. ``Q1;Q2`` and ``q1`` are None: never repaired."""
     v = str(value or "").strip()
@@ -170,6 +174,16 @@ def read_places(alpha3: str) -> tuple[dict, list[OsmPlace], dict]:
             "name": row[2],
             "vintage": vintage.date().isoformat() if isinstance(vintage, datetime) else (str(vintage)[:10] if vintage else None),
         }
+        # R776 (row 292): the objects read below stand where the daily change files left them, so the country's data date is
+        # R775's one reading (country_data_date): the last file applied in an unbroken sequence from the extract, its own date,
+        # never the apply time; "date_not_read" when files were applied without a recorded date. Nothing applied: no key at all.
+        from src.osm.lane_models import OsmCountry, country_data_date
+
+        dd = country_data_date(s.query(OsmCountry).filter_by(alpha3=row[1]).one())
+        if dd["updates"] == "dated":
+            country["last_diff"] = str(dd["last_diff"])[:10]
+        elif dd["updates"] == "date_not_read":
+            country["last_diff"] = LAST_DIFF_NOT_READ
         counts = {"place_objects": 0, "no_point": 0, "with_wikidata_tag": 0, "bad_wikidata_tag": 0}
         out: list[OsmPlace] = []
         for t, oid, kind, name, names_json, lat, lon, wd, pop in s.execute(
@@ -658,13 +672,27 @@ _HEADER = (
 )
 
 
+def _country_record(c: dict) -> dict:
+    rec = {"alpha2": c["alpha2"], "alpha3": c["alpha3"], "extract_vintage": c["vintage"]}
+    if c.get("last_diff"):
+        rec["last_diff"] = c["last_diff"]
+    return rec
+
+
+def compound_vintage(extract: str, last_diff: str | None) -> str:
+    """R776: an extract date and, once daily change files were applied, the last one's date (or that it was not read),
+    as ONE value the place's ``gazetteer_vintage`` column holds: ``2026-10-01+2026-11-19``, ``2026-10-01+not-read``. With no
+    file applied it is the extract date alone, exactly as before. The place card splits it (``_gazetteerDate``)."""
+    return f"{extract}+{last_diff}" if last_diff else extract
+
+
 def render_yaml(entries: list[dict], *, countries: list[dict], wikidata: dict, built: date) -> str:
     """The artifact's bytes. Sorted at every level, so the same input is the same file."""
     vintages = [c["vintage"] for c in countries]
     doc: dict = {
         "built": built.isoformat(),
         "cities": entries,
-        "countries": [{"alpha2": c["alpha2"], "alpha3": c["alpha3"], "extract_vintage": c["vintage"]} for c in countries],
+        "countries": [_country_record(c) for c in countries],
         "license": LICENSE_LINE,
         "source": SOURCE_BOTH if wikidata.get("joined") else SOURCE_OSM,
         "wikidata": wikidata,
@@ -672,6 +700,12 @@ def render_yaml(entries: list[dict], *, countries: list[dict], wikidata: dict, b
     # The vintage is as old as the OLDEST extract, and absent when any extract does not say.
     if vintages and all(vintages):
         doc["as_of"] = min(vintages)
+        # R776: with daily files applied, as_of states both dates: the oldest extract and the newest file applied (or that a
+        # country's file date was not read). Nothing applied anywhere: the same bytes as before.
+        diffs = [c["last_diff"] for c in countries if c.get("last_diff")]
+        if diffs:
+            unread = LAST_DIFF_NOT_READ in diffs
+            doc["as_of"] = compound_vintage(min(vintages), LAST_DIFF_NOT_READ if unread else max(diffs))
     body = yaml.safe_dump(doc, allow_unicode=True, sort_keys=True, default_flow_style=False, width=4096)
     return _HEADER + body
 

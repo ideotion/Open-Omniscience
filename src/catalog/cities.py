@@ -109,6 +109,10 @@ def _load_file(p: Path) -> list[City]:
         return []
     raw_vintage = data.get("as_of")
     vintage = str(raw_vintage) if raw_vintage else None
+    # R776 (row 292): a place artifact built after daily OSM files were applied dates each entry by ITS country (the extract
+    # and the last file applied there, src/entities/gazetteer_build.py:compound_vintage); a country with none keeps its extract
+    # date. A file without that record (every artifact built before R776, and one built with nothing applied) is unchanged.
+    by_country = _country_vintages(data.get("countries"))
     file_source = str(data["source"]).strip() or None if data.get("source") else None
     default = file_source or _default_source(p)
     out: list[City] = []
@@ -141,9 +145,22 @@ def _load_file(p: Path) -> list[City]:
                     if isinstance(names, dict) else None
                 ),
                 source=(str(c["source"]).strip() or None) if c.get("source") else default,
-                vintage=vintage,
+                vintage=by_country.get(str(config_country(c.get("country", ""))).lower(), vintage) if by_country else vintage,
             )
         )
+    return out
+
+
+def _country_vintages(countries: object) -> dict[str, str]:
+    """``{alpha2: "extract[+last_diff]"}`` when any country of the file records an applied daily file, else ``{}``."""
+    if not isinstance(countries, list) or not any(isinstance(c, dict) and c.get("last_diff") for c in countries):
+        return {}
+    out: dict[str, str] = {}
+    for c in countries:
+        if not isinstance(c, dict) or not c.get("alpha2") or not c.get("extract_vintage"):
+            continue
+        extract = str(c["extract_vintage"])[:10]
+        out[str(config_country(c["alpha2"])).lower()] = f"{extract}+{c['last_diff']}" if c.get("last_diff") else extract
     return out
 
 
