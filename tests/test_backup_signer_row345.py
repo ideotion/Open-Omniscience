@@ -91,6 +91,38 @@ def test_a_failed_signature_is_never_grouped_as_a_signer(tmp_path):
         assert signer_relation(stored, local) == "bad-signature"
 
 
+def test_re_importing_a_backup_merged_before_row_345_records_nothing_new(tmp_path):
+    """The Opus read's case: a bad-signature backup merged before row 345 stored its alternates under
+    "unsigned"; restored again it is stored "bad-signature". The "already recorded" checks treat the
+    two keyless states as one, so nothing is captured twice -- and a real key is never matched by them."""
+    from src.backup.merge import merge_corpus
+    from src.database.models import KeywordTranslation
+    from tests.test_metadata_alternates import _META, _alts, _corpus
+
+    inc, live = tmp_path / "inc.db", tmp_path / "live.db"
+    for path, text in ((inc, "X"), (live, "Y")):
+        with _corpus(path)() as s:
+            s.add(
+                KeywordTranslation(
+                    term="chat",
+                    source_lang="fr",
+                    target_lang="en",
+                    text=text,
+                    model="m1",
+                    prompt_version="v1",
+                )
+            )
+            s.commit()
+    merge_corpus(inc, live, {**_META, "origin_fingerprint": "unsigned"})
+    assert [a[5] for a in _alts(live)] == ["unsigned"]
+    merge_corpus(inc, live, {**_META, "origin_fingerprint": "bad-signature"})
+    assert [a[5] for a in _alts(live)] == ["unsigned"], "the same difference, captured again"
+    merge_corpus(inc, live, {**_META, "origin_fingerprint": KEY})
+    assert [a[5] for a in _alts(live)] == ["unsigned", KEY], (
+        "a real signer is never grouped with them"
+    )
+
+
 def test_the_word_x12():
     locales = sorted((STATIC / "locales").glob("*.json"))
     assert len(locales) == 12

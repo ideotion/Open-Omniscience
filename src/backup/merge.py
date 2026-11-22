@@ -5449,6 +5449,15 @@ def _capture_alternates(
     # between the two and only the row is common to both.
     kept_for_row = ""
     is_law = ALTERNATE_SPECS.get(table, {}).get("scope") == "law"
+    # Row 345: a batch with no verified key is stored "unsigned" (before row 345, also for a signature
+    # that did not match) or "bad-signature" (since). For the "already recorded" checks the two are one
+    # origin, so re-importing a backup merged before row 345 does not capture its differences again.
+    # They are never grouped with a real key: the match below is on these two literals only.
+    def _same_origin(alias: str) -> str:
+        if origin in ("unsigned", "bad-signature"):
+            return f"{alias}.origin IN ('unsigned', 'bad-signature')"
+        return f"{alias}.origin = :origin"
+
     try:
         if is_law:
             # The kept ones are copied once to an indexed temp table, so a restore does not scan every kept alternate per incoming row.
@@ -5463,7 +5472,7 @@ def _capture_alternates(
             kept_for_row = (
                 " AND NOT EXISTS (SELECT 1 FROM temp.alt_kept k"  # nosec B608 # as above
                 f"  WHERE k.local_row_id = (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key})"
-                f"  AND k.origin = :origin AND k.fields = json_object({fields}))"
+                f"  AND {_same_origin('k')} AND k.fields = json_object({fields}))"
             )
         # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
         # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
@@ -5475,7 +5484,7 @@ def _capture_alternates(
             " :origin, 'pending', :now"
             f"{where}"
             " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
-            "  WHERE x.table_name = :table AND x.origin = :origin"
+            f"  WHERE x.table_name = :table AND {_same_origin('x')}"
             f"  AND x.identity = json_object({ident}) AND x.fields = json_object({fields}))"
             f"{kept_for_row}"
             f" GROUP BY json_object({ident}), json_object({fields})",
@@ -9824,7 +9833,8 @@ def run_restore(
     report: dict = {
         "artifact_kind": staged.kind,
         "signature_state": staged.signature_state,
-        "origin_fingerprint": staged.origin_fingerprint,
+        # what this batch records (row 345: "bad-signature" for a signature that did not match)
+        "origin_fingerprint": _stored_signer(staged),
         # R800: whose key signed, compared with this installation's own key; never "origin".
         "signed_by": _signed_by(staged),
         "artifact_schema_rev": original_rev,
