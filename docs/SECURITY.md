@@ -808,6 +808,11 @@ imply a protection we cannot deliver.
   a probe that could not tell is never cleared by a later one that saw nothing. Every file under the data
   dir the earlier steps did not
   handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
+  A folder any walk of either erase could not list (R798, row 333: the keys folder, the copies beside each database, the app's
+  own entries of a shared folder, steps 5b and 6, and the uninstall watcher's top-level, keys and data walks) holds files the
+  erase never checked: the result is then "may be incomplete" (`unlisted_folders` in the panic report, a visible caveat ×12),
+  the log says "could not check" with the count and each path as its role, and "destroyed" is said only when every folder was
+  listed and every targeted file was overwritten. A folder that is not there is not one it could not list.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
@@ -835,7 +840,7 @@ imply a protection we cannot deliver.
   `F_GETLK` per kept file, a rewrite every 100 ms for about 2 s while a holder is seen, then always one more rewrite bounded
   by another 2 s plus the disk's flush, salt-bearing heads first, each file capped at its size when kept plus 256 MiB, at
   most 64 files kept); its audit log (`~/.open-omniscience-uninstall.log`) then says, without a path or a process id, that
-  another program had the database open while the erase ran (once a holder is seen, never "none"), that it could not check
+  another program had the database open during the erase (once a holder is seen, never "none"), that it could not check
   (always so on Windows, and whenever a store file was a link, could not be kept or nothing was probed), or that none was
   seen. No line of that log names a path or a process id (row 334): a path is written as its role (`<data>`, `<home>/.../<file name>`, `.../<file name>`), and one it cannot read as `<path withheld>`. A holder with no lock at that moment, one using a locking scheme `F_GETLK` does not see, or one on another computer
   through a network share cannot be seen, so "none" is never a proof. Such

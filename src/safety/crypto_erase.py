@@ -91,6 +91,28 @@ _LIMIT_NOTE_NOT_CLEAN = (
 )
 
 
+# R798: the note when a walk could not list a folder it was to erase -- the files in it were never checked.
+_UNLISTED_SENTENCE = (
+    "The erase could not list some of the folders it was to erase, so it could not check the files in them: the erase may be "
+    "incomplete."
+)
+_LIMIT_NOTE_UNLISTED = (
+    _UNLISTED_SENTENCE + " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
+    "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
+)
+
+
+def _masked(paths: list[str]) -> list[str]:
+    """``paths`` for a log line (R734/R736): each as its role (``<data>/.../name``, ``<home>/.../name``, ``.../name``), and the
+    whole list withheld when the masking itself fails, never written as given."""
+    try:
+        from src.monitoring.path_tokens import tokenise_paths
+
+        return [tokenise_paths(p) for p in paths]
+    except Exception:  # noqa: BLE001 - a log line never carries a raw path
+        return ["(path withheld)"] * len(paths)
+
+
 def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> bool:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
@@ -133,7 +155,7 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
             os.fsync(f.fileno())
         return True
     except OSError:
-        _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", path)
+        _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
 
 
@@ -454,7 +476,7 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
         if s and overwritten:
             keys_destroyed.append(name)
     if shared:
-        others = [e.name for e in _listing(keys_dir) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
+        others = [e.name for e in _listing(keys_dir, unlisted) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
         for name in dict.fromkeys([*_OTHER_KEY_FILES, *others]):
             s, _overwritten, w = track(keys_dir / name)
             seen += s
@@ -496,7 +518,7 @@ def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False) ->
         path.unlink()
         return (True, overwritten, True)
     except OSError:
-        _LOG.warning("crypto-erase: could not unlink %s", path)
+        _LOG.warning("crypto-erase: could not unlink %s", _masked([str(path)])[0])
         return (True, overwritten, False)
 
 
@@ -578,21 +600,27 @@ def _copy_patterns(folder: Path, base: Path, dbs: list[Path]) -> list[re.Pattern
     return pats
 
 
-def _listing(folder: Path) -> list[os.DirEntry]:
-    """The top-level entries of ``folder``, or none when it cannot be listed. ``list`` closes the scan as it ends it."""
+def _listing(folder: Path, unlisted=None) -> list[os.DirEntry]:
+    """The top-level entries of ``folder``, or none when it cannot be listed. ``list`` closes the scan as it ends it. A folder that
+    is not there holds nothing; one that is there but cannot be listed is handed to ``unlisted`` (R798), never passed over in
+    silence."""
     try:
         return list(os.scandir(folder))
-    except OSError:
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        if unlisted is not None:
+            unlisted(exc)
         return []
 
 
-def _db_copies(folder: Path, base: Path, dbs: list[Path]) -> list[Path]:
+def _db_copies(folder: Path, base: Path, dbs: list[Path], unlisted=None) -> list[Path]:
     """The app's own copies of a database in ``folder``, by name; regular files only (a link is left to step 6)."""
     pats = _copy_patterns(folder, base, dbs)
     if not pats:
         return []
     out = []
-    for entry in _listing(folder):
+    for entry in _listing(folder, unlisted):
         if not any(p.fullmatch(entry.name) for p in pats):
             continue
         try:
@@ -625,7 +653,7 @@ def _copy_mode(p: Path, *, encrypted_store: bool) -> str:
     return "plain" if head == _SQLITE_MAGIC else "head"
 
 
-def _erase_roots(base: Path, *, app_only: bool) -> list[Path]:
+def _erase_roots(base: Path, *, app_only: bool, unlisted=None) -> list[Path]:
     """What steps 5b and 6 reach: the data folder whole, or, in a folder the app does not own (R711), each top-level entry the app
     owns there, by name."""
     if not base.exists():
@@ -635,7 +663,7 @@ def _erase_roots(base: Path, *, app_only: bool) -> list[Path]:
     from src.safety.data_scope import is_app_owned, owned_spec
 
     spec = owned_spec(shared=True)  # the app's common names (models, cache, keys...) are left: they may be the operator's
-    return sorted(Path(e.path) for e in _listing(base) if is_app_owned(e.name, spec=spec))
+    return sorted(Path(e.path) for e in _listing(base, unlisted) if is_app_owned(e.name, spec=spec))
 
 
 def _files_under(roots: list[Path], base: Path, onerror, skip: Path | None = None):
@@ -733,8 +761,8 @@ def finish_holder_check(report: dict, generation: int) -> str:
         state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
     report["other_holder"] = state
     if state != HOLDER_NONE:
-        report["limit"] = _LIMIT_NOTE_NOT_CLEAN
-        _LOG.warning("CRYPTO-ERASE: %s", "another program still had the database open when the erase ended; the erase may be "
+        report["limit"] = _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+        _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
                      "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
     return state
 
@@ -770,8 +798,15 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # "keys_destroyed", which must only ever mean the overwrite actually completed.
     overwrite_failures: list[str] = []
 
+    # R798: every folder a walk could not list, in every walk of this erase (the keys folder, the copies beside each database, the
+    # app's own entries of a shared folder, steps 5b and 6). Any one of them makes the result "may be incomplete": the files in it
+    # were never checked, so nothing here is called destroyed.
+    unlisted_folders: list[str] = []
+
     def _unlisted(failed_listing) -> None:  # a folder a walk cannot list is named (its path only), never skipped in silence
-        overwrite_failures.append(str(getattr(failed_listing, "filename", None) or "an unlistable folder"))
+        name = str(getattr(failed_listing, "filename", None) or "an unlistable folder")
+        overwrite_failures.append(name)
+        unlisted_folders.append(name)
 
     def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
         s, overwritten, w = _shred(p, head_bytes=head_bytes)
@@ -933,7 +968,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     copies_destroyed: list[str] = []
     plain_copies: list[Path] = []
     for folder in dict.fromkeys([base, *(db.parent for db in dbs)]):
-        for p in _db_copies(folder, base, dbs):
+        for p in _db_copies(folder, base, dbs, _unlisted):
             mode = _copy_mode(p, encrypted_store=encrypted is True)
             if mode == "plain":
                 plain_copies.append(p)
@@ -957,7 +992,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    sits past its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
     #    failure. In a folder the app does not own, only the app's entries are reached.
     heads_elsewhere = 0
-    roots = _erase_roots(base, app_only=app_only)
+    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted)
     for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"]):
         if p.is_symlink() or not p.is_file():
             continue
@@ -992,7 +1027,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         chosen = configured_folder()
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
-    roots = _erase_roots(base, app_only=app_only)  # listed again: a file the app wrote since 5b is the app's too
+    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted)  # listed again: a file the app wrote since 5b is the app's too
     for p in _files_under(roots, base, _unlisted):  # never follows a symlinked folder (followlinks=False) or a junction
         if p.is_symlink() or not p.is_file():
             # A link is removed, never written through: its target may be anywhere, outside the data dir included.
@@ -1021,16 +1056,24 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             shutil.rmtree(base, ignore_errors=True)
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
+    unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
+    # The log names no path whole (R734/R736): each is written as its role, and one that cannot be read as such is withheld.
+    if unlisted_folders:
+        _LOG.error(
+            "CRYPTO-ERASE: could not check %d folder(s) it could not list; the erase may be incomplete: %s",
+            len(unlisted_folders),
+            _masked(unlisted_folders),
+        )
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
             len(overwrite_failures),
-            overwrite_failures,
+            _masked(overwrite_failures),
         )
     _LOG.warning(
         "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
         "%d overwrite failures)",
-        base,
+        _masked([str(base)])[0],
         encrypted,
         wiped,
         seen,
@@ -1059,7 +1102,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
         "removed": not base.exists(),
-        "limit": _LIMIT_NOTE,
+        # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
+        "unlisted_folders": len(unlisted_folders),
+        "limit": _LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE,
     }
 
 
@@ -1117,7 +1162,7 @@ def full_secure_erase(
     with contextlib.suppress(OSError):
         shutil.rmtree(scrub_dir, ignore_errors=True)
 
-    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", base, passes, total)
+    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)])[0], passes, total)
     return {
         "phase": "free-space-scrub",
         "data_dir": str(base),
