@@ -366,7 +366,7 @@
       const kws = (a.keywords || []).map(k =>
         `<button type="button" class="an-facet" data-on-click="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
         + `title="${esc(t("Mentions in this article — open this keyword's corpus."))}">`
-        + `${esc(k.term)} <span class="muted">${k.count}</span></button>`).join(" ");
+        + `<span translate="no">${esc(k.term)}</span> <span class="muted">${k.count}</span></button>`).join(" ");
       const when = ooIsoDate(a.published_at);
       const lang = a.language || a.detected_language || "";
       // Ruling 12: expanding is a class toggle over text ALREADY in the payload -- a feed
@@ -1004,8 +1004,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const x = _homeTrendTerms[i];
       if (!x || !Array.isArray(x.series)) return;   // defensive: nothing to enlarge
-      chartEnlarge(x.term, [{label: x.term, unit: t("mentions"),
-        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "");
+      chartEnlarge(x.term, [{label: x.term, labelIsData: true, unit: t("mentions"),
+        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "", {titleIsData: true});
     }
     // Home severity alert strip (info / watch / urgent) — GET /api/signals/alerts, LOCAL,
     // no network (reads the cached hazard snapshot; a producer NEVER fetches). Compact +
