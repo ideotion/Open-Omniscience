@@ -65,6 +65,28 @@ for _ in range(240):                        # wait <=120s for the server to exit
     time.sleep(0.5)
 log = []
 def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "  " + m)
+# R734/R736 (row 334): no line of this log names a path or a process id. A path is written as its role: the data folder as <data>,
+# a path inside it or the home folder as <data>/.../<file name> or <home>/.../<file name>, any other as .../<file name> (the
+# same form as the diagnostics' path tokens, src/monitoring/path_tokens.py, which this process cannot import). A path it cannot
+# read is written as <path withheld>, never as given.
+def tok(p):
+    try:
+        q = os.path.normpath(os.fspath(p)); c = os.path.normcase(q)
+        name = os.path.basename(q)
+        parts = [x for x in q.replace("\\", "/").split("/") if x]
+        if len(parts) >= 2 and parts[-2].lower() in ("home", "users", "documents and settings"):
+            return "<home>"                         # a profile folder itself, whatever root holds it: its name is the user's
+        for label, root in (("<data>", plan.get("wipe_data_dir")), ("<home>", os.path.expanduser("~"))):
+            if not root or root == "~": continue
+            r = os.path.normcase(os.path.normpath(root))
+            if label == "<home>" and not os.path.basename(r.rstrip("\\/")): continue   # a home of "/" names no role
+            if c == r: return label
+            if c.startswith(r.rstrip("\\/") + os.sep): return label + "/.../" + name
+        for i, seg in enumerate(parts[:-1]):        # inside anyone's profile folder (/home/<name>, C:\\Users\\<name>)
+            if seg.lower() in ("home", "users", "documents and settings"):
+                return "<home>/.../" + name
+        return ".../" + name if name else "<path withheld>"
+    except Exception: return "<path withheld>"
 # Crypto-erase, stdlib-only + inline (this detached process cannot import src, the venv
 # is gone). SQLCipher keeps its 16-byte salt in page 1 of the encrypted DB: destroy that
 # page and the key is underivable, so the (possibly multi-GB) ciphertext body is noise
@@ -190,14 +212,14 @@ def check_other_holders():
         try: os.close(fd)
         except OSError: pass
     kept.clear()
-rec("uninstall watcher start (pid %d)" % pid)
+rec("uninstall watcher start")
 for f in plan.get("files", []):
-    try: os.remove(f); rec("removed launcher " + f)
-    except OSError as e: rec("launcher kept " + f + " (" + str(e) + ")")
+    try: os.remove(f); rec("removed launcher " + tok(f))
+    except OSError as e: rec("launcher kept " + tok(f) + " (" + (e.strerror or type(e).__name__) + ")")   # str(e) names the path
 v = plan.get("venv")
 if v:
     shutil.rmtree(v, ignore_errors=True)
-    rec(("removed venv " if not os.path.exists(v) else "venv KEPT (in use?) ") + v)
+    rec(("removed venv " if not os.path.exists(v) else "venv KEPT (in use?) ") + tok(v))
 wd = plan.get("wipe_data_dir")
 # R711: a data folder the app does not own (a home folder, a drive root...) is never walked whole or removed. The plan then
 # carries the app's own NAMES (decided in-process, src/safety/data_scope.py, its common names such as "models" left out),
@@ -277,10 +299,10 @@ if wd and os.path.isdir(wd):
         try: left = len(os.listdir(wd))
         except OSError: left = -1
         rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries"
-            % (wd, only.get("reason"), left))
+            % (tok(wd), only.get("reason"), left))
     else:
         shutil.rmtree(wd, ignore_errors=True)
-    rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (wd, wiped, seen, scrubbed))
+    rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (tok(wd), wiped, seen, scrubbed))
 # DuckDB analytics cache can live outside the data dir (OO_COLUMNAR_DIR). Only present in
 # the plan when it actually differs from wd -- head-wipe the two known files there (never
 # rmtree an externally-configured directory we don't otherwise own).
@@ -293,11 +315,11 @@ if sd and os.path.isdir(sd):
             overwrite(fp, True)
             try: os.remove(fp); sd_wiped += 1
             except OSError: pass
-    rec("wiped columnar store %s (%d files, header-only)" % (sd, sd_wiped))
+    rec("wiped columnar store %s (%d files, header-only)" % (tok(sd), sd_wiped))
 af = plan.get("app_folder")
 if af and os.path.isdir(af):
     shutil.rmtree(af, ignore_errors=True)
-    rec(("removed app folder " if not os.path.exists(af) else "app folder KEPT ") + af)
+    rec(("removed app folder " if not os.path.exists(af) else "app folder KEPT ") + tok(af))
 rec("uninstall watcher done")
 lp = plan.get("audit_log")
 if lp:
@@ -520,7 +542,7 @@ def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: 
     _spawn(plan, os.getpid())
     _arm_shutdown()
     _LOG.warning("uninstall scheduled: mode=%s venv=%s launchers=%d folder=%s data=%s",
-                 plan["mode"], plan["venv"], len(plan["launchers"]),
+                 plan["mode"], bool(plan["venv"]), len(plan["launchers"]),   # R734/R736: no path in the app's log
                  bool(plan.get("app_folder")), bool(plan.get("wipe_data_dir")))
     overwrite_note = (
         "Overwrite-in-place does NOT guarantee unrecoverability on SSD/flash or "

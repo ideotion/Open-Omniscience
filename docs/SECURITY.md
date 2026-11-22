@@ -834,7 +834,7 @@ imply a protection we cannot deliver.
   most 64 files kept); its audit log (`~/.open-omniscience-uninstall.log`) then says, without a path or a process id, that
   another program had the database open while the erase ran (once a holder is seen, never "none"), that it could not check
   (always so on Windows, and whenever a store file was a link, could not be kept or nothing was probed), or that none was
-  seen. A holder with no lock at that moment, one using a locking scheme `F_GETLK` does not see, or one on another computer
+  seen. No line of that log names a path or a process id (row 334): a path is written as its role (`<data>`, `<home>/.../<file name>`, `.../<file name>`), and one it cannot read as `<path withheld>`. A holder with no lock at that moment, one using a locking scheme `F_GETLK` does not see, or one on another computer
   through a network share cannot be seen, so "none" is never a proof. Such
   a folder is also said at every start: a warning in the log and the terminal, and a notice on the unlock page and in the
   app, which carries a reason code and never the path. A step of the tidying after a completed erase that fails is
