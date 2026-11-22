@@ -26,6 +26,7 @@ import sqlalchemy as sa
 
 import src.database.session as session
 import src.diagnostics as diag
+from tests._app_engine import app_sqlite_engine
 
 
 def test_doctor_healthy_returns_zero(capsys):
@@ -56,7 +57,7 @@ def _schemaless_db(tmp_path, monkeypatch):
     interrupted first launch (or a bare alembic stamp) leaves behind."""
     db = tmp_path / "open_omniscience.db"
     url = f"sqlite:///{db}"
-    engine = sa.create_engine(url)
+    engine = app_sqlite_engine(db)
     with engine.connect() as c:  # touch it: the file now exists, with no schema
         c.execute(sa.text("select 1"))
     assert db.exists()
@@ -107,7 +108,7 @@ def test_a_real_query_failure_is_still_critical_and_bounded(tmp_path, monkeypatc
 
     db = tmp_path / "open_omniscience.db"
     url = f"sqlite:///{db}"
-    engine = sa.create_engine(url)
+    engine = app_sqlite_engine(db)
     Base.metadata.create_all(engine)
     monkeypatch.setattr(session, "engine", engine)
     monkeypatch.setattr(session, "DATABASE_URL", url)

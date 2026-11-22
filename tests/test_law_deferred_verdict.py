@@ -19,6 +19,8 @@ import subprocess
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STRINGS = ("deferred", "{n} deferred (the host's own Crawl-delay)")
 
@@ -58,7 +60,6 @@ def test_the_coverage_report_names_every_verdict_its_mix_can_hold_in_its_method(
     import ast
     import re
 
-    import sqlalchemy as sa
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
@@ -70,7 +71,7 @@ def test_the_coverage_report_names_every_verdict_its_mix_can_hold_in_its_method(
         n.value.value for n in ast.walk(func) if isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
     }
     assert {"deferred", "re_extracted", "changed", "unchanged"} <= returned, returned  # the reader found the real returns
-    engine = sa.create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     method = law_coverage_report(sessionmaker(bind=engine, future=True)())["method"]
     for verdict in sorted(returned - {"never_checked"}):

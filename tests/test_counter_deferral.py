@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -39,10 +39,11 @@ from src.analytics.counter_deferral import (
 from src.analytics.extract import ExtractedTerm
 from src.analytics.store import counter_envelope, index_article, reindex_articles
 from src.database.models import Article, Base, DerivedMeta, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
-def _engine(path="sqlite://"):
-    eng = create_engine(
+def _engine(path=":memory:"):
+    eng = app_sqlite_engine(
         path, connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)

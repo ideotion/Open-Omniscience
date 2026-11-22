@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
+
 _ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -44,15 +46,15 @@ def _build_dump_index(data_dir: Path) -> None:
 
 @pytest.fixture()
 def db():
-    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy")
     from sqlalchemy import text
     from sqlalchemy.orm import sessionmaker
 
     from src.database.fts import ensure_fts
     from src.database.models import Base, Source
 
-    eng = sa.create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()

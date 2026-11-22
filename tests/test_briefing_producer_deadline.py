@@ -27,6 +27,7 @@ import src.api.insights as ins
 from src.briefing import registry, service
 from src.briefing.card import Card
 from src.database import maintenance as M
+from tests._app_engine import app_sqlite_engine
 
 
 def _card(name: str) -> Card:
@@ -170,7 +171,7 @@ def test_an_enclosing_deadline_is_not_shadowed_by_the_per_producer_one(monkeypat
 
 # --------------------------------------------------------------------------- the point: the log can be checkpointed again
 def _wal_engine(path):
-    eng = sa.create_engine(f"sqlite:///{path}")
+    eng = app_sqlite_engine(path)
     with eng.begin() as c:
         c.exec_driver_sql("PRAGMA journal_mode=WAL")
         c.exec_driver_sql("CREATE TABLE t (x INTEGER)")

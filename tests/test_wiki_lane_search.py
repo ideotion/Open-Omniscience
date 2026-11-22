@@ -895,7 +895,6 @@ def test_the_reader_carries_the_licence_and_the_revision_for_an_added_version(la
 
 
 def test_the_omnibar_wiki_group_carries_the_lane_hits_beside_the_corpus(lane):
-    import sqlalchemy as sa
     from sqlalchemy.orm import sessionmaker
 
     from src.api.search_omni import _wiki_group
@@ -904,7 +903,7 @@ def test_the_omnibar_wiki_group_carries_the_lane_hits_beside_the_corpus(lane):
 
     _warm(title="Omnibar page", latest=(2601, "The omnibar finds molybdenum.", T0))
     _index()
-    eng = sa.create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     try:

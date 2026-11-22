@@ -23,10 +23,10 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _DOMAIN = "news.example"
 _NEEDLE = "hunter2"
@@ -45,15 +45,15 @@ def _needle_free(text: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _engine(url: str):
-    engine = create_engine(url, future=True, connect_args={"check_same_thread": False})
+def _engine(path):
+    engine = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return engine
 
 
 @pytest.fixture()
 def sess_factory(tmp_path):
-    engine = _engine(f"sqlite:///{tmp_path / 's.db'}")
+    engine = _engine(tmp_path / 's.db')
     yield sessionmaker(bind=engine, future=True)
     engine.dispose()
 
@@ -305,7 +305,7 @@ def test_the_csv_export_keeps_the_login_and_imports_back(sess_factory, tmp_path,
     assert _CRED in body
     rows, errors = parse_sources_csv(body)
     assert not errors
-    other = sessionmaker(bind=_engine(f"sqlite:///{tmp_path / 'b.db'}"), future=True)
+    other = sessionmaker(bind=_engine(tmp_path / 'b.db'), future=True)
     with other() as s:
         upsert_sources(s, rows)
         assert [r.rss_url for r in s.query(Source)] == [_CRED]
@@ -319,7 +319,7 @@ def test_the_yaml_exports_keep_the_login_and_import_back(client, sess_factory, t
     with sess_factory() as s:
         SourceManager(s).export_sources_to_yaml(str(path))
     assert _CRED in path.read_text(encoding="utf-8")
-    other = sessionmaker(bind=_engine(f"sqlite:///{tmp_path / 'b.db'}"), future=True)
+    other = sessionmaker(bind=_engine(tmp_path / 'b.db'), future=True)
     with other() as s:
         SourceManager(s).import_sources_from_yaml(str(path))
         assert [r.rss_url for r in s.query(Source)] == [_CRED]
@@ -330,8 +330,8 @@ def test_a_backup_restore_keeps_the_login(tmp_path):
 
     staged, working = tmp_path / "staged.db", tmp_path / "working.db"
     for path in (staged, working):
-        _engine(f"sqlite:///{path}").dispose()
-    engine = _engine(f"sqlite:///{staged}")
+        _engine(path).dispose()
+    engine = _engine(staged)
     with sessionmaker(bind=engine, future=True)() as s:
         src = Source(name="News", domain=_DOMAIN, rss_url=_CRED)
         s.add(src)

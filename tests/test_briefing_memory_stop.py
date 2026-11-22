@@ -18,13 +18,13 @@ from __future__ import annotations
 import json
 
 import pytest
-import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
 import src.api.insights as ins
 from src.briefing import registry, service
 from src.database import maintenance as M
 from src.utils.cache import SimpleCache
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
@@ -376,7 +376,7 @@ def test_a_marker_that_keeps_coming_back_waits_from_when_the_last_refresh_finish
 
 # ------------------------------------------------------------------------------- warm_cache
 def _sqlite_session(tmp_path):
-    eng = sa.create_engine(f"sqlite:///{tmp_path / 'w.db'}",
+    eng = app_sqlite_engine(tmp_path / 'w.db',
                            connect_args={"check_same_thread": False})
     return sessionmaker(bind=eng)()
 

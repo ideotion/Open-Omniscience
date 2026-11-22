@@ -37,6 +37,7 @@ from src.analytics.store import (
 )
 from src.database import query as query_mod
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 _SMALL = 4_000
 _LARGE = 4 * _SMALL
@@ -45,8 +46,8 @@ _LARGE = 4 * _SMALL
 @pytest.fixture()
 def db(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = sa.create_engine(
-        f"sqlite:///{tmp_path / 'v.db'}", connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'v.db', connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()

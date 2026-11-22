@@ -21,20 +21,20 @@ import logging
 import time
 
 import pytest
-import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 import src.api.insights as ins
 from src.briefing import registry
 from src.utils.cache import SimpleCache
+from tests._app_engine import app_sqlite_engine
 
 _BUDGET = 0.2  # the patched "slow" line: a producer that sleeps past it is slow, one that returns at once is not
 _SLEEP = 0.25
 
 
 def _session(tmp_path):
-    eng = sa.create_engine(f"sqlite:///{tmp_path / 's.db'}", connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(tmp_path / 's.db', connect_args={"check_same_thread": False})
     return sessionmaker(bind=eng)()
 
 

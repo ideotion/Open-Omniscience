@@ -28,12 +28,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED, STATUS_UNQUALIFIED
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _DOMAIN = "news.example"
 _NEEDLE, _NEEDLE_B = "hunter2", "sw0rdfish"
@@ -65,8 +66,8 @@ def _needle_free(value: object) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _engine(url: str = "sqlite:///:memory:"):
-    engine = create_engine(url, future=True, connect_args={"check_same_thread": False})
+def _engine(path=":memory:"):
+    engine = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return engine
 
@@ -313,7 +314,7 @@ def test_the_curated_stamp_heal_keeps_a_pair(db, params, shape):
 
 def _corpus(path: Path, rows) -> dict[str, int]:
     """A store at ``path`` holding ``rows`` (``(url, key)``), one article each, titled by its feed URL. Returns url -> source id."""
-    engine = _engine(f"sqlite:///{path}")
+    engine = _engine(path)
     with sessionmaker(bind=engine, future=True)() as s:
         ids = _plant(s, [u for u, _k in rows])
         for sid, (url, key) in zip(ids, rows, strict=True):
