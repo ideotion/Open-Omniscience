@@ -18,7 +18,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
@@ -32,6 +31,7 @@ from src.briefing.card import (
     assert_no_score_fields,
 )
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -39,8 +39,8 @@ def corpus(monkeypatch, tmp_path):
     """A small indexed corpus across two countries/sources that fires several
     producers (rising/diet/lonely/coverage…). Mirrors test_briefing.py's pattern."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -379,8 +379,8 @@ def _lineage_corpus(monkeypatch, tmp_path, dated: bool):
     inserted articles rather than relying on the real MinHash detector to agree the
     short fixture texts are near-duplicate (mirrors this file's `corpus` fixture)."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

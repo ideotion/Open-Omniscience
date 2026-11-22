@@ -22,19 +22,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.ingest.batch import ArticleBatch
 from src.ingest.dedup_front import seen_canonical_url, seen_content_hash
 from src.ingest.pipeline import IngestResult, _exists, store_fetched
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def session(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 't.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 't.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -225,8 +225,8 @@ def test_batch_redo_path_populates_the_front(session, source):
     path used when a batched commit fails and is redone one article at a
     time."""
     batch = ArticleBatch(session, source, size=10)
-    from src.ingest.pipeline import canonicalize_url, generate_content_hash
     from src.ingest.extract import extract_article
+    from src.ingest.pipeline import canonicalize_url, generate_content_hash
 
     html = _article_html("I", "Redo path content sentence unique.")
     doc = extract_article(html, url="https://test.example/i")

@@ -27,13 +27,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.backup import merge as merge_mod
 from src.backup.merge import merge_corpus, verify_copy
 from src.database.fts import _FTS_DDL
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -46,7 +46,7 @@ _BATCH_META = {
 
 def _corpus(path: Path, *, articles: int, first: int = 0, fts: bool = True) -> None:
     """A corpus with the real FTS table + triggers, populated THROUGH them."""
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
     con = sqlite3.connect(path, isolation_level=None)
@@ -55,7 +55,7 @@ def _corpus(path: Path, *, articles: int, first: int = 0, fts: bool = True) -> N
             con.execute(ddl)
     con.close()
 
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     now = datetime.now(UTC)
     with sessionmaker(bind=engine, future=True)() as s:
         src = Source(name="Wire", domain="wire.example")
@@ -470,7 +470,7 @@ def test_the_row_counter_reaches_the_full_set(tmp_path) -> None:
 def _add_arabic_article(path: Path, *, n: int) -> None:
     """One article whose text the index transform CHANGES (vocalised Arabic, teh marbuta),
     so its index entry and its recorded mask prove the transform ran on it."""
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     with sessionmaker(bind=engine, future=True)() as s:
         src = s.query(Source).first()
         s.add(Article(

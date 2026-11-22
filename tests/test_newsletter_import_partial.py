@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from src.api import ingestion
 from src.api.main import app
+from tests._app_engine import app_sqlite_engine
 
 
 def _eml(n: int) -> bytes:
@@ -91,12 +92,11 @@ def _plain(mid: str, body: str) -> bytes:
 
 
 def _session():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     src = Source(name="N", domain="nl.test")

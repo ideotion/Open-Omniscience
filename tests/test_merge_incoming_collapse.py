@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.backup.merge import merge_corpus
@@ -26,6 +26,7 @@ from src.database.models import (
     ExternalSource,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -37,7 +38,7 @@ _BATCH_META = {
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 
@@ -64,7 +65,7 @@ def _add_article(s, *, hashv: str = "H1") -> int:
 
 
 def _count(path: Path, table: str) -> int:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with engine.connect() as c:
             return int(c.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar())  # noqa: S608

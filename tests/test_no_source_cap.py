@@ -10,18 +10,18 @@ explicit soft cap. SQLite ``LIMIT 0`` returns nothing, so ``capped`` guards it.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
 from src.database.query import capped
 from src.scheduler.runner import plan_preview
 from src.scheduler.settings import SchedulerSettings, _coerce_int, load_settings, save_settings
+from tests._app_engine import app_sqlite_engine
 
 
 def _db_with_sources(n: int):
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

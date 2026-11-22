@@ -15,13 +15,13 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, CommodityPrice, MarketExtractionRule, Source
 from src.ingest import EthicalFetcher
 from src.markets.extract import extract_price, parse_number
 from src.markets.pipeline import run_rule
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # parse_number
@@ -128,8 +128,8 @@ class FakeSession:
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

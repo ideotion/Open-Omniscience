@@ -14,6 +14,7 @@ from src.catalog.provenance import (
     WIKIPEDIA,
     provenance_of,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def test_wikipedia_recognised_by_domain_only():
@@ -124,13 +125,12 @@ def test_implied_tags_merge_never_replace():
 def test_ensure_channel_tags_heals_idempotently():
     """The boot heal materialises implied tags on the bounded candidate set, appends
     only (never removes/reorders), and is a no-op the second time."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.catalog.provenance import ensure_channel_tags
     from src.database.models import Base, Source
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()
     s.add_all([

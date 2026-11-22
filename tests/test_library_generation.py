@@ -16,9 +16,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 
 from src.database import library_generation as gen
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 
 
@@ -46,7 +47,7 @@ def _engine(live: Path, *, creator=None):
         return sqlite3.connect(str(live), check_same_thread=False)
 
     # a FILE url: the pool is a QueuePool, as the app's is (an in-memory url gets a SingletonThreadPool, which closes checked-out connections)
-    engine = create_engine(f"sqlite:///{live}", creator=gen.guarded_creator(creator or _open))
+    engine = app_sqlite_engine(live, creator=gen.guarded_creator(creator or _open))
     gen.attach(engine)
     return engine
 
@@ -111,7 +112,7 @@ def test_without_the_guard_a_save_through_a_checked_out_connection_lands_in_the_
     """The defect, reproduced: the evidence that the guard below is what stops it."""
     live = tmp_path / "live.db"
     _store(live)
-    engine = create_engine(f"sqlite:///{live}")  # no guard
+    engine = app_sqlite_engine(live)  # no guard
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT count(*) FROM notes")).scalar()

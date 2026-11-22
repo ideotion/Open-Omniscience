@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.api.database import _compute_figures
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import app_js
 
 
@@ -44,7 +44,7 @@ def _corpus(session: Session, now: datetime) -> None:
 
 
 def test_compute_figures_reports_averages_and_rates():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     now = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
     with Session(eng) as s:
@@ -61,7 +61,7 @@ def test_compute_figures_reports_averages_and_rates():
 
 
 def test_compute_figures_empty_corpus_is_honest():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     now = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
     with Session(eng) as s:

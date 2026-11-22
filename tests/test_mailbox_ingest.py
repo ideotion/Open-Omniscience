@@ -18,12 +18,12 @@ import threading
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.ingest.email import fetch_imap, fetch_mailbox, fetch_pop3
+from tests._app_engine import app_sqlite_engine
 
 _EML = (
     b"From: News <news@example.com>\r\n"
@@ -121,8 +121,8 @@ def client(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'mbox.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'mbox.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)

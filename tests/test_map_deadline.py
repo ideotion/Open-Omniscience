@@ -20,13 +20,14 @@ import time
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 import src.api.insights as ins
 from src.analytics import queries as q
 from src.database.maintenance import StatementTimeout
 from src.database.models import Base, DerivedMeta, Keyword, Source
+from tests._app_engine import app_sqlite_engine
 
 N_MENTIONS = 200_000
 N_KEYWORDS = 400
@@ -37,7 +38,7 @@ N_CITIES = 160
 @pytest.fixture(scope="module")
 def engine(tmp_path_factory):
     path = tmp_path_factory.mktemp("map") / "m.db"
-    eng = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     S = sessionmaker(bind=eng, future=True)
     today = date.today()

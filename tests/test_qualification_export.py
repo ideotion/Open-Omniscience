@@ -16,7 +16,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import (
@@ -35,6 +34,7 @@ from src.catalog.qualification_export import (
 )
 from src.catalog.qualification_overlay import apply_overlay, load_overlay
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 4, tzinfo=UTC)
 _ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ def _merge_script():
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -220,7 +220,7 @@ def test_an_export_is_adopted_verbatim_by_a_fresh_install(db, tmp_path):
     overlay_file.write_text(to_overlay_yaml(build_overlay_export(db, now=NOW)), encoding="utf-8")
 
     # A brand-new install: the same catalog domains, nothing judged.
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     fresh = sessionmaker(bind=engine, future=True)()
     for d in ("good.example", "bad.example"):

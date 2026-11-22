@@ -11,7 +11,6 @@ ready to ingest market coverage out of the box.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
@@ -20,6 +19,7 @@ from src.ingest.seed_sources import (
     load_sources_from_yaml,
     seed_default_sources,
 )
+from tests._app_engine import app_sqlite_engine
 
 _VALID_TYPES = {"stock_exchange", "commodity", "financial"}
 
@@ -39,8 +39,8 @@ def test_markets_catalog_parses_and_is_wellformed():
 
 
 def _session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

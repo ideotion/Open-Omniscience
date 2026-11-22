@@ -17,7 +17,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import inspect
+
+from tests._app_engine import app_sqlite_engine
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -37,7 +39,7 @@ def test_upgrade_head_builds_full_schema(tmp_path):
     res = _alembic(["upgrade", "head"], tmp_path)
     assert res.returncode == 0, res.stdout + res.stderr
     db = tmp_path / "open_omniscience.db"
-    tables = set(inspect(create_engine(f"sqlite:///{db}")).get_table_names())
+    tables = set(inspect(app_sqlite_engine(db)).get_table_names())
     for required in (
         "articles",
         "sources",
@@ -99,7 +101,7 @@ def test_env_py_fileconfig_never_disables_pre_existing_loggers(tmp_path):
     marker = logging.getLogger("test_env_py_fileconfig_marker")
     marker.disabled = False  # a real, pre-existing logger object
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'stamp.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'stamp.db', future=True)
     try:
         Base.metadata.create_all(engine)
         # This is the exact call app boot's self-heal makes; it must NOT disable
@@ -121,7 +123,7 @@ def test_the_day_counts_migration_round_trips_from_a7c3e5f19b20(tmp_path):
     db = tmp_path / "open_omniscience.db"
 
     def objects() -> set[str]:
-        eng = create_engine(f"sqlite:///{db}")
+        eng = app_sqlite_engine(db)
         with eng.connect() as c:
             rows = c.exec_driver_sql("SELECT name FROM sqlite_master WHERE type IN ('table','trigger')").fetchall()
         eng.dispose()

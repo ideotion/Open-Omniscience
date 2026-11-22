@@ -12,10 +12,10 @@ cites". The same footer still inflated three other counts: the convergence share
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 FOOTER = "https://apps.example/outlet-app"  # on every article of the big outlet
 REPORT = "https://agency.example/report"  # cited by one big-outlet article and two small-outlet ones
@@ -23,7 +23,7 @@ BIG = 20  # exactly FURNITURE_MIN_ARTICLES
 
 
 def _sessionmaker(tmp_path, *, big: int = BIG):
-    engine = create_engine(f"sqlite:///{tmp_path / 'f.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'f.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:

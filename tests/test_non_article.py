@@ -20,6 +20,7 @@ from src.ingest.non_article import (
     run_non_article_selftest,
     skip_non_articles_enabled,
 )
+from tests._app_engine import app_sqlite_engine
 
 ARTICLE_TEXT = "A full genuine article body with real sentences. " * 30
 
@@ -159,12 +160,11 @@ class _Doc:
 def test_store_fetched_skips_a_non_article_and_the_switch_bypasses_it(monkeypatch):
     # store_fetched imports the crypto/ORM stack; skip cleanly in the bare sandbox (runs in CI).
     pipeline = pytest.importorskip("src.ingest.pipeline")
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Base, Source
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="X", domain="x.example")

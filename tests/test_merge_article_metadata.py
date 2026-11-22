@@ -29,7 +29,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.backup.merge import (
@@ -38,6 +37,7 @@ from src.backup.merge import (
     merge_corpus,
 )
 from src.database.models import AiKeyword, Article, ArticleAnalysis, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -51,7 +51,7 @@ _BODY = "The summit opened in Geneva on 3 March 2026 with twelve delegations pre
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

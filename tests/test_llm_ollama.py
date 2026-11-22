@@ -14,7 +14,6 @@ from __future__ import annotations
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.llm import get_llm_client, get_ollama_client
@@ -23,6 +22,7 @@ from src.database.models import Article, Base, Source
 from src.database.session import get_db
 from src.llm import ollama
 from src.llm.ollama import LLMError, LLMUnavailable, OllamaClient
+from tests._app_engine import app_sqlite_engine
 
 
 def _installed(handler, *names: str):
@@ -227,8 +227,8 @@ def test_non_loopback_ollama_url_refused():
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'llm.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'llm.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

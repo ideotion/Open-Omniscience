@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy
-from sqlalchemy import create_engine, event, func, text
+from sqlalchemy import event, func, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database import writer
@@ -40,6 +40,7 @@ from src.ingest.email import (
     delete_imported_newsletters,
     newsletter_removal_stopped_text,
 )
+from tests._app_engine import app_sqlite_engine
 
 #: What a planted failure says: it must never reach the route's answer.
 _NEEDLE = "item58-needle-5513"
@@ -50,7 +51,7 @@ ROOT = Path(__file__).resolve().parent.parent
 @pytest.fixture()
 def db(tmp_path):
     """A file-backed session with the real gate handlers, autoflush off like the app's."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'item58.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'item58.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, autoflush=False, future=True)
     event.listen(maker, "before_flush", writer._on_before_flush)
@@ -415,7 +416,7 @@ def test_through_the_real_session_scope_a_failed_salvage_bump_reads_none(tmp_pat
     from src.database import repair
     from src.database import session as session_mod
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'scope.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'scope.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
     event.listen(maker, "before_flush", writer._on_before_flush)

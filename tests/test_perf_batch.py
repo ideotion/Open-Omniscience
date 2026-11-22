@@ -37,6 +37,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from tests._app_engine import app_sqlite_engine
+
 
 @pytest.fixture()
 def client():
@@ -216,12 +218,11 @@ def test_map_coverage_query_plan_uses_the_covering_index(tmp_path):
     order-dependency; confirmed empirically to choose the covering index
     deterministically at both 2,000 and 20,000 seeded articles.
     """
-    from sqlalchemy import create_engine
 
     from src.database.models import Base
 
     db_path = tmp_path / "plan.db"
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    engine = app_sqlite_engine(db_path, future=True)
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
         for i in range(1, 21):

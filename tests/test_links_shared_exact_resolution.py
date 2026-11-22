@@ -31,18 +31,18 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
 from src.database.models import Article, ArticleLink, Base, Keyword, KeywordMention, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'l.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'l.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

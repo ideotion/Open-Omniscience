@@ -10,13 +10,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.database.outlet import OutletMap, outlet_expr
 from src.integrity import collapse as collapse_mod
 from src.integrity.actors import corpus_actors
+from tests._app_engine import app_sqlite_engine
 
 _TEXT = (
     "The ministry announced sweeping new measures on Tuesday afternoon, declaring that the reforms would transform "
@@ -28,7 +28,7 @@ _TEXT = (
 @pytest.fixture()
 def s(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     yield session
@@ -181,7 +181,7 @@ def test_convergence_independence_gate_counts_outlets(s):
 
 def _kw_session(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     from src.database.derived_views import ensure_derived_views
 
@@ -256,7 +256,7 @@ def test_the_link_board_counts_citing_outlets_not_citing_feeds(tmp_path, outlet_
     from src.database.models import ArticleLink
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'l.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'l.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
@@ -403,7 +403,7 @@ def test_a_feed_level_count_says_it_counts_feeds_on_every_surface(tmp_path, monk
     from src.timemap.datestore import upcoming_deduced
 
     assert FEEDS_NOT_OUTLETS in METHOD
-    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'c.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:

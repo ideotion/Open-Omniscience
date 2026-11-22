@@ -24,7 +24,7 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.convergence import _shared_origin
@@ -34,6 +34,7 @@ from src.database.damage import DamageRegistry
 from src.database.maintenance import DEFERRED_INDEXES, HOT_INDEXES
 from src.database.models import Article, ArticleLink, Base, Source
 from src.jobs.background import Framed
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 LINK = "idx_article_link_article_url"
@@ -46,7 +47,7 @@ def _store(
 ):
     """A real store from the models with ``articles`` articles of ``links_per`` links each (every third url shared by
     several articles), then with ``drop`` dropped: the state of a store made before the index existed."""
-    eng = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}")
+    eng = app_sqlite_engine(tmp_path / 'corpus.db')
     Base.metadata.create_all(eng)
     S = sessionmaker(bind=eng)
     with S() as s:
