@@ -340,6 +340,9 @@ def scan_import_folder(
                 # Unencrypted volume copies an interrupted import left here before R686: named, never removed
                 # unless the operator asks (POST /api/backup/import-scan/remove-leftover-plaintext).
                 "leftover_plaintext": leftover_plaintext(d),
+                # R787: the Hugging Face models the artifact carries, read from its (plaintext, signed)
+                # volume manifest so the checklist can show where they would go and ask before placing.
+                **_artifact_hf(d),
             }
             for d in corpus_dirs
         ]
@@ -526,6 +529,28 @@ def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
         return _leftovers_from(text, entries)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
+
+
+#: The streamed artifact kind (src.backup.stream_backup.STREAM_KIND), mirrored to keep this module import-light.
+_STREAM_KIND = "oo-volumes-2"
+
+
+def _artifact_hf(d: Path) -> dict:
+    """``{"hf_models": {"count", "layout_recorded"}}`` when the artifact in ``d`` carries Hugging Face
+    models (R787), else ``{}``. Read from the volume manifest through the hardened reader; the restore
+    checks its signature before anything is placed, so this is what the checklist SHOWS, never what is
+    trusted. ``layout_recorded`` is false for an artifact made before it recorded which cache folder
+    its ``hub/`` stands for (R784's ``hf_layout``)."""
+    data = read_manifest_json(d / _VOL_MANIFEST)
+    if not isinstance(data, dict) or data.get("kind") != _STREAM_KIND:
+        return {}
+    fms = data.get("file_members")
+    if not isinstance(fms, list):
+        return {}
+    n = sum(1 for fm in fms if isinstance(fm, dict) and fm.get("category") == "hf_models")
+    if not n:
+        return {}
+    return {"hf_models": {"count": n, "layout_recorded": data.get("hf_layout") == HF_LAYOUT}}
 
 
 def _volume_count(d: Path) -> int:

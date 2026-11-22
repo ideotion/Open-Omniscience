@@ -601,6 +601,9 @@ class ImportQueueManager:
                         None if raw.get("trust_fetch_history") is None
                         else bool(raw.get("trust_fetch_history"))
                     ),
+                    # R787: only an explicit True (the person ticked the models, the folder shown)
+                    # places the Hugging Face models an artifact carries.
+                    "place_hf_models": raw.get("place_hf_models") is True,
                     "state": "queued",
                     "started_at": None,
                     "ended_at": None,
@@ -1437,6 +1440,7 @@ class ImportQueueManager:
             already_merged_digests=already,
             allow_unverified=bool(item.get("allow_unverified")),
             trust_fetch_history=item.get("trust_fetch_history"),
+            place_hf_models=item.get("place_hf_models") is True,
         )
         st = self._await(mgr.status, mgr.cancel)
         summary = st.get("summary") or {}

@@ -587,6 +587,7 @@ class VolumeBackupManager:
         hold_after_merge: bool = False,
         already_merged_digests: Collection[str] = (),
         trust_fetch_history: bool | None = None,
+        place_hf_models: bool = False,
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
         """Restore one artifact folder as a background job.
@@ -638,6 +639,10 @@ class VolumeBackupManager:
                     # first-launch answer -- so a caller that sends nothing keeps
                     # today's behaviour exactly.
                     "trust_fetch_history": trust_fetch_history,
+                    # R787: Hugging Face models the artifact carries are placed only when the person
+                    # ticked them, with the target folder shown; False (every caller that does not
+                    # ask) leaves them in the artifact, counted.
+                    "place_hf_models": bool(place_hf_models),
                 },
                 daemon=True,
                 name="volume-restore",
@@ -656,6 +661,7 @@ class VolumeBackupManager:
         restore_fn,
         *,
         trust_fetch_history: bool | None = None,
+        place_hf_models: bool = False,
         working_copy: Path | None = None,
         hold_after_merge: bool = False,
         already_merged_digests: frozenset[str] = frozenset(),
@@ -1005,6 +1011,7 @@ class VolumeBackupManager:
                                 staged.staging_dir,
                                 staged.file_members,
                                 should_stop=self._stop.is_set,
+                                place_hf=place_hf_models,
                             )
                         except Exception as exc:  # noqa: BLE001 - never lose a good merge
                             log_failure(

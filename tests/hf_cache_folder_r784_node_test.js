@@ -74,4 +74,44 @@ for (const lang of ["en", "fr", "ar", "ja"]) {
   assert(out.length === 1 && out[0].includes(t(INC)) && out[0].includes(t(WHY["not-writable"])), lang + ": result line: " + JSON.stringify(out));
   assert(lines({ refused_targets: {} }).length === 0, lang + ": drew a line for nothing refused");
 }
+
+// R787: the same rules for the models an encrypted artifact carries.
+const TICK = "Also restore the Hugging Face models this backup carries";
+const LEFT1 = "Not restored, because it was not ticked: {n} Hugging Face model file stays in this backup";
+const LEFTN = "Not restored, because they were not ticked: {n} Hugging Face model files stay in this backup";
+const FMERR = "The corpus was restored; putting the large files this backup carries back in place did not work.";
+for (const lang of ["en", "fr", "ar", "ja", "ru", "hi"]) {
+  const cat = LOCALE(lang);
+  const t = (k) => (cat[k] != null ? cat[k] : k);
+  const tf = (s, v) => String(t(s)).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+  const OOI18N = { t, tf };
+  for (const k of [TICK, LEFT1, LEFTN, FMERR]) assert(lang === "en" || t(k) !== k, lang + ": not translated: " + k);
+  const paren = (html) => "(" + html + ")";
+  const mk = (fn, extra) => new Function("window", "OOI18N", "esc", "fmtNum",
+    [extract("ooLabelText", CORE), extract("_hfTargetWhy", SRC), extract("_uxImHfNote", SRC), ...(extra || []).map((x) => extract(x, SRC)),
+      extract(fn, SRC), "return " + fn + ";"].join("\n"))({ OOI18N }, OOI18N, esc, (n) => String(n));
+  const row = mk("_uxImArtifactHfRow");
+  const p = "/home/x/.cache/huggingface/hub";
+  // Never ticked by default; the folder beside the tick.
+  const r1 = row([{ path: "a", hf_models: { count: 3, layout_recorded: true } }], { path: p, refused: null }, t, tf, paren);
+  assert(r1.includes('id="ux-i-corpus-hf"') && !/ux-i-corpus-hf"[^>]*checked/.test(r1), lang + ": ticked by default: " + r1);
+  assert(r1.includes(esc(t(TICK))) && r1.includes(esc(p)) && r1.includes(esc(t(TO))) && !r1.includes(esc(t(OLD))), lang + ": row: " + r1);
+  // A folder that cannot take them: the tick cannot be made, the reason is said.
+  const r2 = row([{ hf_models: { count: 1, layout_recorded: true } }], { path: p, refused: "not-writable" }, t, tf, paren);
+  assert(/ux-i-corpus-hf" disabled/.test(r2) && r2.includes(esc(t(NOT_HERE))) && r2.includes(esc(t(WHY["not-writable"]))), lang + ": refused row: " + r2);
+  // An old artifact without the layout marker.
+  const r3 = row([{ hf_models: { count: 1, layout_recorded: false } }], { path: p, refused: null }, t, tf, paren);
+  assert(r3.includes(esc(t(OLD))), lang + ": old-artifact note missing: " + r3);
+  assert(row([{ path: "a" }], { path: p }, t, tf, paren) === "", lang + ": drew a row for no models");
+  // The result lines.
+  const fl = mk("_uxImArtifactFileLines");
+  const o1 = fl({ hf_not_chosen: 2, refused_targets: {}, incomplete: false }, t);
+  assert(o1.lines.length === 1 && o1.lines[0] === tf(LEFTN, { n: "2" }) && o1.incomplete === false, lang + ": not ticked: " + JSON.stringify(o1));
+  assert(fl({ hf_not_chosen: 1 }, t).lines[0] === tf(LEFT1, { n: "1" }), lang + ": one file");
+  const o2 = fl({ refused_targets: { hf_models: "not-a-folder" }, incomplete: true }, t);
+  assert(o2.incomplete === true && o2.lines[0].includes(t(INC)) && o2.lines[0].includes(t(WHY["not-a-folder"])), lang + ": refused: " + JSON.stringify(o2));
+  const o3 = fl({ placed: 0, error: "x" }, t);
+  assert(o3.incomplete === true && o3.lines[0] === t(FMERR), lang + ": error: " + JSON.stringify(o3));
+  assert(fl(null, t).lines.length === 0 && fl({ placed: 3, hf_not_chosen: 0, refused_targets: {}, incomplete: false }, t).incomplete === false, lang + ": drew for nothing");
+}
 console.log("hf cache folder r784 node: ok");

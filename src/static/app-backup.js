@@ -1482,6 +1482,18 @@
       }
       return notes.map((n) => `<div class="muted" style="font-size:12px;margin-inline-start:28px">${n}</div>`).join("");
     }
+    // R787: an encrypted artifact that carries Hugging Face models. They are restored only when ticked
+    // here, never by default; the folder they go to on THIS computer (or why they cannot go there) is
+    // said beside the tick, and an artifact made before it recorded its cache layout says what it may miss.
+    function _uxImArtifactHfRow(corpus, hf, t, tfs, paren) {
+      const n = (corpus || []).reduce((a, c) => a + ((c && c.hf_models && c.hf_models.count) || 0), 0);
+      if (!n) return "";
+      const files = n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) });
+      const off = hf && hf.refused ? " disabled" : "";
+      const old = corpus.some((c) => c && c.hf_models && c.hf_models.layout_recorded === false);
+      return `<label class="switch" style="margin:0;margin-inline-start:28px"><input type="checkbox" id="ux-i-corpus-hf"${off}> ${esc(t("Also restore the Hugging Face models this backup carries"))} <span class="muted">${paren(esc(files))}</span></label>`
+        + _uxImHfNote({ hf_models: { count: n, layout_unrecorded: old } }, hf, t);
+    }
     function _uxImBlobRow(b, t, tfs, paren) {
       const parts = [], why = [];
       const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
@@ -1569,7 +1581,8 @@
           const bits = [t("encrypted volumes — additive, nothing you already have is overwritten")];
           if (nv) bits.push(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }));
           if (corpus.length > 1) bits.push(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }));
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`);
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`
+            + _uxImArtifactHfRow(corpus, f.hf_target, t, tfs, paren));
         }
         if (f.legacy_backup && f.legacy_backup.length) {
           const n = f.legacy_backup.length;
@@ -1689,7 +1702,9 @@
       // shown, so an unseen control can never speak for the operator.
       const trust = _uxImTrust();
       if (corpus.length && cb("ux-i-corpus")) {
-        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust, ..._uxImOwnKeys(c.path) });
+        // R787: only a tick the person made places the Hugging Face models an artifact carries.
+        const hfTick = cb("ux-i-corpus-hf") === true;
+        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust, ...(c.hf_models ? { place_hf_models: hfTick } : {}), ..._uxImOwnKeys(c.path) });
       }
       if (legacy.length && cb("ux-i-legacy")) {
         for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name, trust_fetch_history: trust, ..._uxImOwnKeys(lg.path) });
@@ -2083,7 +2098,9 @@
         }
         if (it.kind === "corpus" || it.kind === "legacy") {
           const rep = sm.report || sm || {};
-          summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
+          const fmOut = _uxImArtifactFileLines(rep.file_members, t);
+          summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep),
+            ...(fmOut.lines.length ? { caveat: fmOut.lines } : {}), ...(fmOut.incomplete ? { incomplete: true } : {}) });
         } else if (it.kind === "blobs") {
           // Counts as keyed one/many frames with a grouped number (R14): "3 restored"
           // welded a raw count to an English-ordered adjective that agrees with nothing.
@@ -3814,6 +3831,30 @@
     // Returns [] when there is nothing to say, so a clean restore renders unchanged.
     // Label:value, never an interpolated sentence -- a count cannot conjugate, and
     // Russian has three plural forms to Arabic's six.
+    // R787: what happened to the large files an artifact carries. Hugging Face models the person did
+    // not tick stayed in the artifact (said, never called restored); a cache folder here that could not
+    // take them, or any member refused or missing, makes the restore incomplete.
+    function _uxImArtifactFileLines(fm, t) {
+      const out = { lines: [], incomplete: false };
+      if (!fm || typeof fm !== "object") return out;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, vars) => s2.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const tgtWhy = (fm.refused_targets || {}).hf_models;
+      if (tgtWhy) {
+        out.lines.push(ooLabelText(t("Restore incomplete — the Hugging Face model cache was not restored"), _hfTargetWhy(tgtWhy, t)));
+      }
+      const left = fm.hf_not_chosen || 0;
+      if (left) {
+        out.lines.push(left === 1
+          ? tf("Not restored, because it was not ticked: {n} Hugging Face model file stays in this backup", { n: fmtNum(left, 0) })
+          : tf("Not restored, because they were not ticked: {n} Hugging Face model files stay in this backup", { n: fmtNum(left, 0) }));
+      }
+      if (fm.error) {
+        out.lines.push(t("The corpus was restored; putting the large files this backup carries back in place did not work."));
+        out.incomplete = true;
+      }
+      if (fm.incomplete || tgtWhy) out.incomplete = true;
+      return out;
+    }
     function _fbRefusalLines(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, vars) => {

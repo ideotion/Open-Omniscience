@@ -323,6 +323,8 @@ test("J-3: every bracket on the import checklist is the keyed frame, and the lar
     extract("_uxImBlobRow") + "\n" + extract("_uxImUnreadNote") + "\n" +
     // R784: the Hugging Face cache note under the large-data row.
     extract("_hfTargetWhy") + "\n" + extract("_uxImHfNote") + "\n" +
+    // R787: the Hugging Face tick under the corpus row.
+    extract("_uxImArtifactHfRow") + "\n" +
     "async " + extract("_uxImScan") + "\n" +
     "return { run: _uxImScan };";
   const mod = new Function("window", "OOI18N", "DOM", "api", src)(

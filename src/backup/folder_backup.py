@@ -706,8 +706,15 @@ def place_artifact_file_members(
     *,
     targets: dict[str, Path] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    place_hf: bool = False,
 ) -> dict:
     """Put an oo-volumes-2 artifact's large public files back into their live homes.
+
+    R787: the Hugging Face models an artifact carries are placed only when ``place_hf`` is true -- the
+    person ticked them on the import checklist, which showed the folder they go to on this computer.
+    Otherwise they stay in the artifact, counted in ``hf_not_chosen``, and nothing of them is written.
+    When the cache folder here cannot take them, the restore says so (``refused_targets``) and is
+    ``incomplete``, never complete.
 
     The counterpart of :func:`restore_folder_backup` for the files that rode INSIDE the
     signed artifact (S6.2). Same additive rule -- an existing destination file is never
@@ -744,6 +751,8 @@ def place_artifact_file_members(
     missing: list[dict] = []
     stopped = False
     hf_refused: str | None = None  # R784: looked at once, the first time a model-cache member comes up
+    hf_not_chosen = 0  # R787
+    refused_targets: dict[str, str] = {}
     for fm in file_members:
         if should_stop is not None and should_stop():
             stopped = True
@@ -764,6 +773,10 @@ def place_artifact_file_members(
         src_path = staging / name
         place_rel = rel
         if category == "hf_models":
+            if not place_hf:
+                # R787: never placed unasked. Counted, so the result can say what stayed in the artifact.
+                hf_not_chosen += 1
+                continue
             # R784: ``hub/`` is the hub cache folder itself, and only the cache's own shape is placed
             # (R777's rule, which this path now applies too).
             live_rel = hf_live_rel(rel)
@@ -774,6 +787,8 @@ def place_artifact_file_members(
             if hf_refused is None:
                 hf_refused = hf_target_refusal(root) or ""
             if hf_refused:
+                # R787: one fixed code for the whole category, said once on screen in the person's language.
+                refused_targets["hf_models"] = hf_refused
                 refused.append({"category": category, "rel": rel, "why": f"model cache folder {hf_refused}"})
                 continue
         dst = root / place_rel
@@ -813,6 +828,11 @@ def place_artifact_file_members(
         "missing": missing[:_PROBLEM_CAP],
         "missing_total": len(missing),
         "stopped": stopped,
+        # R787: what the person did not tick stays in the artifact; a cache folder that could not take
+        # the models makes the restore incomplete, as does any refused or missing member.
+        "hf_not_chosen": hf_not_chosen,
+        "refused_targets": refused_targets,
+        "incomplete": bool(refused or missing or stopped),
         "method": (
             "Files carried inside the artifact are placed additively: an existing local "
             "file is kept and counted in `skipped`, never replaced. Their bytes were "

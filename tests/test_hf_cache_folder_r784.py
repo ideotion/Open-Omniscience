@@ -234,13 +234,13 @@ def test_artifact_members_land_in_the_cache_folder_and_only_its_layout(tmp_path)
     out = place_artifact_file_members(staging, [
         {"category": "hf_models", "rel": "hub/" + _REL, "name": "m1"},
         {"category": "hf_models", "rel": ".bash_profile", "name": "m2"},
-    ], targets={"hf_models": live})
+    ], targets={"hf_models": live}, place_hf=True)
     assert out["placed"] == 1 and (live / _REL).read_bytes() == b"{}"
     assert [r["why"] for r in out["refused"]] == ["outside the model cache's layout"]
     assert not (live / ".bash_profile").exists() and not (live / "hub").exists()
     (tmp_path / "taken").write_bytes(b"x")
     out = place_artifact_file_members(staging, [{"category": "hf_models", "rel": "hub/" + _REL, "name": "m1"}],
-                                      targets={"hf_models": tmp_path / "taken"})
+                                      targets={"hf_models": tmp_path / "taken"}, place_hf=True)
     assert out["placed"] == 0 and out["refused"][0]["why"] == f"model cache folder {HF_TARGET_NOT_FOLDER}"
 
 
@@ -256,7 +256,7 @@ def test_artifact_placement_never_writes_through_a_link_in_the_live_cache(tmp_pa
     (live / "models--org--m" / "blobs").mkdir()
     os.symlink(Path("..") / ".." / "blobs" / "gone-blob", snap / "config.json")  # inside the cache, dangling
     out = place_artifact_file_members(staging, [{"category": "hf_models", "rel": "hub/" + _REL, "name": "m1"}],
-                                      targets={"hf_models": live})
+                                      targets={"hf_models": live}, place_hf=True)
     assert out["placed"] == 0 and out["refused"][0]["why"] == "a link on the way in your data folder"
     assert (snap / "config.json").is_symlink() and not (live / "models--org--m" / "blobs" / "gone-blob").exists()
 

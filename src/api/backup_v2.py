@@ -149,7 +149,10 @@ def import_scan_endpoint(path: str) -> dict:
         out = scan_import_folder(path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
-    if "hf_models" in (out.get("found", {}).get("blobs") or {}):
+    found = out.get("found", {})
+    corpus = found.get("corpus") or []
+    # R787: an encrypted artifact that carries Hugging Face models gets the same look at this computer's folder.
+    if "hf_models" in (found.get("blobs") or {}) or any(isinstance(c, dict) and c.get("hf_models") for c in corpus):
         # R784: the folder the Hugging Face models would be restored to ON THIS COMPUTER (or why they
         # cannot be), shown on the checklist before the person chooses. A local look, no network.
         from src.backup.folder_backup import hf_restore_target
