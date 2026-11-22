@@ -5816,6 +5816,7 @@
   "The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.": "Последняя попытка не удалась и ничего не изменила: показаны уже сохранённые значения, без изменений.",
   "The latest attempt failed, so nothing is stored for this yet.": "Последняя попытка не удалась, поэтому здесь пока ничего не сохранено.",
   "The latest {n} firings, newest first. Earlier ones are kept but not shown here.": "Последние срабатывания ({n}), сначала новые. Более ранние сохранены, но здесь не показаны.",
+  "The law catalogue could not be read either.": "Каталог законов тоже не удалось прочитать.",
   "The law catalogue could not be read, so only what is tracked here is counted.": "Каталог законов не удалось прочитать, поэтому учитывается только то, что отслеживается здесь.",
   "The law catalogue could not be read, so this country was not looked up.": "Каталог законов не удалось прочитать, поэтому эта страна не проверялась.",
   "The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.": "Отслеживаемые вами законы перепроверяются на новые редакции, когда подходит срок, не чаще раза в сутки каждый, затем следуют их ИИ-сводки изменений — никогда в режиме полёта. По умолчанию включено. Снимите флажок, чтобы остановить фоновую проверку; «Отследить изменения сейчас» в разделе «Правительства → Право» по-прежнему работает.",

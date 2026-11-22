@@ -773,6 +773,19 @@ const WIKI = {
     assert.ok(!html.includes("language_countries.yml"), "the config path came back as prose: " + html);
   }
   assert.ok(/<code dir="ltr">YAMLError<\/code>/.test(unread({ state: "unreadable", error: "YAMLError" })), "the error class is not shown as data");
+  // Row 319: the floor gave no country AND the catalogue could not be read: both are said, the catalogue's error as data.
+  const CAT = "the law catalogue legal_sources.yml could not be read (YAMLError)";
+  const both = R.livingLawFloorHtml({ floor: { state: "unchecked", reason: PATH_REASON, catalog_reason: CAT, by_state: null, languages: null,
+    floor: { state: "absent" } } }, t, tf);
+  noJunk(both, "the floor and the catalogue both unread");
+  assert.strictEqual(visible(both),
+    "The file that lists the floor's countries is missing, so nothing is counted. The law catalogue could not be read either. Error :: " + CAT);
+  assert.ok(both.includes(`<code dir="ltr">${CAT}</code>`) && /<p class="card-caveat">The law catalogue could not be read either\./.test(both), both);
+  assert.ok(!visible(unread({ state: "absent" })).includes("either"), "a read catalogue was said to be unread");
+  const seen319 = new Set();
+  R.livingLawFloorHtml({ floor: { state: "unchecked", catalog_reason: CAT, by_state: null, languages: null, floor: { state: "empty" } } },
+    (x) => { seen319.add(x); return x; }, tf);
+  assert.ok(seen319.has("The law catalogue could not be read either."), "the row 319 sentence never reached the translator");
   // the catalogue's read error: under the translated sentence, labelled, as data
   assert.ok(/could not be read, so only what is tracked here is counted\.[^<]*<code dir="ltr">the law catalogue legal_sources\.yml could not be read \(YAMLError\)<\/code>/.test(html)
     && text.includes("Error :: the law catalogue legal_sources.yml could not be read (YAMLError)"), html);

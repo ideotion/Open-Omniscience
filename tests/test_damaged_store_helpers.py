@@ -52,3 +52,19 @@ def test_the_file_format_walk_finds_the_pages_dbstat_finds(store):
 
 def test_a_name_with_no_tree_has_no_pages(store):
     assert H.btree_pages(store, "no_such_table") == []
+
+
+@pytest.mark.parametrize("encrypted", [pytest.param(False, id="plaintext"), pytest.param(True, id="sqlcipher")])
+def test_the_store_the_helper_builds_is_in_the_apps_journal_mode(tmp_path, encrypted):
+    """Row 320: the helper's stores are written through the app's pragmas, so they are WAL files like the app's own library, and the
+    builder leaves no log behind (its last step folds the log in and the last close removes it)."""
+    if encrypted:
+        H.needs_sqlcipher()
+    path = tmp_path / "s.db"
+    H.build_app_store(path, articles=20, encrypted=encrypted)
+    assert not os.path.exists(str(path) + "-wal")
+    con = H.open_store(path, key=H.KEY if encrypted else None)
+    try:
+        assert con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    finally:
+        con.close()

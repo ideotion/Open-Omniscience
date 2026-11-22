@@ -5816,6 +5816,7 @@
   "The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.": "The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.",
   "The latest attempt failed, so nothing is stored for this yet.": "The latest attempt failed, so nothing is stored for this yet.",
   "The latest {n} firings, newest first. Earlier ones are kept but not shown here.": "The latest {n} firings, newest first. Earlier ones are kept but not shown here.",
+  "The law catalogue could not be read either.": "The law catalogue could not be read either.",
   "The law catalogue could not be read, so only what is tracked here is counted.": "The law catalogue could not be read, so only what is tracked here is counted.",
   "The law catalogue could not be read, so this country was not looked up.": "The law catalogue could not be read, so this country was not looked up.",
   "The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.": "The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.",
