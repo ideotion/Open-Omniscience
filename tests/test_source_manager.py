@@ -25,20 +25,12 @@ Tests for SourceManager class
 This module contains tests for the comprehensive source management functionality.
 """
 
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database.models import Base, Source, SourceGroup
-from database.source_manager import SourceManager
+from src.database.models import Base, Source, SourceGroup
+from src.database.source_manager import SourceManager
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
@@ -49,7 +41,7 @@ def db_session(tmp_path):
     with them. The next uncached read of the store's country form then failed (the settings store had seen that file), the
     failure was held process-wide for its retry window, and tests in other files that only bind a country column, on their own
     in-memory databases, failed with ``StoreFormUnreadable``. Only under some test orders, so only in some parallel runs."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'sources.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / "sources.db")  # row 285: the app's pragmas, so a delete cascades as in the app
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     try:
@@ -64,6 +56,11 @@ def test_the_fixture_database_is_never_the_apps_live_store(db_session):
     from src.database.session import engine as live
 
     assert db_session.get_bind().url.database != live.url.database
+
+
+def test_the_fixture_database_cascades_as_the_app_does(db_session):
+    # Row 285: a bare create_engine leaves foreign_keys OFF, so an ON DELETE CASCADE the app relies on never fires here
+    assert db_session.connection().exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
 
 
 @pytest.fixture

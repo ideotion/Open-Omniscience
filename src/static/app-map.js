@@ -1138,7 +1138,11 @@
       const hover = vals.vintage
         ? tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}, extract of {vintage}.", vals)
         : tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}; the extract states no date.", vals);
-      return `<rect x="${x}" y="${y}" width="4" height="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.4" title="${esc(hover)}"></rect>`;
+      // Row 291 (R775): once a daily change file was applied, the last one's own date (or that it was not read) follows, in the words
+      // every OSM surface uses (app-core.js), from the one country_data_date. Nothing is added while none was applied.
+      const upd = (typeof ooOsmUpdatesClause === "function") ? ooOsmUpdatesClause(pt.osm_data_date) : "";
+      const title = upd ? `${hover} · ${upd}` : hover;
+      return `<rect x="${x}" y="${y}" width="4" height="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.4" title="${esc(title)}"></rect>`;
     }
 
     // The kind chips of the legend, as their own fragment: the visible KINDS change as

@@ -1077,8 +1077,14 @@
     // Row 283 (row 72's unowned part): the ONE verdict-to-words table, read by the badge AND by "Add & track". A robots
     // refusal is named as the site's rule ("blocked by the site's robots.txt") or our fail-closed refusal ("robots.txt not
     // readable"), never as a fetch error, a failure or an empty document: nothing was requested, so nothing failed.
-    function lawVerdictLabel(verdict) {
+    // Row 290: `host` is the server's robots_host, the site whose robots.txt refused a REDIRECT HOP (host only, R734). Given,
+    // the words name that site, since "the site" would read as the document's own; absent, the generic words stand.
+    function lawVerdictLabel(verdict, host) {
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      if (host && verdict === "robots_blocked") return tf("blocked by the robots.txt of {host} (reached by a redirect)", {host});
+      if (host && verdict === "robots_unread") return tf("robots.txt of {host} not readable (reached by a redirect)", {host});
       const labels = {
         never_checked: tr("not checked yet"), robots_blocked: tr("blocked by the site's robots.txt"),
         // robots.txt could not be read, so the fetch was refused (fail-closed): not the host's rule.
@@ -1092,7 +1098,7 @@
     function lawVerdictBadge(x) {
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const cls = _LAW_VERDICT_PILL[x.verdict] || "";
-      const label = lawVerdictLabel(x.verdict);
+      const label = lawVerdictLabel(x.verdict, x.robots_host);
       const hover = x.last_status ? esc(x.last_status) : tr("Never fetched yet.");
       return `<span class="pill ${cls}" title="${hover}">${esc(label)}</span>`;
     }
@@ -1144,7 +1150,8 @@
         // Keyed on the tracker's exact tag (the exception it caught), never the text-parsed verdict, whose catch-all would
         // call a real failure at an address that merely contains "robots" a robots block (Opus read of #2244).
         const rtag = r.track_result && r.track_result.robots;
-        const robotsWords = rtag === "blocked" ? lawVerdictLabel("robots_blocked") : rtag === "unread" ? lawVerdictLabel("robots_unread") : "";
+        const robotsWords = rtag === "blocked" ? lawVerdictLabel("robots_blocked", r.robots_host)
+          : rtag === "unread" ? lawVerdictLabel("robots_unread", r.robots_host) : "";
         msg.textContent = `${t("Added.")} ${t("Status:")} ${robotsWords || r.last_status || r.track_result.status}`;
         $("law-add-jur").value = ""; $("law-add-title").value = "";
         $("law-add-url").value = ""; $("law-add-official").value = "";
@@ -1185,9 +1192,9 @@
       // Long synchronous op (ethical, rate-limited fetch of each watched document):
       // give a persistent busy state so it never reads as "nothing happened".
       const label = btn ? btn.textContent : null;
-      if (btn) { btn.disabled = true; btn.textContent = "Tracking…"; }
+      if (btn) { btn.disabled = true; btn.textContent = _govT("Tracking…"); }
       const st = $("law-status");
-      if (st) st.innerHTML = '<div class="muted">Tracking watched laws — ethical, rate-limited fetch; this can take a moment…</div>';
+      if (st) st.innerHTML = `<div class="muted">${esc(_govT("Tracking watched laws — ethical, rate-limited fetch; this can take a moment…"))}</div>`;
       try { const r = await api("/api/law/track", {method:"POST"});
         // The kill switch refused it: `documents` and `errors` still count those, so a clean-looking "23 errors" would
         // blame the documents for the person's own airplane mode (invariant #14e's corollary).
@@ -1206,11 +1213,13 @@
             ru ? _govTf("{n} not fetched: the site's robots.txt could not be read", {n: ru}) : "",
             dfrClause].filter(Boolean).join(", ");
           const errs = Math.max(0, (r.errors || 0) - rb - ru);
-          toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${errs} errors.` + (extra ? " " + extra : ""));
+          // Row 290: the headline is a keyed frame too, so the whole message reads in the reader's language.
+          toast(_govTf("Tracked {n} law(s): {baselines} baselines, {changed} changed, {flagged} flagged, {errors} errors.",
+            {n: r.documents, baselines: r.baselines, changed: r.changed, flagged: r.flagged, errors: errs}) + (extra ? " " + extra : ""));
         }
         loadLaw(); loadLawChanges && loadLawChanges();
       } catch (e) { toast(_failMsg("Tracking failed: {error}", e), "err"); if (st) loadLaw(); }
-      finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }
+      finally { if (btn) { btn.disabled = false; btn.textContent = label || _govT("Track changes now"); } }
     }
     async function lawSeed() {
       try { const r = await api("/api/law/seed", {method:"POST"});

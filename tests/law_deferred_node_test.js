@@ -39,10 +39,12 @@ const ESC = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,c=>(
 
 // A tiny translation table, so a label that bypasses the translator cannot pass.
 const DE = { "deferred": "zurückgestellt", "fetch error": "Abruffehler",
+  "Tracked {n} law(s): {baselines} baselines, {changed} changed, {flagged} flagged, {errors} errors.": "{n} Gesetz(e) verfolgt: {baselines} Ausgangsfassungen, {changed} geändert, {flagged} markiert, {errors} Fehler.",
+  "blocked by the robots.txt of {host} (reached by a redirect)": "durch die robots.txt von {host} blockiert (über eine Weiterleitung erreicht)",
   "{n} deferred (the host's own Crawl-delay)": "{n} zurückgestellt (das eigene Crawl-delay des Hosts)" };
 
 function badge(row, translated) {
-  const win = translated ? "{ OOI18N: { t: (s) => DE[s] || s } }" : "{}";
+  const win = translated ? "{ OOI18N: { t: (s) => DE[s] || s, tf: (s, v) => (DE[s] || s).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m) } }" : "{}";
   const f = new Function("DE", "var window = " + win + "; var OOI18N = window.OOI18N;\n" + [ESC, extractConst("_LAW_VERDICT_PILL"), extract("lawVerdictLabel"), extract("lawVerdictBadge"), "return lawVerdictBadge;"].join("\n"));
   return f(DE)(row);
 }
@@ -54,7 +56,7 @@ function sandbox(response, translated) {
   const win = translated
     ? "{ OOI18N: { t: (s) => DE[s] || s, tf: (s, v) => (DE[s] || s).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m) } }"
     : "{}";
-  const src = ["var window = " + win + "; var OOI18N = window.OOI18N;", "function _failMsg(t, e){return t;}", extract("_govT"), extract("_govTf"), extract("lawTrack"), "return { lawTrack };"].join("\n");
+  const src = ["var window = " + win + "; var OOI18N = window.OOI18N;", ESC, "function _failMsg(t, e){return t;}", extract("_govT"), extract("_govTf"), extract("lawTrack"), "return { lawTrack };"].join("\n");
   const f = new Function("DE", "$", "api", "toast", "loadLaw", "loadLawChanges", src);
   const h = f(DE, el, async () => response, (m, k) => log.toasts.push([m, k || "ok"]), () => { log.laws++; }, () => {});
   return { h, log };
@@ -129,5 +131,18 @@ const base = { documents: 0, baselines: 0, changed: 0, flagged: 0, errors: 0, un
   }
   assert.ok(badge({ verdict: "robots_blocked", last_status: "fetch error: robots.txt disallows h" }).includes(">blocked by the site's robots.txt<"));
   assert.ok(!/fail|error|empty/i.test(badge({ verdict: "robots_blocked", last_status: "" }).replace(/title="[^"]*"/, "")), "never worded as a failure");
+  // ---- row 290: the headline is keyed, and a redirect hop's refusal names the refusing host --------------------------------
+  {
+    const { h, log } = sandbox({ ...base, documents: 3, baselines: 1, changed: 1, flagged: 1, errors: 1 }, true);
+    await h.lawTrack(null);
+    assert.strictEqual(log.toasts[0][0], "3 Gesetz(e) verfolgt: 1 Ausgangsfassungen, 1 geändert, 1 markiert, 1 Fehler.", "the headline goes through the translator");
+  }
+  {
+    const hop = badge({ verdict: "robots_blocked", robots_host: "other.example", last_status: "fetch error: robots.txt disallows https://other.example/x (reached by a redirect)" });
+    assert.ok(hop.includes(">blocked by the robots.txt of other.example (reached by a redirect)<"), hop);
+    assert.ok(badge({ verdict: "robots_unread", robots_host: "other.example", last_status: "x" }).includes(">robots.txt of other.example not readable (reached by a redirect)<"));
+    assert.ok(badge({ verdict: "robots_blocked", robots_host: "other.example", last_status: "x" }, true).includes(">durch die robots.txt von other.example blockiert"), "the frame is keyed");
+    assert.ok(badge({ verdict: "robots_blocked", last_status: "x" }).includes(">blocked by the site's robots.txt<"), "a direct refusal keeps the site's own words");
+  }
   console.log("law_deferred_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });
