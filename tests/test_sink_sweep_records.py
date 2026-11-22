@@ -269,6 +269,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_try_open_encrypted', 'last_error[:] = [exc]'): 1,
         # Row 154: only the SQLite result code is read, to stop the page-size walk on a lock; nothing of the error is kept
         ('held_by_another', 'code = getattr(exc, "sqlite_errorcode", None)'): 1,
+        # R789 (row 310): only the errno is read, to tell a descriptor closed since the listing (EBADF, skipped) from one that cannot
+        # be read (any other, which keeps every parked descriptor); nothing of the error is kept, served or logged
+        ('_foreign_fd_keys', 'if exc.errno == errno.EBADF:'): 1,
     },
     # Row 156: a staged backup member's open or ATTACH reads only whether the SQLite code was busy or locked, to refuse it as in use
     # with fixed words instead of "no key opens it"; nothing of the error is kept, served or logged
