@@ -839,7 +839,7 @@ def test_each_slice_is_its_own_checkout_so_no_slot_is_held_across_slices(corpus,
 
 
 def test_under_the_apps_own_engine_settings_a_checkpoint_passes_between_statements(tmp_path, monkeypatch):
-    """Everything above uses a plain engine; the claim is about the app's: its pragmas, its pool, its listeners.
+    """The claim is about the app's own engine as built by the app: its pool and listeners, not only its pragmas.
     (``release_idle_connection`` is written as if a session pinned a snapshot between statements. Pysqlite's
     legacy mode starts no transaction on a SELECT, so only a RUNNING statement pins: this is the measurement.)"""
     from src.database import session as app_session

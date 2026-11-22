@@ -21,7 +21,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 import src.api.insights as ins
@@ -29,7 +29,8 @@ from src.analytics import watches as W
 from src.briefing import registry, service
 from src.briefing.card import Card
 from src.database.maintenance import deadline_expired
-from src.database.models import Article, Base, Watch
+from src.database.models import Article, Base, Source, Watch
+from tests._app_engine import app_sqlite_engine
 
 _BOUND = 0.3  # seconds: the producers' bound, shrunk for the tests whose watch must run past it
 # The bound for the tests whose pass must FINISH inside it. Arming, the watch select and each watch's concept lookup (its first
@@ -44,7 +45,7 @@ _SLOW_SQL = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHER
 
 @pytest.fixture()
 def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'w.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'w.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:
@@ -76,6 +77,9 @@ def home(monkeypatch, tmp_path):
 
 
 def _articles(db, n: int) -> list[int]:
+    if db.get(Source, 1) is None:  # the parent the articles' source_id names (foreign keys are enforced)
+        db.add(Source(id=1, name="S", domain="x.test"))
+        db.flush()
     now = datetime.now(UTC)
     ids = []
     for i in range(n):

@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, insert, text
+from sqlalchemy import insert, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.derived_views import ensure_derived_views
@@ -26,6 +26,7 @@ from src.database.maintenance import StatementTimeout
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from src.monitoring import keyword_write_cost as kwc
 from src.monitoring.keyword_write_cost import keyword_write_cost
+from tests._app_engine import app_sqlite_engine
 
 
 def _dbstat_available() -> bool:
@@ -44,18 +45,23 @@ _HAS_DBSTAT = _dbstat_available()
 _NOW = datetime(2026, 9, 30, 12, 0, 0)
 
 
-def _seed(session, *, articles: int, per_article: int, created_at: datetime) -> None:
-    session.add(Source(name="S", domain="x.test", country="fr"))
-    session.flush()
+def _insert_articles(session, ids, created_at: datetime) -> None:
+    """The article rows (of source 1) that mention rows name: foreign keys are enforced."""
     arts = [
         {
             "url": f"https://x.test/{i}", "canonical_url": f"https://x.test/{i}",
             "source_id": 1, "title": "T", "content": "c", "hash": f"h{i}", "language": "en",
             "created_at": created_at,
         }
-        for i in range(1, articles + 1)
+        for i in ids
     ]
     session.execute(insert(Article), arts)
+
+
+def _seed(session, *, articles: int, per_article: int, created_at: datetime) -> None:
+    session.add(Source(name="S", domain="x.test", country="fr"))
+    session.flush()
+    _insert_articles(session, range(1, articles + 1), created_at)
     kws = [
         {"term": f"k{i}", "normalized_term": f"k{i}", "language": "en"}
         for i in range(1, per_article + 1)
@@ -79,8 +85,8 @@ def make_db(tmp_path):
     made = []
 
     def _make(**kw):
-        engine = create_engine(
-            f"sqlite:///{tmp_path / f'w{len(made)}.db'}",
+        engine = app_sqlite_engine(
+            f"{tmp_path / f'w{len(made)}.db'}",
             future=True,
             connect_args={"check_same_thread": False},
         )
@@ -229,6 +235,7 @@ def test_the_row_count_is_a_range_and_a_stale_stat1_never_wins(make_db):
     s.execute(text("ANALYZE"))
     assert _has_stat1(s)
     # Grow the table 5x after the ANALYZE: stat1 now says 400, the id span says 2000.
+    _insert_articles(s, range(41, 201), _NOW)
     rows = [
         {
             "keyword_id": k, "article_id": a, "count": 1, "first_offset": 0,

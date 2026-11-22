@@ -9,13 +9,13 @@ import threading
 import time
 import uuid
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer.jobs import ArticleWork
 from src.ai_layer.langdetect_llm import LANG_KIND, detect_for_articles
-from src.database.models import AiKeyword, Base, Source
+from src.database.models import AiKeyword, Article, Base, Source
 from src.llm.ollama import GenerationResult, LLMError
+from tests._app_engine import app_sqlite_engine
 
 
 class _TrackingClient:
@@ -45,9 +45,17 @@ class _TrackingClient:
 
 
 def _db():
-    eng = create_engine("sqlite:///:memory:")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng)()
+
+
+def _articles(session, src, n: int) -> None:
+    """The articles 1..n the work items name: the detections are stored against them (foreign keys are enforced)."""
+    for aid in range(1, n + 1):
+        u = f"https://{src.domain}/{aid}"
+        session.add(Article(id=aid, url=u, canonical_url=u, source_id=src.id, title=f"title {aid}", content="x", hash=f"h{aid}"))
+    session.commit()
 
 
 def _work(codes: list[str]) -> list[ArticleWork]:
@@ -62,6 +70,7 @@ def test_detect_for_articles_preserves_order_under_real_concurrency(monkeypatch)
     src = Source(name="s", domain=f"{uuid.uuid4().hex[:8]}.ex", language="en")
     session.add(src)
     session.commit()
+    _articles(session, src, 6)
 
     import contextlib
 
@@ -92,6 +101,7 @@ def test_detect_for_articles_default_is_serial(monkeypatch):
     src = Source(name="s", domain=f"{uuid.uuid4().hex[:8]}.ex", language="en")
     session.add(src)
     session.commit()
+    _articles(session, src, 6)
 
     import contextlib
 
@@ -119,6 +129,7 @@ def test_detect_for_articles_isolates_a_failure_under_concurrency(monkeypatch):
     src = Source(name="s", domain=f"{uuid.uuid4().hex[:8]}.ex", language="en")
     session.add(src)
     session.commit()
+    _articles(session, src, 6)
 
     import contextlib
 

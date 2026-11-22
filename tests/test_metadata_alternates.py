@@ -19,7 +19,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup.merge import merge_corpus  # noqa: E402
@@ -41,6 +40,7 @@ from src.database.models import (  # noqa: E402
     Source,
     WikidataItem,
 )
+from tests._app_engine import app_sqlite_engine
 
 _META = {
     "artifact_kind": "oo-backup-3",
@@ -53,7 +53,7 @@ _T0 = datetime(2026, 9, 1, tzinfo=UTC).replace(tzinfo=None)
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 
@@ -646,6 +646,7 @@ def test_an_alternate_with_no_home_here_is_counted_not_invented(tmp_path):
         a = _article(s, "only-there")
         s.add(ArticleAnalysis(article_id=a.id, kind="summary", result="X", model="m",
                               prompt_version="v", created_at=_T0))
+        _batch_1(s)
         s.add(MetadataAlternate(
             batch_id=1, table_name="article_analyses",
             identity=json.dumps({"article_hash": "not-in-live", "kind": "summary", "model": "m",
@@ -718,12 +719,20 @@ def test_every_table_re_attaches_by_its_own_identity_across_two_hops(tmp_path):
     assert from_a == set(ALTERNATE_SPECS), "A's value reached C through B for every table"
 
 
+def _batch_1(s):
+    """The merge batch (id 1) the hand-written incoming alternates name: foreign keys are enforced."""
+    if s.get(MergeBatch, 1) is None:
+        s.add(MergeBatch(id=1))
+        s.flush()
+
+
 def _restored_with(tmp_path, alternates):
     """C restores a backup whose alternates table holds exactly ``alternates`` (each a dict of
     MetadataAlternate columns); returns the merge counts and C's path."""
     inc, live = tmp_path / "inc.db", tmp_path / "live.db"
     with _corpus(inc)() as s:
         _tr("FROM-B")(s)
+        _batch_1(s)
         for a in alternates:
             s.add(MetadataAlternate(batch_id=1, local_row_id=1, origin="machine-Z",
                                     status="pending", **a))

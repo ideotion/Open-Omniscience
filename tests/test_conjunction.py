@@ -14,7 +14,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics.conjunction import (
@@ -25,13 +24,26 @@ from src.analytics.conjunction import (
     run_conjunction_selftest,
     vocabulary_contrast,
 )
-from src.database.models import Base, Keyword, KeywordMention
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
+
+
+def _articles(s: Session, ids) -> None:
+    """The parent rows the mentions point at (the app's engine enforces foreign keys)."""
+    src = Source(name="S", domain="s.example")
+    s.add(src)
+    s.flush()
+    for aid in ids:
+        u = f"http://s.example/{aid}"
+        s.add(Article(id=aid, title=f"a{aid}", content="x", url=u, canonical_url=u, source_id=src.id, hash=f"h{aid}"))
+    s.flush()
 
 
 def _corpus() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
+    _articles(s, range(1, 6))
     # election -> articles 1,2,3 ; france -> 2,3,4 ; protest -> 3,4,5
     kws = {}
     for term in ("election", "france", "protest"):

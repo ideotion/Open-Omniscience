@@ -14,11 +14,11 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.concentration import find_flooded_topics
-from src.database.models import Base, Keyword, KeywordMention, Source
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 TODAY = date.today()
 RECENT = TODAY - timedelta(days=2)
@@ -32,8 +32,8 @@ KW = dict(min_recent_articles=4, min_prior_articles=6, min_share=0.25, z_min=2.5
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -53,6 +53,8 @@ _aid = [1000]
 
 def _km(db, source_id, keyword_id, observed):
     _aid[0] += 1
+    u = f"https://s{source_id}.test/{_aid[0]}"  # the parent article the mention names (foreign keys are enforced)
+    db.add(Article(id=_aid[0], url=u, canonical_url=u, source_id=source_id, title="t", content="x", hash=f"h{_aid[0]}"))
     db.add(KeywordMention(
         source_id=source_id, keyword_id=keyword_id, article_id=_aid[0], count=1, observed_on=observed,
     ))

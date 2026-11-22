@@ -13,22 +13,21 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Article, Base
+from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def client(tmp_path):
     import src.api.watches  # noqa: F401 - ensure the router import path is exercised
     from src.api.main import app
+    from src.database.fts import ensure_fts
     from src.database.session import get_db
 
-    from src.database.fts import ensure_fts
-
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'w.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'w.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)  # the watch matcher uses FTS5 search_ids; create_all doesn't build it
@@ -82,6 +81,8 @@ def test_evaluate_fires_and_history(client):
     c, Sess = client
     # Seed three recent articles + a watch matching them.
     with Sess() as s:
+        s.add(Source(id=1, name="S", domain="x.test"))  # the parent the articles name (foreign keys are enforced)
+        s.flush()
         for h in ("a1", "a2", "a3"):
             s.add(Article(
                 url=f"https://x.test/{h}", canonical_url=f"https://x.test/{h}", source_id=1,
