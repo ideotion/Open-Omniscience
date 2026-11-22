@@ -118,6 +118,36 @@ def test_an_older_backup_restores_into_the_cache_folder_and_says_what_it_may_mis
     assert (tmp_path / "live" / "cache" / _REL).is_file() and res["restored"] == 2
 
 
+def test_a_folder_with_no_manifest_is_not_called_old(tmp_path):
+    """Nothing says when a hand-copied folder was made, so the older-backup note is not drawn for it."""
+    _cache(tmp_path / "bk" / "hf_models" / "hub")
+    hf = scan_import_folder(tmp_path / "bk")["found"]["blobs"]["hf_models"]
+    assert hf["count"] == 2 and "layout_unrecorded" not in hf
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX links")
+def test_a_cache_folder_that_is_a_link_to_nothing_is_refused_by_name(tmp_path):
+    os.symlink(tmp_path / "unplugged-disk" / "cache", tmp_path / "cache")
+    assert hf_target_refusal(tmp_path / "cache") == HF_TARGET_NOT_FOLDER
+
+
+def test_the_import_queue_carries_the_refusal_to_the_result(monkeypatch):
+    """The summary the page renders comes from the queue; a field dropped there never reaches a line."""
+    from src.backup import import_queue as iq
+
+    class _Mgr:
+        def start(self, *a, **k): pass
+        def status(self): return {"state": "done", "progress": {"refused_targets": {"hf_models": "not-writable"},
+                                                                 "incomplete": True}}
+        def cancel(self): pass
+
+    monkeypatch.setattr(fb, "get_folder_manager", lambda: _Mgr())
+    q = object.__new__(iq.ImportQueueManager)
+    q._await = lambda status, cancel: status()  # an instance attribute: the class is untouched
+    out = iq.ImportQueueManager._run_blobs(q, {"path": "/x", "categories": ["hf_models"]})
+    assert out["refused_targets"] == {"hf_models": "not-writable"} and out["incomplete"] is True
+
+
 def test_a_new_backup_is_not_called_old(tmp_path):
     _cache(tmp_path / "a" / "hub")
     write_folder_backup(tmp_path / "bk", collect_hf_model_items(tmp_path / "a"))
@@ -136,6 +166,19 @@ def test_a_cache_path_taken_by_a_file_refuses_the_category_with_its_reason(tmp_p
         assert res["refused_targets"] == {"hf_models": HF_TARGET_NOT_FOLDER}, target
         assert res["incomplete"] is True and res["restored"] == 0
     assert (tmp_path / "taken").read_bytes() == b"not a folder"
+
+
+def test_a_tilde_cache_path_is_the_person_s_home_folder_on_both_ends(tmp_path, no_hf_env):
+    """``~/x`` left unexpanded is RELATIVE: the backup read, and a restore wrote, a folder named "~"
+    under whatever folder the app started in, while the check looked at the home folder."""
+    no_hf_env.setenv("HOME", str(tmp_path / "me"))
+    no_hf_env.setenv("HF_HUB_CACHE", "~/hf-cache")
+    assert hf_hub_cache() == tmp_path / "me" / "hf-cache"
+    assert hf_restore_target() == {"path": str(tmp_path / "me" / "hf-cache"), "refused": None}
+    no_hf_env.delenv("HF_HUB_CACHE")
+    no_hf_env.setenv("HF_HOME", "~/hf-home")
+    assert hf_hub_cache() == tmp_path / "me" / "hf-home" / "hub"
+    assert hf_target_refusal("~/unexpanded") == HF_TARGET_UNRESOLVED, "the check never expands what the write would not"
 
 
 def test_a_relative_cache_path_is_refused_never_guessed(tmp_path):
@@ -201,6 +244,23 @@ def test_artifact_members_land_in_the_cache_folder_and_only_its_layout(tmp_path)
     assert out["placed"] == 0 and out["refused"][0]["why"] == f"model cache folder {HF_TARGET_NOT_FOLDER}"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX links")
+def test_artifact_placement_never_writes_through_a_link_in_the_live_cache(tmp_path):
+    """A real cache is made of links; a dangling one read as absent and was replaced by a file."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "m1").write_bytes(b"{}")
+    live = tmp_path / "cache"
+    snap = live / "models--org--m" / "snapshots" / "r1"
+    snap.mkdir(parents=True)
+    (live / "models--org--m" / "blobs").mkdir()
+    os.symlink(Path("..") / ".." / "blobs" / "gone-blob", snap / "config.json")  # inside the cache, dangling
+    out = place_artifact_file_members(staging, [{"category": "hf_models", "rel": "hub/" + _REL, "name": "m1"}],
+                                      targets={"hf_models": live})
+    assert out["placed"] == 0 and out["refused"][0]["why"] == "a link on the way in your data folder"
+    assert (snap / "config.json").is_symlink() and not (live / "models--org--m" / "blobs" / "gone-blob").exists()
+
+
 def test_the_layout_rule_maps_hub_to_the_folder_itself():
     assert hf_live_rel("hub/" + _REL) == _REL
     for bad in ("hub/x", ".bash_profile", "other/models--a/snapshots/r/f", "hub/models--a/blobs/x"):
@@ -214,6 +274,8 @@ def test_the_stream_backup_records_the_layout():
 
 # --- words ------------------------------------------------------------------------------------------ #
 _KEYS = [
+    "This backup was made before it recorded which Hugging Face cache folder it read: if that computer's cache "
+    "folder was not named “hub”, its models are not in this backup.",
     "Hugging Face models are restored to",
     "Hugging Face models will not be restored on this computer",
     "Restore incomplete — the Hugging Face model cache was not restored",
@@ -236,7 +298,7 @@ def test_the_help_says_it_in_every_language():
         f = ROOT / ("docs/USER_MANUAL.md" if lang == "en" else f"docs/i18n/{lang}/USER_MANUAL.md")
         text = f.read_text(encoding="utf-8")
         cat = json.loads((ROOT / "src/static/locales" / f"{lang}.json").read_text(encoding="utf-8"))
-        assert "HF_HUB_CACHE" in text and cat[_KEYS[0]] in text and cat[_KEYS[2]] in text, lang
+        assert "HF_HUB_CACHE" in text and cat[_KEYS[1]] in text and cat[_KEYS[3]] in text, lang
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")

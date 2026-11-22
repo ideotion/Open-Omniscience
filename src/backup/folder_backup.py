@@ -642,7 +642,9 @@ def hf_target_refusal(target: Path | str | None) -> str | None:
     writable can still refuse the first write -- which then stops the restore with that error."""
     if target is None:
         return HF_TARGET_UNRESOLVED
-    raw = os.path.expanduser(os.fspath(target))
+    # Checked exactly as given, never expanded here: the path checked must be the path written to, and
+    # ``hf_hub_cache`` already expands ``~`` the way Hugging Face does.
+    raw = os.fspath(target)
     if not raw or not os.path.isabs(raw):
         return HF_TARGET_UNRESOLVED  # a relative HF_HUB_CACHE would mean whatever folder a process started in
     p = Path(raw)
@@ -651,6 +653,8 @@ def hf_target_refusal(target: Path | str | None) -> str | None:
         try:
             st = os.stat(probe)
         except FileNotFoundError:
+            if os.path.islink(probe):
+                return HF_TARGET_NOT_FOLDER  # a link to nothing: the write would fail, so it is said now
             if probe.parent == probe:
                 return HF_TARGET_UNRESOLVED
             probe = probe.parent
@@ -779,6 +783,12 @@ def place_artifact_file_members(
             contained = False
         if not contained:
             refused.append({"category": category, "rel": rel, "why": "outside its category"})
+            continue
+        # R779's destination rule, on this path too (R784 security read): a link anywhere between the live
+        # folder and the file is never written through. A real Hugging Face cache is made of links, and a
+        # DANGLING one (a deleted blob) reads as absent to ``exists()``, so it would have been replaced.
+        if link_on_the_way(root, Path(place_rel)):
+            refused.append({"category": category, "rel": rel, "why": "a link on the way in your data folder"})
             continue
         if not src_path.is_file():
             # The member is named in the index but its bytes are not in staging. The
@@ -1825,6 +1835,7 @@ class FolderBackupManager:
                     corrupt_refused=res.get("corrupt_refused"),
                     restored_unverified=res.get("restored_unverified"),
                     refused_categories=len(res.get("refused_categories") or []),
+                    refused_targets=len(res.get("refused_targets") or {}),  # R784: a count, never the path
                     refused_dest_links=res.get("refused_dest_links"),
                     unread=res.get("unread_total"),
                     unread_folders=res.get("unread_folders"),

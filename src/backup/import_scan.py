@@ -323,8 +323,11 @@ def scan_import_folder(
     for rd, root_cats in blob_roots.items():
         hf = root_cats.get("hf_models")
         if hf is not None and not hf.get("linked"):
+            # Only a manifest that was READ can say it predates the record; a folder with no readable
+            # manifest (copied by hand) is not called old, since nothing says when it was made.
             data = read_manifest_json(Path(rd) / _FOLDER_MANIFEST)
-            hf["layout_recorded"] = isinstance(data, dict) and data.get("hf_layout") == HF_LAYOUT
+            if isinstance(data, dict) and isinstance(data.get("categories"), dict):
+                hf["layout_recorded"] = data.get("hf_layout") == HF_LAYOUT
 
     found: dict = {}
 

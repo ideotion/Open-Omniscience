@@ -55,19 +55,19 @@ for (const lang of ["en", "fr", "ar", "ja"]) {
   const b = { hf_models: { count: 2, bytes: 9 } };
   // The real folder, drawn as an LTR run, escaped -- before the person chooses.
   const p = "/home/a&b/.cache/my-models";
-  const n1 = note(b, { path: p, refused: null }, t, tf);
+  const n1 = note(b, { path: p, refused: null }, t);
   assert(n1.includes(esc(t(TO))) && n1.includes('<bdi dir="ltr"') && n1.includes(esc(p)), lang + ": the folder is missing: " + n1);
   assert(!n1.includes(esc(t(OLD))), lang + ": a recorded backup drew the older-backup note: " + n1);
   // A folder that cannot be used: the named reason, never the path as if it would be used.
   for (const [code, why] of Object.entries(WHY)) {
-    const n2 = note(b, { path: p, refused: code }, t, tf);
-    assert(n2.includes(esc(t(NOT_HERE))) && n2.includes(esc(t(why))) && !n2.includes(esc(t(TO))), lang + ": refusal " + code + ": " + n2);
+    const n2 = note(b, { path: p, refused: code }, t);
+    assert(n2.includes(esc(t(NOT_HERE))) && n2.includes(esc(t(why))) && !n2.includes(esc(t(TO))) && n2.includes(esc(p)), lang + ": refusal " + code + ": " + n2);
   }
   // An older backup says what it may be missing.
-  const n3 = note({ hf_models: { count: 1, layout_unrecorded: 1 } }, { path: p, refused: null }, t, tf);
+  const n3 = note({ hf_models: { count: 1, layout_unrecorded: 1 } }, { path: p, refused: null }, t);
   assert(n3.includes(esc(t(OLD))), lang + ": the older-backup note is missing: " + n3);
   // No model cache in the backup: nothing drawn.
-  assert(note({ wiki: { count: 1 } }, { path: p }, t, tf) === "" && note({ hf_models: { count: 0 } }, null, t, tf) === "", lang + ": drew a note for no models");
+  assert(note({ wiki: { count: 1 } }, { path: p }, t) === "" && note({ hf_models: { count: 0 } }, null, t) === "", lang + ": drew a note for no models");
   // The result line.
   const lines = mk("_fbRefusalLines");
   const out = lines({ refused_targets: { hf_models: "not-writable" }, incomplete: true });
