@@ -71,8 +71,10 @@ def test_the_audit_log_names_no_path_and_no_process_id(tmp_path):
         assert leak not in text, (leak, text)
 
 
-def test_a_path_it_cannot_read_is_withheld_never_written_as_given():
+def test_a_path_it_cannot_read_is_withheld_never_written_as_given(monkeypatch):
     from src.safety.uninstall import _WATCHER_SRC
+
+    monkeypatch.setenv("HOME", "/var/empty/oo-test-home")
 
     ns: dict = {"os": os, "plan": {"wipe_data_dir": "/srv/oo-data"}}
     exec(python_function_source(_WATCHER_SRC, "tok"), ns)  # noqa: S102 - the watcher's own helper, from the repository
@@ -85,3 +87,24 @@ def test_a_path_it_cannot_read_is_withheld_never_written_as_given():
     assert tok("/opt/other/thing") == ".../thing"
     # a sibling whose name starts like the data folder is not inside it
     assert tok("/srv/oo-data-old/x") == ".../x"
+    # anyone's profile folder is the user's name: never its last segment, whoever's home it is
+    assert tok("/home/jane") == "<home>"
+    assert tok("/Users/jane.doe/oo/app") == "<home>/.../app"
+
+
+def test_a_home_of_the_root_folder_names_no_role(monkeypatch):
+    """A service account's HOME of "/" must not make every path read as inside the home folder."""
+    from src.safety.uninstall import _WATCHER_SRC
+
+    monkeypatch.setenv("HOME", "/")
+    ns: dict = {"os": os, "plan": {}}
+    exec(python_function_source(_WATCHER_SRC, "tok"), ns)  # noqa: S102 - the watcher's own helper, from the repository
+    assert ns["tok"]("/") == "<path withheld>"
+    assert ns["tok"]("/opt/other/thing") == ".../thing"
+
+
+def test_the_scheduling_line_in_the_app_log_names_no_venv_path():
+    from src.safety import uninstall
+
+    src = python_function_source(open(uninstall.__file__, encoding="utf-8").read(), "request_uninstall")
+    assert 'plan["mode"], plan["venv"]' not in src

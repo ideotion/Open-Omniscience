@@ -75,9 +75,14 @@ def tok(p):
         for label, root in (("<data>", plan.get("wipe_data_dir")), ("<home>", os.path.expanduser("~"))):
             if not root or root == "~": continue
             r = os.path.normcase(os.path.normpath(root))
+            if not os.path.basename(r.rstrip("\\/")): continue   # a home of "/" or a drive root names no role
             if c == r: return label
             if c.startswith(r.rstrip("\\/") + os.sep): return label + "/.../" + os.path.basename(q)
         name = os.path.basename(q)
+        parts = [x for x in q.replace("\\", "/").split("/") if x]
+        for i, seg in enumerate(parts[:-1]):        # anyone's profile folder (/home/<name>, C:\\Users\\<name>): the name is the user's
+            if seg.lower() in ("home", "users", "documents and settings"):
+                return "<home>" if i + 1 == len(parts) - 1 else "<home>/.../" + name
         return ".../" + name if name else "<path withheld>"
     except Exception: return "<path withheld>"
 # Crypto-erase, stdlib-only + inline (this detached process cannot import src, the venv
@@ -535,7 +540,7 @@ def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: 
     _spawn(plan, os.getpid())
     _arm_shutdown()
     _LOG.warning("uninstall scheduled: mode=%s venv=%s launchers=%d folder=%s data=%s",
-                 plan["mode"], plan["venv"], len(plan["launchers"]),
+                 plan["mode"], bool(plan["venv"]), len(plan["launchers"]),   # R734/R736: no path in the app's log
                  bool(plan.get("app_folder")), bool(plan.get("wipe_data_dir")))
     overwrite_note = (
         "Overwrite-in-place does NOT guarantee unrecoverability on SSD/flash or "
