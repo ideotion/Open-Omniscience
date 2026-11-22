@@ -928,6 +928,7 @@ RUN_REFUSALS: dict[str, str] = {
     "already-running": "another volume backup, restore or verification was already running",
     "barrier": "another job still held the corpus when the restore reached the swap",
     "writer-jobs": "a background job was writing to the corpus, asked before anything was imported (R659)",
+    "half-migrated": "a country-code migration of the corpus did not finish, or its state could not be read (R788)",
     "export-running": "a backup export was running, asked before anything was imported (R712)",
     "not-a-file": "the path given is not a file",
     "memory": "this machine could not hold the merge of an encrypted corpus, asked before anything was staged",

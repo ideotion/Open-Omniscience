@@ -379,7 +379,7 @@ def test_a_committing_restore_refuses_a_half_migrated_store_read_from_the_file(t
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     kv_store.kv_invalidate()
     try:
-        merge._refuse_half_migrated_store()  # no journal: a restore goes ahead
+        merge.refuse_half_migrated_store()  # no journal: a restore goes ahead
         assert kv_store.kv_get_json_checked(cf.JOURNAL_KEY) is None  # cached as "no journal"
         con = sqlite3.connect(db)
         try:
@@ -391,13 +391,13 @@ def test_a_committing_restore_refuses_a_half_migrated_store_read_from_the_file(t
         finally:
             con.close()
         with pytest.raises(merge.HalfMigratedStoreRefused) as caught:
-            merge._refuse_half_migrated_store()
+            merge.refuse_half_migrated_store()
         assert isinstance(caught.value, merge.RestoreRefused)
         assert "interrupted" in str(caught.value) and "/b/copy.db" in str(caught.value)
     finally:
         kv_store.kv_invalidate()
     body = inspect.getsource(merge.run_restore)
-    assert body.count("_refuse_half_migrated_store()") == 2, "asked before preparing and again at the working copy"
+    assert body.count("refuse_half_migrated_store()") == 2, "asked before preparing and again at the working copy"
 
 
 def test_a_wrong_key_is_raised_by_the_read_only_check_and_only_read_only_failures_pass_on(tmp_path, monkeypatch):
