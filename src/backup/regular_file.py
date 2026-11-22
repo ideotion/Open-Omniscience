@@ -73,6 +73,16 @@ def open_regular_fd(path: str | os.PathLike[str], *, follow_links: bool = False,
     return fd
 
 
+def file_fingerprint(st: os.stat_result) -> tuple[int, int, int, int, int]:
+    """Which file a stat names, as ``(st_dev, st_ino, st_size, st_mtime_ns, st_ctime_ns)`` (row 329).
+
+    A reader that hashed a backup volume through one handle and decrypts it later through another compares the two
+    handles' ``fstat`` fingerprints: the same call on both sides, so Windows widths agree. Size and times are in it
+    because a file system may give a deleted file's inode number to a new file at the same name, and ``st_ctime`` is
+    one no unprivileged writer can set back on POSIX."""
+    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
 def open_regular(path: str | os.PathLike[str], *, follow_links: bool = False, dir_fd: int | None = None) -> BinaryIO:
     """:func:`open_regular_fd` as a binary file object (``"rb"``) that closes the descriptor with it."""
     fd = open_regular_fd(path, follow_links=follow_links, dir_fd=dir_fd)

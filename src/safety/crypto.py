@@ -14,14 +14,13 @@ transport/stash; it is not a substitute for full-disk encryption of the live mac
 from __future__ import annotations
 
 import os
-import stat
 import struct
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from src.backup.regular_file import NotARegularFile, create_new, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, file_fingerprint, open_regular
 from src.monitoring.secret_scrub import passphrase_bytes
 
 # Self-describing container so a file can be decrypted years later without out-of-band
@@ -262,7 +261,7 @@ def _open_stream_header(fin, passphrase: str) -> tuple[AESGCM, bytes, int]:
 
 
 def _open_sealed(
-    src: str | os.PathLike[str], *, follow_links: bool = True, identity: tuple[int, int] | None = None
+    src: str | os.PathLike[str], *, follow_links: bool = True, identity: tuple[int, ...] | None = None
 ):
     """An encrypted file opened to be read, as a regular file or not at all (row 312).
 
@@ -273,24 +272,17 @@ def _open_sealed(
     ``follow_links`` (row 329): the app's own sealed files may live behind a link and keep the default. A reader of a
     backup folder passes ``False``: it checked the volume's name is not a link earlier, and an open that followed one
     swapped in since would read a file outside the folder; with ``False`` the open itself refuses a link at the name.
-    ``identity`` is the ``(st_dev, st_ino)`` the reader recorded when it checked the volume: the file opened must be
-    that file, or nothing is read. Either refusal fails closed and never reads as a wrong passphrase."""
+    ``identity`` is the :func:`file_fingerprint` of the handle through which the reader checked the volume: the file
+    opened must be that file, or nothing is read. Either refusal fails closed and never reads as a wrong passphrase."""
     try:
         fh = open_regular(src, follow_links=follow_links)
     except NotARegularFile:
         raise EncryptionError(
             "not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read"
         ) from None
-    if identity is not None and identity[1]:
+    if identity is not None:
         try:
-            st = os.fstat(fh.fileno())
-            same = (st.st_dev, st.st_ino) == identity or not st.st_ino
-            if not same:
-                # A second look by NAME, from the same call family as the reader's check: on Windows lstat and fstat
-                # can give one file's identity at different widths (volumes.load_manifest). Without links followed,
-                # the open already proved the file opened is the file at this name.
-                again = os.stat(src, follow_symlinks=False)
-                same = not follow_links and stat.S_ISREG(again.st_mode) and (again.st_dev, again.st_ino) == identity
+            same = file_fingerprint(os.fstat(fh.fileno())) == tuple(identity)
         except OSError:
             same = False
         if not same:
@@ -307,7 +299,7 @@ def decrypt_stream(
     passphrase: str,
     *,
     follow_links: bool = True,
-    identity: tuple[int, int] | None = None,
+    identity: tuple[int, ...] | None = None,
 ) -> int:
     """Stream-decrypt an OOENC2 file, passing each plaintext chunk to ``write``
     (a ``bytes -> Any`` callable: a file's ``write``, a hasher's ``update``, …).
@@ -341,7 +333,7 @@ def decrypt_stream(
 
 
 def stream_key_opens(
-    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True, identity: tuple[int, int] | None = None
+    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True, identity: tuple[int, ...] | None = None
 ) -> bool:
     """Whether ``passphrase`` opens the FIRST chunk of an OOENC2 file, reading only the header and that chunk.
 
@@ -367,7 +359,7 @@ def decrypt_file(
     passphrase: str,
     *,
     follow_links: bool = True,
-    identity: tuple[int, int] | None = None,
+    identity: tuple[int, ...] | None = None,
 ) -> None:
     """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
 

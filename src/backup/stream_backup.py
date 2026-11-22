@@ -96,7 +96,7 @@ if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
 
 from src.backup.hf_layout import HF_LAYOUT
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import create_new, replace_with
+from src.backup.regular_file import create_new, file_fingerprint, open_regular, replace_with
 from src.backup.volumes import (
     MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES,
 )
@@ -107,6 +107,8 @@ from src.backup.volumes import (
     VolumeStopped,
     _digest_matches,
     _plain_volume_name,
+    checked_volume,
+    fingerprint_rebuilt_volumes,
     load_manifest,
     member_in_use,
     verify_volume_set,
@@ -2094,10 +2096,9 @@ def verify_stream_backup(
     recover them."""
     src = Path(src_dir)
     m = load_manifest(src)
-    checked_ids: dict[str, tuple[int, int]] = {}
     if m.get("kind") == STREAM_KIND:
         _require_safe_manifest_names(m)
-        checked_ids = _require_each_volume_read_once(m, src)
+        _require_each_volume_read_once(m, src)
         _require_distinct_member_names(m)
     report: dict[str, Any] = {
         "kind": m.get("kind"),
@@ -2132,7 +2133,8 @@ def verify_stream_backup(
     else:
         report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
 
-    status = verify_volume_set(src)
+    checked: dict[str, tuple[int, ...]] = {}  # the handle each volume was hashed through (row 329)
+    status = verify_volume_set(src, fingerprints=checked)
     report["bad_volumes"] = status["bad"]
     report["missing_volumes"] = status["missing"]
     if status["bad"]:
@@ -2198,8 +2200,8 @@ def verify_stream_backup(
 
                 try:
                     for vname in mm.get("volumes") or []:
-                        # Never through a link, and only the file checked above (row 329).
-                        decrypt_stream(src / vname, _sink, passphrase, follow_links=False, identity=checked_ids.get(vname))
+                        # Never through a link, and only the file the checksum pass hashed (row 329).
+                        decrypt_stream(src / vname, _sink, passphrase, follow_links=False, identity=checked_volume(checked, vname))
                 except EncryptionError as exc:
                     # The report goes back to every caller that holds the passphrase (the volume-verify
                     # job serves it on an endpoint, the P0 check writes it into a file the debug bundle
@@ -2284,12 +2286,18 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
     path = src / first
     if path.is_symlink() or not path.is_file():
         return  # a link is never followed out of the chosen folder; the restore refuses it by name
+    # One file answers both questions (row 329): the key check opens the file it first looked at, and the checksum must
+    # come from that same file, or a file swapped in for one question and swapped out for the other would make the right
+    # passphrase read as wrong.
     try:
-        if stream_key_opens(path, passphrase, follow_links=False):  # a link swapped in since the look is refused (row 329)
+        with open_regular(path) as fh:
+            seen = file_fingerprint(os.fstat(fh.fileno()))
+        if stream_key_opens(path, passphrase, follow_links=False, identity=seen):
             return
     except (EncryptionError, OSError):
         return  # an unreadable header, or a refused open, is no verdict on the key: the restore's own pass reports it
-    if not _digest_matches(path, vol_by_name[first].get("sha256")):
+    hashed: list[tuple[int, ...]] = []
+    if not _digest_matches(path, vol_by_name[first].get("sha256"), fingerprint=hashed) or hashed != [seen]:
         return
     raise EncryptionError(
         "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "
@@ -2341,7 +2349,7 @@ def read_stream_backup(
     if m.get("kind") != STREAM_KIND:
         raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
     _require_safe_manifest_names(m)
-    checked_ids = _require_each_volume_read_once(m, src)
+    _require_each_volume_read_once(m, src)
     _require_distinct_member_names(m)
     sig_state = _manifest_signature_state(m)
     if sig_state == "bad-signature":
@@ -2362,7 +2370,8 @@ def read_stream_backup(
     _refuse_a_wrong_backup_passphrase(src, m, passphrase)
     stage_a_timings["passphrase_check"] = round(time.monotonic() - t0, 3)
     t0 = time.monotonic()
-    status = verify_volume_set(src)
+    checked: dict[str, tuple[int, ...]] = {}  # the handle each volume was hashed through (row 329)
+    status = verify_volume_set(src, fingerprints=checked)
     if status["bad"]:
         from src.backup.parity import recover_volumes
 
@@ -2374,10 +2383,7 @@ def read_stream_backup(
                 "corrupt or missing volumes that could not be recovered: "
                 + ", ".join(sorted(unrepaired))
             )
-        for name in status["bad"]:
-            # Rebuilt from parity by this restore: a new file, no longer the one checked. It is still opened without
-            # following a link; only the identity comparison is left out for it (row 329).
-            checked_ids.pop(name, None)
+        fingerprint_rebuilt_volumes(m, src, status["bad"], checked)
     stage_a_timings["verify_and_parity_recover"] = round(time.monotonic() - t0, 3)
 
     root = staging_root or data_dir()
@@ -2418,8 +2424,8 @@ def read_stream_backup(
                             _f.write(b)
                             _h.update(b)
 
-                        # Never through a link, and only the file checked before anything was read (row 329).
-                        decrypt_stream(src / vname, _sink, passphrase, follow_links=False, identity=checked_ids.get(vname))
+                        # Never through a link, and only the file the checksum pass hashed (or parity rebuilt and hashed) (row 329).
+                        decrypt_stream(src / vname, _sink, passphrase, follow_links=False, identity=checked_volume(checked, vname))
                 if h.hexdigest() == mm.get("plaintext_sha256"):  # a guard clause keeps the loop's back-edge inside the try (src/utils/interrupts.py)
                     continue
                 raise VolumeError(
@@ -2457,7 +2463,7 @@ def read_stream_backup(
             raise
 
 
-def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -> dict[str, tuple[int, int]]:
+def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -> None:
     """A volume belongs to one member and is read once, and every declared size is a real size (R686).
 
     A manifest that lists a volume twice in its registry, or in one or more members' lists, would have it
@@ -2466,11 +2472,7 @@ def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -
     is a symbolic link is refused, and two names that are one file (a hard link) are one volume. A negative or
     non-integer ``plaintext_bytes`` is refused too, because the staging preflight sums those sizes: one member
     declaring minus what another declares would cancel it out of the free-space check. Refused before anything is
-    read.
-
-    Returns each checked volume's ``(st_dev, st_ino)`` by name (row 329): the reader opens the volume much later
-    and must open THIS file, not one swapped in since (``decrypt_stream(..., follow_links=False, identity=...)``).
-    A volume that was missing, or on a file system that reports no identity, has no entry."""
+    read."""
     from src.backup.volumes import require_unique_volumes
 
     for owner in [m, *(m.get("members") or [])]:
@@ -2482,16 +2484,15 @@ def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -
     names = [str(v.get("name") or "") for v in m.get("volumes") or []]
     require_unique_volumes(names)
     require_unique_volumes(vname for mm in m.get("members") or [] for vname in mm.get("volumes") or [])
-    ids: dict[str, tuple[int, int]] = {}
     if src is None:
-        return ids
+        return
     seen: dict[tuple[int, int], str] = {}
     for name in names:
         p = Path(src) / name
         if p.is_symlink():
             raise VolumeError(f"the volume {name} is a link to another file; refusing to read it")
         try:
-            st = p.stat()
+            st = p.lstat()  # never through a link swapped in since the look above (row 329)
         except OSError:
             continue  # a missing volume is the verify step's to report (and parity's to recover)
         if not st.st_ino:
@@ -2500,8 +2501,6 @@ def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -
         if key in seen:
             raise VolumeError(f"the volumes {seen[key]} and {name} are the same file; refusing to read it twice")
         seen[key] = name
-        ids[name] = key
-    return ids
 
 
 def backup_manifest_refusal(src_dir: Path | str) -> str | None:

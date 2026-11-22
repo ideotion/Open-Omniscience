@@ -22,6 +22,7 @@ import pytest
 
 import src.backup.stream_backup as sb
 import src.backup.volumes as vol
+from src.backup.regular_file import file_fingerprint
 from src.backup.stream_backup import (
     CorpusSource,
     MemberFile,
@@ -30,7 +31,6 @@ from src.backup.stream_backup import (
     write_stream_backup,
 )
 from src.backup.volumes import read_volume_set, write_volume_set
-from src.safety import crypto
 from src.safety.crypto import EncryptionError, decrypt_file, encrypt_file, stream_key_opens
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
@@ -175,23 +175,83 @@ def test_the_apps_own_sealed_file_behind_a_link_still_opens(tmp_path):
         stream_key_opens(link, "pw", follow_links=False)  # a backup reader's open refuses the same link
 
 
-def test_a_volume_whose_identity_still_matches_by_name_is_read(tmp_path, monkeypatch):
-    """Windows can report one file's identity at different widths through lstat and fstat: a second look by name
-    that matches the recorded identity accepts the file, so a sound backup is never refused for it."""
+def test_a_file_at_the_name_with_the_checked_inode_but_new_times_is_refused(tmp_path):
+    """A file system may give a deleted volume's inode number to a new file at the same name: the fingerprint
+    carries size and times too, so the new file is not taken for the one that was checked."""
     plain = tmp_path / "p.bin"
     plain.write_bytes(b"z" * 3000)
     sealed = tmp_path / "s.ooenc"
     encrypt_file(plain, sealed, "pw")
+    with open(sealed, "rb") as fh:
+        checked = file_fingerprint(os.fstat(fh.fileno()))
+    assert stream_key_opens(sealed, "pw", follow_links=False, identity=checked) is True
     st = os.stat(sealed)
+    os.utime(sealed, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    with pytest.raises(EncryptionError) as exc:
+        stream_key_opens(sealed, "pw", follow_links=False, identity=checked)
+    assert "no longer the one that was checked" in str(exc.value)
 
-    class _WideFstat:  # the module's own view of os (R351)
-        def __getattr__(self, name):
-            return getattr(os, name)
 
-        @staticmethod
-        def fstat(fd):
-            r = os.fstat(fd)
-            return os.stat_result((r.st_mode, r.st_ino + (1 << 40), *tuple(r)[2:]))
+def test_the_right_passphrase_never_reads_as_wrong_when_the_first_volume_is_swapped_for_the_key_check(tmp_path, monkeypatch):
+    """The key check and the checksum answer for one file: a volume sealed with another key, put in place only while
+    the key is tried and taken away before the checksum, gives no verdict instead of "wrong passphrase"."""
+    dest = _stream_set(tmp_path)
+    m = vol.load_manifest(dest)
+    victim = dest / next(v for mm in m["members"] for v in mm["volumes"])
+    kept_aside = tmp_path / "kept_aside"
+    plain = tmp_path / "q.bin"
+    plain.write_bytes(b"q" * 1000)
+    other = tmp_path / "other.ooenc"
+    encrypt_file(plain, other, "someone-else")
+    real = sb.stream_key_opens
 
-    monkeypatch.setattr(crypto, "os", _WideFstat())
-    assert stream_key_opens(sealed, "pw", follow_links=False, identity=(st.st_dev, st.st_ino)) is True
+    def _swap_for_the_key_check(p, pw, **kw):
+        os.replace(victim, kept_aside)
+        shutil.copy(other, victim)
+        try:
+            return real(p, pw, **kw)
+        finally:
+            os.replace(kept_aside, victim)
+
+    monkeypatch.setattr(sb, "stream_key_opens", _swap_for_the_key_check)
+    assert sb.backup_passphrase_is_wrong(dest, "pw") is False
+
+
+def test_a_volume_parity_rebuilt_then_replaced_is_refused(tmp_path, monkeypatch):
+    """A volume parity rebuilt is hashed again before it is read, and read only through the file that was hashed."""
+    pytest.importorskip("numpy")
+    import src.backup.parity as parity
+
+    corpus = tmp_path / "corpus.db"
+    con = sqlite3.connect(corpus)
+    con.executescript("CREATE TABLE sources(id INTEGER PRIMARY KEY, domain TEXT);"
+                      "CREATE TABLE articles(id INTEGER PRIMARY KEY, hash TEXT UNIQUE, content TEXT);")
+    con.executemany("INSERT INTO articles(hash, content) VALUES(?,?)", [(f"h{i:05d}", os.urandom(1500).hex()) for i in range(200)])
+    con.commit()
+    con.close()
+    a = tmp_path / "a.json"
+    a.write_text("{}", encoding="utf-8")
+    dest = tmp_path / "dest"
+    write_stream_backup(dest, "pw", corpus_source=CorpusSource(path=corpus, member_name="corpus.db", encrypted=False,
+                                                              freeze=_no_freeze),
+                        side_members=[MemberFile("app_settings.json", "state", a)], volume_size=VOL, parity_fraction=0.5)
+    victim = sorted(dest.glob("vol-*.ooenc"))[1]
+    good = tmp_path / "good"
+    shutil.copy(victim, good)
+    damaged = bytearray(victim.read_bytes())
+    damaged[100] ^= 1
+    victim.write_bytes(bytes(damaged))
+    real = parity.recover_volumes
+
+    def _rebuild_then_replace(*a, **k):
+        out = real(*a, **k)
+        shutil.copy(good, tmp_path / "x")  # the same bytes, another file
+        os.replace(tmp_path / "x", victim)
+        return out
+
+    monkeypatch.setattr(parity, "recover_volumes", _rebuild_then_replace)
+    monkeypatch.setattr(sb, "fingerprint_rebuilt_volumes", _swap_after(sb, "fingerprint_rebuilt_volumes", lambda: _to_copy(victim)))
+    with pytest.raises(EncryptionError) as exc:
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
+    assert "no longer the one that was checked" in str(exc.value)
+    assert "wrong passphrase" not in str(exc.value)
