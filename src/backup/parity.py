@@ -261,8 +261,10 @@ def write_parity(
 
     par_paths = [out / f"par-{j + 1:05d}.oopar" for j in range(m)]
     tmp_paths = [p.with_name(p.name + ".oopart") for p in par_paths]
-    handles = [create_new(p) for p in tmp_paths]  # a link planted at a .oopart name is removed, never written through (row 313)
+    handles: list[Any] = []
     try:
+        for p in tmp_paths:  # inside the try, so a refusal closes the ones already open (row 313)
+            handles.append(create_new(p))  # a link planted at a .oopart name is removed, never written through
         for off in range(0, stripe, band_bytes):
             # one band per call: the loops of a band live in a function with no handler, so an interrupt reaches this call, which the
             # ``finally`` covers (CPython 3.13 leaves a loop's back-edge outside the exception table of the ``try`` around it; R163)
@@ -386,8 +388,10 @@ def recover_volumes(
     tmp_paths = {
         k: out / (data_meta[k]["name"] + ".oopart") for k in erased_data
     }
-    handles = {k: create_new(p) for k, p in tmp_paths.items()}  # never through a link planted in the backup folder (row 313)
+    handles: dict[int, Any] = {}
     try:
+        for k, p in tmp_paths.items():  # inside the try, so a refusal closes the ones already open (row 313)
+            handles[k] = create_new(p)  # never through a link planted in the backup folder
         for off in range(0, stripe, band_bytes):
             # see write_parity: the band's loops are a function of their own (R163)
             _recover_band(np, handles, chosen, inv, mul, erased_data, data_meta, off, min(band_bytes, stripe - off))

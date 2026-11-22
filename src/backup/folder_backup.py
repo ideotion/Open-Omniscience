@@ -531,9 +531,20 @@ def write_folder_backup(
     # file is not the one that was hashed.
     prior = _recorded_digests(root)
     digests: dict[tuple[str, str], str] = {}
+    root_real = os.path.realpath(root)
     for it in items:
         dst = root / it.category / it.rel
-        if dst.exists() and dst.stat().st_size == it.size:
+        # Row 313: the backup folder is a place someone else may have prepared. A category or sub
+        # folder planted there as a link would carry the copy (and its folder creation) to wherever
+        # the link points, so a link anywhere below the chosen folder stops the backup, named, and
+        # nothing is written. A link AT the file's own name is not followed either: it never counts
+        # as the file already present, and the copy's rename replaces the link itself.
+        if link_on_the_way(root, Path(it.category) / Path(it.rel).parent) or not stays_inside(dst.parent, root_real):
+            raise LinkedBackupFolder(
+                f"a folder inside the backup folder is a link, so nothing is written through it: "
+                f"{Path(it.category) / Path(it.rel).parent}"
+            )
+        if not is_link(dst) and dst.exists() and dst.stat().st_size == it.size:
             skipped += 1
             if (carried := prior.get((it.category, it.rel, it.size))) is not None:
                 digests[(it.category, it.rel)] = carried
@@ -912,6 +923,10 @@ def _same_file_again(opened: os.stat_result, checked: os.stat_result, src: Path)
         return False
     return (stat.S_ISREG(now.st_mode) and not is_link_stat(now)
             and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
+class LinkedBackupFolder(OSError):
+    """A folder inside the chosen backup folder is a link: the backup stops rather than write through it."""
 
 
 class SourceChanged(OSError):

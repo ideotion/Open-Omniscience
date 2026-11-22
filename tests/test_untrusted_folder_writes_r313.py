@@ -227,6 +227,59 @@ def test_the_export_summary_never_writes_through_a_link(tmp_path):
     assert victim.read_bytes() == _VICTIM and not (d / SUMMARY_NAME).is_symlink()
 
 
+@posix_only
+def test_a_folder_backup_stops_at_a_linked_category_folder_and_writes_nothing_through_it(tmp_path):
+    from src.backup.folder_backup import BackupItem, LinkedBackupFolder, write_folder_backup
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "enwiki.xml.bz2"
+    victim.write_bytes(_VICTIM)
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"dump bytes")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    os.symlink(outside, dest / "wiki_dumps")
+    item = BackupItem("wiki_dumps", "enwiki.xml.bz2", src, src.stat().st_size)
+    with pytest.raises(LinkedBackupFolder):
+        write_folder_backup(dest, [item])
+    assert victim.read_bytes() == _VICTIM
+    assert sorted(p.name for p in outside.iterdir()) == ["enwiki.xml.bz2"]
+
+
+@posix_only
+def test_a_folder_backup_stops_at_a_linked_sub_folder(tmp_path):
+    from src.backup.folder_backup import BackupItem, LinkedBackupFolder, write_folder_backup
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    src = tmp_path / "blob"
+    src.write_bytes(b"model blob")
+    dest = tmp_path / "dest"
+    (dest / "models").mkdir(parents=True)
+    os.symlink(outside, dest / "models" / "blobs")
+    item = BackupItem("models", "blobs/sha256-ab", src, src.stat().st_size)
+    with pytest.raises(LinkedBackupFolder):
+        write_folder_backup(dest, [item])
+    assert list(outside.iterdir()) == []
+
+
+@posix_only
+def test_a_link_at_a_backed_up_file_is_never_counted_as_present_and_is_replaced(tmp_path):
+    from src.backup.folder_backup import BackupItem, write_folder_backup
+
+    victim = _victim(tmp_path)
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"x" * len(_VICTIM))  # same size as the victim: a followed link would read as present
+    dest = tmp_path / "dest"
+    _link(dest / "osm_regions" / "fr.osm.pbf", victim)
+    res = write_folder_backup(dest, [BackupItem("osm_regions", "fr.osm.pbf", src, src.stat().st_size)])
+    assert res["copied"] == 1 and res["skipped"] == 0
+    assert victim.read_bytes() == _VICTIM
+    out = dest / "osm_regions" / "fr.osm.pbf"
+    assert not out.is_symlink() and out.read_bytes() == src.read_bytes()
+
+
 # --------------------------------------------------------------------------- source pins
 
 
@@ -245,6 +298,7 @@ def test_the_export_summary_never_writes_through_a_link(tmp_path):
         ("src/backup/stream_backup.py", "read_stream_backup", "create_new("),
         ("src/backup/export_summary.py", "write_backup_summary", "replace_with("),
         ("src/backup/folder_backup.py", "_write_manifest_atomically", "create_new("),
+        ("src/backup/folder_backup.py", "write_folder_backup", "link_on_the_way("),
         ("src/backup/artifact.py", "write_backup_v2", "replace_with("),
     ],
 )

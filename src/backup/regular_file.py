@@ -26,6 +26,10 @@ import os
 import stat
 from typing import BinaryIO
 
+#: The bit Windows sets in every reparse tag that stands for ANOTHER NAME (IsReparseTagNameSurrogate): symbolic links,
+#: junctions and mount points. Cloud placeholders and deduplicated files carry tags without it.
+_NAME_SURROGATE = 0x20000000
+
 
 class NotARegularFile(OSError):
     """The name is a link, a pipe, a device or a folder: nothing was read from it."""
@@ -86,14 +90,15 @@ def create_new(path: str | os.PathLike[str], *, mode: int = 0o666) -> BinaryIO:
     turned a plain ``open(path, "wb")`` into a write wherever the link pointed. Whatever the name holds is removed
     first, a link as a link (``unlink`` never follows one), and the file is then CREATED exclusively (``O_CREAT |
     O_EXCL``, plus ``O_NOFOLLOW`` where the platform has it): a link or a file that appears between the two makes the
-    create fail rather than be followed or truncated. A folder at the name is refused, never removed; on Windows any
-    reparse point (a junction, a mount point, a link) is refused rather than removed."""
+    create fail rather than be followed or truncated. A folder at the name is refused, never removed; on Windows a
+    name-surrogate reparse point (a symbolic link, a junction, a mount point) is refused rather than removed, while a
+    file that merely carries another reparse tag (a cloud placeholder, a deduplicated file) is a file like any other."""
     try:
         st = os.lstat(path)
     except FileNotFoundError:
         st = None
     if st is not None:
-        if stat.S_ISDIR(st.st_mode) or int(getattr(st, "st_reparse_tag", 0) or 0):
+        if stat.S_ISDIR(st.st_mode) or int(getattr(st, "st_reparse_tag", 0) or 0) & _NAME_SURROGATE:
             raise NotARegularFile(f"refusing to write over a folder or a reparse point: {os.fspath(path)!s}")
         os.unlink(path)
     flags = (
@@ -116,19 +121,20 @@ def replace_with(path: str | os.PathLike[str], data: bytes, *, tmp: str | os.Pat
 
     p = os.fspath(path)
     t = os.fspath(tmp) if tmp is not None else f"{p}.{secrets.token_hex(4)}.oopart"
+    made = False
     try:
         with create_new(t) as fh:
+            made = True
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(t, p)
     except BaseException:
-        try:
-            st = os.lstat(t)
-            if not stat.S_ISDIR(st.st_mode):
+        if made:  # only the file this call created: never one that appeared at the name meanwhile
+            try:
                 os.unlink(t)
-        except OSError:
-            pass
+            except OSError:
+                pass
         raise
 
 
