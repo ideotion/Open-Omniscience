@@ -52,6 +52,7 @@ _ALLOWED = {
     "src/backup/folder_backup.py": "``os.open(os.devnull, os.O_RDONLY)`` in ``_process_can_open``: opens the null device for reading to ask whether the process still has a file handle; nothing is written or replaced",
     "scripts/guards_for_diff.py": "``core.hooksPath={os.devnull}``: the text of a git config value that switches hooks off; nothing is written there",
     "tests/test_export_summary_reader_r302.py": "``os.symlink(\"/dev/zero\", ...)``: the TARGET of a link the test plants in a temporary folder to prove the manifest reader never follows a link; the device is never opened, written or replaced",
+    "tests/test_untrusted_folder_reads_r312.py": "``os.symlink(\"/dev/zero\", ...)``: the TARGET of links the test plants in temporary backup, scan and volume folders to prove the import scan, the checksum passes, parity and decryption never read through a link or a device; the device is never opened, written or replaced",
     "tests/test_stream_backup_destination_reads_r308.py": "``os.symlink(\"/dev/zero\", ...)``: the TARGET of links the test plants in a temporary export destination to prove the manifest reader and the reuse hash never follow a link; the device is never opened, written or replaced",
 }
 #: The nodes the canary checks. ``/dev/full`` exists on Linux only.

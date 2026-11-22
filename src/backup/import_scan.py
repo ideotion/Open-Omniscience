@@ -29,6 +29,7 @@ from pathlib import Path
 from src.backup.hf_layout import HF_LAYOUT, hf_member_allowed
 from src.backup.links import is_link, is_link_stat
 from src.backup.manifest_file import read_manifest_json
+from src.backup.regular_file import open_regular
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
 # hardcoded so this discovery module stays crypto-free (importing that module pulls in
@@ -172,11 +173,17 @@ def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None, listed: set
     return out
 
 
+#: How much of a CSV the source-list sniff reads: its header line, never the whole file.
+_CSV_SNIFF_BYTES = 64 * 1024
+
+
 def _looks_like_source_csv(p: Path) -> bool:
     """A source-list CSV has a 'domain' column in its header (cheap one-line sniff)."""
     try:
-        with p.open("r", encoding="utf-8", errors="ignore") as fh:
-            header = (fh.readline() or "").lower()
+        # Opened as a regular file or not at all (row 312): a pipe named x.csv held the whole scan on its open, and
+        # a link was followed out of the folder. One line, bounded: a file with no newline is never read whole.
+        with open_regular(p) as fh:
+            header = fh.readline(_CSV_SNIFF_BYTES).decode("utf-8", errors="ignore").lower()
         return "domain" in header
     except OSError:
         return False
@@ -448,7 +455,7 @@ def looks_like_leftover(name: str) -> bool:
 _V1_KIND = "oo-volumes-1"
 
 
-def _leftovers_from(manifest_text: str, entries: dict[str, bool]) -> list[str]:
+def _leftovers_from(manifest_text: str | object, entries: dict[str, bool]) -> list[str]:
     """The leftover copies one folder holds, from its manifest's text and its own listing (R686, R692).
 
     ``entries`` maps each name the folder lists to whether it is a regular file that is not a link. Pure: no path is
@@ -460,10 +467,12 @@ def _leftovers_from(manifest_text: str, entries: dict[str, bool]) -> list[str]:
     folder lists it as a regular file."""
     import json
 
-    try:
-        m = json.loads(manifest_text)
-    except ValueError:
-        return []
+    m = manifest_text  # already parsed by the hardened reader (row 312), or a manifest's text
+    if isinstance(manifest_text, str):
+        try:
+            m = json.loads(manifest_text)
+        except (ValueError, RecursionError):
+            return []
     if not isinstance(m, dict) or m.get("kind") != _V1_KIND:
         return []
     vols = m.get("volumes")
@@ -491,12 +500,14 @@ def leftovers_in_handle(dir_fd: int) -> list[str]:
     """``leftover_plaintext`` for a folder already opened as a no-follow handle: the manifest and the listing are both
     read through it, so they describe the very folder a removal through the same handle acts on. Never raises."""
     try:
-        fd = os.open(_VOL_MANIFEST, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
-        with os.fdopen(fd, "r", encoding="utf-8") as fh:
-            text = fh.read()
+        # Through the hardened reader (row 312): an open without O_NONBLOCK waited for ever on a pipe there,
+        # and the read had no bound.
+        m = read_manifest_json(_VOL_MANIFEST, dir_fd=dir_fd)
+        if m is None:
+            return []
         with os.scandir(dir_fd) as it:
             entries = {e.name: e.is_file(follow_symlinks=False) for e in it}
-        return _leftovers_from(text, entries)
+        return _leftovers_from(m, entries)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
 
@@ -523,10 +534,12 @@ def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
             finally:
                 os.close(fd)
         folder = Path(d)  # Windows: no folder handles, so one manifest read and one listing of the folder
-        text = (folder / _VOL_MANIFEST).read_text(encoding="utf-8")
+        m = read_manifest_json(folder / _VOL_MANIFEST)  # never a link, a pipe or an unbounded read (row 312)
+        if m is None:
+            return []
         with os.scandir(folder) as it:
             entries = {e.name: e.is_file(follow_symlinks=False) and not e.is_symlink() for e in it}
-        return _leftovers_from(text, entries)
+        return _leftovers_from(m, entries)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
 

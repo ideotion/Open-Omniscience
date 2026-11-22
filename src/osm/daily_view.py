@@ -44,7 +44,7 @@ def _build() -> dict[str, Any]:
     from sqlalchemy import func, inspect
 
     from src.osm.apply import FEED_PREFIX
-    from src.osm.lane_models import OsmCountry, OsmDiffRun
+    from src.osm.lane_models import OsmCountry, OsmDiffRun, country_data_date
     from src.versioned import store
     from src.versioned.models import VersionedGap
 
@@ -54,14 +54,22 @@ def _build() -> dict[str, Any]:
     with store.lane_session("osm") as s:
         have = set(inspect(s.get_bind()).get_table_names())
         # Only a finished cut is a cut country: a row still ingesting, or one that failed, holds nothing the daily files could reach.
-        countries = list(
-            s.query(OsmCountry.alpha3, OsmCountry.diff_sequence, OsmCountry.diff_timestamp).filter(OsmCountry.status == "complete")
-        )
+        countries = list(s.query(OsmCountry).filter(OsmCountry.status == "complete").order_by(OsmCountry.alpha3))
+        # R790 (row 311): the data date of each cut country, from R775's one reading. A country whose daily files were applied without
+        # their date being read is named apart and never enters the newest or the oldest: its data is newer than its extract by an
+        # unknown span, so neither date would be its own.
+        dates = [country_data_date(c) for c in countries]
+        dated = [d["last_diff"] if d["updates"] == "dated" else d["extract"] for d in dates if d["updates"] != "date_not_read"]
+        dated = [d for d in dated if d is not None]
         out: dict[str, Any] = {
             "measured": True,
             "countries_cut": len(countries),
             "countries_updated": sum(1 for c in countries if c.diff_sequence is not None),
             "newest_file_at": _iso(max((c.diff_timestamp for c in countries if c.diff_timestamp is not None), default=None)),
+            "date_not_read": [c.alpha3 for c, d in zip(countries, dates, strict=True) if d["updates"] == "date_not_read"],
+            "newest_data_at": max(dated, default=None),
+            "oldest_data_at": min(dated, default=None),
+            "data_undated": sum(1 for d in dates if d["updates"] == "none" and d["extract"] is None),
         }
         if OsmDiffRun.__tablename__ in have:
             out["files_applied"] = int(s.query(func.count(OsmDiffRun.id)).scalar() or 0)

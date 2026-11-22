@@ -49,6 +49,7 @@ from pathlib import Path, PurePosixPath
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
+from src.backup.regular_file import NotARegularFile, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -1590,8 +1591,12 @@ def _blob_sha256_from_name(rel: str) -> str | None:
 
 
 def _sha256_file(path: Path) -> str:
+    """The SHA-256 of a regular file. The verify reaches a member through its name inside the backup folder, so a
+    pipe or a device there raises :class:`NotARegularFile` without blocking or reading (row 312), and
+    a link is never followed either (no backup we write holds one; one swapped in after the traversal guard looked
+    could lead out of the folder), so it reads as a checksum mismatch."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with open_regular(path) as f:
         for chunk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -1733,8 +1738,11 @@ def verify_folder_backup(
             want = [h for h in (recorded, blob_hex) if h is not None]
             if want and (blob_hex is None or verify_model_checksums):
                 checksummed += 1
-                actual_hex = _sha256_file(path)
-                status = "ok" if all(actual_hex == h for h in want) else "checksum_mismatch"
+                try:
+                    actual_hex = _sha256_file(path)
+                except NotARegularFile:
+                    actual_hex = ""  # a link, or swapped for a pipe or a device after the look: never a match
+                status = "ok" if actual_hex and all(actual_hex == h for h in want) else "checksum_mismatch"
             else:
                 status = "size_only"  # present + right size; no usable stored checksum
         summary[status] += 1
