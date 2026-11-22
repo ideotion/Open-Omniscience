@@ -140,6 +140,29 @@ def test_a_missing_key_is_still_missing(tmp_path):
 
 
 def test_the_review_reads_through_the_shared_reader():
-    src = Path(ev.__file__).read_text(encoding="utf-8")
-    body = src.split("def existing_public_key_hex", 1)[1].split("\ndef ", 1)[0]
+    import inspect
+
+    body = inspect.getsource(ev.existing_public_key_hex)
     assert "keyfile.read_once(" in body and "read_bytes(" not in body
+
+
+@posix_only
+def test_the_custody_status_reports_a_fifo_key_as_unreadable_not_a_500(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
+    (tmp_path / "keys").mkdir()
+    key = tmp_path / "keys" / "custody_ed25519.pem"
+    os.mkfifo(key)
+    try:
+        with TestClient(app) as client:
+            done, r, error = _within(10, client.get, "/api/custody/settings")
+        assert done, "the custody status hung on a FIFO at the key's name"
+        assert error is None and r.status_code == 200, r.text
+        assert r.json()["key_protection"] == "unreadable" and r.json()["keys_created"] is True
+        assert key.is_fifo()
+    finally:
+        _unblock(key)
