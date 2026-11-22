@@ -57,6 +57,28 @@ def gather_counts() -> tuple[Counter, int]:
     return counts, total
 
 
+_TARGET_WORDS = {
+    "absent": "not found on this install",
+    "empty": "read, and it sets no floor",
+    "unreadable": "could not be read",
+}
+
+
+def targets_lines(reg: dict) -> list[str]:
+    """Row 289: the targets file's read state, so a "-" in the table below says why. Empty when it was read whole."""
+    read = reg.get("targets") or {"state": "present"}
+    refused = reg.get("targets_refused") or []
+    out = []
+    if read.get("state") != "present":
+        err = f" ({read['error']})" if read.get("error") else ""
+        out.append(f"Targets (configs/catalog_targets.yml): {read.get('state')}{err}: "
+                   f"{_TARGET_WORDS.get(str(read.get('state')), 'not read')}, so no region is compared with a floor")
+    if refused:
+        out.append(f"Targets refused ({len(refused)}): " + ", ".join(
+            f"{r.get('region') or '-'}.{r.get('key') or '-'} {r.get('refused')}" for r in refused))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
@@ -83,6 +105,8 @@ def main() -> int:
         flag = f"  [ABOVE the {tc['max_share_pct']}% guard]"
     print(f"Top country: {country_display_name(tc['code'])} — "
           f"{tc['sources']} sources, {tc['share_pct']}% of located{flag}")
+    for line in targets_lines(reg):
+        print(line)
     print()
     print(f"{'Region':<15} {'sources':>8} {'floor':>6}   {'countries':>9} {'floor':>6}")
     for row in reg["regions"]:

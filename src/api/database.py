@@ -541,6 +541,10 @@ def country_coverage(db: Session = Depends(get_db)) -> dict:
         totals = standing_totals(db)
         total_sources = totals["sources"]
         report["regional"] = regional_report(counts, total_sources=total_sources)
+        if report["regional"]["targets"].get("state") != "present" or report["regional"]["targets_refused"]:
+            # Row 289: a file the operator fixes is not a database write, so the change probe cannot see it, and a
+            # verified entry is only re-stamped. This payload stands for its own TTL and is then recomputed regardless.
+            report["__ttl_s__"] = _CACHE_TTL_S
         report["sources"] = totals["sources"]
         report["candidates_not_checked"] = totals["candidates_not_checked"]
         report["candidate_line"] = CANDIDATE_LINE
