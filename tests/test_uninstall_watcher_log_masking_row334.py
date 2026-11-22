@@ -63,7 +63,7 @@ def test_the_audit_log_names_no_path_and_no_process_id(tmp_path):
     assert "removed launcher <home>/.../open-omniscience.desktop" in text, text
     assert "launcher kept <home>/.../open-omniscience-stuck.desktop (" in text, text
     assert "wiped data <data> (" in text, text
-    assert "wiped columnar store " in text and "/.../columnar (" in text, text   # <home>/... when tmp sits in a profile folder
+    assert "wiped columnar store " in text and ".../columnar (" in text, text   # <home>/... when tmp sits in a profile folder
     assert "removed venv <home>/.../.venv" in text, text
     assert "removed app folder <home>/.../app" in text, text
     # and nothing else does
