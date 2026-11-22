@@ -297,14 +297,17 @@ class _HashedReads:
         return b
 
 
-def _refuse_a_file_that_is_not_the_one_checked(fin: Any, h: Any, expect_sha256: str, end_seen: bool) -> None:
+def _refuse_a_file_that_is_not_the_one_checked(
+    fin: Any, h: Any, expect_sha256: str, end_seen: bool, short_before_more: bool
+) -> None:
     """After a chunk failed its tag in a reader that knows the file's checksum (row 329): read the rest through the same
-    handle, and when the file is not the one that was checked -- other bytes, or bytes after the end it saw -- say so,
+    handle, and when the file is not the one that was checked -- other bytes, bytes after the end it saw, or a chunk
+    cut short with more after it -- say so,
     rather than let the failure read as a wrong passphrase."""
     tail = 0
     for blk in iter(lambda: fin.read(1 << 20), b""):
         tail += len(blk)
-    if (end_seen and tail) or h.hexdigest() != expect_sha256:
+    if short_before_more or (end_seen and tail) or h.hexdigest() != expect_sha256:
         raise EncryptionError(
             "this file is not the one that was checked before reading (it was replaced or changed since); "
             "what was read must not be used"
@@ -346,7 +349,8 @@ def decrypt_stream(
                 pt = aes.decrypt(_chunk_nonce(prefix, counter, final), prev, None)
             except InvalidTag as exc:
                 if expect_sha256 is not None:
-                    _refuse_a_file_that_is_not_the_one_checked(fin, h, expect_sha256, final)
+                    # A short chunk with more after it is an end seen and grown back: changed, whatever the digest.
+                    _refuse_a_file_that_is_not_the_one_checked(fin, h, expect_sha256, final, not final and len(prev) < block)
                 raise EncryptionError(
                     "wrong passphrase or the file has been altered"
                 ) from exc

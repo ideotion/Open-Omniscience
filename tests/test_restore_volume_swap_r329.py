@@ -375,3 +375,44 @@ def test_a_link_put_at_the_name_between_the_look_and_the_open_is_an_encryption_r
     with pytest.raises(EncryptionError):
         stream_key_opens(sealed, "pw", follow_links=False)
     del rf
+
+
+def test_a_chunk_cut_short_and_grown_back_during_the_decrypt_never_reads_as_a_wrong_passphrase(tmp_path, monkeypatch):
+    """A read that returns half a chunk saw the end of the file there; bytes after it mean the file changed while it
+    was read, and that is what the refusal says, even when every byte read still hashes to the manifest's digest."""
+    import src.safety.crypto as crypto
+
+    plain = tmp_path / "p.bin"
+    plain.write_bytes(b"\0")
+    sealed = tmp_path / "one.ooenc"
+    encrypt_file(plain, sealed, "pw")
+    with open(sealed, "rb") as fh:
+        block = crypto._open_stream_header(fh, "pw")[2]
+    plain.write_bytes(os.urandom(2 * block + 9))
+    sealed = tmp_path / "three.ooenc"
+    encrypt_file(plain, sealed, "pw")
+    want = hashlib.sha256(sealed.read_bytes()).hexdigest()
+    real = crypto._open_stream_header
+
+    def _half_then_rest(fin, passphrase):
+        out = real(fin, passphrase)
+        inner_read, calls, carry = fin.read, [], []
+
+        def _read(n=-1):
+            calls.append(n)
+            if len(calls) == 1:
+                b = inner_read(n)
+                carry.append(b[len(b) // 2:])
+                return b[: len(b) // 2]  # the end seen mid-chunk
+            if carry:
+                head = carry.pop()
+                return head + inner_read(n - len(head))  # grown back: the rest, read on from where the end was seen
+            return inner_read(n)
+
+        fin.read = _read
+        return out
+
+    monkeypatch.setattr(crypto, "_open_stream_header", _half_then_rest)
+    with pytest.raises(EncryptionError) as exc:
+        decrypt_stream(sealed, lambda b: None, "pw", follow_links=False, expect_sha256=want)
+    assert "passphrase" not in str(exc.value)
