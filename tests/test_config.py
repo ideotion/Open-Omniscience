@@ -63,7 +63,9 @@ def no_repo_configs(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_config_after_test():
-    """Reset config after each test."""
+    """Reset the app's config singleton before and after each test (row 287: these tests now use src.config itself, so
+    none may depend on whichever test ran before having left it empty)."""
+    reset_config()
     yield
     reset_config()
 
