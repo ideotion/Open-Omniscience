@@ -199,7 +199,7 @@ async function check(id, what, fn) {
     // JSON.stringify would escape them away and drop the label).
     const RAW = {t: MARKED.t, current: MARKED.current,
       tf: (s, v) => "TF[" + s + "]" + Object.keys(v || {}).map((k) => k + "=" + v[k]).join(",")};
-    const F = build(["ooLabelHtml", "ooLtrPct", "renderCoverageRegions"],
+    const F = build(["ooLabelHtml", "ooLtrPct", "covTargetsLine", "renderCoverageRegions"],
       "function _regionFloorBars(){ return ''; } const document = {documentElement: {}};",   // the % frames ride ooLtrPct (item 46 S4 b), unchanged on a page with no direction
       "renderCoverageRegions", {$: () => host, window: {OOI18N: RAW}, OOI18N: RAW});
     F.renderCoverageRegions({regional: {

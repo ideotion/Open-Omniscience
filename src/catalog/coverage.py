@@ -67,21 +67,127 @@ def coverage_report(
 _TARGETS_PATH = Path(__file__).resolve().parents[2] / "configs" / "catalog_targets.yml"
 
 
-def load_targets(path: Path | None = None) -> dict:
-    """Read the per-region balance targets (user-editable aspirational floors).
+#: The targets file's read state (row 289): ``present``, ``absent`` (no file), ``empty`` (read, sets no usable target) or
+#: ``unreadable`` (the error named by its class or a shape fact, never the path). Targets that were not read are never
+#: "no target set": the report says which, and every comparison is None with the state beside it.
+TARGET_STATES = ("present", "absent", "empty", "unreadable")
+_REGION_KEYS = ("min_sources", "min_countries")
+_SHARE_KEYS = ("max_country_share_pct", "min_located_share_pct")
 
-    Absent/unreadable file degrades to empty targets — the regional report then
-    simply reports actuals without target comparisons, never invented numbers.
+
+def _count_value(v: object) -> int | None:
+    """A whole, non-negative target count, or None. A bool is not a count; a float is one only when whole."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v if v >= 0 else None
+    if isinstance(v, float) and v.is_integer() and v >= 0:
+        return int(v)
+    return None
+
+
+def _share_value(v: object) -> float | int | None:
+    """A share between 0 and 100 inclusive, or None."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return v if 0 <= v <= 100 else None
+
+
+def _clean_targets(data: dict) -> tuple[dict, dict, list[dict]]:
+    """``(regions, concentration, refused)`` from a parsed targets mapping. A value that is not a usable target is
+    REFUSED with a token, never coerced: a coerced floor ("lots" read as 0) would be met by every region."""
+    refused: list[dict] = []
+    regions: dict[str, dict] = {}
+    raw_regions = data.get("regions")
+    if raw_regions is not None and not isinstance(raw_regions, dict):
+        refused.append({"region": None, "key": "regions", "refused": "not_a_mapping"})
+        raw_regions = {}
+    for name, row in (raw_regions or {}).items():
+        if name not in CONTINENTS:
+            refused.append({"region": str(name), "key": None, "refused": "not_a_region"})
+            continue
+        if not isinstance(row, dict):
+            refused.append({"region": name, "key": None, "refused": "not_a_mapping"})
+            continue
+        kept: dict = {}
+        for key in row:
+            if key not in _REGION_KEYS:
+                refused.append({"region": name, "key": str(key), "refused": "unknown_key"})
+        for key in _REGION_KEYS:
+            if row.get(key) is None:
+                continue
+            val = _count_value(row[key])
+            if val is None:
+                refused.append({"region": name, "key": key, "refused": "not_a_whole_number"})
+            else:
+                kept[key] = val
+        if kept:
+            regions[name] = kept
+    concentration: dict = {}
+    raw_conc = data.get("concentration")
+    if raw_conc is not None and not isinstance(raw_conc, dict):
+        refused.append({"region": None, "key": "concentration", "refused": "not_a_mapping"})
+    if not isinstance(raw_conc, dict):
+        raw_conc = {}
+    for key in raw_conc:
+        if key not in _SHARE_KEYS:
+            refused.append({"region": None, "key": str(key), "refused": "unknown_key"})
+    for key in _SHARE_KEYS:
+        if raw_conc.get(key) is None:
+            continue
+        share = _share_value(raw_conc[key])
+        if share is None:
+            refused.append({"region": None, "key": key, "refused": "not_a_percentage"})
+        else:
+            concentration[key] = share
+    return regions, concentration, refused
+
+
+def _judge(regions: dict, concentration: dict, refused: list[dict], read: dict) -> dict:
+    """The final state once the values are cleaned: a read file with no usable target is ``empty`` -- or
+    ``unreadable`` when values were there and every one was refused, since that file is not a file of nothing."""
+    if read.get("state") != "present" or regions or concentration:
+        return read
+    if refused:
+        return {"state": "unreadable", "error": f"no usable target ({len(refused)} refused)"}
+    return {"state": "empty"}
+
+
+def load_targets(path: Path | None = None) -> dict:
+    """Read the per-region balance targets (user-editable aspirational floors), with the read's state. Never raises.
+
+    Returns ``{"regions", "concentration", "read", "refused"}``. Read on every call, never cached here, so a file the
+    operator fixes is seen by the next compute. The coverage route's cache re-stamps an entry while nothing is written to
+    the database, so a payload whose targets were not read whole carries its own TTL there (``__ttl_s__``) and is
+    recomputed once that ends, written to or not.
     """
     p = path or _TARGETS_PATH
+    empty: dict = {"regions": {}, "concentration": {}, "refused": []}
     try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except OSError:
-        return {"regions": {}, "concentration": {}}
-    return {
-        "regions": data.get("regions") or {},
-        "concentration": data.get("concentration") or {},
-    }
+        data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {**empty, "read": {"state": "absent"}}
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError, yaml.YAMLError) as exc:
+        return {**empty, "read": {"state": "unreadable", "error": type(exc).__name__}}
+    if data is None:
+        return {**empty, "read": {"state": "empty"}}
+    if not isinstance(data, dict):
+        return {**empty, "read": {"state": "unreadable", "error": f"not a mapping ({type(data).__name__})"}}
+    regions, concentration, refused = _clean_targets(data)
+    read = _judge(regions, concentration, refused, {"state": "present"})
+    if read["state"] != "present":
+        return {**empty, "refused": refused, "read": read}
+    return {"regions": regions, "concentration": concentration, "refused": refused, "read": read}
+
+
+def _normalised_targets(targets: dict) -> dict:
+    """A targets dict as :func:`load_targets` returns it. A hand-built one (no ``read`` block) is cleaned the same
+    way and judged by what survives, so a bad value never raises out of the report."""
+    if isinstance(targets.get("read"), dict):
+        return {"refused": [], **targets}
+    regions, concentration, refused = _clean_targets(targets)
+    read = _judge(regions, concentration, refused, {"state": "present"})
+    return {"regions": regions, "concentration": concentration, "refused": refused, "read": read}
 
 
 def regional_report(
@@ -97,9 +203,11 @@ def regional_report(
     each row says plainly whether it is met. ``unlocated`` counts sources with
     no resolvable country at all (only computable when ``total_sources`` is
     given) — they are invisible to every geographic analysis, so the share is
-    reported rather than hidden.
+    reported rather than hidden. ``targets`` is the targets file's read state (row 289) and ``targets_refused`` every
+    value it refused: when the file was not read, no region is compared with a floor and that says why, never "no
+    target set".
     """
-    targets = targets if targets is not None else load_targets()
+    targets = _normalised_targets(targets if targets is not None else load_targets())
     region_targets: dict = targets.get("regions") or {}
     counts = {(c or "").lower(): int(n) for c, n in country_counts.items() if c}
 
@@ -128,13 +236,9 @@ def regional_report(
         t = region_targets.get(r) or {}
         row["min_sources"] = t.get("min_sources")
         row["min_countries"] = t.get("min_countries")
-        row["sources_met"] = (
-            None if t.get("min_sources") is None else row["sources"] >= int(t["min_sources"])
-        )
+        row["sources_met"] = None if t.get("min_sources") is None else row["sources"] >= t["min_sources"]
         row["countries_met"] = (
-            None
-            if t.get("min_countries") is None
-            else row["countries_covered"] >= int(t["min_countries"])
+            None if t.get("min_countries") is None else row["countries_covered"] >= t["min_countries"]
         )
         regions.append(row)
 
@@ -146,6 +250,9 @@ def regional_report(
     conc = targets.get("concentration") or {}
     out: dict = {
         "regions": regions,
+        # Row 289: whether the targets were read, and every value refused; a None comparison then says why.
+        "targets": targets["read"],
+        "targets_refused": targets["refused"],
         "special_sources": special_sources,
         "located_sources": located,
         "top_country": {
