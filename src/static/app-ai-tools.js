@@ -2689,17 +2689,30 @@
       return id;
     }
 
+    // Row 326: the Time cell of a custody entry. A stamped time is shown as recorded. An OpenTimestamps proof carries no
+    // time in the record (nothing here writes one back once a block confirms it), so the cell says what the record holds
+    // rather than the word "opentimestamps", and never claims it is unconfirmed; any other kind is shown as sent, as code.
+    function custodyEntryTimeHtml(ts, t) {
+      if (!ts) return "—";
+      if (ts.asserted_time) return esc(ts.asserted_time);
+      if (ts.kind === "opentimestamps") return esc(t("OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time"));
+      return ts.kind ? `<code dir="ltr">${esc(ts.kind)}</code>` : "—";
+    }
+
     async function viewChain() {
       const id = custItem(); if (!id) return;
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const trf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id));
         const t = $("cust-entries");
         t.innerHTML = "<tr><th>#</th><th>Action</th><th>Actor</th><th>Time</th><th>Sig</th></tr>" +
           d.entries.map(e =>
             `<tr><td>${e.seq}</td><td>${esc(e.action)}</td><td>${esc(e.actor||"—")}</td>
-             <td class="muted" style="font-size:12px">${esc((e.timestamp&&e.timestamp.asserted_time||e.timestamp&&e.timestamp.kind)||"—")}</td>
+             <td class="muted" style="font-size:12px">${custodyEntryTimeHtml(e.timestamp, tr)}</td>
              <td><span class="pill">${esc(e.signature&&e.signature.algorithm||"?")}</span></td></tr>`).join("");
-        $("cust-result").textContent = `${d.entry_count} custody entr${d.entry_count===1?"y":"ies"}.`;
+        $("cust-result").textContent = trf("Custody entries: {n}", { n: d.entry_count });
       } catch (e) { $("cust-entries").innerHTML = ""; toast(_failMsg("View chain: {error}", e), "err"); }
     }
 

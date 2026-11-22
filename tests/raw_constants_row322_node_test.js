@@ -89,7 +89,7 @@ assert.strictEqual(R._aiSweepNote({ note: "into None, 0 keywords walked this pas
 assert.ok(R._aiLatestNote({ latest_note_code: "perception-stored" }, t).startsWith("T[The extracted names"));
 assert.ok(R._aiLatestNote({ latest_note_code: "translation-stored" }, t).startsWith("T[Its answers are stored as tentative"));
 assert.strictEqual(R._aiLatestNote({ latest_note: "older words" }, t), "older words");
-for (const v of ["junk", "content", "unsure"]) assert.strictEqual(R._aiTriageVerdictWords(v, t), "T[" + v + "]");
+for (const v of ["junk", "content", "unsure"]) assert.strictEqual(R._aiTriageVerdictWords(v, t), "T[Verdict: " + v + "]");  // row 326: labelled keys
 assert.strictEqual(R._aiTriageVerdictWords("maybe-later", t), "maybe-later");
 
 // every string these maps use reached the translator, so it must be a locale key (checked from Python)
