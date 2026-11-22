@@ -13,6 +13,7 @@ transport/stash; it is not a substitute for full-disk encryption of the live mac
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import struct
@@ -276,9 +277,12 @@ def _open_sealed(src: str | os.PathLike[str], *, follow_links: bool = True):
     try:
         return open_regular(src, follow_links=follow_links)
     except NotARegularFile:
-        raise EncryptionError(
-            "not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read"
-        ) from None
+        pass
+    except OSError as exc:
+        # A link put at the name between the look and the open: O_NOFOLLOW answers ELOOP (EMLINK on FreeBSD).
+        if follow_links or exc.errno not in (errno.ELOOP, errno.EMLINK):
+            raise
+    raise EncryptionError("not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read")
 
 
 class _HashedReads:
@@ -291,6 +295,20 @@ class _HashedReads:
         b = self._fin.read(n)
         self._h.update(b)
         return b
+
+
+def _refuse_a_file_that_is_not_the_one_checked(fin: Any, h: Any, expect_sha256: str, end_seen: bool) -> None:
+    """After a chunk failed its tag in a reader that knows the file's checksum (row 329): read the rest through the same
+    handle, and when the file is not the one that was checked -- other bytes, or bytes after the end it saw -- say so,
+    rather than let the failure read as a wrong passphrase."""
+    tail = 0
+    for blk in iter(lambda: fin.read(1 << 20), b""):
+        tail += len(blk)
+    if (end_seen and tail) or h.hexdigest() != expect_sha256:
+        raise EncryptionError(
+            "this file is not the one that was checked before reading (it was replaced or changed since); "
+            "what was read must not be used"
+        )
 
 
 def decrypt_stream(
@@ -327,6 +345,8 @@ def decrypt_stream(
             try:
                 pt = aes.decrypt(_chunk_nonce(prefix, counter, final), prev, None)
             except InvalidTag as exc:
+                if expect_sha256 is not None:
+                    _refuse_a_file_that_is_not_the_one_checked(fin, h, expect_sha256, final)
                 raise EncryptionError(
                     "wrong passphrase or the file has been altered"
                 ) from exc
@@ -385,8 +405,15 @@ def stream_key_opens_or_digest(
             return True, None
         except InvalidTag:
             pass
+        tail = 0
         for blk in iter(lambda: fin.read(1 << 20), b""):
-            del blk  # hashed on the way through
+            tail += len(blk)  # hashed on the way through
+    # The end of the file is part of what the key was tried on (it decides the first chunk's nonce), and a digest does
+    # not record where the end was seen: a file cut short while the key was tried and grown back before the hash would
+    # hash as the genuine one. A short first chunk followed by more bytes, or more bytes after the end was seen, is no
+    # verdict (row 329).
+    if (final and tail) or (not final and len(first) < block):
+        raise EncryptionError("this file changed while it was being read; no verdict on the passphrase")
     return False, h.hexdigest()
 
 

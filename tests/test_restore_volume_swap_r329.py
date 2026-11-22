@@ -15,6 +15,7 @@ restore fail. A refusal is never reported as a wrong passphrase.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import shutil
@@ -299,3 +300,78 @@ def test_a_volume_parity_rebuilt_then_replaced_is_refused(tmp_path, monkeypatch)
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
     assert "not the one that was checked" in str(exc.value)
     assert "wrong passphrase" not in str(exc.value)
+
+
+def test_the_probe_gives_no_verdict_when_the_file_grows_back_after_its_end_was_seen(tmp_path, monkeypatch):
+    """A volume cut to its first chunk while the key is tried (so that chunk is taken as the last one and fails its tag
+    under the right passphrase) and grown back before the checksum would hash as the genuine file: the probe sees
+    bytes after the end it saw and gives no verdict, so the right passphrase never reads as wrong."""
+    import src.safety.crypto as crypto
+
+    plain = tmp_path / "p.bin"
+    sealed = tmp_path / "s.ooenc"
+    real = crypto._open_stream_header
+    seen: dict[str, int] = {}
+
+    def _end_seen_after_the_first_chunk(fin, passphrase):
+        out = real(fin, passphrase)
+        seen["block"] = out[2]
+        inner_read, calls = fin.read, []
+
+        def _read(n=-1):
+            calls.append(n)
+            return b"" if len(calls) == 2 else inner_read(n)  # read(1) sees an end, as a cut file would show it
+
+        fin.read = _read
+        return out
+
+    plain.write_bytes(b"\0")
+    encrypt_file(plain, sealed, "pw")
+    with open(sealed, "rb") as fh:
+        block = real(fh, "pw")[2]
+    plain.write_bytes(os.urandom(block + 7))  # two chunks
+    encrypt_file(plain, tmp_path / "two.ooenc", "pw")
+    assert crypto.stream_key_opens_or_digest(tmp_path / "two.ooenc", "pw", follow_links=False) == (True, None)
+    monkeypatch.setattr(crypto, "_open_stream_header", _end_seen_after_the_first_chunk)
+    with pytest.raises(EncryptionError) as exc:
+        crypto.stream_key_opens_or_digest(tmp_path / "two.ooenc", "pw", follow_links=False)
+    assert "no verdict" in str(exc.value)
+
+
+def test_a_volume_altered_after_the_checks_never_reads_as_a_wrong_passphrase(tmp_path, monkeypatch):
+    """A volume changed after the checksum pass fails a chunk's tag before the digest is known: the rest is hashed and
+    the refusal says the file is not the one checked, never that the passphrase may be wrong."""
+    dest = _stream_set(tmp_path)
+    victim = sorted(dest.glob("vol-*.ooenc"))[1]
+
+    def _flip():
+        b = bytearray(victim.read_bytes())
+        b[200] ^= 1
+        victim.write_bytes(bytes(b))
+
+    monkeypatch.setattr(sb, "verify_volume_set", _swap_after(sb, "verify_volume_set", _flip))
+    with pytest.raises(EncryptionError) as exc:
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
+    assert "not the one that was checked" in str(exc.value)
+    assert "passphrase" not in str(exc.value)
+
+
+@posix_only
+def test_a_link_put_at_the_name_between_the_look_and_the_open_is_an_encryption_refusal(tmp_path, monkeypatch):
+    """The open's own refusal of a link (ELOOP) is the same refusal as the look's, so a verify records it."""
+    import src.backup.regular_file as rf
+    import src.safety.crypto as crypto
+
+    sealed = tmp_path / "s.ooenc"
+    plain = tmp_path / "p.bin"
+    plain.write_bytes(b"k" * 100)
+    encrypt_file(plain, tmp_path / "real.ooenc", "pw")
+    os.symlink(tmp_path / "real.ooenc", sealed)
+
+    def _eloop(path, *, follow_links=False, dir_fd=None):
+        raise OSError(errno.ELOOP, "Too many levels of symbolic links", str(path))
+
+    monkeypatch.setattr(crypto, "open_regular", _eloop)
+    with pytest.raises(EncryptionError):
+        stream_key_opens(sealed, "pw", follow_links=False)
+    del rf
