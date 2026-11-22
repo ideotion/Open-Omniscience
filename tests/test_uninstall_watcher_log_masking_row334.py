@@ -75,6 +75,7 @@ def test_a_path_it_cannot_read_is_withheld_never_written_as_given(monkeypatch):
     from src.safety.uninstall import _WATCHER_SRC
 
     monkeypatch.setenv("HOME", "/var/empty/oo-test-home")
+    monkeypatch.setenv("USERPROFILE", "/var/empty/oo-test-home")
 
     ns: dict = {"os": os, "plan": {"wipe_data_dir": "/srv/oo-data"}}
     exec(python_function_source(_WATCHER_SRC, "tok"), ns)  # noqa: S102 - the watcher's own helper, from the repository
@@ -97,10 +98,23 @@ def test_a_home_of_the_root_folder_names_no_role(monkeypatch):
     from src.safety.uninstall import _WATCHER_SRC
 
     monkeypatch.setenv("HOME", "/")
+    monkeypatch.setenv("USERPROFILE", "/")
     ns: dict = {"os": os, "plan": {}}
     exec(python_function_source(_WATCHER_SRC, "tok"), ns)  # noqa: S102 - the watcher's own helper, from the repository
     assert ns["tok"]("/") == "<path withheld>"
     assert ns["tok"]("/opt/other/thing") == ".../thing"
+
+
+def test_a_profile_folder_is_home_even_inside_the_data_folder_and_a_root_data_folder_keeps_its_role(monkeypatch):
+    from src.safety.uninstall import _WATCHER_SRC
+
+    monkeypatch.setenv("HOME", "/var/empty/oo-test-home")
+    monkeypatch.setenv("USERPROFILE", "/var/empty/oo-test-home")
+    ns: dict = {"os": os, "plan": {"wipe_data_dir": "/home"}}
+    exec(python_function_source(_WATCHER_SRC, "tok"), ns)  # noqa: S102 - the watcher's own helper, from the repository
+    assert ns["tok"]("/home/jane") == "<home>"
+    ns["plan"]["wipe_data_dir"] = "/"
+    assert ns["tok"]("/") == "<data>"
 
 
 def test_the_scheduling_line_in_the_app_log_names_no_venv_path():

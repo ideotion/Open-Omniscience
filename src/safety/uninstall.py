@@ -72,17 +72,19 @@ def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "
 def tok(p):
     try:
         q = os.path.normpath(os.fspath(p)); c = os.path.normcase(q)
+        name = os.path.basename(q)
+        parts = [x for x in q.replace("\\", "/").split("/") if x]
+        if len(parts) >= 2 and parts[-2].lower() in ("home", "users", "documents and settings"):
+            return "<home>"                         # a profile folder itself, whatever root holds it: its name is the user's
         for label, root in (("<data>", plan.get("wipe_data_dir")), ("<home>", os.path.expanduser("~"))):
             if not root or root == "~": continue
             r = os.path.normcase(os.path.normpath(root))
-            if not os.path.basename(r.rstrip("\\/")): continue   # a home of "/" or a drive root names no role
+            if label == "<home>" and not os.path.basename(r.rstrip("\\/")): continue   # a home of "/" names no role
             if c == r: return label
-            if c.startswith(r.rstrip("\\/") + os.sep): return label + "/.../" + os.path.basename(q)
-        name = os.path.basename(q)
-        parts = [x for x in q.replace("\\", "/").split("/") if x]
-        for i, seg in enumerate(parts[:-1]):        # anyone's profile folder (/home/<name>, C:\\Users\\<name>): the name is the user's
+            if c.startswith(r.rstrip("\\/") + os.sep): return label + "/.../" + name
+        for i, seg in enumerate(parts[:-1]):        # inside anyone's profile folder (/home/<name>, C:\\Users\\<name>)
             if seg.lower() in ("home", "users", "documents and settings"):
-                return "<home>" if i + 1 == len(parts) - 1 else "<home>/.../" + name
+                return "<home>/.../" + name
         return ".../" + name if name else "<path withheld>"
     except Exception: return "<path withheld>"
 # Crypto-erase, stdlib-only + inline (this detached process cannot import src, the venv
