@@ -395,17 +395,17 @@ def test_a_link_error_that_is_not_a_drive_without_links_keeps_the_finished_copy(
 
     live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, False, "pending at the cut")
     damaged.unlink()  # the earlier start's second name gone: this start must make it again
-    real_link = os.link
+    from tests.os_scope import scope_os
 
     def full(src, dst, *a, **kw):
         raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr(os, "link", full)
+    scope_os(monkeypatch, repair, link=full)  # the repair module's os only, never the whole process (R351)
     with pytest.raises(repair.Declined) as refusal:
         repair.run(repair.plan())
     assert refusal.value.code == "name-not-given"
     assert list(tmp_path.glob("live.salvage-*.db.json")) and len(list(tmp_path.glob("live.salvage-*.db"))) == 1
-    monkeypatch.setattr(os, "link", real_link)
+    scope_os(monkeypatch, repair, link=os.link)
     _finishes(live, tmp_path, "pending at the cut")
 
 
