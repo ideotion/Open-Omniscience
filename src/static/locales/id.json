@@ -8736,5 +8736,6 @@
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
   "🛒 Draft (": "🛒 Draf (",
-  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "Perbaikan selesai. File rusak yang disisihkannya disimpan sebagai {name}, karena sudah ada file bernama {left} di samping pustaka Anda: aplikasi membiarkan file itu persis seperti adanya dan tidak akan pernah menghapusnya."
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.": "Perbaikan selesai. File rusak yang disisihkannya disimpan sebagai {name}, karena sudah ada file bernama {left} di samping pustaka Anda: aplikasi membiarkan file itu seperti adanya.",
+  "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed.": "Aplikasi tidak beralih ke file yang diperbaiki: nama-nama yang diberikannya untuk file rusak di samping pustaka Anda semuanya sudah dipakai file lain, yang tidak disentuhnya. Salinan yang diperbaiki disimpan dan peralihan dicoba lagi pada awal berikutnya; memindahkan file-file itu ke tempat lain memungkinkannya selesai. File data Anda tidak diubah."
 }

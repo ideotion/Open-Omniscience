@@ -65,6 +65,7 @@ PASSPHRASE. The record holds counts, table names, id ranges and reason CODES; an
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import logging
 import os
@@ -72,6 +73,7 @@ import re
 import stat
 import threading
 import time
+import unicodedata
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -152,8 +154,9 @@ def switch_on() -> bool:
 class Declined(RuntimeError):
     """Refused for a stated reason, with every file as it was. ``code`` keys the sentence (``no-room``,
     ``schema-unreadable``, ``no-hard-links``, ``writer-busy``, ``unfinished-starts``, ``write-gate-off``, ``copy-stale`` and
-    ``saved-during-the-copy``: the library was written to after the copy began; ``damaged-name-taken``: the name the damaged file
-    is to be kept under, or the log name beside it, is held by a file the repair did not make, and is named in the text)."""
+    ``saved-during-the-copy``: the library was written to after the copy began; ``damaged-name-taken``: every name the damaged file
+    could be kept under (the recorded one and the bounded numbered ones after it) is held by a file the repair did not make, named in
+    the text; ``name-not-given``: the second name could not be made for another reason, and the finished copy is kept)."""
 
     def __init__(self, code: str, detail: str, **facts: Any) -> None:
         super().__init__(detail)
@@ -357,6 +360,8 @@ def _name_blocker(target: Path, damaged: Path) -> str | None:
         twin, original = _identity(damaged), _identity(target)
         if twin is None or original is None or twin != original:
             return damaged.name
+    if os.path.lexists(_side(damaged, "-shm")):
+        return _side(damaged, "-shm").name  # the repair never makes one: whatever is there is not its own, and is never named beside
     try:
         _clear_empty_log_name(target, damaged)
     except Declined:
@@ -364,13 +369,41 @@ def _name_blocker(target: Path, damaged: Path) -> str | None:
     return None
 
 
-def _unlink_if_twin(target: Path, extra: Path) -> None:
-    """Remove ``extra`` only when it is, at this moment, a second name of the live file (same inode and device, read without following a
-    link): unlinking a second name loses nothing. Any other file under that name is left exactly as it is."""
-    a, b = _identity(extra), _identity(target)
+#: What ``os.link`` raises when the drive or the folder cannot give a file a second name at all. Any other error (a full folder, a
+#: read error, a sharing violation) is not that answer: the finished copy is kept for the next start rather than thrown away.
+_NO_LINK_ERRNOS = frozenset(
+    e for e in (getattr(errno, n, None) for n in ("EPERM", "EXDEV", "ENOTSUP", "EOPNOTSUPP", "EMLINK", "ENOSYS", "EINVAL")) if e is not None
+)
+
+
+def _link_refused(exc: OSError) -> Declined:
+    if exc.errno in _NO_LINK_ERRNOS:
+        return Declined("no-hard-links", "the drive cannot give the damaged file a second name")
+    return Declined(
+        "name-not-given", f"the damaged file could not be given its second name ({type(exc).__name__}), so nothing was switched; the repaired "
+        "copy is kept and the switch is tried again at the next start",
+    )
+
+
+def _replaced_name(target: Path, doc: dict[str, Any]) -> Path | None:
+    """The damaged name a fallback moved away from (``replaced_name`` in the sidecar), when it is a name the repair gives."""
+    name = doc.get("replaced_name")
+    if isinstance(name, str) and _kept_name_pattern(target).fullmatch(name):
+        return target.parent / name
+    return None
+
+
+def _drop_replaced_name(target: Path, doc: dict[str, Any], kept: Path) -> None:
+    """After the switch: the name the fallback moved away from, when an earlier start had made it a second name of the file that is now
+    the kept damaged one, is removed, only when it is that same file at this moment (inode and device, no link followed): it holds
+    nothing the kept name does not, and left there it would keep a full copy of the library on the drive that nothing ever removes."""
+    old = _replaced_name(target, doc)
+    if old is None or old == kept:
+        return
+    a, b = _identity(old), _identity(kept)
     if a is not None and a == b:
-        with contextlib.suppress(FileNotFoundError):
-            extra.unlink()
+        with contextlib.suppress(OSError):
+            old.unlink()
 
 
 def _numbered(target: Path, damaged: Path, n: int) -> Path:
@@ -386,26 +419,26 @@ def _claim_free_name(target: Path, damaged: Path, sidecar: Path, left: str) -> P
     (``left``), so the repair finishes under the next free numbered name instead of refusing at every start. The search is bounded; each
     name is CLAIMED by the hard link itself, which fails on any existing name (a link included, never followed), and a taken one moves
     on to the next number, so there is no gap between a check and the use. The sidecar names the candidate BEFORE the link is tried, so a
-    cut at any point resumes under the name the sidecar records. The old name goes first, and only when it is at that moment the live
-    file's own second name; the file that was left in place is never touched."""
-    _unlink_if_twin(target, damaged)
+    cut at any point resumes under the name the sidecar records. The old name is not removed here (the probe connection still holds the
+    live file open, and Windows refuses to remove any name of an open file): it is recorded as ``replaced_name`` and removed after the
+    switch, only when it is then the kept file's own second name (:func:`_drop_replaced_name`). The file left in place is never touched."""
     doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    original = dict(doc)
     for n in range(2, 2 + _FREE_NAME_TRIES):
         candidate = _numbered(target, damaged, n)
         if candidate == damaged or any(os.path.lexists(_side(candidate, s)) for s in ("", "-wal", "-shm")):
             continue
-        doc["damaged"], doc["name_left_in_place"] = candidate.name, left
+        doc.update(damaged=candidate.name, name_left_in_place=left, replaced_name=damaged.name)
         _write_json_atomic(sidecar, doc)
         try:
             os.link(target, candidate)
         except FileExistsError:
             continue
-        except OSError:
-            raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
-        if any(os.path.lexists(_side(candidate, s)) for s in ("-wal", "-shm")):
-            _unlink_if_twin(target, candidate)  # a log or index appeared beside it meanwhile: never named next to one
-            continue
+        except OSError as exc:
+            raise _link_refused(exc) from None
         return candidate
+    # No name: the sidecar is put back to the name it recorded, so the next start names the same file that blocked this one.
+    _write_json_atomic(sidecar, original)
     raise Declined(
         "damaged-name-taken",
         f"{left} is already beside the library and is kept, and no free name was found for the damaged file, so nothing was switched",
@@ -650,6 +683,7 @@ def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) ->
             doc["swapped"] = True
             _record(late_sidecar=doc)
             _drop_extra_names(target, target.parent / str(doc["damaged"]))
+            _drop_replaced_name(target, doc, target.parent / str(doc["damaged"]))
             with contextlib.suppress(OSError):
                 sidecar.unlink()
             continue
@@ -664,6 +698,9 @@ def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) ->
             with contextlib.suppress(OSError):
                 stale.unlink()
         _drop_extra_names(target, target.parent / str(doc["damaged"]))
+        replaced = _replaced_name(target, doc)
+        if replaced is not None:
+            _drop_extra_names(target, replaced)
     return resumable
 
 
@@ -1259,7 +1296,10 @@ def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
     report["page_size"] = doc["page_size"] if type(doc.get("page_size")) is int and doc["page_size"] > 0 else None
     report["clean_at"] = _clean_read_time(doc, _written_at(sidecar), _written_at(damaged))
     left = doc.get("name_left_in_place")
-    if isinstance(left, str) and 0 < len(left) <= 255 and "/" not in left and "\\" not in left and left == Path(left).name:
+    if (
+        isinstance(left, str) and 0 < len(left) <= 255 and "/" not in left and "\\" not in left and left == Path(left).name
+        and not any(unicodedata.category(ch) in ("Cc", "Cf") for ch in left)
+    ):
         report["name_left_in_place"] = left
 
 
@@ -1302,6 +1342,7 @@ def _kept_facts(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
         except Exception:  # noqa: BLE001 - not measured: no date is set below, and the record says so
             _LOG.warning("database repair: the kept file could not be read to measure what the drive cannot give; it gets no removal date")
     _note_what_was_set_aside(report, damaged)
+    _drop_replaced_name(target, doc, damaged)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
         report["kept_file_bytes"] = damaged.stat().st_size
@@ -1472,11 +1513,13 @@ def _swap(
                 twin, original = _identity(damaged), _identity(target)
                 if twin is None or original is None or twin != original:
                     left = damaged.name  # taken since the check: never overwritten, the repair moves to a free name below
-            except OSError:
-                for spent in (finished, sidecar):
-                    with contextlib.suppress(OSError):
-                        spent.unlink()
-                raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
+            except OSError as exc:
+                refusal = _link_refused(exc)
+                if refusal.code == "no-hard-links":
+                    for spent in (finished, sidecar):
+                        with contextlib.suppress(OSError):
+                            spent.unlink()
+                raise refusal from None
         if left is not None:
             try:
                 damaged = _claim_free_name(target, damaged, sidecar, left)
@@ -1547,6 +1590,8 @@ def _swap(
     kv_invalidate()  # the settings the replaced file held are not the live ones: the restore's swap empties the cache the same way
     dispose_engine()
     _fsync_dir(target.parent)
+    with contextlib.suppress(OSError, ValueError):
+        _drop_replaced_name(target, json.loads(sidecar.read_text(encoding="utf-8")), damaged)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
         report["kept_file_bytes"] = damaged.stat().st_size

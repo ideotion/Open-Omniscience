@@ -8736,5 +8736,6 @@
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
   "🛒 Draft (": "🛒 Borrador (",
-  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "La reparación ha terminado. El archivo dañado que apartó se conserva como {name}, porque ya había un archivo llamado {left} junto a tu biblioteca: la aplicación dejó ese archivo tal como estaba y nunca lo eliminará."
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.": "La reparación ha terminado. El archivo dañado que apartó se conserva como {name}, porque ya había un archivo llamado {left} junto a tu biblioteca: la aplicación dejó ese archivo tal como estaba.",
+  "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed.": "La aplicación no cambió al archivo reparado: los nombres que da al archivo dañado junto a tu biblioteca están todos ocupados por otros archivos, que no toca. La copia reparada se conserva y el cambio se intenta de nuevo en el próximo inicio; mover esos archivos a otro lugar le permite terminar. Tus archivos de datos no se modificaron."
 }

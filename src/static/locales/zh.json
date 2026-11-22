@@ -8736,5 +8736,6 @@
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
   "🛒 Draft (": "🛒 草稿 (",
-  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "修复已完成。修复时搁置的损坏文件保存为 {name}，因为您的资料库旁已有一个名为 {left} 的文件：应用原样保留了该文件，并且永远不会删除它。"
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.": "修复已完成。修复时搁置的损坏文件保存为 {name}，因为您的资料库旁已有一个名为 {left} 的文件：应用原样保留了该文件。",
+  "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed.": "应用没有切换到修复后的文件：它在您的资料库旁为损坏文件使用的名称都已被其他文件占用，应用不会动这些文件。修复后的副本已保留，下次启动时会再次尝试切换；把这些文件移到别处即可让它完成。您的数据文件没有被更改。"
 }

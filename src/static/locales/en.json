@@ -8736,5 +8736,6 @@
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
   "🛒 Draft (": "🛒 Draft (",
-  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it."
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.": "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.",
+  "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed.": "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed."
 }

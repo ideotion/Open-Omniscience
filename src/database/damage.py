@@ -1755,6 +1755,7 @@ class DamageRegistry:
                     "write-gate-off": FRAME_REPAIR_NO_GATE,
                     "copy-stale": FRAME_REPAIR_WRITTEN,
                     "saved-during-the-copy": FRAME_REPAIR_WRITTEN,
+                    "damaged-name-taken": FRAME_REPAIR_NAME_TAKEN,
                 }.get(str(reason), FRAME_REPAIR_FAILED)
                 values: dict[str, Any] = {}
                 if frame == FRAME_REPAIR_NO_ROOM:
@@ -1785,7 +1786,7 @@ class DamageRegistry:
                 )
                 out.extend(_orphan_notes(last))
                 left = last.get("name_left_in_place")
-                if isinstance(left, str) and left:
+                if isinstance(left, str) and left and kept is not None:  # once the kept copy is removed, "is kept as" would be false
                     # R781 (row 299): the name the repair first chose was taken by a file it must keep, so it finished under the next
                     # free name. Said as a finished repair, naming both files, never as a failure.
                     out.append(
@@ -2199,7 +2200,12 @@ FRAME_REPAIRED_OPEN = (
 )
 FRAME_KEPT_NAME_LEFT = (
     "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside "
-    "your library: the app left that file exactly as it was and will never remove it."
+    "your library: the app left that file as it was."
+)
+FRAME_REPAIR_NAME_TAKEN = (
+    "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by "
+    "other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving "
+    "those files elsewhere lets it finish. Your data files were not changed."
 )
 FRAME_KEPT_UNTIL = (
     "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. The app removes it at the first start "

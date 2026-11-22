@@ -18,6 +18,7 @@ save committed into the log by a connection that stays open, on both engine legs
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -322,9 +323,96 @@ def test_the_free_name_search_is_bounded_and_claims_by_the_link(tmp_path, monkey
     assert H.sha(live) == before and decoy.read_bytes() == b"decoy"
     taken = sorted(p.name for p in tmp_path.glob("live.damaged-*") if p.is_symlink())
     assert len(taken) == 3 and all(os.readlink(tmp_path / n) == str(decoy) for n in taken), "a link was followed or overwritten"
-    assert list(tmp_path.glob("live.salvage-*.db.json")), "the finished copy was thrown away"
+    (sidecar,) = tmp_path.glob("live.salvage-*.db.json")
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["damaged"] == damaged.name and "name_left_in_place" not in doc, "the next start names the file that blocked this one"
     notes = _repaired_frames(request)
     assert all(n["frame"] != damage.FRAME_KEPT_NAME_LEFT for n in notes)
+    assert all(n["frame"] != damage.FRAME_REPAIR_FAILED for n in notes), notes
+
+
+@pytest.mark.parametrize("encrypted", LEGS)
+def test_an_index_beside_the_damaged_name_is_left_in_place_too(tmp_path, monkeypatch, request, encrypted):
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, "pending at the cut")
+    shm = Path(str(damaged) + "-shm")
+    shm.write_bytes(b"not the repair's")
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["name_left_in_place"] == shm.name
+    assert shm.read_bytes() == b"not the repair's" and report["kept_file"].endswith("-2.db")
+    assert not os.path.lexists(damaged), "the old name, the kept file's own second name, is removed after the switch"
+    assert _count_named(live, "pending at the cut") == 1
+
+
+def test_an_empty_log_name_that_cannot_be_removed_is_left_in_place_and_the_repair_finishes(tmp_path, monkeypatch, request):
+    """A Windows sharing violation on the empty leftover: never a raw error at every start; it is left where it is and named."""
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, False, "pending at the cut")
+    log = Path(str(damaged) + "-wal")
+    log.write_bytes(b"")
+    real_unlink = Path.unlink
+
+    def held(self, *a, **kw):
+        if self == log:
+            raise PermissionError(13, "the file is in use")
+        return real_unlink(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", held)
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["name_left_in_place"] == log.name and log.exists()
+    assert _count_named(live, "pending at the cut") == 1
+
+
+def test_a_link_error_that_is_not_a_drive_without_links_keeps_the_finished_copy(tmp_path, monkeypatch, request):
+    """A full folder or a read error at the link is not "this drive cannot hard-link": the finished copy and its sidecar stay, the
+    refusal is named, and the next start finishes the switch."""
+    import errno
+
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, False, "pending at the cut")
+    damaged.unlink()  # the earlier start's second name gone: this start must make it again
+    real_link = os.link
+
+    def full(src, dst, *a, **kw):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(os, "link", full)
+    with pytest.raises(repair.Declined) as refusal:
+        repair.run(repair.plan())
+    assert refusal.value.code == "name-not-given"
+    assert list(tmp_path.glob("live.salvage-*.db.json")) and len(list(tmp_path.glob("live.salvage-*.db"))) == 1
+    monkeypatch.setattr(os, "link", real_link)
+    _finishes(live, tmp_path, "pending at the cut")
+
+
+def test_a_name_left_in_place_with_control_or_format_characters_is_not_carried():
+    for bad in ("a\u202eb.db-wal", "a\nb", "a/b", "..\\x", ""):
+        report: dict = {}
+        repair._carry_from(report, {"name_left_in_place": bad, "created_at": "2026-11-22T00:00:00+00:00"}, Path("/data/live.db"))
+        assert "name_left_in_place" not in report, bad
+    report = {}
+    repair._carry_from(report, {"name_left_in_place": "live.damaged-20261122T010203Z.db-wal", "created_at": "2026-11-22T00:00:00+00:00"},
+                       Path("/data/live.db"))
+    assert report["name_left_in_place"] == "live.damaged-20261122T010203Z.db-wal"
+
+
+def test_the_name_left_notice_is_said_only_while_the_kept_copy_is_there(tmp_path, monkeypatch):
+    from src.database.damage import DamageRegistry
+
+    reg = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json")
+    monkeypatch.setattr(damage, "registry", reg)
+    monkeypatch.setattr(damage, "_file_paths", lambda key: (tmp_path / "live.db", "live.db"))
+    monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
+    kept = tmp_path / "live.damaged-20261006T000000Z-2.db"
+    kept.write_bytes(b"x" * 1000)
+    reg.repair_upsert("a", file=FILE_CORPUS, state="done", reason=None, kept_file=kept.name, kept_rows=5, unreadable_ids=0,
+                      folder=str(tmp_path), name_left_in_place="live.damaged-20261006T000000Z.db-wal")
+
+    def frames():
+        return [n for n in reg.notes() if n["kind"] == "repaired"]
+
+    (said,) = [n for n in frames() if n["frame"] == damage.FRAME_KEPT_NAME_LEFT]
+    assert said["vars"] == {"name": kept.name, "left": "live.damaged-20261006T000000Z.db-wal"}
+    kept.unlink()
+    reg.repair_upsert("a", kept_file_removed_at="2026-11-06T00:00:00+00:00", kept_file_removed_bytes=1000)
+    assert all(n["frame"] != damage.FRAME_KEPT_NAME_LEFT for n in frames()), "a removed copy is never said to be kept"
 
 
 @pytest.mark.parametrize("encrypted", LEGS)
@@ -406,14 +494,14 @@ def test_a_save_between_the_fold_and_the_swap_is_refused_and_survives(tmp_path, 
 
 
 def test_the_name_left_in_place_notice_is_translated_into_every_language():
-    import json
-
     files = sorted((Path(__file__).resolve().parent.parent / "src" / "static" / "locales").glob("*.json"))
     assert len(files) == 12
     for path in files:
-        entry = json.loads(path.read_text(encoding="utf-8")).get(damage.FRAME_KEPT_NAME_LEFT)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entry = data.get(damage.FRAME_KEPT_NAME_LEFT)
         assert entry, f"{path.name} has no translation of the notice"
         assert "{name}" in entry and "{left}" in entry, f"{path.name} lost a slot"
+        assert data.get(damage.FRAME_REPAIR_NAME_TAKEN), f"{path.name} has no translation of the refusal"
 
 
 def test_the_damaged_name_pattern_is_the_repairs_own():

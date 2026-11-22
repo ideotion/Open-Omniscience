@@ -8736,5 +8736,6 @@
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
   "🛒 Draft (": "🛒 Черновик (",
-  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "Восстановление завершено. Повреждённый файл, который оно отложило, сохранён как {name}, потому что рядом с вашей библиотекой уже был файл с именем {left}: приложение оставило этот файл в точности как есть и никогда его не удалит."
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.": "Восстановление завершено. Повреждённый файл, который оно отложило, сохранён как {name}, потому что рядом с вашей библиотекой уже был файл с именем {left}: приложение оставило этот файл как есть.",
+  "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed.": "Приложение не переключилось на восстановленный файл: все имена, которые оно даёт повреждённому файлу рядом с вашей библиотекой, заняты другими файлами, которые оно не трогает. Восстановленная копия сохранена, и переключение будет повторено при следующем запуске; если переместить эти файлы в другое место, оно сможет завершиться. Ваши файлы данных не изменены."
 }

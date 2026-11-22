@@ -8736,5 +8736,6 @@
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
   "🛒 Draft (": "🛒 草稿 (",
-  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "修復は完了しました。修復で取り置いた破損ファイルは {name} として保存されています。ライブラリの横に {left} という名前のファイルがすでにあったためです。アプリはそのファイルをそのまま残し、削除することはありません。"
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file as it was.": "修復は完了しました。修復で取り置いた破損ファイルは {name} として保存されています。ライブラリの横に {left} という名前のファイルがすでにあったためです。アプリはそのファイルをそのまま残しました。",
+  "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving those files elsewhere lets it finish. Your data files were not changed.": "アプリは修復済みファイルに切り替えませんでした。ライブラリの横で破損ファイルに付ける名前がすべて他のファイルに使われており、アプリはそれらに手を触れません。修復済みのコピーは保存され、次回の起動時に切り替えが再試行されます。それらのファイルを別の場所に移すと完了できます。データファイルは変更されていません。"
 }
