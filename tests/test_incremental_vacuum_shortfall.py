@@ -288,3 +288,24 @@ def test_space_that_cannot_be_measured_is_never_called_reclaimed(monkeypatch, tm
     acc = maintenance._space_account(disk, disk, freed_bytes=4096, journal_mode="wal")
     assert acc["bytes_reclaimed"] is None
     assert "could not be read, so none of it is called reclaimed" in acc["freed_not_yet_shrunk"]["detail"]
+
+
+def test_no_vacuum_path_forces_a_checkpoint():
+    """R785: the maintenance module never asks for a checkpoint. The behavioural test above cannot tell an
+    explicit checkpoint from an automatic one, so the rule is pinned at the source too."""
+    from pathlib import Path
+
+    import src.database.maintenance as maintenance
+
+    source = Path(maintenance.__file__).read_text(encoding="utf-8").lower()
+    assert "wal_checkpoint" not in source
+
+
+def test_disk_growth_is_stated_not_folded_into_zero():
+    from src.database import maintenance
+
+    acc = maintenance._space_account(
+        {"total_bytes": 100}, {"total_bytes": 160}, freed_bytes=40, journal_mode="wal"
+    )
+    assert acc["bytes_reclaimed"] == 0 and acc["bytes_added_on_disk"] == 60
+    assert acc["freed_not_yet_shrunk"]["bytes"] == 40

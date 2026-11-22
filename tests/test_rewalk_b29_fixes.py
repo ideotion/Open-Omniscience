@@ -244,7 +244,7 @@ _O5_FRAMES = (
     "Your budgets can still take {room}; the drive has {free} free. That is more than the drive has free.",
     "Done. {stored} labelled · {none} unclear · {total} scanned",
     "Last run: {stored} labelled · {none} unclear · {total} scanned",
-    "Compacted. Space freed: {freed} · {secs} s",
+    "Compacted. Space returned to the disk: {freed} · {secs} s",
     "{n} imported newsletters removed. Re-import the cleaned files to replace them.",
     "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, "
     "{flagged} tracker wrappers flagged.",
@@ -290,7 +290,7 @@ def test_the_swept_sites_call_the_frames():
     settings = strip_comments(read_static("app-settings.js"))
     poll = strip_comments(function_body(read_static("app-settings.js"), "pollLangDetect"))
     assert 'tf("Done. {stored} labelled' in poll and 'tf("Last run: {stored} labelled' in poll
-    assert 'tf("Compacted. Space freed: {freed}' in settings
+    assert 'tf("Compacted. Space returned to the disk: {freed}' in settings
     assert settings.count("esc(_nlAnonLine(tl))") == 2, "both newsletter paths share the one keyed tally"
     assert "{n} imported newsletters removed. Re-import" in settings
     core = strip_comments(function_body(read_static("app-core.js"), "arbitrate"))

@@ -2417,8 +2417,9 @@ def _on_disk_bytes(db_path: str | None) -> dict:
 _FREED_NOT_SHRUNK_WAL = (
     "On this store's write-ahead log, freed pages are released inside the log first: the database file "
     "shrinks only when a checkpoint has copied the log back into it, and the log's own space returns when "
-    "the log is next reset. That happens at a later automatic checkpoint or when the app closes, and a "
-    "reader still holding an older view of the database holds it back. This pass does not force a checkpoint."
+    "the log is next reset, down to the size limit the app sets for the log rather than to nothing. That happens when a later checkpoint completes, such as an automatic one or the "
+    "one the app attempts when it closes; a reader still holding an older view of the database, or an abrupt "
+    "stop, can delay it. This pass does not force a checkpoint."
 )
 _FREED_NOT_SHRUNK_OTHER = (
     "The file's size on disk did not fall by what was freed inside the database. On a store that does not "
@@ -2438,6 +2439,9 @@ def _space_account(before: dict, after: dict, *, freed_bytes: int, journal_mode:
         "on_disk_before": before,
         "on_disk_after": after,
         "bytes_reclaimed": reclaimed,
+        # On a write-ahead log the disk often GROWS during a vacuum (the log is added on top): stated, not
+        # folded into a reclaimed figure of 0.
+        "bytes_added_on_disk": max(a - b, 0) if b is not None and a is not None else None,
         "bytes_freed_in_database": max(int(freed_bytes), 0),
         "journal_mode": journal_mode,
     }
@@ -2467,8 +2471,9 @@ def vacuum_database(engine: Engine) -> dict:
     WHAT THE DISK GETS BACK, AND WHEN (R785, measured on WAL stores plain and
     encrypted): the rebuilt pages are written through the write-ahead log, so
     straight after a VACUUM the log holds about the rebuilt database's size. With
-    no other reader the automatic checkpoint shrinks the FILE at once and the log
-    keeps the bytes it took; with a reader holding an older view the file does not
+    no other reader the FILE shrinks once the log crosses the automatic checkpoint
+    (measured: 4 KiB pages yes, the encrypted 16 KiB stores' smaller page count
+    often not), and the log keeps the bytes it took; with a reader holding an older view the file does not
     shrink at all and the log is added on top. The file-only figure this used to
     report as "reclaimed" was therefore the rebuild's size, not the disk's gain.
     ``bytes_reclaimed`` is now the measured fall in file plus log, and the
@@ -2483,7 +2488,6 @@ def vacuum_database(engine: Engine) -> dict:
     if preflight.get("sufficient") is False:
         _LOG.warning("compaction not run: %s", preflight.get("detail"))
         raise VacuumSpaceError(preflight)
-    disk_before = _on_disk_bytes(db_path)
     t0 = time.perf_counter()
     # VACUUM is a raw-SQL write that takes an exclusive lock; route it through
     # the single-writer gate so it queues with collection/import writers instead
@@ -2496,12 +2500,15 @@ def vacuum_database(engine: Engine) -> dict:
         page_size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
         freelist_before = conn.execute(text("PRAGMA freelist_count")).scalar() or 0
         pages_before = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
+        # Measured INSIDE the gate, both sides, so a collection writer growing the log while this waited
+        # is not charged to (or credited to) the VACUUM.
+        disk_before = _on_disk_bytes(db_path)
         conn.execute(text("VACUUM"))
         conn.execute(text("PRAGMA analysis_limit=1000"))
         conn.execute(text("PRAGMA optimize"))
         freelist_after = conn.execute(text("PRAGMA freelist_count")).scalar() or 0
         pages_after = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
-    disk_after = _on_disk_bytes(db_path)
+        disk_after = _on_disk_bytes(db_path)
     account = _space_account(
         disk_before, disk_after, freed_bytes=(pages_before - pages_after) * page_size, journal_mode=journal_mode
     )
@@ -2688,7 +2695,7 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
             # page. With it fixed, the three reachable outcomes were measured directly
             # on a real store (freelist 445, page_size 4096):
             #
-            #   * budget-bound  -- requested 5  -> reclaimed exactly 5, 440 still free.
+            #   * budget-bound  -- requested 5  -> freed exactly 5, 440 still free.
             #   * unobstructed  -- requested 100,000 -> freelist drained to ZERO.
             #   * reader-held  -- measured then on a store WITHOUT a write-ahead log, where a
             #     second connection holding a read snapshot made the pragma RAISE
