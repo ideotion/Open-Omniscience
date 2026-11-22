@@ -390,11 +390,15 @@ def _iso(d: datetime | None) -> str | None:
 
 
 def _vintage(rows: list[Any]) -> list[dict[str, Any]]:
-    """Each country's data date as the legend states it: the extract's and the last diff applied."""
-    return [{
-        "alpha3": c.alpha3, "extract_date": _iso(c.extract_vintage),
-        "last_diff": _iso(c.diff_timestamp), "diff_sequence": c.diff_sequence,
-    } for c in rows]
+    """Each country's data date as the legend states it, from the one source every OSM surface reads (row 286, R775)."""
+    from src.osm.lane_models import country_data_date
+
+    out = []
+    for c in rows:
+        d = country_data_date(c)
+        out.append({"alpha3": c.alpha3, "extract_date": d["extract"], "last_diff": d["last_diff"],
+                    "diff_sequence": d["diff_sequence"], "updates": d["updates"]})
+    return out
 
 
 def _countries_in_box(ses: Any, view_box: list[float]) -> list[Any]:

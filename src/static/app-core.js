@@ -38,6 +38,28 @@
       const v = String(s == null ? "" : s).slice(0, 16).replace("T", " ");
       return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
     }
+    // Row 286 (R775): the OpenStreetMap surfaces (the picker's lane cell, the map's OSM line, the
+    // completeness heads, the object and place cards) state the date of the last daily change file
+    // applied in order since the extract, BESIDE the extract's date and never in its place. dd is the
+    // backend's ONE country_data_date (src/osm/lane_models.py): its data time, never the day it was
+    // applied here; with no file applied the clause is empty and the surface keeps its extract date
+    // alone; with files applied and their date not read it says so, and nothing stands in for it.
+    // The words claim the files were applied, never that every object is current to that date.
+    function ooOsmUpdated(dd) { return !!(dd && (dd.updates === "dated" || dd.updates === "date_not_read")); }
+    function ooOsmUpdatesClause(dd) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      if (!ooOsmUpdated(dd)) return "";
+      return (dd.updates === "dated" && dd.last_diff)
+        ? tf("daily change files applied through {date}", { date: ooIsoDate(dd.last_diff) })
+        : t("daily updates applied, data date not read");
+    }
+    // The clause as HTML, after a " · ", with its method on hover; "" when no file was applied.
+    function ooOsmUpdatesHtml(dd) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const c = ooOsmUpdatesClause(dd);
+      return c ? ` · <span title="${esc(t("The date of the last daily change file applied in order since the extract, as the file itself states it, not the day it was applied here. It says those changes were applied, not that every object is current to that date."))}">${esc(c)}</span>` : "";
+    }
     // A compound number token that must keep its left-to-right order beside Arabic text: a
     // leading "+N" (the plus is drawn on the far side of the digits) or a "lo–hi" range (drawn
     // hi–lo). First-strong isolate, only under a right-to-left page; left-to-right output is the

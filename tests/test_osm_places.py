@@ -296,7 +296,8 @@ def test_the_place_card_of_a_notable_object_says_where_it_came_from(osm_lane_dir
     card = place_card(db, "node/8", "ar")
     assert card["title"] == {"name": "قرية الاختبار", "source": "osm", "lang": "ar"}
     assert card["origin"] == "osm-lane" and card["caveat"] == OSM_NOTABLE_CAVEAT
-    assert card["osm"] == {"held": True, "tag": "place=village", "vintage": None, "country_name": "Fixture Land"}
+    assert card["osm"] == {"held": True, "tag": "place=village", "vintage": None, "country_name": "Fixture Land",
+                           "data_date": {"extract": None, "last_diff": None, "diff_sequence": None, "updates": "none"}}
 
 
 def test_the_omnibar_places_group_lists_lane_rows_once(osm_lane_dir, db):

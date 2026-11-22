@@ -95,7 +95,7 @@ def _edited_within_year(days: list[list], reference) -> int:
 def _countries() -> dict[str, Any]:
     from sqlalchemy import inspect
 
-    from src.osm.lane_models import OsmCountry
+    from src.osm.lane_models import OsmCountry, country_data_date
     from src.osm.places_summary import changed_places, part_for
     from src.versioned import store
 
@@ -137,7 +137,7 @@ def _countries() -> dict[str, Any]:
                     "n": values["places"],
                     "values": values,
                     "reasons": reasons,
-                    "vintage": {"extract": _iso(c.extract_vintage), "last_diff": _iso(c.diff_timestamp), "reference": _iso(ref)},
+                    "vintage": {**country_data_date(c), "reference": _iso(ref)},
                     "observed_since": since,
                     "places_summary": {"source": how["source"], **{k: v for k, v in how.items() if k != "source"}},
                 }
