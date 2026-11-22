@@ -2387,14 +2387,93 @@ def vacuum_preflight(engine: Engine) -> dict:
     return report
 
 
+def _on_disk_bytes(db_path: str | None) -> dict:
+    """The database file and its write-ahead log as the filesystem measures them NOW (R785).
+
+    ``total_bytes`` is what the store holds on disk: the file plus its ``-wal`` log, because on the app's
+    WAL stores a released page stays on disk in the log until a checkpoint copies it back, so the file's
+    size alone can fall while the disk gives nothing back. No log file is a log of nothing (0); a size that
+    exists and cannot be read is ``None``, never 0, and then there is no total."""
+    out: dict[str, int | None] = {"file_bytes": None, "log_bytes": None, "total_bytes": None}
+    if not db_path:
+        return out
+    try:
+        out["file_bytes"] = os.path.getsize(db_path)
+    except OSError:
+        return out
+    try:
+        out["log_bytes"] = os.path.getsize(db_path + "-wal")
+    except FileNotFoundError:
+        out["log_bytes"] = 0
+    except OSError:
+        return out
+    out["total_bytes"] = int(out["file_bytes"] or 0) + int(out["log_bytes"] or 0)
+    return out
+
+
+# Why space a pass freed can still be on disk afterwards. Measured on WAL stores, plain and encrypted
+# (tests/test_incremental_vacuum_shortfall.py): incremental_vacuum and VACUUM both run to completion with
+# or without a reader holding a snapshot; what a reader changes is only WHEN the disk sees it.
+_FREED_NOT_SHRUNK_WAL = (
+    "On this store's write-ahead log, freed pages are released inside the log first: the database file "
+    "shrinks only when a checkpoint has copied the log back into it, and the log's own space returns when "
+    "the log is next reset. That happens at a later automatic checkpoint or when the app closes, and a "
+    "reader still holding an older view of the database holds it back. This pass does not force a checkpoint."
+)
+_FREED_NOT_SHRUNK_OTHER = (
+    "The file's size on disk did not fall by what was freed inside the database. On a store that does not "
+    "use a write-ahead log this has not been measured, so no cause is named."
+)
+
+
+def _space_account(before: dict, after: dict, *, freed_bytes: int, journal_mode: str | None) -> dict:
+    """R785: what a vacuum gave back to the disk, measured, kept apart from what it freed inside the database.
+
+    ``bytes_reclaimed`` is the measured fall in file plus log, never a freelist or page count, and is ``None``
+    when either side could not be measured. Space freed inside the database that the disk has not yet seen
+    is reported as exactly that, ``freed_not_yet_shrunk``, with its reason, and is never called reclaimed."""
+    b, a = before.get("total_bytes"), after.get("total_bytes")
+    reclaimed = max(b - a, 0) if b is not None and a is not None else None
+    acc: dict[str, Any] = {
+        "on_disk_before": before,
+        "on_disk_after": after,
+        "bytes_reclaimed": reclaimed,
+        "bytes_freed_in_database": max(int(freed_bytes), 0),
+        "journal_mode": journal_mode,
+    }
+    if freed_bytes > 0 and (reclaimed is None or reclaimed < freed_bytes):
+        pending = freed_bytes - (reclaimed or 0)
+        if reclaimed is None:
+            detail = (
+                f"{freed_bytes:,} bytes were freed inside the database, but the size of the file or its log "
+                "could not be read, so none of it is called reclaimed."
+            )
+        else:
+            why = _FREED_NOT_SHRUNK_WAL if (journal_mode or "").lower() == "wal" else _FREED_NOT_SHRUNK_OTHER
+            detail = f"{pending:,} bytes are freed inside the database but not yet returned to the disk. {why}"
+        acc["freed_not_yet_shrunk"] = {"bytes": pending, "detail": detail}
+    return acc
+
+
 def vacuum_database(engine: Engine) -> dict:
     """VACUUM the main store + refresh planner stats; report real numbers.
 
-    Rebuilds the database file, returning freed pages to the filesystem
-    (deletes/retractions leave free pages that only VACUUM reclaims). Honest
-    costs, stated to the caller: the rebuild takes time proportional to the
-    file and blocks writers for the duration (readers continue via WAL).
-    Works identically on SQLCipher stores (pages re-encrypt on write).
+    Rebuilds the database without its free pages (deletes/retractions leave
+    free pages that only VACUUM compacts). Honest costs, stated to the caller:
+    the rebuild takes time proportional to the file and blocks writers for the
+    duration (readers continue via WAL). Works identically on SQLCipher stores
+    (pages re-encrypt on write).
+
+    WHAT THE DISK GETS BACK, AND WHEN (R785, measured on WAL stores plain and
+    encrypted): the rebuilt pages are written through the write-ahead log, so
+    straight after a VACUUM the log holds about the rebuilt database's size. With
+    no other reader the automatic checkpoint shrinks the FILE at once and the log
+    keeps the bytes it took; with a reader holding an older view the file does not
+    shrink at all and the log is added on top. The file-only figure this used to
+    report as "reclaimed" was therefore the rebuild's size, not the disk's gain.
+    ``bytes_reclaimed`` is now the measured fall in file plus log, and the
+    rebuild's shrink that the disk has not yet seen is ``freed_not_yet_shrunk``,
+    with its reason.
     """
     if engine.url.get_backend_name() != "sqlite":
         return {"supported": False, "detail": "VACUUM tool applies to SQLite stores only"}
@@ -2404,7 +2483,7 @@ def vacuum_database(engine: Engine) -> dict:
     if preflight.get("sufficient") is False:
         _LOG.warning("compaction not run: %s", preflight.get("detail"))
         raise VacuumSpaceError(preflight)
-    size_before = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else None
+    disk_before = _on_disk_bytes(db_path)
     t0 = time.perf_counter()
     # VACUUM is a raw-SQL write that takes an exclusive lock; route it through
     # the single-writer gate so it queues with collection/import writers instead
@@ -2413,19 +2492,28 @@ def vacuum_database(engine: Engine) -> dict:
 
     # The connection first, then the gate (writer.connection_first): the other order made this wait for the pool while holding the gate.
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn, write_lock():
+        journal_mode = str(conn.execute(text("PRAGMA journal_mode")).scalar() or "") or None
+        page_size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
         freelist_before = conn.execute(text("PRAGMA freelist_count")).scalar() or 0
+        pages_before = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
         conn.execute(text("VACUUM"))
         conn.execute(text("PRAGMA analysis_limit=1000"))
         conn.execute(text("PRAGMA optimize"))
         freelist_after = conn.execute(text("PRAGMA freelist_count")).scalar() or 0
-    size_after = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else None
+        pages_after = int(conn.execute(text("PRAGMA page_count")).scalar() or 0)
+    disk_after = _on_disk_bytes(db_path)
+    account = _space_account(
+        disk_before, disk_after, freed_bytes=(pages_before - pages_after) * page_size, journal_mode=journal_mode
+    )
     return {
         "supported": True,
-        "bytes_before": size_before,
-        "bytes_after": size_after,
-        "bytes_reclaimed": (size_before - size_after)
-        if size_before is not None and size_after is not None
-        else None,
+        # file plus its write-ahead log, as the filesystem measured them (R785)
+        "bytes_before": disk_before["total_bytes"],
+        "bytes_after": disk_after["total_bytes"],
+        **account,
+        "page_size": page_size,
+        "database_pages_before": pages_before,
+        "database_pages_after": pages_after,
         "freelist_pages_before": int(freelist_before),
         "freelist_pages_after": int(freelist_after),
         "duration_ms": round((time.perf_counter() - t0) * 1000),
@@ -2434,7 +2522,9 @@ def vacuum_database(engine: Engine) -> dict:
         "preflight": preflight,
         "method": (
             "SQLite VACUUM (full file rebuild; frees unused pages) followed by "
-            "PRAGMA optimize. Real byte sizes from the filesystem. Checked first: free space "
+            "PRAGMA optimize. Space reclaimed is the measured fall in the database file plus its "
+            "write-ahead log; space freed inside the database that the disk has not yet seen is reported "
+            "apart, never as reclaimed. Checked first: free space "
             "on the database's volume against twice the pages in use plus the log, and the memory the "
             "rebuilt copy is held in against what is available."
         ),
@@ -2469,7 +2559,7 @@ def _incremental_vacuum_hours() -> float:
 
 
 def _incremental_vacuum_pages() -> int:
-    """Pages reclaimed per automatic pass (bounded; OO_INCREMENTAL_VACUUM_PAGES)."""
+    """Pages freed per automatic pass (bounded; OO_INCREMENTAL_VACUUM_PAGES)."""
     try:
         n = int(os.getenv("OO_INCREMENTAL_VACUUM_PAGES", "2000"))
     except ValueError:
@@ -2478,7 +2568,7 @@ def _incremental_vacuum_pages() -> int:
 
 
 def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
-    """DB-10 §1a/§3: reclaim a BOUNDED number of free pages via
+    """DB-10 §1a/§3: release a BOUNDED number of free pages via
     ``PRAGMA incremental_vacuum(N)`` in the scheduler's idle window, instead of
     relying only on the heavy, blocking full VACUUM (the Settings button).
 
@@ -2492,6 +2582,14 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
       * a fresh-enough marker (throttled to OO_INCREMENTAL_VACUUM_HOURS).
     Freelist-page counts are real PRAGMA reads, never estimated. Off the
     request path, best-effort, never raises.
+
+    FREED IS NOT RECLAIMED (R785). ``pages_freed`` is the freelist's fall: pages
+    released inside the database. ``bytes_reclaimed`` is what the disk got back,
+    the measured fall in the file plus its write-ahead log. On the app's WAL
+    stores the two differ by design: the pragma releases pages in the log and the
+    file shrinks only at a later checkpoint, so straight after a pass the disk has
+    usually seen none of it. That difference is ``freed_not_yet_shrunk``, with its
+    reason, and is never called reclaimed. No checkpoint is forced here.
     """
     import json
     from datetime import datetime, timedelta
@@ -2521,6 +2619,8 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
                     pass  # unparseable marker -> treat as due
 
             pages = _incremental_vacuum_pages()
+            journal_mode = str(conn.execute(text("PRAGMA journal_mode")).scalar() or "") or None
+            disk_before = _on_disk_bytes(engine.url.database)
             freelist_before = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
             # C3 (field diagnostics 2026-09-09): PRAGMA incremental_vacuum(N) frees
             # pages ONE AT A TIME, yielding one result row per page freed, and only
@@ -2563,15 +2663,17 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
                 finally:
                     raw_cur.close()
             freelist_after = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
-            reclaimed = max(freelist_before - freelist_after, 0)
+            freed = max(freelist_before - freelist_after, 0)
             page_size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
+            disk_after = _on_disk_bytes(engine.url.database)
             report = {
                 "freelist_pages_before": freelist_before,
                 "freelist_pages_after": freelist_after,
-                "pages_reclaimed": reclaimed,
+                "pages_freed": freed,
                 "requested_pages": pages,
                 "page_size": page_size,
                 "freelist_bytes_after": freelist_after * page_size,
+                **_space_account(disk_before, disk_after, freed_bytes=freed * page_size, journal_mode=journal_mode),
                 "at": now.isoformat(timespec="seconds"),
             }
             # C3 (field diagnostics 2026-09-11), REVISED once the mechanism was known.
@@ -2588,10 +2690,15 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
             #
             #   * budget-bound  -- requested 5  -> reclaimed exactly 5, 440 still free.
             #   * unobstructed  -- requested 100,000 -> freelist drained to ZERO.
-            #   * reader-blocked-- a second connection holding a read snapshot makes the
-            #     pragma RAISE `database is locked`; it does not silently under-reclaim.
-            #     That path therefore lands in the `except` below and reports
-            #     `skipped: error`, which is where it belongs.
+            #   * reader-held  -- measured then on a store WITHOUT a write-ahead log, where a
+            #     second connection holding a read snapshot made the pragma RAISE
+            #     `database is locked` (the `except` below, `skipped: error`).
+            #
+            # R785, MEASURED AGAIN ON THE APP'S OWN STORES, WHICH ARE WAL: the third outcome
+            # above was a rollback-journal store's. On WAL (plain and encrypted), a reader
+            # holding a snapshot does NOT stop the pragma: it frees every page it is asked
+            # to, in the log, and what the reader holds back is the checkpoint that would
+            # shrink the file. That is reported as freed_not_yet_shrunk, never as reclaimed.
             #
             # So "asked for N and got fewer" is not the shape a healthy store produces,
             # and an alarm hung on it would now fire approximately never while the thing
@@ -2607,26 +2714,25 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
             # does not occur. Inventing a cause for a healthy run is the same defect as
             # staying silent about an unhealthy one, pointed the other way.
             if freelist_after > 0 and page_size > 0:
-                budget_bound = pages > 0 and reclaimed >= pages
+                budget_bound = pages > 0 and freed >= pages
                 report["residual"] = {
                     "still_free_pages": freelist_after,
                     "still_free_bytes": freelist_after * page_size,
-                    "reclaimed": reclaimed,
+                    "freed": freed,
                     "requested": pages,
                     "budget_bound": budget_bound,
                     "detail": (
-                        f"reclaimed {reclaimed:,} of the {pages:,} pages this pass was "
+                        f"freed {freed:,} of the {pages:,} pages this pass was "
                         f"allowed, leaving {freelist_after:,} free "
                         f"({freelist_after * page_size:,} bytes). The per-pass budget was "
                         "the limit, not the store: later passes continue from here, and "
                         "OO_INCREMENTAL_VACUUM_PAGES raises it."
                         if budget_bound
                         else
-                        f"reclaimed {reclaimed:,} of {pages:,} requested pages while "
-                        f"{freelist_after:,} remain free. The budget was NOT the limit, so "
-                        "something stopped the pragma short -- check "
-                        "storage_composition.last_checkpoint.readers for a long-lived "
-                        "reader holding a snapshot those pages belong to."
+                        f"freed {freed:,} of {pages:,} requested pages while "
+                        f"{freelist_after:,} remain free, and the budget was not the limit. "
+                        "No cause for this shape has been measured: on a write-ahead-log "
+                        "store a reader does not stop the pragma, so none is named here."
                     ),
                     "full_vacuum_note": (
                         "A full VACUUM is the only operation that always compacts, and it "

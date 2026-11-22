@@ -1191,6 +1191,8 @@
   "Compact database (VACUUM)": "Padatkan basis data (VACUUM)",
   "Compacted.": "Pemadatan selesai.",
   "Compacted. Space freed: {freed} · {secs} s": "Pemadatan selesai. Ruang yang dibebaskan: {freed} · {secs} s",
+  "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log the file shrinks only at a later checkpoint, or when the app closes.": "{pending} yang dibebaskan di dalam basis data belum kembali ke disk: dengan write-ahead log basis data ini, berkas baru menyusut pada checkpoint berikutnya, atau saat aplikasi ditutup.",
+  "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.": "{pending} yang dibebaskan di dalam basis data belum kembali ke disk. Belum ada penyebab yang diukur untuk basis data ini.",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Pemadatan membangun ulang berkas basis data: memulihkan ruang yang ditinggalkan penghapusan dan mendefragmentasi indeks. Waktunya sebanding dengan ukuran berkas dan menjeda penulisan pengumpulan selama berjalan — tidak ada yang ditafsirkan atau dihapus.",
   "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "Pemadatan menulis ulang seluruh berkas basis data dan bisa memakan waktu pada korpus besar. Lanjutkan?",
   "Compacting… this can take a while on a large corpus.": "Memadatkan… bisa memakan waktu pada korpus besar.",

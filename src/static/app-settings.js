@@ -1458,6 +1458,17 @@
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
         out.textContent = tf("Compacted. Space freed: {freed} · {secs} s",
           { freed, secs: (r.duration_ms / 1000).toFixed(1) });
+        // R785: space freed inside the database that the disk has not seen yet is its own line, never "freed".
+        const pend = r.freed_not_yet_shrunk;
+        if (pend && pend.bytes > 0) {
+          const why = document.createElement("div");
+          why.className = "muted";
+          why.textContent = tf(r.journal_mode === "wal"
+            ? "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log the file shrinks only at a later checkpoint, or when the app closes."
+            : "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.",
+            { pending: _fmtBytes(pend.bytes) });
+          out.appendChild(why);
+        }
         _dbReclaimBytes = 0; _paintReclaim();
       } catch (e) {
         out.textContent = ooLabelText(t("Compaction failed"), e.message);

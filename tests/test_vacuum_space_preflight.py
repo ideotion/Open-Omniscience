@@ -71,6 +71,7 @@ def sqlite_engine(tmp_path):
     from sqlalchemy import create_engine, text
 
     db = tmp_path / "store.db"
+    # Stays bare (R785): this file controls each store's journal mode and page size; the app engine would force WAL.
     engine = create_engine(f"sqlite:///{db}")
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         conn.execute(text("CREATE TABLE t (id INTEGER PRIMARY KEY, blob TEXT)"))
@@ -321,6 +322,7 @@ def _engine_with_rows(path, *, wal: bool, rows: int, keep: int | None = None, pa
     encrypted stores use 16 KiB), set before anything is written."""
     from sqlalchemy import create_engine, event, text
 
+    # Stays bare (R785): this file controls each store's journal mode and page size; the app engine would force WAL.
     engine = create_engine(f"sqlite:///{path}")
 
     @event.listens_for(engine, "connect")

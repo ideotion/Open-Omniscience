@@ -1191,6 +1191,8 @@
   "Compact database (VACUUM)": "Сжать базу данных (VACUUM)",
   "Compacted.": "Сжатие завершено.",
   "Compacted. Space freed: {freed} · {secs} s": "Сжатие завершено. Освобождено: {freed} · {secs} с",
+  "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log the file shrinks only at a later checkpoint, or when the app closes.": "{pending}, освобождённые внутри базы данных, ещё не возвращены на диск: при журнале упреждающей записи этой базы файл уменьшается только при следующей контрольной точке или при закрытии приложения.",
+  "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.": "{pending}, освобождённые внутри базы данных, ещё не возвращены на диск. Причина для этой базы не измерялась.",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Сжатие перестраивает файл базы данных: возвращает место, освобождённое удалениями, и дефрагментирует индексы. Занимает время, пропорциональное размеру файла, и приостанавливает запись сбора на время выполнения — ничего не интерпретируется и не удаляется.",
   "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "Сжатие перезаписывает весь файл базы данных и может занять некоторое время на большом корпусе. Продолжить?",
   "Compacting… this can take a while on a large corpus.": "Сжатие… на большом корпусе это может занять время.",

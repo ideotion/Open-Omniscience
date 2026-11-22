@@ -1191,6 +1191,8 @@
   "Compact database (VACUUM)": "Compact database (VACUUM)",
   "Compacted.": "Compacted.",
   "Compacted. Space freed: {freed} · {secs} s": "Compacted. Space freed: {freed} · {secs} s",
+  "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log the file shrinks only at a later checkpoint, or when the app closes.": "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log the file shrinks only at a later checkpoint, or when the app closes.",
+  "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.": "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.",
   "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?",
   "Compacting… this can take a while on a large corpus.": "Compacting… this can take a while on a large corpus.",
