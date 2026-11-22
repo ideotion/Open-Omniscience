@@ -103,8 +103,11 @@ def header_only(name):
     return name in _ENC or any(name == b + "-shm" for b in _ENC)
 def overwrite(p, head_only):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
     try:
-        if os.path.islink(p) or not os.path.isfile(p): return True   # a link is never written through, nor a FIFO or a device
-        n = os.path.getsize(p)
+        try: st = os.lstat(p)
+        except FileNotFoundError: return True                          # gone already: nothing left to overwrite
+        except OSError: unreached(p); return False                     # could not be looked at: never counted as handled
+        if not stat.S_ISREG(st.st_mode): return True   # a link is never written through, nor a FIFO or a device
+        n = st.st_size
         limit = min(n, PAGE1) if head_only else n
         with open(p, "r+b", buffering=0) as f:
             w = 0
@@ -116,7 +119,9 @@ def overwrite(p, head_only):   # True once every byte it was to write is written
 # R798: every folder a walk of the wipe could not list (it then checked none of the files in it); one is enough for "may be
 # incomplete", and the log gives their count and each as its role (tok), never "DB salt pages destroyed".
 unlisted_dirs = []
-def unlisted(e): unlisted_dirs.append(getattr(e, "filename", None))
+def unlisted(e):
+    if not isinstance(e, FileNotFoundError): unlisted_dirs.append(getattr(e, "filename", None))   # gone mid-walk: nothing in it
+def unreached(p): unlisted_dirs.append(os.path.dirname(p))   # its folder could be listed, not searched (mode r--)
 # R792 (part B): ANOTHER process holding the database (a second copy of the app, a database tool) keeps the unlinked files alive
 # and can go on committing into them, salt included -- measured on this watcher: a process writing in a loop through it kept
 # the salt in 5 runs of 5. Never waited on and never signalled: a descriptor is kept on each SQLite file of an encrypted
@@ -235,10 +240,12 @@ wd = plan.get("wipe_data_dir")
 only = plan.get("app_only")
 def linkish(p):   # a symlink, or a Windows junction (os.walk enters those); any reparse point on a Python without isjunction
     try:
-        if os.path.islink(p): return True
+        st = os.lstat(p)
+        if stat.S_ISLNK(st.st_mode): return True
         if hasattr(os.path, "isjunction"): return os.path.isjunction(p)
-        return bool(getattr(os.lstat(p), "st_file_attributes", 0) & 0x400)
-    except OSError: return True
+        return bool(getattr(st, "st_file_attributes", 0) & 0x400)
+    except FileNotFoundError: return True    # gone: nothing to enter
+    except OSError: unreached(p); return True   # could not be looked at: never entered, and named (R798)
 def ours(nm):
     for c in dict.fromkeys((nm, re.sub(only["strip"], "", nm))):
         if c and (c in only["names"] or c.startswith(tuple(only["prefixes"])) or c.endswith(tuple(only["suffixes"]))): return True

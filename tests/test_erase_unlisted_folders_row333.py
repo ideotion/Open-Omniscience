@@ -18,6 +18,8 @@ import logging
 import os
 from pathlib import Path
 
+import pytest
+
 from src.safety import crypto_erase
 from tests.js_source_helper import python_function_source
 from tests.os_scope import scope_os
@@ -186,3 +188,147 @@ def test_the_watcher_still_says_destroyed_when_it_reached_everything(tmp_path):
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
     text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")})
     assert "crypto-erase: DB salt pages destroyed" in text and "could not check" not in text, text
+
+
+# ---- a folder that can be listed but not searched (mode r--): its names are read, nothing in it can be looked at, opened or
+# removed. The security reads of this PR: before the fix such a folder was never counted as unlisted, the panic wipe called the
+# keys in it destroyed-or-absent and crashed in steps 5b/6, and the watcher counted its files as handled.
+_SKIP_PERMS = pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0, reason="needs file permissions that bind (POSIX, not root)"
+)
+
+
+def _locked_os(locked: Path):
+    """``lstat``/``stat``/``open`` as a folder of mode r-- answers them for the entries in it, as any user, root included."""
+    def refuse(fn):
+        def call(path, *a, **k):
+            if Path(os.fspath(path)).parent == locked:
+                raise PermissionError(13, "Permission denied", os.fspath(path))
+            return fn(path, *a, **k)
+        return call
+
+    return {"lstat": refuse(os.lstat), "stat": refuse(os.stat), "open": refuse(os.open)}
+
+
+def test_a_keys_folder_that_cannot_be_searched_is_never_reported_clean(tmp_path, monkeypatch):
+    from src.safety import data_scope
+
+    data = tmp_path / "OOS data"
+    keys = data / "keys"
+    keys.mkdir(parents=True)
+    (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE")
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    monkeypatch.setattr(data_scope, "folder_scope", lambda base: {"broad": True, "reason": "test"})
+    scope_os(monkeypatch, crypto_erase, **_locked_os(keys))
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["keys_destroyed"] == [], report
+    assert report["unlisted_folders"] >= 1 and "may be incomplete" in report["limit"], report
+    assert str(keys / "custody_ed25519.pem") in report["overwrite_failures"], report
+
+
+def test_an_app_folder_that_cannot_be_searched_never_stops_the_erase(tmp_path, monkeypatch):
+    data = tmp_path / "OOS data"
+    locked = data / "bulletin"
+    locked.mkdir(parents=True)
+    (locked / "x.db").write_bytes(b"S" * 8192)
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    scope_os(monkeypatch, crypto_erase, **_locked_os(locked))
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)  # never raises
+    assert report["unlisted_folders"] == 1 and "may be incomplete" in report["limit"], report
+    assert str(locked / "x.db") in report["overwrite_failures"], report
+
+
+@_SKIP_PERMS
+@pytest.mark.parametrize("shared", [False, True])
+def test_a_real_unsearchable_folder_in_the_panic_wipe(tmp_path, monkeypatch, shared):
+    from src.safety import data_scope
+
+    data = tmp_path / "OOS data"
+    keys = data / "keys"
+    keys.mkdir(parents=True)
+    (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE")
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    if shared:
+        monkeypatch.setattr(data_scope, "folder_scope", lambda base: {"broad": True, "reason": "test"})
+    keys.chmod(0o400)
+    try:
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    finally:
+        keys.chmod(0o700)
+    assert report["keys_destroyed"] == [] and report["unlisted_folders"] >= 1, report
+    assert (keys / "custody_ed25519.pem").exists() and "may be incomplete" in report["limit"], report
+
+
+def test_the_erase_never_makes_again_the_folder_it_removed(tmp_path, monkeypatch):
+    """The last log lines mask their paths; the masking must not ask src.paths.data_dir, which makes a missing folder again."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["removed"] is True and not data.exists(), report
+
+
+def test_the_masking_can_be_given_the_data_folder(monkeypatch):
+    import src.paths
+    from src.monitoring.path_tokens import tokenise_paths
+
+    monkeypatch.setattr(src.paths, "data_dir", lambda: (_ for _ in ()).throw(AssertionError("asked")))
+    assert tokenise_paths("/srv/oo/data/keys/x.pem", data_root="/srv/oo/data") == "<data>/…/x.pem"
+
+
+_PRELUDE_SEARCH = r"""
+import os
+def _refuse(fn):
+    def call(path, *a, **k):
+        if os.path.basename(os.path.dirname(os.fspath(path))) == "locked":
+            raise PermissionError(13, "Permission denied", os.fspath(path))
+        return fn(path, *a, **k)
+    return call
+os.lstat, os.stat, os.open = _refuse(os.lstat), _refuse(os.stat), _refuse(os.open)
+"""
+
+
+def _watch_with(tmp_path, plan: dict, prelude: str) -> str:
+    import json
+    import subprocess
+    import sys
+
+    from src.safety.uninstall import _WATCHER_SRC
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    home = tmp_path / "home" / "jane.doe"
+    home.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
+    subprocess.run([sys.executable, "-c", prelude + _WATCHER_SRC, str(dead.pid), json.dumps(plan)], timeout=60, check=True,
+                   env=env)
+    return (tmp_path / "audit.log").read_text(encoding="utf-8")
+
+
+def test_the_watcher_never_counts_a_file_it_could_not_look_at_as_handled(tmp_path):
+    data = tmp_path / "home" / "jane.doe" / "oo-data"
+    (data / "locked").mkdir(parents=True)
+    (data / "locked" / "pre-restore-1.db").write_bytes(b"SALTSALT" * 1024)
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _PRELUDE_SEARCH)
+    assert "salt pages destroyed" not in text and "THE ERASE MAY BE INCOMPLETE" in text, text
+    assert "could not check 1 folder(s) it could not list: <data>/.../locked" in text, text
+    for leak in (str(tmp_path), "jane.doe"):
+        assert leak not in text, (leak, text)
+
+
+@_SKIP_PERMS
+def test_the_watcher_with_a_real_unsearchable_folder(tmp_path):
+    data = tmp_path / "home" / "jane.doe" / "oo-data"
+    locked = data / "bulletin"
+    locked.mkdir(parents=True)
+    (locked / "x.db").write_bytes(b"SALTSALT" * 1024)
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    locked.chmod(0o400)
+    try:
+        text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, "")
+    finally:
+        if locked.exists():
+            locked.chmod(0o700)
+    assert "salt pages destroyed" not in text and "THE ERASE MAY BE INCOMPLETE" in text, text

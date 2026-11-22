@@ -812,7 +812,11 @@ imply a protection we cannot deliver.
   own entries of a shared folder, steps 5b and 6, and the uninstall watcher's top-level, keys and data walks) holds files the
   erase never checked: the result is then "may be incomplete" (`unlisted_folders` in the panic report, a visible caveat ×12),
   the log says "could not check" with the count and each path as its role, and "destroyed" is said only when every folder was
-  listed and every targeted file was overwritten. A folder that is not there is not one it could not list.
+  listed and every targeted file was overwritten. A folder that is not there is not one it could not list. A folder that can be
+  listed but not searched (mode r--) counts too: an entry in it that cannot be looked at is never taken for a link, a file
+  already handled or one that is not there; it is named as not overwritten and its folder as one it could not check, in both
+  copies, and it never stops the erase. The log's path masking is told the erase's data folder, so it never makes again the
+  folder the erase has just removed.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
