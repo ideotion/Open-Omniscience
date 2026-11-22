@@ -195,7 +195,7 @@ def list_alternates(
     # key signed, compared now with this installation's own -- never as a proven origin.
     from src.backup.artifact import signer_relation, this_installation_key
 
-    local_key = this_installation_key()
+    local_key = this_installation_key() if counts else None  # one key read, and none with nothing to show
     batches = []
     for b in session.query(MergeBatch).filter(MergeBatch.id.in_(list(counts))).order_by(
         MergeBatch.id.desc()
