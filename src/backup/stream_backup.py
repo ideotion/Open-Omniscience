@@ -96,6 +96,7 @@ if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
 
 from src.backup.hf_layout import HF_LAYOUT
 from src.backup.manifest_file import read_manifest_json
+from src.backup.regular_file import create_new, replace_with
 from src.backup.volumes import (
     MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES,
 )
@@ -392,9 +393,9 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
 #  Small helpers
 # --------------------------------------------------------------------------- #
 def _write_json_atomic(path: Path, payload: Any) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    # The destination's manifests are written here: a link planted at the temporary name is removed, never written through,
+    # and the rename replaces a link at the final name itself (row 313).
+    replace_with(path, json.dumps(payload, indent=1, ensure_ascii=False).encode("utf-8"), tmp=path.with_name(path.name + ".tmp"))
 
 
 #: Matched with ``fullmatch``: ``$`` also matches before a final newline, so ``^...$`` with ``match`` let ``"v1\n"`` through.
@@ -2393,7 +2394,7 @@ def read_stream_backup(
                 # What a member may write is the plaintext size its manifest declares, the size the staging preflight
                 # counted: a member whose volumes decrypt to more is refused at that size, never let fill the disk (R686).
                 budget = [int(mm.get("plaintext_bytes") or 0)]
-                with open(out_path, "wb") as fout:
+                with create_new(out_path) as fout:  # never through a link at a member's name (row 313)
                     for vname in mm.get("volumes") or []:
                         if vname not in vol_by_name:
                             raise VolumeError(
