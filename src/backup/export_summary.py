@@ -134,14 +134,11 @@ def _size(v: Any) -> int:
 def _folder_manifest(dest: Path) -> dict[str, Any] | None:
     from src.backup.folder_backup import MANIFEST_NAME as FOLDER_MANIFEST
 
-    p = dest / FOLDER_MANIFEST
     # Row 302: the destination folder is on a drive anything may have written to, so the manifest is
     # read like every other untrusted manifest (R780): never through a link, never blocking on a pipe,
-    # bounded in size and nesting. A manifest that is there but cannot be read is said in the log by
-    # fixed words only.
-    m = read_manifest_json(p)
-    if m is None and os.path.lexists(p):
-        _LOG.warning("export summary: %s is there but could not be read as a manifest", FOLDER_MANIFEST)
+    # bounded in size and nesting. No second look at the path (an exists or lstat) follows the read:
+    # the one hardened read is the only touch of the drive's file.
+    m = read_manifest_json(dest / FOLDER_MANIFEST)
     return m if isinstance(m, dict) else None
 
 
