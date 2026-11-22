@@ -57,6 +57,11 @@
     // language it happened to render in first, exactly like the attribute-level
     // opt-out just above this function.
     if (p && p.closest && p.closest("[data-i18n-dyn]")) return;
+    // Row 326: DATA is never looked up. The walker matches a text node against every key, so a corpus keyword whose
+    // text happens to equal a key ("content", "person", "delete") would be shown translated -- the app altering the
+    // user's data on screen. An element marked with the standard translate="no" (which also tells a browser's own
+    // translator to leave it) holds data, and nothing inside it is touched.
+    if (p && p.closest && p.closest('[translate="no"]')) return;
     let o = origText.get(n);
     if (o === undefined) { o = n.nodeValue; origText.set(n, o); }  // first sight = English
     const t = tr(o);
@@ -77,6 +82,7 @@
     // Audited when this changed: no static title, placeholder or aria-label sits inside
     // a dyn container; everything inside one is written through t() by its renderer.
     if (el.closest ? el.closest("[data-i18n-dyn]") : (el.hasAttribute && el.hasAttribute("data-i18n-dyn"))) return;
+    if (el.closest && el.closest('[translate="no"]')) return;  // Row 326: data, as in doText above
     let store = origAttr.get(el);
     for (const a of ATTRS) {
       if (!el.hasAttribute(a)) continue;
