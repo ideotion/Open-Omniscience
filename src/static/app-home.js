@@ -2571,7 +2571,7 @@
         const key = String(g.signer || "").match(/.{1,4}/g).join(" ");
         const sig = esc(JSON.stringify(g.signer)), n = Number(g.count) || 0;
         return `<div class="draft-item withheld-trust" role="group"><div class="di-body">
-          <p>${esc(tf("A backup signed by another installation carried {count} trust decisions, which were not applied. Import them too?", {count: n}))}</p>
+          <p>${esc(tf("A backup signed by another installation carried trust decisions that were not applied (count: {count}). Import them too?", {count: n}))}</p>
           <p class="hint">${esc(t("Its signing key:"))} <code dir="ltr">${esc(key)}</code></p>
           <p class="hint">${esc(t("Its signature shows the backup is unchanged since it was signed, not who signed it. Import them only if you know that installation is yours or someone you trust."))}</p></div>
           <button class="ghost tiny" data-autofocus data-on-click="answerWithheldTrust(${sig}, ${n}, false)">${esc(t("No"))}</button>
@@ -2584,7 +2584,7 @@
         : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       try {
         const r = await api("/api/annotations/withheld-trust", {method: "POST", body: JSON.stringify({signer, count, apply: apply === true})});
-        toast(apply === true ? tf("{count} trust decisions applied.", {count: r.applied || 0})
+        toast(apply === true ? tf("Trust decisions applied: {count}.", {count: r.applied || 0})
           : t("Not imported: those authors stay untrusted. You can still trust any of them in the list."));
       } catch (e) { toast(e.message, "err"); }
       loadAuthors();
