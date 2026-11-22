@@ -56,7 +56,7 @@ const HELPERS = [
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
   "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingTotalWhy", "livingWalkSwitchFact", "livingLocatedFact", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
-  "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
+  "livingMapGroups", "livingMapDataDates", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
   "lawVelocityHtml", "lawThesaurusWords", "lawThesaurusWhy", "livingThesauriHtml",
@@ -258,6 +258,30 @@ const WIKI = {
   assert.ok(dv.indexOf("2026-10-30 08:15 UTC") < dv.indexOf("2026-09-01 07:00 UTC"), "events are listed newest first, as the server sent them");
   assert.ok(daily.includes("CC(FRA)") && daily.includes("CC(DEU)"), "a country goes through the display helper, never printed raw");
   noJunk(daily, "the daily group"); noVerdict(daily, "the daily group");
+  // R790 (row 311): the date of the map data is the cut countries' own data dates, newest and oldest; a country whose files were
+  // applied with no date read is named apart and in neither; downloads not yet cut stay "Not recorded".
+  const MAPS = { measured: true, regions: 2, by_state: { done: 2 }, other_state: 0, bytes_on_disk: GIB,
+    freshness: { measured: false, reason: "not-recorded" } };
+  const dated = R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null, daily: { ...DAILY,
+    newest_data_at: "2026-11-04T23:59:00+00:00", oldest_data_at: "2026-09-01T00:00:00+00:00", date_not_read: ["ITA"], data_undated: 0 } }, t, tf));
+  const mv = visible(dated);
+  assert.ok(mv.includes("Newest map data 2026-11-04 23:59 UTC") && mv.includes("Oldest map data 2026-09-01 00:00 UTC"), mv);
+  assert.ok(dated.includes("CC(ITA)") && mv.includes("Data date not read"), "the undated country is named apart: " + mv);
+  assert.ok(mv.includes("Downloaded files not yet cut Not recorded"), mv);
+  assert.ok(!mv.includes("Date of the map data") && !mv.includes("Extract states no date"), mv);
+  assert.ok(!/current as of/i.test(mv + hovers(dated)), "never 'current as of'");
+  noJunk(dated, "the map data dates"); noVerdict(dated, "the map data dates");
+  const plain = R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null,
+    daily: { ...DAILY, newest_data_at: "2026-11-04T23:59:00+00:00", oldest_data_at: "2026-09-01T00:00:00+00:00", date_not_read: [], data_undated: 2 } }, t, tf));
+  assert.ok(!visible(plain).includes("Data date not read") && visible(plain).includes("Extract states no date 2"), visible(plain));
+  const allUnread = visible(R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null,
+    daily: { ...DAILY, newest_data_at: null, oldest_data_at: null, date_not_read: ["ITA", "FRA"], data_undated: 0 } }, t, tf)));
+  assert.ok(allUnread.includes("Newest map data Not recorded") && allUnread.includes("Oldest map data Not recorded"),
+    "every cut country undated: no date stands in: " + allUnread);
+  for (const d of [undefined, { measured: false, reason: "lane-never-run" }, { ...DAILY, countries_cut: 0 }]) {
+    const none = visible(R.livingGroupsHtml(R.livingMapGroups({ kind: "osm", maps: MAPS, storage: null, daily: d }, t, tf)));
+    assert.ok(none.includes("Date of the map data Not recorded") && !none.includes("Newest map data"), "no cut country reads as before: " + none);
+  }
   const none = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, rebaselines: [], rebaselines_total: 0, hand_recuts: 0 }, t, tf)]));
   assert.ok(none.includes("Re-baselines 0") && none.includes("Re-baseline events None"), "no event reads as None, and a zero is a measured zero: " + none);
   const older = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, rebaselines_not_shown: 4 }, t, tf)]));
