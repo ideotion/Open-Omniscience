@@ -98,10 +98,11 @@ def test_a_round_trip_restores_a_loadable_cache(tmp_path) -> None:
     out = restore_folder_backup(dest, categories=["hf_models"], targets={"hf_models": live})
     assert out["restored"] > 0 and out["refused_symlinks"] == 0
 
-    snap = live / "hub" / "models--org--tiny" / "snapshots" / "abc123"
+    # R784: the target IS the hub cache folder; the backup's ``hub/`` lands in it, not below it.
+    snap = live / "models--org--tiny" / "snapshots" / "abc123"
     assert (snap / "config.json").is_file(), "vLLM's own stated precondition"
     assert (snap / "model.safetensors").read_bytes() == _BLOB
-    refs = live / "hub" / "models--org--tiny" / "refs" / "main"
+    refs = live / "models--org--tiny" / "refs" / "main"
     assert refs.read_text(encoding="utf-8") == "abc123"
     # Plain files, not links: the restore refuses symlinks outright, so a design that
     # needed them would have been refused by its own safety guard.
@@ -117,6 +118,7 @@ def test_the_default_restore_target_is_where_vllm_will_look(tmp_path, monkeypatc
     dest, live = tmp_path / "drive", tmp_path / "app-hf"
     write_folder_backup(dest, collect_hf_model_items(src))
     monkeypatch.setattr(ms, "hf_home", lambda: live)
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
     out = restore_folder_backup(dest, categories=["hf_models"])  # no targets=
     assert out["restored"] > 0
     assert (live / "hub" / "models--org--tiny" / "snapshots" / "abc123" / "config.json").is_file()

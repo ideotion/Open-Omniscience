@@ -87,7 +87,7 @@ src/api/wiki_lane.py	5
 src/backup/alternates.py	1
 src/backup/country_codes.py	5
 src/backup/export_summary.py	2
-src/backup/folder_backup.py	5
+src/backup/folder_backup.py	4
 src/backup/import_queue.py	2
 src/backup/lane_merge.py	8
 src/backup/merge.py	23

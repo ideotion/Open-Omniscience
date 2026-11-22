@@ -93,6 +93,7 @@ from src.shared_text import said
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
     from src.backup.artifact import StagedArtifact
 
+from src.backup.hf_layout import HF_LAYOUT
 from src.backup.volumes import (
     MANIFEST_NAME,
     VOLUME_SIZE_DEFAULT,
@@ -1807,6 +1808,9 @@ def write_stream_backup(
                 "plaintext_bytes": sum(int(m["plaintext_bytes"]) for m in members_out),
                 "members": members_out,
                 "file_members": file_members,
+                # R784: a model-cache member's leading ``hub/`` is the Hugging Face hub cache folder
+                # itself (src.backup.hf_layout.HF_LAYOUT). Absent when the artifact carries none.
+                **({"hf_layout": HF_LAYOUT} if any(fm.get("category") == "hf_models" for fm in file_members) else {}),
                 "volumes": st.volumes,
                 "parity": None,
                 "notes": notes,

@@ -1456,27 +1456,86 @@
     // file count ("wiki 3 · maps 1" was English in every locale). A category with folders or files the scan was refused
     // reads "at least N files", with the reason on the hover; links are never restored (a restore refuses every link),
     // so they are not counted, and the hover says so.
+    // R784: why the Hugging Face cache folder on this computer cannot take a restore (fixed codes).
+    function _hfTargetWhy(code, t) {
+      return ({
+        "not-a-folder": t("its path is taken by something that is not a folder"),
+        "not-writable": t("its folder cannot be written to"),
+      })[code] || t("its folder could not be worked out");
+    }
+    // R784: where the Hugging Face models go on THIS computer, said on the checklist before the person
+    // chooses (the real folder, as it resolves here), or why they cannot be restored here. And, for a
+    // backup made before it recorded which cache folder it read, what that older backup may be missing.
+    function _uxImHfNote(b, hf, t) {
+      if (!b || !b.hf_models || !(b.hf_models.count > 0)) return "";
+      const notes = [];
+      const ltrPath = () => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(hf.path)}</bdi>`;
+      if (hf && hf.refused) {
+        // The folder rides along when known, so the person knows which one to fix.
+        notes.push(esc(ooLabelText(t("Hugging Face models will not be restored on this computer"), _hfTargetWhy(hf.refused, t)))
+          + (hf.path ? " " + ltrPath() : ""));
+      } else if (hf && hf.path) {
+        notes.push(esc(ooLabelText(t("Hugging Face models are restored to"), "\u0001")).replace("\u0001", ltrPath));
+      }
+      if (b.hf_models.layout_unrecorded) {
+        notes.push(esc(t("This backup was made before it recorded which Hugging Face cache folder it read: if that computer's cache folder was not named “hub”, its models are not in this backup.")));
+      }
+      return notes.map((n) => `<div class="muted" style="font-size:12px;margin-inline-start:28px">${n}</div>`).join("");
+    }
+    // R787: an encrypted artifact that carries Hugging Face models. They are restored only when ticked
+    // here, never by default; the folder they go to on THIS computer (or why they cannot go there) is
+    // said beside the tick, and an artifact made before it recorded its cache layout says what it may miss.
+    function _uxImArtifactHfRow(corpus, hf, t, tfs, paren) {
+      const n = (corpus || []).reduce((a, c) => a + ((c && c.hf_models && c.hf_models.count) || 0), 0);
+      const old = (corpus || []).some((c) => c && c.hf_models && c.hf_models.layout_recorded === false);
+      return _uxImHfTick("ux-i-corpus-hf", n, old, hf, t, tfs, paren);
+    }
+    // One unticked box for N model files, with the folder they go to here (or why not) and the older-backup note.
+    function _uxImHfTick(id, n, old, hf, t, tfs, paren) {
+      if (!n) return "";
+      const files = n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) });
+      const off = hf && hf.refused ? " disabled" : "";
+      return `<label class="switch" style="margin:0;margin-inline-start:28px"><input type="checkbox" id="${id}"${off}> ${esc(t("Also restore the Hugging Face models this backup carries"))} <span class="muted">${paren(esc(files))}</span></label>`
+        + _uxImHfNote({ hf_models: { count: n, layout_unrecorded: old } }, hf, t);
+    }
     function _uxImBlobRow(b, t, tfs, paren) {
       const parts = [], why = [];
       const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
       const UNREAD = t("Some files or folders here could not be read, so this count includes only the ones that could.");
       const LINKS = t("Links in this backup folder are not counted: a restore never follows a link, so they are never restored.");
+      const LAYOUT = t("Files in the model folder outside the model cache's own layout are not counted and never restored: a restore places only what a backup writes there.");
       const LINKED = t("This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.");
+      const UNLISTED = t("Some files here are not listed in this backup's current manifest; they may come from an earlier or interrupted backup pass. They are restored like the others, without a recorded checksum to check them against. Anyone who can write to this backup folder could also have placed them there, or listed files of their own: the manifest carries its own signing key.");
       const cat = (c, label) => {
         if (!c) return;
         // R779: a category folder that is a link restores nothing; said on the row, the remedy on hover.
         const value = (c.linked && !c.count) ? t("a link, not restored")
           : (c.unread_entries ? t("at least") + " " : "") + files(c.count || 0);
-        parts.push(ooLabelText(t(label), value));
+        // R780: files the backup's current manifest does not list, said on the row with the count.
+        const unlistedPart = c.unlisted ? " " + tfs("({n} not in the manifest)", { n: fmtNum(c.unlisted, 0) }) : "";
+        parts.push(ooLabelText(t(label), value + unlistedPart));
+        if (c.unlisted && !why.includes(UNLISTED)) why.push(UNLISTED);
+        if (c.refused_layout && !why.includes(LAYOUT)) why.push(LAYOUT);
         if (c.linked && !why.includes(LINKED)) why.push(LINKED);
         if (c.unread_entries && !why.includes(UNREAD)) why.push(UNREAD);
         if (c.refused_links && !why.includes(LINKS)) why.push(LINKS);
       };
       cat(b.wiki, "Wikipedia dumps");
       cat(b.maps, "Offline maps");
-      cat(b.models, "LLM models");
+      // R777: the Ollama store and the Hugging Face cache are one "LLM models" line, as on export.
+      const llm = [b.models, b.hf_models].filter(Boolean);
+      cat(llm.length < 2 ? llm[0] : {
+        count: llm[0].count + llm[1].count, bytes: llm[0].bytes + llm[1].bytes,
+        unread_entries: (llm[0].unread_entries || 0) + (llm[1].unread_entries || 0),
+        unlisted: (llm[0].unlisted || 0) + (llm[1].unlisted || 0),
+        refused_links: (llm[0].refused_links || 0) + (llm[1].refused_links || 0),
+        refused_layout: (llm[0].refused_layout || 0) + (llm[1].refused_layout || 0),
+        linked: (llm[0].linked || 0) + (llm[1].linked || 0),
+      }, "LLM models");
       const hover = why.length ? ` title="${esc(why.join(" "))}"` : "";
-      return `<label class="switch" style="margin:0"${hover}><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>`;
+      // Said on the row, not only on hover: a restore adds, it never replaces a file already there.
+      const keep = `<div class="muted" style="font-size:12px;margin-inline-start:28px">${esc(t("A file already in your data folders is kept as it is: a restore never overwrites it, and never downloads anything."))}</div>`;
+      return `<label class="switch" style="margin:0"${hover}><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>${keep}`;
     }
     // Folders the scan walk was refused (row 293): said on screen, since whatever they hold is not listed.
     function _uxImUnreadNote(n, t, tfs) {
@@ -1526,7 +1585,8 @@
           const bits = [t("encrypted volumes — additive, nothing you already have is overwritten")];
           if (nv) bits.push(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }));
           if (corpus.length > 1) bits.push(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }));
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`);
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`
+            + _uxImArtifactHfRow(corpus, f.hf_target, t, tfs, paren));
         }
         if (f.legacy_backup && f.legacy_backup.length) {
           const n = f.legacy_backup.length;
@@ -1534,7 +1594,9 @@
           const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
           rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
         }
-        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren));
+        // R787 reads: the models a folder backup carries ask for their own tick too, never by default.
+        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren) + _uxImHfTick("ux-i-blobs-hf",
+          (f.blobs.hf_models && f.blobs.hf_models.count) || 0, !!(f.blobs.hf_models && f.blobs.hf_models.layout_unrecorded), f.hf_target, t, tfs, paren));
         if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
         const notes = [];
         // Row 293: folders the scan was refused are said on screen; whatever they hold is not listed above.
@@ -1627,7 +1689,7 @@
       const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
       const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
       const legacy = f.legacy_backup || [];
-      const blobRoots = f.blob_roots || (f.blobs ? [{ root: src, categories: Object.keys(f.blobs).map(k => ({ wiki: "wiki_dumps", maps: "osm_regions", models: "models" }[k])) }] : []);
+      const blobRoots = f.blob_roots || (f.blobs ? [{ root: src, categories: Object.keys(f.blobs).map(k => ({ wiki: "wiki_dumps", maps: "osm_regions", models: "models", hf_models: "hf_models" }[k])).filter(Boolean) }] : []);
       const pass = document.getElementById("ux-imp-pass").value || "";
       // The volume corpus is ALWAYS encrypted -> a passphrase is required. A legacy
       // single-file archive may be plaintext, so its passphrase is optional here;
@@ -1646,13 +1708,21 @@
       // shown, so an unseen control can never speak for the operator.
       const trust = _uxImTrust();
       if (corpus.length && cb("ux-i-corpus")) {
-        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust, ..._uxImOwnKeys(c.path) });
+        // R787: only a tick the person made places the Hugging Face models an artifact carries.
+        const hfTick = cb("ux-i-corpus-hf") === true;
+        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust, ...(c.hf_models ? { place_hf_models: hfTick } : {}), ..._uxImOwnKeys(c.path) });
       }
       if (legacy.length && cb("ux-i-legacy")) {
         for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name, trust_fetch_history: trust, ..._uxImOwnKeys(lg.path) });
       }
-      if (blobRoots.length && cb("ux-i-blobs")) {
-        for (const br of blobRoots) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: br.categories });
+      // R787 reads: the model cache is restored only when its own box was ticked, and that box alone
+      // is enough; the other large-data categories follow the "Restore large data" box.
+      const blobAll = cb("ux-i-blobs") === true, blobHf = cb("ux-i-blobs-hf") === true;
+      if (blobRoots.length && (blobAll || blobHf)) {
+        for (const br of blobRoots) {
+          const cats = (br.categories || []).filter((c) => (c === "hf_models" ? blobHf : blobAll));
+          if (cats.length) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: cats });
+        }
       }
       if (f.newsletters && cb("ux-i-eml")) items.push({ kind: "newsletters", path: src, label: t("Newsletters") });
       if (!items.length) { toast(t("Nothing selected to import."), "err"); return; }
@@ -2040,7 +2110,9 @@
         }
         if (it.kind === "corpus" || it.kind === "legacy") {
           const rep = sm.report || sm || {};
-          summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
+          const fmOut = _uxImArtifactFileLines(rep.file_members, t);
+          summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep),
+            ...(fmOut.lines.length ? { caveat: fmOut.lines } : {}), ...(fmOut.incomplete ? { incomplete: true } : {}) });
         } else if (it.kind === "blobs") {
           // Counts as keyed one/many frames with a grouped number (R14): "3 restored"
           // welded a raw count to an English-ordered adjective that agrees with nothing.
@@ -3771,6 +3843,30 @@
     // Returns [] when there is nothing to say, so a clean restore renders unchanged.
     // Label:value, never an interpolated sentence -- a count cannot conjugate, and
     // Russian has three plural forms to Arabic's six.
+    // R787: what happened to the large files an artifact carries. Hugging Face models the person did
+    // not tick stayed in the artifact (said, never called restored); a cache folder here that could not
+    // take them, or any member refused or missing, makes the restore incomplete.
+    function _uxImArtifactFileLines(fm, t) {
+      const out = { lines: [], incomplete: false };
+      if (!fm || typeof fm !== "object") return out;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, vars) => s2.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const tgtWhy = (fm.refused_targets || {}).hf_models;
+      if (tgtWhy) {
+        out.lines.push(ooLabelText(t("Restore incomplete — the Hugging Face model cache was not restored"), _hfTargetWhy(tgtWhy, t)));
+      }
+      const left = fm.hf_not_chosen || 0;
+      if (left) {
+        out.lines.push(left === 1
+          ? tf("Not restored, because it was not ticked: {n} Hugging Face model file stays in this backup", { n: fmtNum(left, 0) })
+          : tf("Not restored, because they were not ticked: {n} Hugging Face model files stay in this backup", { n: fmtNum(left, 0) }));
+      }
+      if (fm.error) {
+        out.lines.push(t("The corpus was restored; putting the large files this backup carries back in place did not work."));
+        out.incomplete = true;
+      }
+      if (fm.incomplete || tgtWhy) out.incomplete = true;
+      return out;
+    }
     function _fbRefusalLines(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, vars) => {
@@ -3799,6 +3895,12 @@
       // R779: a category folder that is a LINK was not restored at all, so the restore is
       // incomplete. The category is a fixed folder name, never a path; the remedy rides along.
       const linkedCats = (p.refused_categories || []).map((c) => String(c));
+      // R784: the Hugging Face model cache folder on THIS computer could not take the restore; one
+      // fixed reason, said in the person's language. Nothing of that category was restored.
+      const tgtWhy = (p.refused_targets || {}).hf_models;
+      if (tgtWhy) {
+        lines.push(ooLabelText(t("Restore incomplete — the Hugging Face model cache was not restored"), _hfTargetWhy(tgtWhy, t)));
+      }
       if (linkedCats.length) {
         lines.push(ooLabelText(t("Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link"),
           linkedCats.join(" · ")));
@@ -3844,10 +3946,28 @@
         lines.push(ooLabelText(t("Restore incomplete — folders in the backup that could not be listed, so whatever they hold was not restored"),
           fmtNum(unreadDirs, 0) + named(dirs, unreadDirs, (u) => `${u.category}${u.rel ? "/" + u.rel : ""}`)));
       }
+      // R777: files in the model-cache folder outside the layout a backup writes there. Never placed.
+      const layout = p.refused_layout || 0;
+      if (layout) {
+        lines.push(ooLabelText(t("Restore incomplete — files in the model folder outside the model cache's own layout, never placed in your data folders"),
+          fmtNum(layout, 0)));
+      }
       const memberLinks = p.refused_symlinks || 0;
       if (memberLinks) {
         lines.push(ooLabelText(t("Not restored — links inside the backup, which a restore never follows"),
           fmtNum(memberLinks, 0)));
+      }
+      // R780: restored, but not listed in this backup's current manifest -- per category, apart from
+      // "not content-verified". The manifest proves no origin, so the line says what they MAY be.
+      const label = { wiki_dumps: "Wikipedia dumps", osm_regions: "Offline maps", models: "LLM models", hf_models: "LLM models" };
+      const byLabel = {};
+      for (const [c, n] of Object.entries(p.restored_unlisted || {})) {
+        if (Number(n) > 0) { const k = label[c] || c; byLabel[k] = (byLabel[k] || 0) + Number(n); }
+      }
+      const unlisted = Object.entries(byLabel);
+      if (unlisted.length) {
+        lines.push(ooLabelText(t("Restored, but not listed in this backup's current manifest; they may come from an earlier or interrupted backup pass"),
+          unlisted.map(([k, n]) => `${t(k)} ${fmtNum(n, 0)}`).join(" · ")));
       }
       const unverified = p.restored_unverified || 0;
       if (unverified) {

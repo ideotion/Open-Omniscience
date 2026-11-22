@@ -33,6 +33,7 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -44,7 +45,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
+from src.backup.manifest_file import read_manifest_json
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -268,10 +271,14 @@ def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
     revision. A cache normally holds one revision per model, and the alternative costs
     the symlink guard, so the duplication is accepted rather than hidden.
     """
-    from src.llm.model_store import hf_home
+    from src.llm.model_store import hf_hub_cache
 
-    home = home or hf_home()
-    hub = home / "hub"
+    # R784: the hub cache folder ITSELF (HF_HUB_CACHE when set, whatever it is named). The old
+    # ``hf_home() / "hub"`` named the PARENT of HF_HUB_CACHE plus "hub": a cache folder named
+    # anything else was never backed up. ``home`` (tests, callers with their own home) keeps HF's
+    # own layout below it. The backup still writes it as ``hub/...``: that folder name is the
+    # cache folder, recorded in the manifest as ``hf_layout``.
+    hub = home / "hub" if home is not None else hf_hub_cache()
     if not hub.is_dir():
         return []
     items: list[BackupItem] = []
@@ -443,10 +450,7 @@ def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
     file whose size differs from the recorded one is not the file that was hashed and its
     old digest must not travel. A missing, damaged or foreign manifest is simply an empty
     map — this is a best-effort carry-forward, never a gate."""
-    try:
-        m = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    m = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
     cats = m.get("categories") if isinstance(m, dict) else None
     if not isinstance(cats, dict):
         return {}
@@ -465,6 +469,24 @@ def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
                 continue
             if isinstance(sha, str) and _SHA256_RE.match(sha) and isinstance(rel, str):
                 out[(str(c), rel, size)] = sha.lower()
+    return out
+
+
+def _manifest_listing(root: Path) -> dict[str, set[str]] | None:
+    """``category -> {rel}`` for every file the backup's CURRENT manifest lists, or ``None`` when there
+    is no manifest that can be read (R780). Unlike :func:`_recorded_digests` it keeps an entry with no
+    checksum too: the question here is only "is this file listed", never "is it verified".
+
+    The manifest is signed with a key it carries itself, so it is tamper-EVIDENCE, never proof of
+    where a file came from: a file it does not list is still restored, and counted as unlisted."""
+    m = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
+    cats = m.get("categories") if isinstance(m, dict) else None
+    if not isinstance(cats, dict):
+        return None
+    out: dict[str, set[str]] = {}
+    for c, lst in cats.items():
+        if isinstance(lst, list):
+            out[str(c)] = {e["rel"] for e in lst if isinstance(e, dict) and isinstance(e.get("rel"), str)}
     return out
 
 
@@ -538,6 +560,10 @@ def write_folder_backup(
         # checksums existed). Verify reports those as unverifiable rather than counting
         # them as content-checked.
         "files_without_checksum": unhashed,
+        # R784: ``hf_models/hub/`` is the Hugging Face hub cache folder itself; a restore places it in
+        # the hub cache folder of the computer it runs on. A manifest without it was written when the
+        # backup read ``<parent of HF_HUB_CACHE>/hub``, which missed a cache folder named otherwise.
+        "hf_layout": HF_LAYOUT,
         "note": (
             "Public, re-downloadable blobs copied as-is (NOT encrypted) — the private "
             "corpus stays in the encrypted oo-backup-2 backup. Restore is additive. "
@@ -588,10 +614,72 @@ def live_targets(overrides: dict[str, Path] | None = None) -> dict[str, Path]:
         # than a second root under "models": the existing category's on-disk layout IS
         # the Ollama store root, and folding a second store under it would send an
         # older backup's manifests/ and blobs/ somewhere new on the way back.
-        from src.llm.model_store import hf_home
+        # R784: the hub cache folder ITSELF, as it resolves on THIS computer; a member's leading
+        # ``hub/`` is that folder (``hf_live_rel``).
+        from src.llm.model_store import hf_hub_cache
 
-        tgt.setdefault("hf_models", hf_home())
+        tgt.setdefault("hf_models", hf_hub_cache())
     return tgt
+
+
+#: R784: why the Hugging Face cache folder cannot take a restore here. Fixed codes, never the system's
+#: words; the page says each one in the person's language.
+HF_TARGET_UNRESOLVED = "unresolved"  # no absolute folder could be worked out, or it could not be looked at
+HF_TARGET_NOT_FOLDER = "not-a-folder"  # its path, or a folder above it, is taken by something that is not a folder
+HF_TARGET_NOT_WRITABLE = "not-writable"  # the folder (or the nearest one above it that exists) cannot be written
+
+
+def hf_target_refusal(target: Path | str | None) -> str | None:
+    """Why the hub cache folder ``target`` cannot take a restore, or ``None`` (R784).
+
+    Looked at before anything is placed, so a cache folder this computer cannot use is said as ONE
+    named reason and the category is left out -- never one write error per model file. The folder may
+    not exist yet (a computer that never downloaded a model): then the nearest folder above it that
+    exists must be one this process can write into. The folder may be a link the person made (a cache
+    moved to another disk); that is their choice and is followed, as the other live folders are. A
+    write that still fails later stops the restore with an error, as before.
+
+    STATED LIMIT: on Windows ``os.access`` does not read folder permissions (ACLs), so a folder it calls
+    writable can still refuse the first write -- which then stops the restore with that error."""
+    if target is None:
+        return HF_TARGET_UNRESOLVED
+    # Checked exactly as given, never expanded here: the path checked must be the path written to, and
+    # ``hf_hub_cache`` already expands ``~`` the way Hugging Face does.
+    raw = os.fspath(target)
+    if not raw or not os.path.isabs(raw):
+        return HF_TARGET_UNRESOLVED  # a relative HF_HUB_CACHE would mean whatever folder a process started in
+    p = Path(raw)
+    probe = p
+    while True:
+        try:
+            st = os.stat(probe)
+        except FileNotFoundError:
+            if os.path.islink(probe):
+                return HF_TARGET_NOT_FOLDER  # a link to nothing: the write would fail, so it is said now
+            if probe.parent == probe:
+                return HF_TARGET_UNRESOLVED
+            probe = probe.parent
+            continue
+        except NotADirectoryError:
+            return HF_TARGET_NOT_FOLDER
+        except (OSError, ValueError):
+            return HF_TARGET_UNRESOLVED
+        break
+    if not stat.S_ISDIR(st.st_mode):
+        return HF_TARGET_NOT_FOLDER
+    if not os.access(probe, os.W_OK | os.X_OK):
+        return HF_TARGET_NOT_WRITABLE
+    return None
+
+
+def hf_restore_target() -> dict:
+    """The Hugging Face hub cache folder a restore would write to on THIS computer, and why it cannot
+    when it cannot (R784) -- what the import checklist shows before the person chooses."""
+    try:
+        path: Path | None = live_targets().get("hf_models")
+    except Exception:  # noqa: BLE001 - any failure to work the folder out is that, said as one reason
+        path = None
+    return {"path": None if path is None else os.fspath(path), "refused": hf_target_refusal(path)}
 
 
 def _unsafe_placement_reason(name: str, rel: str) -> str | None:
@@ -613,14 +701,25 @@ def _unsafe_placement_reason(name: str, rel: str) -> str | None:
     return None
 
 
+#: The errors that say a member's NAME cannot exist here, not that writing failed (R787 reads).
+_NAME_ERRNOS = frozenset({errno.ENAMETOOLONG, errno.ENOTDIR, errno.EEXIST, errno.EISDIR})
+
+
 def place_artifact_file_members(
     staging_dir: str | os.PathLike,
     file_members: Iterable[dict],
     *,
     targets: dict[str, Path] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    place_hf: bool = False,
 ) -> dict:
     """Put an oo-volumes-2 artifact's large public files back into their live homes.
+
+    R787: the Hugging Face models an artifact carries are placed only when ``place_hf`` is true -- the
+    person ticked them on the import checklist, which showed the folder they go to on this computer.
+    Otherwise they stay in the artifact, counted in ``hf_not_chosen``, and nothing of them is written.
+    When the cache folder here cannot take them, the restore says so (``refused_targets``) and is
+    ``incomplete``, never complete.
 
     The counterpart of :func:`restore_folder_backup` for the files that rode INSIDE the
     signed artifact (S6.2). Same additive rule -- an existing destination file is never
@@ -656,6 +755,9 @@ def place_artifact_file_members(
     refused: list[dict] = []
     missing: list[dict] = []
     stopped = False
+    hf_refused: str | None = None  # R784: looked at once, the first time a model-cache member comes up
+    hf_not_chosen = 0  # R787
+    refused_targets: dict[str, str] = {}
     for fm in file_members:
         if should_stop is not None and should_stop():
             stopped = True
@@ -674,13 +776,52 @@ def place_artifact_file_members(
             refused.append({"category": category, "rel": rel, "why": why})
             continue
         src_path = staging / name
-        dst = root / rel
+        place_rel = rel
+        if category == "hf_models":
+            if not place_hf:
+                # R787: never placed unasked. Counted, so the result can say what stayed in the artifact.
+                hf_not_chosen += 1
+                continue
+            # R784: ``hub/`` is the hub cache folder itself, and only the cache's own shape is placed
+            # (R777's rule, which this path now applies too).
+            live_rel = hf_live_rel(rel)
+            if live_rel is None:
+                refused.append({"category": category, "rel": rel, "why": "outside the model cache's layout"})
+                continue
+            place_rel = live_rel
+            if hf_refused is None:
+                hf_refused = hf_target_refusal(root) or ""
+            if hf_refused:
+                # R787: one fixed code for the whole category, said once on screen in the person's language.
+                refused_targets["hf_models"] = hf_refused
+                refused.append({"category": category, "rel": rel, "why": f"model cache folder {hf_refused}"})
+                continue
+        dst = root / place_rel
         try:
             contained = dst.resolve().is_relative_to(root.resolve())
         except (OSError, ValueError):  # pragma: no cover - defensive
             contained = False
         if not contained:
             refused.append({"category": category, "rel": rel, "why": "outside its category"})
+            continue
+        # R779's destination rule, on this path too (R784 security read): a link anywhere between the live
+        # folder and the file is never written through. A real Hugging Face cache is made of links, and a
+        # DANGLING one (a deleted blob) reads as absent to ``exists()``, so it would have been replaced.
+        # R787 reads: a link AT the file's own name is that file already present here (a cache's
+        # snapshot entries are links into its blobs), so it is kept and counted as skipped; a link in a
+        # folder on the way is still refused. A name the system cannot look at (too long, a file where
+        # a folder is needed) refuses that one member and never stops the others.
+        try:
+            parent_link = link_on_the_way(root, Path(place_rel).parent)
+            own_link = not parent_link and os.path.islink(dst)
+        except (OSError, ValueError):
+            refused.append({"category": category, "rel": rel, "why": "a name that cannot be used here"})
+            continue
+        if parent_link:
+            refused.append({"category": category, "rel": rel, "why": "a link on the way in your data folder"})
+            continue
+        if own_link:
+            skipped += 1  # never overwrite a local file, and never write through a link
             continue
         if not src_path.is_file():
             # The member is named in the index but its bytes are not in staging. The
@@ -691,7 +832,16 @@ def place_artifact_file_members(
         if dst.exists():
             skipped += 1  # never overwrite a local file
             continue
-        if not _atomic_copy(src_path, dst, should_stop=should_stop):
+        try:
+            copied = _atomic_copy(src_path, dst, should_stop=should_stop)
+        except OSError as exc:
+            # R787 reads: a NAME this system cannot hold (too long, or a file where the artifact needs a
+            # folder) refuses that one member; any other failure (a full disk) still stops, as before.
+            if exc.errno not in _NAME_ERRNOS:
+                raise
+            refused.append({"category": category, "rel": rel, "why": "a name that cannot be used here"})
+            continue
+        if not copied:
             stopped = True
             break
         placed += 1
@@ -705,6 +855,11 @@ def place_artifact_file_members(
         "missing": missing[:_PROBLEM_CAP],
         "missing_total": len(missing),
         "stopped": stopped,
+        # R787: what the person did not tick stays in the artifact; a cache folder that could not take
+        # the models makes the restore incomplete, as does any refused or missing member.
+        "hf_not_chosen": hf_not_chosen,
+        "refused_targets": refused_targets,
+        "incomplete": bool(refused or missing or stopped),
         "method": (
             "Files carried inside the artifact are placed additively: an existing local "
             "file is kept and counted in `skipped`, never replaced. Their bytes were "
@@ -965,9 +1120,15 @@ def restore_folder_backup(
     # in which case every file restores as before and is COUNTED as unverifiable, never
     # silently called sound.
     recorded = _recorded_digests(src)
+    # R780: which files the current manifest lists at all. A file it does not list is restored as
+    # before and counted per category, apart from "not content-verified".
+    listing = _manifest_listing(src)
+    unlisted: dict[str, int] = {}
 
-    restored = skipped = refused_symlinks = refused_dest_links = 0
+    restored = skipped = refused_symlinks = refused_dest_links = refused_layout = 0
     refused_categories: list[str] = []
+    # R784: categories whose LIVE folder cannot take a restore on this computer, with one fixed reason.
+    refused_targets: dict[str, str] = {}
     corrupt: list[dict] = []
     # R778: what could not be READ. Counted and named like ``corrupt``, and the restore goes on.
     unread: list[dict] = []
@@ -1022,6 +1183,13 @@ def restore_folder_backup(
             continue
         if not is_folder:
             continue
+        if cat == "hf_models":
+            # R784: the hub cache folder as it resolves HERE; one that cannot be used leaves the whole
+            # category out with its reason, and the restore is incomplete.
+            why_target = hf_target_refusal(dest_dir)
+            if why_target is not None:
+                refused_targets[cat] = why_target
+                continue
         # Containment is measured from where the folders really are: the backup folder the person
         # picked may itself be a link (their choice), and so may a live data folder they moved.
         cat_real = os.path.realpath(cat_root)
@@ -1048,6 +1216,9 @@ def restore_folder_backup(
             _unread(cat, rel_s, why)
         for p, seen in members:
             rel = p.relative_to(cat_root)
+            if cat == "hf_models" and not hf_member_allowed(rel.as_posix()):
+                refused_layout += 1  # R777: only the model cache's own layout is ever placed
+                continue
             # Belt and braces: whatever the walk handed back, no part of the way from the BACKUP folder
             # to the member -- the category folder included -- may be a link, and its real path may not
             # leave the folder.
@@ -1073,14 +1244,26 @@ def restore_folder_backup(
             if linked_way or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
-            dst = dest_dir / rel
+            # R784: in the model cache, the leading ``hub/`` is the hub cache folder itself.
+            if cat == "hf_models":
+                live_rel = hf_live_rel(rel.as_posix())
+                if live_rel is None:  # pragma: no cover - hf_member_allowed refused it above
+                    refused_layout += 1
+                    continue
+                rel_live = Path(live_rel)
+            else:
+                rel_live = rel
+            dst = dest_dir / rel_live
             # R779, the destination side: never write THROUGH a link. A link anywhere between the
             # live folder and the file (a sub-folder, or the file's own name) is refused, and the
             # resolved destination must stay inside the live folder.
-            if link_on_the_way(dest_dir, rel) or not stays_inside(dst, dest_real):
+            # R787 reads: a link AT the file's own name is that file already present (a Hugging Face
+            # cache's snapshot entries are links into its blobs): kept and counted as skipped, never
+            # written through. A link in a folder on the way is still refused.
+            if link_on_the_way(dest_dir, rel_live.parent) or not stays_inside(dst.parent, dest_real):
                 refused_dest_links += 1
                 continue
-            if dst.exists():
+            if os.path.islink(dst) or dst.exists():
                 skipped += 1  # never overwrite a local file
                 continue
             want = recorded.get((cat, rel.as_posix(), seen.st_size))
@@ -1109,7 +1292,9 @@ def restore_folder_backup(
                     corrupt.append({"category": cat, "rel": _shown(rel.as_posix())})
                 continue
             if want is None:
-                unverifiable += 1
+                unverifiable += 1  # an unlisted file has no recorded checksum either, so it counts here too
+            if listing is None or rel.as_posix() not in listing.get(cat, ()):
+                unlisted[cat] = unlisted.get(cat, 0) + 1
             restored += 1
             if progress_cb is not None:
                 progress_cb({"restored": restored, "skipped": skipped})
@@ -1123,11 +1308,18 @@ def restore_folder_backup(
         # R779: category folders that are links. NOTHING in them was restored, so the restore is
         # incomplete -- the person restores them by copying the real folder into the backup.
         "refused_categories": refused_categories,
+        # R784: categories whose live folder cannot take a restore here, ``{category: reason code}``
+        # (HF_TARGET_*). Nothing of them was restored.
+        "refused_targets": refused_targets,
         # R779: files not placed because a link sat on the way to their place in the live folder.
         "refused_dest_links": refused_dest_links,
         # A member link was never written by a backup, but its place in the restore is still empty:
         # any link refusal means the restore did not bring back everything the folder showed.
-        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks or unread_total or unread_folders),
+        "incomplete": bool(refused_categories or refused_targets or refused_dest_links or refused_symlinks or unread_total or unread_folders
+                           or refused_layout),
+        # R777: files in the model-cache folder outside the shape the backup writes there (hidden names,
+        # anything outside hub/models--*/refs|snapshots). Never placed in the Hugging Face home.
+        "refused_layout": refused_layout,
         # R778: files (or folders, whose files are unknown) that could not be READ, each with one fixed
         # reason code. Not restored; the rest of the restore went on. Names stay on this machine: the
         # run journal and the diagnostics carry the count only.
@@ -1144,6 +1336,11 @@ def restore_folder_backup(
         # backup, or a manifest that could not be read). A gap, published as a gap:
         # these were NOT content-verified and must not be counted as if they were.
         "restored_unverified": unverifiable,
+        # R780: restored, but not listed in this backup's CURRENT manifest, per category. They may come
+        # from an earlier or interrupted backup pass (a stopped pass keeps the previous manifest, and a
+        # file removed from the live folder since an earlier pass stays on the drive); counted apart
+        # from "not content-verified", never refused, since the manifest proves no origin.
+        "restored_unlisted": unlisted,
         "stopped": stopped,
     }
 
@@ -1235,10 +1432,16 @@ def verify_folder_backup(
         "manifest_found": False,
         "ok": False,
     }
-    try:
-        manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    manifest = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
+    if manifest is None:
+        try:
+            present = os.path.lexists(root / MANIFEST_NAME)
+        except (OSError, ValueError):
+            present = False
         out["reason"] = (
+            "a manifest is at this path but was refused: it is not a regular file, is too large, or is "
+            "not readable JSON -- so there is nothing trustworthy to verify against."
+            if present else
             "no finalized manifest at this path — an interrupted/incomplete folder backup "
             "never writes one, so there is nothing to verify against."
         )
@@ -1541,7 +1744,11 @@ class FolderBackupManager:
             if self._alive():
                 storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
-            cats = [c for c in categories if c in _CATEGORIES] or list(_CATEGORIES)
+            cats = [c for c in categories if c in _CATEGORIES] or (
+                # R787 reads: a restore that names no category never places Hugging Face models; only
+                # a request that names them (the person's own tick) does.
+                [c for c in _CATEGORIES if c != "hf_models"] if mode == "restore" else list(_CATEGORIES)
+            )
             items: list[BackupItem] = []
             if mode == "backup":
                 try:
@@ -1682,9 +1889,12 @@ class FolderBackupManager:
                     corrupt_refused=res.get("corrupt_refused"),
                     restored_unverified=res.get("restored_unverified"),
                     refused_categories=len(res.get("refused_categories") or []),
+                    refused_targets=len(res.get("refused_targets") or {}),  # R784: a count, never the path
                     refused_dest_links=res.get("refused_dest_links"),
                     unread=res.get("unread_total"),
                     unread_folders=res.get("unread_folders"),
+                    refused_layout=res.get("refused_layout"),
+                    restored_unlisted=sum((res.get("restored_unlisted") or {}).values()),
                 )
                 storage_events.run_ended(
                     note,
