@@ -2699,6 +2699,30 @@
       return ts.kind ? `<code dir="ltr">${esc(ts.kind)}</code>` : "—";
     }
 
+    // Row 327: the Action cell, in the reader's language. The set is closed (src/custody/log.py CustodyAction; the API
+    // refuses any other value), so each action is worded; one this build does not know is shown as sent, as code.
+    const _CUSTODY_ACTION_WORDS = {
+      ingest: "Item ingested", access: "Item accessed", export: "Item exported", verify: "Item verified",
+      annotate: "Item annotated", redact: "Item redacted", delete: "Item deleted", anchor: "Item anchored",
+      key_rotation: "Signing key rotated",
+    };
+    function custodyActionHtml(action, t) {
+      return Object.prototype.hasOwnProperty.call(_CUSTODY_ACTION_WORDS, action)
+        ? esc(t(_CUSTODY_ACTION_WORDS[action])) : `<code dir="ltr">${esc(action)}</code>`;
+    }
+    // The Signature cell (its header said "Sig", which every locale read as "significance") names the algorithms the signature actually carries (src/custody/signing.py sign()): "hybrid" is
+    // Ed25519 plus ML-DSA, with the ML-DSA variant the record names. Algorithm names are not translated.
+    function custodySigHtml(sig) {
+      const alg = sig && sig.algorithm;
+      if (alg === "ed25519") return "Ed25519";
+      if (alg === "hybrid") {
+        const v = String((sig.ml_dsa && sig.ml_dsa.variant) || "");
+        const m = /^ml_dsa_(\d+)$/.exec(v);  // signing.py _MLDSA_VARIANT, e.g. ml_dsa_65 -> ML-DSA-65
+        return esc("Ed25519 + " + (m ? "ML-DSA-" + m[1] : (v || "ML-DSA")));
+      }
+      return alg ? `<code dir="ltr">${esc(alg)}</code>` : "?";
+    }
+
     async function viewChain() {
       const id = custItem(); if (!id) return;
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2707,11 +2731,11 @@
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id));
         const t = $("cust-entries");
-        t.innerHTML = "<tr><th>#</th><th>Action</th><th>Actor</th><th>Time</th><th>Sig</th></tr>" +
+        t.innerHTML = "<tr><th>#</th><th>Action</th><th>Actor</th><th>Time</th><th>Signature</th></tr>" +
           d.entries.map(e =>
-            `<tr><td>${e.seq}</td><td>${esc(e.action)}</td><td>${esc(e.actor||"—")}</td>
+            `<tr><td>${esc(String(e.seq))}</td><td>${custodyActionHtml(e.action, tr)}</td><td translate="no">${esc(e.actor||"—")}</td>
              <td class="muted" style="font-size:12px">${custodyEntryTimeHtml(e.timestamp, tr)}</td>
-             <td><span class="pill">${esc(e.signature&&e.signature.algorithm||"?")}</span></td></tr>`).join("");
+             <td><span class="pill" translate="no">${custodySigHtml(e.signature)}</span></td></tr>`).join("");
         $("cust-result").textContent = trf("Custody entries: {n}", { n: d.entry_count });
       } catch (e) { $("cust-entries").innerHTML = ""; toast(_failMsg("View chain: {error}", e), "err"); }
     }

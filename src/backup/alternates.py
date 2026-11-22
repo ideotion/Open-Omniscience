@@ -191,6 +191,11 @@ def list_alternates(
         text("SELECT batch_id, status, COUNT(*) FROM metadata_alternates GROUP BY batch_id, status")
     ):
         counts.setdefault(int(bid), {})[st] = int(n)
+    # R800: the stored signer key ("origin" in the stored record, kept as it is) is shown as whose
+    # key signed, compared now with this installation's own -- never as a proven origin.
+    from src.backup.artifact import signer_relation, this_installation_key
+
+    local_key = this_installation_key() if counts else None  # one key read, and none with nothing to show
     batches = []
     for b in session.query(MergeBatch).filter(MergeBatch.id.in_(list(counts))).order_by(
         MergeBatch.id.desc()
@@ -199,6 +204,7 @@ def list_alternates(
             "id": b.id,
             "imported_at": b.imported_at.isoformat() if b.imported_at else None,
             "origin": b.origin_fingerprint,
+            "signed_by": signer_relation(b.origin_fingerprint, local_key),
             "app_version": b.app_version,
             "pending": counts[b.id].get("pending", 0),
             "kept": counts[b.id].get("kept", 0),
@@ -208,13 +214,25 @@ def list_alternates(
         "status": status,
         "total": total,
         "batches": batches,
-        "items": [_item(session, r) for r in rows],
+        "items": [_with_signer(_item(session, r), local_key) for r in rows],
         "method": (
             "each item is a value a restore brought that differs from the one this machine "
             "holds; the app shows this machine's value unless the operator chose the restore's, and "
             "nothing here changes what is shown by itself"
         ),
     }
+
+
+def _with_signer(item: dict, local_key: str | None) -> dict:
+    """Each ARRIVED provenance tag gains ``signed_by`` (R800), computed for this display only; the
+    stored tag is not changed."""
+    from src.backup.artifact import signer_relation
+
+    for side in ("imported_provenance", "local_provenance"):
+        tag = item.get(side)
+        if isinstance(tag, dict) and tag.get("arrived"):
+            item[side] = {**tag, "signed_by": signer_relation(tag.get("origin"), local_key)}
+    return item
 
 
 def _get(session: Any, alt_id: int) -> Any:

@@ -99,7 +99,7 @@ def test_a_stream_volume_swapped_for_a_link_after_the_checks_is_refused(tmp_path
     with pytest.raises(EncryptionError) as exc:
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
     assert "wrong passphrase" not in str(exc.value)
-    assert "nothing was read" in str(exc.value)
+    assert "this file was not read" in str(exc.value)
 
 
 def test_a_stream_volume_replaced_by_another_volume_after_the_checks_is_refused(tmp_path, monkeypatch):

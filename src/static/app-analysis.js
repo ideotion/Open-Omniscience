@@ -761,7 +761,7 @@
         // t() text here it froze in the fetch language, so after a live switch the legend,
         // the hover and the data table still said "mentions" under a Chinese caption.
         if (main && main.resolved && (main.points || []).length)
-          series.push({ label: term, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
+          series.push({ label: term, labelIsData: true, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
         // Related keywords are corpora too: overlay each one's own coverage series.
         const rel = ((assoc && assoc.nodes) || []).map(n => n.label || n.id)
           .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
@@ -770,7 +770,7 @@
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
-            series.push({ label: rel[i], unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
+            series.push({ label: rel[i], labelIsData: true, unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
         });
         _anTrend.counts = series;
         // Q502/Q417: the per-language halves the aggregate already publishes. Captured
@@ -2015,7 +2015,7 @@
           // No expansion and no refusal, but a pin was sent: the term touches no ring at
           // all. Nothing else in this loop would render, so the rejected choice would
           // vanish entirely.
-          parts.push(`<div>${esc(term.term)}${missNote(term)}</div>`);
+          parts.push(`<div><span translate="no">${esc(term.term)}</span>${missNote(term)}</div>`);
         }
       }
       if (!parts.length && !capOff) return "";
@@ -4609,7 +4609,7 @@
         + `</tbody></table>`;
       if ((d.keywords || []).length) {
         html += `<div class="vsect">${esc(t("Keywords from the description"))}</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 10px">`
-          + d.keywords.map((k) => `<span class="pill" dir="auto">${esc(k.term)} · ${k.count}</span>`).join("") + `</div>`;
+          + d.keywords.map((k) => `<span class="pill" dir="auto" translate="no">${esc(k.term)} · ${k.count}</span>`).join("") + `</div>`;
       }
       // Q819 step 2: the Wikipedia pages carrying the same QID -- the same Place.
       const w = d.wiki || {};

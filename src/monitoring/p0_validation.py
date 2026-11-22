@@ -118,10 +118,13 @@ def _acceptance_bars() -> dict[str, str]:
             "(compare the delta against corpus_bytes across runs, never a fixed MB)."
         ),
         "p0_1_verify": (
-            "The backup VERIFIES: the Ed25519-signed volume manifest plus every "
-            "data + parity volume checksum, and (with the passphrase) every volume "
-            "stream-decrypts and its member checksums cross-check the signed "
-            "envelope. Acceptance: verify reports ok with no bad volumes."
+            "The backup VERIFIES: the volume manifest's Ed25519 signature matches its "
+            "content, every data + parity volume checksum matches, and (with the "
+            "passphrase) every volume stream-decrypts and its member checksums "
+            "cross-check the signed envelope. The signature shows the content is "
+            "unchanged since it was signed and names the key that signed it; the key "
+            "travels in the same file, so it never shows who made the backup. "
+            "Acceptance: verify reports ok with no bad volumes."
         ),
         "p0_2_restore": (
             "Restore streams member-by-member (bounded RAM), disk-preflights "
@@ -461,6 +464,9 @@ def _check_backup(
         "duration_s": round(time.monotonic() - vt0, 3),
         "ok": None if vrep is None else vrep.get("ok"),
         "signature": None if vrep is None else vrep.get("signature"),
+        # R800: whose key signed, compared with this installation's own key
+        "signed_by": None if vrep is None else vrep.get("signed_by"),
+        "signer_key": None if vrep is None else vrep.get("signer_key"),
         "decrypted": None if vrep is None else vrep.get("decrypted"),
         "bad_volumes": None if vrep is None else vrep.get("bad_volumes"),
         "missing_volumes": None if vrep is None else vrep.get("missing_volumes"),
@@ -475,7 +481,9 @@ def _check_backup(
     elif vrep and vrep.get("ok"):
         verify_check = _verdict(
             "pass",
-            "the volume manifest signature and every volume checksum verified; the "
+            "the volume manifest matches its signature (content unchanged since it was "
+            + "signed; " + _signed_by_words(vrep.get("signed_by"), vrep.get("signer_key")) + ") and "
+            + "every volume checksum matches; the "
             + ("passphrase decrypted every volume and " if vrep.get("decrypted") else "")
             + "member checksums cross-checked the signed envelope.",
             verify_measurements,
@@ -548,6 +556,9 @@ def _check_restore(
         "peak_rss_delta_mb": rss.delta_mb,
         "staged_bytes": staged_bytes,
         "signature_state": report.get("signature_state"),
+        # R800: "verified" means the content is unchanged since it was signed; whose key signed it
+        # (this installation's or another's) is the separate fact, never an origin.
+        "signed_by": report.get("signed_by"),
         "artifact_kind": report.get("artifact_kind"),
         "encrypted": report.get("encrypted"),
         "plan": report.get("plan"),
@@ -888,6 +899,16 @@ def _check_collector() -> dict:
 # --------------------------------------------------------------------------- #
 #  Verdict + report assembly
 # --------------------------------------------------------------------------- #
+def _signed_by_words(signed_by: object, signer_key: object) -> str:
+    """R800: the signer as the app can state it: this installation's key or another's, never an origin."""
+    key = str(signer_key or "")[:16]
+    if signed_by == "this-installation":
+        return f"signed by this installation, key {key}"
+    if signed_by == "another-installation":
+        return f"signed by another installation, key {key}"
+    return f"signed by key {key}" if key else "signer key not recorded"
+
+
 def _verdict(verdict: str, reason: str, measurements: dict, bar: str) -> dict:
     """One check block. ``verdict`` in {pass, fail, not-measurable-here}."""
     v = "not-measurable-here" if verdict == "not-measurable" else verdict
@@ -1113,7 +1134,7 @@ def render_p0_validation_text(report: dict) -> str:
     lines.append("")
     order = [
         ("p0_1_backup", "P0.1 backup (streaming, bounded RAM)"),
-        ("p0_1_verify", "P0.1 verify (signed manifest + volume checksums)"),
+        ("p0_1_verify", "P0.1 verify (manifest matches its signature + volume checksums)"),
         ("p0_2_restore", "P0.2 restore (staged probe + dry-run merge preview)"),
         ("p0_4_unlock", "P0.4 unlock (< 2 s bar)"),
         ("p0_3_collector", "P0.3 collector (flat RSS across passes)"),

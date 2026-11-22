@@ -379,7 +379,7 @@
              const members = (p.members && p.members.length > 1) ? p.members.join(", ") : "";
              const titleAttr = members ? ` title="${esc(t("Entity family:"))} ${esc(members)}"` : "";
              return `<tr class="ckw-row" data-term="${esc(p.normalized || p.term)}" style="cursor:pointer;border-bottom:1px solid var(--line)">
-               <td style="padding:4px 8px"><span${titleAttr}>${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(kwKindLabel(p.kind))}</span>` : ""}</td>
+               <td style="padding:4px 8px"><span${titleAttr} translate="no">${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(kwKindLabel(p.kind))}</span>` : ""}</td>
                <td style="text-align:right;padding:4px 8px">${fmt(p.cooccur)}</td>
                <td style="text-align:right;padding:4px 8px">${fmt(p.n_b)}</td>
                <td style="text-align:right;padding:4px 8px">${(p.pmi != null ? p.pmi.toFixed(2) : "—")}</td>
@@ -798,7 +798,7 @@
           api("/api/insights/associations?term=" + encodeURIComponent(term)),
           api("/api/insights/context?term=" + encodeURIComponent(term)),
         ]);
-        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
+        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “<span translate="no">${esc(term)}</span>”. Index the corpus, or try another term.</div>`; return; }
         const r = tr.resolved;
         const t8 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const tf8 = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
@@ -816,7 +816,7 @@
         // client-side (invariant #16 — never thinned; ooChart unchanged).
         const allPts = tr.points || [];
         // The unit is chrome, so it is keyed (M-10: the legend read "n=20 · mentions" in zh).
-        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: t8("mentions"),
+        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, labelIsData: true, unit: t8("mentions"),
           points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
           {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
            onSelectRange: _brushToCorpus(r.term, "week")});
@@ -1467,7 +1467,7 @@
       if (!terms.length) return `<div class="muted">${esc(t((d && d.method) || "No resolvable keyword given."))}</div>`;
       const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
       const perTerm = terms.map((x) =>
-        `<span class="chip" title="${esc(t("exact article count for this term, within the scope"))}">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+        `<span class="chip" title="${esc(t("exact article count for this term, within the scope"))}"><span translate="no">${esc(x.term)}</span> <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
       const bounded = d.result_bounded
         ? `<div class="card-caveat" title="${esc(t("the set scan reached its cap"))}">${esc(t("Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one."))}</div>` : "";
       const sc = d.scope || {};
@@ -1517,7 +1517,7 @@
     function conjContrastHtml(c, t, tf) {
       const side = (s2) => `${_conjExpr(s2)} (n=${s2 ? s2.n_combined : 0})`;
       const rows = (c.contrasts || []).slice(0, 15).map((r) =>
-        `<tr><td dir="auto">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${ooLtrIsolate((r.delta > 0 ? "+" : "") + r.delta)}</td></tr>`).join("");
+        `<tr><td dir="auto" translate="no">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${ooLtrIsolate((r.delta > 0 ? "+" : "") + r.delta)}</td></tr>`).join("");
       if (!rows) return `<div class="muted">${esc(t("No keyword to compare: one side is empty or its articles carry no other keyword."))}</div>`;
       return `<div class="muted small">A = ${esc(side(c.a))} · B = ${esc(side(c.b))}</div>`
         + `<table class="data" style="margin-top:4px"><thead><tr><th>${esc(t("Keyword"))}</th><th>A</th><th>B</th>`
@@ -1705,7 +1705,7 @@
             + `<div>${esc(m.snippet || "")}</div></div>`).join("")
         : `<div class="muted">${esc(t("No context snippets."))}</div>`;
       return `<h3 style="margin:16px 0 6px;font-size:13px">${esc(t("In context"))}`
-        + `${ctx.term ? ` <span class="muted">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
+        + `${ctx.term ? ` <span class="muted" translate="no">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
     }
     async function loadAnContext(p) {
       if (!_anKwData) return;
@@ -1746,7 +1746,7 @@
       return terms.map(t => `<div class="kw-row" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
           data-on-click='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" data-on-click='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
+        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" translate="no" data-on-click='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
         <span class="pill">${esc(kwKindLabel(t.kind))}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
@@ -1968,7 +1968,7 @@
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       const title = x.term + " — " + (LABELS[w.label] || w.label);
       const points = x.series.map(p => ({t: p.date, v: p.count}));
-      chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat ? t(d.caveat) : "");
+      chartEnlarge(title, [{label: x.term, labelIsData: true, unit: t("mentions"), points}], d.caveat ? t(d.caveat) : "", {titleIsData: true});
     }
 
     // -- ooViz honest lenses over the trending-windows payload (batch F item 2) ---- //
@@ -2004,7 +2004,7 @@
       return {
         stages: order.map(lab => LAB[lab] || lab),
         series: terms.map(tm => ({
-          label: tm.term,
+          label: tm.term, labelIsData: true,
           values: order.map(lab => lab in tm.rates ? +tm.rates[lab].toFixed(2) : null),
         })),
       };
@@ -2045,7 +2045,7 @@
         }
         const dots = finite.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="${col}" title="${esc(se.label)}: ${esc(fmtNum(p.value))}"></circle>`).join("");
         const lp = finite[finite.length - 1];
-        const lbl = `<text x="${(lp.x + 5).toFixed(1)}" y="${(lp.y + 3).toFixed(1)}" font-size="9" fill="var(--fg)" style="cursor:pointer" data-on-click='openAnalysisFor(${esc(JSON.stringify(se.label))});return false'>${esc(se.label)}</text>`;
+        const lbl = `<text x="${(lp.x + 5).toFixed(1)}" y="${(lp.y + 3).toFixed(1)}" font-size="9" fill="var(--fg)" style="cursor:pointer" translate="no" data-on-click='openAnalysisFor(${esc(JSON.stringify(se.label))});return false'>${esc(se.label)}</text>`;
         return segs + dots + lbl;
       }).join("");
       const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--ok)">▲</span> ${esc(t("rising"))} · <span style="color:var(--err)">▼</span> ${esc(t("falling"))}`
@@ -2158,7 +2158,7 @@
         const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + nReal + (nReal < n ? " (" + (n - nReal) + " gaps)" : ""))}" style="display:block;direction:ltr">${gr}${body}</svg>`;
         const oc = p.term != null ? `data-on-click='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
         const head = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">`
-          + `<a href="#" ${oc} title="${esc(t("Open this keyword's own analysis window"))}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.label || "")}</a>`
+          + `<a href="#" ${oc} title="${esc(t("Open this keyword's own analysis window"))}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span translate="no">${esc(p.label || "")}</span></a>`
           + `<span class="muted" style="font-size:10px"${nReal < n ? ` title="${esc(t("Periods with no data are drawn as gaps, never as zero."))}"` : ""}>n=${nReal}${nReal < n ? " · " + (n - nReal) + "\u00a0◦" : ""}</span></div>`;
         return `<div style="border:1px solid var(--border);border-radius:6px;padding:5px">${head}${svg}</div>`;
       };
@@ -2199,7 +2199,7 @@
       const terms = ((wk && wk.terms) || []).filter(x => Array.isArray(x.series));
       if (!terms.length) { box.innerHTML = `<div class="muted">${esc(t("No rising keywords with a series yet."))}</div>`; return; }
       const LAB = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
-      const panels = terms.map(x => ({label: x.term, term: x.term, points: x.series.map(p => ({date: p.date, count: p.count}))}));
+      const panels = terms.map(x => ({label: x.term, labelIsData: true, term: x.term, points: x.series.map(p => ({date: p.date, count: p.count}))}));
       box.innerHTML = `<h2 style="font-size:13px">${esc(t("Small multiples"))} — ${esc(LAB[wk.label] || wk.label)}</h2>` + smallMultiplesSvg(panels, {});
     }
     // Weather signals: a toggleable layer, OFF by default (row 122, register ruling G7). The state is per
@@ -2317,7 +2317,12 @@
     function chartEnlarge(title, seriesList, caveat, opts) {
       opts = opts || {};
       const dlg = $("chart-enlarge"); if (!dlg) return;
-      const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = title || "";
+      const ttl = $("chart-enlarge-title");
+      if (ttl) {
+        ttl.textContent = title || "";
+        // Row 327: a keyword title is data -- the page translator must not rewrite it.
+        if (opts.titleIsData) ttl.setAttribute("translate", "no"); else ttl.removeAttribute("translate");
+      }
       const note = $("chart-enlarge-note");
       if (note) { note.textContent = caveat || ""; note.style.display = caveat ? "" : "none"; }
       const body = $("chart-enlarge-body"); if (!body) return;

@@ -103,7 +103,7 @@ def test_an_already_merged_backup_under_an_old_passphrase_never_stops_the_start(
     merged = _manifest(tmp_path / "merged")
     fresh = _manifest(tmp_path / "fresh")
     tried: list[str] = []
-    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", lambda p, k: tried.append(Path(p).name) or Path(p) == merged)
+    monkeypatch.setattr(SB, "backup_passphrase_check", lambda p, k: tried.append(Path(p).name) or (("wrong", None) if Path(p) == merged else ("none", None)))
     monkeypatch.setattr(MG, "artifact_source_digest", lambda p: "d" * 64 if Path(p) == merged else None)
     monkeypatch.setattr(MG, "find_completed_import", lambda d: {"batch_id": 7, "imported_at": "x"} if d else None)
     monkeypatch.setattr(LM, "lanes_pending", lambda d: False)
@@ -127,7 +127,7 @@ def test_a_backup_the_run_would_open_again_still_has_its_key_tried(tmp_path, mon
     from src.backup.import_queue import ImportQueueManager
 
     merged = _manifest(tmp_path / "merged")
-    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", lambda p, k: True)
+    monkeypatch.setattr(SB, "backup_passphrase_check", lambda p, k: ("wrong", None))
     monkeypatch.setattr(MG, "find_completed_import", lambda d: {"batch_id": 7, "imported_at": "x"} if d else None)
     if case == "lanes-owed":
         monkeypatch.setattr(MG, "artifact_source_digest", lambda p: "d" * 64)

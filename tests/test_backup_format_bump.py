@@ -223,6 +223,6 @@ def test_the_signature_gate_covers_EVERY_signed_format(tmp_path):
         )
         with pytest.raises(MergeError) as exc:
             prepare_staged_corpus(staged)
-        assert "unsigned" in str(exc.value), (
+        assert "is not signed" in str(exc.value), (  # R800 words the gate by what it checked
             f"{schema} was merged without a verified signature -- the gate failed OPEN"
         )

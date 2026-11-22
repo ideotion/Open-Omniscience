@@ -3535,7 +3535,7 @@
         <div class="row" style="margin-top:6px">
           <input id="p0-dest" type="text" style="min-width:280px" placeholder="backup destination dir (a separate empty folder / drive)">
           <input id="p0-pass" type="password" style="width:200px" placeholder="backup passphrase (never stored)" autocomplete="new-password">
-          <button id="p0-run-btn" data-on-click="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
+          <button id="p0-run-btn" data-on-click="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (manifest matches its signature + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
           <button class="secondary" data-on-click="cancelP0Validation()" title="Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.">Cancel</button>
           <span id="p0-status" class="small" style="margin-left:6px"></span>
         </div>

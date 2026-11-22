@@ -393,6 +393,9 @@ def merge_batches(limit: int = 20) -> dict:
         rows = (
             s.query(MergeBatch).order_by(MergeBatch.id.desc()).limit(max(1, min(limit, 100))).all()
         )
+        from src.backup.artifact import signer_relation, this_installation_key
+
+        local_key = this_installation_key()
         return {
             "batches": [
                 {
@@ -400,6 +403,8 @@ def merge_batches(limit: int = 20) -> dict:
                     "imported_at": b.imported_at.isoformat() if b.imported_at else None,
                     "artifact_kind": b.artifact_kind,
                     "origin_fingerprint": b.origin_fingerprint,
+                    # R800: the stored key, compared now with this installation's own
+                    "signed_by": signer_relation(b.origin_fingerprint, local_key),
                     "app_version": b.app_version,
                     "alembic_rev": b.alembic_rev,
                     "status": b.status,
@@ -594,7 +599,8 @@ def folder_backup_verify(body: FolderRestoreBody) -> dict:
     files are counted in ``size_only`` rather than silently called sound). The
     content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are checked against the
     hash in their own filename as well. The manifest itself is signed, and its state
-    (``signed`` / ``unsigned`` / ``bad-signature``) rides the verdict. Runs as the (single) folder job, so it
+    (``signed`` / ``unsigned`` / ``bad-signature``) rides the verdict: ``signed`` means the manifest is
+    unchanged since the key it carries signed it, never where the backup came from (R800). Runs as the (single) folder job, so it
     surfaces in /api/jobs + /folder/status and is cancellable; the verdict rides
     ``status()['verify']`` (schema ``oo-folder-verify-1``: ok, files_checked, files_checksummed,
     summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused,link_not_checked,unreadable},
