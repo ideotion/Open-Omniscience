@@ -17,7 +17,7 @@ from pathlib import Path
 _TESTS = Path(__file__).resolve().parent
 #: Engine-building calls in tests/ outside the helper, measured on 2026-11-21. Counted per CALL, never per file: a file
 #: that attaches the app's pragmas to one engine can still build others bare, and a per-file exemption would hide them.
-_CEILING = 41  # in 23 files, measured after row 288 batch 8 on main 7e50ca16e
+_CEILING = 38  # in 21 files, measured after row 288 tail
 #: The SQLAlchemy calls that build an engine.
 _BUILDERS = frozenset({"create_engine", "create_async_engine", "engine_from_config"})
 
