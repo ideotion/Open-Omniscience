@@ -183,7 +183,7 @@ def build_search_index(alpha3: str) -> dict:
 
 def index_state() -> list[dict]:
     """Every complete country, with whether its index matches its ingest. ``[]`` with no lane."""
-    from src.osm.lane_models import OsmCountry, OsmSearchIndex, country_basis
+    from src.osm.lane_models import OsmCountry, OsmSearchIndex, country_basis, country_data_date
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -197,6 +197,7 @@ def index_state() -> list[dict]:
             out.append({
                 "alpha3": c.alpha3, "name": c.name,
                 "vintage": c.extract_vintage.isoformat() if c.extract_vintage else None,
+                "data_date": country_data_date(c),
                 "indexed": bool(r and r.basis_ingest == basis),
                 "names": r.names if r else None, "addresses": r.addresses if r else None,
                 "addresses_no_point": r.addresses_no_point if r else None,
@@ -307,7 +308,7 @@ def parse_ref(ref: str) -> tuple[str, int]:
 
 def object_card(ref: str) -> dict | None:
     """One stored object, every tag rendered as metadata. None when the lane does not hold it."""
-    from src.osm.lane_models import OsmCountry, OsmObject
+    from src.osm.lane_models import OsmCountry, OsmObject, country_data_date
     from src.versioned import store
 
     otype, oid = parse_ref(ref)
@@ -334,6 +335,7 @@ def object_card(ref: str) -> dict | None:
             "country": row["country_alpha3"],
             "country_name": country.name if country else None,
             "vintage": country.extract_vintage.isoformat() if country and country.extract_vintage else None,
+            "data_date": country_data_date(country) if country else None,
             "caveat": OBJECT_CAVEAT,
         }
     # A notable object is also a Place (Q817): the card says where that card is.
