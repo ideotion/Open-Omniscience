@@ -95,7 +95,8 @@ def test_a_cut_with_no_file_applied_has_a_snapshot_and_says_the_window_is_empty(
     assert got["changes"] == {"status": "no-daily-files"}, "no figure at all for the window, not zeros"
     assert got["prior"]["available"] is False and got["prior"]["reason"] == "no-history-cut"
     assert got["snapshot"]["n"] == 5, "the snapshot does not need a change file"
-    assert got["vintage"] == {"extract": "2025-01-10T00:00:00+00:00", "last_diff": None, "reference": "2025-01-10T00:00:00+00:00"}
+    assert got["vintage"] == {"extract": "2025-01-10T00:00:00+00:00", "last_diff": None, "diff_sequence": None, "updates": "none",
+                              "reference": "2025-01-10T00:00:00+00:00"}
 
 
 def test_a_lane_cut_before_the_tag_table_keeps_its_snapshot_and_says_why_the_window_is_missing(cut):

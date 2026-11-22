@@ -138,7 +138,7 @@ def tag_completeness(alpha3: str) -> dict:
     """The analytic for one ingested country. Reads ``osm.db``; opens nothing else."""
     from sqlalchemy import func, select
 
-    from src.osm.lane_models import OsmCountry, osm_objects_table
+    from src.osm.lane_models import OsmCountry, country_data_date, osm_objects_table
     from src.versioned import store
 
     base: dict[str, Any] = {"country": alpha3, "method": METHOD, "caveat": CAVEAT, "keys": [], "n": None}
@@ -152,6 +152,7 @@ def tag_completeness(alpha3: str) -> dict:
         facts = {
             "name": row.name,
             "vintage": row.extract_vintage.isoformat() if row.extract_vintage else None,
+            "data_date": country_data_date(row),
             "extract": row.extract_name,
         }
         if row.status != "complete":
@@ -382,7 +383,7 @@ def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
 
 def countries() -> list[dict]:
     """Every country the lane holds, with its recorded measurements. ``[]`` when the lane is absent."""
-    from src.osm.lane_models import OsmCountry
+    from src.osm.lane_models import OsmCountry, country_data_date
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -399,6 +400,7 @@ def countries() -> list[dict]:
                     "extract": r.extract_name,
                     "extract_bytes": r.extract_bytes,
                     "vintage": r.extract_vintage.isoformat() if r.extract_vintage else None,
+                    "data_date": country_data_date(r),
                     "reader": r.reader,
                     "started_at": r.started_at.isoformat() if r.started_at else None,
                     "finished_at": r.finished_at.isoformat() if r.finished_at else None,

@@ -4487,6 +4487,18 @@
       openPlaceCard(_placeCardLast.id);
     }
 
+    // The OSM data's date on the object and place cards (row 286, R775): the extract's date alone while no daily
+    // change file was applied, else the extract's date named as the extract's, then the last applied file's own date.
+    // Returns HTML (escaped inside); ooOsmUpdatesHtml is in app-core.js, the one wording every OSM surface uses.
+    function _osmCardDate(vintage, dd) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const head = !vintage ? t("The extract states no date")
+        : ooOsmUpdated(dd) ? tf("OpenStreetMap extract of {date}", {date: ooIsoDate(vintage)})
+        : tf("OpenStreetMap data of {date}", {date: ooIsoDate(vintage)});
+      return esc(head) + ooOsmUpdatesHtml(dd);
+    }
+
     // S05-04 S5 (Q817): a place of an OSM country that is NOT a notable Place stays a row of
     // the lane, and this card shows that row -- every tag as metadata, the data's date, the
     // caveat visible. A notable object says where its Place card is. Same dialog, no network.
@@ -4533,7 +4545,7 @@
       if (d.place_id) {
         html += `<p><button type="button" class="tiny secondary" data-on-click="openPlaceCard(${esc(JSON.stringify(d.place_id))})">${esc(t("Open the place card"))}</button></p>`;
       }
-      html += `<div class="muted small">${esc(d.vintage ? tf("OpenStreetMap data of {date}", {date: ooIsoDate(d.vintage)}) : t("The extract states no date"))}</div>`;
+      html += `<div class="muted small">${_osmCardDate(d.vintage, d.data_date)}</div>`;
       html += `<p class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</p>`;
       $("pc-body").innerHTML = html;
     }
@@ -4599,10 +4611,10 @@
       // Where the Place came from: a mention the gazetteer resolved, or a notable object of an
       // OSM country read into this machine (Q817) -- each states its own date.
       const origin = d.origin === "osm-lane"
-        ? (d.osm && d.osm.vintage ? tf("OpenStreetMap data of {date}", {date: ooIsoDate(d.osm.vintage)}) : t("The extract states no date"))
-        : (d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"));
+        ? _osmCardDate(d.osm && d.osm.vintage, d.osm && d.osm.data_date)   // HTML, escaped inside
+        : esc(d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"));
       html += `<div class="muted small">${esc(tf("Mentioned in {n} articles", {n: d.articles || 0}))}`
-        + ` · ${esc(origin)}`
+        + ` · ${origin}`
         + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: ooIsoDate(d.item.as_of)}))}` : "")
         + `</div>`;
       if (d.articles || d.qid) {

@@ -551,7 +551,7 @@ def _osm_facts(place) -> dict | None:
         return {"held": None}
     if card is None:
         return {"held": False}
-    return {"held": True, "tag": card["tag"], "vintage": card["vintage"], "country_name": card["country_name"]}
+    return {"held": True, "tag": card["tag"], "vintage": card["vintage"], "data_date": card.get("data_date"), "country_name": card["country_name"]}
 
 
 def search_places(session, q: str, limit: int = 8) -> dict:
