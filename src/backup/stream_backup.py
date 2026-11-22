@@ -110,6 +110,7 @@ from src.backup.volumes import (
     load_manifest,
     member_in_use,
     verify_volume_set,
+    volume_expectation,
 )
 from src.paths import data_dir
 from src.safety import process_owner as _process_owner
@@ -2199,7 +2200,7 @@ def verify_stream_backup(
                     for vname in mm.get("volumes") or []:
                         # Never through a link, and only bytes whose checksum is the manifest's (row 329).
                         decrypt_stream(
-                            src / vname, _sink, passphrase, follow_links=False, expect_sha256=_volume_sha256(m, vname)
+                            src / vname, _sink, passphrase, follow_links=False, **_volume_checked(m, vname)
                         )
                 except EncryptionError as exc:
                     # The report goes back to every caller that holds the passphrase (the volume-verify
@@ -2289,7 +2290,9 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
     # handle, so a file swapped in, or rewritten, for the key check and put back for the checksum can never make the right
     # passphrase read as wrong.
     try:
-        opens, digest = stream_key_opens_or_digest(path, passphrase, follow_links=False)
+        opens, digest = stream_key_opens_or_digest(
+            path, passphrase, follow_links=False, max_bytes=volume_expectation(vol_by_name[first])["expect_bytes"]
+        )
     except (EncryptionError, OSError):
         return  # an unreadable header, or a refused open, is no verdict on the key: the restore's own pass reports it
     if opens or digest != vol_by_name[first].get("sha256"):
@@ -2420,7 +2423,7 @@ def read_stream_backup(
                         # Never through a link, and only bytes whose checksum is the manifest's: a volume swapped,
                         # rebuilt or rewritten since the checksum pass is refused, whatever its inode (row 329).
                         decrypt_stream(
-                            src / vname, _sink, passphrase, follow_links=False, expect_sha256=_volume_sha256(m, vname)
+                            src / vname, _sink, passphrase, follow_links=False, **_volume_checked(m, vname)
                         )
                 if h.hexdigest() == mm.get("plaintext_sha256"):  # a guard clause keeps the loop's back-edge inside the try (src/utils/interrupts.py)
                     continue
@@ -2459,13 +2462,14 @@ def read_stream_backup(
             raise
 
 
-def _volume_sha256(m: dict[str, Any], name: str) -> str:
-    """The ciphertext SHA-256 the manifest gives volume ``name``, or ``""`` (which no file hashes to) when it gives
-    none: the decrypt then refuses the volume rather than read it unchecked (row 329)."""
+def _volume_checked(m: dict[str, Any], name: str) -> dict[str, Any]:
+    """What the decrypt of volume ``name`` must find (row 329): the ciphertext SHA-256 and size the manifest gives it,
+    the ones the checksum pass held the file to. No digest is ``""``, which no file hashes to, so the volume is refused
+    rather than read unchecked; no whole-number size leaves the read unbounded, as before."""
     for v in m.get("volumes") or []:
         if isinstance(v, dict) and v.get("name") == name:
-            return str(v.get("sha256") or "")
-    return ""
+            return volume_expectation(v)
+    return {"expect_sha256": "", "expect_bytes": None}
 
 
 def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -> None:

@@ -40,6 +40,7 @@ from src.safety.crypto import (
     decrypt_stream,
     encrypt_file,
     stream_key_opens,
+    stream_key_opens_or_digest,
 )
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges on Windows")
@@ -416,3 +417,45 @@ def test_a_chunk_cut_short_and_grown_back_during_the_decrypt_never_reads_as_a_wr
     with pytest.raises(EncryptionError) as exc:
         decrypt_stream(sealed, lambda b: None, "pw", follow_links=False, expect_sha256=want)
     assert "passphrase" not in str(exc.value)
+
+
+def test_a_volume_swapped_for_a_longer_one_is_refused_at_the_checked_size(tmp_path, monkeypatch):
+    """A volume swapped after the checks for its own header and a huge tail cannot hold the restore reading: the read
+    stops one byte past the size the manifest gives it."""
+    dest = _stream_set(tmp_path)
+    victim = sorted(dest.glob("vol-*.ooenc"))[1]
+    reads: list[int] = []
+
+    def _grow():
+        size = victim.stat().st_size
+        with open(victim, "r+b") as f:
+            f.truncate(size + 64 * 1024 * 1024)  # sparse: cheap to make, slow to read
+
+    monkeypatch.setattr(sb, "verify_volume_set", _swap_after(sb, "verify_volume_set", _grow))
+    import src.safety.crypto as crypto
+
+    real_read = crypto._HashedReads.read
+
+    def _count(self, n=-1):
+        b = real_read(self, n)
+        reads.append(len(b))
+        return b
+
+    monkeypatch.setattr(crypto._HashedReads, "read", _count)
+    with pytest.raises(EncryptionError) as exc:
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
+    assert "not the one that was checked" in str(exc.value)
+    assert sum(reads) < 16 * 1024 * 1024  # stopped at the checked size, never read the 64 MiB tail
+
+
+def test_the_probe_stops_at_the_size_the_manifest_gives(tmp_path):
+    plain = tmp_path / "p.bin"
+    plain.write_bytes(b"s" * 5000)
+    sealed = tmp_path / "s.ooenc"
+    encrypt_file(plain, sealed, "pw")
+    size = sealed.stat().st_size
+    assert stream_key_opens_or_digest(sealed, "pw", follow_links=False, max_bytes=size) == (True, None)
+    with pytest.raises(EncryptionError):
+        stream_key_opens_or_digest(sealed, "wrong", follow_links=False, max_bytes=size - 1)
+    opens, digest = stream_key_opens_or_digest(sealed, "wrong", follow_links=False, max_bytes=size)
+    assert opens is False and digest == hashlib.sha256(sealed.read_bytes()).hexdigest()

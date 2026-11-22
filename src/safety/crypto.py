@@ -13,7 +13,6 @@ transport/stash; it is not a substitute for full-disk encryption of the live mac
 
 from __future__ import annotations
 
-import errno
 import hashlib
 import os
 import struct
@@ -278,21 +277,36 @@ def _open_sealed(src: str | os.PathLike[str], *, follow_links: bool = True):
         return open_regular(src, follow_links=follow_links)
     except NotARegularFile:
         pass
-    except OSError as exc:
-        # A link put at the name between the look and the open: O_NOFOLLOW answers ELOOP (EMLINK on FreeBSD).
-        if follow_links or exc.errno not in (errno.ELOOP, errno.EMLINK):
+    except OSError:
+        # A link put at the name between the look and the open: O_NOFOLLOW refuses it (ELOOP, EMLINK on FreeBSD).
+        # Told apart by looking at the name again, so any other failure is raised as it was.
+        if follow_links or not os.path.islink(src):
             raise
     raise EncryptionError("not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read")
 
 
-class _HashedReads:
-    """A file read through ``hashlib``: every byte handed out is hashed first (row 329)."""
+_NOT_THE_FILE_CHECKED = (
+    "this file is not the one that was checked before reading (it was replaced or changed since); "
+    "what was read must not be used"
+)
 
-    def __init__(self, fin: Any, h: Any) -> None:
-        self._fin, self._h = fin, h
+
+class _HashedReads:
+    """A file read through ``hashlib``: every byte handed out is hashed first (row 329).
+
+    ``limit`` is the size the reader's checksum pass found: a file read past it is not that file, and is refused
+    there, so a volume swapped for a huge or ever-growing one after the check cannot hold a restore reading it."""
+
+    def __init__(self, fin: Any, h: Any, limit: int | None = None) -> None:
+        self._fin, self._h, self._limit, self._read = fin, h, limit, 0
 
     def read(self, n: int = -1) -> bytes:
+        if self._limit is not None and (n < 0 or n > self._limit + 1 - self._read):
+            n = self._limit + 1 - self._read  # never more than one byte past the size that was checked
         b = self._fin.read(n)
+        self._read += len(b)
+        if self._limit is not None and self._read > self._limit:
+            raise EncryptionError(_NOT_THE_FILE_CHECKED)
         self._h.update(b)
         return b
 
@@ -308,10 +322,7 @@ def _refuse_a_file_that_is_not_the_one_checked(
     for blk in iter(lambda: fin.read(1 << 20), b""):
         tail += len(blk)
     if short_before_more or (end_seen and tail) or h.hexdigest() != expect_sha256:
-        raise EncryptionError(
-            "this file is not the one that was checked before reading (it was replaced or changed since); "
-            "what was read must not be used"
-        )
+        raise EncryptionError(_NOT_THE_FILE_CHECKED)
 
 
 def decrypt_stream(
@@ -321,6 +332,7 @@ def decrypt_stream(
     *,
     follow_links: bool = True,
     expect_sha256: str | None = None,
+    expect_bytes: int | None = None,
 ) -> int:
     """Stream-decrypt an OOENC2 file, passing each plaintext chunk to ``write``
     (a ``bytes -> Any`` callable: a file's ``write``, a hasher's ``update``, …).
@@ -334,11 +346,12 @@ def decrypt_stream(
     hashed as they are read, through the one handle, and must come to that digest, or this raises once the file is read
     and the caller must discard everything handed to ``write``: a file swapped in after the checksum pass, rebuilt, or
     rewritten in place is never taken for the file that was checked. This needs no file identity, so it holds on FAT and
-    network drives that give one file a new inode number from one open to the next."""
+    network drives that give one file a new inode number from one open to the next. ``expect_bytes``, the size that
+    pass found, bounds the read: a file longer than that is refused as soon as it shows it."""
     total = 0
     h = hashlib.sha256()
     with _open_sealed(src, follow_links=follow_links) as raw:
-        fin: Any = raw if expect_sha256 is None else _HashedReads(raw, h)
+        fin: Any = raw if expect_sha256 is None else _HashedReads(raw, h, expect_bytes)
         aes, prefix, block = _open_stream_header(fin, passphrase)
         counter = 0
         prev = fin.read(block)
@@ -361,10 +374,7 @@ def decrypt_stream(
                 break
             prev = cur
     if expect_sha256 is not None and h.hexdigest() != expect_sha256:
-        raise EncryptionError(
-            "this file is not the one that was checked before reading (it was replaced or changed since); "
-            "what was read must not be used"
-        )
+        raise EncryptionError(_NOT_THE_FILE_CHECKED)
     return total
 
 
@@ -388,7 +398,7 @@ def stream_key_opens(src: str | os.PathLike[str], passphrase: str, *, follow_lin
 
 
 def stream_key_opens_or_digest(
-    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True
+    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True, max_bytes: int | None = None
 ) -> tuple[bool, str | None]:
     """:func:`stream_key_opens`, and when the key does NOT open, the SHA-256 of the very bytes that were tried.
 
@@ -396,10 +406,11 @@ def stream_key_opens_or_digest(
     chunk the key failed on and the rest of the file, all read once through one handle (row 329): a caller that
     tells a wrong key from damage by the file's checksum can never be shown one file for the key and another, or
     the same file rewritten in between, for the checksum. A malformed header or a refused open raises
-    :class:`EncryptionError`, never a ``False``."""
+    :class:`EncryptionError`, never a ``False``, and so does a file longer than ``max_bytes`` (the size the
+    caller's manifest gives it)."""
     h = hashlib.sha256()
     with _open_sealed(src, follow_links=follow_links) as raw:
-        fin = _HashedReads(raw, h)
+        fin = _HashedReads(raw, h, max_bytes)
         aes, prefix, block = _open_stream_header(fin, passphrase)
         first = fin.read(block)
         rest = fin.read(1)
@@ -428,11 +439,14 @@ def decrypt_file(
     *,
     follow_links: bool = True,
     expect_sha256: str | None = None,
+    expect_bytes: int | None = None,
 ) -> None:
     """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
 
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
     extended stream -- never silently yields a partial archive. ``follow_links`` and
-    ``expect_sha256``: see :func:`decrypt_stream`; on a raise the caller discards ``dst``."""
+    ``expect_sha256`` and ``expect_bytes``: see :func:`decrypt_stream`; on a raise the caller discards ``dst``."""
     with create_new(dst) as fout:  # never through a link at its name (row 313)
-        decrypt_stream(src, fout.write, passphrase, follow_links=follow_links, expect_sha256=expect_sha256)
+        decrypt_stream(
+            src, fout.write, passphrase, follow_links=follow_links, expect_sha256=expect_sha256, expect_bytes=expect_bytes
+        )

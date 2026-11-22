@@ -298,6 +298,15 @@ def verify_volume_set(
     }
 
 
+def volume_expectation(v: dict[str, Any]) -> dict[str, Any]:
+    """The digest and size a decrypt holds a volume to (row 329), from its manifest entry: the ones the checksum pass
+    checked. A missing digest is ``""`` (no file matches it, so the volume is refused); a size that is not a whole
+    number of bytes is no bound."""
+    n = v.get("bytes")
+    size = n if isinstance(n, int) and not isinstance(n, bool) and n >= 0 else None
+    return {"expect_sha256": str(v.get("sha256") or ""), "expect_bytes": size}
+
+
 def require_unique_volumes(names: Any) -> None:
     """Refuse a manifest that names one volume twice (R686): read twice, it is written twice, and no
     size the manifest declares bounds that."""
@@ -448,7 +457,7 @@ def read_volume_set(
                 vtmp = Path(dest).with_name(f".{v['name']}.{secrets.token_hex(4)}.plain")
                 try:
                     # Never through a link, and only bytes whose checksum is the one the check above found (row 329).
-                    decrypt_file(out / v["name"], vtmp, passphrase, follow_links=False, expect_sha256=str(v.get("sha256") or ""))
+                    decrypt_file(out / v["name"], vtmp, passphrase, follow_links=False, **volume_expectation(v))
                     with open(vtmp, "rb") as vf:
                         while True:
                             blk = vf.read(_COPY_BUF)
