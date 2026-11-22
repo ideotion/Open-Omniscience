@@ -221,7 +221,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
     """
     from sqlalchemy import select
 
-    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis, osm_objects_table
+    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis, country_reference, osm_objects_table
     from src.versioned import store
 
     doc = load_outlines(path)
@@ -237,7 +237,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
         if country is None or country.status != "complete":
             raise Admin1Error("not-ingested")
         basis = country_basis(country)
-        reference = country.diff_timestamp or country.extract_vintage
+        reference, _why = country_reference(country)  # row 298: never the extract's date once files were applied undated
         row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one_or_none()
         if row is None:
             row = OsmAdmin1Split(alpha3=alpha3)

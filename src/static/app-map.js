@@ -4133,7 +4133,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
       const share = osmCompTf("Share of {n}", { n: fmtNum(s.n || 0, 0) });
       const le = s.last_edit || {}, cd = s.check_date || {};
-      const gone = t("Not available: neither the extract nor a change file states a date to measure the ages from.");
+      const gone = (le.reason || cd.reason) === "date-not-read"
+        ? t("Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.")
+        : t("Not available: neither the extract nor a change file states a date to measure the ages from.");
       let out = `<h4 class="lib-sub">${esc(t("Last edited, counted back from the vintage"))}</h4>`;
       if (le.available === false) out += `<div class="muted">${esc(gone)}</div>`;
       else {
@@ -4376,7 +4378,7 @@
       for (const r of a.regions || []) {
         const name = _osmAdmin1Label(r);
         const raw = r.n == null ? null : (m === "places" ? r.n : (r.measures ? r.measures[m] : null));
-        if (raw == null) out.absent.push({ name, why: r.n != null && !r.measures ? "recount" : (r.measures ? "no-reference" : "") });
+        if (raw == null) out.absent.push({ name, why: r.n != null && !r.measures ? "recount" : (r.measures ? ((lane.data_date || {}).updates === "date_not_read" ? "date-not-read" : "no-reference") : "") });
         else out.rows.push({ key: r.key, name, raw, n: r.n });
       }
       return out;
@@ -4402,6 +4404,7 @@
       }
       if (f.note) notes += `<div class="hint">${esc(f.note)}</div>`;
       const why = { "no-reference": "Not available: neither the extract nor a change file states a date to measure the ages from.",
+        "date-not-read": "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.",
         "no-daily-files": "No daily change file has been applied to this country yet.", "old-lane": "Could not be read",
         recount: "Counted before this measure existed: count the regions again to add it.",
         "no-places": "No places were counted here, so there is no share." };
