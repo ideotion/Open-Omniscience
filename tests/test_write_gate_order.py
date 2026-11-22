@@ -16,13 +16,14 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import Column, Integer, String, create_engine, event, update
+from sqlalchemy import Column, Integer, String, event, update
 from sqlalchemy.exc import OperationalError, UnboundExecutionError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from src.database import writer
+from tests._app_engine import app_sqlite_engine
 
 Base = declarative_base()
 
@@ -36,8 +37,8 @@ class Row(Base):
 @pytest.fixture
 def pool_of_one(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_WRITE_GATE_WATCHDOG", "0")
-    eng = create_engine(
-        f"sqlite:///{tmp_path / 'order.db'}", poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=3
+    eng = app_sqlite_engine(
+        tmp_path / 'order.db', poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=3
     )
     Base.metadata.create_all(eng)
     factory = sessionmaker(bind=eng, autoflush=False)

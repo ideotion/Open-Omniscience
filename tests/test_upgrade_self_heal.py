@@ -27,7 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.maintenance import (
@@ -42,6 +42,7 @@ from src.database.models import (
     WikiPage,
     WikiRevision,
 )
+from tests._app_engine import app_sqlite_engine
 
 # The exact 0.09-cycle holes the battery must heal (table -> dropped columns).
 _HOLES: dict[str, list[str]] = {
@@ -64,8 +65,8 @@ def _run_battery(engine) -> list[str]:
 def old_engine():
     """A 0.0.8/early-0.09-shaped store: current schema MINUS the hole columns,
     with one row per affected table inserted through the OLD schema."""
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     with eng.begin() as c:
@@ -134,7 +135,7 @@ def test_battery_is_idempotent(old_engine):
 
 def test_fresh_db_is_a_noop():
     """create_all already builds the columns — the heal must not touch a fresh DB."""
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     assert _run_battery(eng) == []
 
@@ -142,7 +143,7 @@ def test_fresh_db_is_a_noop():
 def test_missing_tables_are_a_noop():
     """A store that never had wiki/keyword tables (create_all will build them
     later in init_db) must not crash the battery."""
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     assert _run_battery(eng) == []
 
 

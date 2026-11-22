@@ -25,7 +25,7 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -33,6 +33,7 @@ import src.database.session  # noqa: F401 - registers the gate's listeners on th
 from src.database import writer
 from src.database.models import Base, Source
 from src.monitoring import storage_events as se
+from tests._app_engine import app_sqlite_engine
 
 GATE = writer.write_gate
 
@@ -42,7 +43,7 @@ def world(tmp_path, monkeypatch):
     """A file engine with ``slow(seconds)`` and ``boom(seconds)`` SQL functions, a session factory wired as the real one is (the
     writer's hooks plus its after-commit), and a journal of its own."""
     monkeypatch.setenv("OO_WRITE_GATE_WATCHDOG", "0")
-    eng = create_engine(f"sqlite:///{tmp_path / 'bd.db'}")
+    eng = app_sqlite_engine(tmp_path / 'bd.db')
 
     @event.listens_for(eng, "connect")
     def _functions(dbapi, _rec):  # pragma: no cover - trivial

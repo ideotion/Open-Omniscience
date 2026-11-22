@@ -13,6 +13,7 @@ import sqlite3
 
 from src.database import session as S
 from src.monitoring.storage import storage_composition
+from tests._app_engine import app_sqlite_engine
 
 
 def _apply(conn):
@@ -50,13 +51,13 @@ def test_bad_env_falls_back_to_default(monkeypatch):
 
 def test_storage_composition_surfaces_wal_and_limit(tmp_path):
     # a real file-backed WAL db with the pragmas + a pending write -> a -wal file exists.
-    from sqlalchemy import create_engine, event, text
+    from sqlalchemy import event, text
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
     db = tmp_path / "c.db"
-    engine = create_engine(f"sqlite:///{db}", future=True)
+    engine = app_sqlite_engine(db, future=True)
     event.listen(engine, "connect", S._sqlite_pragmas)  # apply our pragmas
     Base.metadata.create_all(engine)
     sm = sessionmaker(bind=engine, future=True)

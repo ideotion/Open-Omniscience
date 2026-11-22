@@ -20,13 +20,14 @@ import sqlite3
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event, func, select, text
+from sqlalchemy import event, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.database import query as dq
 from src.database.derived_views import KeywordMentionRead as KM
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 TODAY = date(2026, 10, 6)
 DAYS = 12
@@ -39,7 +40,7 @@ def _build(tmp_path, *, seed: int = 5):
     each mentioning a handful of the ``KEYWORDS`` keywords (ids are NOT dense: every third id is skipped, as
     in a corpus whose keywords were folded and deleted)."""
     path = tmp_path / "chunk.db"
-    engine = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
 
     @event.listens_for(engine, "connect")
     def _wal(dbapi, _rec):  # noqa: ANN001
@@ -161,7 +162,7 @@ def test_the_country_filter_is_the_same_filter(corpus):
 
 
 def test_an_empty_table_and_an_empty_window_answer_nothing(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'e.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'e.db', future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         assert _chunked(s, TODAY - timedelta(days=3), TODAY, _always) == ({}, 0)

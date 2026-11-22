@@ -12,7 +12,6 @@ import re
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.api.insights import _count_sources_not_candidates
@@ -22,6 +21,7 @@ from src.catalog.source_standing import (
     standing_totals,
 )
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 LANGS = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
@@ -29,7 +29,7 @@ LANGS = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng, tables=[Source.__table__, Article.__table__])
     with Session(eng) as s:
         yield s
@@ -129,7 +129,7 @@ def test_the_candidate_line_ships_in_every_language(lang):
 @pytest.fixture
 def full_db():
     """Every table, so the endpoints' own live queries run against this world."""
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         yield s

@@ -12,16 +12,17 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from tests._app_engine import app_sqlite_engine
+
 
 def _mem_session():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
     from src.database.models import Base
 
-    eng = create_engine(
-        "sqlite:///:memory:",
+    eng = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

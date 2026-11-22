@@ -15,7 +15,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -26,6 +25,7 @@ from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki import cross_edition as X
 from src.wiki.identity import external_id_for
 from src.wiki.lane_models import WikiWalkCursor, WikiWalkPage
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import object_literal
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
@@ -46,8 +46,8 @@ def lane(tmp_path, monkeypatch):
 
 @pytest.fixture
 def corpus():
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(eng)
     ensure_fts(eng)

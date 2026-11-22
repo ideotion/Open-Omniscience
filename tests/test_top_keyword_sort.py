@@ -16,7 +16,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 try:
@@ -27,14 +26,15 @@ except BaseException:  # noqa: BLE001  # pragma: no cover - crypto extra absent 
     _HAVE_MAIN = False
 
 from src.database.models import Article, Base, Keyword, Source
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(not _HAVE_MAIN, reason="src.api.main needs the crypto extra (runs in CI)")
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

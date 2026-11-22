@@ -27,11 +27,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base
 from src.versioned.store import create_lane, dispose_all, lane_session
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import object_literal
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -59,8 +59,8 @@ def corpus(tmp_path):
     """A corpus of the test's own. The app's shared session outlives the test, and pages or
     articles committed there would meet every later test (``LESSONS.md``: endpoint tests
     override ``get_db`` and never seed ``SessionLocal``)."""
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'corpus.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'corpus.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

@@ -29,7 +29,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.feed_key import feed_key
@@ -39,6 +39,7 @@ from src.ingest.crawl import CrawlConfig, _registrable_host, crawl_source
 from src.ingest.pipeline import IngestResult, _maybe_index_links, ingest_url
 from src.services.link_analyzer.extractor import LinkExtractor
 from src.utils import url_utils
+from tests._app_engine import app_sqlite_engine
 
 _USER, _NEEDLE = "alice", "hunter2"
 _CRED = f"{_USER}:{_NEEDLE}@"
@@ -103,7 +104,7 @@ def _pages(sess) -> list[str]:
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Good", domain="good.example", language="en"))
@@ -313,7 +314,7 @@ def test_a_stored_key_is_read_as_its_feeds_key_today(stored, rss_url, read):
 
 @pytest.fixture()
 def store():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s
@@ -424,7 +425,7 @@ def test_an_orm_write_heals_a_legacy_key(store):
 
 
 def _merge_corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

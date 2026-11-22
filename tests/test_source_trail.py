@@ -14,7 +14,6 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, Source, SourceCandidate
@@ -23,11 +22,12 @@ from src.discovery.source_trail import (
     source_citation_tally,
     source_provenance,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -57,7 +57,7 @@ def _link(s, article_id, url, link_type="external"):
 
 
 def test_provenance_unknown_source_id():
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     assert source_provenance(s, 999) == {"found": False}

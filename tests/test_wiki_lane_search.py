@@ -28,6 +28,7 @@ from src.wiki import lane_search as S
 from src.wiki.identity import external_id_for
 from src.wiki.lane_models import WikiLaneDoc, WikiLaneIndexQueue, WikiLaneIndexState, WikiWarmPage
 from src.wiki.tiers import budget_state
+from tests._app_engine import app_sqlite_engine
 
 EDITION = "oo"
 T0 = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -582,11 +583,10 @@ def test_a_released_savepoint_commits_on_this_driver_which_is_why_there_are_none
     changes it is noticed."""
     import sqlite3
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     path = tmp_path / "sp.db"
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = app_sqlite_engine(path, future=True)
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TABLE t(x INT)")
     s = Session(eng)

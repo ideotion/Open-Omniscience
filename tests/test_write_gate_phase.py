@@ -15,12 +15,13 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.pool import QueuePool
 
 from src.database import writer
 from src.monitoring import storage_events as se
 from src.monitoring import thread_usage
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
@@ -46,7 +47,7 @@ def journal(tmp_path, monkeypatch):
 
 @pytest.fixture
 def engine(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'phase.db'}", poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=20)
+    eng = app_sqlite_engine(tmp_path / 'phase.db', poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=20)
 
     @event.listens_for(eng, "connect")
     def _functions(dbapi, _record):

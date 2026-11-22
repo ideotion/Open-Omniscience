@@ -21,7 +21,7 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 
 from src.database.writer import (
     WriteGateBusy,
@@ -29,6 +29,7 @@ from src.database.writer import (
     watchdog_tick,
     write_lock,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread, record_asked_waits
 
 
@@ -125,7 +126,7 @@ def test_checkpoint_wal_records_an_honest_skip_when_the_gate_is_busy(monkeypatch
     monkeypatch.setenv("OO_CKPT_GATE_TIMEOUT_S", "0.1")
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None, raising=False)
     db = tmp_path / "ckpt.db"
-    eng = create_engine(f"sqlite:///{db}")
+    eng = app_sqlite_engine(db)
     with eng.connect() as con:
         con.execute(text("PRAGMA journal_mode=WAL"))
         con.execute(text("CREATE TABLE t (a INTEGER)"))
@@ -153,7 +154,7 @@ def test_checkpoint_wal_takes_the_callers_bound_over_an_unbounded_setting(monkey
     monkeypatch.setenv("OO_CKPT_GATE_TIMEOUT_S", "0")
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None, raising=False)
     db = tmp_path / "bound.db"
-    eng = create_engine(f"sqlite:///{db}")
+    eng = app_sqlite_engine(db)
     with eng.connect() as con:
         con.execute(text("PRAGMA journal_mode=WAL"))
         con.execute(text("CREATE TABLE t (a INTEGER)"))
@@ -182,7 +183,7 @@ def test_an_explicit_zero_bound_waits_for_ever_whatever_the_setting_says(monkeyp
     monkeypatch.setenv("OO_CKPT_GATE_TIMEOUT_S", "0.2")
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None, raising=False)
     db = tmp_path / "forever.db"
-    eng = create_engine(f"sqlite:///{db}")
+    eng = app_sqlite_engine(db)
     with eng.connect() as con:
         con.execute(text("PRAGMA journal_mode=WAL"))
         con.execute(text("CREATE TABLE t (a INTEGER)"))
@@ -210,7 +211,7 @@ def test_checkpoint_wal_still_checkpoints_when_the_gate_is_free(monkeypatch, tmp
     monkeypatch.setenv("OO_CKPT_GATE_TIMEOUT_S", "5")
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None, raising=False)
     db = tmp_path / "free.db"
-    eng = create_engine(f"sqlite:///{db}")
+    eng = app_sqlite_engine(db)
     with eng.connect() as con:
         con.execute(text("PRAGMA journal_mode=WAL"))
         con.execute(text("CREATE TABLE t (a INTEGER)"))
@@ -415,7 +416,7 @@ def test_the_watchdog_can_be_turned_off(monkeypatch):
 def test_a_checked_out_connection_is_listed_with_its_age(tmp_path):
     from src.database import pool_watch
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'pool.db'}")
+    eng = app_sqlite_engine(tmp_path / 'pool.db')
     event.listen(eng, "checkout", pool_watch._on_checkout)
     event.listen(eng, "checkin", pool_watch._on_checkin)
     pool_watch._reset_for_tests()
@@ -437,7 +438,7 @@ def test_a_returned_connection_is_not_listed(tmp_path):
     reading would accuse an innocent one."""
     from src.database import pool_watch
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'pool2.db'}")
+    eng = app_sqlite_engine(tmp_path / 'pool2.db')
     event.listen(eng, "checkout", pool_watch._on_checkout)
     event.listen(eng, "checkin", pool_watch._on_checkin)
     pool_watch._reset_for_tests()

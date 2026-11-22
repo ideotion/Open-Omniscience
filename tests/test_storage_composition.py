@@ -23,12 +23,12 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from src.monitoring import storage as storage_mod
 from src.monitoring.storage import storage_composition
+from tests._app_engine import app_sqlite_engine
 
 
 def _dbstat_available() -> bool:
@@ -52,8 +52,8 @@ _HAS_DBSTAT = _dbstat_available()
 @pytest.fixture()
 def db(tmp_path):
     # FILE-backed (dbstat pages are real on-disk pages).
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'store.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'store.db',
         future=True,
         connect_args={"check_same_thread": False},
     )
@@ -213,8 +213,8 @@ def test_endpoint_serves_and_downloads(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'api.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'api.db',
         future=True,
         connect_args={"check_same_thread": False},
     )
@@ -329,7 +329,7 @@ def test_the_estimate_reports_a_deadline_abort(db, monkeypatch):
 def test_a_gapped_small_store_is_read_in_full_not_sampled(tmp_path):
     """49 rows at ids 1..49 plus one at id 1,000,000: id-spread probes would all land on the
     far row. A store at or under the probe count is read in full and says so."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'gap.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'gap.db', future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))

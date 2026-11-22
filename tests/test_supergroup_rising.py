@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.supergroup_rising import find_rising_supergroups
@@ -27,6 +26,7 @@ from src.database.models import (
     KeywordSuperGroupMember,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 _TODAY = date(2026, 7, 18)
 _WINDOW = 7
@@ -36,8 +36,8 @@ _B_START = _W_START - timedelta(days=_BASELINE)
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

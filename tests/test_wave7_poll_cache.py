@@ -29,7 +29,6 @@ import time
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import poll_cache
@@ -43,6 +42,7 @@ from src.database.models import (
     Watch,
     WatchMatch,
 )
+from tests._app_engine import app_sqlite_engine
 
 # The cache-freshness disclosure keys poll_cache adds on top of the raw compute_alerts
 # payload — stripped before an equality comparison against a direct live compute.
@@ -51,8 +51,8 @@ _DECOR = {"as_of", "cache_age_s", "cached", "cache_note"}
 
 def _fresh_session():
     """A session on its OWN in-memory engine (a bind distinct from every other one)."""
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

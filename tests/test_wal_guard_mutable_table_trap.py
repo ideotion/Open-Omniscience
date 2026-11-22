@@ -52,15 +52,16 @@ the skip boundary no longer lines up with what was actually delivered before.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.briefing import registry
 from src.database import session as db_session
+from tests._app_engine import app_sqlite_engine
 
 
 def _fresh_engine(db_path):
-    eng = create_engine(f"sqlite:///{db_path}", future=True)
+    eng = app_sqlite_engine(db_path, future=True)
     event.listen(eng, "connect", db_session._sqlite_pragmas)
     with eng.connect() as c:
         c.exec_driver_sql("CREATE TABLE t(id INTEGER PRIMARY KEY, x)")

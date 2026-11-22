@@ -27,7 +27,6 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -38,6 +37,7 @@ from src.database.models import Base
 from src.ingest import import_job
 from src.ingest.import_job import NewsletterImportManager
 from src.monitoring import storage_events as se
+from tests._app_engine import app_sqlite_engine
 from tests.test_storage_events_runs import (
     _events,
     _finish,
@@ -240,7 +240,7 @@ def test_an_exit_no_branch_names_still_closes_the_legacy_run(journal, legacy, mo
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
 def nl(tmp_path):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)
     folder = tmp_path / f"inbox-{MARKER}"
