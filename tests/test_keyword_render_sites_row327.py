@@ -8,7 +8,7 @@ locale key. A corpus keyword is data: "person", "delete" or "online" drawn alone
 locale's word for it, the app altering the user's data on screen. Row 326 made the walker leave anything inside
 ``translate="no"`` alone (and ``data-i18n-dyn`` already was); this row marks the sites.
 
-THE GUARD. Every ``esc(<…>.term)`` / ``esc(<…>.keyword)`` / ``esc(<…>.kw)`` in the UI modules is listed below and
+THE GUARD. Every ``esc(<…>.term)`` / ``esc(<…>.keyword)`` / ``esc(<…>.kw)`` / ``esc(<…>.normalized)`` in the UI modules is listed below and
 must sit either inside a ``data-*`` or ``value`` attribute (never translated), or inside a tag that carries
 ``translate="no"`` or ``data-i18n-dyn`` -- the tag it is written into, or the element it is the content of. A new
 site that is neither fails here and names its line. The detector is a property of the source, so a site written in
@@ -22,8 +22,9 @@ import re
 
 from tests.js_source_helper import app_modules, read_static, strip_comments
 
-_KW = re.compile(r"esc\(\s*(?:[A-Za-z_$][\w$]*\.)*(?:term|keyword|kw)\s*\)")
+_KW = re.compile(r"esc\(\s*(?:[A-Za-z_$][\w$]*\.)*(?:term|keyword|kw|normalized)\s*\)")
 _ATTR_VALUE = re.compile(r"""(?:data-[\w-]+|value)=(["'])[^"']*$""")
+_VOID = re.compile(r"<(?:img|br|hr|input|wbr|meta|link|source|col|area)\b", re.I)
 _MARK = re.compile(r"""translate=(["'])no\1|\bdata-i18n-dyn\b""")
 
 
@@ -44,6 +45,8 @@ def _unmarked(src: str) -> tuple[int, list[str]]:
         else:
             # the match is CONTENT: the element it is the content of (the last opening tag) must carry it
             tag = before[lt : before.find(">", lt) + 1] if lt != -1 else ""
+            if _VOID.match(tag) or tag.endswith("/>"):
+                tag = ""  # a void or self-closed tag has no content: its mark does not cover a sibling
         if not _MARK.search(tag):
             line = src.count("\n", 0, m.start()) + 1
             bad.append(f"line {line}: {src[m.start() - 60 : m.end()].strip()}")
@@ -66,6 +69,7 @@ def test_every_keyword_render_site_is_marked_as_data():
 def test_the_guard_bites():
     """Mutants, so the guard is known to see an unmarked site in each shape it accepts."""
     assert _unmarked("`<td>${esc(r.term)}</td>`")[1]
+    assert _unmarked('`<td><br translate="no">${esc(r.term)}</td>`')[1]
     assert _unmarked('`<span class="pill">${esc(k.keyword)} · 3</span>`')[1]
     assert _unmarked('`<input aria-label="${esc(f.term)}">`')[1]
     # and passes the shapes it should
@@ -73,6 +77,42 @@ def test_the_guard_bites():
     assert not _unmarked('`<input aria-label="${esc(f.term)}" translate="no">`')[1]
     assert not _unmarked('`<b data-kwstat="${esc(t.term)}">x</b>`')[1]
     assert not _unmarked("`<td data-i18n-dyn>${esc(it.keyword)}</td>`")[1]
+
+
+_SERIES_KW = re.compile(r"\{\s*label:\s*(?:[A-Za-z_$][\w$]*\.)*(?:term|keyword|kw)\b(?![\w$])")
+
+
+def test_a_keyword_chart_series_and_enlarge_title_are_marked_as_data():
+    """A chart series named by a keyword sets ``labelIsData`` (the shared legend then draws it inside
+    ``translate="no"``), and an enlarge dialog titled by a keyword passes ``titleIsData``."""
+    seen = 0
+    for name in app_modules():
+        src = strip_comments(read_static(name))
+        for m in _SERIES_KW.finditer(src):
+            seen += 1
+            obj = src[m.start() : src.find("}", m.end()) + 1]
+            assert "labelIsData: true" in obj, (name, obj[:120])
+    assert seen >= 4, seen
+    markets = read_static("app-markets.js")
+    assert "labelIsData: !!s.labelIsData," in markets
+    assert '`<span translate="no">${esc(s.label)}</span>`' in markets
+    corpus = read_static("app-corpus.js")
+    assert (
+        'if (opts.titleIsData) ttl.setAttribute("translate", "no"); else ttl.removeAttribute("translate");'
+        in corpus
+    )
+    assert corpus.count("{titleIsData: true}") == 1
+    assert read_static("app-home.js").count("{titleIsData: true}") == 1
+    assert "label: rel[i], labelIsData: true," in read_static("app-analysis.js")
+    # the small-multiples panel header and the zero-mention hover name keywords too
+    assert (
+        'style="cursor:pointer" translate="no" data-on-click=' in corpus
+    )  # the slope chart's end label
+    assert '<span translate="no">${esc(p.label || "")}</span></a>' in corpus
+    assert (
+        '<span class="muted" translate="no" title="${esc(g.members.filter(m => m.mentions === 0)'
+        in read_static("app-insights.js")
+    )
 
 
 def test_the_custody_table_words_its_actions_and_names_its_signature():

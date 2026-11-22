@@ -1004,8 +1004,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const x = _homeTrendTerms[i];
       if (!x || !Array.isArray(x.series)) return;   // defensive: nothing to enlarge
-      chartEnlarge(x.term, [{label: x.term, unit: t("mentions"),
-        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "");
+      chartEnlarge(x.term, [{label: x.term, labelIsData: true, unit: t("mentions"),
+        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "", {titleIsData: true});
     }
     // Home severity alert strip (info / watch / urgent) — GET /api/signals/alerts, LOCAL,
     // no network (reads the cached hazard snapshot; a producer NEVER fetches). Compact +

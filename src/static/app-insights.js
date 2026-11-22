@@ -694,7 +694,7 @@
       const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
         : String(s2).replace(/\{(\w+)\}/g, (m0, k) => (v && v[k] != null) ? String(v[k]) : m0);
       const zeroChip = zeroCount > 0
-        ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">${esc(tf("+{n} with no mentions yet", {n: zeroCount}))}</span>`
+        ? `<span class="muted" translate="no" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">${esc(tf("+{n} with no mentions yet", {n: zeroCount}))}</span>`
         : "";
       // Row 1 (dominance): the mandatory "which member accounts for the total"
       // disclosure — a group total without it misleads by construction. Keyed as one
@@ -772,7 +772,7 @@
         const isRing = !!m.ring_id;
         const inner = isRing
           ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">group·${(m.ring_members || []).length}</span>`
-          : esc(m.normalized);
+          : `<span translate="no">${esc(m.normalized)}</span>`;
         // §B circle grammar: the group ring + its translated level hover, appended
         // to the existing member-list tip (never replacing it).
         const baseTip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";

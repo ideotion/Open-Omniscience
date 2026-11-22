@@ -2764,7 +2764,7 @@
   "It removes the articles and all their analysis (keywords, dates, places); the empty newsletter source stays so a clean re-import re-attaches.": "記事とそのすべての分析（キーワード、日付、場所）を削除します。空のニュースレターソースは残るので、クリーンな再インポートが再び関連付けられます。",
   "It runs the frozen input set through the model task by task and is resumable, because it takes tens of minutes. A quick check is minutes, so the two are one button with a choice rather than two buttons.": "固定した入力セットをタスクごとにモデルへ通し、数十分かかるため再開できます。クイックチェックは数分なので、2 つのボタンではなく、選択肢付きの 1 つのボタンにしています。",
   "Item accessed": "項目を閲覧",
-  "Item anchored": "項目をアンカー",
+  "Item anchored": "項目を固定",
   "Item annotated": "項目に注記",
   "Item deleted": "項目を削除",
   "Item exported": "項目をエクスポート",

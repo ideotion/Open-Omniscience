@@ -761,7 +761,7 @@
         // t() text here it froze in the fetch language, so after a live switch the legend,
         // the hover and the data table still said "mentions" under a Chinese caption.
         if (main && main.resolved && (main.points || []).length)
-          series.push({ label: term, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
+          series.push({ label: term, labelIsData: true, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
         // Related keywords are corpora too: overlay each one's own coverage series.
         const rel = ((assoc && assoc.nodes) || []).map(n => n.label || n.id)
           .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
@@ -770,7 +770,7 @@
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
-            series.push({ label: rel[i], unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
+            series.push({ label: rel[i], labelIsData: true, unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
         });
         _anTrend.counts = series;
         // Q502/Q417: the per-language halves the aggregate already publishes. Captured
