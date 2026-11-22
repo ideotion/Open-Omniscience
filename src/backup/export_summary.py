@@ -271,7 +271,8 @@ def export_facts(
         vols = manifest.get("volumes")
         par = manifest.get("parity")
         count = len(vols) if isinstance(vols, list) else 0  # row 302: another shape counts none
-        parity = bool(par.get("volumes")) if isinstance(par, dict) else False
+        pv = par.get("volumes") if isinstance(par, dict) else None
+        parity = isinstance(pv, list) and bool(pv)
     else:
         count, parity = None, False
     request = read_export_request(d)
@@ -283,7 +284,7 @@ def export_facts(
         "corpus_facts": corpus_facts,
         "volumes": {
             "count": count,
-            "bytes": _volume_bytes(d),
+            "bytes": _volume_bytes(d, manifest),
             "plaintext_bytes": (summary or {}).get("plaintext_bytes"),
             "parity": parity,
             "parity_available": (summary or {}).get("parity_available"),
@@ -361,14 +362,15 @@ def _volume_manifest(dest: Path) -> dict[str, Any] | None:
     return m if isinstance(m, dict) else None
 
 
-def _volume_bytes(dest: Path) -> int | None:
+def _volume_bytes(dest: Path, manifest: dict[str, Any] | None = None) -> int | None:
     """Total bytes of the encrypted volumes + parity actually on the drive.
 
     Read off the MANIFEST (the set's own account of what it contains) rather than
     globbed off the directory, so a stray file an operator dropped in the folder is
-    never counted as part of the backup.
+    never counted as part of the backup. ``manifest`` is the one already read, so the count and the bytes
+    of one summary come from one read of the drive (row 302).
     """
-    m = _volume_manifest(dest)
+    m = manifest if manifest is not None else _volume_manifest(dest)
     if m is None:
         return None
     parity = m.get("parity")

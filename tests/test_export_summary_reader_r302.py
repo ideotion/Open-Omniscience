@@ -21,6 +21,7 @@ import pytest
 from src.backup import export_summary
 from src.backup.folder_backup import MANIFEST_NAME as FOLDER_MANIFEST
 from src.backup.volumes import MANIFEST_NAME as VOLUME_MANIFEST
+from tests.js_source_helper import python_function_source
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="pipes and /dev/zero")
 
@@ -84,10 +85,17 @@ def test_a_manifest_of_another_shape_counts_nothing(tmp_path, folder, volumes):
     assert export_summary._volume_bytes(tmp_path) in (0, 2)
     facts = export_summary.export_facts(tmp_path)
     assert isinstance(facts, dict)
+    assert isinstance(export_summary.render_summary_markdown(facts), str)
+
+
+def test_parity_of_another_shape_is_not_reported_as_written(tmp_path):
+    (tmp_path / VOLUME_MANIFEST).write_text(json.dumps({"volumes": [{"bytes": 4}], "parity": {"volumes": "str"}}), encoding="utf-8")
+    vols = export_summary.export_facts(tmp_path)["volumes"]
+    assert vols["parity"] is False and vols["count"] == 1 and vols["bytes"] == 4
 
 
 def test_the_summary_module_has_no_plain_read_of_a_manifest():
     src = (Path(export_summary.__file__)).read_text(encoding="utf-8")
-    assert "read_manifest_json(" in src
-    assert ".read_text(" not in src.split("def _folder_manifest", 1)[1].split("def _lane_kinds", 1)[0]
-    assert ".read_text(" not in src.split("def _volume_manifest", 1)[1].split("def _volume_bytes", 1)[0]
+    for fn in ("_folder_manifest", "_volume_manifest"):
+        body = python_function_source(src, fn)
+        assert "read_manifest_json(" in body and ".read_text(" not in body, fn
