@@ -156,10 +156,12 @@ _GENERATIONS = itertools.count(1)
 # when one was still there at the end, or when it could not tell.
 #: How long the erase goes on rewriting while another process still holds the store (inline, after every key is destroyed; and
 #: again in the panic wipe's late pass before its descriptors are let go). Measured: a rewrite pass of a few-MiB log and the
-#: probe take milliseconds, so 2 s is ~20 passes; with no other holder the erase pays one probe per kept file (< 1 ms each).
+#: probe take milliseconds, so 2 s is ~20 passes; with no other holder the erase pays two probes per kept file (< 1 ms each) and
+#: one more rewrite through them (R796), itself bounded by it.
 _HOLDER_BOUND_S = 2.0
 _HOLDER_STEP_S = 0.1
-#: The erase result's ``other_holder``: no other process was seen holding the store; one still held it when the bound ended;
+#: The erase result's ``other_holder``: no other process was seen holding the store; one was seen holding it at some point of the
+#: erase (R796: even one that let go before the end);
 #: or whether one did could not be told (Windows, a platform whose lock record is not read here, a probe that failed, a file
 #: that could not be kept). Only "none" is a clean result.
 HOLDER_NONE, HOLDER_HELD, HOLDER_UNKNOWN = "none", "held", "unknown"
@@ -298,6 +300,9 @@ def settle_other_holders(generation: int, *, bound_s: float | None = None) -> st
         entries = list(_HELD.get(generation, ()))
         state = _holder_state(entries)
         seen = state == HOLDER_HELD
+        # R796, as the watcher keeps it: a probe that could not tell is never cleared by a later one that saw nothing (the file it
+        # could not ask about may have been held by a program that let go since).
+        ever_unknown = state == HOLDER_UNKNOWN
         if seen:
             deadline = time.monotonic() + bound
             while True:
@@ -305,13 +310,17 @@ def settle_other_holders(generation: int, *, bound_s: float | None = None) -> st
                 if time.monotonic() >= deadline:
                     break
                 time.sleep(_HOLDER_STEP_S)
-                if _holder_state(entries) != HOLDER_HELD:
+                state = _holder_state(entries)
+                ever_unknown = ever_unknown or state == HOLDER_UNKNOWN
+                if state != HOLDER_HELD:
                     break
         # R796: always, whatever was found -- what a holder committed before it let go, or one no probe could see.
         rescrub_held(close=False, generation=generation, deadline=time.monotonic() + bound)
         state = _holder_state(entries)
         # R796: a holder seen at any point may have written behind the last rewrite before it let go: never "none".
-        return HOLDER_HELD if seen else state
+        if seen or state == HOLDER_HELD:
+            return HOLDER_HELD
+        return HOLDER_UNKNOWN if ever_unknown or state == HOLDER_UNKNOWN else HOLDER_NONE
     except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
         return HOLDER_UNKNOWN
 
@@ -364,7 +373,9 @@ def held_count(generation: int | None = None) -> int:
 
 def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: float | None = None) -> int:
     done = 0
-    for fd, kind, cap in held:
+    # The salt-bearing heads first, as the watcher's rewrite_kept does: a long log must not use the whole bound before a main
+    # file's first page is reached.
+    for fd, kind, cap in sorted(held, key=lambda e: e[1] == "whole"):
         try:
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError  # not rewritten this pass; a closing pass still closes it below
@@ -688,7 +699,7 @@ def quick_crypto_erase(
 
     Either way (R792), once every key is destroyed the erase looks for ANOTHER process holding the store, goes on rewriting
     through the kept descriptors while one is seen (at most :data:`_HOLDER_BOUND_S`, never waiting when none is), and reports
-    ``other_holder``: ``"none"``, ``"held"`` (one still had the store open when the bound ended: the erase may be incomplete) or
+    ``other_holder``: ``"none"``, ``"held"`` (one was seen holding the store during the erase, even if it let go before the end: the erase may be incomplete) or
     ``"unknown"`` (it could not tell; always so on Windows, where an open file cannot be found from here). Only "none" is a
     clean erase, and it means none was SEEN (a process holding no lock at that moment, or one on another machine sharing the
     folder over a network file system, is not). ``settle`` False (the panic wipe, which closes its pool and takes the app

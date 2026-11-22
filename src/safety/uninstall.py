@@ -127,7 +127,7 @@ except ImportError:
 LAYOUT = "hhqqi" if sys.platform.startswith("linux") else ("qqihh" if sys.platform == "darwin" else None)
 BOUND = 2.0; STEP = 0.1; GROWTH = 256 * 1024 * 1024; MAX_KEPT = 64
 _SQL = tuple(n for n in _ENC if "duckdb" not in n)
-kept = []; held_stat = {"missed": 0, "seen": 0, "ever": False}
+kept = []; held_stat = {"missed": 0, "seen": 0, "ever": False, "unknown": False}
 def sqlite_kind(name):
     for b in _SQL:
         if name == b: return "head"
@@ -165,6 +165,7 @@ def holder_state():
         h = holder(fd)
         if h: held_stat["ever"] = True; return "held"
         unknown = unknown or h is None
+    if unknown: held_stat["unknown"] = True   # never cleared by a later probe that saw nothing (R796, the panic copy too)
     return "unknown" if unknown else "none"
 def rewrite_kept(deadline):
     # the salt-bearing heads first, so a long log cannot use the whole bound before a main file's first page is reached
@@ -198,6 +199,7 @@ def check_other_holders():
     rewrite_kept(time.monotonic() + BOUND)   # always, whatever was found: what a holder committed before it let go, or unseen
     state = holder_state()
     if held_stat["ever"]: state = "held"     # a program seen holding it during the erase may have written behind the rewrite
+    elif held_stat.get("unknown"): state = "unknown"
     if state == "held":
         rec("THE ERASE MAY BE INCOMPLETE: another program had the database open while the erase ran, and it may have "
             "written the database's key material back to the disk. Close that program or restart the computer; overwriting the "

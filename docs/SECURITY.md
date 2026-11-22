@@ -804,7 +804,8 @@ imply a protection we cannot deliver.
   (measured: such a process's next write was refused and left no salt, because SQLite rereads page 1 and finds it destroyed;
   a transaction already under way that commits page 1 after the last rewrite is the window left); a holder on another
   machine sharing the folder over a network file system may hold locks this machine cannot see; key files, the cache and
-  `anchors.db` are not checked. With no other holder the check costs one probe per kept file. Every file under the data
+  `anchors.db` are not checked. With no other holder the check costs two probes per kept file and the one more rewrite (bounded the same way, heads first);
+  a probe that could not tell is never cleared by a later one that saw nothing. Every file under the data
   dir the earlier steps did not
   handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
