@@ -2564,11 +2564,55 @@
         return t("Its answers are stored as tentative (≈) translations, never in the keyword index; the keyword and search surfaces show them where they apply.");
       return String((s && s.latest_note) || "");
     }
+    // Row 326: the verdict keys carry their label. A bare "junk" / "content" / "unsure" key would also translate a
+    // KEYWORD whose text is that word, wherever the page shows one, and so alter the user's data on screen.
     function _aiTriageVerdictWords(v, t) {
-      if (v === "junk") return t("junk");
-      if (v === "content") return t("content");
-      if (v === "unsure") return t("unsure");
+      if (v === "junk") return t("Verdict: junk");
+      if (v === "content") return t("Verdict: content");
+      if (v === "unsure") return t("Verdict: unsure");
       return String(v);
+    }
+
+    // Row 326: the sweep state's counters and the stored kinds, in the reader's language. The names are the sweeps' own
+    // (triage_job.py, source_tags_job.py, perception_extract_job.py totals; translation_sweep.py's _bump keys, shared by
+    // its keyword and title sweeps, so worded without a unit; activity.py AI_KINDS); a counter or kind this
+    // build does not know is shown as sent, as code. A nested counter (field_gated: per field) is spelled out, never
+    // printed as an object.
+    const _AI_TOTALS_WORDS = {
+      keywords_in: "Keywords sent", verdicts_out: "Verdicts returned", parse_failures: "Answers that did not parse",
+      missing: "Items with no answer", sources_in: "Sources sent", assigned_count: "Sources given a tag",
+      none_count: "Sources with no tag", attempted: "Articles attempted", skipped_existing: "Articles already extracted",
+      gated: "Articles not run (language not cleared, or no text)", stored: "Articles extracted",
+      who: "Names stored", where: "Places stored", when: "Dates stored",
+      field_gated: "Articles with a field discarded (language not cleared)",
+      hidden: "Skipped: hidden keyword", no_language: "Skipped: language unknown",
+      same_language: "Skipped: already in the target language", verified: "Skipped: a verified translation exists",
+      already_tentative: "Skipped: a tentative translation exists", model_error: "Model errors",
+      added: "Translations added", no_usable_answer: "No usable answer", untitled: "Skipped: no title",
+      already_done: "Skipped: already translated",
+    };
+    const _AI_FIELD_WORDS = { who: "Names: {n}", where: "Places: {n}", when: "Dates: {n}" };
+    const _AI_KIND_WORDS = {
+      language: "Languages detected", "ai-who": "Names (AI)", "ai-place": "Places (AI)", "ai-date": "Dates (AI)",
+    };
+    const _aiOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    function _aiTotalsBit(k, v, t, tf) {
+      const name = _aiOwn(_AI_TOTALS_WORDS, k) ? esc(t(_AI_TOTALS_WORDS[k])) : `<code dir="ltr">${esc(k)}</code>`;
+      if (v && typeof v === "object") {
+        const parts = Object.keys(v).map((f) => _aiOwn(_AI_FIELD_WORDS, f)
+          ? esc(tf(_AI_FIELD_WORDS[f], { n: String(v[f]) }))
+          : `<code dir="ltr">${esc(f)}</code> ${esc(String(v[f]))}`);
+        return `${name} (${parts.join(", ")})`;
+      }
+      return `${name} ${esc(String(v))}`;
+    }
+    function _aiKindHtml(kind, t) {
+      return _aiOwn(_AI_KIND_WORDS, kind) ? esc(t(_AI_KIND_WORDS[kind])) : `<code dir="ltr">${esc(kind)}</code>`;
+    }
+    const _AI_COORDINATOR_IDLE_NOTE = "While the background lane is driving a sweep, that sweep's own job status reads idle — the lane runs members directly rather than through their registered jobs. The figures here come from the sweeps' logs, so they stay true either way.";
+    function _aiCoordinatorNote(c, t) {
+      if (c && c.note_code === "lane-runs-members-directly") return t(_AI_COORDINATOR_IDLE_NOTE);
+      return String((c && c.note) || "");
     }
 
     async function loadAiActivity() {
@@ -2584,19 +2628,19 @@
         return;
       }
       const sweeps = (r.sweeps || []).map((s) => {
-        const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label || s.key)}</div>`];
+        const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label ? t(s.label) : (s.key || ""))}</div>`];
         if (s.note) rows.push(`<div class="muted">${esc(_aiSweepNote(s, t, tf))}</div>`);
-        rows.push(_aiRateLine(s.rates, s.unit || t("items")));
+        rows.push(_aiRateLine(s.rates, s.unit ? t(s.unit) : t("items")));
         const st = s.state || {};
         const totals = st.totals || {};
-        const bits = Object.keys(totals).map((k) => `${esc(k)} ${esc(String(totals[k]))}`);
+        const bits = Object.keys(totals).map((k) => _aiTotalsBit(k, totals[k], t, tf));
         if (st.batches_completed !== undefined) {
           bits.unshift(`${esc(t("batches"))} ${esc(String(st.batches_completed))}`);
         }
         if (bits.length) rows.push(`<div class="muted">${bits.join(" · ")}</div>`);
         if ((s.latest || []).length) {
           const items = s.latest.slice(0, 12).map((x) =>
-            `<span class="pill">${esc(x.term || x.domain || "")}` +
+            `<span class="pill"><span translate="no">${esc(x.term || x.domain || "")}</span>` +
             (x.verdict ? ` · ${esc(_aiTriageVerdictWords(x.verdict, t))}` : "") +
             (Array.isArray(x.tags) && x.tags.length ? ` · ${esc(x.tags.join(", "))}` : "") +
             `</span>`).join(" ");
@@ -2618,8 +2662,8 @@
         const kinds = (sd.kinds || []).map((k) => {
           if (typeof k.per_hour === "number") { total += k.per_hour; any = true; }
           const latest = (k.latest || []).slice(0, 8)
-            .map((x) => `<span class="pill">${esc(x.term || "")}</span>`).join(" ");
-          return `<div style="margin-top:6px"><strong>${esc(k.kind)}</strong> · ` +
+            .map((x) => `<span class="pill" translate="no">${esc(x.term || "")}</span>`).join(" ");
+          return `<div style="margin-top:6px"><strong>${_aiKindHtml(k.kind, t)}</strong> · ` +
             `${esc(t("total"))} ${esc(String(k.total))} · ` +
             `${esc(t("in the last"))} ${esc(String(sd.window_hours))}h: ${esc(String(k.in_window))}` +
             (typeof k.per_hour === "number" ? ` · <strong>${esc(String(k.per_hour))}</strong>/h` : "") +
@@ -2636,7 +2680,7 @@
       }
 
       const coord = (r.coordinator || {}).note
-        ? `<div class="muted" style="margin-top:8px">${esc(r.coordinator.note)}</div>` : "";
+        ? `<div class="muted" style="margin-top:8px">${esc(_aiCoordinatorNote(r.coordinator, t))}</div>` : "";
       host.innerHTML = sweeps + stored + coord +
         `<div class="card-caveat" style="margin-top:8px">${ooSaidHtml(r, "caveat")}</div>`;
     }
@@ -2826,7 +2870,7 @@
           `<button class="tiny${a.kind === k ? " active" : ""}" data-k="${k}" data-on-click="mbAnchorKind(${i},'${k}')">${esc(k)}</button>`).join("");
         return `<div class="mb-row" tabindex="0" data-i="${i}" data-on-keydown="mbAnchorKey(event,${i})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
           + `<span style="min-width:78px">${vb}</span>`
-          + `<span style="min-width:170px">${esc(a.term)}</span>`
+          + `<span style="min-width:170px" translate="no">${esc(a.term)}</span>`
           + `<span class="muted" style="font-size:11px;min-width:26px">${ooLangCell(a.language)}</span>`
           + `<span>${kb}</span></div>`;
       }).join("");

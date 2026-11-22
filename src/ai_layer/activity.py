@@ -490,7 +490,9 @@ def _coordinator_view() -> dict:
             "reads idle — the lane runs members directly rather than through their "
             "registered jobs. The figures here come from the sweeps' logs, so they stay "
             "true either way."
-        )
+        ),
+        # Row 326: the UI words the note by this code, in the reader's language; the English above stays the record.
+        "note_code": "lane-runs-members-directly",
     }
     try:
         # Through the JOB REGISTRY, not by importing the API module: a reader in the
