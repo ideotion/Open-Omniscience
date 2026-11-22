@@ -584,7 +584,7 @@ def folder_backup_verify(body: FolderRestoreBody) -> dict:
     (``signed`` / ``unsigned`` / ``bad-signature``) rides the verdict. Runs as the (single) folder job, so it
     surfaces in /api/jobs + /folder/status and is cancellable; the verdict rides
     ``status()['verify']`` (schema ``oo-folder-verify-1``: ok, files_checked, files_checksummed,
-    summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused,link_not_checked},
+    summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused,link_not_checked,unreadable},
     signature_state, problems).
     400 on a bad path; 409 if a folder job is already running."""
     from src.backup.folder_backup import get_folder_manager
