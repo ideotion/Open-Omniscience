@@ -341,6 +341,8 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None, move_t
     from src.ingest import (
         CrawlDelayDeferred,
         FetchError,
+        RobotsDisallowed,
+        RobotsUnavailable,
         kill_switch_engaged_since,
         kill_switch_epoch,
     )
@@ -396,6 +398,13 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None, move_t
         out = {"document_id": doc.id, "status": "error", "detail": record_text(exc)}
         if offline:
             out["offline"] = True  # the kill switch refused it: not the document's failure (the tallies count it apart)
+        elif isinstance(exc, RobotsDisallowed):
+            # Row 283 (row 72): the site's own robots.txt forbids this address, so nothing was requested. A label over the
+            # exception the fetcher already raised, never a change to what it fetches; the tallies count it apart so a
+            # caller can name it "blocked by the site's robots.txt" instead of a failure.
+            out["robots"] = "blocked"
+        elif isinstance(exc, RobotsUnavailable):
+            out["robots"] = "unread"  # robots.txt could not be read, so the fetch was refused (fail closed): not the site's rule
         return out
     except Exception as exc:  # noqa: BLE001 - record, never crash the batch
         # the socket-level airplane guard raises an OSError, not a FetchError; engaged now or since the request began (R614)
@@ -892,6 +901,12 @@ def _back_off_after_crash(session, doc_id, exc) -> None:
         session.rollback()
 
 
+#: Row 283: a robots refusal's tally key. Like ``skipped_offline``, present ONLY when non-zero and still counted in
+#: ``errors`` (the old fields are unchanged), so a caller can take it out and name it: "blocked by the site's robots.txt"
+#: is the publisher's rule, and "robots.txt not readable" is our fail-closed refusal; neither is the document failing.
+_ROBOTS_TALLY_KEY = {"blocked": "robots_blocked", "unread": "robots_unread"}
+
+
 def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None) -> dict:
     """Track all watched legal documents, returning an aggregate tally.
 
@@ -904,6 +919,10 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
 
     ``deferred`` follows the same convention (R293): present ONLY when the host's own Crawl-delay put at least one document
     off. A deferral is neither an error nor a document attempted, so it is in neither ``errors`` nor ``documents``.
+
+    ``robots_blocked`` / ``robots_unread`` follow ``skipped_offline``'s convention (row 283): present ONLY when non-zero,
+    still inside ``errors``, so the "Track changes now" message can say the site's robots.txt blocked a document instead
+    of counting it as a failure.
     """
     from src.database.query import capped
 
@@ -946,6 +965,9 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
             tally["errors"] += 1
             if res.get("offline"):
                 tally["skipped_offline"] = tally.get("skipped_offline", 0) + 1
+            elif res.get("robots") in _ROBOTS_TALLY_KEY:
+                key = _ROBOTS_TALLY_KEY[res["robots"]]
+                tally[key] = tally.get(key, 0) + 1
         elif status == "unchanged":
             tally["unchanged"] += 1
         elif status == "deferred":
@@ -1054,6 +1076,9 @@ def auto_track_due(
             tally["errors"] += 1
             if res.get("offline"):
                 tally["skipped_offline"] = tally.get("skipped_offline", 0) + 1
+            elif res.get("robots") in _ROBOTS_TALLY_KEY:
+                key = _ROBOTS_TALLY_KEY[res["robots"]]
+                tally[key] = tally.get(key, 0) + 1
         elif status == "unchanged":
             tally["unchanged"] += 1
         elif status == "deferred":
