@@ -97,6 +97,28 @@ def test_following_a_link_still_refuses_a_pipe_or_a_device_at_its_end(tmp_path):
         assert fh.read() == b"ok"
 
 
+@posix_only
+def test_a_name_swapped_after_the_look_is_refused(tmp_path, monkeypatch):
+    """Where there is no O_NOFOLLOW (Windows), the identity of the file opened is compared with the one looked at."""
+    (tmp_path / "a").write_bytes(b"a")
+    (tmp_path / "b").write_bytes(b"b")
+    class _SwappingOs:  # this module's own view of os, never the process's (R351)
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+        @staticmethod
+        def open(p, *a, **k):
+            # Between the look and the open the name is swapped for a link, and (as on Windows, with no O_NOFOLLOW)
+            # the open follows it to another regular file.
+            os.unlink(tmp_path / "a")
+            os.symlink(tmp_path / "b", tmp_path / "a")
+            return os.open(tmp_path / "b", *a, **k)
+
+    monkeypatch.setattr(regular_file, "os", _SwappingOs())
+    with pytest.raises(NotARegularFile):
+        open_regular_fd(tmp_path / "a")
+
+
 def test_a_folder_is_refused(tmp_path):
     with pytest.raises(NotARegularFile):
         open_regular_fd(tmp_path)
@@ -190,12 +212,49 @@ def _small_set(tmp: Path) -> tuple[Path, dict]:
 def test_a_volume_swapped_for_a_pipe_or_a_link_is_reported_bad_not_read(tmp_path, kind):
     out, m = _small_set(tmp_path)
     victim = m["volumes"][0]["name"]
+    real = (out / victim).read_bytes()
     (out / victim).unlink()
     _plant(out / victim, kind)
+    if kind == "link":  # the link's target holds the volume's exact bytes: only the refusal can make it bad
+        (out.parent / ("outside-" + victim)).write_bytes(real)
     status = _within(10, lambda: volumes.verify_volume_set(out))
     assert victim in status["bad"] and not status["ok"]
     with pytest.raises(volumes.VolumeError):
         _within(10, lambda: volumes.read_volume_set(out, "pw", tmp_path / "restored.bin"))
+
+
+@pytest.mark.parametrize("name", ["../outside.ooenc", "sub/x.ooenc", "..", 7])
+def test_a_volume_name_that_is_a_path_is_bad_and_never_read(tmp_path, name, monkeypatch):
+    out, m = _small_set(tmp_path)
+    (tmp_path / "outside.ooenc").write_bytes((out / m["volumes"][0]["name"]).read_bytes())
+    m["volumes"][0]["name"] = name
+    (out / "volumes.json").write_text(json.dumps(m), encoding="utf-8")
+    hashed: list = []
+    real = volumes._sha256_file
+    monkeypatch.setattr(volumes, "_sha256_file", lambda p: hashed.append(p) or real(p))
+    status = volumes.verify_volume_set(out)
+    assert str(name) in status["bad"] and not status["ok"]
+    assert all(Path(p).parent == out for p in hashed)  # nothing outside the folder was hashed
+
+
+def test_parity_recovery_never_reads_a_parity_name_that_is_a_path(tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    from src.backup import parity
+
+    out, _ = _small_set(tmp_path)
+    parity.write_parity(out, parity_count=1)
+    m = volumes.load_manifest(out)
+    data0 = m["volumes"][0]["name"]
+    good = (out / data0).read_bytes()
+    pv = m["parity"]["volumes"][0]
+    (tmp_path / "elsewhere.oopar").write_bytes((out / pv["name"]).read_bytes())
+    pv["name"] = "../elsewhere.oopar"
+    (out / data0).write_bytes(b"damaged")
+    read: list = []
+    real = parity._read_band
+    monkeypatch.setattr(parity, "_read_band", lambda p, o, n: read.append(p) or real(p, o, n))
+    assert parity.recover_volumes(m, [data0], out_dir=out) == [data0]
+    assert all(Path(p).parent == out for p in read) and (out / data0).read_bytes() != good
 
 
 def test_a_sound_set_still_verifies_and_restores(tmp_path):
@@ -257,7 +316,7 @@ def test_parity_recovery_with_a_planted_parity_volume_neither_blocks_nor_install
 
 
 @posix_only
-@pytest.mark.parametrize("kind", ["fifo", "zero"])
+@pytest.mark.parametrize("kind", KINDS)
 def test_the_folder_backup_hash_refuses_a_pipe_or_a_device(tmp_path, kind):
     from src.backup import folder_backup
 

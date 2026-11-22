@@ -46,8 +46,20 @@ def open_regular_fd(path: str | os.PathLike[str], *, follow_links: bool = False,
         raise NotARegularFile(f"not a regular file: {os.fspath(path)!s}")
     fd = os.open(path, _flags(follow_links), **kw)  # a link swapped in after the look fails here (ELOOP)
     try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):  # the file OPENED, not the name looked at
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode):  # the file OPENED, not the name looked at
             raise NotARegularFile(f"not a regular file: {os.fspath(path)!s}")
+        # The file OPENED is the file EXAMINED. Where there is no O_NOFOLLOW (Windows), this is what refuses a name
+        # swapped for a link to a regular file between the look and the open. A file system that reports no inode (0)
+        # cannot be compared; a mismatch is confirmed by a second look at the NAME, because lstat and fstat come from
+        # different Windows calls that may give one file's identity at different widths (volumes.load_manifest).
+        if not follow_links and (st.st_ino and fst.st_ino) and (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
+            try:
+                again = os.stat(path, follow_symlinks=False, **kw)
+            except OSError:
+                again = None
+            if again is None or not stat.S_ISREG(again.st_mode) or (again.st_dev, again.st_ino) != (st.st_dev, st.st_ino):
+                raise NotARegularFile(f"changed while it was being opened: {os.fspath(path)!s}")
     except BaseException:
         os.close(fd)
         raise

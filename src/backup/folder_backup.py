@@ -1592,10 +1592,11 @@ def _blob_sha256_from_name(rel: str) -> str | None:
 
 def _sha256_file(path: Path) -> str:
     """The SHA-256 of a regular file. The verify reaches a member through its name inside the backup folder, so a
-    pipe or a device there raises :class:`NotARegularFile` without blocking or reading (row 312); a link that stays
-    inside the category folder is followed, as the traversal guard already allows."""
+    pipe or a device there raises :class:`NotARegularFile` without blocking or reading (row 312), and
+    a link is never followed either (no backup we write holds one; one swapped in after the traversal guard looked
+    could lead out of the folder), so it reads as a checksum mismatch."""
     h = hashlib.sha256()
-    with open_regular(path, follow_links=True) as f:
+    with open_regular(path) as f:
         for chunk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -1740,7 +1741,7 @@ def verify_folder_backup(
                 try:
                     actual_hex = _sha256_file(path)
                 except NotARegularFile:
-                    actual_hex = ""  # swapped for a pipe or a device after the look: never a match
+                    actual_hex = ""  # a link, or swapped for a pipe or a device after the look: never a match
                 status = "ok" if actual_hex and all(actual_hex == h for h in want) else "checksum_mismatch"
             else:
                 status = "size_only"  # present + right size; no usable stored checksum

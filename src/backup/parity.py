@@ -43,6 +43,7 @@ from src.backup.volumes import (
     MANIFEST_NAME,
     VolumeError,
     _digest_matches,
+    _plain_volume_name,
     _sha256_file,
     load_manifest,
 )
@@ -349,9 +350,15 @@ def recover_volumes(
     bad_set = set(bad)
     # A corrupt parity volume must not poison recovery: re-verify parity integrity too.
     for pv in par["volumes"]:
+        if not _plain_volume_name(pv.get("name")):  # never joined to the folder: a path would read outside it (row 312)
+            bad_set.add(str(pv.get("name")))
+            continue
         p = out / pv["name"]
         if not p.exists() or not _digest_matches(p, pv["sha256"]):
             bad_set.add(pv["name"])
+    for v in data_meta:
+        if not _plain_volume_name(v.get("name")):
+            bad_set.add(str(v.get("name")))
 
     present_rows: list[tuple[int, Path]] = []
     erased_data: list[int] = []

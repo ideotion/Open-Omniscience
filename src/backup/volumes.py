@@ -82,6 +82,13 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _plain_volume_name(name: object) -> bool:
+    """Whether a name a manifest gives is one file directly in the set's folder: never a path (``../x``,
+    ``sub/link/x``), a drive letter or a stream name. A crafted manifest is read before its names are checked
+    anywhere else, so a verify that hashed ``../x`` read outside the folder (row 312)."""
+    return isinstance(name, str) and name not in {"", ".", ".."} and not any(c in name for c in "/\\:\0")
+
+
 def _digest_matches(path: Path, expected: object) -> bool:
     """Whether ``path`` is a regular file whose SHA-256 is ``expected``. A name that is a link, a pipe or a device is
     a volume that does not match: reported as bad, so a re-copy or parity recovery deals with it, never read (row
@@ -265,11 +272,15 @@ def verify_volume_set(
     for v in m["volumes"]:
         if should_stop is not None and should_stop():
             raise VolumeStopped("stopped while verifying the volume set")
+        if not _plain_volume_name(v.get("name") if isinstance(v, dict) else None):
+            bad.append(str(v.get("name") if isinstance(v, dict) else v))  # never joined to the folder, never read
+            checked += 1
+            continue
         p = out / v["name"]
         if not p.exists():
             bad.append(v["name"])
             missing.append(v["name"])
-        elif not _digest_matches(p, v["sha256"]):
+        elif not _digest_matches(p, v.get("sha256")):
             bad.append(v["name"])
         checked += 1
         if progress_cb is not None:
