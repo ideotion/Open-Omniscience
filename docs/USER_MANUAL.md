@@ -2014,6 +2014,7 @@ Official **figures** are not here at all — they are data, so they live under
     destroy it); the app folder is left in place to delete manually. Equivalent to
     `./install.sh --uninstall` or the **“Uninstall Open Omniscience”** desktop icon the
     installer creates next to the two app launchers.
+    If you choose a mode that also wipes your data, that erase runs after the app has stopped and records what it did in `.open-omniscience-uninstall.log` in your home folder. It too is complete only when no other program has the database open: the log says when another program still had it open, or when the erase could not check (it never can on Windows). A program that has the database open but holds no lock on it at that moment cannot be seen, so the check can miss it.
 
   Governance and the dual-use red lines that bound all of this are in
   [`GOVERNANCE.md`](GOVERNANCE.md) (also in **Help & docs**).

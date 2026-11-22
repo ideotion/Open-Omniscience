@@ -1940,6 +1940,7 @@ Amtliche **Zahlen** stehen hier überhaupt nicht — sie sind Daten und liegen d
     sie zu vernichten); der App-Ordner bleibt bestehen und muss von Hand gelöscht werden. Gleichwertig mit
     `./install.sh --uninstall` oder dem Desktop-Symbol **„Open Omniscience deinstallieren“** (Uninstall Open Omniscience), das das
     Installationsprogramm neben den beiden App-Startern anlegt.
+    Wenn Sie einen Modus wählen, der auch Ihre Daten löscht, läuft diese Löschung, nachdem die App beendet ist, und hält in `.open-omniscience-uninstall.log` in Ihrem Benutzerordner fest, was sie getan hat. Auch sie ist nur vollständig, wenn kein anderes Programm die Datenbank geöffnet hat: Das Protokoll sagt, wenn ein anderes Programm sie noch geöffnet hatte oder wenn die Löschung das nicht prüfen konnte (unter Windows kann sie es nie). Ein Programm, das die Datenbank geöffnet hat, aber in diesem Moment keine Sperre auf ihr hält, ist nicht zu sehen, daher kann die Prüfung es übersehen.
 
   Die Governance und die roten Linien zur doppelten Verwendbarkeit (Dual Use), die all dem Grenzen setzen, stehen in
   [`GOVERNANCE.md`](GOVERNANCE.md) (auch unter **Hilfe & Doku**).

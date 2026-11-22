@@ -1932,6 +1932,7 @@ Os **números** oficiais não ficam aqui de jeito nenhum — eles são dados, po
     destruí-los); a pasta do app fica no lugar para ser excluída manualmente. Equivale a
     `./install.sh --uninstall` ou ao ícone **“Desinstalar o Open Omniscience” [Uninstall Open Omniscience]** na área de trabalho que o
     instalador cria ao lado dos dois atalhos do app.
+    Se escolher um modo que também apaga os seus dados, esse apagamento corre depois de a aplicação parar e regista o que fez em `.open-omniscience-uninstall.log`, na sua pasta pessoal. Também ele só é completo quando nenhum outro programa tem a base de dados aberta: o registo diz quando outro programa ainda a tinha aberta, ou quando o apagamento não conseguiu verificá-lo (em Windows nunca consegue). Um programa que tem a base de dados aberta mas não detém nenhum bloqueio sobre ela nesse momento não pode ser visto, por isso a verificação pode não o detetar.
 
   A governança e as linhas vermelhas de uso duplo que delimitam tudo isso estão em
   [`GOVERNANCE.md`](GOVERNANCE.md) (também em **Ajuda e documentação**).
