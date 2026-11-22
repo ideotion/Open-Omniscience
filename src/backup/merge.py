@@ -49,7 +49,7 @@ from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import groupby, islice
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from src.backup.artifact import StagedArtifact, member_segment_is_safe
@@ -7168,12 +7168,21 @@ def merge_side_files(staged: StagedArtifact) -> dict:
 
         signed_here = is_this_installations_key(staged.origin_fingerprint) is True
     withheld_authors: list[str] = []
-    for name, path in staged.member_paths("annotations"):
+    for raw_name, path in staged.member_paths("annotations"):
+        # Route on the name as the staging join reads it (member_path drops "." segments and doubled "/"): routed on its
+        # spelling, "annotations/./imported/x.json" missed the imported-record branch below and its bytes (trust flag
+        # included) were written as they came, past the R800 gate and the author_id check. Only what this app writes as an
+        # annotations member is restored: a .json under annotations/; any other name is refused and reported, never written.
+        parts = PurePosixPath(raw_name).parts
+        name = "/".join(parts)
+        if len(parts) < 2 or parts[0] != "annotations" or not name.endswith(".json"):
+            ann["errors"].append(f"{raw_name!r}: refused, not an annotations file (nothing was written)")
+            continue
         local = base / name
         if local.exists():
             ann["kept_local"] += 1
             continue
-        if name.startswith("annotations/imported/"):
+        if parts[1] == "imported":
             # The member is an imported-author RECORD, not a signed bundle: it was
             # written by import_bundle AFTER verification, so its manifest+signature
             # were stripped and it CANNOT be re-verified (its origin was proven at the

@@ -316,3 +316,39 @@ def test_the_endpoint_refuses_a_key_that_is_not_one(monkeypatch, tmp_path):
     with pytest.raises(HTTPException) as stale:
         api.settle_withheld_trust(api.WithheldTrustDecision(signer=OTHER_KEY, count=3, apply=True))
     assert stale.value.status_code == 409
+
+
+@pytest.mark.parametrize("spelling", ["annotations/./imported/{f}", "annotations//imported/{f}", "./annotations/imported/{f}"])
+def test_another_spelling_of_an_imported_record_still_passes_the_gate(monkeypatch, tmp_path, spelling):
+    """Security read of row 339: the staging join drops "." segments and doubled "/", so routing on the name's
+    spelling sent these past adopt_imported_record and wrote their trust flag as it came."""
+    staged = _member_from_another_install(monkeypatch, tmp_path)
+    real = staged.members[0]["name"]
+    staged.members[0]["name"] = spelling.format(f=real.rsplit("/", 1)[1])
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    from src.backup.merge import merge_side_files
+
+    ann = merge_side_files(staged)["annotations"]
+    assert ann["imported_authors"] == 1 and ann.get("restored_mine") is None
+    assert ann["trust_withheld"]["count"] == 1
+    (author,) = store.list_authors()
+    assert author["trusted"] is False and author["trust_withheld_by"] == OTHER_KEY
+
+
+@pytest.mark.parametrize("name", ["keys/evidence_ed25519.pem", "state.json", "annotations", "annotations/notes.txt"])
+def test_an_annotations_member_outside_annotations_json_is_refused(monkeypatch, tmp_path, name):
+    staging = tmp_path / "staging"
+    (staging / name).parent.mkdir(parents=True, exist_ok=True)
+    if name == "annotations":
+        (staging / name).mkdir(exist_ok=True)
+        (staging / name / "x").write_text("x")
+    else:
+        (staging / name).write_text("{}")
+    staged = _staged_from(staging, name)
+    base = tmp_path / "b"
+    monkeypatch.setenv("OO_DATA_DIR", str(base))
+    from src.backup.merge import merge_side_files
+
+    ann = merge_side_files(staged)["annotations"]
+    assert len(ann["errors"]) == 1 and "refused" in ann["errors"][0]
+    assert not (base / name).exists()
