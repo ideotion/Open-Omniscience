@@ -326,17 +326,17 @@ def test_an_unreadable_store_says_why_and_is_never_absent(data, monkeypatch):
     class _Held(PermissionError):
         winerror = 32
 
-    real_open = open
+    real_header_file = at_rest_state._header_file
 
     def refusing(path, *a, **kw):
         if Path(path) == lp:
             raise _Held(13, "held")
         if Path(path).name == "custody_log.db":
             raise PermissionError(13, "denied")
-        return real_open(path, *a, **kw)
+        return real_header_file(path, *a, **kw)
 
     _plain_table(data / "custody_log.db")
-    monkeypatch.setattr(at_rest_state, "open", refusing, raising=False)
+    monkeypatch.setattr(at_rest_state, "_header_file", refusing)
     st = at_rest_state.status()
     # Row 153: a file another program holds is in use right now, not unreadable and not pending.
     assert _row(st, f"lane:{all_lanes()[0].kind}")["state"] == "busy"

@@ -56,4 +56,7 @@ def open_plain_read_only(path: os.PathLike[str] | str) -> sqlite3.Connection:
     """
     if not Path(path).is_file():
         raise sqlite3.OperationalError("unable to open database file")
-    return sqlite3.connect(read_only_uri(path), uri=True)
+    from src.database.connect import sqlite_opening
+
+    with sqlite_opening():  # R789: no Python read of ours closes a descriptor while this open may take a lock
+        return sqlite3.connect(read_only_uri(path), uri=True)

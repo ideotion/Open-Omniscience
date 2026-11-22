@@ -514,14 +514,14 @@ def test_the_operators_own_run_keeps_its_snapshot_when_a_store_fails(stores, mon
 def test_a_store_that_is_there_but_cannot_be_read_is_never_counted_absent(stores, monkeypatch):
     encrypt_tool.encrypt_all(_KEY)
     lane = stores.parent / "wiki.db"
-    real_open = open
+    real_header_file = at_rest_state._header_file
 
     def refusing(p, *a, **kw):  # the status reads each header itself (row 149): a read error on the lane's
         if Path(p) == lane:
             raise OSError(5, "Input/output error")
-        return real_open(p, *a, **kw)
+        return real_header_file(p, *a, **kw)
 
-    monkeypatch.setattr(at_rest_state, "open", refusing, raising=False)
+    monkeypatch.setattr(at_rest_state, "_header_file", refusing)
     st = at_rest_state.status(stores)
     row = next(r for r in st["stores"] if r["store"] == "lane:wiki")
     assert row["state"] == "unreadable" and row["reason"] == "io"
