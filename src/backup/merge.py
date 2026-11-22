@@ -7367,7 +7367,10 @@ _KEY_EVIDENCE_PKCS8 = (
     "it under in a form it does read; it is not written and stays in the backup"
 )
 _EVIDENCE_KEY_FILE = "evidence_ed25519.pem"
-_KEY_MARKER_CARRIED = "this install writes this marker itself when a restore places its key; one carried in a backup is never written"
+_KEY_MARKER_CARRIED = (
+    "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never "
+    "written"
+)
 #: How a carried key that is placed was written (:func:`_reseal_key`).
 _KEY_PLACED_HOW = ("as_carried", "resealed", "still_encrypted")
 

@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "عمليات الجلب الخاصة بهذا التطبيق",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "لا يملك هذا المستند سجلًا في نموذج القانون بعد؛ يُسجَّل في جولة التتبّع التالية، وحتى ذلك الحين لا توجد أحكام للمقارنة",
   "this form could not be counted": "تعذّر حساب هذه الصيغة",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "يكتب هذا التثبيت هذه العلامة بنفسه عندما تضع عملية استعادة مفتاحه؛ ولا تُكتب أبدًا علامة محمولة في نسخة احتياطية",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "يكتب هذا التثبيت هذه العلامة بنفسه عندما تضع عملية استعادة مفتاحًا هنا؛ ولا تُكتب أبدًا علامة محمولة في نسخة احتياطية",
   "this instance": "هذه النسخة",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "هذا تصنيفٌ للمكان، لا حكمٌ على الناشر: فهو يقول إن النشرة أُرسلت من نطاق يتابعه مجموعك أصلًا، ولا يقول أبدًا إن الاثنين متساويان في الموثوقية. والتراجع يعيد كل تصنيف تلقائي بدقة، ولا يمسّ شيئًا صنّفته بنفسك",
   "this machine backed off under memory pressure, so the ramp is capped": "تراجع هذا الجهاز تحت ضغط الذاكرة، لذا صار التصاعد محدودًا",

@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "las descargas propias de esta app",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "este documento aún no tiene fila en el modelo de leyes; se registra en la próxima pasada de seguimiento y, hasta entonces, no hay disposiciones que comparar",
   "this form could not be counted": "esta forma no se pudo contar",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "esta instalación escribe esta marca por sí misma cuando una restauración coloca su clave; una marca incluida en una copia nunca se escribe",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "esta instalación escribe esta marca por sí misma cuando una restauración coloca una clave aquí; una marca incluida en una copia nunca se escribe",
   "this instance": "esta instancia",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "esto es una UBICACIÓN, no un juicio sobre el editor: dice que un boletín se envió desde un dominio que su corpus ya sigue, nunca que ambos sean igual de fiables. Deshacer restaura con exactitud cada ubicación automática y no toca nada que haya archivado usted",
   "this machine backed off under memory pressure, so the ramp is capped": "esta máquina se replegó por presión de memoria, así que la subida está limitada",

@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "this app’s own fetches",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare",
   "this form could not be counted": "this form could not be counted",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "this install writes this marker itself when a restore places its key; one carried in a backup is never written",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written",
   "this instance": "this instance",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself",
   "this machine backed off under memory pressure, so the ramp is capped": "this machine backed off under memory pressure, so the ramp is capped",

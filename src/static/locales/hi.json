@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "इस ऐप के अपने फ़ेच",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "इस दस्तावेज़ की अभी कानून-मॉडल में कोई पंक्ति नहीं है; यह अगले ट्रैकिंग पास में दर्ज होगी, तब तक तुलना के लिए कोई प्रावधान नहीं हैं",
   "this form could not be counted": "इस रूप को गिना नहीं जा सका",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "जब कोई पुनर्स्थापना इस इंस्टॉलेशन की कुंजी रखती है, तो यह चिह्न यह इंस्टॉलेशन स्वयं लिखता है; बैकअप में आया चिह्न कभी नहीं लिखा जाता",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "जब कोई पुनर्स्थापना यहाँ कोई कुंजी रखती है, तो यह चिह्न यह इंस्टॉलेशन स्वयं लिखता है; बैकअप में आया चिह्न कभी नहीं लिखा जाता",
   "this instance": "यह इंस्टेंस",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "यह एक स्थान-निर्धारण है, प्रकाशक पर कोई निर्णय नहीं: यह कहता है कि न्यूज़लेटर उस डोमेन से भेजी गई जिसे आपका संग्रह पहले से ट्रैक करता है, यह कभी नहीं कि दोनों समान रूप से विश्वसनीय हैं। पूर्ववत करने पर हर स्वचालित स्थान-निर्धारण ठीक वैसा ही बहाल हो जाता है, और आपने जो स्वयं वर्गीकृत किया उसे नहीं छुआ जाता",
   "this machine backed off under memory pressure, so the ramp is capped": "यह मशीन मेमोरी दबाव में पीछे हटी, इसलिए बढ़ोतरी सीमित है",

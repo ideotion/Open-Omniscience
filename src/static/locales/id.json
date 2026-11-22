@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "pengambilan aplikasi ini sendiri",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "dokumen ini belum memiliki baris model hukum; baris itu dicatat pada putaran pelacakan berikutnya, dan sampai saat itu tidak ada ketentuan untuk dibandingkan",
   "this form could not be counted": "bentuk ini tidak dapat dihitung",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "instalasi ini menulis penanda ini sendiri saat pemulihan menempatkan kuncinya; penanda yang terbawa dalam cadangan tidak pernah ditulis",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "instalasi ini menulis penanda ini sendiri saat pemulihan menempatkan sebuah kunci di sini; penanda yang terbawa dalam cadangan tidak pernah ditulis",
   "this instance": "instans ini",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "ini adalah PENEMPATAN, bukan penilaian atas penerbitnya: ia menyatakan bahwa sebuah buletin dikirim dari domain yang sudah dipantau korpus Anda, bukan bahwa keduanya sama-sama dapat dipercaya. Pembatalan memulihkan setiap penempatan otomatis dengan tepat, dan tidak menyentuh apa pun yang Anda arsipkan sendiri",
   "this machine backed off under memory pressure, so the ramp is capped": "mesin ini mundur karena tekanan memori, sehingga peningkatannya dibatasi",

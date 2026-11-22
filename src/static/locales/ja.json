@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "このアプリ自体の取得",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "この文書にはまだ法令モデルの行がありません。次の追跡処理で記録され、それまでは比較できる条項がありません",
   "this form could not be counted": "この語形を集計できませんでした",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "復元がこのインストール環境の鍵を配置したとき、この印はこのインストール環境自身が書き込みます。バックアップに含まれていた印は書き込まれません",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "復元がここに鍵を配置したとき、この印はこのインストール環境自身が書き込みます。バックアップに含まれていた印は書き込まれません",
   "this instance": "このインスタンス",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "これは「振り分け」であって、発行元への評価ではありません。すでに追跡しているドメインから送られたという事実を示すだけで、両者が同じだけ信頼できるという意味ではありません。取り消すと自動振り分けはすべて正確に元へ戻り、ご自身で振り分けたものには一切触れません",
   "this machine backed off under memory pressure, so the ramp is capped": "このマシンはメモリ圧迫で後退したため、立ち上げが制限されています",

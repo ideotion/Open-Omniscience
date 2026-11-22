@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "本应用自身的抓取",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "该文件尚无法律模型记录;下一轮跟踪时会记录,在此之前没有可比较的条款",
   "this form could not be counted": "无法统计这个词形",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "当恢复操作放置本安装实例的密钥时，此标记由本安装实例自行写入；备份中携带的标记永远不会被写入",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "当恢复操作在此放置密钥时，此标记由本安装实例自行写入；备份中携带的标记永远不会被写入",
   "this instance": "本实例",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "这是一次归档，不是对出版方的评判：它只说明这封邮件通讯来自您的语料库已经追踪的域名，绝不表示两者同样可靠。撤销会精确还原每一次自动归档，并且不会动您亲自归档的任何内容",
   "this machine backed off under memory pressure, so the ramp is capped": "本机在内存压力下已退让，因此提速受限",

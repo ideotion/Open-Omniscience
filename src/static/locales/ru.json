@@ -8173,7 +8173,7 @@
   "this app’s own fetches": "собственные запросы этого приложения",
   "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "у этого документа ещё нет строки в модели законов; она появится при следующем проходе отслеживания, а до тех пор сравнивать нечего",
   "this form could not be counted": "не удалось подсчитать эту форму",
-  "this install writes this marker itself when a restore places its key; one carried in a backup is never written": "эта установка сама записывает эту отметку, когда восстановление размещает её ключ; отметка из резервной копии никогда не записывается",
+  "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never written": "эта установка сама записывает эту отметку, когда восстановление размещает здесь ключ; отметка из резервной копии никогда не записывается",
   "this instance": "этот экземпляр",
   "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "это РАЗМЕЩЕНИЕ, а не суждение об издателе: оно означает, что рассылка пришла с домена, за которым ваш корпус уже следит, но никогда — что оба одинаково надёжны. Отмена в точности восстанавливает каждое автоматическое размещение и не затрагивает ничего, что вы распределили сами",
   "this machine backed off under memory pressure, so the ramp is capped": "эта машина отступила под давлением памяти, поэтому разгон ограничен",
