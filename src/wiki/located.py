@@ -609,7 +609,8 @@ def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[s
             # Another house number, a dwelling, a private object or nothing public: never placed, counted as not confirmed.
             return {"status": "ambiguous", "answers": total}
         first = results[0]
-        countries = {c.get("alpha3"): c.get("vintage") for c in answer.get("countries") or []}
+        countries = {c.get("alpha3"): c for c in answer.get("countries") or []}
+        country = countries.get(first.get("country")) or {}
         return {
             "status": "located",
             "query": query,
@@ -617,7 +618,9 @@ def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[s
             "lon": points[0][1],
             "osm_object": first.get("object"),
             "osm_country": first.get("country"),
-            "osm_vintage": countries.get(first.get("country")),
+            "osm_vintage": country.get("vintage"),
+            # Row 291 (R775): the last daily file applied, beside the extract's date (src/osm/lane_models.py:country_data_date).
+            "osm_data_date": country.get("data_date"),
             "answers": total,
         }
     return {"status": "not_located"}
@@ -713,7 +716,9 @@ def _osm_scope() -> tuple[str | None, list[tuple[float, float, float, float]]]:
     except Exception as exc:  # noqa: BLE001 - an unreadable OSM lane is said as such, never as "no country"
         log_failure(_LOG, "located addresses: the OSM index state could not be read", exc, level=logging.WARNING)
         return None, []
-    signature = json.dumps(sorted((c["alpha3"], c.get("vintage")) for c in scope))
+    # Row 291: keyed on what the objects stand at (the cut plus the daily file applied, the basis index_state compares), never on the
+    # extract's date alone: a daily update changes the objects without a new cut, and an answer memoized before it must be asked again.
+    signature = json.dumps(sorted((c["alpha3"], c.get("basis")) for c in scope))
     if not scope:
         return signature, []
     from src.osm.lane_models import OsmCountry
@@ -898,6 +903,7 @@ def _report(state: _State, held: dict[str, tuple[str, str, str]], boxes: list, g
                         "field": key,
                         "address": text,
                         **{k: answer[k] for k in ("query", "lat", "lon", "osm_object", "osm_country", "osm_vintage", "answers")},
+                        "osm_data_date": answer.get("osm_data_date"),
                     }
                 )
     read = {"hot": sum(1 for r in state.pages if r.startswith("hot:")), "warm": sum(1 for r in state.pages if r.startswith("warm:"))}
