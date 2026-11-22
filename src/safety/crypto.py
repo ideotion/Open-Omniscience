@@ -282,7 +282,7 @@ def _open_sealed(src: str | os.PathLike[str], *, follow_links: bool = True):
         # Told apart by looking at the name again, so any other failure is raised as it was.
         if follow_links or not os.path.islink(src):
             raise
-    raise EncryptionError("not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read")
+    raise EncryptionError("this file was not read: it is not a regular file, or it is a link")
 
 
 _NOT_THE_FILE_CHECKED = (

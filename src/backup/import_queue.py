@@ -374,6 +374,18 @@ def _state_path() -> Path:
     return data_dir() / _STATE_FILE
 
 
+# R795: what the start refuses with, one whole sentence per backup or group, translated whole by the page (ooServerText).
+WRONG_PASSPHRASES = (
+    "Wrong passphrase for {names}: each backup's first volume matches its list of volumes signed by this installation "
+    "but does not open with the passphrase given. Nothing was started and nothing was changed on this computer; correct it and import again."
+)
+UNCHECKED_PASSPHRASE = (
+    "Could not check the passphrase for {name}: its first volume does not open with the passphrase given, and the "
+    "backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a "
+    "changed backup. Nothing was started and nothing was changed on this computer."
+)
+
+
 class ImportQueueManager:
     """ONE import run at a time. Items are executed in order; the run owns a single
     exclusive collection window spanning all of them (ruling item 10)."""
@@ -704,23 +716,34 @@ class ImportQueueManager:
         A run of many backups commits them in groups (``import_checkpoint_k``): one backup failing on a typo in its own
         passphrase discards the work of the backups staged with it, which is many minutes per backup on a large import.
         Checking every backup's key first costs well under a second each (one key derivation and one chunk; the volume
-        is hashed only when the chunk does not open). Only a CERTAIN answer refuses (``backup_passphrase_is_wrong``): a
-        set that cannot be read is left to the restore, which says what is wrong with it."""
-        from src.backup.stream_backup import backup_passphrase_is_wrong
+        is hashed only when the chunk does not open). Two answers refuse (``backup_passphrase_check``): a passphrase that is
+        certainly wrong, and one that does not open a first volume whose list of volumes cannot be authenticated (R795: the
+        reason is named, never called a wrong passphrase). A set that cannot be read is left to the restore, which says
+        what is wrong with it."""
+        from src.backup.stream_backup import backup_passphrase_check
 
-        wrong = [
-            str(raw.get("label") or Path(str(raw.get("path"))).name)
-            for raw in items or []
-            if raw.get("kind") == "corpus" and raw.get("path")
+        wrong: list[str] = []
+        unchecked: list[tuple[str, str]] = []
+        for raw in items or []:
+            if raw.get("kind") != "corpus" or not raw.get("path"):
+                continue
             # a backup the run skips as already merged is never opened, so an old passphrase for it cannot stop the start
-            and (raw.get("force") or not ImportQueueManager._already_merged(str(raw["path"])))
-            and backup_passphrase_is_wrong(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
-        ]
+            if not raw.get("force") and ImportQueueManager._already_merged(str(raw["path"])):
+                continue
+            verdict, reason = backup_passphrase_check(str(raw["path"]), str(raw.get("passphrase") or passphrase or ""))
+            # one line per refusal: a folder name's own line breaks or control characters never start a line of their own
+            name = "".join(c if c.isprintable() else " " for c in str(raw.get("label") or Path(str(raw.get("path"))).name))
+            if verdict == "wrong":
+                wrong.append(name)
+            elif verdict == "unchecked" and reason:
+                unchecked.append((name, reason))
+        lines = []
         if wrong:
-            raise ValueError(
-                "Wrong passphrase for " + ", ".join(wrong) + ": the backup is intact but does not open with the "
-                "passphrase given. Nothing was started; correct it and import again."
-            )
+            lines.append(WRONG_PASSPHRASES.format(names=", ".join(wrong)))
+        lines.extend(UNCHECKED_PASSPHRASE.format(name=name, reason=reason) for name, reason in unchecked)
+        if lines:
+            # one sentence per line, each whole, so the page translates every line on its own
+            raise ValueError("\n".join(lines))
 
     def stop(self) -> None:
         """Stop the run IMMEDIATELY (ruling item 15). The item in flight is cancelled
