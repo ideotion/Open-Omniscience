@@ -16,6 +16,7 @@ const path = require("path");
 const STATIC = path.join(__dirname, "..", "src", "static");
 const CORE = fs.readFileSync(path.join(STATIC, "app-core.js"), "utf-8");
 const ANA = fs.readFileSync(path.join(STATIC, "app-analysis.js"), "utf-8");
+const INS = fs.readFileSync(path.join(STATIC, "app-insights.js"), "utf-8");
 const LOCALE = (code) => JSON.parse(fs.readFileSync(path.join(STATIC, "locales", code + ".json"), "utf-8"));
 const LANGS = ["en", "fr", "de", "es", "pt", "id", "ru", "ar", "hi", "bn", "ja", "zh"];
 
@@ -77,6 +78,30 @@ test("every language: both dates, no placeholder left", () => {
     const h = strip(build(lang)("2026-10-01+2026-11-19"));
     assert(!/\{\w+\}/.test(h), lang + ": a placeholder was left: " + h);
     assert(h.includes("2026-10-01") && h.includes("2026-11-19"), lang + ": a date is missing: " + h);
+  }
+});
+
+// The Insights entity line names the built gazetteer's vintage (Q805): the same two dates, never the raw "+not-read" value.
+function buildLine(lang) {
+  const loc = LOCALE(lang);
+  const t = (s) => (loc[s] || s);
+  const tf = (s, v) => t(s).replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : String(v[k])));
+  const window = { OOI18N: { t, tf } };
+  const ooIsoDate = (s) => String(s).slice(0, 10);
+  const body = [extract("ooOsmUpdated", CORE), extract("ooOsmUpdatesClause", CORE), extract("_gazetteerArtifactLine", INS),
+    "return (v) => _gazetteerArtifactLine(v, OOI18N.tf);"].join("\n");
+  return new Function("window", "OOI18N", "ooIsoDate", body)(window, window.OOI18N, ooIsoDate);
+}
+
+test("the Insights gazetteer line: as before, or both dates, never the raw value", () => {
+  const f = buildLine("en");
+  assert(f("2026-10-01") === "Gazetteer: the built artifact, vintage 2026-10-01", f("2026-10-01"));
+  assert(f(null) === "Gazetteer: the built artifact, vintage ?", f(null));
+  assert(f("2026-10-01+2026-11-19") === "Gazetteer: the built artifact, vintage 2026-10-01 · daily change files applied through 2026-11-19", f("2026-10-01+2026-11-19"));
+  assert(f("2026-10-01+not-read") === "Gazetteer: the built artifact, vintage 2026-10-01 · daily updates applied, data date not read", f("2026-10-01+not-read"));
+  for (const lang of LANGS) {
+    const h = buildLine(lang)("2026-10-01+not-read");
+    assert(!h.includes("not-read") && !h.includes("+") && !/\{\w+\}/.test(h), lang + ": " + h);
   }
 });
 

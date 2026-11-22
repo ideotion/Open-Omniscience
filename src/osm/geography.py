@@ -95,7 +95,7 @@ def _edited_within_year(days: list[list], reference) -> int:
 def _countries() -> dict[str, Any]:
     from sqlalchemy import inspect
 
-    from src.osm.lane_models import OsmCountry, country_data_date
+    from src.osm.lane_models import OsmCountry, country_data_date, country_reference
     from src.osm.places_summary import changed_places, part_for
     from src.versioned import store
 
@@ -109,14 +109,14 @@ def _countries() -> dict[str, Any]:
             if c.status != "complete":
                 not_cut.append(c.alpha3)
                 continue
-            ref = c.diff_timestamp or c.extract_vintage
+            ref, why = country_reference(c)  # row 298: no reference when files were applied undated
             data, how = part_for(s, c.alpha3, "geography", c, have, reference=ref)
             counts = data["counts"]
             values: dict[str, int | None] = {"places": int(counts.get("n", 0)), "brand": int(counts.get("brand_any", 0)), "checked": int(counts.get("checked", 0))}
             reasons: dict[str, str] = {}
             if ref is None:
                 values["edited_1y"] = None
-                reasons["edited_1y"] = "no-reference"
+                reasons["edited_1y"] = why or "no-reference"
             else:
                 values["edited_1y"] = int(counts["edited_1y"]) if "edited_1y" in counts else _edited_within_year(data["days"], ref)
             w = _window(s, c.alpha3, have)

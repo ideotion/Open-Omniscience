@@ -48,8 +48,8 @@ def test_a_volume_that_links_out_of_the_folder_is_never_read(tmp_path, monkeypat
     real = sb.stream_key_opens
     monkeypatch.setattr(sb, "stream_key_opens", lambda p, pw: opened.append(p) or real(p, pw))
     hashed = []
-    real_hash = sb._sha256_file
-    monkeypatch.setattr(sb, "_sha256_file", lambda p: hashed.append(p) or real_hash(p))
+    real_hash = sb._digest_matches  # the stream reader hashes a volume through this since row 312
+    monkeypatch.setattr(sb, "_digest_matches", lambda p, want: hashed.append(p) or real_hash(p, want))
     assert backup_passphrase_is_wrong(chosen, "wrong") is False  # no verdict: the restore refuses the link by name
     assert opened == [] and hashed == []
 

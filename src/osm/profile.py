@@ -300,7 +300,7 @@ def _age_counts(days: list[list], rd: date) -> tuple[dict[str, int], int]:
     return buckets, stamped
 
 
-def _snapshot_freshness(s, alpha3: str, ref: datetime | None, country, have: set[str]) -> dict[str, Any]:
+def _snapshot_freshness(s, alpha3: str, ref: datetime | None, country, have: set[str], why: str | None = None) -> dict[str, Any]:
     from src.osm.places_summary import part_for
 
     data, info = part_for(s, alpha3, "freshness", country, have)
@@ -309,6 +309,9 @@ def _snapshot_freshness(s, alpha3: str, ref: datetime | None, country, have: set
     out: dict[str, Any] = {"n": n, "check_date": {"present": carrying, "share": _share(carrying, n)}, "age_years": list(AGE_YEARS), **_source(info)}
     if ref is None:
         reason = {"available": False, "reason": "no-reference", "detail": "neither the extract nor a change file states a date to measure the ages from"}
+        if why == "date-not-read":
+            reason = {"available": False, "reason": why,
+                      "detail": "daily change files were applied and their data date was not read, so there is no date to measure the ages from"}
         out["last_edit"] = reason
         out["check_date"].update(reason)
         return out
@@ -428,7 +431,7 @@ def _prior(s, alpha3: str, surface: str, have: set[str]) -> dict[str, Any]:
 def _build(alpha3: str, surface: str, limit: int) -> dict[str, Any]:
     from sqlalchemy import inspect
 
-    from src.osm.lane_models import OsmCountry, country_data_date
+    from src.osm.lane_models import OsmCountry, country_data_date, country_reference
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -439,14 +442,14 @@ def _build(alpha3: str, surface: str, limit: int) -> dict[str, Any]:
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
         if country is None or country.status != "complete":
             return {"status": "not-cut", "country": alpha3, "surface": surface}
-        ref = country.diff_timestamp or country.extract_vintage
+        ref, why = country_reference(country)  # row 298: never the extract's date once files were applied undated
         vintage = {**country_data_date(country), "reference": _iso(ref)}
         if surface == "brands":
             snap = _snapshot_brands(s, alpha3, limit, country, have)
         elif surface == "channels":
             snap = _snapshot_channels(s, alpha3, country, have)
         else:
-            snap = _snapshot_freshness(s, alpha3, ref, country, have)
+            snap = _snapshot_freshness(s, alpha3, ref, country, have, why=why)
         w = _window(s, alpha3, have)
         if w["state"] == "ok":
             changes = _changes(s, alpha3, surface, w)

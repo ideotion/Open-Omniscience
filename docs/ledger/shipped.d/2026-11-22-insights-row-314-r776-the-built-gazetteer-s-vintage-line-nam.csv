@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-22,insights,"row 314 (R776): the built gazetteer's vintage line names both dates, never the raw compound value",shipped,PR #2275; R776; R775,src/static/app-insights.js,"The Insights entity box printed the built gazetteer's as_of verbatim, so an artifact built after daily OSM files were applied read 'vintage 2026-10-01+not-read' in every language. _gazetteerArtifactLine now gives the extract's date and R775's clause (applied through d2, or data date not read); any other vintage reads as before. No new strings."

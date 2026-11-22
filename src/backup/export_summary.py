@@ -43,7 +43,6 @@ missing "verified" would flatten into one.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import datetime
@@ -58,6 +57,7 @@ from src.backup.attribution import (
     signals_from_tables,
 )
 from src.backup.export_folder import REQUEST_NAME, read_export_request
+from src.backup.manifest_file import read_manifest_json
 from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure
 
@@ -126,17 +126,19 @@ def _table_rows(tables: dict[str, Any] | None) -> list[dict[str, Any]]:
     return rows
 
 
+def _size(v: Any) -> int:
+    """A byte count from a manifest on the drive: a whole number of zero or more, else 0 (row 302)."""
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else 0
+
+
 def _folder_manifest(dest: Path) -> dict[str, Any] | None:
     from src.backup.folder_backup import MANIFEST_NAME as FOLDER_MANIFEST
 
-    p = dest / FOLDER_MANIFEST
-    if not p.exists():
-        return None
-    try:
-        m = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        log_failure(_LOG, f"export summary: unreadable {FOLDER_MANIFEST}", exc, level=logging.WARNING)
-        return None
+    # Row 302: the destination folder is on a drive anything may have written to, so the manifest is
+    # read like every other untrusted manifest (R780): never through a link, never blocking on a pipe,
+    # bounded in size and nesting. No second look at the path (an exists or lstat) follows the read:
+    # the one hardened read is the only touch of the drive's file.
+    m = read_manifest_json(dest / FOLDER_MANIFEST)
     return m if isinstance(m, dict) else None
 
 
@@ -162,17 +164,19 @@ def _file_categories(manifest: dict[str, Any] | None) -> list[dict[str, Any]]:
     selected, so an empty list means "not part of this export" rather than "empty",
     and listing it would invent a member.
     """
-    cats = (manifest or {}).get("categories") or {}
+    cats = (manifest or {}).get("categories")
     out: list[dict[str, Any]] = []
+    if not isinstance(cats, dict):  # row 302: a manifest of another shape names no category
+        return out
     for name, items in cats.items():
-        entries = items or []
+        entries = items if isinstance(items, list) else []
         if not entries:
             continue
         out.append(
             {
                 "category": str(name),
                 "files": len(entries),
-                "bytes": sum(int(e.get("size") or 0) for e in entries),
+                "bytes": sum(_size(e.get("size")) for e in entries if isinstance(e, dict)),
             }
         )
     out.sort(key=lambda c: (-c["bytes"], c["category"]))
@@ -261,8 +265,11 @@ def export_facts(
     elif manifest is not None:
         # The set's own account of itself: the same two figures the summary carries,
         # so a reopened panel still states what is on the drive.
-        count = len(manifest.get("volumes") or [])
-        parity = bool((manifest.get("parity") or {}).get("volumes"))
+        vols = manifest.get("volumes")
+        par = manifest.get("parity")
+        count = len(vols) if isinstance(vols, list) else 0  # row 302: another shape counts none
+        pv = par.get("volumes") if isinstance(par, dict) else None
+        parity = isinstance(pv, list) and bool(pv)
     else:
         count, parity = None, False
     request = read_export_request(d)
@@ -274,7 +281,7 @@ def export_facts(
         "corpus_facts": corpus_facts,
         "volumes": {
             "count": count,
-            "bytes": _volume_bytes(d),
+            "bytes": _volume_bytes(d, manifest),
             "plaintext_bytes": (summary or {}).get("plaintext_bytes"),
             "parity": parity,
             "parity_available": (summary or {}).get("parity_available"),
@@ -348,32 +355,25 @@ def _volume_manifest(dest: Path) -> dict[str, Any] | None:
     """The volume set's ``volumes.json``, or ``None`` when the folder holds no set."""
     from src.backup.volumes import MANIFEST_NAME
 
-    p = dest / MANIFEST_NAME
-    if not p.exists():
-        return None
-    try:
-        m = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    m = read_manifest_json(dest / MANIFEST_NAME)  # row 302: same hardened read as the folder manifest
     return m if isinstance(m, dict) else None
 
 
-def _volume_bytes(dest: Path) -> int | None:
+def _volume_bytes(dest: Path, manifest: dict[str, Any] | None = None) -> int | None:
     """Total bytes of the encrypted volumes + parity actually on the drive.
 
     Read off the MANIFEST (the set's own account of what it contains) rather than
     globbed off the directory, so a stray file an operator dropped in the folder is
-    never counted as part of the backup.
+    never counted as part of the backup. ``manifest`` is the one already read, so the count and the bytes
+    of one summary come from one read of the drive (row 302).
     """
-    m = _volume_manifest(dest)
+    m = manifest if manifest is not None else _volume_manifest(dest)
     if m is None:
         return None
-    total = 0
-    for v in m.get("volumes") or []:
-        total += int(v.get("bytes") or 0)
-    for pv in (m.get("parity") or {}).get("volumes") or []:
-        total += int(pv.get("bytes") or 0)
-    return total
+    parity = m.get("parity")
+    lists = (m.get("volumes"), parity.get("volumes") if isinstance(parity, dict) else None)
+    # Row 302: entries of another shape count nothing, never a crash of the summary.
+    return sum(_size(v.get("bytes")) for lst in lists if isinstance(lst, list) for v in lst if isinstance(v, dict))
 
 
 def _human(n: Any) -> str:
