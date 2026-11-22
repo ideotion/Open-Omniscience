@@ -82,13 +82,13 @@ def test_reclaims_pages_on_an_incremental_mode_store_and_persists_a_marker(tmp_p
         engine.dispose()
 
     assert out["freelist_pages_before"] == freelist_before_close
-    assert out["pages_reclaimed"] > 0
+    assert out["pages_freed"] > 0
     assert out["freelist_pages_after"] < out["freelist_pages_before"]
     assert out["at"]
 
     state = incremental_vacuum_state()
     assert state["last_run"] == out["at"]
-    assert state["last_tally"]["pages_reclaimed"] == out["pages_reclaimed"]
+    assert state["last_tally"]["pages_freed"] == out["pages_freed"]
 
 
 def test_reclaims_the_full_requested_budget_not_just_one_page(tmp_path, monkeypatch):
@@ -100,7 +100,7 @@ def test_reclaims_the_full_requested_budget_not_just_one_page(tmp_path, monkeypa
     because pysqlite reports no ``cursor.description`` for it, SQLAlchemy's
     CursorResult treats that as "no rows" and closes the cursor after the
     single execute() step -- which is the same step that frees page #1. That
-    makes ``pages_reclaimed`` exactly 1 on every call, regardless of the
+    made the freed-page count (then named ``pages_reclaimed``) exactly 1 on every call, regardless of the
     requested budget or the freelist size. This test sets a requested budget
     (50) comfortably smaller than the freelist it builds, so a correct pass
     reclaims exactly the requested budget, not 1."""
@@ -133,9 +133,9 @@ def test_reclaims_the_full_requested_budget_not_just_one_page(tmp_path, monkeypa
         engine.dispose()
 
     assert out["requested_pages"] == 50
-    assert out["pages_reclaimed"] == 50, (
+    assert out["pages_freed"] == 50, (
         f"asked for 50 pages with {freelist_before_close} free -- got "
-        f"{out['pages_reclaimed']} (a value of 1 is the discarded-cursor defect)"
+        f"{out["pages_freed"]} (a value of 1 is the discarded-cursor defect)"
     )
     assert out["freelist_pages_after"] == out["freelist_pages_before"] - 50
 
@@ -225,7 +225,7 @@ def test_surfaced_in_the_integrity_diagnostics(monkeypatch):
     init_db()
     monkeypatch.setattr(
         "src.database.maintenance.incremental_vacuum_state",
-        lambda: {"last_run": "2026-07-20T00:00:00", "last_tally": {"pages_reclaimed": 3}},
+        lambda: {"last_run": "2026-07-20T00:00:00", "last_tally": {"pages_freed": 3}},
     )
     with session_scope() as session:
         report = integrity.corpus_integrity(session)

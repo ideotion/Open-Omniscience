@@ -39,6 +39,15 @@ const panel = (title, bodyHtml, srcNote) =>
 // A suggestion is an action the user could do manually, parameters visible.
 const suggestion = (label, href, what) =>
   `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}<span class="what">${esc(what)}</span></a>`;
+// A date tag's status in words, the same three keys the agenda's _agStatusLabel uses (app-agenda.js), so one
+// tag reads the same on both pages (row 316). This page does not load app-agenda.js, hence the local copy;
+// tests/date_tag_status_node_test.js holds the two to the same answer for every token.
+function _tagStatusLabel(st) {
+  const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+  if (st === "confirmed") return T("confirmed by you");
+  if (st === "rejected") return T("rejected by you");
+  return T("not checked");
+}
 const caveatBlock = text =>
   `<div class="caveat"><b>Caveat (from the Lead):</b> ${esc(text)}</div>`;
 
@@ -57,7 +66,7 @@ async function viewPromise() {
     const list = tags.tags || tags.dates || tags.items || (Array.isArray(tags) ? tags : []);
     if (list.length) {
       tagsHtml = "<table><tr><th>Date</th><th>Status</th><th>Snippet (provenance)</th></tr>" +
-        list.map(t => `<tr><td>${esc(t.mentioned_on || t.date)}</td><td>${esc(t.status)}</td>` +
+        list.map(t => `<tr><td>${esc(t.mentioned_on || t.date)}</td><td>${esc(_tagStatusLabel(t.status))}</td>` +
                       `<td>${esc(t.snippet || "")}</td></tr>`).join("") + "</table>";
     }
   } catch (e) { tagsHtml = `<p class="err">${esc(e.message)}</p>`; }
