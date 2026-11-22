@@ -371,17 +371,16 @@ def _name_blocker(target: Path, damaged: Path) -> str | None:
 
 #: What ``os.link`` raises when the drive or the folder cannot give a file a second name at all. Any other error (a full folder, a
 #: read error, a sharing violation) is not that answer: the finished copy is kept for the next start rather than thrown away.
-_NO_LINK_ERRNOS = frozenset(
-    e for e in (getattr(errno, n, None) for n in ("EPERM", "EXDEV", "ENOTSUP", "EOPNOTSUPP", "EMLINK", "ENOSYS", "EINVAL")) if e is not None
-)
+_NO_LINK_ERRNOS = frozenset((errno.EPERM, errno.EXDEV, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EMLINK, errno.ENOSYS, errno.EINVAL))
 
 
-def _link_refused(exc: OSError) -> Declined:
-    if exc.errno in _NO_LINK_ERRNOS:
+def _link_refused(number: int | None) -> Declined:
+    """The named refusal for an ``os.link`` failure, from its errno alone (never the error's words, which name a path)."""
+    if number in _NO_LINK_ERRNOS:
         return Declined("no-hard-links", "the drive cannot give the damaged file a second name")
     return Declined(
-        "name-not-given", f"the damaged file could not be given its second name ({type(exc).__name__}), so nothing was switched; the repaired "
-        "copy is kept and the switch is tried again at the next start",
+        "name-not-given", "the damaged file could not be given its second name, so nothing was switched; the repaired copy is kept and "
+        "the switch is tried again at the next start",
     )
 
 
@@ -466,7 +465,7 @@ def _claim_free_name(target: Path, damaged: Path, sidecar: Path, left: str) -> P
         except FileExistsError:
             continue
         except OSError as exc:
-            raise _link_refused(exc) from None
+            raise _link_refused(exc.errno) from None
         return candidate
     # No name: the sidecar is put back to the name it recorded, so the next start names the same file that blocked this one.
     _write_json_atomic(sidecar, original)
@@ -1543,7 +1542,7 @@ def _swap(
                 if twin is None or original is None or twin != original:
                     left = damaged.name  # taken since the check: never overwritten, the repair moves to a free name below
             except OSError as exc:
-                refusal = _link_refused(exc)
+                refusal = _link_refused(exc.errno)
                 if refusal.code == "no-hard-links":
                     _scrap(target, damaged, finished, sidecar)
                 raise refusal from None
