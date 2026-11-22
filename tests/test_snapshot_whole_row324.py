@@ -194,7 +194,7 @@ def test_a_name_that_became_a_link_is_not_removed_through_it(tmp_path, monkeypat
     _plain_store(src)
     dest = tmp_path / "snap.db"
     victim = tmp_path / "victim.txt"
-    victim.write_text("keep me")
+    victim.write_text("keep me", encoding="utf-8")
     moved = tmp_path / "moved-away.db"
 
     def swap(d: Path) -> None:
@@ -205,7 +205,7 @@ def test_a_name_that_became_a_link_is_not_removed_through_it(tmp_path, monkeypat
     with pytest.raises(SnapshotLeftOnDisk) as left:
         snapshot_to_plaintext(src, dest)
     assert str(dest) in str(left.value), "the copy is not accounted for at its name: said, never assumed gone"
-    assert victim.read_text() == "keep me"
+    assert victim.read_text(encoding="utf-8") == "keep me"
     assert dest.is_symlink(), "the link is not the file this call made: left where it is"
 
 
