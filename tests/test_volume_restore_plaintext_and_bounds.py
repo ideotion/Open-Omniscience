@@ -67,8 +67,8 @@ sys.path.insert(0, {str(ROOT)!r})
 import src.backup.volumes as v
 from src.backup.artifact import read_volume_backup
 real = v.decrypt_file
-def dying(src, dst, pw):
-    real(src, dst, pw)
+def dying(src, dst, pw, **opened):
+    real(src, dst, pw, **opened)
     os._exit(7)
 v.decrypt_file = dying
 read_volume_backup(Path({str(out)!r}), {PW!r}, Path({str(data)!r}))
