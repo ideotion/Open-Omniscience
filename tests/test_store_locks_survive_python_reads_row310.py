@@ -775,3 +775,179 @@ def test_a_descriptor_or_a_group_member_that_cannot_be_read_keeps_everything(tmp
             assert connect_mod._group_of(str(path) + "-shm")[2] is True, "a store that cannot be stat'ed left the group"
     finally:
         os.close(other)
+
+
+# --- Row 335: a recorded descriptor number is checked before it is reused or closed --------------------------------- #
+#
+# CI caught a lock drop the stress test above could not reproduce on demand: "a second process took the store under a held
+# lock: 2 of 300" (delete mode, a full xdist worker). The mechanism, forced here: a descriptor of ours is parked on the store,
+# some other code in the process closes that NUMBER (a double close), and the next open (a SQLite connection) lands on it. The
+# sweep left every recorded number out of its listing as "ours", found the store free, and closed the connection's descriptor;
+# and a read reused the number and read whatever file sat on it.
+
+_ONE_TRY = (
+    "import sqlite3, sys\n"
+    "c = sqlite3.connect(sys.argv[1], timeout=0, isolation_level=None)\n"
+    "try:\n"
+    "    c.execute('BEGIN IMMEDIATE')\n"
+    "    print('TOOK')\n"
+    "except sqlite3.OperationalError:\n"
+    "    print('REFUSED')\n"
+)
+
+
+def _try_take(path: Path) -> str:
+    return subprocess.run([sys.executable, "-c", _ONE_TRY, str(path)], capture_output=True, text=True, timeout=60).stdout.strip()
+
+
+def _parked_then_freed(tmp_path: Path) -> tuple[Path, int]:
+    """A plaintext store in delete mode with a descriptor of ours recorded on it whose number another close has freed."""
+    path = tmp_path / "s.db"
+    con = connect_mod.connect(path, create_encrypted=False)
+    con.execute("PRAGMA journal_mode=delete").fetchone()
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    holder = connect_mod.connect(path, check_same_thread=False)
+    try:
+        assert connect_mod.is_encrypted_file(path) is False
+        number = connect_mod._hdr_fds[_key(path)][0]  # parked: a connection holds the file
+    finally:
+        holder.close()
+        con.close()
+    os.close(number)  # someone else's double close: harmless by itself while no lock is held
+    return path, number
+
+
+def _next_open_lands_on(number: int, opener):
+    """Run ``opener`` so that the descriptor it opens takes ``number`` (the lowest free number is the one an open gets)."""
+    fillers = []
+    try:
+        while True:
+            n = os.open(__file__, os.O_RDONLY)  # any regular file: only its number matters
+            if n >= number:
+                os.close(n)
+                break
+            fillers.append(n)
+        return opener()
+    finally:
+        for n in fillers:
+            os.close(n)
+
+
+def _leads_to(number: int) -> tuple[int, int]:
+    st = os.fstat(number)
+    return st.st_dev, st.st_ino
+
+
+def test_a_connection_that_reuses_a_freed_number_of_ours_keeps_its_lock(tmp_path):
+    import sqlite3
+
+    path, number = _parked_then_freed(tmp_path)
+    conn = _next_open_lands_on(number, lambda: sqlite3.connect(str(path), isolation_level=None))
+    try:
+        assert _leads_to(number) == _key(path), "the connection did not land on the freed number; the test proves nothing"
+        conn.execute("BEGIN IMMEDIATE")
+        assert _try_take(path) == "REFUSED"
+        connect_mod.is_encrypted_file(path)  # any read of ours: its release sweeps
+        assert _try_take(path) == "REFUSED", "a read of ours closed the connection's descriptor and dropped its lock"
+        conn.execute("ROLLBACK")
+    finally:
+        conn.close()
+
+
+def test_a_freed_number_now_on_another_file_is_never_read_or_closed(tmp_path):
+    # The same flags as ours on a different file: only the (device, inode) half of the check tells them apart.
+    path, number = _parked_then_freed(tmp_path)
+    other = tmp_path / "other.bin"
+    other.write_bytes(b"not a database, and not the store" * 4)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = _next_open_lands_on(number, lambda: os.open(other, flags))
+    try:
+        assert fd == number
+        assert connect_mod.is_encrypted_file(path) is False, "the header was read from whatever file sat on the freed number"
+        assert _leads_to(fd) == _key(other), "a read of ours, or its sweep, closed someone else's descriptor"
+        connect_mod.connect(path, check_same_thread=False).close()  # was: "s.db does not exist yet"
+        assert _leads_to(fd) == _key(other)
+    finally:
+        os.close(fd)
+
+
+def test_a_read_only_connection_that_reuses_a_freed_number_of_ours_keeps_its_lock(tmp_path):
+    # A read-only SQLite connection opens O_RDONLY on the same file: only the O_NONBLOCK part of the check tells it apart.
+    import sqlite3
+
+    path, number = _parked_then_freed(tmp_path)
+    uri = path.resolve().as_uri() + "?mode=ro"
+    conn = _next_open_lands_on(number, lambda: sqlite3.connect(uri, uri=True, isolation_level=None))
+    try:
+        assert _leads_to(number) == _key(path), "the connection did not land on the freed number; the test proves nothing"
+        conn.execute("BEGIN")
+        conn.execute("SELECT count(*) FROM t").fetchone()  # SHARED: a writer is kept out until it ends
+        connect_mod.is_encrypted_file(path)  # any read of ours: its release sweeps
+        took = subprocess.run(
+            [sys.executable, "-c", _ONE_TRY.replace("BEGIN IMMEDIATE", "BEGIN EXCLUSIVE"), str(path)],
+            capture_output=True, text=True, timeout=60,
+        ).stdout.strip()
+        assert took == "REFUSED", "a read of ours closed the read-only connection's descriptor and dropped its shared lock"
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+
+def _second_store(tmp_path: Path) -> Path:
+    path = tmp_path / "second.db"
+    con = connect_mod.connect(path, create_encrypted=False)
+    con.execute("PRAGMA journal_mode=delete").fetchone()
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    return path
+
+
+def test_a_stale_record_now_on_another_store_keeps_that_store_held(tmp_path):
+    # The record says "ours on s.db", the number now holds a connection on second.db, and a descriptor of ours really is on
+    # second.db. The listing leaves the number out as ours; only the check of every record finds second.db held.
+    import sqlite3
+
+    second = _second_store(tmp_path)  # first: making it reads and sweeps, which would forget the stale record below
+    _path, number = _parked_then_freed(tmp_path)
+    conn = _next_open_lands_on(number, lambda: sqlite3.connect(str(second), isolation_level=None))
+    try:
+        assert _leads_to(number) == _key(second)
+        assert number in connect_mod._hdr_fds.get(_key(_path), []), "the stale record is gone already; the test proves nothing"
+        conn.execute("BEGIN IMMEDIATE")
+        assert connect_mod.is_encrypted_file(second) is False  # a descriptor of ours on second.db; its release sweeps
+        assert _try_take(second) == "REFUSED", "a sweep closed our descriptor on a store a connection holds"
+        conn.execute("ROLLBACK")
+    finally:
+        conn.close()
+
+
+def test_a_record_forgotten_while_a_sweep_lists_still_counts_as_held(tmp_path, monkeypatch):
+    # The sweep takes its own numbers in its first hold and lists the rest with no lock. A reader that finds one of those
+    # numbers stale in between forgets it: the sweep's last hold must still count what it now leads to as held.
+    import sqlite3
+
+    second = _second_store(tmp_path)  # first: making it reads and sweeps, which would forget the stale record below
+    path, number = _parked_then_freed(tmp_path)
+    conn = _next_open_lands_on(number, lambda: sqlite3.connect(str(second), isolation_level=None))
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        real = connect_mod._foreign_fd_keys
+        forgot = []
+
+        def _listing_then_a_reader_forgets(ours):
+            keys = real(ours)
+            if not forgot:
+                forgot.append(1)
+                connect_mod.is_encrypted_file(path)  # finds the stale number, forgets it; its own sweep is skipped
+                assert number not in {fd for fds in connect_mod._hdr_fds.values() for fd in fds}
+            return keys
+
+        monkeypatch.setattr(connect_mod, "_foreign_fd_keys", _listing_then_a_reader_forgets)
+        assert connect_mod.is_encrypted_file(second) is False
+        assert forgot, "the sweep never reached its listing; the test proves nothing"
+        assert _try_take(second) == "REFUSED", "a number forgotten during the listing let the sweep close a held store's descriptor"
+        conn.execute("ROLLBACK")
+    finally:
+        conn.close()
