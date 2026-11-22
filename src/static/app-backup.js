@@ -4207,8 +4207,13 @@
         // reaches what this page stored, not only the server's files.
         try { localStorage.removeItem("oo.climate.place"); } catch (_e) { /* storage may be unavailable */ }
         const plaintext = r.encrypted_corpus === false;
-        // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state.
-        const rec = plaintext
+        // R792, read here before the offer below: it may never call the corpus unrecoverable unless the erase result is clean.
+        const holder = r.other_holder || "unknown";
+        const clean = holder === "none";
+        // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
+        // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
+        const rec = !clean ? t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.")
+          : plaintext
           ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
           : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.") +
             " " + t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.");
@@ -4219,8 +4224,6 @@
         // R792: only "none" is a clean erase. Another program that still had the database open may have written the key material
         // back into the files it holds ("held"), and on Windows, or when the check failed, the erase cannot tell ("unknown"): the
         // result then never says the store is unrecoverable, and the notice stays visible beside it.
-        const holder = r.other_holder || "unknown";
-        const clean = holder === "none";
         const holderNote = holder === "held"
           ? t("Another program still had the database open when the erase ended, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below.")
           : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below.");

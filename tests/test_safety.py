@@ -91,6 +91,7 @@ def test_panic_wipes(tmp_path):
     assert report["files_seen"] == 2 and report["files_wiped"] == 2
     assert not folder.exists()
     assert "SSD" in report["limit"]  # honest about the limit
+    assert report["other_holder"] == "none"  # R792: no other process had it open, checked after the tidying
 
 
 # --- fetch mode / protected fetch ------------------------------------------ #

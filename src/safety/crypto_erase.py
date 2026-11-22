@@ -82,6 +82,15 @@ _LIMIT_NOTE = (
 )
 
 
+# R792: the note when another program had, or may have had, the database open -- the clean guarantee above is not claimed.
+_LIMIT_NOTE_NOT_CLEAN = (
+    "The salt was destroyed in every file this erase reached, but another program that had the database open may have "
+    "written it back into files it still held; if so, the encrypted corpus may still be recoverable with the passphrase. "
+    "A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on SSD/flash or copy-on-write "
+    "filesystems (wear-levelling / snapshots may retain old blocks)."
+)
+
+
 def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> bool:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
@@ -131,9 +140,10 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
 # Descriptors the erase keeps on the files it unlinked, as (fd, kind), one list per wipe (its GENERATION): a transaction
 # already under way when the erase ran still holds the unlinked file and, on commit, writes page 1 -- salt included -- into it.
 # ``kind`` is "whole" (a -wal or -journal, rewritten whole), "head" (a main file, its salt page) or "shm" (a log index, its
-# head zeroed). Per wipe (row 36), so the late pass of one wipe closes its own descriptors and never a second wipe's, whose own
+# head zeroed); ``cap`` bounds every later rewrite of it (its size when kept plus :data:`_HELD_GROWTH`), so a holder that grows
+# the file it shares with the erase (a sparse ``ftruncate`` to hundreds of GiB) cannot make a rewrite fill the disk. Per wipe (row 36), so the late pass of one wipe closes its own descriptors and never a second wipe's, whose own
 # late pass then comes its full delay after that second erase.
-_HELD: dict[int, list[tuple[int, str]]] = {}
+_HELD: dict[int, list[tuple[int, str, int]]] = {}
 _HELD_LOCK = threading.Lock()
 _GENERATIONS = itertools.count(1)
 
@@ -157,6 +167,9 @@ HOLDER_NONE, HOLDER_HELD, HOLDER_UNKNOWN = "none", "held", "unknown"
 # the eight WAL locks from byte 120 and the "dead man switch" at 128 on the log index.
 _MAIN_LOCKS = (0x40000000, 2 + 510)
 _SHM_LOCKS = (120, 9)
+#: How far a kept file may grow past its size when kept and still be rewritten whole (a holder's commits through the erase
+#: append to the log; the app's own log is cut back to 64 MiB after a checkpoint).
+_HELD_GROWTH = 256 * 1024 * 1024
 
 
 def new_hold_generation() -> int:
@@ -184,11 +197,13 @@ def _hold(path: Path, *, whole: bool, generation: int = 0, kind: str | None = No
         os.close(fd)
         return False
     kind = kind or ("whole" if whole else "head")
-    if kind in ("head", "shm"):
-        _shut_out(fd, kind)
+    try:
+        cap = os.fstat(fd).st_size + _HELD_GROWTH
+    except OSError:
+        cap = _HELD_GROWTH
     # No lock: the erase waits on nothing, and a rescrub of an earlier wipe may hold it for a long rewrite. ``setdefault`` and a
     # list append are atomic, and a pass takes only the entries present when it starts, removing them from the front.
-    _HELD.setdefault(generation, []).append((fd, kind))
+    _HELD.setdefault(generation, []).append((fd, kind, cap))
     return True
 
 
@@ -234,8 +249,9 @@ def _shut_out(fd: int, kind: str) -> None:
     """R792 (2): one attempt, never waiting, to take SQLite's lock bytes on a kept main file or log index for writing, so a
     process that holds the file open but no lock on it yet (between two transactions) is refused when it next begins one. It
     fails, and the erase carries on, whenever another connection already holds those bytes: that case is what the probe and
-    the bounded rewrite are for. Let go when the descriptor is closed (and earlier if this process's own pool, closing after
-    the erase, unlocks the same bytes: POSIX locks belong to the process, not to the descriptor). Never raises."""
+    the bounded rewrite are for. POSIX locks belong to the PROCESS, not to the descriptor: closing ANY descriptor this process has
+    on the file drops them (the erase's own overwrite of the path, this process's pool closing after the erase), so it is taken
+    only through :func:`shut_out_held`, once every such open and close is over. Never raises."""
     try:
         import fcntl
     except ImportError:
@@ -248,13 +264,21 @@ def _shut_out(fd: int, kind: str) -> None:
         fcntl.fcntl(fd, fcntl.F_SETLK, req)
 
 
-def _holder_state(entries: list[tuple[int, str]]) -> str:
+def shut_out_held(generation: int) -> None:
+    """Take the lock bytes of every kept main file and log index of one wipe (see :func:`_shut_out`). Called after the erase has
+    finished opening and closing those paths, and on the panic path after its pool is closed, or the close would undo it."""
+    for fd, kind, _cap in list(_HELD.get(generation, ())):
+        if kind in ("head", "shm"):
+            _shut_out(fd, kind)
+
+
+def _holder_state(entries: list[tuple[int, str, int]]) -> str:
     """One probe of every kept main file, log and log index: ``held`` when any shows another process's lock, ``unknown`` when
     any could not be asked, ``none`` otherwise."""
     if os.name != "posix" or _flock_layout() is None:
         return HOLDER_UNKNOWN
     unknown = False
-    for fd, _kind in entries:
+    for fd, _kind, _cap in entries:
         seen = _other_holder(fd)
         if seen:
             return HOLDER_HELD
@@ -275,25 +299,27 @@ def settle_other_holders(generation: int, *, bound_s: float | None = None) -> st
             return state
         deadline = time.monotonic() + bound
         while True:
-            rescrub_held(close=False, generation=generation)
+            rescrub_held(close=False, generation=generation, deadline=deadline)
             if time.monotonic() >= deadline:
                 break
             time.sleep(_HOLDER_STEP_S)
             state = _holder_state(entries)
             if state != HOLDER_HELD:
-                rescrub_held(close=False, generation=generation)  # what it committed just before it let go
+                # What it committed just before it let go, under a bound of its own.
+                rescrub_held(close=False, generation=generation, deadline=time.monotonic() + bound)
                 return state
         return _holder_state(entries)
     except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
         return HOLDER_UNKNOWN
 
 
-def rescrub_held(*, close: bool, generation: int | None = None, settle: bool = True) -> int:
+def rescrub_held(*, close: bool, generation: int | None = None, settle: bool = True, deadline: float | None = None) -> int:
     """Overwrite again, through the kept descriptors, the head of every unlinked main file and log index and the whole of
     every unlinked -wal and -journal; with ``close`` the descriptors are then let go. Only one wipe's with ``generation``,
     every wipe's without. A closing pass first goes on rewriting while another process still holds one of the files, within
     :data:`_HOLDER_BOUND_S` (R792: the hold is never let go while another holder is still seen inside the bound; ``settle``
-    False skips that when the caller has just done it). Returns how many were rewritten. Never raises: the wipe is done, this
+    False skips that when the caller has just done it). Each file is rewritten up to its ``cap``; a ``deadline`` (a
+    ``time.monotonic()`` value) stops a pass that runs past it. Returns how many were rewritten. Never raises: the wipe is done, this
     closes the window a late commit leaves."""
     if close and settle:
         gens = list(_HELD) if generation is None else [generation]
@@ -311,7 +337,7 @@ def rescrub_held(*, close: bool, generation: int | None = None, settle: bool = T
         held = [e for g in gens for e in _HELD.get(g, [])[: taken[g]]]
         if close:
             _forget_held(taken)
-        done = _rewrite_held(held, close=close)
+        done = _rewrite_held(held, close=close, deadline=deadline)
     return done
 
 
@@ -333,23 +359,29 @@ def held_count(generation: int | None = None) -> int:
     return sum(len(v) for v in list(_HELD.values()))
 
 
-def _rewrite_held(held: list[tuple[int, str]], *, close: bool) -> int:
+def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: float | None = None) -> int:
     done = 0
-    for fd, kind in held:
+    for fd, kind, cap in held:
         try:
-            size = os.fstat(fd).st_size
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError  # not rewritten this pass; a closing pass still closes it below
+            size = min(os.fstat(fd).st_size, cap)
             limit = size if kind == "whole" else min(size, _SQLCIPHER_PAGE1)
             os.lseek(fd, 0, os.SEEK_SET)
             written = 0
             while True:
                 if written >= limit:
                     break
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError
                 n = min(_CHUNK, limit - written)
                 # A log index's head is zeroed, never randomised (see pass 1 of the erase): a random frame count grows the
                 # mapped file of a connection that reads it.
                 written += os.write(fd, bytes(n) if kind == "shm" else os.urandom(n))
             os.fsync(fd)
             done += 1
+        except TimeoutError:
+            pass  # the bound ended this pass; the result says whether a holder was still there
         except OSError:
             _LOG.warning("crypto-erase: a held file could not be rewritten again")
         finally:
@@ -632,7 +664,8 @@ def _left_entries(base: Path) -> dict[str, list[str]]:
 
 
 def quick_crypto_erase(
-    confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False, hold_generation: int = 0
+    confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False, hold_generation: int = 0,
+    settle: bool = True,
 ) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
@@ -654,7 +687,9 @@ def quick_crypto_erase(
     through the kept descriptors while one is seen (at most :data:`_HOLDER_BOUND_S`, never waiting when none is), and reports
     ``other_holder``: ``"none"``, ``"held"`` (one still had the store open when the bound ended: the erase may be incomplete) or
     ``"unknown"`` (it could not tell; always so on Windows, where an open file cannot be found from here). Only "none" is a
-    clean erase."""
+    clean erase, and it means none was SEEN (a process holding no lock at that moment, or one on another machine sharing the
+    folder over a network file system, is not). ``settle`` False (the panic wipe, which closes its pool and takes the app
+    offline first) leaves that step to :func:`finish_holder_check`, which the caller then runs."""
     if not confirm:
         raise PermissionError("quick_crypto_erase requires confirm=True (this is irreversible)")
     own = not hold_for_rescrub
@@ -662,17 +697,32 @@ def quick_crypto_erase(
     missed: list[str] = []
     try:
         report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
-        state = settle_other_holders(generation)
-        if missed and state == HOLDER_NONE:
-            state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
-        report["other_holder"] = state
-        if state != HOLDER_NONE:
-            _LOG.warning("CRYPTO-ERASE: %s", "another program still had the database open when the erase ended; the erase may be "
-                         "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
+        report["files_not_kept"] = len(missed)  # a count: the names are never reported
+        if settle or own:
+            finish_holder_check(report, generation)
         return report
     finally:
         if own:
             rescrub_held(close=True, generation=generation, settle=False)
+
+
+def finish_holder_check(report: dict, generation: int) -> str:
+    """R792: take the kept files' lock bytes, go on rewriting while another process still holds the store (bounded), and set
+    ``report["other_holder"]``; when it is not "none", ``report["limit"]`` says the corpus may still be recoverable instead of
+    the clean guarantee. Returns the state. Never raises."""
+    try:
+        shut_out_held(generation)
+        state = settle_other_holders(generation)
+    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+        state = HOLDER_UNKNOWN
+    if report.get("files_not_kept") and state == HOLDER_NONE:
+        state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
+    report["other_holder"] = state
+    if state != HOLDER_NONE:
+        report["limit"] = _LIMIT_NOTE_NOT_CLEAN
+        _LOG.warning("CRYPTO-ERASE: %s", "another program still had the database open when the erase ended; the erase may be "
+                     "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
+    return state
 
 
 def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str]) -> dict:

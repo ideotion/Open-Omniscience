@@ -318,3 +318,67 @@ def test_the_probe_sees_another_process_and_stops_seeing_it_once_it_closes(tmp_p
         assert ce._holder_state(list(ce._HELD[generation])) == ce.HOLDER_NONE
     finally:
         ce.rescrub_held(close=True, generation=generation, settle=False)
+
+
+_PEEK = r"""
+import fcntl, os, struct, sys
+fd = os.open(sys.argv[1], os.O_RDWR)
+got = fcntl.fcntl(fd, fcntl.F_GETLK, struct.pack("hhqqi", fcntl.F_RDLCK, os.SEEK_SET, 0x40000002, 510, 0))
+print("LOCKED" if struct.unpack("hhqqi", got[:struct.calcsize("hhqqi")])[0] != fcntl.F_UNLCK else "FREE", flush=True)
+"""
+
+
+def test_the_lock_bytes_are_taken_after_the_overwrites_and_kept_until_the_descriptors_go(tmp_path):
+    """R792 (2): POSIX locks belong to the process, so the erase's own overwrite of a path (an open and a close) drops any lock
+    taken on it before. Taken after them, the lock bytes stay held: another process asking for SQLite's shared range on the
+    erased main file is refused until the panic wipe's closing pass lets the descriptors go."""
+    from src.safety import crypto_erase as ce
+
+    data, _salt = _store(tmp_path)
+    db = data / ce._MAIN_DB
+    kept = tmp_path / "kept-db"
+    os.link(db, kept)  # a name for the erased file, so another process can ask about it
+    generation = ce.new_hold_generation()
+    try:
+        report = ce.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=True, hold_generation=generation)
+        assert report["other_holder"] == ce.HOLDER_NONE
+        peek = subprocess.run([sys.executable, "-c", _PEEK, str(kept)], capture_output=True, text=True, timeout=60)
+        assert peek.stdout.strip() == "LOCKED", peek.stdout + peek.stderr
+    finally:
+        ce.rescrub_held(close=True, generation=generation)
+    peek = subprocess.run([sys.executable, "-c", _PEEK, str(kept)], capture_output=True, text=True, timeout=60)
+    assert peek.stdout.strip() == "FREE", peek.stdout + peek.stderr
+
+
+def test_a_store_file_that_could_not_be_kept_makes_the_result_could_not_check(tmp_path, monkeypatch):
+    from src.safety import crypto_erase as ce
+
+    data, _salt = _store(tmp_path)
+    real = ce._hold
+    monkeypatch.setattr(ce, "_hold", lambda p, **k: False if p.name == ce._MAIN_DB else real(p, **k))
+    report = ce.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["other_holder"] == ce.HOLDER_UNKNOWN
+    assert report["files_not_kept"] == 1
+    assert report["limit"] == ce._LIMIT_NOTE_NOT_CLEAN and "unrecoverable regardless" not in report["limit"]
+
+
+def test_a_kept_file_grown_by_its_holder_is_rewritten_only_up_to_its_cap_and_a_pass_stops_at_its_bound(tmp_path, monkeypatch):
+    """A holder that grows the file it shares with the erase (a sparse ftruncate) cannot make a rewrite fill the disk, and a
+    pass past its deadline writes nothing more."""
+    import time
+
+    from src.safety import crypto_erase as ce
+
+    monkeypatch.setattr(ce, "_HELD_GROWTH", 1024 * 1024)
+    f = tmp_path / "x-wal"
+    f.write_bytes(b"\x00" * 4096)
+    generation = ce.new_hold_generation()
+    assert ce._hold(f, whole=True, generation=generation)
+    try:
+        with open(f, "r+b") as grow:
+            grow.truncate(1024 ** 3)  # 1 GiB, sparse: what a hostile holder could do
+        assert ce.rescrub_held(close=False, generation=generation, deadline=time.monotonic() - 1) == 0
+        assert ce.rescrub_held(close=False, generation=generation) == 1
+        assert os.stat(f).st_blocks * 512 <= 4096 + 1024 * 1024 + 64 * 1024, "the rewrite went past the cap"
+    finally:
+        ce.rescrub_held(close=True, generation=generation, settle=False)
