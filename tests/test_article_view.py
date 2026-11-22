@@ -11,7 +11,6 @@ import pathlib
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import (
@@ -23,13 +22,14 @@ from src.database.models import (
     Base,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def test_article_offline_view(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'v.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'v.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -92,8 +92,8 @@ def test_article_view_shows_server_ip_with_caveat(tmp_path):
     origin caveat -- previously verified absent from this endpoint."""
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'ip.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'ip.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -142,8 +142,8 @@ def test_article_view_shows_unavailable_server_ip_with_reason(tmp_path):
     (with the reason) rather than showing blank or a guessed address."""
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'ip2.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'ip2.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -190,8 +190,8 @@ def test_article_view_shows_co_citation(tmp_path):
     """When two articles cite the same external link, the reader flags the shared source."""
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'cc.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'cc.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -280,8 +280,8 @@ def test_article_view_related_and_dup_badge_read_keyword_mentions(tmp_path):
     from src.analytics.store import index_article
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'related.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'related.db',
         future=True,
         connect_args={"check_same_thread": False},
     )
@@ -357,8 +357,8 @@ def test_article_view_related_and_dup_badge_read_keyword_mentions(tmp_path):
 
 
 def _engine_with_article(tmp_path, name):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / name}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / name, future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -631,8 +631,8 @@ def test_an_outlets_page_furniture_is_listed_apart_from_its_citations(tmp_path):
     from src.analytics.link_furniture import FURNITURE_MIN_ARTICLES
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'fu.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'fu.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -685,7 +685,7 @@ def test_an_outlets_page_furniture_is_listed_apart_from_its_citations(tmp_path):
 def test_a_small_outlet_has_no_furniture(tmp_path):
     from src.analytics.link_furniture import outlet_link_shares
 
-    engine = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 's.db', future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         s.add(Source(name="Tiny", domain="tiny.test"))
@@ -701,7 +701,7 @@ def test_the_reader_shows_the_domain_for_a_source_named_only_by_a_wikidata_id(tm
     """Row 71 (report 7.3): the epari.fi article read "Q11858063" as its source."""
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'q.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:

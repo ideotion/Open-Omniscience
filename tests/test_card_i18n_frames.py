@@ -39,6 +39,7 @@ from pathlib import Path
 import pytest
 
 from src.briefing.card import Card, CardSchemaError, frame, frames_text, numeric_frames
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import object_literal
 from tests.locale_forms import load_locale
 
@@ -191,12 +192,11 @@ def test_every_inline_method_and_caveat_frames_to_a_key(locales):
 
 @pytest.fixture()
 def empty_session():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

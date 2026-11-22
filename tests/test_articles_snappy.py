@@ -19,6 +19,8 @@ import inspect
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
+
 # --------------------------------------------------------------------------- #
 # Freeze fix: the handlers are synchronous (threadpool), not async (event loop)
 # --------------------------------------------------------------------------- #
@@ -56,13 +58,13 @@ _needs_main = pytest.mark.skipif(not _HAVE_MAIN, reason="src.api.main needs the 
 @pytest.fixture()
 def client(tmp_path):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine, event
+    from sqlalchemy import event
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'snappy.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'snappy.db', future=True,
         connect_args={"check_same_thread": False},
     )
 

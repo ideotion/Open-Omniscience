@@ -33,12 +33,13 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import QueuePool
 
 from src.api.diagnostics.bundle import _roll_back_a_failed_read
+from tests._app_engine import app_sqlite_engine
 
 _KEY = "damaged read test key"
 _PAGE = 16384
@@ -46,7 +47,7 @@ _BAD_RANGE = "SELECT id, v FROM big WHERE id BETWEEN :lo AND :hi"
 
 
 def _plain_session(tmp_path: Path) -> Session:
-    eng = create_engine(f"sqlite:///{tmp_path / 'plain.db'}", poolclass=QueuePool, pool_size=2, max_overflow=0)
+    eng = app_sqlite_engine(tmp_path / 'plain.db', poolclass=QueuePool, pool_size=2, max_overflow=0)
     with eng.begin() as c:
         c.execute(text("CREATE TABLE small (a INTEGER)"))
         c.execute(text("INSERT INTO small VALUES (1), (2), (3)"))
@@ -75,7 +76,7 @@ def test_a_healthy_session_keeps_the_snapshot_it_has(tmp_path):
     """A rollback ends the read transaction, and the next statement opens a snapshot of a LATER moment: a section that failed
     for another reason (a Python error, a statement deadline) must leave the snapshot every later section reads."""
     db = _plain_session(tmp_path)
-    writer = create_engine(f"sqlite:///{tmp_path / 'plain.db'}")
+    writer = app_sqlite_engine(tmp_path / 'plain.db')
     try:
         assert db.execute(text("SELECT count(*) FROM small")).scalar_one() == 3
         with writer.begin() as c:
@@ -162,8 +163,8 @@ def test_a_real_damaged_page_leaves_the_session_dead_until_the_helper_rolls_it_b
     path = tmp_path / "corpus.db"
     _build_damaged_store(path)
     damage.registry._reset_for_tests(path_fn=lambda: tmp_path / "database-damage.json")
-    eng = create_engine(
-        "sqlite://",
+    eng = app_sqlite_engine(
+        ":memory:",
         creator=lambda: connect(path, key=_KEY, check_same_thread=False),
         poolclass=QueuePool,
         pool_size=2,

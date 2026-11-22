@@ -18,7 +18,6 @@ import contextlib
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -29,6 +28,7 @@ from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
 from src.monitoring import benchmark, search_timing
 from src.monitoring.benchmark import run_benchmark
+from tests._app_engine import app_sqlite_engine
 
 main = pytest.importorskip("src.api.main")  # CI/venv with crypto; skips on a bare sandbox
 
@@ -41,8 +41,8 @@ _TEXTS = [
 
 
 def _corpus(*, articles: bool = True):
-    engine = create_engine(
-        "sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)

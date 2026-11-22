@@ -52,10 +52,11 @@ import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 main = pytest.importorskip("src.api.main")  # CI/venv with crypto; skips on a bare sandbox
 
@@ -65,7 +66,7 @@ SORTS = [None, "date", "title", "source", "language", "words", "sentiment", "top
 
 @pytest.fixture
 def db(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'browse.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'browse.db', future=True)
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     s.add_all(

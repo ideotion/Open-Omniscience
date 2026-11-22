@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     app_js,
     array_literal,
@@ -216,12 +217,11 @@ def test_the_refusal_names_the_choice_and_carries_a_code_the_screen_can_translat
 
 @pytest.fixture
 def _empty_db(tmp_path):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Base
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'q.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     try:

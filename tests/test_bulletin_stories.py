@@ -16,7 +16,6 @@ import json
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin.period import resolve_period
@@ -27,13 +26,14 @@ from src.bulletin.stories import (
     story_evidence,
 )
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _P = resolve_period("weekly", end=date(2026, 8, 1))
 _DAY = "2026-07-27"
 
 
 def _session() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
 

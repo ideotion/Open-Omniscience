@@ -13,19 +13,20 @@ import io
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'api.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'api.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

@@ -29,12 +29,13 @@ from __future__ import annotations
 
 import threading
 
-from sqlalchemy import create_engine, event, insert, text
+from sqlalchemy import event, insert, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.store import maybe_cleanup_keywords, reconcile_keyword_language
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from src.database.writer import _on_after_transaction_end, _on_before_flush, _on_orm_execute
+from tests._app_engine import app_sqlite_engine
 
 
 def _wired_sessionmaker(tmp_path, *, busy_timeout_ms: int = 200):
@@ -42,8 +43,8 @@ def _wired_sessionmaker(tmp_path, *, busy_timeout_ms: int = 200):
     the same idiom tests/test_write_gate.py uses, so cross-thread contention is
     genuine and a short busy_timeout means an UNGATED write fails fast."""
     db = tmp_path / "c8.db"
-    engine = create_engine(
-        f"sqlite:///{db}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        db, future=True, connect_args={"check_same_thread": False}
     )
 
     @event.listens_for(engine, "connect")

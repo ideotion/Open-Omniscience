@@ -20,7 +20,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup.alternates import (  # noqa: E402
@@ -42,6 +42,7 @@ from src.database.models import (  # noqa: E402
     Place,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 _META = {
     "artifact_kind": "oo-backup-3", "origin_fingerprint": "machine-B", "app_version": "0.5.0",
@@ -52,7 +53,7 @@ _T1 = _T0 + timedelta(days=9)
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 
@@ -209,7 +210,7 @@ def test_a_text_keyed_row_swaps_by_its_key_and_survives_a_vacuum(tmp_path):
         assert s.get(Place, "node/2").name == "Theirs"
         s.execute(text("DELETE FROM places WHERE id = 'node/1'"))   # opens a gap so VACUUM renumbers
         s.commit()
-    raw = create_engine(f"sqlite:///{live}", future=True)
+    raw = app_sqlite_engine(live, future=True)
     with raw.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
         c.execute(text("VACUUM"))
     with _corpus(live)() as s:

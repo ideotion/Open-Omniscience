@@ -13,18 +13,18 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.catalog import candidate_sources as cs
 from src.database.models import Article, Base, MergedRow, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 WHEN = datetime(2026, 11, 1, 12, 0)
 
 
 @pytest.fixture
 def db(monkeypatch):
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng, tables=[Source.__table__, Article.__table__, SourceQualificationAttempt.__table__,
                                           MergedRow.__table__])
     monkeypatch.setattr("src.catalog.provenance_scope.curated_catalogue_domains", lambda: frozenset({"shipped.example"}))

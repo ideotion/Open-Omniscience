@@ -23,6 +23,7 @@ from src.bulletin.narration import (
     narrate,
     narrate_story,
 )
+from tests._app_engine import app_sqlite_engine
 
 _STORY = {
     "article_ids": [1, 2],
@@ -309,14 +310,13 @@ def test_narration_off_leaves_layer_a_byte_identical():
     """
     from datetime import date, datetime
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.bulletin.edition import build_edition
     from src.bulletin.period import resolve_period
     from src.database.models import Article, Base, Source
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="A", domain="a.test")
@@ -365,7 +365,6 @@ def test_narration_off_leaves_layer_a_byte_identical():
 def test_a_clustering_failure_leaves_the_record_intact(monkeypatch):
     from datetime import date
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.bulletin import edition as edition_mod
@@ -373,7 +372,7 @@ def test_a_clustering_failure_leaves_the_record_intact(monkeypatch):
     from src.bulletin.period import resolve_period
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     monkeypatch.setattr(

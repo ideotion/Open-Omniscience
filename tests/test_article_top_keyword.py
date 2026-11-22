@@ -11,13 +11,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article, top_keyword_of
 from src.database.models import Article, Base, Source
-
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------
 # The pure rule. These are the assertions that make a naive `max()` fail: an
@@ -75,8 +74,8 @@ def test_zero_and_negative_counts_are_not_evidence():
 
 
 def _session(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'tk.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'tk.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)

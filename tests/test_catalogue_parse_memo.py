@@ -29,13 +29,13 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.api.main as api_main
 import src.ingest.seed_sources as ss
 import src.law.catalog as law_catalog
 from src.database.models import Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -243,7 +243,7 @@ def _start_up_pass(session):
 
 
 def _fresh_session():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True, autoflush=False)()
 

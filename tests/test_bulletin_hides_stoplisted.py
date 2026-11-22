@@ -23,7 +23,6 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics.extract import global_stopwords
@@ -33,6 +32,7 @@ from src.bulletin.coverage import _terms
 from src.bulletin.period import resolve_period
 from src.bulletin.stories import article_keyword_sets, build_stories
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 HIDDEN = ["mathcal", "mathbf", "mathbb", "mathrm", "fig", "supplementary", "crossref", "likelyno7"]
 VISIBLE = ["ballot", "budget", "border", "harbour"]
@@ -45,7 +45,7 @@ def s():
     stop = global_stopwords()
     assert all(w in stop for w in HIDDEN), "the fixture's hidden words must be on the shipped list"
     assert not any(w in stop for w in VISIBLE)
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     session = Session(engine)
     try:

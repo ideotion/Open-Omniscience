@@ -15,13 +15,13 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import claim_workspace as cw
 from src.api.main import app
 from src.database.models import Article, ArticleLink, Base, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 _WIRE_BODY = (
     "Glacier melt in the Alps doubled between 2000 and 2020, a study published on Monday "
@@ -90,7 +90,7 @@ def make_corpus(tmp_path):
     from src.database.fts_norm import install_pool_hook
 
     install_pool_hook()
-    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True,
+    engine = app_sqlite_engine(tmp_path / 'c.db', future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     ensure_fts(engine)

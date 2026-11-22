@@ -20,7 +20,6 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin.coverage import country_coverage
@@ -33,13 +32,14 @@ from src.database.models import (
     KeywordMention,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 _DAY = date(2026, 8, 5)
 
 
 @pytest.fixture
 def seeded():
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     fr = Source(name="Le Monde", domain="lemonde.fr", country="fr")

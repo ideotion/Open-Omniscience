@@ -15,6 +15,7 @@ from __future__ import annotations
 from src.monitoring.activity import ActivityMonitor
 from src.scheduler.runner import _progress_set, current_progress, plan_preview
 from src.scheduler.settings import SchedulerSettings
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -58,13 +59,12 @@ def test_progress_set_and_clear():
 # --------------------------------------------------------------------------- #
 def test_plan_preview_targets_and_estimate(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -99,13 +99,12 @@ def test_plan_preview_reports_actual_language_and_tag_strata(monkeypatch, tmp_pa
     interleaves by (languages + tags), derived cheaply from the bounded sample already
     fetched, with the honest re-randomisation note — not just claim 'stratified'."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -188,13 +187,12 @@ def test_network_mode_toggle_endpoints():
 
 def _plan_preview_sources_session(n: int, *, enabled_qualified: int | None = None):
     """n sources, the first `enabled_qualified` of them selectable by the scheduler."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

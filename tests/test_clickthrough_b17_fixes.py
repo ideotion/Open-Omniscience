@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     event_listener_bodies,
     function_body,
@@ -196,14 +197,13 @@ def test_both_task_managers_draw_the_frame():
 
 def test_the_estimate_method_is_its_frame_filled(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
     from src.scheduler.runner import plan_preview
     from src.scheduler.settings import SchedulerSettings
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     for i in range(3):

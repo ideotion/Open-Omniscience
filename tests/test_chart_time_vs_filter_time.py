@@ -42,12 +42,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 DAY = datetime(2026, 6, 15, 9, 0, tzinfo=UTC)
 JUNE = (datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 6, 30, tzinfo=UTC))
@@ -61,7 +61,7 @@ _BODY = (
 def db():
     """An isolated in-memory corpus -- never SessionLocal, which is shared for the
     whole pytest session and would leak these rows into every later reader."""
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     try:

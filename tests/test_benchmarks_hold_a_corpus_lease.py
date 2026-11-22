@@ -12,17 +12,17 @@ by name): holding one is what makes it wait for the benchmark.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, rollup_serve
 from src.database import corpus_lease
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def session():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

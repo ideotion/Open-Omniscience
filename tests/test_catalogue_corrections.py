@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
@@ -26,11 +25,12 @@ from src.ingest.seed_sources import (
     seed_sources,
     sync_catalogue_corrections,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def session():
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()
     yield s

@@ -22,6 +22,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     array_literal,
     assert_absent,
@@ -191,13 +192,12 @@ def test_the_trend_value_lines_are_keyed_frames_x12():
 
 def test_the_trend_method_and_window_caveat_the_server_sends_are_keyed_x12():
     """Read from the producers, not restated: the caveat is a caveat, so x12."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics import queries as q
     from src.database.models import Base
 
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     rising = q.trending(s, window_days=7, baseline_days=30)
@@ -222,13 +222,12 @@ def test_the_mind_map_controls_and_its_own_sentences_are_keyed():
     assert_absent(body, '})">Cloud</button>', why="the Cloud button is an English literal")
     assert "t(g.method)" in body and "t(g.caveat)" in body
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics import queries as q
     from src.database.models import Base
 
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     empty = q.article_graph(sessionmaker(bind=eng, future=True)(), article_ids=[1])
     full_caveat = "A concept map of the keywords present, not a co-occurrence network; not causation."
