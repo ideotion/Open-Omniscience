@@ -1101,6 +1101,15 @@
       $("es-fetch").addEventListener("click", entitySpineFetch);
     }
 
+    // R776 (row 292): the built gazetteer's vintage as a sentence. An artifact built after daily OSM files were applied dates itself
+    // "extract+last file" (or "+not-read"): the line names both dates in R775's words, never the raw compound value. Any other vintage
+    // reads exactly as before.
+    function _gazetteerArtifactLine(v, tf) {
+      const m = /^([^+]+)\+(.+)$/.exec(String(v || ""));
+      const line = tf("Gazetteer: the built artifact, vintage {date}", {date: m ? m[1] : (v || "?")});
+      if (!m) return line;
+      return line + " \u00b7 " + ooOsmUpdatesClause(m[2] === "not-read" ? {updates: "date_not_read", last_diff: null} : {updates: "dated", last_diff: m[2]});
+    }
     async function loadEntitySpine() {
       _entitySpineWire();
       const box = $("es-pending");
@@ -1115,7 +1124,7 @@
         // WHICH gazetteer, and its vintage (Q805) -- or that the shipped sample names no
         // OpenStreetMap object, which is why no place resolves without the built artifact.
         const gz = g.artifact
-          ? tf("Gazetteer: the built artifact, vintage {date}", {date: g.vintage || "?"})
+          ? _gazetteerArtifactLine(g.vintage, tf)
           : t("Gazetteer: the small shipped sample, which names no OpenStreetMap object, so no place resolves until the full gazetteer is built.");
         const src = d.sources || {};
         box.innerHTML = '<div data-i18n-dyn>' + esc(gz) + "</div>"
