@@ -9358,7 +9358,12 @@ def _refuse_half_migrated_store() -> None:
     the FILE each time, never from this process's cache, which is exactly what may be stale after a run it did not see. A
     journal that cannot be read refuses too: unreadable is not "no run". The words are fixed sentences, never an error's."""
     from src.config.kv_store import KvReadError, kv_get_json_checked, kv_invalidate
-    from src.database.country_form import JOURNAL_KEY, UNFINISHED_STATES, held_message, unfinished_message
+    from src.database.country_form import (
+        JOURNAL_KEY,
+        UNFINISHED_STATES,
+        held_message,
+        unfinished_message,
+    )
 
     kv_invalidate(JOURNAL_KEY)
     try:
