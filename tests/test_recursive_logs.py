@@ -14,15 +14,15 @@ diagnostics endpoint suite / CI.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def session() -> Session:
-    eng = create_engine("sqlite://", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         yield s
@@ -69,8 +69,9 @@ def test_schema_drift_clean_on_a_fresh_schema(session):
 
 
 def test_schema_drift_detects_a_missing_column(session):
-    from src.monitoring.schema_drift import schema_drift
     from sqlalchemy import text
+
+    from src.monitoring.schema_drift import schema_drift
 
     # Simulate a self-heal gap: drop a column the model declares. Drop the index that
     # covers it first (SQLite refuses to drop an indexed column).
@@ -94,13 +95,13 @@ def test_source_last_crawled_self_heal_creates_column_and_index():
     (column present, index missing only) -- both must end up fully healed, and
     schema_drift() (the diagnostic that surfaced the bug) must report zero drift for
     sources.last_crawled_at afterward."""
-    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy import inspect, text
     from sqlalchemy.orm import Session as _Session
 
     from src.database.maintenance import ensure_source_last_crawled_column
 
     # Case A: never had the column.
-    eng = create_engine("sqlite://", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     with eng.begin() as conn:
         conn.execute(text("DROP INDEX idx_source_last_crawled"))
@@ -116,7 +117,7 @@ def test_source_last_crawled_self_heal_creates_column_and_index():
     assert src_tbl is None or "last_crawled_at" not in src_tbl.get("missing_indexes", [])
 
     # Case B: the exact field-diagnosed state -- column present, index missing only.
-    eng2 = create_engine("sqlite://", future=True)
+    eng2 = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng2)
     with eng2.begin() as conn:
         conn.execute(text("DROP INDEX idx_source_last_crawled"))

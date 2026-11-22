@@ -21,7 +21,6 @@ import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
@@ -30,6 +29,7 @@ from src.database import fts
 from src.database.fts import SearchQueryError, build_match, parse_query
 from src.database.models import Article, Base, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # The parser table
@@ -215,8 +215,8 @@ def client(tmp_path):
     from src.database.fts_norm import install_pool_hook
 
     install_pool_hook()
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'g.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'g.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)

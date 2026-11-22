@@ -21,7 +21,6 @@ import pathlib
 import subprocess
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, Source
@@ -38,6 +37,7 @@ from src.law.track import auto_track_due, track_document
 from src.law.track import track_watched as law_track_watched
 from src.wiki.track import ensure_page
 from src.wiki.track import track_watched as wiki_track_watched
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _KILL_SWITCH_TEXT = "network kill switch is active -- collection stopped by operator"
@@ -81,8 +81,8 @@ def airplane_mode():
 @pytest.fixture()
 def sessions(tmp_path):
     # A FILE database, not :memory:, so the route's threadpool thread sees the same schema and rows.
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'skipped.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'skipped.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

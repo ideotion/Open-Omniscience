@@ -28,10 +28,10 @@ import ast
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 
 from src.backup.merge import RestoreAborted, merge_corpus
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 _MERGE_PY = Path(__file__).resolve().parents[1] / "src" / "backup" / "merge.py"
 _BATCH_META = {
@@ -49,7 +49,7 @@ _BATCH_META = {
 def _tiny_corpus(p: Path) -> None:
     """A real, empty schema — the merge writes its own provenance tables, so a
     hand-rolled two-table stub would fail for the wrong reason."""
-    Base.metadata.create_all(create_engine(f"sqlite:///{p}", future=True))
+    Base.metadata.create_all(app_sqlite_engine(p, future=True))
 
 
 def test_a_stop_during_the_merge_aborts_and_writes_nothing(tmp_path):

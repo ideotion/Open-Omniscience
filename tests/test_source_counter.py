@@ -14,17 +14,18 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics.store import reconcile_source_counters, source_counter_envelope
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _session():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)()
@@ -116,7 +117,7 @@ def test_self_heal_backfills_the_counter_on_an_upgraded_store():
 
     from src.database.maintenance import ensure_source_counter_columns
 
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    eng = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                         poolclass=StaticPool, future=True)
     Base.metadata.create_all(eng)
     Session = sessionmaker(bind=eng, future=True)

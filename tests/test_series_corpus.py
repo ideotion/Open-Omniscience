@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -29,11 +29,12 @@ from src.analytics.extract import BaselineExtractor
 from src.catalog.provenance import provenance_of
 from src.database.models import Article, Keyword, KeywordMention, Source, StatFigure
 from src.stats import series_corpus as sc
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     from src.database.models import Base
     Base.metadata.create_all(engine)

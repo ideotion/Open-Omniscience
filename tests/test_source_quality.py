@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics import source_quality as sq
@@ -36,6 +35,7 @@ from src.analytics.source_quality import (
     select_source_fingerprint,
 )
 from src.database.models import Article, ArticleLink, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # Layer A — metrics + robust baselines + flagging
@@ -263,7 +263,7 @@ def test_ordinary_journalism_can_never_be_classified_furniture():
 # --------------------------------------------------------------------------- #
 
 def _corpus() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     sources = {
@@ -438,7 +438,7 @@ def test_read_only_the_report_writes_no_rows():
 def _sparse_corpus() -> Session:
     """A source whose articles are mostly NOT in the keyword index -- the shape of the real
     2026-08-11 field corpus, where 2.89% of articles carried any mention at all."""
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="S", domain="s.example", source_type="news", language="en", enabled=True,

@@ -18,15 +18,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _seed(tmp_path, name="r.db"):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / name}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / name, future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -216,14 +216,13 @@ def test_article_graph_is_a_deterministic_outward_radial(tmp_path):
     """article_graph centres on the most-mentioned keyword and radiates OUTWARD —
     the mind-map rule (no cross-tangle): every edge is centre -> arm, sized by
     mention count, counts only (no score)."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics import queries as q
     from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'g.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'g.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

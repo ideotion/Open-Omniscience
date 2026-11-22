@@ -15,7 +15,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,14 +22,15 @@ from src.analytics.extract import BaselineExtractor
 from src.analytics.reindex_job import ReindexJobManager
 from src.analytics.store import index_article, reconcile_keyword_counters
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def env(tmp_path):
     # A shared in-memory DB (StaticPool) so the worker thread's own session sees the
     # schema + the seeded rows; tests join() the worker before asserting (no race).
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)
@@ -257,7 +257,6 @@ def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path
     window too small to parallelise, or to an extractor the pool refuses, would pass
     every output-equality test while still running on one core.
     """
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
@@ -265,8 +264,8 @@ def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path
     from src.analytics.store import reindex_all_batch
     from src.database.models import Article, Base, Source
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)

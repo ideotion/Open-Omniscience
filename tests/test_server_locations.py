@@ -13,12 +13,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.database.models import Article, Base, Source
 from src.geo import ip_geo
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -29,8 +29,8 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_IP_GEO_DB", str(geo))
     ip_geo._country_ranges.cache_clear()
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

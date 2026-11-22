@@ -23,11 +23,11 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database.models import Base
 from src.monitoring import soak_window as sw
+from tests._app_engine import app_sqlite_engine
 
 _BANNED_KEY_FRAGMENTS = ("score", "rating", "ranking", "grade")
 
@@ -41,7 +41,7 @@ def _isolated_data_dir(tmp_path, monkeypatch):
 
 @pytest.fixture
 def session() -> Session:
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         yield s

@@ -23,6 +23,7 @@ import json
 import pytest
 
 from src.backup import merge as m
+from tests._app_engine import app_sqlite_engine
 
 _DIGEST = "a" * 64
 _OTHER = "b" * 64
@@ -79,13 +80,12 @@ def _seed_batch(session, *, digest, status):
 
 @pytest.fixture()
 def session(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.maintenance import ensure_merge_batch_source_digest
     from src.database.models import Base
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'x.db'}")
+    engine = app_sqlite_engine(tmp_path / 'x.db')
     Base.metadata.create_all(engine)
     ensure_merge_batch_source_digest(engine)
     Session = sessionmaker(bind=engine)

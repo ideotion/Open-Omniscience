@@ -28,7 +28,6 @@ from urllib.parse import urlparse
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument
@@ -41,6 +40,7 @@ from src.ingest import (
 )
 from src.ingest.airplane import AirplaneModeError
 from src.law.track import track_document
+from tests._app_engine import app_sqlite_engine
 
 _HOST = "https://gazette.example"
 _SENTENCE = "network kill switch is active"
@@ -187,7 +187,7 @@ def test_a_switch_engaging_mid_fetch_through_fetch_is_not_robots_unavailable(tmp
 #  The consequence R293 cares about: the law document is not stamped, on this pass or the next
 # --------------------------------------------------------------------------- #
 def test_the_law_tracker_gives_the_time_back_and_the_next_pass_asks_the_host(tmp_path):
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     doc = LawDocument(

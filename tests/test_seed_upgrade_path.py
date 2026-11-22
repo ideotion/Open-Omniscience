@@ -15,12 +15,12 @@ import json
 import shutil
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
 from src.ingest.seed_sources import seed_default_sources
 from src.law.catalog import seed_legal_sources
+from tests._app_engine import app_sqlite_engine
 
 _FIELDS = ("domain", "name", "source_type", "rss_url", "country", "language", "region", "catalog_baseline")
 
@@ -70,7 +70,7 @@ def _first(session, domain):
 def template(tmp_path_factory):
     """A database one boot of the current seeder wrote, and its rows: what a fresh install looks like."""
     path = tmp_path_factory.mktemp("seed-upgrade") / "template.db"
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as session:
         _boot(session)
@@ -84,7 +84,7 @@ def installed(template, tmp_path):
     """A copy of the fresh database, opened for one scenario."""
     path = tmp_path / "scenario.db"
     shutil.copy(template[0], path)
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     session = sessionmaker(bind=engine, future=True)()
     yield session, template[1]
     session.close()

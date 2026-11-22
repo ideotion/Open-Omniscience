@@ -19,7 +19,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics.source_audit import (
@@ -34,6 +33,7 @@ from src.analytics.source_audit import (
     should_auto_demote,
 )
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 from tests.diagnostics_source import diagnostics_source
 
 _BANNED = ("score", "ranking", "rating", "grade")
@@ -277,7 +277,7 @@ def _corpus() -> Session:
     en cohort clears the article floor and the pathology source sits in the tail; plus 1 fr source
     whose cohort is below the floor (no baseline). The furniture source is a MINORITY of the article
     cohort so the robust p90 lands in the healthy bulk (real corpora look like this)."""
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     kw_cache: dict[str, Keyword] = {}

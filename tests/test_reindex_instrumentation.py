@@ -20,6 +20,7 @@ import pytest
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.reindex_parallel import _MIN_PARALLEL_BATCH, precompute_batch
+from tests._app_engine import app_sqlite_engine
 
 
 def _tasks(n: int):
@@ -113,13 +114,12 @@ def _reindex_importable() -> bool:
 def test_reindex_articles_reports_a_real_split_and_never_a_fabricated_rate(tmp_path):
     from datetime import UTC, datetime
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics.store import reindex_articles
     from src.database.models import Article, Base, Source
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     db.add(Source(name="S", domain="x.test", country="fr"))

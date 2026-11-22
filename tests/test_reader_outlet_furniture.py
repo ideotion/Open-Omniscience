@@ -17,13 +17,13 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import outlet_furniture
 from src.database.models import Article, Base, Source
 from src.signals import near_dup
 from src.signals.near_dup import near_duplicate_clusters, shingles
+from tests._app_engine import app_sqlite_engine
 
 _TEMPLATE = (
     "Prenumerera nu och läs Hufvudstadsbladet digitalt utan begränsningar varje dag Kundservice Annonsera "
@@ -64,7 +64,7 @@ def test_twelve_template_pages_are_not_copies_and_a_real_copy_still_is(tmp_path)
     from src.analytics.store import index_article
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'r67.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'r67.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
@@ -243,7 +243,7 @@ def test_the_pair_mode_refuses_more_docs_than_it_compares_exactly():
 def test_furniture_keywords_need_half_the_sources_articles(tmp_path):
     from src.database.models import Keyword, KeywordMention
 
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     S = sessionmaker(bind=engine, future=True)
     with S() as s:

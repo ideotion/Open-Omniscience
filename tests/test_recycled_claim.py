@@ -14,11 +14,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.recycled_claim import find_recycled_claims
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # A paragraph long enough to clear min_chars and to shingle to a high Jaccard with itself.
 TEXT = (
@@ -38,8 +38,8 @@ NOW = datetime.now().replace(microsecond=0)
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -122,8 +122,8 @@ def test_recycled_claims_endpoint(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'r.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'r.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

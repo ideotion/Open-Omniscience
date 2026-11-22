@@ -10,13 +10,13 @@ VADER, so a core install (no [analysis] extra) never crashes at ingest.
 """
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.sentiment import score_article
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 try:
     import vaderSentiment  # noqa: F401
@@ -29,8 +29,8 @@ _needs_vader = pytest.mark.skipif(not _HAS_VADER, reason="sentiment scoring need
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

@@ -18,13 +18,13 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
 from src.api.ratelimit import limiter
 from src.database.models import Article, ArticleMentionedDate, Base, Keyword, KeywordMention, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 
 def _client_for(engine):
@@ -59,7 +59,7 @@ def small(tmp_path, monkeypatch):
     install_pool_hook()
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 's.db'}")
     kv_store.kv_invalidate()
-    engine = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True,
+    engine = app_sqlite_engine(tmp_path / 's.db', future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     stamp_new_store(engine, had_tables=False)
@@ -178,7 +178,7 @@ def reference(tmp_path_factory):
     path = tmp_path_factory.mktemp("ref") / "ref.db"
     generate_corpus(path, CorpusSpec(articles=1500, sources=40, mentions_per_article=12,
                                      head_pool=800, content_words=60))
-    engine = create_engine(f"sqlite:///{path}", future=True,
+    engine = app_sqlite_engine(path, future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)  # tables the generator does not create (watches ...)
     return engine

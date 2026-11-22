@@ -30,12 +30,12 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics import queries as q
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import function_body, read_static
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -63,8 +63,8 @@ def test_node_suite(suite: str) -> None:
 #  The graph carries the label fields (M-3/M-5) and keyed wording (M-10)
 # --------------------------------------------------------------------------- #
 def _session():
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

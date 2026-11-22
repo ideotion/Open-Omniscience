@@ -26,7 +26,6 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -35,6 +34,7 @@ from src.database.models import Article, Base, Source
 from src.monitoring import search_timing, unlock_marker
 from src.monitoring.search_timing import _FakeClock
 from src.shared import walk_no_score as _walk_no_score
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 
 main = pytest.importorskip("src.api.main")  # CI/venv with crypto; skips on a bare sandbox
@@ -55,8 +55,8 @@ def _isolated(tmp_path, monkeypatch):
 
 
 def _session():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     ensure_fts(eng)

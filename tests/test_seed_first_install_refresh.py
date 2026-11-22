@@ -13,11 +13,12 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-from sqlalchemy import create_engine, event, false
+from sqlalchemy import event, false
 from sqlalchemy.orm import Query, sessionmaker
 
 from src.database.models import Base, Source
 from src.ingest.seed_sources import seed_sources
+from tests._app_engine import app_sqlite_engine
 
 _N = 60
 
@@ -31,7 +32,7 @@ def _entries(n: int = _N, start: int = 0) -> list[dict]:
 
 
 def _session():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return engine, sessionmaker(bind=engine, future=True)()
 
