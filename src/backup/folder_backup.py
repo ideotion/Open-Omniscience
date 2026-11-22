@@ -1625,11 +1625,11 @@ def _member_link(root: Path, category: str, rel: str) -> str | None:
     try:
         if is_link(root / category):
             return ""
+        cat_dev = os.lstat(root / category).st_dev
         for i in range(1, len(parts) + 1):
-            if is_link(root / category / Path(*parts[:i])):
-                return "/".join(parts[:i])
-        if os.lstat(root / category / Path(*parts)).st_dev != os.lstat(root / category).st_dev:
-            return rel
+            here = root / category / Path(*parts[:i])
+            if is_link(here) or os.lstat(here).st_dev != cat_dev:
+                return "/".join(parts[:i])  # the first such name, as the category walk names it
     except (OSError, ValueError):
         return None
     return None

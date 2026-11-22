@@ -278,3 +278,26 @@ def test_a_device_node_or_pipe_is_never_opened(tmp_path, monkeypatch):
     rep = verify_folder_backup(dest)
     assert rep["ok"] is False and rep["summary"]["missing"] == 1
     assert "europe.pbf" not in opened
+
+
+def test_a_listed_file_under_a_nested_mount_is_counted_once(tmp_path, monkeypatch):
+    dest = _backup(tmp_path)
+    mnt = os.fspath(dest / "wiki_dumps" / "enwiki")
+
+    class _Mounted:  # this module's own view of os (R351)
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+        @staticmethod
+        def lstat(path, *a, **k):
+            st = os.lstat(path, *a, **k)
+            p = os.fspath(path)
+            if p == mnt or p.startswith(mnt + os.sep):
+                return os.stat_result((st.st_mode, st.st_ino, st.st_dev + 1, *tuple(st)[3:]))
+            return st
+
+    monkeypatch.setattr(folder_backup, "os", _Mounted())
+    rep = verify_folder_backup(dest)
+    assert rep["ok"] is False
+    assert rep["summary"]["link_not_checked"] == 1
+    assert [p["rel"] for p in rep["problems"]] == ["enwiki/a.bz2"]
