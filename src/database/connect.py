@@ -32,15 +32,18 @@ protection is the artifact's own OOENC1 envelope).
 from __future__ import annotations
 
 import contextlib
+import errno
 import logging
 import os
 import shutil
 import sqlite3
+import stat
+import sys
 import threading
 import time
 from pathlib import Path, PurePath, PureWindowsPath
 
-from src.database import open_stats
+from src.database import open_stats, store_pins
 
 _LOG = logging.getLogger("database.connect")
 
@@ -238,15 +241,406 @@ def have_driver() -> bool:
 
 
 def is_encrypted_file(path: Path | str) -> bool | None:
-    """True = ciphertext header, False = plaintext SQLite, None = missing/empty."""
+    """True = ciphertext header, False = plaintext SQLite, None = missing/empty.
+
+    R789 (row 310): on POSIX this never CLOSES a descriptor on the file. Closing any descriptor on a file drops every
+    fcntl lock the process holds on it, SQLite's included, and this runs on every :func:`connect`: measured, one plain
+    ``open``/``close`` here let another process take a store this process still had a connection on (the country
+    migration took it under a running app, whose next write left an alpha-3 marker over alpha-2 rows; in some runs two
+    writers on one WAL zeroed the header). The header is read with ``pread`` on a descriptor kept per file
+    (:func:`store_reader`). Windows has no such locks and a held descriptor would block ``os.replace`` there, so it reads
+    as it always did."""
     p = Path(path)
     try:
-        if not p.exists() or p.stat().st_size == 0:
-            return None
-        with open(p, "rb") as fh:
-            return fh.read(16) != _SQLITE_MAGIC
+        st = p.stat()
     except OSError:
         return None
+    if st.st_size == 0:
+        return None
+    if os.name == "nt":
+        try:
+            with open(p, "rb") as fh:
+                return fh.read(16) != _SQLITE_MAGIC
+        except OSError:
+            return None
+    try:
+        with store_reader(p) as fd:
+            return os.pread(fd, 16, 0) != _SQLITE_MAGIC
+    except OSError:
+        return None
+
+
+# --- R789: header reads that never drop a lock ----------------------------------------------------------------- #
+#
+# A Python read of a file SQLite may have open here takes a read-only descriptor through :func:`_acquire` and gives it
+# back through :func:`_release`. The descriptor is CLOSED at the release only when closing it can drop nothing: no other
+# descriptor of this process is open on the file or on the other files of its SQLite group (``X``, ``X-wal``, ``X-shm``,
+# ``X-journal``: a connection on ``X`` opens its logs lazily, so a log with no descriptor yet is still "held" while ``X``
+# has one), no SQLite open is in flight in this process (:func:`sqlite_opening`, entered by :func:`connect` and the other
+# places that open a store), and no other reader of ours is using it. Otherwise it is PARKED, reused by the next read of
+# the same file, and closed by a later release once the group is free. So a file SQLite holds is never closed under it,
+# and a file it does not hold (a backup member, an export, a candidate on a removable drive) is not kept open. The decision
+# and the close happen under ``_hdr_lock``, and a SQLite open counts itself in under the same lock before it opens, so a
+# connection cannot appear between the check and the close. Descriptors are opened ``O_CLOEXEC`` and ``O_NONBLOCK`` (a FIFO
+# at a store path never blocks while the lock is held) and only for regular files.
+_hdr_fds: dict[tuple[int, int], list[int]] = {}  # every descriptor of ours on a file; the first is the one read
+_hdr_names: dict[tuple[int, int], str] = {}  # the name the file was read by, for its group
+_hdr_uses: dict[tuple[int, int], int] = {}  # readers of ours using it now
+_hdr_opening = 0  # SQLite opens in flight in this process
+_hdr_lock = threading.RLock()  # re-entrant: the audit hook below may run while this thread holds it
+_sweep_lock = threading.Lock()  # one sweep at a time: only a sweep closes, so a listing it made stays true for it
+_hdr_gen = 0  # bumped by every SQLite open that starts in this process (counted or audited)
+_audit_pending: dict[int, list[float]] = {}  # thread -> start times of stdlib sqlite3 opens not yet returned
+_AUDIT_STALE_S = 60.0  # an open that never reported its handle (it raised) stops counting after this
+_GROUP_SUFFIXES = ("-wal", "-shm", "-journal")
+
+
+@contextlib.contextmanager
+def sqlite_opening():
+    """Around every SQLite open (sqlcipher3's above all, which the interpreter does not audit) of a file this process may
+    also read from Python (R789): while one is in flight, no read of ours closes a descriptor, and one that started during a
+    sweep makes that sweep close nothing, so a lock the new connection takes cannot be dropped by a close that raced it."""
+    global _hdr_opening, _hdr_gen
+    counted = False
+    try:
+        with _hdr_lock:
+            _hdr_opening += 1
+            _hdr_gen += 1
+            counted = True
+        yield
+    finally:
+        with _hdr_lock:
+            if counted:
+                _hdr_opening -= 1
+        _sweep()  # what reads during the open parked; the new connection's own files stay (they are foreign now)
+
+
+def _sqlite_audit(event: str, args) -> None:
+    """Every stdlib ``sqlite3.connect`` anywhere in the process counts as an open in flight from before it opens the file
+    until its handle exists (the interpreter's ``sqlite3.connect`` and ``sqlite3.connect/handle`` audit events), so an
+    opener nobody wrapped in :func:`sqlite_opening` is covered too. One that raises never reports a handle: it stops
+    counting after ``_AUDIT_STALE_S`` (an open itself takes no lock and does not wait on one)."""
+    if event == "sqlite3.connect":
+        global _hdr_gen
+        with _hdr_lock:
+            _hdr_gen += 1
+            _audit_pending.setdefault(threading.get_ident(), []).append(time.monotonic())
+    elif event == "sqlite3.connect/handle":
+        with _hdr_lock:
+            pending = _audit_pending.get(threading.get_ident())
+            if pending:
+                pending.pop()
+
+
+def _opening_now_locked() -> bool:
+    if _hdr_opening:
+        return True
+    cutoff = time.monotonic() - _AUDIT_STALE_S
+    for tid in list(_audit_pending):
+        live = [t for t in _audit_pending[tid] if t > cutoff]
+        if live:
+            _audit_pending[tid] = live
+            return True
+        del _audit_pending[tid]
+    return False
+
+
+if os.name != "nt":
+    sys.addaudithook(_sqlite_audit)
+
+
+def pin_store(path: Path | str) -> None:
+    """See :func:`src.database.store_pins.pin_store` (the session names the library there, without importing this module)."""
+    store_pins.pin_store(path)
+
+
+def _not_regular(mode: int) -> OSError:
+    if stat.S_ISDIR(mode):
+        return IsADirectoryError(errno.EISDIR, "is a directory")
+    return OSError(errno.EINVAL, "not a regular file")
+
+
+def _acquire(p: Path) -> tuple[tuple[int, int], int]:
+    """A read-only descriptor on the regular file at ``p`` and its (device, inode), counted in use until :func:`_release`.
+    Raises ``OSError`` as ``os.open`` does; ``IsADirectoryError`` for a directory, ``OSError`` for another non-regular file.
+    The stat and the open run OUTSIDE ``_hdr_lock`` (a hung mount stalls this read, not every connect); a descriptor not
+    yet recorded is foreign to other reads, which then keep theirs: the safe direction."""
+    name = os.path.abspath(p)  # before any open: a later chdir must not change which files the name means
+    st = os.stat(name)
+    if not stat.S_ISREG(st.st_mode):
+        raise _not_regular(st.st_mode)  # refused before any open: no FIFO wait, no terminal, no device side effect
+    key = (st.st_dev, st.st_ino)
+    with _hdr_lock:
+        if key in _hdr_fds:
+            _hdr_names[key] = name
+            _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
+            return key, _hdr_fds[key][0]
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+    fd = os.open(name, flags)
+    got = os.fstat(fd)  # should this raise, the descriptor stays open: closing one we cannot place could drop a lock
+    if not stat.S_ISREG(got.st_mode):
+        os.close(fd)  # the name now leads to a non-regular file, which no SQLite connection holds a lock on
+        raise _not_regular(got.st_mode)
+    key = (got.st_dev, got.st_ino)  # what was opened, even if the name moved since the stat
+    with _hdr_lock:
+        if key in _hdr_fds:
+            _hdr_fds[key].append(fd)  # never closed here: another of ours is open on the file
+        else:
+            _hdr_fds[key] = [fd]
+        _hdr_names[key] = name
+        _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
+        return key, _hdr_fds[key][0]
+
+
+def _release(key: tuple[int, int]) -> None:
+    with _hdr_lock:
+        _hdr_uses[key] -= 1
+    _sweep()
+
+
+def _base_of(name: str) -> str:
+    for suf in _GROUP_SUFFIXES:
+        if name.endswith(suf):
+            return name[: -len(suf)]
+    return name
+
+
+def _group_of(name: str) -> tuple[str, set[tuple[int, int]], bool]:
+    """The realpath of the store ``name`` belongs to, the (device, inode) of that store and its logs as they are now, and
+    whether any of them could not be read for a reason other than its absence (a network mount's EIO, ESTALE): then the
+    group is not known and the descriptor is kept."""
+    base = _base_of(name)
+    keys = set()
+    uncertain = False
+    for n in (base, *(base + s for s in _GROUP_SUFFIXES)):
+        try:
+            st = os.stat(n)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            uncertain = True  # a member that cannot be read may be the one a connection holds: keep
+            continue
+        keys.add((st.st_dev, st.st_ino))
+    try:
+        real = os.path.realpath(base)
+    except (OSError, ValueError):
+        real = base
+    return real, keys, uncertain
+
+
+def _foreign_fd_keys(ours: set[int]) -> set[tuple[int, int]] | None:
+    """The (device, inode) of every descriptor of this process not in ``ours``; None if they cannot be listed. Lists
+    ``/proc/self/fd`` or ``/dev/fd`` and ``fstat``s each: nothing is opened to find out."""
+    for d in ("/proc/self/fd", "/dev/fd"):
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        keys = set()
+        for name in names:
+            try:
+                n = int(name)
+            except ValueError:
+                continue
+            if n in ours:
+                continue
+            try:
+                st = os.fstat(n)
+            except OSError as exc:
+                if exc.errno == errno.EBADF:
+                    continue  # closed since the listing (the listing's own descriptor among them)
+                return None  # a descriptor that cannot be read (EIO, ESTALE) may be a connection's: keep everything
+            keys.add((st.st_dev, st.st_ino))
+        return keys
+    return None
+
+
+def _idle_names_locked() -> dict[tuple[int, int], str]:
+    return {k: _hdr_names.get(k, "") for k in _hdr_fds if not _hdr_uses.get(k)}
+
+
+def _ours_locked() -> set[int]:
+    return {fd for fds in _hdr_fds.values() for fd in fds}
+
+
+def _sweep() -> None:
+    """Close every descriptor of ours that no reader uses and that closing cannot hurt (see the block comment above).
+
+    Three steps, so no stat, listing or open waits while ``_hdr_lock`` is held: under the lock, nothing may be opening,
+    and the open generation is noted; with no lock, the process's descriptors are listed and the groups resolved by name;
+    under the lock again, if any SQLite open started since the note (counted or audited) or one is in flight, nothing is
+    closed; otherwise the decision and the close are made. The close itself stays under the lock: deciding and closing
+    must be one step against any open, so a close that a stalled mount holds up holds up opens with it. A descriptor any
+    connection made before the note is in the listing; one made after it changed the generation. A descriptor that cannot
+    be read, or a group member that cannot be stat'ed for a reason other than its absence, keeps everything. Sweeps run
+    one at a time (``_sweep_lock``), and only a sweep closes, so the descriptor numbers listed stay what they were.
+
+    What this costs: a descriptor whose sweep was skipped (another sweep running, an open in flight) stays open until a
+    later read of ours sweeps, so a file deleted meanwhile keeps its disk space until then or until the process exits. The
+    audit hook sees this interpreter only; nothing here runs SQLite in a subinterpreter."""
+    if not _sweep_lock.acquire(blocking=False):
+        return  # another sweep is running; what this release parked waits for the next one
+    try:
+        with _hdr_lock:
+            if _opening_now_locked():
+                return
+            gen = _hdr_gen
+            idle = _idle_names_locked()
+            ours = _ours_locked()
+        if not idle:
+            return
+        foreign = _foreign_fd_keys(ours)
+        if foreign is None:
+            return  # cannot tell: keep them all (a kept descriptor drops nothing)
+        groups = {k: _group_of(name) for k, name in idle.items()}
+        with _hdr_lock:
+            if _hdr_gen != gen or _opening_now_locked():
+                return
+            _close_free_locked(groups, foreign)
+    finally:
+        _sweep_lock.release()
+
+
+def _close_free_locked(
+    groups: dict[tuple[int, int], tuple[str, set[tuple[int, int]], bool]], foreign: set[tuple[int, int]]
+) -> None:
+    for key, (real, group, uncertain) in groups.items():
+        if key not in _hdr_fds or _hdr_uses.get(key) or uncertain:
+            continue
+        reachable = key in group  # the name still leads to this file
+        if reachable and real in store_pins.PINNED:
+            continue  # the library: kept while it is the library (the coordinator's fallback)
+        if reachable:
+            # The store and its logs as the name finds them now, and any older file of ours recorded under the same store
+            # name (a connection may still have it open and would open its logs by name).
+            base = _base_of(_hdr_names.get(key, ""))
+            held = group | {k for k, n in _hdr_names.items() if k in _hdr_fds and _base_of(n) == base} | {key}
+        else:
+            held = {key}  # a replaced file is judged alone: its name now leads elsewhere, and so would a lazy log open
+        if held & foreign:
+            continue
+        if any(_hdr_uses.get(k) for k in held if k != key):
+            continue  # a reader of ours on the same group: the group's descriptors stay with it
+        for fd in _hdr_fds.pop(key):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        _hdr_names.pop(key, None)
+        _hdr_uses.pop(key, None)
+
+
+@contextlib.contextmanager
+def store_reader(path: Path | str):
+    """A read-only descriptor on ``path`` whose use never drops this process's locks on it (R789), for every Python read of
+    a file SQLite may have open here: the store, its ``-wal``/``-shm``, a snapshot being written.
+
+    On POSIX the descriptor may be SHARED with other readers of the same file: read it only at explicit offsets
+    (:func:`read_at`, ``os.sendfile`` with an offset), never with ``read``/``lseek``, which move a shared position. It is
+    closed after the block only when nothing of this process holds the file (see :func:`_acquire`). On Windows (no fcntl
+    locks) it is a private descriptor, closed on exit. Raises ``OSError`` as ``os.open`` does."""
+    if os.name == "nt":
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+        return
+    key, fd = _acquire(Path(path))
+    try:
+        yield fd
+    finally:
+        _release(key)
+
+
+class _HeldFile:
+    """A read-only file object over a :func:`store_reader` descriptor with a position of its OWN (``read``, ``seek``,
+    ``tell``, ``fileno``), so code written for ``open(path, "rb")`` reads the store without closing a descriptor SQLite's
+    locks depend on (R789). ``close`` gives the descriptor back (``on_close``); it never closes one SQLite needs."""
+
+    def __init__(self, fd: int, on_close=None) -> None:
+        self._fd = fd
+        self._pos = 0
+        self._on_close = on_close
+        self.closed = False
+
+    def fileno(self) -> int:
+        return self._fd
+
+    def read(self, n: int = -1) -> bytes:
+        if n is None or n < 0:
+            parts = []
+            while True:  # one pread returns at most about 2 GiB on Linux: read to the end as a file object does
+                data = read_at(self._fd, 1 << 30, self._pos)
+                if not data:
+                    break
+                parts.append(data)
+                self._pos += len(data)
+            return b"".join(parts)
+        data = read_at(self._fd, n, self._pos)
+        self._pos += len(data)
+        return data
+
+    def readinto(self, buf) -> int:
+        data = self.read(len(buf))
+        buf[: len(data)] = data
+        return len(data)
+
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        if whence == os.SEEK_SET:
+            self._pos = offset
+        elif whence == os.SEEK_CUR:
+            self._pos += offset
+        elif whence == os.SEEK_END:
+            self._pos = os.fstat(self._fd).st_size + offset
+        else:
+            raise ValueError(f"whence {whence!r}")
+        return self._pos
+
+    def tell(self) -> int:
+        return self._pos
+
+    def readable(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        if not self.closed:
+            self.closed = True
+            if self._on_close is not None:
+                self._on_close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
+
+
+def open_held(path: Path | str, mode: str = "rb", buffering: int = 0):
+    """A drop-in for ``open(path, "rb", buffering=0)`` on a file SQLite may have open in this process (R789): on POSIX a
+    :class:`_HeldFile` whose ``close`` never closes a descriptor SQLite's locks depend on; on Windows the ordinary ``open``.
+    Close it (a ``with`` block): until then the descriptor counts as in use."""
+    if mode != "rb":
+        raise ValueError("open_held reads only")
+    if os.name == "nt":
+        return open(path, "rb", buffering=buffering)  # noqa: SIM115 - the caller's ``with`` closes it
+    key, fd = _acquire(Path(path))
+    return _HeldFile(fd, on_close=lambda: _release(key))
+
+
+@contextlib.contextmanager
+def store_file(path: Path | str):
+    """``open(path, "rb")`` for a file SQLite may have open in this process (R789): a :class:`_HeldFile` over
+    :func:`store_reader`, so leaving the block never closes a descriptor SQLite's locks depend on, on POSIX."""
+    with store_reader(path) as fd:
+        yield _HeldFile(fd)
+
+
+def read_at(fd: int, n: int, offset: int) -> bytes:
+    """``n`` bytes at ``offset`` (fewer at the end of the file) without moving the descriptor's position where the platform
+    can (``os.pread``); Windows, whose descriptor from :func:`store_reader` is private, seeks then reads."""
+    if hasattr(os, "pread"):
+        return os.pread(fd, n, offset)
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.read(fd, n)
 
 
 def _sql_literal_escape(value: str) -> str:
@@ -585,15 +979,16 @@ def connect(
 
     ``read_only=True`` opens an existing file ``mode=ro`` and writes nothing, its leftover log included:
     see :func:`_connect` for why ``PRAGMA query_only`` is not that."""
-    conn = _connect(
-        path,
-        key=key,
-        create_encrypted=create_encrypted,
-        check_same_thread=check_same_thread,
-        timeout=timeout,
-        cipher_page_size=cipher_page_size,
-        read_only=read_only,
-    )
+    with sqlite_opening():  # R789: no Python read closes a descriptor while this open may be taking a lock
+        conn = _connect(
+            path,
+            key=key,
+            create_encrypted=create_encrypted,
+            check_same_thread=check_same_thread,
+            timeout=timeout,
+            cipher_page_size=cipher_page_size,
+            read_only=read_only,
+        )
     from src.database.fts_norm import register
 
     register(conn)
@@ -676,10 +1071,11 @@ def attach(conn, path: Path | str, alias: str) -> None:
     """ATTACH a PLAINTEXT database (staged artifact members are plaintext by
     design). On a SQLCipher connection the empty KEY clause is mandatory or the
     attached DB would inherit the main key; stdlib sqlite3 has no KEY clause."""
-    if _is_sqlcipher_conn(conn):
-        conn.execute(f'ATTACH DATABASE ? AS "{alias}" KEY \'\'', (str(path),))
-    else:
-        conn.execute(f'ATTACH DATABASE ? AS "{alias}"', (str(path),))
+    with sqlite_opening():  # R789: an ATTACH opens a file the audit hook does not see
+        if _is_sqlcipher_conn(conn):
+            conn.execute(f'ATTACH DATABASE ? AS "{alias}" KEY \'\'', (str(path),))
+        else:
+            conn.execute(f'ATTACH DATABASE ? AS "{alias}"', (str(path),))
 
 
 def _is_sqlcipher_conn(conn) -> bool:
@@ -738,7 +1134,8 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
         finally:
             conn.close()
         return dest_p
-    src_conn = sqlite3.connect(str(src_p))
+    with sqlite_opening():  # R789: the live store, opened outside connect()
+        src_conn = sqlite3.connect(str(src_p))
     try:
         dst_conn = sqlite3.connect(str(dest_p))
         try:
@@ -768,7 +1165,8 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
     src_p, dest_p = Path(src_plain), Path(dest)
     dest_p.parent.mkdir(parents=True, exist_ok=True)
     dest_p.unlink(missing_ok=True)
-    conn = sqc.connect(str(src_p))  # a plaintext file opens with no key
+    with sqlite_opening():  # R789: sqlcipher3 opens are not audited
+        conn = sqc.connect(str(src_p))  # a plaintext file opens with no key
     try:
         conn.execute(f"ATTACH DATABASE ? AS enc KEY '{_sql_literal_escape(key)}'", (str(dest_p),))
         _match_source_pragmas(conn, "enc")
@@ -808,7 +1206,8 @@ def copy_at_current_settings(src: Path | str, dest: Path | str, *, should_stop=N
     else:
         from sqlcipher3 import dbapi2 as sqc
 
-        conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
+        with sqlite_opening():  # R789: sqlcipher3 opens are not audited
+            conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
         attach, attach_args, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ''", (str(dest_p),), "page_size"
     try:
         conn.execute("PRAGMA temp_store = MEMORY")  # a sorter or temp table spilled to disk would be plaintext, whatever the build
@@ -902,7 +1301,10 @@ def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
         wal = src_p.with_name(src_p.name + "-wal")
         if wal.exists() and wal.stat().st_size > 0:
             return False
-        shutil.copyfile(src_p, dest_p)
+        if os.name == "nt":
+            shutil.copyfile(src_p, dest_p)
+        else:
+            _copy_from_held(src_p, dest_p)
         # A snapshot is a lone file: any -wal/-shm the destination inherited from a
         # previous life would be read as ITS log and corrupt the read.
         for suffix in ("-wal", "-shm"):
@@ -911,6 +1313,82 @@ def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
     # microseconds, not proportional to corpus size).
     connect(dest_p, check_same_thread=False).close()
     return True
+
+
+class StoreCopyRefused(OSError):
+    """A byte copy of the store was refused before or during the copy; the reason is the message, the partial is gone."""
+
+
+def _copy_from_held(src_p: Path, dest_p: Path, *, chunk: int = 8 * 1024 * 1024, use_sendfile: bool = True) -> None:
+    """Byte-copy the live store from the descriptor kept for it (R789): ``shutil.copyfile`` opened and CLOSED the store,
+    and on POSIX that close dropped every lock this process held on it, so after every restore and stream backup another
+    process could take or write the store under the running app.
+
+    Called under the write gate with the checkpoint drained and the ``-wal`` empty (the caller's preconditions, unchanged).
+    The kept descriptor must be the file now at ``src_p`` (device and inode, the name not followed if it is a link), or the
+    copy is refused: a stale or replaced file is never copied. The size is read once from the descriptor and exactly that
+    many bytes are copied; a short read, or a size that changes during the copy, fails it and removes the partial."""
+    try:
+        os.stat(src_p, follow_symlinks=False)
+    except OSError as exc:
+        raise StoreCopyRefused(f"the store could not be found at its path ({type(exc).__name__})") from None
+    with store_reader(src_p) as fd:  # in use for the whole copy: no other read of ours closes it meanwhile
+        _copy_fd(src_p, fd, dest_p, chunk=chunk, use_sendfile=use_sendfile)
+
+
+def _copy_chunk(fd: int, out: int, done: int, want: int, size: int, state: dict) -> int:
+    """One chunk of :func:`_copy_fd` at offset ``done``; returns the bytes written (0 when ``sendfile`` just gave way to the
+    pread loop). A loop body of its own, so the copy loop's back-edge stays inside the ``try`` around it (R163)."""
+    sendfile = state["sendfile"]
+    if sendfile is not None:
+        try:
+            n = sendfile(out, fd, done, want)  # an explicit offset: the shared position is not moved
+        except OSError:
+            state["sendfile"] = None  # not supported for this pair of files here: the pread loop does it
+            return 0
+        if n == 0:
+            raise StoreCopyRefused(f"the store ended after {done} of {size} bytes during the copy")
+        return n
+    data = read_at(fd, want, done)
+    if not data:
+        raise StoreCopyRefused(f"the store ended after {done} of {size} bytes during the copy")
+    view = memoryview(data)
+    while view:
+        view = view[os.write(out, view) :]
+    return len(data)
+
+
+def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bool) -> None:
+    def _same_file_at_path() -> bool:
+        try:
+            now = os.stat(src_p, follow_symlinks=False)
+        except OSError:
+            return False
+        held = os.fstat(fd)
+        return (held.st_dev, held.st_ino) == (now.st_dev, now.st_ino)
+
+    if not _same_file_at_path():
+        raise StoreCopyRefused("the store at its path is not the file this process holds; nothing was copied")
+    size = os.fstat(fd).st_size
+    # A new file only (the caller removed any old one), never through a link: 0o666 less the umask, as shutil.copyfile made it.
+    out = os.open(dest_p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o666)
+    try:
+        try:
+            state = {"sendfile": getattr(os, "sendfile", None) if use_sendfile else None}
+            done = 0
+            while True:  # the guard-clause form: the back-edge stays inside the try (R163)
+                if done >= size:
+                    break
+                done += _copy_chunk(fd, out, done, min(chunk, size - done), size, state)
+            if os.fstat(fd).st_size != size:
+                raise StoreCopyRefused("the store changed size during the copy; the copy was discarded")
+            if not _same_file_at_path():
+                raise StoreCopyRefused("the store at its path was replaced during the copy; the copy was discarded")
+        finally:
+            os.close(out)  # the destination, a new private file: closing it drops no lock anyone holds
+    except BaseException:
+        dest_p.unlink(missing_ok=True)
+        raise
 
 
 def snapshot_open_connection(conn, dest: Path | str) -> Path:

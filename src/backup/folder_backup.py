@@ -49,7 +49,7 @@ from pathlib import Path, PurePosixPath
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -320,8 +320,8 @@ def _write_manifest_atomically(path: Path, text: str) -> None:
 
     tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}{_PART_SUFFIX}")
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        with create_new(tmp) as fh:  # never through a link at the temporary name (row 313)
+            fh.write(text.encode("utf-8"))
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
@@ -531,9 +531,29 @@ def write_folder_backup(
     # file is not the one that was hashed.
     prior = _recorded_digests(root)
     digests: dict[tuple[str, str], str] = {}
+    root_real = os.path.realpath(root)
+    # Row 313: the backup folder is a place someone else may have prepared. A category or sub folder
+    # there that is a link would carry the copy (and its folder creation) to wherever the link points,
+    # so EVERY item's way is checked before the first byte is copied, and a link stops the backup with
+    # the folder, where it points and what to do. Checked again per item below, against a folder
+    # swapped for a link while the copy runs. A link AT a file's own name is not followed either: it
+    # never counts as the file already present, and the copy's rename replaces the link itself.
+    for it in items:
+        if (found := _linked_way(root, root_real, it)) is not None:
+            raise LinkedBackupFolder(
+                f"The large-data backup stopped before copying anything: the folder {found[0]} inside the "
+                f"backup folder is a link to {found[1]}, and a backup never writes through a link. Replace the "
+                f"link with a real folder, or choose a backup folder on that other drive."
+            )
     for it in items:
         dst = root / it.category / it.rel
-        if dst.exists() and dst.stat().st_size == it.size:
+        if (found := _linked_way(root, root_real, it)) is not None:
+            raise LinkedBackupFolder(
+                f"The large-data backup stopped: the folder {found[0]} inside the backup folder became a link "
+                f"to {found[1]} while it ran, and nothing was written through it. Replace the link with a real "
+                f"folder, or choose a backup folder on that other drive."
+            )
+        if not is_link(dst) and dst.exists() and dst.stat().st_size == it.size:
             skipped += 1
             if (carried := prior.get((it.category, it.rel, it.size))) is not None:
                 digests[(it.category, it.rel)] = carried
@@ -912,6 +932,24 @@ def _same_file_again(opened: os.stat_result, checked: os.stat_result, src: Path)
         return False
     return (stat.S_ISREG(now.st_mode) and not is_link_stat(now)
             and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
+def _linked_way(root: Path, root_real: str, it: BackupItem) -> tuple[str, str] | None:
+    """The first folder below ``root`` on ``it``'s way that is a link, or that leads out of ``root``:
+    ``(its path inside the backup folder, where it really points)``. ``None`` when the way is plain."""
+    rel_parent = Path(it.category) / Path(it.rel).parent
+    if not link_on_the_way(root, rel_parent) and stays_inside(root / rel_parent, root_real):
+        return None
+    cur = root
+    for part in rel_parent.parts:
+        cur = cur / part
+        if is_link(cur) or not stays_inside(cur, root_real):
+            break
+    return (cur.relative_to(root).as_posix(), os.path.realpath(cur))
+
+
+class LinkedBackupFolder(OSError):
+    """A folder inside the chosen backup folder is a link: the backup stops rather than write through it."""
 
 
 class SourceChanged(OSError):

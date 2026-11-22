@@ -116,7 +116,12 @@ MISMATCH_LATER_PAGES = "later-pages"
 
 #: Opens the file for the raw read (no SQLite, no key): a name tests replace with a file whose reads fail, because a drive that fails
 #: to read cannot be made on demand.
-_raw_open = open
+def _raw_open(path, mode="rb", buffering=0):
+    """The file's bytes through the descriptor kept for it (R789, ``connect.open_held``): the store may be open in this
+    process, and closing a descriptor of our own on it would drop every lock the process holds on it."""
+    from src.database.connect import open_held
+
+    return open_held(path, mode, buffering)
 
 
 def read_settings(con: Any) -> tuple[int | None, str | None]:

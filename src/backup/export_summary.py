@@ -58,6 +58,7 @@ from src.backup.attribution import (
 )
 from src.backup.export_folder import REQUEST_NAME, read_export_request
 from src.backup.manifest_file import read_manifest_json
+from src.backup.regular_file import replace_with
 from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure
 
@@ -591,8 +592,7 @@ def write_backup_summary(dest: str | os.PathLike[str], facts: dict[str, Any]) ->
         _LOG.info("export summary: kept %s (this process no longer holds its facts)", p)
         return p
     tmp = d / (SUMMARY_NAME + ".oopart")
-    tmp.write_text(render_summary_markdown(facts), encoding="utf-8")
-    os.replace(tmp, p)
+    replace_with(p, render_summary_markdown(facts).encode("utf-8"), tmp=tmp)  # never through a link at either name (row 313)
     return p
 
 
