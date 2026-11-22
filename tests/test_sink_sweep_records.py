@@ -194,7 +194,7 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ("classify_restore_error", "msg = str(exc)"): 1,
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,
         # R788 (row 309): the restore's journal check reads the KvReadError's ``held`` flag (a bool); its words are fixed
-        ("_refuse_half_migrated_store", "if exc.held:"): 1,
+        ("refuse_half_migrated_store", "if exc.held:"): 1,
         ("classify_restore_error", 'f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "'): 1,
         ("_retry_while_locked", "if not _file_is_locked(exc) or time.monotonic() >= deadline:"): 1,
         # R741 (row 145): the grace hook only reads ``filename2``/``filename`` to ask whether THIS process holds that file; no text is read or kept.

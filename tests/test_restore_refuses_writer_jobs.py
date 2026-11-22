@@ -304,7 +304,7 @@ def test_the_journal_names_the_writer_jobs_refusal():
 
     assert "writer-jobs" in se.RUN_REFUSALS and "barrier" in se.RUN_REFUSALS
     vj = (ROOT / "src/backup/volume_job.py").read_text("utf-8")
-    branch = vj[vj.index("if issubclass(type(exc), WriterJobsRefused):") :][:300]
+    branch = vj[vj.index("if issubclass(type(exc), WriterJobsRefused):") :][:600]  # row 325 put the half-migrated branch between
     assert 'reason="writer-jobs"' in branch and 'reason="barrier"' in branch
 
 
