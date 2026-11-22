@@ -264,7 +264,8 @@ def test_the_world_map_states_the_vintage_and_links_to_settings():
     js = (STATIC / "app-map.js").read_text("utf-8")
     vintage = _fn(js, "loadOsmVintage")
     assert "openSettingsOsm()" in vintage and "c.vintage" in vintage
-    assert "date not stated in the extract" in vintage
+    assert "_osmVintageHead(" in vintage, "row 286: the head with the last applied file's date"
+    assert "date not stated in the extract" in _fn(js, "_osmVintageHead")
     assert "loadOsmVintage();" in _fn(js, "loadOoMapCoverage")
     shell = (STATIC / "app-shell.js").read_text("utf-8")
     assert "loadOsmPicker()" in shell

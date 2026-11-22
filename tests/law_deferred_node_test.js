@@ -43,7 +43,7 @@ const DE = { "deferred": "zurückgestellt", "fetch error": "Abruffehler",
 
 function badge(row, translated) {
   const win = translated ? "{ OOI18N: { t: (s) => DE[s] || s } }" : "{}";
-  const f = new Function("DE", "var window = " + win + "; var OOI18N = window.OOI18N;\n" + [ESC, extractConst("_LAW_VERDICT_PILL"), extract("lawVerdictBadge"), "return lawVerdictBadge;"].join("\n"));
+  const f = new Function("DE", "var window = " + win + "; var OOI18N = window.OOI18N;\n" + [ESC, extractConst("_LAW_VERDICT_PILL"), extract("lawVerdictLabel"), extract("lawVerdictBadge"), "return lawVerdictBadge;"].join("\n"));
   return f(DE)(row);
 }
 
@@ -114,5 +114,20 @@ const base = { documents: 0, baselines: 0, changed: 0, flagged: 0, errors: 0, un
     await h.lawTrack(null);
     assert.ok(log.toasts[0][0].endsWith("2 zurückgestellt (das eigene Crawl-delay des Hosts)"), "the clause is a keyed template: " + log.toasts[0][0]);
   }
+  // ---- row 283: a robots refusal is named, and leaves the error count ------------------------------------------------------
+  {
+    // `errors` still counts them (skipped_offline's convention); the toast takes them out and says what they are
+    const { h, log } = sandbox({ ...base, documents: 5, baselines: 1, errors: 4, robots_blocked: 2, robots_unread: 1 });
+    await h.lawTrack(null);
+    assert.strictEqual(log.toasts[0][0],
+      "Tracked 5 law(s): 1 baselines, 0 changed, 0 flagged, 1 errors. 2 blocked by the site's robots.txt, 1 not fetched: the site's robots.txt could not be read");
+  }
+  {
+    const { h, log } = sandbox({ ...base, documents: 2, errors: 2, robots_blocked: 2 });
+    await h.lawTrack(null);
+    assert.ok(log.toasts[0][0].includes(" 0 errors. 2 blocked by the site's robots.txt"), "a pass of robots refusals counts no error: " + log.toasts[0][0]);
+  }
+  assert.ok(badge({ verdict: "robots_blocked", last_status: "fetch error: robots.txt disallows h" }).includes(">blocked by the site's robots.txt<"));
+  assert.ok(!/fail|error|empty/i.test(badge({ verdict: "robots_blocked", last_status: "" }).replace(/title="[^"]*"/, "")), "never worded as a failure");
   console.log("law_deferred_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });

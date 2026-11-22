@@ -428,7 +428,7 @@ def _prior(s, alpha3: str, surface: str, have: set[str]) -> dict[str, Any]:
 def _build(alpha3: str, surface: str, limit: int) -> dict[str, Any]:
     from sqlalchemy import inspect
 
-    from src.osm.lane_models import OsmCountry
+    from src.osm.lane_models import OsmCountry, country_data_date
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -440,7 +440,7 @@ def _build(alpha3: str, surface: str, limit: int) -> dict[str, Any]:
         if country is None or country.status != "complete":
             return {"status": "not-cut", "country": alpha3, "surface": surface}
         ref = country.diff_timestamp or country.extract_vintage
-        vintage = {"extract": _iso(country.extract_vintage), "last_diff": _iso(country.diff_timestamp), "reference": _iso(ref)}
+        vintage = {**country_data_date(country), "reference": _iso(ref)}
         if surface == "brands":
             snap = _snapshot_brands(s, alpha3, limit, country, have)
         elif surface == "channels":

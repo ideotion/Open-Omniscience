@@ -106,12 +106,14 @@ def test_each_measure_is_a_count_of_places_exactly_these(cut):
 def test_the_vintage_is_the_extract_and_the_last_change_file_applied(cut):
     _seed()
     a = _area(GEO.countries_view())
-    assert a["vintage"] == {"extract": "2025-01-10T00:00:00+00:00", "last_diff": None, "reference": "2025-01-10T00:00:00+00:00"}
+    assert a["vintage"] == {"extract": "2025-01-10T00:00:00+00:00", "last_diff": None, "diff_sequence": None, "updates": "none",
+                            "reference": "2025-01-10T00:00:00+00:00"}
     with store.lane_session("osm") as s:
         c = s.query(OsmCountry).filter_by(alpha3="ZZZ").one()
         c.diff_timestamp, c.diff_sequence = _dt(2025, 1, 12), 2
     a = _area(GEO.countries_view())
-    assert a["vintage"] == {"extract": "2025-01-10T00:00:00+00:00", "last_diff": "2025-01-12T00:00:00+00:00", "reference": "2025-01-12T00:00:00+00:00"}
+    assert a["vintage"] == {"extract": "2025-01-10T00:00:00+00:00", "last_diff": "2025-01-12T00:00:00+00:00", "diff_sequence": 2,
+                            "updates": "dated", "reference": "2025-01-12T00:00:00+00:00"}
     # the ages move with the reference: 2024-01-12 now, still only n5
     assert a["values"]["edited_1y"] == 1
 
