@@ -432,7 +432,9 @@ def _read_bounded(path: Path) -> tuple[bytes, os.stat_result]:
         raw = b"".join(parts)
         if len(raw) > MAX_KEY_FILE_BYTES:
             raise KeyFileNotReadable(f"longer than any key file: {path.name}")
-        return raw, st
+        # the state AFTER the read is the one returned: a file replaced and scrubbed while it was read shows nlink 0
+        # only from here, and read_once's retry depends on seeing it
+        return raw, os.fstat(fd)
     finally:
         os.close(fd)
 

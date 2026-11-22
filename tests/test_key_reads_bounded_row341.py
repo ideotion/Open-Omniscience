@@ -77,16 +77,64 @@ def test_the_loader_refuses_a_fifo_and_makes_no_key_over_it(tmp_path):
         _unblock(key)
 
 
+_DEVICE_PROBE = """
+import resource, sys
+resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))  # a reader that does not stop fails here, not by exhausting the machine
+from pathlib import Path
+from src.custody import keyfile as kf
+from src.reporting import evidence as ev
+key = Path(sys.argv[1])
+try:
+    kf.read_once(key)
+except kf.KeyFileNotReadable:
+    pass
+else:
+    sys.exit("read_once read a device")
+sys.exit(0 if ev.existing_public_key_hex(key) is None else "the review read a device as a key")
+"""
+
+
 @posix_only
 def test_a_link_to_a_device_is_refused_without_reading_it(tmp_path):
+    """Run in a child with a memory ceiling and a timeout: if the reader ever reads /dev/zero again, the child fails
+    instead of filling this process's memory."""
+    import subprocess
+
     if not Path("/dev/zero").exists():
         pytest.skip("no /dev/zero")
     key = tmp_path / "evidence_ed25519.pem"
     key.symlink_to("/dev/zero")
-    done, _r, error = _within(5, kf.read_once, key)
-    assert done and isinstance(error, kf.KeyFileNotReadable)
-    done, result, error = _within(5, ev.existing_public_key_hex, key)
-    assert done and error is None and result is None
+    root = Path(__file__).resolve().parents[1]
+    done = subprocess.run(
+        [sys.executable, "-c", _DEVICE_PROBE, str(key)], cwd=root, capture_output=True, text=True, timeout=60
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+
+
+def test_a_key_replaced_and_scrubbed_while_it_is_read_is_read_again(tmp_path, monkeypatch):
+    """A wrap in place replaces the key and overwrites the old file's bytes with zeros; a reader that had it open
+    must see the old file has no name any more (nlink 0, taken AFTER the read) and read the new one."""
+    key = tmp_path / "k.pem"
+    key.write_bytes(b"PLAINTEXT-KEY")
+    real_read = os.read
+    swapped: list[int] = []
+
+    def read(fd, n):
+        if not swapped:
+            swapped.append(1)
+            old_size = os.lstat(key).st_size
+            h = os.open(key, os.O_RDWR)
+            try:
+                (tmp_path / "new").write_bytes(b"WRAPPED-KEY!!")
+                os.replace(tmp_path / "new", key)
+                os.write(h, b"\0" * old_size)
+            finally:
+                os.close(h)
+        return real_read(fd, n)
+
+    scope_os(monkeypatch, kf, read=read)
+    raw, st = kf.read_once(key)
+    assert raw == b"WRAPPED-KEY!!" and st.st_nlink == 1
 
 
 def test_a_file_longer_than_any_key_is_refused(tmp_path):
