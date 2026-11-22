@@ -451,17 +451,19 @@ class KvReadError(Exception):
     """A stored value that EXISTS (or may) could not be read: the store is locked, keyed to another passphrase, damaged or
     unreachable. Carries the class of the failure and none of the engine's words. Absent (no file, no table, no row) is not this.
     ``damaged`` says the value IS there and cannot be parsed (as against a store that could not be opened): the one case a save
-    that supplies the whole choice may replace."""
+    that supplies the whole choice may replace. ``held`` says another connection holds the file (locked or busy, or a
+    keyed open refused as held), so nothing about the value is known; a caller can name that instead of a damaged store."""
 
-    def __init__(self, what: str, damaged: bool = False) -> None:
+    def __init__(self, what: str, damaged: bool = False, held: bool = False) -> None:
         super().__init__(what)
         self.damaged = damaged
+        self.held = held
 
 
 #: How long a failed read is remembered, so that a caller asking again and again (a stream's every event) does not open a
 #: failing store each time. It protects the store from a retry storm and nothing else: a write or an invalidation clears it.
 _FAIL_HOLD_S = 2.0
-_failed: dict[tuple[str, str], tuple[float, str]] = {}
+_failed: dict[tuple[str, str], tuple[float, str, bool]] = {}
 #: Store files read or written in this process: one of them gone later is a failure, where one never there is a first run.
 _seen: set[str] = set()
 
@@ -474,6 +476,16 @@ _RO_ONLY_FAILURES = ("unable to open database file", "readonly database")
 def _ro_only_failure(exc: BaseException) -> bool:
     # By name: the keyed driver (sqlcipher3) raises its own ``OperationalError``, not sqlite3's.
     return type(exc).__name__ == "OperationalError" and any(w in str(exc).lower() for w in _RO_ONLY_FAILURES)
+
+
+def _held_failure(exc: BaseException) -> bool:
+    """Whether a failed read failed because another connection holds the file (R788): a keyed open refused as held, or
+    SQLite's locked/busy answer. By class name and the engine's fixed words only, so nothing else of the text is kept."""
+    if type(exc).__name__ == "StoreHeldError":
+        return True
+    from src.database.write import is_locked_error
+
+    return is_locked_error(exc)
 
 
 def kv_get_json_checked(key: str) -> dict | None:
@@ -493,7 +505,7 @@ def kv_get_json_checked(key: str) -> dict | None:
             return _parsed(_cache[ck])
         held = _failed.get(ck)
         if held is not None and held[0] > time.monotonic():
-            raise KvReadError(held[1])
+            raise KvReadError(held[1], held=held[2])
         epoch, ver = _epoch, _wver.get(ck, 0)
     try:
         try:
@@ -511,11 +523,12 @@ def kv_get_json_checked(key: str) -> dict | None:
                 return None  # a first run: nothing stored yet
             # The store was read (or written) earlier in this process and is gone now: that is a failure, not a first run.
         what = type(exc).__name__
+        held_by_other = _held_failure(exc)
         _LOG.debug("kv_get_json(%r) unreadable (%s)", key, what)
         with _lock:
             if _epoch == epoch and _wver.get(ck, 0) == ver:  # a read the swap broke is not held against the file that is live now
-                _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what)
-        raise KvReadError(what) from None
+                _failed[ck] = (time.monotonic() + _FAIL_HOLD_S, what, held_by_other)
+        raise KvReadError(what, held=held_by_other) from None
     with _lock:
         if _epoch == epoch and _wver.get(ck, 0) == ver:  # an invalidation or a save of this key since the read began: what it read may be stale
             _cache[ck] = raw
@@ -739,6 +752,21 @@ def kv_invalidate(key: str | None = None) -> None:
         else:
             _forget_key(_failed, key)
             _forget_key(_cache, key)
+
+
+def kv_forget_if_changed(key: str, raw: str | None) -> bool:
+    """Drop ``key``'s cached value when it is not ``raw``, the value just read from the live file by another route (R788).
+
+    For a caller that holds an open connection on the store and has read the row through it: the cache answers a later
+    read only if it still says what the file says. Equal, nothing moves (a pooled store pays one indexed read, not a
+    second keyed open). Different, or nothing cached to compare, the key is forgotten as :func:`kv_invalidate` forgets
+    it, so the next read goes to the file. Returns whether it was forgotten."""
+    path = _db_path()
+    with _lock:
+        if path is not None and (path, key) in _cache and _cache[(path, key)] == raw:
+            return False
+    kv_invalidate(key)
+    return True
 
 
 def kv_swap_epoch() -> int:

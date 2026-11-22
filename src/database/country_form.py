@@ -84,6 +84,18 @@ def unfinished_message(state: object, backup: object = None) -> str:
     )
 
 
+def held_message() -> str:
+    """What a start or a write says when another program holds the store, so its country form could not be read (R788).
+
+    The migration holds the file for its whole run, and before this a start under it said "the journal could not be
+    read", which points at a damaged store. Nothing was read and nothing is known to be wrong: the file is in use."""
+    return (
+        "the store is held by another program, so its country form could not be read and nothing was written. A "
+        "country-code migration (`open-omniscience migrate-countries`) holds the store this way for its whole run; so can "
+        "a backup or a second copy of the app. Let it finish or close it, then start again."
+    )
+
+
 def refuse_if_unfinished() -> None:
     """Raise :class:`MigrationUnfinished` when the journal says a run began and did not end. Unreadable is not absent: a
     journal that cannot be read raises :class:`StoreFormUnreadable`."""
@@ -92,10 +104,42 @@ def refuse_if_unfinished() -> None:
     try:
         journal = kv_get_json_checked(JOURNAL_KEY)
     except KvReadError as exc:
+        if getattr(exc, "held", False):
+            raise StoreFormUnreadable(held_message()) from None
         raise StoreFormUnreadable(f"the country migration journal could not be read ({type(exc).__name__})") from None
     if isinstance(journal, dict) and journal.get("state") in UNFINISHED_STATES:
         backup = journal.get("backup")
         raise MigrationUnfinished(unfinished_message(journal.get("state"), backup.get("path") if isinstance(backup, dict) else None))
+
+
+def recheck_on_new_connection(dbapi_connection) -> None:
+    """Make the process's cached form and journal answer only what THIS file says now (R788, row 309).
+
+    The migration takes the file only while no connection of any process is open on it, so a process that is alive with
+    an EMPTY pool (after a restore, repair, rebuild, unlock or panic disposed it) does not stop it, and once it is done that
+    process's cache still says alpha-2 and "no journal": measured, its next write put ``de`` beside ``FRA`` under an alpha-3
+    marker, and after an interrupted run its writes made the resume unfinishable. Every write reaches the file through a
+    connection, and after such a gap the first one is a NEW physical connection; this runs on it (the engine's ``connect``
+    event) and reads the two rows through it. While it, or any connection, stays open no migration can start, so what the
+    cache holds from here on is what the file holds. Equal values cost one indexed read; a different or unreadable one
+    drops the cached entry, and the next :func:`store_form` reads the file and fails closed if it cannot."""
+    from src.config import kv_store
+
+    try:
+        cur = dbapi_connection.cursor()
+        try:
+            rows = dict(
+                cur.execute('SELECT key, value FROM "app_state" WHERE key IN (?, ?)', (KEY, JOURNAL_KEY)).fetchall()
+            )
+        finally:
+            cur.close()
+    except Exception as exc:  # noqa: BLE001 - not read here is not "unchanged": both keys are read afresh by their next caller
+        _LOG.debug("country form recheck on a new connection not read (%s); both keys dropped", type(exc).__name__)
+        kv_store.kv_invalidate(KEY)
+        kv_store.kv_invalidate(JOURNAL_KEY)
+        return
+    for key in (KEY, JOURNAL_KEY):
+        kv_store.kv_forget_if_changed(key, rows.get(key))
 
 
 def form_from_value(value: dict | None) -> Form:
@@ -136,6 +180,8 @@ def store_form() -> Form:
     try:
         return form_from_value(kv_get_json_checked(KEY))
     except KvReadError as exc:
+        if getattr(exc, "held", False):
+            raise StoreFormUnreadable(held_message()) from None
         raise StoreFormUnreadable(f"the country form of the store could not be read ({type(exc).__name__})") from None
 
 
