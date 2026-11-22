@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-22,backup/import-scan,row 293: unreadable backup files never fail or hide from the scan,shipped,PR #2253,src/backup/import_scan.py; src/static/app-backup.js; tests/test_import_scan_unread_r293.py,"The import scan walks with lstat and counts refusals (unread_entries + reason, unread_folders) instead of a 500; counts exactly what a folder restore copies (no links, no .oopart; refused_links on hover); legacy size unread is null; checklist shows at least N files; x12."
