@@ -219,12 +219,20 @@ def _reason(exc: BaseException) -> str:
     return "io"
 
 
+def _header_file(path: Path):
+    """The store's bytes through the descriptor kept for it (R789, ``connect.store_file``): a status read must never close a
+    descriptor of its own on a store this process may hold, which would drop every lock the process has on it."""
+    from src.database.connect import store_file
+
+    return store_file(path)
+
+
 def _read_header(path: Path) -> tuple[str, str | None]:
     """``(state, reason)`` from the file's first 16 bytes: ``absent`` (no file, or an empty one), ``plaintext``, ``encrypted`` (a
     header that is not SQLite's), ``busy`` (another program holds the file: try again), or ``unreadable`` with the reason, so a file
     that is there is never counted as absent."""
     try:
-        with open(path, "rb") as fh:
+        with _header_file(path) as fh:
             head = fh.read(16)
     except FileNotFoundError:
         return "absent", None

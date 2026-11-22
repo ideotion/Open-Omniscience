@@ -20,7 +20,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular
 from src.monitoring.secret_scrub import passphrase_bytes
 
 # Self-describing container so a file can be decrypted years later without out-of-band
@@ -188,7 +188,7 @@ def encrypt_file(
     Never holds the whole file in RAM and has no 2 GiB ceiling. A wrong passphrase
     or any tampering fails loudly on decrypt (per-chunk GCM auth)."""
     header, prefix, aes = _header_and_cipher(passphrase, chunk_size)
-    with open(src, "rb") as fin, open(dst, "wb") as fout:
+    with open(src, "rb") as fin, create_new(dst) as fout:  # never through a link at dst (row 313)
         fout.write(header)
         _encrypt_stream(fin, fout, aes, prefix, chunk_size, None)
 
@@ -208,7 +208,7 @@ def encrypt_stream_to(
     The per-VOLUME encryptor: a large archive is read ONCE and sliced into <600 MB
     volumes, each a self-contained OOENC2 file with its own authentication."""
     header, prefix, aes = _header_and_cipher(passphrase, chunk_size)
-    with open(dst, "wb") as fout:
+    with create_new(dst) as fout:  # a volume is created, never written through a link at its name (row 313)
         fout.write(header)
         return _encrypt_stream(fin, fout, aes, prefix, chunk_size, limit)
 
@@ -237,7 +237,7 @@ def encrypt_stream_to_hashed(
             h.update(b)
             return self._fh.write(b)
 
-    with open(dst, "wb") as fout:
+    with create_new(dst) as fout:  # never through a link at its name (row 313)
         out = _HashingOut(fout)
         out.write(header)
         consumed = _encrypt_stream(fin, out, aes, prefix, chunk_size, limit)
@@ -335,5 +335,5 @@ def decrypt_file(
 
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
     extended stream -- never silently yields a partial archive."""
-    with open(dst, "wb") as fout:
+    with create_new(dst) as fout:  # never through a link at its name (row 313)
         decrypt_stream(src, fout.write, passphrase)

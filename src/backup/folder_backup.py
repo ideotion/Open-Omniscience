@@ -49,8 +49,9 @@ from pathlib import Path, PurePosixPath
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
+from src.shared_text import said
 
 MANIFEST_NAME = "oo-folder-backup.json"
 BACKUP_SCHEMA = "oo-folder-backup-1"
@@ -320,8 +321,8 @@ def _write_manifest_atomically(path: Path, text: str) -> None:
 
     tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}{_PART_SUFFIX}")
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        with create_new(tmp) as fh:  # never through a link at the temporary name (row 313)
+            fh.write(text.encode("utf-8"))
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
@@ -531,9 +532,29 @@ def write_folder_backup(
     # file is not the one that was hashed.
     prior = _recorded_digests(root)
     digests: dict[tuple[str, str], str] = {}
+    root_real = os.path.realpath(root)
+    # Row 313: the backup folder is a place someone else may have prepared. A category or sub folder
+    # there that is a link would carry the copy (and its folder creation) to wherever the link points,
+    # so EVERY item's way is checked before the first byte is copied, and a link stops the backup with
+    # the folder, where it points and what to do. Checked again per item below, against a folder
+    # swapped for a link while the copy runs. A link AT a file's own name is not followed either: it
+    # never counts as the file already present, and the copy's rename replaces the link itself.
+    for it in items:
+        if (found := _linked_way(root, root_real, it)) is not None:
+            raise LinkedBackupFolder(
+                f"The large-data backup stopped before copying anything: the folder {found[0]} inside the "
+                f"backup folder is a link to {found[1]}, and a backup never writes through a link. Replace the "
+                f"link with a real folder, or choose a backup folder on that other drive."
+            )
     for it in items:
         dst = root / it.category / it.rel
-        if dst.exists() and dst.stat().st_size == it.size:
+        if (found := _linked_way(root, root_real, it)) is not None:
+            raise LinkedBackupFolder(
+                f"The large-data backup stopped: the folder {found[0]} inside the backup folder became a link "
+                f"to {found[1]} while it ran, and nothing was written through it. Replace the link with a real "
+                f"folder, or choose a backup folder on that other drive."
+            )
+        if not is_link(dst) and dst.exists() and dst.stat().st_size == it.size:
             skipped += 1
             if (carried := prior.get((it.category, it.rel, it.size))) is not None:
                 digests[(it.category, it.rel)] = carried
@@ -912,6 +933,24 @@ def _same_file_again(opened: os.stat_result, checked: os.stat_result, src: Path)
         return False
     return (stat.S_ISREG(now.st_mode) and not is_link_stat(now)
             and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
+def _linked_way(root: Path, root_real: str, it: BackupItem) -> tuple[str, str] | None:
+    """The first folder below ``root`` on ``it``'s way that is a link, or that leads out of ``root``:
+    ``(its path inside the backup folder, where it really points)``. ``None`` when the way is plain."""
+    rel_parent = Path(it.category) / Path(it.rel).parent
+    if not link_on_the_way(root, rel_parent) and stays_inside(root / rel_parent, root_real):
+        return None
+    cur = root
+    for part in rel_parent.parts:
+        cur = cur / part
+        if is_link(cur) or not stays_inside(cur, root_real):
+            break
+    return (cur.relative_to(root).as_posix(), os.path.realpath(cur))
+
+
+class LinkedBackupFolder(OSError):
+    """A folder inside the chosen backup folder is a link: the backup stops rather than write through it."""
 
 
 class SourceChanged(OSError):
@@ -1564,6 +1603,80 @@ _PROBLEM_CAP = 200
 _BLOB_SHA_RE = re.compile(r"^sha256[-:]([0-9a-fA-F]{64})$")
 
 
+def _plain_rel(rel: str) -> bool:
+    """R791: whether a manifest ``rel`` is a plain member name, the only shape a folder backup writes: forward
+    slashes, no empty, ``.`` or ``..`` part, no backslash, no NUL, not absolute (and no colon on Windows). Anything else is refused by
+    its name before any look, so a ``..`` that would resolve back inside the folder cannot lead a check, or a
+    read, through a link on its way."""
+    if not isinstance(rel, str) or not rel or "\x00" in rel or "\\" in rel or rel.startswith("/"):
+        return False
+    parts = rel.split("/")
+    # A drive or stream name (``C:x``, ``f:stream``) means something else on Windows; elsewhere a colon is a letter.
+    return all(p not in ("", ".", "..") for p in parts) and not (os.name == "nt" and ":" in rel)
+
+
+def _member_link(root: Path, category: str, rel: str) -> str | None:
+    """R791: the name a restore would refuse this member by, as a path below the category folder (``""`` for
+    the category folder itself), or ``None``: the category folder, a folder below it, or the file itself is a
+    link, or the file sits on another device than its category folder (a mount point, a FUSE folder: restore
+    refuses those with its links). A name that cannot be looked at is not called a link here; the checks
+    that follow report it. ``rel`` must already be a plain name (``_plain_rel``)."""
+    parts = rel.split("/")
+    try:
+        if is_link(root / category):
+            return ""
+        cat_dev = os.lstat(root / category).st_dev
+        for i in range(1, len(parts) + 1):
+            here = root / category / Path(*parts[:i])
+            if is_link(here) or os.lstat(here).st_dev != cat_dev:
+                return "/".join(parts[:i])  # the first such name, as the category walk names it
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _linked_member(root: Path, category: str, rel: str) -> bool:
+    """Whether ``_member_link`` names a link for this member (a name that is not plain is never one: the
+    traversal guard refuses it by its own name)."""
+    return _plain_rel(rel) and _member_link(root, category, rel) is not None
+
+
+def _links_in_category(cat_root: Path, should_stop: Callable[[], bool] | None = None) -> list[str]:
+    """R791: every link inside a category folder, as a path below it, found without following any (a link
+    to a folder is listed and not entered), and every name on another device than the category folder (a
+    mount point or a subvolume: restore refuses what it holds as it refuses a link; listed, not entered). A
+    ``.oopart`` is passed over, as restore passes it over. A folder that cannot be listed is passed over too:
+    its files are reported by the entries that name them. ``should_stop`` ends the walk between folders."""
+    found: list[str] = []
+    try:
+        cat_dev = os.lstat(cat_root).st_dev
+    except OSError:
+        return found
+    stack = [""]
+    while stack:
+        if should_stop is not None and should_stop():
+            break
+        sub = stack.pop()
+        try:
+            with os.scandir(cat_root / sub if sub else cat_root) as it:
+                names = sorted(e.name for e in it)
+        except OSError:
+            continue
+        for n in names:
+            if n.endswith(_PART_SUFFIX):
+                continue
+            rel = f"{sub}/{n}" if sub else n
+            try:
+                st = os.lstat(cat_root / rel)
+            except OSError:
+                continue
+            if is_link_stat(st) or st.st_dev != cat_dev:
+                found.append(rel)
+            elif stat.S_ISDIR(st.st_mode):
+                stack.append(rel)
+    return sorted(found)
+
+
 def _safe_member_path(root: Path, category: str, rel: str) -> Path | None:
     """Resolve ``<root>/<category>/<rel>``, refusing any path that escapes ``<root>/<category>``.
 
@@ -1600,6 +1713,104 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _hash_fd(fd: int) -> str:
+    """The SHA-256 of an open file, read to its end (the handle is closed)."""
+    h = hashlib.sha256()
+    try:
+        f = os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    with f:
+        for chunk in iter(lambda: f.read(_COPY_BUF), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_member(
+    root: Path, category: str, rel: str, size: int, entry: dict, verify_model_checksums: bool
+) -> tuple[str, dict, bool]:
+    """One manifest entry's verdict: ``(status, detail, hashed)``. Never raises (R791): what cannot be looked
+    at or read is ``unreadable``, a failure, never a crash and never a pass.
+
+    The order is restore's: a name that is not a plain member name is refused by its name; a link on its way
+    (or another device) is "a link, not checked" and is never read; then, where the system can
+    (``_FD_RELATIVE``), the file is opened with restore's own opener, one name at a time from the category
+    folder by handle without following a link, and its size and bytes are read FROM THAT HANDLE, so a folder
+    swapped for a link after the look is refused at the open rather than read through. Where it cannot
+    (Windows), the path checks stand, with restore's stated limit."""
+    if category not in _CATEGORIES or not _plain_rel(rel):
+        return "traversal_refused", {}, False
+    if _member_link(root, category, rel) is not None:
+        return "link_not_checked", said("why", "a link, not checked"), False
+    path = _safe_member_path(root, category, rel)
+    if path is None:
+        return "traversal_refused", {}, False
+    # Two independent stored checksums, and they are not the same evidence. `sha256` is what THIS backup
+    # recorded when it wrote the bytes (present since 2026-09-07, and signed with the manifest). The Ollama
+    # blob's own name embeds its sha256, which is the publisher's value and is carried by a backup of any
+    # age. Where both exist they must BOTH match: a recorded digest that disagrees with the name is exactly
+    # the case where trusting either one alone reports a corrupted blob as sound.
+    recorded = entry.get("sha256")
+    recorded = recorded.lower() if (isinstance(recorded, str) and _SHA256_RE.match(recorded)) else None
+    blob_hex = _blob_sha256_from_name(rel) if category == "models" else None
+    want = [h for h in (recorded, blob_hex) if h is not None]
+    hash_it = bool(want) and (blob_hex is None or verify_model_checksums)
+    if _FD_RELATIVE:
+        try:
+            # Looked at before it is opened: a device node a crafted drive carries is never opened, since an
+            # open alone can have effects (row 312's rule). A swap after this look still meets O_NOFOLLOW.
+            if not stat.S_ISREG(os.lstat(path).st_mode):
+                return "missing", {}, False
+        except FileNotFoundError:
+            return "missing", {}, False
+        except (OSError, ValueError):
+            return "unreadable", {}, False
+        try:
+            cat_st = os.lstat(root / category)
+            fd = _open_member_fd(root, category, cat_st, PurePosixPath(rel))
+        except SourceChanged:
+            return "link_not_checked", said("why", "a link, not checked"), False
+        except (FileNotFoundError, UnreadGone, UnreadNotAFile, NotADirectoryError, IsADirectoryError):
+            return "missing", {}, False
+        except (OSError, ValueError):
+            return "unreadable", {}, False
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                return "missing", {}, False
+            if st.st_dev != cat_st.st_dev:
+                return "link_not_checked", said("why", "a link, not checked"), False
+            if st.st_size != size:
+                return "size_mismatch", {"expected_size": size, "actual_size": st.st_size}, False
+            if not hash_it:
+                return "size_only", {}, False
+            # The handle was opened O_NONBLOCK (a pipe never blocks the open); a regular file reads the same.
+            owned, fd = fd, -1  # handed over before the call: _hash_fd closes it, whatever happens
+            actual_hex = _hash_fd(owned)
+        except OSError:
+            return "unreadable", {}, hash_it
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        return ("ok" if all(actual_hex == h for h in want) else "checksum_mismatch"), {}, True
+    try:
+        if not path.is_file():
+            return "missing", {}, False
+        actual = path.stat().st_size
+        if actual != size:
+            return "size_mismatch", {"expected_size": size, "actual_size": actual}, False
+        if not hash_it:
+            return "size_only", {}, False
+        try:
+            actual_hex = _sha256_file(path)
+        except NotARegularFile:
+            actual_hex = ""  # a link, or swapped for a pipe or a device after the look: never a match
+    except (OSError, ValueError):
+        return "unreadable", {}, hash_it
+    return ("ok" if actual_hex and all(actual_hex == h for h in want) else "checksum_mismatch"), {}, True
 
 
 def verify_folder_backup(
@@ -1699,10 +1910,13 @@ def verify_folder_backup(
         "size_mismatch": 0,
         "checksum_mismatch": 0,
         "traversal_refused": 0,
+        "link_not_checked": 0,
+        "unreadable": 0,
     }
     problems: list[dict] = []
     checked = checksummed = 0
     stopped = False
+    implicated: set[tuple[str, str]] = set()
     for category, e in entries:
         if should_stop is not None and should_stop():
             stopped = True
@@ -1712,39 +1926,12 @@ def verify_folder_backup(
             size = int(e.get("size", -1))
         except (TypeError, ValueError):
             size = -1
-        path = _safe_member_path(root, category, rel)
-        status: str
-        detail: dict = {}
-        if path is None:
-            status = "traversal_refused"
-        elif not path.is_file():
-            status = "missing"
-        elif (actual := path.stat().st_size) != size:
-            status = "size_mismatch"
-            detail = {"expected_size": size, "actual_size": actual}
-        else:
-            # Two independent stored checksums, and they are not the same evidence.
-            # `sha256` is what THIS backup recorded when it wrote the bytes (present
-            # since 2026-09-07, and signed with the manifest). The Ollama blob's own
-            # name embeds its sha256, which is the publisher's value and is carried by
-            # a backup of any age. Where both exist they must BOTH match: a recorded
-            # digest that disagrees with the name is exactly the case where trusting
-            # either one alone reports a corrupted blob as sound.
-            recorded = e.get("sha256")
-            recorded = recorded.lower() if (
-                isinstance(recorded, str) and _SHA256_RE.match(recorded)
-            ) else None
-            blob_hex = _blob_sha256_from_name(rel) if category == "models" else None
-            want = [h for h in (recorded, blob_hex) if h is not None]
-            if want and (blob_hex is None or verify_model_checksums):
-                checksummed += 1
-                try:
-                    actual_hex = _sha256_file(path)
-                except NotARegularFile:
-                    actual_hex = ""  # a link, or swapped for a pipe or a device after the look: never a match
-                status = "ok" if actual_hex and all(actual_hex == h for h in want) else "checksum_mismatch"
-            else:
-                status = "size_only"  # present + right size; no usable stored checksum
+        status, detail, hashed = _verify_member(root, category, rel, size, e, verify_model_checksums)
+        if hashed:
+            checksummed += 1
+        if status == "link_not_checked":
+            if (link := _member_link(root, category, rel)) is not None:
+                implicated.add((category, link))
         summary[status] += 1
         checked += 1
         if status not in ("ok", "size_only") and len(problems) < _PROBLEM_CAP:
@@ -1752,12 +1939,35 @@ def verify_folder_backup(
         if progress_cb is not None:
             progress_cb({"files_total": total, "files_done": checked, "checksummed": checksummed})
 
+    if not stopped:
+        # R791: a link anywhere in a category folder leaves a restore incomplete (restore counts every link
+        # it meets on its walk, listed or not), so one no manifest entry leads to is found here too, without
+        # following it, and fails the verdict the same way.
+        for category in sorted(c for c in cats if c in _CATEGORIES):
+            cat_root = root / category
+            try:
+                plain = not is_link(cat_root) and cat_root.is_dir()
+            except OSError:
+                plain = False
+            if not plain:
+                continue
+            for link in _links_in_category(cat_root, should_stop):
+                if (category, link) in implicated:
+                    continue
+                summary["link_not_checked"] += 1
+                if len(problems) < _PROBLEM_CAP:
+                    problems.append({"category": category, "rel": link, "status": "link_not_checked",
+                                     **said("why", "a link, not in the manifest")})
+        if should_stop is not None and should_stop():
+            stopped = True  # the walk was cut short: an incomplete verify never claims success
     summary["malformed_entries"] = malformed
     failures = (
         summary["missing"]
         + summary["size_mismatch"]
         + summary["checksum_mismatch"]
         + summary["traversal_refused"]
+        + summary["link_not_checked"]  # R791: what a restore refuses is never counted as verified
+        + summary["unreadable"]  # R791: a file that could not be read is not a file that was checked
         + malformed  # a structurally-damaged manifest is a failure, never a silent "all clear"
         # A manifest that does not verify against its own embedded key is not a manifest
         # to verify files against. `unsigned` is NOT counted: see above.
@@ -1773,13 +1983,29 @@ def verify_folder_backup(
             "summary": summary,
             "problems": problems,
             "problems_truncated": max(0, failures - len(problems)),
+            **(
+                said(
+                    "links",
+                    "Not checked: {n}. Each is a link in the backup, or a file reached through one, and "
+                    "neither Verify nor a restore follows a link. To check and restore them, copy the real folder or "
+                    "file into the backup in place of the link.",
+                    n=summary["link_not_checked"],
+                )
+                if summary["link_not_checked"]
+                else {}
+            ),
             "method": (
                 "Every manifest-listed file must be present with the exact recorded size; "
                 "any file carrying a recorded sha256 is streamed-hashed and matched against "
                 "it, and content-addressed Ollama model blobs (blobs/sha256-<hex>) are also "
                 "matched against the sha256 in their name (both, where both exist). The "
                 "manifest's own Ed25519 signature is reported. Manifest paths are "
-                "traversal-guarded before any stat/hash. Counts only, no score."
+                "traversal-guarded before any stat/hash. A file reached through a link (its category folder, a folder below it, "
+                "or the file itself) is never read and counts as link_not_checked, a failure, because a restore never "
+                "follows a link; so does a link in a category folder that no entry names. Where the system allows, each "
+                "file is opened one name at a time from its category folder without following a link, and its size and "
+                "bytes are read from that handle. A file that cannot be read counts as unreadable, a failure. Counts "
+                "only, no score."
             ),
             "caveat": (
                 "size_only means the manifest recorded no usable checksum for that file — a "
@@ -1839,7 +2065,7 @@ def _verify_counts(res: dict) -> tuple[int | None, int | None]:
     """``(checked, mismatches)`` of a verify's report, or ``(None, None)`` when it holds no counts (no manifest, a damaged one).
     ``verify_folder_backup`` names them ``files_checked`` and ``summary`` and has never had a ``checked`` or a ``mismatches`` key, so the
     run journal's closing line read ``None`` for both until now. A mismatch is a file the manifest lists that is missing, of another
-    size, of another checksum or outside the folder, a manifest entry that was not one, or a manifest whose signature is bad (the
+    size, of another checksum, outside the folder, a link or reached through one, or unreadable (R791), a manifest entry that was not one, or a manifest whose signature is bad (the
     failures the verdict counts); a file that is only ``size_only`` is not one. ``mismatches`` can therefore exceed ``checked`` (a
     bad signature checks no file, and a malformed category counts as one entry and checks none)."""
     summary = res.get("summary")
@@ -1847,7 +2073,10 @@ def _verify_counts(res: dict) -> tuple[int | None, int | None]:
         return None, None
     bad = sum(
         int(summary.get(key) or 0)
-        for key in ("missing", "size_mismatch", "checksum_mismatch", "traversal_refused", "malformed_entries")
+        for key in (
+            "missing", "size_mismatch", "checksum_mismatch", "traversal_refused", "link_not_checked", "unreadable",
+            "malformed_entries",
+        )
     )
     if res.get("signature_state") == "bad-signature":
         bad += 1

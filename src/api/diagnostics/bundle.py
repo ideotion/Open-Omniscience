@@ -304,6 +304,7 @@ def debug_bundle(
     from src.monitoring.slowquery import summary as _slowquery_summary
     from src.monitoring.storage import storage_composition as _storage_composition
     from src.paths import data_dir as _data_dir
+    from src.paths import wal_file_bytes
 
     budget = _debug_bundle_member_budget_s()
 
@@ -423,6 +424,8 @@ def debug_bundle(
             "extras": {m: _has(m) for m in ("numpy", "scipy", "pandas", "zstandard", "lz4")},
             "llm": llm,
             "db_bytes": db_file.stat().st_size if db_file.exists() else None,
+            # Row 321: the write-ahead log beside it, a separate figure so db_bytes keeps its meaning.
+            "wal_bytes": wal_file_bytes(db_file),
             "kill_switch": kill_switch_active(),
         }
 
