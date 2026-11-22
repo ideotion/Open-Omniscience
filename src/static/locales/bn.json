@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "চলতি স্বাস্থ্য ব্যয় (জিডিপির %)",
   "Current pass": "বর্তমান পাস",
   "Current text (as last captured)": "বর্তমান পাঠ্য (সর্বশেষ সংগৃহীত অনুযায়ী)",
-  "Custody entries: {n}": "হেফাজত-শৃঙ্খলের এন্ট্রি: {n}",
+  "Custody entries: {n}": "কাস্টডি লগের এন্ট্রি: {n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "কাস্টডি হলো বিষয়বস্তুর উপর একটি কাজ: কোনো নিবন্ধ বা কর্পাসের একটি স্বাক্ষরিত, কারচুপি-প্রকাশক অনুলিপি রপ্তানি করুন, এবং একটি যাচাই করুন। গ্রহণের সময় স্বয়ংক্রিয় লগিং ডিফল্টভাবে চালু; OpenTimestamps/Bitcoin অ্যাঙ্করিং ডিফল্টভাবে বন্ধ থাকে (এটি আপনার IP ও সময় প্রকাশ করে দেবে)। ক্রিপ্টোগ্রাফিক বিবরণ (পোস্ট-কোয়ান্টাম স্বাক্ষর, Merkle প্রমাণ) প্যানেলে ব্যাখ্যা করা আছে।",
   "Custody log": "কাস্টডি লগ",
   "Custody settings saved.": "হেফাজত-শৃঙ্খল সেটিংস সংরক্ষণ করা হয়েছে।",

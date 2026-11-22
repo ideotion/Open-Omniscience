@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "चालू स्वास्थ्य व्यय (जीडीपी का %)",
   "Current pass": "वर्तमान पास",
   "Current text (as last captured)": "वर्तमान पाठ (अंतिम बार लिए गए अनुसार)",
-  "Custody entries: {n}": "हिरासत-शृंखला प्रविष्टियाँ: {n}",
+  "Custody entries: {n}": "कस्टडी लॉग प्रविष्टियाँ: {n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "अभिरक्षा (custody) सामग्री पर की जाने वाली एक क्रिया है: किसी लेख या कॉर्पस की हस्ताक्षरित, छेड़छाड़-प्रकट प्रति निर्यात करें, और किसी को सत्यापित करें। ग्रहण के समय स्वतः-लॉगिंग डिफ़ॉल्ट रूप से चालू है; OpenTimestamps/Bitcoin एंकरिंग डिफ़ॉल्ट रूप से बंद रहती है (यह आपका IP और समय उजागर कर देगी)। क्रिप्टोग्राफ़िक विवरण (पोस्ट-क्वांटम हस्ताक्षर, Merkle प्रमाण) पैनल में समझाया गया है।",
   "Custody log": "कस्टडी लॉग",
   "Custody settings saved.": "अभिरक्षा शृंखला सेटिंग्स सहेजी गईं।",

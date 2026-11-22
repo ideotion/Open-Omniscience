@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "Текущие расходы на здравоохранение (% ВВП)",
   "Current pass": "Текущий проход",
   "Current text (as last captured)": "Текущий текст (на момент последнего получения)",
-  "Custody entries: {n}": "Записей цепочки хранения: {n}",
+  "Custody entries: {n}": "Записи журнала custody: {n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "Хранение доказательств — это действие над содержимым: выгрузить подписанную копию статьи или корпуса, в которой любое изменение обнаруживается, и проверить такую копию. Автоматическая запись в журнал при приёме включена по умолчанию; привязка через OpenTimestamps/Bitcoin по умолчанию остаётся выключенной (она раскрыла бы ваш IP и время). Криптографические подробности (постквантовые подписи, доказательства Merkle) объяснены на панели.",
   "Custody log": "Журнал custody",
   "Custody settings saved.": "Настройки цепочки ответственности сохранены.",

@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "経常保健支出（GDP比%）",
   "Current pass": "現在のパス",
   "Current text (as last captured)": "現行本文（最終取得時点）",
-  "Custody entries: {n}": "管理記録のエントリ: {n}",
+  "Custody entries: {n}": "管理ログのエントリ: {n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "カストディはコンテンツに対する操作です: 記事またはコーパスの、署名済みで改ざん検知可能なコピーを書き出し、それを検証します。取り込み時の自動記録は既定でオンです。OpenTimestamps／Bitcoin へのアンカーは既定でオフのままです（あなたの IP と時刻を明らかにしてしまうためです）。暗号技術的な詳細（ポスト量子署名、Merkle 証明）はパネル内で説明しています。",
   "Custody log": "管理ログ",
   "Custody settings saved.": "管理連鎖の設定を保存しました。",

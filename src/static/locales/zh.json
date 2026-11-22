@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "经常性卫生支出（占 GDP 的 %）",
   "Current pass": "当前一轮",
   "Current text (as last captured)": "当前文本（最近一次采集）",
-  "Custody entries: {n}": "监管链条目：{n}",
+  "Custody entries: {n}": "保管日志条目：{n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "保管链是对内容的一项操作：导出一篇文章或一个语料库的带签名、可验证是否被篡改的副本，并对其进行校验。摄入时自动记录默认开启；OpenTimestamps/Bitcoin 锚定默认保持关闭（它会暴露你的 IP 和时间）。密码学细节（后量子签名、Merkle 证明）在面板中说明。",
   "Custody log": "保管日志",
   "Custody settings saved.": "保管链设置已保存。",

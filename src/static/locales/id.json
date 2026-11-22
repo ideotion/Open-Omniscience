@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "Belanja kesehatan berjalan (% dari PDB)",
   "Current pass": "Lintasan saat ini",
   "Current text (as last captured)": "Teks saat ini (sebagaimana terakhir diambil)",
-  "Custody entries: {n}": "Entri rantai pengawasan: {n}",
+  "Custody entries: {n}": "Entri log kustodi: {n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "Kustodi adalah tindakan atas konten: ekspor salinan artikel atau korpus yang ditandatangani dan menunjukkan bukti perubahan, lalu verifikasi salinan tersebut. Pencatatan otomatis saat ingest aktif secara bawaan; penambatan OpenTimestamps/Bitcoin tetap nonaktif secara bawaan (itu akan mengungkapkan IP dan waktu Anda). Detail kriptografisnya (tanda tangan pasca-kuantum, bukti Merkle) dijelaskan di panel.",
   "Custody log": "Log kustodi",
   "Custody settings saved.": "Pengaturan rantai pengawasan disimpan.",

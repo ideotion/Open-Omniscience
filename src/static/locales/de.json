@@ -1546,7 +1546,7 @@
   "Current health expenditure (% of GDP)": "Laufende Gesundheitsausgaben (% des BIP)",
   "Current pass": "Aktueller Lauf",
   "Current text (as last captured)": "Aktueller Text (Stand der letzten Erfassung)",
-  "Custody entries: {n}": "Verwahrungseinträge: {n}",
+  "Custody entries: {n}": "Custody-Log-Einträge: {n}",
   "Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.": "Verwahrung ist eine Aktion auf Inhalten: Exportieren Sie eine signierte Kopie eines Artikels oder Korpus, an der Manipulationen erkennbar sind, und prüfen Sie eine solche. Die automatische Protokollierung beim Import ist standardmäßig an; die Verankerung über OpenTimestamps/Bitcoin bleibt standardmäßig aus (sie würde Ihre IP und Ihre Zeitpunkte offenlegen). Die kryptografischen Details (post-quantensichere Signaturen, Merkle-Beweise) werden im Panel erklärt.",
   "Custody log": "Custody-Log",
   "Custody settings saved.": "Verwahrungskette-Einstellungen gespeichert.",
