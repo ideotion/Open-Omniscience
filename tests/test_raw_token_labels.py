@@ -14,7 +14,8 @@ slack, the shape of ``test_raw_number_ratchet.py``). A new raw print fails here 
 move the pin AND say below which kind it is. What the pinned remainder is (read, not browser-measured):
 
 * STANDING ALONE in its own node, so the walker translates it when the key exists: app-map.js (dump status pill),
-  app-sources.js (``x.status`` pill), investigate.js (a table cell).
+  app-sources.js (``x.status`` pill). (investigate.js's date-tag cell left this list in row 316: it now says the
+  status through ``_tagStatusLabel``, the agenda's words.)
 * AN IDENTIFIER OR USER-DEFINED OPEN SET, so it is shown as sent on purpose: app-map.js ``e.kind`` (a Wikimedia
   dump file name), reader.js (AI keyword kind, set by a custom prompt), app-home.js (annotation and claim kinds: the
   server accepts any string, the UI's own select offers six that could be mapped later), app-insights.js (``data-kind`` attributes, never drawn), ooversions.js (a CSS class).
@@ -38,7 +39,7 @@ _RAW = re.compile(r"""esc\(\s*[A-Za-z_][\w.]*\.(?:state|status|kind)\s*\)""")
 
 _PINS = {
     "app-backup.js": 1, "app-diagnostics.js": 2, "app-home.js": 2, "app-insights.js": 2, "app-map.js": 2,
-    "app-settings.js": 1, "app-sources.js": 1, "investigate.js": 1, "ooversions.js": 1, "reader.js": 1,
+    "app-settings.js": 1, "app-sources.js": 1, "ooversions.js": 1, "reader.js": 1,
     "taskmanager.js": 2,
 }
 
@@ -116,3 +117,16 @@ def test_the_label_functions_behave():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "all checks passed" in proc.stdout
+
+
+def test_a_date_tag_reads_the_same_on_investigate_and_in_the_agenda():
+    """Row 316: /investigate printed a date tag's stored status raw; it now uses the agenda's three words."""
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "date_tag_status_node_test.js")], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all checks passed" in proc.stdout
+    for f in sorted((_STATIC / "locales").glob("*.json")):
+        loc = json.loads(f.read_text(encoding="utf-8"))
+        for key in ("confirmed by you", "rejected by you", "not checked"):
+            assert loc.get(key), (f.stem, key)
