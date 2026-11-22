@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,112 @@ def _owned_by_app(path: Path) -> bool:
         return False
 
 
+#: R786: a name whose presence ANYWHERE inside a folder means it holds more than model weights -- the
+#: app's database, its instance or data-volume marker, a backup's manifest or an export folder's record,
+#: an encrypted volume, key material. A folder holding one is never removed whole by this module.
+_NOT_MODELS_NAMES = frozenset({
+    "open_omniscience.db", ".oo-instance-id", ".oos-volume", "volumes.json", "oo-folder-backup.json",
+    "oo-export-request.json",
+})
+_NOT_MODELS_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".db-wal", ".ooenc", ".pem", ".key")
+
+#: The prefix every guard refusal carries, so the page says WHY a folder is kept.
+_NOT_REMOVABLE = "not removable by the app: "
+
+
+def _real(path: Path | str) -> Path | None:
+    """``path`` made absolute and resolved (links followed), or None when that cannot be done."""
+    try:
+        raw = os.path.expanduser(os.fspath(path))
+        if not raw or not os.path.isabs(raw):
+            return None
+        return Path(os.path.realpath(raw))
+    except (OSError, ValueError):
+        return None
+
+
+def _holds_more_than_models(root: Path) -> str | None:
+    """The first sign that ``root`` holds something other than model weights, or None. Walked
+    without following links (a link cannot make a folder look clean), and a folder that cannot be
+    walked fully is not called clean either: fail closed."""
+    failed: list[OSError] = []
+    try:
+        for _cur, dirs, files in os.walk(root, onerror=failed.append, followlinks=False):
+            for name in [*dirs, *files]:
+                low = name.lower()
+                if low in _NOT_MODELS_NAMES or low.endswith(_NOT_MODELS_SUFFIXES) or low == "keys":
+                    return "it holds files that are not model weights (the app's data, a backup, or keys)"
+    except OSError:
+        return "it could not be looked through completely"
+    if failed and not all(isinstance(e, FileNotFoundError) for e in failed):
+        return "it could not be looked through completely"
+    return None
+
+
+def removal_refusal(path: Path | str, *, others: Sequence[Path | str] = (), look_inside: bool = True) -> str | None:
+    """Why the folder ``path`` must NEVER be removed whole by this app, or None (R786).
+
+    Independent of :func:`_owned_by_app`, and checked on every removal: being inside the data folder
+    is what makes a store the app's, and is no proof that the folder is only models. ``HF_HUB_CACHE``
+    pointed at ``<data>/hub`` made the old ``hf_home()`` answer the data folder ITSELF -- inside it, so
+    "ours", so offered for deletion as "the Hugging Face models", database and keys with it.
+
+    Refused: a folder that cannot be resolved; a whole drive; the home folder or a folder holding it;
+    the app's data folder or a folder holding it; a folder holding the app's database (wherever
+    ``DATABASE_URL`` puts it) or any OTHER store in ``others`` (or the same folder as one); and a
+    folder whose contents show it holds more than models (:func:`_holds_more_than_models`). The content
+    look is skipped (``look_inside=False``) only for the vLLM environment and its build folder, which
+    the app made itself and which legitimately carry ``.pem`` certificate bundles; the path checks
+    still apply to them."""
+    real = _real(path)
+    if real is None:
+        return _NOT_REMOVABLE + "its location could not be worked out"
+    if real == Path(real.anchor):
+        return _NOT_REMOVABLE + "it is a whole drive"
+    home = _real(Path.home())
+    if home is None or real == home or home.is_relative_to(real):
+        return _NOT_REMOVABLE + "it is your home folder, or holds it"
+    from src.paths import data_dir
+
+    data = _real(data_dir())
+    if data is None or real == data or data.is_relative_to(real):
+        return _NOT_REMOVABLE + "it is the app's own data folder, or holds it"
+    db_url = os.getenv("DATABASE_URL") or ""
+    if db_url.startswith("sqlite:///"):
+        db = _real(db_url.removeprefix("sqlite:///"))
+        if db is not None and db.is_relative_to(real):
+            return _NOT_REMOVABLE + "it holds the app's database"
+    for other in others:
+        o = _real(other)
+        if o is None:
+            continue  # an unresolvable other store cannot be inside this one by any path we can see
+        if o == real or o.is_relative_to(real):
+            return _NOT_REMOVABLE + "it is, or holds, another of the app's folders"
+    why = _holds_more_than_models(real) if look_inside and real.is_dir() else None
+    return None if why is None else _NOT_REMOVABLE + why
+
+
+def _store_paths() -> list[tuple[str, Path]]:
+    from src.llm.model_store import hf_hub_cache, ollama_store
+
+    # R786: the hub cache folder ITSELF, never ``hf_home()`` (the PARENT of HF_HUB_CACHE).
+    return [("ollama", ollama_store()), ("huggingface", hf_hub_cache())]
+
+
+def _other_folders(own: Path) -> list[Path]:
+    """Every folder this module knows besides ``own``: the other stores and the vLLM environment."""
+    out = [p for _k, p in _store_paths() if p != own]
+    try:
+        from src.llm import vllm_lifecycle
+
+        venv = vllm_lifecycle.venv_dir()
+        if venv != own:
+            out.append(venv)
+    except Exception:  # noqa: BLE001 - a missing backend has no folder to protect
+        pass
+    return out
+
+
 def _store_entry(kind: str, path: Path) -> dict:
     """One model store, described: where, how big, and whether we may remove it."""
     ours = _owned_by_app(path)
@@ -118,14 +225,17 @@ def _store_entry(kind: str, path: Path) -> dict:
         exists = path.exists()
     except OSError:
         exists = False
+    guard = removal_refusal(path, others=_other_folders(path)) if (ours and exists) else None
     return {
         "kind": kind,
         "path": str(path),
         "exists": exists,
         "bytes": _dir_bytes(path) if exists else 0,
-        "removable": bool(ours and exists),
+        "removable": bool(ours and exists and guard is None),
         "kept_reason": (
-            None
+            guard
+            if guard is not None
+            else None
             if ours
             else (
                 "you chose this location yourself, so it is yours rather than this "
@@ -137,9 +247,9 @@ def _store_entry(kind: str, path: Path) -> dict:
 
 def model_stores() -> list[dict]:
     """Every model store this app knows about, app-owned or not."""
-    from src.llm.model_store import hf_home, legacy_hf_home, ollama_store
+    from src.llm.model_store import legacy_hf_home
 
-    out = [_store_entry("ollama", ollama_store()), _store_entry("huggingface", hf_home())]
+    out = [_store_entry(kind, path) for kind, path in _store_paths()]
     legacy = legacy_hf_home()
     if legacy is not None:
         e = _store_entry("huggingface-legacy", legacy)
@@ -171,8 +281,10 @@ def _vllm_state() -> dict:
         "running": bool(running),
         "path": str(venv),
         "bytes": _dir_bytes(venv) if installed else 0,
-        # Ours by construction: this app created the venv at a path it chose.
-        "removable": bool(installed) and _owned_by_app(venv),
+        # Ours by construction: this app created the venv at a path it chose. R786: and never a folder
+        # that is, or holds, the data folder, the home folder or a model store.
+        "removable": bool(installed) and _owned_by_app(venv)
+        and removal_refusal(venv, others=[p for _k, p in _store_paths()], look_inside=False) is None,
     }
 
 
@@ -312,7 +424,8 @@ def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
                     from src.llm.vllm_lifecycle import pip_tmpdir
 
                     build = pip_tmpdir()
-                    if build.exists() and _owned_by_app(build):
+                    if build.exists() and _owned_by_app(build) and removal_refusal(
+                            build, others=[p for _k, p in _store_paths()], look_inside=False) is None:
                         _rmtree(build)
                 except Exception:  # noqa: BLE001 - a leftover build dir is not a failure
                     pass
@@ -341,7 +454,12 @@ def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
 
     if delete_models:
         for store in model_stores():
-            if store["removable"]:
+            # R786: looked at AGAIN just before the delete, so a folder that changed since the plan
+            # was read (a database copied into it, a variable re-pointed) is still refused.
+            again = removal_refusal(store["path"], others=_other_folders(Path(store["path"]))) if store["removable"] else None
+            if again is not None:
+                kept.append({"what": f"{store['kind']} models", "reason": again})
+            elif store["removable"]:
                 result = _rmtree(Path(store["path"]))
                 result["what"] = f"{store['kind']} models"
                 result["freed_bytes"] = store.get("bytes") if result.get("removed") else 0
@@ -372,6 +490,7 @@ def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
 __all__ = [
     "OLLAMA_MANUAL_REMOVAL",
     "model_stores",
+    "removal_refusal",
     "uninstall",
     "uninstall_plan",
 ]

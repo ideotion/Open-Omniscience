@@ -112,6 +112,20 @@ def hf_home() -> Path:
     return app_models_root() / "huggingface"
 
 
+def hf_hub_cache() -> Path:
+    """The Hugging Face hub cache folder itself -- the folder that holds ``models--*`` (R784, R786).
+
+    In HF's own precedence: ``HF_HUB_CACHE`` IS that folder, whatever it is named; otherwise it is
+    ``hub`` under ``HF_HOME``; otherwise ``hub`` under the app's own Hugging Face home. NOT
+    ``hf_home()``: that answers the PARENT of ``HF_HUB_CACHE``, which can be the app's data folder or a
+    person's home folder -- and the uninstall offered to delete it as "the Hugging Face models" (R786).
+    ``~`` is expanded as huggingface_hub expands it: left as is, "~/hf-cache" is a RELATIVE path."""
+    explicit = (os.getenv("HF_HUB_CACHE") or "").strip()
+    if explicit:
+        return Path(os.path.expanduser(explicit))
+    return Path(os.path.expanduser(os.fspath(hf_home() / "hub")))
+
+
 def legacy_hf_home() -> Path | None:
     """Hugging Face's OWN default cache home -- where weights downloaded before
     2026-08-04 still are.
@@ -170,7 +184,9 @@ def launch_env(base: dict | None = None) -> dict:
         # as where weights belong (the activation blocker prints it, and an operator
         # moving an existing cache needs it to exist). A folder the app names should be
         # a folder the app has made.
-        (h_home / "hub").mkdir(parents=True, exist_ok=True)
+        # R786: the hub cache folder HF will actually use -- with HF_HUB_CACHE set, ``h_home / "hub"``
+        # was a stray folder beside it.
+        hf_hub_cache().mkdir(parents=True, exist_ok=True)
         env["OLLAMA_MODELS"] = str(o_store)
         env["HF_HOME"] = str(h_home)
     except OSError as exc:  # noqa: BLE001 - an unwritable data dir must not block a start
@@ -313,7 +329,9 @@ def store_report() -> dict:
     from src.backup.ollama_models import default_store as ollama_detected
 
     configured_ollama = ollama_store()
-    configured_hf = hf_home()
+    # R786: the hub cache folder itself, sized alone. ``hf_home()`` is the PARENT of HF_HUB_CACHE, which
+    # with HF_HUB_CACHE=/home/u/my-models measured all of /home/u as "Hugging Face".
+    configured_hf = hf_hub_cache()
     try:
         on_disk = ollama_detected()
     except Exception:  # noqa: BLE001 - detection must never break the report
@@ -372,7 +390,7 @@ def store_report() -> dict:
         out["huggingface"]["note"] = (
             f"There are also model weights at {legacy_hf}, from before the store moved "
             f"into the app folder. They are still usable — move them into "
-            f"{configured_hf / 'hub'} (that is where the server looks), or set HF_HOME "
+            f"{configured_hf} (that is where the server looks), or set HF_HOME "
             f"back to {legacy_hf} and let future downloads land there too. Nothing is "
             "moved or deleted for you."
         )
