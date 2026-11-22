@@ -376,10 +376,11 @@ def encrypt_store(
     connection unlikely in the first place."""
     from src.database import at_rest_state
 
-    # Row 323 / R793: room for this store's two copies, checked before ANY file is made for it. Only a store that is there and reads
-    # as plaintext is copied; an absent or already-encrypted one is skipped below and needs no room.
+    # Row 323 / R793: room for this store's two copies, checked before ANY file is made for it. An absent or empty store, or one whose
+    # header reads as encrypted, is skipped below and needs no room; a header that could NOT be read is checked too (fail closed:
+    # ``encrypt_database`` reads it again, and a second read that says plaintext would otherwise copy it with no check at all).
     p = Path(path)
-    if p.is_file() and is_encrypted_file(p) is False:
+    if p.is_file() and p.stat().st_size > 0 and is_encrypted_file(p) is not True:
         refused = room_refusal(name, p)
         if refused is not None:
             raise EncryptNoRoom(refused)

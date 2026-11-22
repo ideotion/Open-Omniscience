@@ -409,7 +409,7 @@ def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[...,
         with write_lock():
             encrypt_tool.dispose_lane_engines()
             for name in st["pending"]:
-                if encrypt_tool.room_refusal(name, paths[name]) is not None:
+                if paths[name].is_file() and encrypt_tool.room_refusal(name, paths[name]) is not None:
                     # A store is copied twice beside itself (the snapshot, then the encrypted copy) under the write gate: without the
                     # room for both (its file and its write-ahead log, row 323) it would hold every save for hours and end on a full
                     # disk. The ONE check the operator's encrypt makes too (R793); a room that was not read refuses as well. It waits

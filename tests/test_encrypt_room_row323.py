@@ -405,3 +405,44 @@ def test_the_page_reads_the_sentences_back_and_knows_the_partial_words():
     assert "3.5 Gio" in said and "1.2 Gio" in said, said
     assert fr["the size of its write-ahead log could not be read"] in said, said
     assert "Not enough free space" not in said and "was not encrypted" not in said, said
+
+
+def test_a_header_that_cannot_be_read_is_still_checked_for_room(stores, monkeypatch):
+    # The first header read fails (None); a later read says plaintext. Without the check here the store would be copied unchecked.
+    real = encrypt_tool.is_encrypted_file
+    calls: list[int] = []
+
+    def flaky(p):
+        calls.append(1)
+        return None if len(calls) == 1 else real(p)
+
+    monkeypatch.setattr(encrypt_tool, "is_encrypted_file", flaky)
+    _free(monkeypatch, 0)
+    with pytest.raises(encrypt_tool.EncryptNoRoom):
+        encrypt_tool.encrypt_store("corpus", stores, _KEY, main=stores, library=True)
+    assert _made_beside(stores.parent, stores.name) == []
+
+
+def test_a_pending_store_gone_before_the_finish_is_not_called_unreadable(stores, monkeypatch):
+    _free(monkeypatch, 10**15)
+    monkeypatch.setattr(
+        at_rest_state,
+        "status",
+        lambda main=None: {
+            "corpus_encrypted": True,
+            "complete": False,
+            "pending": ["custody"],
+            "busy": [],
+            "stores": [],
+            "plaintext_snapshots": [],
+        },
+    )
+    (stores.parent / "custody_log.db").unlink()
+    called: list[str] = []
+    out = at_rest_state.finish_pending(
+        _KEY, stores, encrypt=lambda *a, **_kw: called.append(a[0]) or {}
+    )
+    assert called == ["custody"], (
+        "the check did not stand in for the store's own skip of an absent file"
+    )
+    assert out == {"finished": ["custody"], "still_pending": []}
