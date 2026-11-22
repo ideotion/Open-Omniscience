@@ -198,6 +198,8 @@ def index_state() -> list[dict]:
                 "alpha3": c.alpha3, "name": c.name,
                 "vintage": c.extract_vintage.isoformat() if c.extract_vintage else None,
                 "data_date": country_data_date(c),
+                # What the objects stand at (the cut, plus the daily file applied): a reader that memoizes answers keys on it.
+                "basis": basis,
                 "indexed": bool(r and r.basis_ingest == basis),
                 "names": r.names if r else None, "addresses": r.addresses if r else None,
                 "addresses_no_point": r.addresses_no_point if r else None,
@@ -362,7 +364,7 @@ def geocode(q: str, limit: int = 5, facts: bool = False) -> dict:
     scope = [c for c in index_state() if c["indexed"]]
     base: dict[str, Any] = {
         "q": q, "scope": GEOCODER_SCOPE, "method": GEOCODER_METHOD,
-        "countries": [{"alpha3": c["alpha3"], "name": c["name"], "vintage": c["vintage"]} for c in scope],
+        "countries": [{"alpha3": c["alpha3"], "name": c["name"], "vintage": c["vintage"], "data_date": c["data_date"]} for c in scope],
         "results": [], "total": 0,
     }
     tokens = _tokens(q)
