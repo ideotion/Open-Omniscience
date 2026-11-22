@@ -1503,6 +1503,11 @@ class ImportQueueManager:
             "refused_categories": list(p.get("refused_categories") or []),
             "refused_dest_links": p.get("refused_dest_links", 0),
             "incomplete": bool(p.get("incomplete")),
+            # R778: members that could not be read, with a fixed reason code each; the restore went on.
+            "unread_total": p.get("unread_total", 0),
+            "unread_folders": p.get("unread_folders", 0),
+            "unread_by_why": dict(p.get("unread_by_why") or {}),
+            "unread": list(p.get("unread") or []),
         }
 
     def _run_newsletters(self, item: dict) -> dict:

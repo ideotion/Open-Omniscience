@@ -211,7 +211,7 @@ def test_every_new_string_is_a_key_in_all_twelve_catalogues():
             "Not restored — links inside the backup, which a restore never follows"]
     keys += [line.split('t("', 1)[1].split('")', 1)[0] for line in src.splitlines()
              if 't("Restore incomplete — ' in line]
-    assert len(keys) == 6
+    assert len(keys) >= 6  # R778 adds its own "Restore incomplete — " line, checked by its own test
     for p in sorted((ROOT / "src" / "static" / "locales").glob("*.json")):
         cat = json.loads(p.read_text(encoding="utf-8"))
         missing = [k for k in keys if not cat.get(k)]

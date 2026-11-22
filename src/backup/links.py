@@ -37,8 +37,7 @@ def is_link(path: str | os.PathLike[str]) -> bool:
     """Whether ``path`` is a link, read without following it. ``False`` when nothing is there.
 
     Any other refusal raises: a path that could not be looked at is not known to be safe. The scan
-    counts it as not read; the restore stops with an error, as it did before for a file it could not
-    look at (letting one unreadable member not stop a restore is R778's)."""
+    counts it as not read; the restore counts it as not read and goes on (R778)."""
     try:
         return is_link_stat(os.lstat(path))
     except FileNotFoundError:
