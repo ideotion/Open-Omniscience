@@ -1461,6 +1461,7 @@
       const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
       const UNREAD = t("Some files or folders here could not be read, so this count includes only the ones that could.");
       const LINKS = t("Links in this backup folder are not counted: a restore never follows a link, so they are never restored.");
+      const LAYOUT = t("Files in the model folder outside the model cache's own layout are not counted and never restored: a restore places only what a backup writes there.");
       const LINKED = t("This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.");
       const cat = (c, label) => {
         if (!c) return;
@@ -1468,15 +1469,26 @@
         const value = (c.linked && !c.count) ? t("a link, not restored")
           : (c.unread_entries ? t("at least") + " " : "") + files(c.count || 0);
         parts.push(ooLabelText(t(label), value));
+        if (c.refused_layout && !why.includes(LAYOUT)) why.push(LAYOUT);
         if (c.linked && !why.includes(LINKED)) why.push(LINKED);
         if (c.unread_entries && !why.includes(UNREAD)) why.push(UNREAD);
         if (c.refused_links && !why.includes(LINKS)) why.push(LINKS);
       };
       cat(b.wiki, "Wikipedia dumps");
       cat(b.maps, "Offline maps");
-      cat(b.models, "LLM models");
+      // R777: the Ollama store and the Hugging Face cache are one "LLM models" line, as on export.
+      const llm = [b.models, b.hf_models].filter(Boolean);
+      cat(llm.length < 2 ? llm[0] : {
+        count: llm[0].count + llm[1].count, bytes: llm[0].bytes + llm[1].bytes,
+        unread_entries: (llm[0].unread_entries || 0) + (llm[1].unread_entries || 0),
+        refused_links: (llm[0].refused_links || 0) + (llm[1].refused_links || 0),
+        refused_layout: (llm[0].refused_layout || 0) + (llm[1].refused_layout || 0),
+        linked: (llm[0].linked || 0) + (llm[1].linked || 0),
+      }, "LLM models");
       const hover = why.length ? ` title="${esc(why.join(" "))}"` : "";
-      return `<label class="switch" style="margin:0"${hover}><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>`;
+      // Said on the row, not only on hover: a restore adds, it never replaces a file already there.
+      const keep = `<div class="muted" style="font-size:12px;margin-inline-start:28px">${esc(t("A file already in your data folders is kept as it is: a restore never overwrites it, and never downloads anything."))}</div>`;
+      return `<label class="switch" style="margin:0"${hover}><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>${keep}`;
     }
     // Folders the scan walk was refused (row 293): said on screen, since whatever they hold is not listed.
     function _uxImUnreadNote(n, t, tfs) {
@@ -1627,7 +1639,7 @@
       const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
       const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
       const legacy = f.legacy_backup || [];
-      const blobRoots = f.blob_roots || (f.blobs ? [{ root: src, categories: Object.keys(f.blobs).map(k => ({ wiki: "wiki_dumps", maps: "osm_regions", models: "models" }[k])) }] : []);
+      const blobRoots = f.blob_roots || (f.blobs ? [{ root: src, categories: Object.keys(f.blobs).map(k => ({ wiki: "wiki_dumps", maps: "osm_regions", models: "models", hf_models: "hf_models" }[k])).filter(Boolean) }] : []);
       const pass = document.getElementById("ux-imp-pass").value || "";
       // The volume corpus is ALWAYS encrypted -> a passphrase is required. A legacy
       // single-file archive may be plaintext, so its passphrase is optional here;
@@ -3843,6 +3855,12 @@
         const dirs = unreadAll.filter((u) => u.why === "folder-unlisted");
         lines.push(ooLabelText(t("Restore incomplete — folders in the backup that could not be listed, so whatever they hold was not restored"),
           fmtNum(unreadDirs, 0) + named(dirs, unreadDirs, (u) => `${u.category}${u.rel ? "/" + u.rel : ""}`)));
+      }
+      // R777: files in the model-cache folder outside the layout a backup writes there. Never placed.
+      const layout = p.refused_layout || 0;
+      if (layout) {
+        lines.push(ooLabelText(t("Restore incomplete — files in the model folder outside the model cache's own layout, never placed in your data folders"),
+          fmtNum(layout, 0)));
       }
       const memberLinks = p.refused_symlinks || 0;
       if (memberLinks) {

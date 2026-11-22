@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from src.backup.hf_layout import hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.monitoring.secret_scrub import log_failure, record_text
 
@@ -966,7 +967,7 @@ def restore_folder_backup(
     # silently called sound.
     recorded = _recorded_digests(src)
 
-    restored = skipped = refused_symlinks = refused_dest_links = 0
+    restored = skipped = refused_symlinks = refused_dest_links = refused_layout = 0
     refused_categories: list[str] = []
     corrupt: list[dict] = []
     # R778: what could not be READ. Counted and named like ``corrupt``, and the restore goes on.
@@ -1048,6 +1049,9 @@ def restore_folder_backup(
             _unread(cat, rel_s, why)
         for p, seen in members:
             rel = p.relative_to(cat_root)
+            if cat == "hf_models" and not hf_member_allowed(rel.as_posix()):
+                refused_layout += 1  # R777: only the model cache's own layout is ever placed
+                continue
             # Belt and braces: whatever the walk handed back, no part of the way from the BACKUP folder
             # to the member -- the category folder included -- may be a link, and its real path may not
             # leave the folder.
@@ -1127,7 +1131,11 @@ def restore_folder_backup(
         "refused_dest_links": refused_dest_links,
         # A member link was never written by a backup, but its place in the restore is still empty:
         # any link refusal means the restore did not bring back everything the folder showed.
-        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks or unread_total or unread_folders),
+        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks or unread_total or unread_folders
+                           or refused_layout),
+        # R777: files in the model-cache folder outside the shape the backup writes there (hidden names,
+        # anything outside hub/models--*/refs|snapshots). Never placed in the Hugging Face home.
+        "refused_layout": refused_layout,
         # R778: files (or folders, whose files are unknown) that could not be READ, each with one fixed
         # reason code. Not restored; the rest of the restore went on. Names stay on this machine: the
         # run journal and the diagnostics carry the count only.
@@ -1685,6 +1693,7 @@ class FolderBackupManager:
                     refused_dest_links=res.get("refused_dest_links"),
                     unread=res.get("unread_total"),
                     unread_folders=res.get("unread_folders"),
+                    refused_layout=res.get("refused_layout"),
                 )
                 storage_events.run_ended(
                     note,

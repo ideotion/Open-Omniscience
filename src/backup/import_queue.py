@@ -1502,6 +1502,7 @@ class ImportQueueManager:
             "refused_symlinks": p.get("refused_symlinks", 0),
             "refused_categories": list(p.get("refused_categories") or []),
             "refused_dest_links": p.get("refused_dest_links", 0),
+            "refused_layout": p.get("refused_layout", 0),
             "incomplete": bool(p.get("incomplete")),
             # R778: members that could not be read, with a fixed reason code each; the restore went on.
             "unread_total": p.get("unread_total", 0),

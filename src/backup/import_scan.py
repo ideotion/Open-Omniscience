@@ -23,8 +23,10 @@ from __future__ import annotations
 import os
 import re
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
+from src.backup.hf_layout import hf_member_allowed
 from src.backup.links import is_link, is_link_stat
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
@@ -43,8 +45,12 @@ _FOLDER_MANIFEST = "oo-folder-backup.json"
 
 # blob category dir on disk -> (import kind key the dialog shows, the folder-restore
 # category name). A blob backup made by the folder engine writes <root>/<catdir>/...
-_BLOB_DIRS = {"wiki_dumps": "wiki", "osm_regions": "maps", "models": "models"}
-_CATKEY_TO_DIR = {"wiki": "wiki_dumps", "maps": "osm_regions", "models": "models"}
+# R777: ``hf_models`` (the Hugging Face cache vLLM reads) has been written by the folder backup since it
+# learned that category, but the scan never listed it, so no restore ever asked for it. It is its own
+# kind here, shown beside ``models`` as the one "LLM models" line, and restored like the others: files
+# only, never downloaded, an existing file never overwritten.
+_BLOB_DIRS = {"wiki_dumps": "wiki", "osm_regions": "maps", "models": "models", "hf_models": "hf_models"}
+_CATKEY_TO_DIR = {"wiki": "wiki_dumps", "maps": "osm_regions", "models": "models", "hf_models": "hf_models"}
 
 # Directory names we never descend into: VCS/build/cache junk + OS recycle bins. A
 # leading-dot dir is also skipped (dotfolders are config/cache, never a backup). This
@@ -88,15 +94,18 @@ def _LINKED_CATEGORY() -> dict:  # noqa: N802 - reads as the constant it stands 
     return {"count": 0, "bytes": 0, "linked": True, "reason": SCAN_LINKED_CATEGORY}
 
 
-def _dir_totals(d: Path) -> dict:
+def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None) -> dict:
     """``{count, bytes}`` of what a folder restore would restore from one category folder, plus
     ``unread_entries`` (folders or files it was refused) and ``refused_links`` when non-zero.
 
     It counts exactly what ``restore_folder_backup`` copies: regular files, never a ``.oopart``,
     never a link (restore refuses every link, file or folder, and never follows one). A refusal
     no longer fails the whole scan (row 293): it is counted, so the page can say the count is a
-    lower bound. A file that vanished mid-scan is gone, not unread."""
-    count = nbytes = unread = links = 0
+    lower bound. A file that vanished mid-scan is gone, not unread.
+
+    ``allow`` (R777, the model-cache folder): a file whose path relative to ``d`` it refuses is not
+    counted but counted apart in ``refused_layout``, exactly as the restore refuses it."""
+    count = nbytes = unread = links = refused_layout = 0
 
     def _refused(err: OSError) -> None:
         nonlocal unread
@@ -131,9 +140,14 @@ def _dir_totals(d: Path) -> dict:
             if is_link_stat(st):  # a junction or reparse point too (R779)
                 links += 1
             elif stat.S_ISREG(st.st_mode):
+                if allow is not None and not allow(Path(os.path.join(dirpath, name)).relative_to(d).as_posix()):
+                    refused_layout += 1
+                    continue
                 count += 1
                 nbytes += st.st_size
     out: dict = {"count": count, "bytes": nbytes}
+    if refused_layout:
+        out["refused_layout"] = refused_layout
     if unread:
         out.update(unread_entries=unread, reason=SCAN_UNREAD)
     if links:
@@ -215,8 +229,9 @@ def scan_import_folder(
                     except OSError:
                         unread_folders += 1
                         continue
-                    totals = _LINKED_CATEGORY() if linked else _dir_totals(curp / d)
-                    if totals["count"] or totals.get("unread_entries") or totals.get("linked"):
+                    totals = _LINKED_CATEGORY() if linked else _dir_totals(
+                        curp / d, hf_member_allowed if d == "hf_models" else None)
+                    if totals["count"] or totals.get("unread_entries") or totals.get("linked") or totals.get("refused_layout"):
                         blob_roots.setdefault(str(curp), {})[_BLOB_DIRS[d]] = totals
                     continue
                 keep.append(d)
@@ -305,7 +320,7 @@ def scan_import_folder(
                 a = agg.setdefault(k, {"count": 0, "bytes": 0})
                 a["count"] += tot["count"]
                 a["bytes"] += tot["bytes"]
-                for extra in ("unread_entries", "refused_links"):
+                for extra in ("unread_entries", "refused_links", "refused_layout"):
                     if tot.get(extra):
                         a[extra] = a.get(extra, 0) + tot[extra]
                 if tot.get("unread_entries"):
