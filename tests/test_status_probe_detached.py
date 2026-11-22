@@ -24,18 +24,19 @@ import sqlite3
 import threading
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 
 from src.api import insights
 from src.database import pool_watch
 from src.database.pool_reserve import ReservingQueuePool
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def eng(tmp_path):
     insights._reset_status_probe_for_tests()
-    e = create_engine(
-        f"sqlite:///{tmp_path / 'probe.db'}",
+    e = app_sqlite_engine(
+        tmp_path / 'probe.db',
         future=True,
         poolclass=ReservingQueuePool,
         pool_size=2,
@@ -137,8 +138,8 @@ def test_an_in_memory_engine_keeps_its_database_when_the_probe_reads(pool_name):
     from sqlalchemy import pool as sa_pool
 
     insights._reset_status_probe_for_tests()
-    e = create_engine(
-        "sqlite://",
+    e = app_sqlite_engine(
+        ":memory:",
         future=True,
         poolclass=getattr(sa_pool, pool_name),
         connect_args={"check_same_thread": False},
@@ -167,7 +168,7 @@ def test_only_queue_and_null_pools_are_detachable(tmp_path):
         # the allow-list's one real difference from a deny-list: a pool nobody listed is kept pooled
         (sa_pool.AssertionPool, False),
     ):
-        e = create_engine(f"sqlite:///{tmp_path / (cls.__name__ + '.db')}", future=True, poolclass=cls)
+        e = app_sqlite_engine(tmp_path / (cls.__name__ + '.db'), future=True, poolclass=cls)
         try:
             assert insights._detachable(e) is expected, cls.__name__
         finally:

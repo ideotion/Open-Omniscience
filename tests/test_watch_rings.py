@@ -23,7 +23,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import watches as W
@@ -31,6 +30,7 @@ from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -42,8 +42,8 @@ def corpus(tmp_path):
     ``OO_DATA_DIR`` any test set, so a per-test temp directory silently re-uses the
     first one's file and every test after the first reads someone else's corpus.
     """
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'watch_rings.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'watch_rings.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

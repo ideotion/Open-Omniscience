@@ -7,7 +7,6 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from datetime import date
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import supergroup_index as idx
@@ -20,11 +19,12 @@ from src.database.models import (
     KeywordSuperGroupMember,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -137,8 +137,8 @@ def _client(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'sgidx.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'sgidx.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

@@ -7,18 +7,17 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 import yaml
+from sqlalchemy.orm import sessionmaker
 
 from src.analytics.supergroup_seed import _PATH, _RETIRED, seed_supergroups
 from src.database.models import Base, KeywordSuperGroup, KeywordSuperGroupMember
+from tests._app_engine import app_sqlite_engine
 
 
 def _session(tmp_path):
-    eng = create_engine(
-        f"sqlite:///{tmp_path / 'sg.db'}", future=True,
+    eng = app_sqlite_engine(
+        tmp_path / 'sg.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(eng)

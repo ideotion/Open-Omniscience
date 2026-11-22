@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 import src.api.insights as ins
@@ -23,11 +23,12 @@ from src.analytics import queries as q
 from src.database import query as dq
 from src.database.derived_views import KeywordMentionRead as KM
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def sess(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'b.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'b.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     S = sessionmaker(bind=engine, future=True)
     today = date.today()

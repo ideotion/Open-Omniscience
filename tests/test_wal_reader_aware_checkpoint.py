@@ -30,16 +30,17 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 
 
 def _wal_engine(tmp_path, monkeypatch, *, rows=3000):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("OO_WAL_CHECKPOINT_BUSY_MS", raising=False)
     db = tmp_path / "w.db"
-    eng = create_engine(f"sqlite:///{db}")
+    eng = app_sqlite_engine(db)
     with eng.begin() as c:
         c.execute(text("PRAGMA journal_mode=WAL"))
         c.execute(text("CREATE TABLE t(a INTEGER PRIMARY KEY, b TEXT)"))

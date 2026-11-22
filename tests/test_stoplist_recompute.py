@@ -29,13 +29,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import src.analytics.stoplist_recompute as sr
 from src.analytics.store import top_keyword_of
 from src.database.models import Article, Base, DerivedMeta, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _MT = KeywordMention.__table__
 _STAMP = datetime(2026, 1, 1, tzinfo=UTC).replace(tzinfo=None)
@@ -43,8 +44,8 @@ _STAMP = datetime(2026, 1, 1, tzinfo=UTC).replace(tzinfo=None)
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     factory = sessionmaker(bind=eng, future=True)

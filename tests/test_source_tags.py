@@ -11,11 +11,11 @@ lesson triage.py's tests already cover); the EVIDENCE FLOOR and the explicit
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import source_tags as ST
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -424,8 +424,8 @@ def test_the_batch_record_never_coerces_an_inconclusive_verdict_to_a_failure():
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

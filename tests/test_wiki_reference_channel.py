@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database.models import Base, Source, SourceCandidate, WikiPage
 from src.discovery.channels import extract_reference_domains, wikipedia_reference_channel
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # PURE parser — extract_reference_domains
@@ -78,7 +78,7 @@ def test_trailing_sentence_punctuation_is_not_part_of_the_url():
 # --------------------------------------------------------------------------- #
 
 def _corpus() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     # a real seeded source (so its domain counts as already-known)

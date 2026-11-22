@@ -26,12 +26,13 @@ from src.api.main import app
 from src.api.ratelimit import limiter
 from src.database.models import Base, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 's.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 's.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

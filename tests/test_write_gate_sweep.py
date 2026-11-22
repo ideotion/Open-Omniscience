@@ -18,17 +18,18 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, event, func
+from sqlalchemy import event, func
 from sqlalchemy.orm import sessionmaker
 
 from src.database import writer
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def gated(tmp_path):
     """A file-backed session factory with the real gate handlers, autoflush off like the app's."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'sweep.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'sweep.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, autoflush=False, future=True)
     event.listen(maker, "before_flush", writer._on_before_flush)

@@ -71,7 +71,7 @@ import threading
 import time
 from pathlib import Path
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.briefing import registry
@@ -79,6 +79,7 @@ from src.database import session as S
 from src.monitoring.storage import storage_composition
 from src.scheduler import hygiene
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _JOURNAL_SIZE_LIMIT_BYTES = _JOURNAL_SIZE_LIMIT_MB * 1024 * 1024
@@ -174,7 +175,7 @@ def _wal_engine(tmp_path, name="wal_starve.db", seed_rows=_SEED_ROWS):
     never sets a limit worth asserting growth "past N times" of.
     """
     db = tmp_path / name
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
     event.listen(eng, "connect", S._sqlite_pragmas)
     with eng.connect() as c:
         c.exec_driver_sql("CREATE TABLE t(x)")

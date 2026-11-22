@@ -18,6 +18,7 @@ from src.versioned.models import VersionedEntity
 from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki import hotset
 from src.wiki.identity import parse_external_id
+from tests._app_engine import app_sqlite_engine
 
 EDITIONS = ("en", "fr", "de")
 
@@ -37,12 +38,11 @@ def lane(tmp_path, monkeypatch):
 
 @pytest.fixture
 def corpus_factory(tmp_path):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'corpus-hot.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'corpus-hot.db', future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

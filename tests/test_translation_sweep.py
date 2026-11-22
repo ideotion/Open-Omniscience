@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import translation_sweep as TSW
@@ -30,6 +30,7 @@ from src.database.models import (
     KeywordTranslation,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 # (term, language, article_count) chosen so each branch of the sweep is reached:
 #   climat      fr, a verified-ring member            -> never sent to the model
@@ -63,7 +64,7 @@ class _Stub:
 
 @pytest.fixture()
 def db(tmp_path):
-    e = create_engine(f"sqlite:///{tmp_path / 't.db'}", future=True)
+    e = app_sqlite_engine(tmp_path / 't.db', future=True)
     Base.metadata.create_all(e)
     maker = sessionmaker(bind=e, future=True, expire_on_commit=False)
     with maker() as s:

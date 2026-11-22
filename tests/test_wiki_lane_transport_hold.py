@@ -18,6 +18,7 @@ import pytest
 import requests
 
 from src.safety import transport_watch as tw
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PROXY = "socks5h://127.0.0.1:9050"
@@ -512,13 +513,12 @@ def test_the_stream_button_resumes_a_held_lane_only_through_the_resume_route_aft
 
 def test_a_page_whose_text_fetch_met_the_change_is_rolled_back_not_stored_without_text(monkeypatch):
     """The enrichment fetches fail open; a transport change is not a missing enrichment: the page is not stored, ``last_revid`` stays."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, WikiRevision
     from src.wiki.track import ensure_page, track_watched
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     page = ensure_page(db, "en", "Berlin")

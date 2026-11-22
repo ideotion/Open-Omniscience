@@ -20,11 +20,11 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import filters
 from src.database.models import Article, Base, Keyword, KeywordMention, KeywordTag, Source
+from tests._app_engine import app_sqlite_engine
 
 SHOWN, HIDDEN = "zzharvest", "zzfurniture"
 
@@ -45,7 +45,7 @@ def stoplist(monkeypatch):
 
 @pytest.fixture()
 def session():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         s.add(Source(id=1, name="A", domain="a.test", country="fr"))

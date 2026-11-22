@@ -27,7 +27,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED
@@ -38,6 +37,7 @@ from src.ingest.pipeline import feed_is_due, ingest_source
 from src.safety.fetcher import make_fetcher
 from src.scheduler.runner import _lane_step_crawl
 from src.scheduler.settings import SchedulerSettings
+from tests._app_engine import app_sqlite_engine
 
 HOSTS = ("a.example", "b.example", "c.example")
 FEED_HOST = "a.example"
@@ -123,7 +123,7 @@ def _fetcher(tmp_path, calls, *, cut_on=None, feed=False, sitemap_urls=(), raw_o
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

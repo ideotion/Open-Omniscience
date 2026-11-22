@@ -30,11 +30,11 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from src.monitoring import holder_state
 from src.monitoring import storage_events as se
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 from tests.wallclock_helpers import HANG_GUARD_S, call_on_thread
 
@@ -729,7 +729,7 @@ def test_a_passphrase_the_process_holds_is_scrubbed_in_a_file_written_before_it_
 def test_a_checkpoint_that_fails_on_a_message_with_the_passphrase_records_the_class_only(journal, held_passphrase, tmp_path):
     from src.scheduler import hygiene
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'c.db', future=True)
 
     def boom(*_a, **_k):
         raise RuntimeError(f"cannot open {tmp_path}/c.db with key {MARKER}")
@@ -1202,7 +1202,7 @@ def test_an_engagement_ended_by_an_explicit_start_says_so(journal, guard_on):
 # --------------------------------------------------------------------------- #
 def _wal_engine(tmp_path, name="ckpt.db"):
     db = tmp_path / name
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
     with eng.connect() as c:
         c.exec_driver_sql("PRAGMA journal_mode=WAL")
         c.exec_driver_sql("CREATE TABLE t(x)")
@@ -1372,8 +1372,8 @@ def test_a_boot_that_opened_the_store_is_journaled_and_one_that_raised_is_not(jo
 def _pool_engine(timeout: float = 0.1):
     from src.database.pool_reserve import ReservingQueuePool
 
-    return create_engine(
-        "sqlite://", creator=lambda: sqlite3.connect(":memory:", check_same_thread=False),
+    return app_sqlite_engine(
+        ":memory:", creator=lambda: sqlite3.connect(":memory:", check_same_thread=False),
         poolclass=ReservingQueuePool, pool_size=1, max_overflow=0, pool_timeout=timeout,
     )
 

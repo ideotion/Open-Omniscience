@@ -16,7 +16,7 @@ from __future__ import annotations
 import threading
 import time
 
-from sqlalchemy import Integer, create_engine, event
+from sqlalchemy import Integer, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from src.database.writer import (
@@ -26,6 +26,7 @@ from src.database.writer import (
     _on_orm_execute,
     write_gate,
 )
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # WriterGate primitive
@@ -122,8 +123,8 @@ def _wired_sessionmaker(tmp_path):
     makes them safe. We attach the same handlers the app wires on SessionLocal.
     """
     db = tmp_path / "gate.db"
-    engine = create_engine(
-        f"sqlite:///{db}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        db, future=True, connect_args={"check_same_thread": False}
     )
 
     @event.listens_for(engine, "connect")

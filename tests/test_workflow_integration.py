@@ -16,7 +16,6 @@ from __future__ import annotations
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.ingestion import get_fetcher
@@ -28,6 +27,7 @@ from src.database.session import get_db
 from src.ingest import EthicalFetcher
 from src.llm.ollama import OllamaClient
 from src.reporting.evidence import verify_bundle
+from tests._app_engine import app_sqlite_engine
 
 
 def _html(title, body):
@@ -60,8 +60,8 @@ class _NetSession:
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))  # evidence signing key under tmp
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'wf.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'wf.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)

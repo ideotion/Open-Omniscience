@@ -16,6 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from tests._app_engine import app_sqlite_engine
+
 
 @pytest.fixture()
 def client():
@@ -164,13 +166,12 @@ def test_tracker_stores_per_revision_full_text():
     """The storage ruling (maintainer-agreed 2026-06-12): every tracked
     revision keeps its FULL TEXT, batched in one call; latest_text comes from
     the newest revision of the batch — exact versions, no diff replay."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, WikiRevision
     from src.wiki.track import ensure_page, update_page
 
-    engine = create_engine("sqlite:///:memory:", future=True,
+    engine = app_sqlite_engine(":memory:", future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
@@ -211,13 +212,12 @@ def test_tracker_stores_per_revision_full_text():
 def test_revision_text_fetch_failure_keeps_revisions():
     """A text-fetch failure stores the revisions WITHOUT text (NULL says so)
     and falls back to fetch_current_text for the latest — never drops edits."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, WikiRevision
     from src.wiki.track import ensure_page, update_page
 
-    engine = create_engine("sqlite:///:memory:", future=True,
+    engine = app_sqlite_engine(":memory:", future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()

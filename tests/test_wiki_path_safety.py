@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from src.wiki.dumpread import dump_paths
 from src.wiki.dumps import dump_filename, dump_url, validate_wiki_code
+from tests._app_engine import app_sqlite_engine
 
 # Real Wikipedia edition codes the validator MUST keep accepting (incl. the ones a
 # naive ^[a-z]{2,3}(-[a-z]+)?$ would wrongly reject: "simple", multi-hyphen codes).
@@ -85,15 +86,14 @@ def test_api_dump_endpoints_reject_traversal_with_400():
 
 def _pages_client(tmp_path):
     """A TestClient wired to a scratch DB, for the watched-pages CRUD endpoint."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.main import app
     from src.database.models import Base
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'wiki.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'wiki.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

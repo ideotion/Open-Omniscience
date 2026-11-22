@@ -21,13 +21,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics.concentration import reading_diet_by_type
 from src.analytics.queries import SOURCE_TYPE_UNTYPED, source_type_facets
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 try:
     from src.api.main import app  # noqa: F401
@@ -64,8 +64,8 @@ def _score_like_keys(obj) -> list[str]:
 def _session():
     # StaticPool shares ONE in-memory connection across threads, so the endpoint (run
     # off the event loop in the threadpool) sees the seeded tables.
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

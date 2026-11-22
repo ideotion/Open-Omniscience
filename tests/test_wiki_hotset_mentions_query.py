@@ -15,16 +15,17 @@ property the change exists for, so it is read from SQLite itself, not from the s
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Keyword
 from src.wiki import hotset
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def corpus(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'hot-mentions.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'hot-mentions.db', future=True)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, future=True)
     with factory() as db:

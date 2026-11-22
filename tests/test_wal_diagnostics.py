@@ -26,7 +26,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 import src.database.session as session_mod
@@ -39,6 +39,7 @@ from src.database.snapshots import (
     metric_history,
 )
 from src.monitoring.storage import _last_wal_checkpoint, _wal_history, storage_composition
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -46,8 +47,8 @@ def db(tmp_path, monkeypatch):
     """A FILE-backed store in WAL mode — the -wal sidecar has to be real for any of
     this to mean anything."""
     path = tmp_path / "store.db"
-    engine = create_engine(
-        f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        path, future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     with engine.connect() as c:

@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -27,6 +27,7 @@ from src.database.models import Base, WikiPage, WikiRevision
 from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki import lane_search as S
 from src.wiki.lane_models import WIKI_LANE_MODELS, WikiLaneDoc, WikiLaneIndexQueue, WikiLaneTracked
+from tests._app_engine import app_sqlite_engine
 
 EDITION = "oo"
 T0 = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -45,8 +46,8 @@ def lane(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_NO_SCHEDULER", "1")
     dispose_all()
     create_lane("wiki")
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(eng)
     ensure_fts(eng)
