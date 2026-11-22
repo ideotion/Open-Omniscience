@@ -9286,21 +9286,35 @@ def refuse_while_writer_jobs_run() -> None:
     refusal at a later item discards the merges the group was still holding, as any refusal there does: the operator imports again."""
     from src.jobs.background import running_writer_jobs, stop_jobs_for_restore
 
-    # R712: a running backup export refuses the restore and is named, before anything is stopped. It is not a writer (it reads the
-    # corpus), so it is not in the registry's writer list; the volume job already refuses a second volume job, but the export's
-    # large-data phase leaves that manager idle, and the single-file restore never asked it.
-    exporting = export_refusal()
-    if exporting:
-        raise WriterJobsRefused(exporting)
-    # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
-    blocking = running_writer_jobs(include_stoppable=False)
-    if blocking:
-        raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in blocking)))
+    said = writer_jobs_refusal()
+    if said:
+        raise WriterJobsRefused(said)
     _remember_stopped(stop_jobs_for_restore(_STOP_FOR_RESTORE_S))
     running = running_writer_jobs()
     if running:
         start_jobs_stopped_for_restore()  # nothing is imported, so nothing else would start them again
         raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
+
+
+def writer_jobs_refusal() -> str | None:
+    """The refusal :func:`refuse_while_writer_jobs_run` raises before it stops anything, or None; it stops nothing itself.
+
+    A running backup export (R712), then a running writer the restore may not stop. A job it may stop (the re-index drain) is
+    not named here: the restore stops it when it runs. The import queue asks this at its start (row 328), where stopping a
+    job would leave it stopped for the whole run. Raises only what the registry raises."""
+    from src.jobs.background import running_writer_jobs
+
+    # R712: a running backup export refuses the restore and is named, before anything is stopped. It is not a writer (it reads the
+    # corpus), so it is not in the registry's writer list; the volume job already refuses a second volume job, but the export's
+    # large-data phase leaves that manager idle, and the single-file restore never asked it.
+    exporting = export_refusal()
+    if exporting:
+        return exporting
+    # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
+    blocking = running_writer_jobs(include_stoppable=False)
+    if blocking:
+        return _WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in blocking))
+    return None
 
 
 def export_refusal() -> str | None:
