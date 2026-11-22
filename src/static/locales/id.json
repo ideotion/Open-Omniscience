@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "Perbaikan selesai. File rusak yang disisihkannya disimpan sebagai {name}, karena sudah ada file bernama {left} di samping pustaka Anda: aplikasi membiarkan file itu persis seperti adanya dan tidak akan pernah menghapusnya."
 }

@@ -1784,6 +1784,18 @@ class DamageRegistry:
                     }
                 )
                 out.extend(_orphan_notes(last))
+                left = last.get("name_left_in_place")
+                if isinstance(left, str) and left:
+                    # R781 (row 299): the name the repair first chose was taken by a file it must keep, so it finished under the next
+                    # free name. Said as a finished repair, naming both files, never as a failure.
+                    out.append(
+                        {
+                            "kind": "repaired",
+                            "file": FILE_CORPUS,
+                            "frame": FRAME_KEPT_NAME_LEFT,
+                            "vars": {"name": str(last["kept_file"]), "left": left},
+                        }
+                    )
             name = str(last["kept_file"])
             if removed_at:
                 out.append(
@@ -2184,6 +2196,10 @@ FRAME_REPAIRED_OPEN = (
     "Your library file was damaged, and the app repaired it: {kept} rows were copied. The end of the article list could "
     "not be read, so how many entries were lost is not known (at least {lost}). Articles that could not be read are "
     "collected again by ordinary collection."
+)
+FRAME_KEPT_NAME_LEFT = (
+    "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside "
+    "your library: the app left that file exactly as it was and will never remove it."
 )
 FRAME_KEPT_UNTIL = (
     "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. The app removes it at the first start "

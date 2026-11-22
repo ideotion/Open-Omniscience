@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho ("
+  "🛒 Draft (": "🛒 Rascunho (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "O reparo foi concluído. O arquivo danificado que ele separou é mantido como {name}, porque já havia um arquivo chamado {left} ao lado da sua biblioteca: o aplicativo deixou esse arquivo exatamente como estava e nunca o removerá."
 }

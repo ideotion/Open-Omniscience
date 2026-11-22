@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "মেরামত শেষ হয়েছে। মেরামত যে ক্ষতিগ্রস্ত ফাইলটি আলাদা করে রেখেছে, সেটি {name} নামে রাখা আছে, কারণ আপনার লাইব্রেরির পাশে আগে থেকেই {left} নামের একটি ফাইল ছিল: অ্যাপটি সেই ফাইলটি ঠিক যেমন ছিল তেমনই রেখেছে এবং কখনো সেটি সরাবে না।"
 }

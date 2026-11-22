@@ -290,9 +290,10 @@ def _salvage_target(target: Path, stamp: str) -> Path:
 
 
 def _damaged_name(target: Path, stamp: str) -> Path:
+    """The first ``<stem>.damaged-<stamp>[-n]<suffix>`` with no file, log or index under it (a link counts as taken: ``lexists``)."""
     base = target.with_name(f"{target.stem}.damaged-{stamp}{target.suffix}")
     candidate, n = base, 1
-    while candidate.exists():
+    while any(os.path.lexists(_side(candidate, s)) for s in ("", "-wal", "-shm")):
         n += 1
         candidate = target.with_name(f"{target.stem}.damaged-{stamp}-{n}{target.suffix}")
     return candidate
@@ -329,11 +330,85 @@ def _clear_empty_log_name(target: Path, damaged: Path) -> None:
     except OSError:
         st = None
     if st is not None and _is_damaged_name(target, damaged) and stat.S_ISREG(st.st_mode) and st.st_size == 0:
-        log.unlink()
-        return
+        try:
+            log.unlink()
+        except FileNotFoundError:
+            return
+        except OSError:
+            pass  # e.g. a Windows sharing violation: the name stays, and is refused below like any name that is not cleared
+        else:
+            return
     raise Declined(
         "damaged-name-taken",
         f"{log.name} is already beside the library and is not an empty log the repair left, so it is kept and nothing was switched",
+    )
+
+
+#: How many numbered names (``-2`` onward) are tried when the damaged file's chosen name is taken by a file the repair must keep.
+_FREE_NAME_TRIES = 50
+
+
+def _name_blocker(target: Path, damaged: Path) -> str | None:
+    """The name of the file that stops ``damaged`` from being given to the live file, or ``None`` when it can be: the main name must be
+    free or already the live file's own second name (an earlier start's, same inode and device), and its log name free or an exactly
+    empty leftover, which is removed (:func:`_clear_empty_log_name`). The main name is checked FIRST, so nothing is removed for a name
+    that cannot be used anyway. A blocking file is never touched here."""
+    if os.path.lexists(damaged):
+        twin, original = _identity(damaged), _identity(target)
+        if twin is None or original is None or twin != original:
+            return damaged.name
+    try:
+        _clear_empty_log_name(target, damaged)
+    except Declined:
+        return _side(damaged, "-wal").name
+    return None
+
+
+def _unlink_if_twin(target: Path, extra: Path) -> None:
+    """Remove ``extra`` only when it is, at this moment, a second name of the live file (same inode and device, read without following a
+    link): unlinking a second name loses nothing. Any other file under that name is left exactly as it is."""
+    a, b = _identity(extra), _identity(target)
+    if a is not None and a == b:
+        with contextlib.suppress(FileNotFoundError):
+            extra.unlink()
+
+
+def _numbered(target: Path, damaged: Path, n: int) -> Path:
+    middle = damaged.name[len(target.stem): len(damaged.name) - len(target.suffix)] if target.suffix else damaged.name[len(target.stem):]
+    found = re.fullmatch(r"\.damaged-(\d{8}T\d{6}Z)(?:-\d+)?", middle)
+    if not _is_damaged_name(target, damaged) or found is None:
+        raise Declined("damaged-name-taken", f"{damaged.name} is not a name the repair gives, so no other name was chosen and nothing was switched")
+    return target.with_name(f"{target.stem}.damaged-{found.group(1)}-{n}{target.suffix}")
+
+
+def _claim_free_name(target: Path, damaged: Path, sidecar: Path, left: str) -> Path:
+    """R781 (row 299), the coordinator's accepted fallback: the damaged file's recorded name is taken by a file the repair must keep
+    (``left``), so the repair finishes under the next free numbered name instead of refusing at every start. The search is bounded; each
+    name is CLAIMED by the hard link itself, which fails on any existing name (a link included, never followed), and a taken one moves
+    on to the next number, so there is no gap between a check and the use. The sidecar names the candidate BEFORE the link is tried, so a
+    cut at any point resumes under the name the sidecar records. The old name goes first, and only when it is at that moment the live
+    file's own second name; the file that was left in place is never touched."""
+    _unlink_if_twin(target, damaged)
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    for n in range(2, 2 + _FREE_NAME_TRIES):
+        candidate = _numbered(target, damaged, n)
+        if candidate == damaged or any(os.path.lexists(_side(candidate, s)) for s in ("", "-wal", "-shm")):
+            continue
+        doc["damaged"], doc["name_left_in_place"] = candidate.name, left
+        _write_json_atomic(sidecar, doc)
+        try:
+            os.link(target, candidate)
+        except FileExistsError:
+            continue
+        except OSError:
+            raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
+        if any(os.path.lexists(_side(candidate, s)) for s in ("-wal", "-shm")):
+            _unlink_if_twin(target, candidate)  # a log or index appeared beside it meanwhile: never named next to one
+            continue
+        return candidate
+    raise Declined(
+        "damaged-name-taken",
+        f"{left} is already beside the library and is kept, and no free name was found for the damaged file, so nothing was switched",
     )
 
 
@@ -980,7 +1055,7 @@ def _registry_fields(report: dict[str, Any], state: str) -> dict[str, Any]:
         "replaced_text_values", "tables", "search_index", "indexes_seconds", "encrypted",
         "preflight", "post_steps", "resumed", "clean_at", "kept_file_ino", "kept_file_dev", "kept_wal_ino", "kept_wal_bytes",
         "kept_file_removal_after", "kept_file_removal_withheld", "kept_file_removal_undated", "kept_file_disk_unread_pages", "disk_unread_pages",
-        "disk_unread_first", "check_pages_unread",
+        "disk_unread_first", "check_pages_unread", "name_left_in_place",
     )
     out: dict[str, Any] = {"state": state, "finished_at": datetime.now(UTC).isoformat(timespec="seconds")}
     out.update({k: report[k] for k in keep if k in report})
@@ -1183,6 +1258,9 @@ def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
     report["disk_unread_pages"] = measured if type(measured) is int and measured >= 0 else None
     report["page_size"] = doc["page_size"] if type(doc.get("page_size")) is int and doc["page_size"] > 0 else None
     report["clean_at"] = _clean_read_time(doc, _written_at(sidecar), _written_at(damaged))
+    left = doc.get("name_left_in_place")
+    if isinstance(left, str) and 0 < len(left) <= 255 and "/" not in left and "\\" not in left and left == Path(left).name:
+        report["name_left_in_place"] = left
 
 
 def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None) -> str:
@@ -1377,32 +1455,42 @@ def _swap(
         # reached the drive.
         _durable(finished)
         _fsync_dir(target.parent)
-        # R781 (row 299): the main file ALONE is named. "The log holds nothing that is not in the file" is checked HERE, at the moment
-        # of naming, not assumed from the fold above: the file and its log must still be exactly what the fold left (``now``); a save
-        # that reached the log since is not in the file, so nothing is named and nothing is switched.
+        # R781 (row 299): the main file ALONE is named. A save that reached the file or its log after the fold is refused here early and
+        # cheaply; the guarantee is the check inside the swap window below (``written_to_since``: no other connection committed since the
+        # copy began, by SQLite's data version, and the file and its log are still exactly what the fold left).
         if fingerprint(target) != now:
             raise Declined(
                 "saved-during-the-copy",
                 "something was saved to the library file after its log was folded in, so nothing was named or switched; the repair is "
                 "made again at the next start",
             )
-        _clear_empty_log_name(target, damaged)  # an earlier start's log name: removed only when exactly empty, else refused and kept
-        live, kept = target, damaged
-        try:
-            os.link(live, kept)
-        except FileExistsError:
-            twin, original = _identity(kept), _identity(live)
-            if twin is None or original is None or twin != original:
-                # A different file already has that name: never overwrite it. Refused with the name, the copy and its sidecar kept.
-                raise Declined(
-                    "damaged-name-taken",
-                    f"{kept.name} is already beside the library and is a different file, so it is kept and nothing was switched",
-                ) from None
-        except OSError:
-            for spent in (finished, sidecar):
-                with contextlib.suppress(OSError):
-                    spent.unlink()
-            raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
+        left = _name_blocker(target, damaged)
+        if left is None:
+            try:
+                os.link(target, damaged)
+            except FileExistsError:
+                twin, original = _identity(damaged), _identity(target)
+                if twin is None or original is None or twin != original:
+                    left = damaged.name  # taken since the check: never overwritten, the repair moves to a free name below
+            except OSError:
+                for spent in (finished, sidecar):
+                    with contextlib.suppress(OSError):
+                        spent.unlink()
+                raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
+        if left is not None:
+            try:
+                damaged = _claim_free_name(target, damaged, sidecar, left)
+            except Declined as refusal:
+                if refusal.code == "no-hard-links":
+                    for spent in (finished, sidecar):
+                        with contextlib.suppress(OSError):
+                            spent.unlink()
+                raise
+            report["name_left_in_place"] = left
+            _LOG.warning(
+                "database repair: %s was already beside the library and is left in place; the damaged file is kept as %s instead",
+                left, damaged.name,
+            )
         _note_what_was_set_aside(report, damaged)
 
         def written_to_since() -> None:

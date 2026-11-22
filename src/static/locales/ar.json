@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "اكتمل الإصلاح. الملف التالف الذي نحّاه جانبًا محفوظ باسم {name}، لأن ملفًا باسم {left} كان موجودًا بالفعل بجوار مكتبتك: ترك التطبيق ذلك الملف كما هو تمامًا ولن يزيله أبدًا."
 }

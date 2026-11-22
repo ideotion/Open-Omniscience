@@ -8,8 +8,8 @@ at the replace) left the name pointing at a log SQLite then recreated under a ne
 different file there and failed with a raw ``FileExistsError``: the repair could never finish. A copy discarded at plan time left
 the empty log name behind. The ruling (R781, option A): the damaged copy is the folded main file ALONE, the log is never linked
 and ``-shm`` never kept; "the log holds nothing that is not in the file" is checked at the moment of naming; an earlier start's
-log name is removed only when it is exactly 0 bytes, a regular file and the app's own damaged-name pattern, and anything else
-there is refused by name and kept.
+log name is removed only when it is exactly 0 bytes, a regular file and the app's own damaged-name pattern; anything else there is
+left in place, untouched and named, and the repair finishes under the next free numbered name (the coordinator's accepted fallback).
 
 Every store here is in WAL mode through the app's own connection pragmas (``src.database.session._sqlite_pragmas``: through
 ``tests/_app_engine.py::app_sqlite_engine`` for a plaintext file, on the keyed factory connection for an encrypted one), with a
@@ -227,33 +227,134 @@ def test_an_empty_log_name_beside_a_resumed_copy_is_removed_and_the_swap_finishe
     _finishes(live, tmp_path, "pending at the cut")
 
 
-@pytest.mark.parametrize("what", ["frames", "symlink"])
-@pytest.mark.parametrize("encrypted", LEGS)
-def test_anything_but_an_empty_log_under_the_damaged_name_is_refused_by_name_and_kept(tmp_path, monkeypatch, request, encrypted, what):
+def _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, saved: str):
+    """A repair cut at the replace with a save pending in the log; the next start resumes it. Returns the live file and the damaged name
+    the cut start gave."""
     from src.backup import merge
 
     live = _wal_live(tmp_path, monkeypatch, request, encrypted)
+    holder = _pending(live, saved)
     real = _cut_before_the_replace(monkeypatch)
-    with pytest.raises(OSError):
-        repair.run(repair.plan())
+    try:
+        with pytest.raises(OSError):
+            repair.run(repair.plan())
+    finally:
+        holder.close()
+    monkeypatch.setattr(merge, "_replace_live_corpus", real)
     (damaged,) = [tmp_path / n for n in _damaged_names(tmp_path)]
+    return live, damaged
+
+
+def _repaired_frames(request) -> list[dict]:
+    return [n for n in request.getfixturevalue("reg").notes() if n["kind"] in ("repaired", "repair")]
+
+
+@pytest.mark.parametrize("what", ["frames", "symlink"])
+@pytest.mark.parametrize("encrypted", LEGS)
+def test_a_file_under_the_damaged_log_name_is_left_in_place_and_the_repair_finishes_under_a_free_name(
+    tmp_path, monkeypatch, request, encrypted, what
+):
+    """The coordinator's accepted fallback: anything but an empty log under the damaged name is never removed, and the repair no longer
+    refuses at every start for it: it finishes under the next free numbered name, and the notice says it finished and names both."""
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, "pending at the cut")
     log = Path(str(damaged) + "-wal")
     other = tmp_path / "elsewhere.bin"
     other.write_bytes(b"")
+    frames = b"\x37\x7f\x06\x82" + b"\0" * 60
     if what == "frames":
-        log.write_bytes(b"\x37\x7f\x06\x82" + b"\0" * 60)  # a log that may hold frames: never removed
+        log.write_bytes(frames)  # a log that may hold frames: never removed
     else:
         log.symlink_to(other)  # an empty file reached through a link: never followed, never removed
-    monkeypatch.setattr(merge, "_replace_live_corpus", real)
+    work = repair.plan()
+    assert work["kind"] == "resume"
+    report = repair.run(work)
+    assert report["outcome"] == "repaired" and report["name_left_in_place"] == log.name
+    kept = tmp_path / report["kept_file"]
+    assert kept.name == damaged.name.replace(".db", "-2.db") and kept.is_file() and not kept.is_symlink()
+    assert not os.path.lexists(damaged), "the old name was the live file's own second name and is gone"
+    assert _count_named(live, "pending at the cut") == 1 and _count_named(kept, "pending at the cut") == 1
+    if what == "frames":
+        assert log.read_bytes() == frames and not log.is_symlink()
+    else:
+        assert log.is_symlink() and os.readlink(log) == str(other) and other.read_bytes() == b""
+    assert not list(tmp_path.glob("live.salvage-*")), "the copy or its sidecar outlived the finished swap"
+    notes = _repaired_frames(request)
+    assert all(n["frame"] != damage.FRAME_REPAIR_FAILED for n in notes), notes
+    (said,) = [n for n in notes if n["frame"] == damage.FRAME_KEPT_NAME_LEFT]
+    assert said["vars"] == {"name": kept.name, "left": log.name}
+    assert repair.plan() is None, "the next start has nothing left to do"
+
+
+@pytest.mark.parametrize("encrypted", LEGS)
+def test_a_different_file_under_the_damaged_main_name_is_left_in_place_and_the_repair_finishes(tmp_path, monkeypatch, request, encrypted):
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, "pending at the cut")
+    damaged.unlink()  # the live file's own second name gone; somebody else's file under that name instead
+    damaged.write_bytes(b"somebody else's file")
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and report["name_left_in_place"] == damaged.name
+    assert damaged.read_bytes() == b"somebody else's file"
+    assert report["kept_file"].endswith("-2.db") and _count_named(live, "pending at the cut") == 1
+
+
+@pytest.mark.parametrize("encrypted", LEGS)
+def test_the_free_name_search_is_bounded_and_claims_by_the_link(tmp_path, monkeypatch, request, encrypted):
+    """No check-then-use gap: a name taken between the look and the link (here a link made while the sidecar is written) makes the
+    link fail and the search move on; once the bound is reached the refusal names the file left in place, and nothing is switched."""
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, "pending at the cut")
+    log = Path(str(damaged) + "-wal")
+    log.write_bytes(b"\x37\x7f\x06\x82" + b"\0" * 60)
+    decoy = tmp_path / "decoy.bin"
+    decoy.write_bytes(b"decoy")
+    real_write = repair._write_json_atomic
+
+    def taken_meanwhile(path, doc):
+        real_write(path, doc)
+        name = tmp_path / doc["damaged"]
+        if name != damaged and not os.path.lexists(name):
+            name.symlink_to(decoy)  # somebody takes the candidate right after it was looked at
+
+    monkeypatch.setattr(repair, "_write_json_atomic", taken_meanwhile)
+    monkeypatch.setattr(repair, "_FREE_NAME_TRIES", 3)
     before = H.sha(live)
-    for _start in range(2):  # the same clean, named refusal at each start, never a raw error
-        work = repair.plan()
-        assert work["kind"] == "resume"
-        with pytest.raises(repair.Declined) as refusal:
-            repair.run(work)
-        assert refusal.value.code == "damaged-name-taken" and log.name in str(refusal.value)
-    assert H.sha(live) == before and os.path.lexists(log) and other.exists()
+    with pytest.raises(repair.Declined) as refusal:
+        repair.run(repair.plan())
+    assert refusal.value.code == "damaged-name-taken" and log.name in str(refusal.value)
+    assert H.sha(live) == before and decoy.read_bytes() == b"decoy"
+    taken = sorted(p.name for p in tmp_path.glob("live.damaged-*") if p.is_symlink())
+    assert len(taken) == 3 and all(os.readlink(tmp_path / n) == str(decoy) for n in taken), "a link was followed or overwritten"
     assert list(tmp_path.glob("live.salvage-*.db.json")), "the finished copy was thrown away"
+    notes = _repaired_frames(request)
+    assert all(n["frame"] != damage.FRAME_KEPT_NAME_LEFT for n in notes)
+
+
+@pytest.mark.parametrize("encrypted", LEGS)
+def test_the_old_shape_a_log_name_linked_to_the_live_log_never_loses_a_frame(tmp_path, monkeypatch, request, encrypted):
+    """What the code before R781 left: the damaged log name hard-linked to the live log. When the live log is closed away the name keeps
+    its frames (all of them already folded into the library file); it is left in place, and the repair still finishes."""
+    from src.backup import merge
+
+    live = _wal_live(tmp_path, monkeypatch, request, encrypted)
+
+    def cut(*a, **kw):
+        raise OSError(5, "the power went out")
+
+    real = merge.swap_in_corpus
+    monkeypatch.setattr(merge, "swap_in_corpus", cut)
+    with pytest.raises(OSError):
+        repair.run(repair.plan())
+    monkeypatch.setattr(merge, "swap_in_corpus", real)
+    (damaged,) = [tmp_path / n for n in _damaged_names(tmp_path)]
+    holder = _pending(live, "in the old log")
+    os.link(str(live) + "-wal", str(damaged) + "-wal")  # the old code's second name of the live log
+    held = Path(str(damaged) + "-wal").read_bytes()
+    holder.close()  # SQLite folds the log in at the last close and removes ITS name; the second one keeps the frames
+    report = repair.run(repair.plan())
+    assert report["outcome"] == "repaired" and _count_named(live, "in the old log") == 1
+    assert Path(str(damaged) + "-wal").read_bytes() == held, "the file that was left in place was changed"
+    # The save moved the file, so the cut copy is discarded and a new one is made: the plan dropped the live file's own second name and
+    # left the log name with its frames where it was; the new copy's damaged name is a free one, never beside that log.
+    assert not os.path.lexists(damaged) and report["kept_file"] != damaged.name
+    assert not os.path.lexists(tmp_path / (report["kept_file"] + "-wal"))
 
 
 @pytest.mark.parametrize("encrypted", LEGS)
@@ -294,6 +395,25 @@ def test_a_save_between_the_fold_and_the_swap_is_refused_and_survives(tmp_path, 
     assert refusal.value.code == "saved-during-the-copy"
     assert _damaged_names(tmp_path) == [], "a name was given to a file whose log held a save the copy does not have"
     assert _count_named(live, "after the fold") == 1 and _count_named(live, "before the fold") == 1
+    # The next start: the copy that missed the save is discarded, a new one is made, and both saves are in the repaired library.
+    monkeypatch.setattr(repair, "_empty_the_log", _REAL_EMPTY_THE_LOG)
+    work = repair.plan()
+    assert work is not None and work["kind"] == "repair", work
+    report = repair.run(work)
+    assert report["outcome"] == "repaired"
+    assert _count_named(live, "after the fold") == 1 and _count_named(live, "before the fold") == 1
+    assert _damaged_names(tmp_path) == [report["kept_file"]]
+
+
+def test_the_name_left_in_place_notice_is_translated_into_every_language():
+    import json
+
+    files = sorted((Path(__file__).resolve().parent.parent / "src" / "static" / "locales").glob("*.json"))
+    assert len(files) == 12
+    for path in files:
+        entry = json.loads(path.read_text(encoding="utf-8")).get(damage.FRAME_KEPT_NAME_LEFT)
+        assert entry, f"{path.name} has no translation of the notice"
+        assert "{name}" in entry and "{left}" in entry, f"{path.name} lost a slot"
 
 
 def test_the_damaged_name_pattern_is_the_repairs_own():

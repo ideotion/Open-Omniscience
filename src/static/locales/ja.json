@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "修復は完了しました。修復で取り置いた破損ファイルは {name} として保存されています。ライブラリの横に {left} という名前のファイルがすでにあったためです。アプリはそのファイルをそのまま残し、削除することはありません。"
 }

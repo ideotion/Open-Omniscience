@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "Восстановление завершено. Повреждённый файл, который оно отложило, сохранён как {name}, потому что рядом с вашей библиотекой уже был файл с именем {left}: приложение оставило этот файл в точности как есть и никогда его не удалит."
 }

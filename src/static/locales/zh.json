@@ -8735,5 +8735,6 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside your library: the app left that file exactly as it was and will never remove it.": "修复已完成。修复时搁置的损坏文件保存为 {name}，因为您的资料库旁已有一个名为 {left} 的文件：应用原样保留了该文件，并且永远不会删除它。"
 }
