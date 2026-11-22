@@ -25,6 +25,7 @@ import pytest
 
 from src.database import writer
 from src.scheduler.bandwidth import _AdjustableSemaphore
+from tests._app_engine import app_sqlite_engine
 
 
 class FlakyRLock:
@@ -615,12 +616,10 @@ def test_a_session_takes_the_window_once_and_marks_itself(monkeypatch):
 def test_the_collector_slot_is_given_back_when_the_reservation_raises_after_taking_it():
     import sqlite3
 
-    from sqlalchemy import create_engine
-
     from src.database.pool_reserve import ReservingQueuePool, collector_role
 
-    engine = create_engine(
-        "sqlite://",
+    engine = app_sqlite_engine(
+        ":memory:",
         creator=lambda: sqlite3.connect(":memory:", check_same_thread=False),
         poolclass=ReservingQueuePool,
         pool_size=2,
@@ -643,7 +642,7 @@ def test_the_collector_slot_is_given_back_when_the_reservation_raises_after_taki
 def test_write_lock_still_gives_its_level_back_when_the_body_commits_a_session_that_held_the_window(tmp_path, monkeypatch):
     """The regression the read found in the first version: the release was decided by comparing depths AFTER the body, so a body that
     ended a transaction which had taken the window earlier (its commit gives one level back) left the level write_lock took held for ever."""
-    from sqlalchemy import Column, Integer, create_engine, event
+    from sqlalchemy import Column, Integer, event
     from sqlalchemy.orm import declarative_base, sessionmaker
 
     monkeypatch.setattr(writer, "gate_enabled", lambda: True)
@@ -653,7 +652,7 @@ def test_write_lock_still_gives_its_level_back_when_the_body_commits_a_session_t
         __tablename__ = "rows"
         id = Column(Integer, primary_key=True)
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'g.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'g.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, autoflush=False, future=True)
     event.listen(maker, "before_flush", writer._on_before_flush)

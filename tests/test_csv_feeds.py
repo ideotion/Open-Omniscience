@@ -12,13 +12,13 @@ fetches the real FRED/World Bank CSVs on the user's machine.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, CommodityPrice, Source
 from src.ingest import EthicalFetcher
 from src.markets.csv_feeds import import_feed, import_points, parse_series_csv
 from src.markets.feed_catalog import get_feed, load_feeds
+from tests._app_engine import app_sqlite_engine
 
 # A FRED-style export: date column first, value second, "." marks a missing day.
 _FRED_CSV = "DATE,DCOILWTICO\n2024-01-02,70.38\n2024-01-03,72.70\n2024-01-04,.\n2024-01-05,73.81\n"
@@ -50,8 +50,8 @@ def test_parse_series_csv_unknown_column_errors():
 
 
 def _db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -149,8 +149,8 @@ def test_feeds_api_list_and_import(tmp_path, monkeypatch):
 
     # Isolated on-disk DB via dependency override (shared across the threadpool's
     # connections, unlike :memory:, and never touches the dev DB).
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'feeds.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'feeds.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

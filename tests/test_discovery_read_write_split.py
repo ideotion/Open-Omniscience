@@ -31,16 +31,16 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, Source
 from src.database.writer import write_gate
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     s = Session()
@@ -129,7 +129,7 @@ def test_apply_source_topics_does_not_hold_the_gate_during_derive(monkeypatch):
     from src.analytics import source_topics as st_mod
     from src.database.models import Keyword, KeywordMention, KeywordTag
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     s = Session()

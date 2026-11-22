@@ -39,6 +39,7 @@ from src.api.diagnostics.bundle import (
     _write_all_diagnostics_zip,
     resolve_bundle_profile,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _members():
@@ -581,7 +582,6 @@ def test_the_real_estimator_hands_its_counts_to_the_gate(tmp_path, monkeypatch):
     """Not a stub: the bundle's own estimator over a real (tiny) database fills the reading."""
     import sqlite3
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.diagnostics import bundle
@@ -596,7 +596,7 @@ def test_the_real_estimator_hands_its_counts_to_the_gate(tmp_path, monkeypatch):
     )
     con.commit()
     con.close()
-    db = sessionmaker(bind=create_engine(f"sqlite:///{p}"))()
+    db = sessionmaker(bind=app_sqlite_engine(p))()
     try:
         monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
         monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: 8192.0)

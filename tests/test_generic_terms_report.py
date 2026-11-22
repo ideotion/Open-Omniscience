@@ -8,16 +8,16 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.engine_report import _generic_terms
 from src.analytics.extract import global_stopwords
 from src.database.models import Base, Keyword, KeywordTag
+from tests._app_engine import app_sqlite_engine
 
 
 def _session():
-    e = create_engine("sqlite:///:memory:", future=True)
+    e = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(e)
     return sessionmaker(bind=e, future=True)()
 

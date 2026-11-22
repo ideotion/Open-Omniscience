@@ -25,12 +25,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from src.api import database as dbmod
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 #: Enough rows that a three-opcode loop reaches the handler's 20,000-opcode interval several times over.
 _ROWS = 30_000
@@ -40,8 +41,8 @@ _TINY = 1e-6
 
 def _store(*, articles: int, mentions: int):
     """An in-memory store on the app's own schema: ``articles`` article rows and ``mentions`` keyword_mentions rows (distinct pairs)."""
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()

@@ -11,7 +11,7 @@ mutation that removes its mechanism reddens BY NAME (the matrix is in the PR bod
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.equivalence import (
@@ -20,6 +20,7 @@ from src.analytics.equivalence import (
     resolve_concept,
 )
 from src.database.fts import build_match, search_ids, search_total
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # A ring fixture big enough to reach the cap, built by hand so the numbers in the
@@ -202,7 +203,7 @@ def test_a_measured_zero_and_an_unmeasured_form_are_different_facts(ring):
 @pytest.fixture()
 def fts_corpus():
     """Seven articles: 3 en ``climate``, 2 fr ``climat``, 2 de ``Klima``."""
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     with eng.begin() as c:
         c.execute(
             text(

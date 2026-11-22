@@ -17,6 +17,7 @@ import importlib.util
 import logging
 
 import src.monitoring.errorlog as errorlog
+from tests._app_engine import app_sqlite_engine
 
 
 def _fresh(monkeypatch, tmp_path):
@@ -93,7 +94,6 @@ def test_counter_drift_interrupted_error_is_counted(monkeypatch, tmp_path):
     `logging` module (which is what feeds this very counter) that anything
     happened. FAILS on the current code: the counter-drift failure never reaches
     the rolling log, so it can never be counted."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Base
@@ -103,7 +103,7 @@ def test_counter_drift_interrupted_error_is_counted(monkeypatch, tmp_path):
     errorlog.install()
     errorlog.note_boot()
 
-    eng = create_engine("sqlite://", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         real_execute = s.execute

@@ -22,7 +22,7 @@ import json
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -35,6 +35,7 @@ from src.database.fts_reindex import (
     reindex_step,
 )
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 jieba = pytest.importorskip("jieba")
 
@@ -70,7 +71,7 @@ _QUERIES = ["东京", "北京", "气候", "政策", "احمد", "أحمد", "ا�
 
 
 def _engine():
-    eng = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     return eng
 
@@ -215,7 +216,7 @@ def test_a_connection_without_the_functions_cannot_write_articles(tmp_path):
     """The contract, stated as a test: a trigger calling a function the connection lacks
     fails, and so does the write. Loud and repairable, never a corrupted index."""
     path = tmp_path / "c.db"
-    eng = create_engine(f"sqlite:///{path}")
+    eng = app_sqlite_engine(path)
     Base.metadata.create_all(eng)
     ensure_fts(eng)
     _seed(eng, {"en1": ("x", "en")}).close()

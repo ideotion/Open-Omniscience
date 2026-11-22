@@ -9,7 +9,7 @@ tested with an injected fake connection.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, Source
@@ -20,6 +20,7 @@ from src.ingest.email import (
     parse_email,
     sender_origin_ip,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _msg_with_received(received_lines: bytes) -> bytes:
@@ -166,8 +167,8 @@ def test_parse_html_email_strips_tags():
 
 
 def _db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -336,7 +337,7 @@ def _eml(subject: str, body: str, mid: str) -> bytes:
 def test_ingest_emails_batched_commit_dedups_across_batches():
     # Batched commits (perf) must keep the exact dedup tally. m3 shares m1's body
     # (=> same content hash) but a different Message-ID, so it dedups on the hash.
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     src = Source(name="N", domain="nl.test")
@@ -360,7 +361,7 @@ def test_batched_commit_falls_back_per_message_on_collision():
     # autoflush OFF -> the in-batch existence check can't see a same-hash sibling, so
     # the batch flush hits the unique index; the per-message fallback must store one
     # and count the other a duplicate (NO data loss — the maintainer's standing rule).
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
 
     @event.listens_for(engine, "connect")
     def _fk(dbapi_conn, _rec):  # noqa: ANN001
@@ -431,7 +432,7 @@ def test_commit_one_classifies_a_sqlcipher3_style_collision_as_a_duplicate_not_a
     monkeypatch.setitem(sys.modules, "sqlcipher3", fake_pkg)
     monkeypatch.setitem(sys.modules, "sqlcipher3.dbapi2", fake_dbapi2)
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     src = Source(name="N", domain="nl.test")
@@ -469,7 +470,7 @@ def test_commit_one_reraises_a_genuinely_unexpected_exception(monkeypatch):
     loudly -- never be silently swallowed and miscounted as a duplicate."""
     import src.ingest.email as email_mod
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     src = Source(name="N", domain="nl.test")
@@ -505,7 +506,7 @@ def test_same_body_different_message_id_dedups_on_hash():
     # uncommitted batch. (The old (hash, canonical) tuple key let them all in and collide
     # at the flush insertmany.) Expect: stored once, the rest counted duplicate, NO raise,
     # no errors, no row lost.
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True, autoflush=False)()
     src = Source(name="N", domain="nl.test")

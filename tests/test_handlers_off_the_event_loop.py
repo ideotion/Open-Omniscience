@@ -54,8 +54,9 @@ import threading
 # assertion exists.) fastapi and sqlalchemy are core dependencies, never extras.
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+from tests._app_engine import app_sqlite_engine
 
 _API = pathlib.Path(__file__).resolve().parents[1] / "src" / "api"
 
@@ -243,7 +244,7 @@ def test_a_slow_sync_handler_does_not_stall_a_concurrent_request():
     """
     from src.api.ratelimit import limiter
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine)
 
     def _get_db():

@@ -30,7 +30,6 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
@@ -38,6 +37,7 @@ from src.ingest import EthicalFetcher, _host_netloc
 from src.ingest.crawl import CrawlConfig, _off_site, _registrable_host, crawl_source
 from src.ingest.fetch_verdict import failure_url
 from src.ingest.sitemap import discover_sitemap_urls
+from tests._app_engine import app_sqlite_engine
 
 _EVIL = "evil.example"
 
@@ -92,7 +92,7 @@ def _page(title, body_sentence, links=()):
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Good", domain="good.example", language="en"))

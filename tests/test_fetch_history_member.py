@@ -22,12 +22,12 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup import fetch_history as fh  # noqa: E402
 from src.backup.merge import merge_corpus  # noqa: E402
 from src.database.models import Base, FeedFetchState, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-3",
@@ -41,7 +41,7 @@ _SKIP = datetime(2030, 1, 1, 0, 0, 0, tzinfo=UTC).replace(tzinfo=None)
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

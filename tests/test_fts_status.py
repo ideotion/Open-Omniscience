@@ -26,7 +26,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError as _SADatabaseError
 from sqlalchemy.orm import sessionmaker
 
@@ -34,14 +34,15 @@ from src.database import damage
 from src.database.fts import ensure_fts, fts_status
 from src.database.maintenance import StatementTimeout
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 #: The statement behind ``rows``. ``count(1)`` and not ``count(*)``: a bare ``count(*)`` is one opcode that the deadline cannot interrupt.
 _ARTICLES_COUNT = "count(1) FROM articles"
 
 
 def _corpus(with_fts: bool = True):
-    e = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    e = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(e)
     if with_fts:

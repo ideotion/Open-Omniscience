@@ -16,18 +16,19 @@ import subprocess
 import sys
 import threading
 
-from sqlalchemy import create_engine, event, inspect
+from sqlalchemy import event, inspect
 from sqlalchemy.orm import sessionmaker
 
 from src.database import session as session_module
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _fresh_engine(tmp_path):
     """An isolated engine on a temp SQLite file, with the same PRAGMAs as prod."""
     db = tmp_path / "test.db"
-    engine = create_engine(
-        f"sqlite:///{db}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        db, future=True, connect_args={"check_same_thread": False}
     )
 
     @event.listens_for(engine, "connect")

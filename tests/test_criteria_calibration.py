@@ -15,11 +15,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics.criteria_calibration import CRITERIA_VERSION, calibration_report
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _BANNED = ("score", "ranking", "rating", "grade")
 
@@ -57,7 +57,7 @@ _REAL_PROSE_BODY = (
 
 
 def _corpus() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="News", domain="news.example", language="en", enabled=True)

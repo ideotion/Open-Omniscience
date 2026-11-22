@@ -19,7 +19,6 @@ pytest.importorskip("vaderSentiment")
 
 from datetime import UTC, datetime  # noqa: E402
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -27,11 +26,12 @@ import src.api.framing as fr  # noqa: E402
 from src.awareness.framing import compare_framing  # noqa: E402
 from src.database.fts import ensure_fts, search_ids  # noqa: E402
 from src.database.models import Article, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 
 def _session(n: int, *, fts: bool = False):
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False},
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False},
         poolclass=StaticPool, future=True,
     )
     Base.metadata.create_all(eng)

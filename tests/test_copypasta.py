@@ -17,12 +17,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.copypasta import find_copypasta
 from src.database.models import Article, Base, Source
 from src.signals.near_dup import shared_word_ngrams
+from tests._app_engine import app_sqlite_engine
 
 # A verbatim "talking point" long enough to clear k=8 and to merge into one span.
 PLANT = (
@@ -79,8 +79,8 @@ def test_shared_word_ngrams_respects_min_docs_and_degenerate_inputs():
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -158,8 +158,8 @@ def test_copypasta_endpoint(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'c.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'c.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

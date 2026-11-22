@@ -31,13 +31,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # The stored, frequently-mentioned keyword a short probe term collides with as a
 # pure substring ("lith" is contained in "lithium" but is never a keyword of its
@@ -53,8 +53,8 @@ _REAL_TERM = "lithium"      # the real, resolvable, frequently-mentioned keyword
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

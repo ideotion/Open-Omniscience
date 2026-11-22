@@ -22,12 +22,13 @@ from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import Article, Base, Source
 from src.monitoring.anomaly import volume_anomalies
+from tests._app_engine import app_sqlite_engine
 
 _HAS_SCIPY = importlib.util.find_spec("scipy") is not None
 
@@ -38,8 +39,8 @@ _DAY_COUNTS = {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 20}
 def _engine_with_corpus():
     # StaticPool: ONE shared in-memory connection, so the TestClient's request-handler
     # thread sees the same DB (+ tables) the fixture set up in the main thread.
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False},
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False},
         poolclass=StaticPool, future=True,
     )
     Base.metadata.create_all(eng)

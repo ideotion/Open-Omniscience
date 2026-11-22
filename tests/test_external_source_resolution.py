@@ -11,15 +11,15 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database.models import Base, ExternalSource, SourceCandidate
 from src.discovery.channels import _add_candidate, resolve_external_source
+from tests._app_engine import app_sqlite_engine
 
 
 def _session() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
 

@@ -10,11 +10,11 @@ import json
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.timemap import datediag
+from tests._app_engine import app_sqlite_engine
 
 TODAY = date(2026, 6, 9)
 
@@ -71,8 +71,8 @@ def test_base_language():
 
 
 def _client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'dd.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'dd.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

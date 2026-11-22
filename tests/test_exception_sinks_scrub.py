@@ -18,7 +18,6 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -27,6 +26,7 @@ from src.database.models import Base
 from src.ingest import import_job
 from src.monitoring import exit_evidence as ee
 from src.monitoring import secret_scrub as S
+from tests._app_engine import app_sqlite_engine
 
 PASS = "Qv9#k'L-72mZpx"
 SRC = Path(__file__).resolve().parents[1] / "src"
@@ -119,7 +119,7 @@ def failed_import(monkeypatch, tmp_path):
     monkeypatch.setattr(import_job, "ingest_emails", boom)
 
     def run():
-        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+        engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
         Base.metadata.create_all(engine)
         folder = tmp_path / "nl"
         folder.mkdir()

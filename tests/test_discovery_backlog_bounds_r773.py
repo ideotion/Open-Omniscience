@@ -15,18 +15,18 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.backlog import discovery_gate, judging_pace, unjudged_backlog, unjudged_by_country
 from src.catalog.discover_job import advance_world_discovery, load_state
 from src.catalog.qualification import select_unqualified
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
