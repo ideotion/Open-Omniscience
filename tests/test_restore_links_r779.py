@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from src.backup.folder_backup import _atomic_copy, restore_folder_backup
+from src.backup.folder_backup import SourceChanged, _atomic_copy, restore_folder_backup
 from src.backup.import_scan import SCAN_LINKED_CATEGORY, scan_import_folder
 from src.backup.links import is_link, link_on_the_way, stays_inside
 
@@ -115,6 +115,44 @@ def test_a_planted_part_file_link_is_removed_not_written_through(tmp_path):
     assert _atomic_copy(src, dst) is True
     assert victim.read_bytes() == b"keep me"
     assert dst.read_bytes() == b"payload" and not is_link(dst)
+
+
+def test_a_member_swapped_after_its_check_is_refused_not_read(tmp_path):
+    checked = _touch(tmp_path / "backup" / "wiki_dumps" / "a.bz2", b"dump")
+    other = _touch(tmp_path / "elsewhere" / "s.txt", b"secret")
+    dst = tmp_path / "live" / "a.bz2"
+    dst.parent.mkdir()
+    with pytest.raises(SourceChanged):  # same name, another file: refused by device and inode
+        _atomic_copy(checked, dst, nofollow_src=True, expect=os.lstat(other))
+    checked.unlink()
+    os.symlink(other, checked)
+    with pytest.raises(SourceChanged):  # the name became a link: not opened
+        _atomic_copy(checked, dst, nofollow_src=True, expect=os.lstat(other))
+    assert not dst.exists() and not (tmp_path / "live" / "a.bz2.oopart").exists()
+
+
+def test_a_member_link_alone_makes_the_restore_incomplete(tmp_path):
+    _touch(tmp_path / "elsewhere" / "s.txt")
+    backup = tmp_path / "backup"
+    _touch(backup / "wiki_dumps" / "en.xml.bz2", b"dump")
+    os.symlink(tmp_path / "elsewhere" / "s.txt", backup / "wiki_dumps" / "fr.xml.bz2")
+    res = restore_folder_backup(backup, targets=_targets(tmp_path))
+    assert res["restored"] == 1 and res["refused_symlinks"] == 1 and res["incomplete"] is True
+
+
+def test_the_scan_and_the_restore_count_the_same_links(tmp_path):
+    _touch(tmp_path / "elsewhere" / "x" / "1")
+    _touch(tmp_path / "elsewhere" / "x" / "2")
+    backup = tmp_path / "backup"
+    _touch(backup / "models" / "blobs" / "sha256-a")
+    os.symlink(tmp_path / "elsewhere" / "x", backup / "models" / "dirlink")
+    os.symlink(tmp_path / "elsewhere" / "x" / "1", backup / "models" / "filelink")
+    (backup / "models" / "work.oopart").mkdir()
+    _touch(backup / "models" / "work.oopart" / "inside")
+    scan = scan_import_folder(backup)["found"]["blobs"]["models"]
+    res = restore_folder_backup(backup, targets=_targets(tmp_path))
+    assert scan["count"] == res["restored"] == 2  # a plain folder named .oopart is entered by both
+    assert scan["refused_links"] == res["refused_symlinks"] == 2
 
 
 def test_the_scan_lists_a_linked_category_with_its_reason_and_counts_nothing(tmp_path):

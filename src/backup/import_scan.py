@@ -88,14 +88,6 @@ def _LINKED_CATEGORY() -> dict:  # noqa: N802 - reads as the constant it stands 
     return {"count": 0, "bytes": 0, "linked": True, "reason": SCAN_LINKED_CATEGORY}
 
 
-def _quiet_is_link(p: str) -> bool:
-    """``is_link`` for counting: a name it may not look at is not counted as a link (the walk says it was not read)."""
-    try:
-        return is_link(p)
-    except OSError:
-        return False
-
-
 def _dir_totals(d: Path) -> dict:
     """``{count, bytes}`` of what a folder restore would restore from one category folder, plus
     ``unread_entries`` (folders or files it was refused) and ``refused_links`` when non-zero.
@@ -114,7 +106,18 @@ def _dir_totals(d: Path) -> dict:
     for dirpath, dirnames, names in os.walk(d, onerror=_refused, followlinks=False):
         # os.walk lists a link to a folder among the folders and never enters it; restore refuses it.
         # A ".oopart" name is skipped by restore before its link check, so it is not a refused link either.
-        links += sum(1 for n in dirnames if not n.endswith(_PART_SUFFIX) and _quiet_is_link(os.path.join(dirpath, n)))
+        enter: list[str] = []
+        for n in dirnames:
+            try:
+                linked = is_link(os.path.join(dirpath, n))
+            except OSError:
+                unread += 1  # a name it may not look at is said, never taken for a plain folder
+                continue
+            if not linked:
+                enter.append(n)  # restore walks into a plain folder whatever its name, ".oopart" too
+            elif not n.endswith(_PART_SUFFIX):
+                links += 1  # never entered: a junction is pruned here too, whatever os.walk would do
+        dirnames[:] = enter
         for name in names:
             if name.endswith(_PART_SUFFIX):
                 continue

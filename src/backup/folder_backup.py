@@ -33,17 +33,19 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from src.backup.links import is_link, link_on_the_way, stays_inside
+from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -336,6 +338,8 @@ def _atomic_copy(
     *,
     should_stop: Callable[[], bool] | None = None,
     digest: "hashlib._Hash | None" = None,
+    nofollow_src: bool = False,
+    expect: os.stat_result | None = None,
 ) -> bool:
     """Stream ``src`` to ``dst`` via a temp file + rename (so a paused copy never leaves
     a corrupt destination). Returns True if it completed, False if ``should_stop`` fired
@@ -353,22 +357,39 @@ def _atomic_copy(
     # there. ``open(tmp, "wb")`` follows a link, so a ``.oopart`` planted as a link to another file
     # had the copy written through it. ``unlink`` removes a link itself, never what it points at.
     tmp.unlink(missing_ok=True)
+    binary = getattr(os, "O_BINARY", 0)
     try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o666)
-        with open(src, "rb") as r, os.fdopen(fd, "wb") as w:
-            while True:
-                if should_stop is not None and should_stop():
-                    w.close()
-                    tmp.unlink(missing_ok=True)
-                    return False
-                chunk = r.read(_COPY_BUF)
-                if not chunk:
-                    break
-                w.write(chunk)
-                if digest is not None:
-                    digest.update(chunk)
-            w.flush()
-            os.fsync(w.fileno())
+        # A restore reads from an untrusted folder: where the system can, the source is opened without
+        # following a link, so a member swapped for one after it was checked is refused, not read.
+        try:
+            src_fd = os.open(src, os.O_RDONLY | binary | (getattr(os, "O_NOFOLLOW", 0) if nofollow_src else 0))
+        except OSError as exc:
+            if nofollow_src and exc.errno == errno.ELOOP:  # the name is now a link: refused, never read
+                raise SourceChanged("the file became a link after it was checked") from None
+            raise
+        with os.fdopen(src_fd, "rb") as r:
+            if expect is not None:
+                # The file opened must be the one that was checked: a regular file with the same
+                # device and inode. This also catches a FOLDER on the way swapped for a link, which
+                # O_NOFOLLOW alone does not (it only guards the last name).
+                got = os.fstat(r.fileno())
+                if not stat.S_ISREG(got.st_mode) or (got.st_dev, got.st_ino) != (expect.st_dev, expect.st_ino):
+                    raise SourceChanged("the file changed after it was checked")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary, 0o666)
+            with os.fdopen(fd, "wb") as w:
+                while True:
+                    if should_stop is not None and should_stop():
+                        w.close()
+                        tmp.unlink(missing_ok=True)
+                        return False
+                    chunk = r.read(_COPY_BUF)
+                    if not chunk:
+                        break
+                    w.write(chunk)
+                    if digest is not None:
+                        digest.update(chunk)
+                w.flush()
+                os.fsync(w.fileno())
         os.replace(tmp, dst)  # atomic on the same filesystem
         return True
     except BaseException:
@@ -675,6 +696,46 @@ def place_artifact_file_members(
     }
 
 
+class SourceChanged(OSError):
+    """A restore member is no longer the file that was checked (R779): it was swapped after the look."""
+
+
+def _category_members(cat_root: Path) -> tuple[list[tuple[Path, os.stat_result]], int]:
+    """The regular files a restore may copy from one category folder, each with the ``lstat`` it was
+    checked by, sorted, and the number of links met on the way (R779).
+
+    Walked with ``os.walk`` and PRUNED here rather than by the walker's own rule, because ``rglob`` and
+    ``os.walk`` both treat a Windows junction as a plain folder and would walk into it. A ``.oopart`` is
+    skipped before its link check (a copy in progress, never a member), and a plain folder is entered
+    whatever its name. Mirrors ``import_scan._dir_totals``, so the preview and the restore agree. A folder
+    it may not list is passed over as ``rglob`` passed it over; counting it is R778's."""
+    members: list[tuple[Path, os.stat_result]] = []
+    links = 0
+    for dirpath, dirnames, names in os.walk(cat_root, followlinks=False):
+        enter: list[str] = []
+        for n in dirnames:
+            if is_link(os.path.join(dirpath, n)):
+                if not n.endswith(_PART_SUFFIX):
+                    links += 1  # never follow -- see restore_folder_backup's docstring
+            else:
+                enter.append(n)
+        dirnames[:] = enter
+        for n in names:
+            if n.endswith(_PART_SUFFIX):
+                continue
+            fp = os.path.join(dirpath, n)
+            try:
+                st = os.lstat(fp)
+            except FileNotFoundError:
+                continue
+            if is_link_stat(st):
+                links += 1
+            elif stat.S_ISREG(st.st_mode):
+                members.append((Path(fp), st))
+    members.sort(key=lambda m: m[0])
+    return members, links
+
+
 def restore_folder_backup(
     src_root: str | os.PathLike,
     *,
@@ -746,20 +807,15 @@ def restore_folder_backup(
         # picked may itself be a link (their choice), and so may a live data folder they moved.
         cat_real = os.path.realpath(cat_root)
         dest_real = os.path.realpath(dest_dir)
-        for p in sorted(cat_root.rglob("*")):
-            if p.name.endswith(_PART_SUFFIX):
-                continue
-            if p.is_symlink() or is_link(p):
-                refused_symlinks += 1  # never follow -- see the docstring above
-                continue
-            if not p.is_file():
-                continue
-            # Belt and braces: whatever the walk handed back, a member whose real path leaves its
-            # category folder is not restored. Fails closed.
-            if not stays_inside(p, cat_real):
+        members, linked_here = _category_members(cat_root)
+        refused_symlinks += linked_here
+        for p, seen in members:
+            rel = p.relative_to(cat_root)
+            # Belt and braces: whatever the walk handed back, no part of the way from the category
+            # folder to the member may be a link, and its real path may not leave the folder.
+            if link_on_the_way(cat_root, rel.parent) or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
-            rel = p.relative_to(cat_root)
             dst = dest_dir / rel
             # R779, the destination side: never write THROUGH a link. A link anywhere between the
             # live folder and the file (a sub-folder, or the file's own name) is refused, and the
@@ -770,14 +826,19 @@ def restore_folder_backup(
             if dst.exists():
                 skipped += 1  # never overwrite a local file
                 continue
-            want = recorded.get((cat, rel.as_posix(), p.stat().st_size))
+            want = recorded.get((cat, rel.as_posix(), seen.st_size))
             # VERIFY WHILE COPYING, and only commit the copy if it matches. The bytes
             # are read either way, so the check is free; the temp file is what makes
             # "refuse" possible at all -- a corrupt member is discarded before it can
             # land in the live data directory. Without this a dump that rotted on the
             # external drive was restored silently, and the app then read it as its own.
             h = hashlib.sha256() if want is not None else None
-            if not _atomic_copy(p, dst, should_stop=should_stop, digest=h):
+            try:
+                done = _atomic_copy(p, dst, should_stop=should_stop, digest=h, nofollow_src=True, expect=seen)
+            except SourceChanged:
+                refused_symlinks += 1  # swapped for something else after it was looked at: not read
+                continue
+            if not done:
                 stopped = True
                 break
             if h is not None and h.hexdigest() != want:
@@ -802,7 +863,9 @@ def restore_folder_backup(
         "refused_categories": refused_categories,
         # R779: files not placed because a link sat on the way to their place in the live folder.
         "refused_dest_links": refused_dest_links,
-        "incomplete": bool(refused_categories or refused_dest_links),
+        # A member link was never written by a backup, but its place in the restore is still empty:
+        # any link refusal means the restore did not bring back everything the folder showed.
+        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks),
         # A file whose bytes did not match the checksum this backup recorded for it. NOT
         # restored: the copy is removed again, so the live data directory never receives
         # it. Named, so the operator can re-download exactly those.

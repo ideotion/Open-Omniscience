@@ -15,20 +15,30 @@ from pathlib import Path
 
 # 0x400 on Windows; the attribute is absent elsewhere, so the test reads 0 and costs nothing.
 _REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+# The "name surrogate" bit of a reparse tag: set for every reparse point that STANDS FOR ANOTHER NAME
+# (a symbolic link, a junction or mount point, and the like). Not set for a OneDrive "files on demand"
+# placeholder or a deduplicated file, which are the file's own data stored another way: refusing those
+# would refuse a backup kept in a OneDrive folder, which is not a link at all.
+_NAME_SURROGATE = 0x20000000
 
 
 def is_link_stat(st: os.stat_result) -> bool:
-    """True for a symbolic link, and on Windows also for a junction or any other reparse point."""
+    """True for a symbolic link, and on Windows also for a junction or any other reparse point that
+    stands for another name. A tag that cannot be read on a reparse point counts as a link (fail closed)."""
     if stat.S_ISLNK(st.st_mode):
         return True
-    return bool(getattr(st, "st_file_attributes", 0) & _REPARSE)
+    if not getattr(st, "st_file_attributes", 0) & _REPARSE:
+        return False
+    tag = getattr(st, "st_reparse_tag", None)
+    return tag is None or bool(tag & _NAME_SURROGATE)
 
 
 def is_link(path: str | os.PathLike[str]) -> bool:
     """Whether ``path`` is a link, read without following it. ``False`` when nothing is there.
 
-    Any other refusal raises: a path that could not be looked at is not known to be safe, and the
-    caller decides what to do with that (the restore counts it, the scan says it was not read)."""
+    Any other refusal raises: a path that could not be looked at is not known to be safe. The scan
+    counts it as not read; the restore stops with an error, as it did before for a file it could not
+    look at (letting one unreadable member not stop a restore is R778's)."""
     try:
         return is_link_stat(os.lstat(path))
     except FileNotFoundError:
