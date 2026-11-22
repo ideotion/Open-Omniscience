@@ -596,7 +596,7 @@ def _decrypt_that_names_the_passphrase(monkeypatch) -> None:
     file the debug bundle carries) -- the coordinator's check of #1318, B1."""
     from src.safety.crypto import EncryptionError
 
-    def refuse(path, sink, passphrase):
+    def refuse(path, sink, passphrase, **_opened):
         raise EncryptionError(f"could not open {Path(path).name} with {passphrase}")
 
     monkeypatch.setattr("src.backup.stream_backup.decrypt_stream", refuse)
@@ -877,7 +877,7 @@ def test_verify_withholds_a_decrypt_failure_that_has_a_unicode_error_in_its_chai
     dest = tmp_path / "dest"
     _backup(tmp_path, dest, corpus, pw=secret)
 
-    def refuse(path, sink, passphrase):
+    def refuse(path, sink, passphrase, **_opened):
         try:
             "held\udcffkey".encode()
         except UnicodeError as inner:

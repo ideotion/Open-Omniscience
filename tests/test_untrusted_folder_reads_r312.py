@@ -231,7 +231,7 @@ def test_a_volume_name_that_is_a_path_is_bad_and_never_read(tmp_path, name, monk
     (out / "volumes.json").write_text(json.dumps(m), encoding="utf-8")
     hashed: list = []
     real = volumes._sha256_file
-    monkeypatch.setattr(volumes, "_sha256_file", lambda p: hashed.append(p) or real(p))
+    monkeypatch.setattr(volumes, "_sha256_file", lambda p, *a, **k: hashed.append(p) or real(p, *a, **k))
     status = volumes.verify_volume_set(out)
     assert str(name) in status["bad"] and not status["ok"]
     assert all(Path(p).parent == out for p in hashed)  # nothing outside the folder was hashed
@@ -283,7 +283,7 @@ def test_the_stream_verify_never_hashes_a_parity_name_that_is_a_path(tmp_path, m
     (out / "volumes.json").write_text(json.dumps(m), encoding="utf-8")
     hashed: list = []
     real = stream_backup._digest_matches
-    monkeypatch.setattr(stream_backup, "_digest_matches", lambda p, w: hashed.append(p) or real(p, w))
+    monkeypatch.setattr(stream_backup, "_digest_matches", lambda p, w, **k: hashed.append(p) or real(p, w, **k))
     report = stream_backup.verify_stream_backup(out)
     assert "../secret" in report["parity"]["bad"]
     assert all(Path(p).parent == out for p in hashed)
@@ -378,6 +378,7 @@ def test_the_folder_backup_hash_refuses_a_pipe_or_a_device(tmp_path, kind):
         ("src/backup/stream_backup.py", "verify_stream_backup", "_digest_matches("),
         ("src/safety/crypto.py", "decrypt_stream", "_open_sealed("),
         ("src/safety/crypto.py", "stream_key_opens", "_open_sealed("),
+        ("src/safety/crypto.py", "stream_key_opens_or_digest", "_open_sealed("),
     ],
 )
 def test_no_plain_read_remains_at_a_swept_site(module, fn, must):

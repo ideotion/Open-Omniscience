@@ -1387,6 +1387,25 @@
       }
     }
 
+    // R800 (row 340): a backup's signature is checked against a key the same file carries, so it shows
+    // only that the content is unchanged since that key signed it -- never where the backup came from.
+    // The one comparison the app can make is with its OWN key: "this installation" or "another
+    // installation" (a plain fact, never a warning). Plain text: callers escape it.
+    function backupSignerWords(signedBy, key, t, tf) {
+      const k = String(key || "");
+      const fp = "\u2068" + k.slice(0, 16) + "\u2069";
+      if (!/^[0-9a-f]{64}$/i.test(k) || signedBy === "unsigned") return t("Not signed");
+      if (signedBy === "this-installation") return tf("Signed by this installation, key {fp}", { fp });
+      if (signedBy === "another-installation") return tf("Signed by another installation, key {fp}", { fp });
+      return tf("Signed by key {fp}", { fp });
+    }
+    function backupSignatureWords(state, signedBy, key, t, tf) {
+      if (state === "verified") return t("Content unchanged since it was signed") + " \u00b7 " + backupSignerWords(signedBy, key, t, tf);
+      if (state === "bad-signature") return t("Signature does not match its content");
+      if (!state || state === "unsigned" || String(state).startsWith("not-applicable")) return t("Not signed");
+      return String(state);
+    }
+
     function _uxRenderVerify(host, rep, t) {
       if (!rep || typeof rep !== "object" || rep.ok === undefined) {
         host.innerHTML = `<span class="muted">${esc(t("No verification report was returned."))}</span>`;
@@ -1405,7 +1424,9 @@
         // frame (R2): "5 volumes" welded a raw count to an English noun, and "signature:"
         // carried its own colon.
         const nVol = rep.volumes === 1 ? tfv("{n} volume", { n: fmtNum(1, 0) }) : tfv("{n} volumes", { n: fmtNum(rep.volumes, 0) });
-        lines.push(`<div class="muted">${esc(nVol)} · ${ooLabelHtml(esc(t("signature")), esc(String(rep.signature || "—")))}${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
+        // R800: what the signature shows (the content is unchanged since it was signed) and whose
+        // key signed it, compared with this installation's own -- never a claim of origin.
+        lines.push(`<div class="muted">${esc(nVol)} · <bdi>${esc(backupSignatureWords(rep.signature, rep.signed_by, rep.signer_key, t, tfv))}</bdi>${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
       }
       const probs = Array.isArray(rep.problems) ? rep.problems : [];
       // padding-inline-START (I-4's class): in RTL the bullets sit on the right.
@@ -2775,9 +2796,10 @@
         ? t("By a person (confirm or reject)")
         : ((p.version && p.kind === "model") ? tf("By {producer}, prompt {version}", { producer: _altIso(p.producer || "?"), version: _altIso(p.version) })
                       : tf("By {producer}", { producer: _altIso(p.producer || "?") }));
+      // R800: the stored "origin" is the key that signed the restore, shown as whose key it is.
       const where = p.arrived
-        ? tf("Arrived from {origin}, restore of {date}", {
-            origin: _altIso(String(p.origin || "").slice(0, 12)), date: _altIso(fmtDateTime(p.arrived.at)) })
+        ? tf("Arrived in the restore of {date}", { date: _altIso(fmtDateTime(p.arrived.at)) })
+          + " \u00b7 " + backupSignerWords(p.signed_by, p.origin, t, tf)
         : t("Made here");
       return `<span title="${esc("oo.prov/1 " + JSON.stringify(p))}">${esc(by)} \u00b7 <bdi>${esc(where)}</bdi></span>`;
     }
@@ -2826,7 +2848,7 @@
       const head = rep.batches.map((b) => {
         const n = b.pending + b.kept;
         return `<div style="margin-top:8px"><b>${esc(tf("Restore of {date}", { date: fmtDateTime(b.imported_at) }))}</b>`
-          + ` \u00b7 <bdi>${esc(String(b.origin || "").slice(0, 12))}</bdi>`
+          + ` \u00b7 <bdi>${esc(backupSignerWords(b.signed_by, b.origin, t, tf))}</bdi>`
           + ` \u00b7 ${esc(tf("{n} not yet looked at", { n: b.pending }))}`
           + (b.swapped ? ` \u00b7 ${esc(tf("{n} swapped", { n: b.swapped }))}` : "")
           + (n > 0 ? ` <button class="secondary tiny" data-on-click="altDiscardBatch(${Number(b.id)}, ${Number(n)})">${esc(t("Discard all from this restore"))}</button>` : "")

@@ -110,6 +110,7 @@ from src.backup.volumes import (
     load_manifest,
     member_in_use,
     verify_volume_set,
+    volume_expectation,
 )
 from src.paths import data_dir
 from src.safety import process_owner as _process_owner
@@ -119,7 +120,7 @@ from src.safety.crypto import (
     decrypt_stream,
     encrypt_bytes,
     encrypt_stream_to_hashed,
-    stream_key_opens,
+    stream_key_opens_or_digest,
 )
 from src.utils.interrupts import kept
 
@@ -2123,13 +2124,25 @@ def verify_stream_backup(
     if m.get("kind") == STREAM_KIND:
         state = _manifest_signature_state(m)
         report["signature"] = state
+        # R800: a verified signature shows the index is unchanged since this key signed it,
+        # never where the set came from; say whose key it is, compared with this
+        # installation's own, and nothing more.
+        from src.backup.artifact import signer_relation, this_installation_key
+
+        sig = m.get("signature")
+        signer = str(sig.get("public_key") or "") if state == "verified" and isinstance(sig, dict) else ""
+        report["signer_key"] = signer or None
+        report["signed_by"] = signer_relation(signer, this_installation_key()) if signer else "unsigned"
         if state != "verified":
+            what = "is not signed" if state == "unsigned" else "signature does not match its content"
             _fail(
-                f"volume manifest signature: {state} — the set's index cannot be "
-                "trusted (an interrupted finalize or tampering); re-run the backup"
+                f"the volume manifest {what}, so the set's index cannot be relied on "
+                "(an interrupted finalize, or a change after it was written); re-run the backup"
             )
     else:
         report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
+        report["signer_key"] = None
+        report["signed_by"] = "unsigned"
 
     status = verify_volume_set(src)
     report["bad_volumes"] = status["bad"]
@@ -2197,7 +2210,10 @@ def verify_stream_backup(
 
                 try:
                     for vname in mm.get("volumes") or []:
-                        decrypt_stream(src / vname, _sink, passphrase)
+                        # Never through a link, and only bytes whose checksum is the manifest's (row 329).
+                        decrypt_stream(
+                            src / vname, _sink, passphrase, follow_links=False, **_volume_checked(m, vname)
+                        )
                 except EncryptionError as exc:
                     # The report goes back to every caller that holds the passphrase (the volume-verify
                     # job serves it on an endpoint, the P0 check writes it into a file the debug bundle
@@ -2282,12 +2298,16 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
     path = src / first
     if path.is_symlink() or not path.is_file():
         return  # a link is never followed out of the chosen folder; the restore refuses it by name
+    # One read answers both questions (row 329): the checksum is taken over the very bytes the key failed on, through one
+    # handle, so a file swapped in, or rewritten, for the key check and put back for the checksum can never make the right
+    # passphrase read as wrong.
     try:
-        if stream_key_opens(path, passphrase):
-            return
+        opens, digest = stream_key_opens_or_digest(
+            path, passphrase, follow_links=False, max_bytes=volume_expectation(vol_by_name[first])["expect_bytes"]
+        )
     except (EncryptionError, OSError):
-        return  # an unreadable header is damage, not a key: the checksum pass reports it
-    if not _digest_matches(path, vol_by_name[first].get("sha256")):
+        return  # an unreadable header, or a refused open, is no verdict on the key: the restore's own pass reports it
+    if opens or digest != vol_by_name[first].get("sha256"):
         return
     raise EncryptionError(
         "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "
@@ -2412,7 +2432,11 @@ def read_stream_backup(
                             _f.write(b)
                             _h.update(b)
 
-                        decrypt_stream(src / vname, _sink, passphrase)
+                        # Never through a link, and only bytes whose checksum is the manifest's: a volume swapped,
+                        # rebuilt or rewritten since the checksum pass is refused, whatever its inode (row 329).
+                        decrypt_stream(
+                            src / vname, _sink, passphrase, follow_links=False, **_volume_checked(m, vname)
+                        )
                 if h.hexdigest() == mm.get("plaintext_sha256"):  # a guard clause keeps the loop's back-edge inside the try (src/utils/interrupts.py)
                     continue
                 raise VolumeError(
@@ -2450,6 +2474,16 @@ def read_stream_backup(
             raise
 
 
+def _volume_checked(m: dict[str, Any], name: str) -> dict[str, Any]:
+    """What the decrypt of volume ``name`` must find (row 329): the ciphertext SHA-256 and size the manifest gives it,
+    the ones the checksum pass held the file to. No digest is ``""``, which no file hashes to, so the volume is refused
+    rather than read unchecked; no whole-number size leaves the read unbounded, as before."""
+    for v in m.get("volumes") or []:
+        if isinstance(v, dict) and v.get("name") == name:
+            return volume_expectation(v)
+    return {"expect_sha256": "", "expect_bytes": None}
+
+
 def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -> None:
     """A volume belongs to one member and is read once, and every declared size is a real size (R686).
 
@@ -2479,7 +2513,7 @@ def _require_each_volume_read_once(m: dict[str, Any], src: Path | None = None) -
         if p.is_symlink():
             raise VolumeError(f"the volume {name} is a link to another file; refusing to read it")
         try:
-            st = p.stat()
+            st = p.lstat()  # never through a link swapped in since the look above (row 329)
         except OSError:
             continue  # a missing volume is the verify step's to report (and parity's to recover)
         if not st.st_ino:

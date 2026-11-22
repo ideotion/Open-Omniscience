@@ -206,6 +206,11 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # A comparison with the one known engine message that means "no rows yet"; nothing is written.
         ("_incoming_group_rows", 'if str(exc).lower() != f"no such table: cnt.{table}":'): 1,
     },
+    # Row 328: the queue's start carries ``refuse_half_migrated_store``'s refusal on as its own ValueError; that text is one of the
+    # fixed sentences it writes (never an error's words: R788).
+    "src/backup/import_queue.py": {
+        ("ImportQueueManager._refuse_a_store_no_restore_may_enter", "raise ValueError(str(refused)) from None"): 1,
+    },
     # ``PendingRulingError`` is the attribution module's own error: fixed words naming the missing ruling.
     "src/backup/export_summary.py": {("export_facts", "attribution, attribution_error = [], str(exc)"): 1},
     # ``_ExportRefused`` is this module's own refusal with fixed words (_NO_SPACE and the like); any other failure is its class.
@@ -295,6 +300,8 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # R789 (row 310): only the errno is read, to tell a descriptor closed since the listing (EBADF, skipped) from one that cannot
         # be read (any other, which keeps every parked descriptor); nothing of the error is kept, served or logged
         ('_foreign_fd_keys', 'if exc.errno == errno.EBADF:'): 1,
+        # Row 335: a recorded number no longer ours is placed by its errno alone (EBADF: nothing there now); no text is read.
+        ('_validate_ours_locked', 'if exc.errno != errno.EBADF:'): 1,
     },
     # Row 156: a staged backup member's open or ATTACH reads only whether the SQLite code was busy or locked, to refuse it as in use
     # with fixed words instead of "no key opens it"; nothing of the error is kept, served or logged

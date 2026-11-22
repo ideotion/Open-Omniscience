@@ -1981,6 +1981,9 @@
       };
       const all = seriesList.map((s, i) => ({
         label: s.label || `#${i + 1}`, unit: s.unit || "",
+        // Row 327: a keyword series names itself with data; the legend marks it so the page
+        // translator never rewrites it (chrome labels stay translatable).
+        labelIsData: !!s.labelIsData,
         // Three redundant channels per series (see _FIG_STYLES): colour, dash
         // pattern, marker shape. A caller-supplied s.color still wins — a surface
         // that deliberately means something by its colour keeps saying it — but it
@@ -2514,7 +2517,7 @@
           return `<button type="button" class="fig-leg" data-oo-leg="${i}"` +
             ` aria-pressed="${s.hidden ? "false" : "true"}"${s.hidden ? ' style="opacity:.4"' : ""}>` +
             _figGlyph(Object.assign({}, st, {color: s.color})) +
-            `${esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${n}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
+            `${s.labelIsData ? `<span translate="no">${esc(s.label)}</span>` : esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${n}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
         }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
           elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; hovP = null; hovS = null; draw(); };

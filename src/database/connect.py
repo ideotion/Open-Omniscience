@@ -43,6 +43,9 @@ import threading
 import time
 from pathlib import Path, PurePath, PureWindowsPath
 
+if os.name != "nt":
+    import fcntl
+
 from src.database import open_stats, store_pins
 
 _LOG = logging.getLogger("database.connect")
@@ -263,11 +266,26 @@ def is_encrypted_file(path: Path | str) -> bool | None:
                 return fh.read(16) != _SQLITE_MAGIC
         except OSError:
             return None
-    try:
-        with store_reader(p) as fd:
-            return os.pread(fd, 16, 0) != _SQLITE_MAGIC
-    except OSError:
-        return None
+    for _attempt in range(3):
+        try:
+            with store_reader(p) as fd:
+                head = os.pread(fd, 16, 0)
+                after = os.fstat(fd)
+            if (after.st_dev, after.st_ino) == (st.st_dev, st.st_ino):
+                return head != _SQLITE_MAGIC
+            # Row 335: the number led to another file by the end of the read (a close elsewhere freed it and an open took
+            # it), or the name was replaced. Bytes of the file the name leads to NOW are its answer; any other file's are not.
+            st = p.stat()
+        except OSError:
+            return None
+        if st.st_size == 0:
+            return None
+        if (after.st_dev, after.st_ino) == (st.st_dev, st.st_ino):
+            return head != _SQLITE_MAGIC
+    # Three reads, none of the file the name leads to: the answer an unreadable file has always had ("could not read").
+    # Never a verdict from another file's bytes, and never a made-up True: callers act on True (an encrypt skips the store
+    # as "already encrypted", an erase skips the whole-file rewrite a plaintext body needs).
+    return None
 
 
 # --- R789: header reads that never drop a lock ----------------------------------------------------------------- #
@@ -293,6 +311,7 @@ _hdr_gen = 0  # bumped by every SQLite open that starts in this process (counted
 _audit_pending: dict[int, list[float]] = {}  # thread -> start times of stdlib sqlite3 opens not yet returned
 _AUDIT_STALE_S = 60.0  # an open that never reported its handle (it raised) stops counting after this
 _GROUP_SUFFIXES = ("-wal", "-shm", "-journal")
+_hdr_forgotten: list[tuple[tuple[int, int], int]] = []  # (key, number) of records forgotten since the last sweep (row 335)
 
 
 @contextlib.contextmanager
@@ -360,6 +379,87 @@ def _not_regular(mode: int) -> OSError:
     return OSError(errno.EINVAL, "not a regular file")
 
 
+def _still_ours_locked(fd: int, key: tuple[int, int]) -> bool:
+    """Whether the recorded descriptor ``fd`` is still the one this module opened on ``key`` (row 335). Call under ``_hdr_lock``,
+    in the same hold as the reuse or the close it permits.
+
+    A number is only a number: a double close anywhere in the process (a library, another component) frees it, and the next
+    open of any file takes it, a SQLite connection's above all. Closing it then drops that connection's locks; reading it
+    reads another file. Ours is a regular file on ``key`` opened read-only with ``O_NONBLOCK``, which SQLite never sets, and
+    without ``O_NOFOLLOW``, which SQLite sets, as do this repository's other non-blocking readers except
+    ``regular_file`` with ``follow_links=True`` (sealed and backup files, never a store's group: the (device, inode) half
+    keeps those apart). A descriptor that fails any part, or that
+    ``fstat`` or ``fcntl`` cannot answer for, is not ours: never closed, never read.
+
+    STATED LIMITS: the ``fstat`` runs under ``_hdr_lock`` (the ruling: the check and the use in one hold), and a sweep checks
+    EVERY record (a stale record of any file may be the number a connection on the store being closed now holds), so a stalled
+    network mount or a pulled drive holding any parked descriptor stalls the opens that wait for the lock with it. An
+    ``fstat`` or ``fcntl`` error, even a passing one, forgets the record without closing it (the ruling: fail closed), so a
+    flaky mount can leave descriptors open. On macOS ``F_GETFL`` does not report ``O_NOFOLLOW``, so there the flags half tells
+    ours from SQLite's (``O_NONBLOCK``) but not from this repository's other non-blocking readers; the (device, inode) half
+    still holds, and a sweep closes a number only while no connection holds the store's group, so no lock is dropped. A number freed and reused WHILE
+    a reader of ours is using it (between :func:`_acquire` and :func:`_release`) cannot be seen by any check here; the header
+    read checks the file again after reading (:func:`is_encrypted_file`)."""
+    if os.name == "nt":
+        return False  # no descriptor is ever recorded on Windows (its readers return early); never reach the absent fcntl
+    try:
+        st = os.fstat(fd)
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    except OSError:
+        return False
+    return (
+        (st.st_dev, st.st_ino) == key
+        and (flags & os.O_ACCMODE) == os.O_RDONLY
+        and bool(flags & getattr(os, "O_NONBLOCK", 0))
+        and not flags & getattr(os, "O_NOFOLLOW", 0)
+    )
+
+
+def _forget_fd_locked(key: tuple[int, int], fd: int) -> None:
+    """Drop ``fd`` from the record of ``key`` WITHOUT closing it: it is no longer ours (row 335). The number and the key go to
+    :data:`_hdr_forgotten`, so a sweep that listed the process's descriptors before this (leaving the number out as ours)
+    still counts what the number now leads to as foreign."""
+    _hdr_forgotten.append((key, fd))
+    fds = _hdr_fds.get(key)
+    if fds is None:
+        return
+    while fd in fds:
+        fds.remove(fd)
+    if not fds:
+        del _hdr_fds[key]
+        if not _hdr_uses.get(key):
+            _hdr_names.pop(key, None)
+            _hdr_uses.pop(key, None)
+
+
+def _validate_ours_locked() -> tuple[set[tuple[int, int]], bool]:
+    """Check every recorded descriptor (row 335) and forget each one that is no longer ours. Returns the (device, inode) the
+    sweep must count as foreign, and whether a number could not be placed (then this sweep closes nothing: what sits on it
+    may be a connection's).
+
+    Foreign: the file each forgotten number was recorded on (fail closed: it counts as held for this sweep), and the file it
+    now leads to. That covers the numbers forgotten here and every number a reader forgot since the last sweep
+    (:data:`_hdr_forgotten`), which this sweep's listing may have left out as ours."""
+    for key, fds in list(_hdr_fds.items()):
+        for fd in list(fds):
+            if not _still_ours_locked(fd, key):
+                _forget_fd_locked(key, fd)
+    now_foreign: set[tuple[int, int]] = set()
+    unplaced = False
+    forgotten = list(_hdr_forgotten)
+    _hdr_forgotten.clear()
+    for key, fd in forgotten:
+        now_foreign.add(key)
+        try:
+            st = os.fstat(fd)
+        except OSError as exc:
+            if exc.errno != errno.EBADF:
+                unplaced = True  # something is there and cannot be read: keep everything
+            continue
+        now_foreign.add((st.st_dev, st.st_ino))
+    return now_foreign, unplaced
+
+
 def _acquire(p: Path) -> tuple[tuple[int, int], int]:
     """A read-only descriptor on the regular file at ``p`` and its (device, inode), counted in use until :func:`_release`.
     Raises ``OSError`` as ``os.open`` does; ``IsADirectoryError`` for a directory, ``OSError`` for another non-regular file.
@@ -371,10 +471,15 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
         raise _not_regular(st.st_mode)  # refused before any open: no FIFO wait, no terminal, no device side effect
     key = (st.st_dev, st.st_ino)
     with _hdr_lock:
-        if key in _hdr_fds:
+        fd = next((n for n in _hdr_fds.get(key, ()) if _still_ours_locked(n, key)), -1)
+        for stale in list(_hdr_fds.get(key, ())):
+            if stale == fd:
+                continue
+            _forget_fd_locked(key, stale)  # row 335: a stale number is never handed to a read, and never closed
+        if fd >= 0:
             _hdr_names[key] = name
             _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
-            return key, _hdr_fds[key][0]
+            return key, fd
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
     fd = os.open(name, flags)
     got = os.fstat(fd)  # should this raise, the descriptor stays open: closing one we cannot place could drop a lock
@@ -383,18 +488,25 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
         raise _not_regular(got.st_mode)
     key = (got.st_dev, got.st_ino)  # what was opened, even if the name moved since the stat
     with _hdr_lock:
+        for other, fds in list(_hdr_fds.items()):
+            if fd not in fds:
+                continue
+            _forget_fd_locked(other, fd)  # row 335: a record of this number from before a foreign close is stale
         if key in _hdr_fds:
             _hdr_fds[key].append(fd)  # never closed here: another of ours is open on the file
         else:
             _hdr_fds[key] = [fd]
         _hdr_names[key] = name
         _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
-        return key, _hdr_fds[key][0]
+        return key, fd  # the one just opened: an older number recorded for the key was not checked in this hold (row 335)
 
 
 def _release(key: tuple[int, int]) -> None:
     with _hdr_lock:
         _hdr_uses[key] -= 1
+        if not _hdr_uses[key] and key not in _hdr_fds:  # its record was forgotten while in use (row 335): drop the rest
+            _hdr_uses.pop(key, None)
+            _hdr_names.pop(key, None)
     _sweep()
 
 
@@ -496,7 +608,12 @@ def _sweep() -> None:
         with _hdr_lock:
             if _hdr_gen != gen or _opening_now_locked():
                 return
-            _close_free_locked(groups, foreign)
+            # Row 335: the listing left out every number recorded as ours. One a foreign close freed and an open reused is not
+            # ours any more: it is forgotten, and what it now leads to (a connection's file, perhaps) counts as foreign.
+            now_foreign, unplaced = _validate_ours_locked()
+            if unplaced:
+                return
+            _close_free_locked(groups, foreign | now_foreign)
     finally:
         _sweep_lock.release()
 
@@ -522,6 +639,8 @@ def _close_free_locked(
         if any(_hdr_uses.get(k) for k in held if k != key):
             continue  # a reader of ours on the same group: the group's descriptors stay with it
         for fd in _hdr_fds.pop(key):
+            if not _still_ours_locked(fd, key):
+                continue  # row 335: not ours any more (checked under this same hold): forgotten, never closed
             with contextlib.suppress(OSError):
                 os.close(fd)
         _hdr_names.pop(key, None)

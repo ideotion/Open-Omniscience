@@ -844,9 +844,15 @@ def prepare_staged_corpus(
         and staged.signature_state != "verified"
         and not allow_unverified
     ):
+        # R800: word what was checked. The signature can only show the manifest is unchanged
+        # since a key signed it; a missing one shows nothing at all, a failing one shows the
+        # manifest and its signature disagree.
+        what = {
+            "unsigned": "is not signed",
+            "bad-signature": "signature does not match its content",
+        }.get(staged.signature_state, f"signature state is {staged.signature_state}")
         raise MergeError(
-            f"artifact manifest is {staged.signature_state}; pass "
-            "allow_unverified to merge it anyway (its origin cannot be proven)"
+            f"artifact manifest {what}; pass allow_unverified to merge it anyway"
         )
 
     # RECORD, never STAGE. timings.stage() also fires stage_progress_cb, which
@@ -7165,7 +7171,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         if name.startswith("annotations/imported/"):
             # The member is an imported-author RECORD, not a signed bundle: it was
             # written by import_bundle AFTER verification, so its manifest+signature
-            # were stripped and it CANNOT be re-verified (its origin was proven at the
+            # were stripped and it CANNOT be re-verified (its signature was checked at the
             # original import, provenance kept in verify_reason). Re-passing it to
             # import_bundle rejected it as malformed -> every imported author silently
             # failed to restore. Adopt the verified record directly instead, mirroring
@@ -7970,6 +7976,15 @@ def _verify_chain_rows(rows: Iterable[tuple]) -> tuple[bool, list[str], int]:
 
     ok, problems = verify_entries(_entries(), max_issues=_CUSTODY_MAX_ISSUES)
     return ok, problems, n
+
+
+def _signed_by(staged: StagedArtifact) -> str:
+    """R800: the signer stated the one way the app can state it (``artifact.SIGNER_RELATIONS``)."""
+    from src.backup.artifact import signer_relation, this_installation_key
+
+    if staged.signature_state != "verified":
+        return "unsigned"
+    return signer_relation(staged.origin_fingerprint, this_installation_key())
 
 
 def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
@@ -9286,21 +9301,35 @@ def refuse_while_writer_jobs_run() -> None:
     refusal at a later item discards the merges the group was still holding, as any refusal there does: the operator imports again."""
     from src.jobs.background import running_writer_jobs, stop_jobs_for_restore
 
-    # R712: a running backup export refuses the restore and is named, before anything is stopped. It is not a writer (it reads the
-    # corpus), so it is not in the registry's writer list; the volume job already refuses a second volume job, but the export's
-    # large-data phase leaves that manager idle, and the single-file restore never asked it.
-    exporting = export_refusal()
-    if exporting:
-        raise WriterJobsRefused(exporting)
-    # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
-    blocking = running_writer_jobs(include_stoppable=False)
-    if blocking:
-        raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in blocking)))
+    said = writer_jobs_refusal()
+    if said:
+        raise WriterJobsRefused(said)
     _remember_stopped(stop_jobs_for_restore(_STOP_FOR_RESTORE_S))
     running = running_writer_jobs()
     if running:
         start_jobs_stopped_for_restore()  # nothing is imported, so nothing else would start them again
         raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
+
+
+def writer_jobs_refusal() -> str | None:
+    """The refusal :func:`refuse_while_writer_jobs_run` raises before it stops anything, or None; it stops nothing itself.
+
+    A running backup export (R712), then a running writer the restore may not stop. A job it may stop (the re-index drain) is
+    not named here: the restore stops it when it runs. The import queue asks this at its start (row 328), where stopping a
+    job would leave it stopped for the whole run. Raises only what the registry raises."""
+    from src.jobs.background import running_writer_jobs
+
+    # R712: a running backup export refuses the restore and is named, before anything is stopped. It is not a writer (it reads the
+    # corpus), so it is not in the registry's writer list; the volume job already refuses a second volume job, but the export's
+    # large-data phase leaves that manager idle, and the single-file restore never asked it.
+    exporting = export_refusal()
+    if exporting:
+        return exporting
+    # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
+    blocking = running_writer_jobs(include_stoppable=False)
+    if blocking:
+        return _WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in blocking))
+    return None
 
 
 def export_refusal() -> str | None:
@@ -9776,6 +9805,8 @@ def run_restore(
         "artifact_kind": staged.kind,
         "signature_state": staged.signature_state,
         "origin_fingerprint": staged.origin_fingerprint,
+        # R800: whose key signed, compared with this installation's own key; never "origin".
+        "signed_by": _signed_by(staged),
         "artifact_schema_rev": original_rev,
         # Honest encryption verdict (field test 2026-06-19 P0-2): True when the
         # uploaded artifact was AES-256-GCM (OOENC1) at rest and we had to decrypt
