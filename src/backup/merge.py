@@ -7172,17 +7172,19 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         # Route on the name as the staging join reads it (member_path drops "." segments and doubled "/"): routed on its
         # spelling, "annotations/./imported/x.json" missed the imported-record branch below and its bytes (trust flag
         # included) were written as they came, past the R800 gate and the author_id check. Only what this app writes as an
-        # annotations member is restored: a .json under annotations/; any other name is refused and reported, never written.
+        # annotations member is restored (the store writes annotations/mine.json and annotations/imported/<id>.json); any
+        # other name is refused and reported, never written.
         parts = PurePosixPath(raw_name).parts
         name = "/".join(parts)
-        if len(parts) < 2 or parts[0] != "annotations" or not name.endswith(".json"):
+        is_record = len(parts) == 3 and parts[:2] == ("annotations", "imported") and name.endswith(".json")
+        if not is_record and name != "annotations/mine.json":
             ann["errors"].append(f"{raw_name!r}: refused, not an annotations file (nothing was written)")
             continue
         local = base / name
         if local.exists():
             ann["kept_local"] += 1
             continue
-        if parts[1] == "imported":
+        if is_record:
             # The member is an imported-author RECORD, not a signed bundle: it was
             # written by import_bundle AFTER verification, so its manifest+signature
             # were stripped and it CANNOT be re-verified (its origin was proven at the

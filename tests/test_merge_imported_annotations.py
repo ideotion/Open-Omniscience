@@ -335,7 +335,8 @@ def test_another_spelling_of_an_imported_record_still_passes_the_gate(monkeypatc
     assert author["trusted"] is False and author["trust_withheld_by"] == OTHER_KEY
 
 
-@pytest.mark.parametrize("name", ["keys/evidence_ed25519.pem", "state.json", "annotations", "annotations/notes.txt"])
+@pytest.mark.parametrize("name", ["keys/evidence_ed25519.pem", "state.json", "annotations", "annotations/notes.txt", "annotations/other.json",
+     "annotations/imported/deeper/x.json"])
 def test_an_annotations_member_outside_annotations_json_is_refused(monkeypatch, tmp_path, name):
     staging = tmp_path / "staging"
     (staging / name).parent.mkdir(parents=True, exist_ok=True)
