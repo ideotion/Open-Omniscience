@@ -2094,7 +2094,9 @@
       } catch (_e) {}
       const dlg = document.getElementById("ux-import");
       if (dlg && !dlg.open) {
-        if (st.state === "done") toast(t("Import complete."));
+        // R778/R779: a run that left files out is never announced as complete, dialog open or not.
+        if (st.state === "done" && summaries.some((s2) => s2 && s2.incomplete)) toast(t("Import incomplete — some files were not restored"), "err");
+        else if (st.state === "done") toast(t("Import complete."));
         else if (st.state === "stopped") toast(t("Import stopped."));
         else if (st.state === "error") toast(t("Import finished with errors."), "err");
       }

@@ -340,3 +340,10 @@ def test_an_unread_name_that_is_not_utf8_still_renders_as_json(tmp_path, monkeyp
     assert res["unread_total"] == 1 and res["incomplete"] is True
     json.dumps(res, ensure_ascii=False).encode("utf-8")  # raised UnicodeEncodeError before
     assert res["unread"][0]["rel"] == "x�.bin"
+
+
+def test_the_closed_dialog_toast_never_calls_an_incomplete_restore_complete():
+    js = (ROOT / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
+    i = js.index('toast(t("Import complete."))')
+    before = js[i - 400 : i]
+    assert "s2.incomplete" in before and 'toast(t("Import incomplete — some files were not restored")' in before
