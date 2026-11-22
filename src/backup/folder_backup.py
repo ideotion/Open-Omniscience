@@ -365,16 +365,25 @@ def _atomic_copy(
             # ever, before the fstat below could refuse it. It changes nothing for a regular file.
             guard = (getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)) if nofollow_src else 0
             src_fd = os.open(src, os.O_RDONLY | binary | guard)
-        except OSError:
-            if nofollow_src and is_link(src):  # the name is now a link: refused, never read
+        except OSError as exc:
+            if nofollow_src and _now_a_link(src):  # the name is now a link: refused, never read
                 raise SourceChanged("the file became a link after it was checked") from None
-            raise
+            if not nofollow_src or not _process_can_open():
+                raise  # a backup's own copy, or the whole process out of files or memory: stop, as before
+            # R778: the SOURCE could not be opened. Raised as one of the fixed classes below, so the
+            # restore counts it as not read and goes on; the system's own words are never kept.
+            raise _unread_of(type(exc)) from None
         with os.fdopen(src_fd, "rb") as r:
             if expect is not None:
                 # The file opened must be the one that was checked: a regular file with the same
                 # device and inode. This also catches a FOLDER on the way swapped for a link, which
                 # O_NOFOLLOW alone does not (it only guards the last name).
-                got = os.fstat(r.fileno())
+                try:
+                    got = os.fstat(r.fileno())
+                except OSError as exc:
+                    if not _process_can_open():
+                        raise
+                    raise _unread_of(type(exc)) from None
                 if not stat.S_ISREG(got.st_mode) or not (_same_file(got, expect) or _same_file_again(got, expect, Path(src))):
                     raise SourceChanged("the file changed after it was checked")
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary, 0o666)
@@ -384,7 +393,14 @@ def _atomic_copy(
                         w.close()
                         tmp.unlink(missing_ok=True)
                         return False
-                    chunk = r.read(_COPY_BUF)
+                    try:
+                        chunk = r.read(_COPY_BUF)
+                    except OSError as exc:
+                        if not nofollow_src or not _process_can_open():
+                            raise
+                        # R778: a read that fails part-way (a bad sector, a drive pulled) leaves no
+                        # partial file: the temp is removed below and the live name never appears.
+                        raise _unread_of(type(exc)) from None
                     if not chunk:
                         break
                     w.write(chunk)
@@ -732,6 +748,73 @@ class SourceChanged(OSError):
     """A restore member is no longer the file that was checked (R779): it was swapped after the look."""
 
 
+class SourceUnreadable(OSError):
+    """A restore member that could not be READ (R778). Never a destination failure: a full disk or a
+    live folder that cannot be written still stops the restore with an error, because every file after
+    it would fail the same way. Each subclass is one fixed reason; the system's own words are dropped."""
+
+
+class UnreadDenied(SourceUnreadable):
+    """The system refused to let the file be read (permissions, or a file another program holds locked)."""
+
+
+class UnreadGone(SourceUnreadable):
+    """The file was listed, then was no longer there when it was read."""
+
+
+class UnreadNotAFile(SourceUnreadable):
+    """The name no longer stands for a regular file."""
+
+
+class UnreadFailed(SourceUnreadable):
+    """Reading failed part-way, or for another reason (a damaged drive, a disconnected device)."""
+
+
+#: R778's fixed reason codes, by class. A folder that could not be listed has its own code.
+UNREAD_WHY: dict[type, str] = {
+    UnreadDenied: "denied",
+    UnreadGone: "gone",
+    UnreadNotAFile: "not-a-file",
+    UnreadFailed: "read-failed",
+}
+UNREAD_FOLDER = "folder-unlisted"
+
+
+def _unread_of(cls: type) -> SourceUnreadable:
+    """The fixed R778 class for an ``OSError`` class met while READING a member."""
+    if issubclass(cls, PermissionError):
+        return UnreadDenied("permission denied")
+    if issubclass(cls, FileNotFoundError):
+        return UnreadGone("no longer there")
+    if issubclass(cls, (IsADirectoryError, NotADirectoryError)):
+        return UnreadNotAFile("not a file")
+    return UnreadFailed("could not be read")
+
+
+def _process_can_open() -> bool:
+    """Whether this process can still open a file at all. Asked only after a source failed: when the
+    process itself is out of file handles, every file after this one would fail the same way, so the
+    restore stops with that error instead of marking the rest unread one by one. Answered by trying,
+    since the error's own number is not read (the sink rule). Stated limit: an open refused for lack of
+    memory is not told apart this way (opening the null device usually still succeeds), so it is
+    counted against that one file."""
+    try:
+        fd = os.open(os.devnull, os.O_RDONLY)
+    except OSError:
+        return False
+    os.close(fd)
+    return True
+
+
+def _now_a_link(path: Path) -> bool:
+    """``is_link`` for a name whose open just failed; a name that cannot even be looked at is not
+    known to be a link, and its open failure is reported as such."""
+    try:
+        return is_link(path)
+    except OSError:
+        return False
+
+
 def _category_swapped(cat_root: Path, cat_real: str) -> bool:
     """Whether the category folder is now a link, or (where the system gives folders a stable identity)
     no longer the folder its resolved path names. A folder that cannot be looked at counts as swapped."""
@@ -744,26 +827,49 @@ def _category_swapped(cat_root: Path, cat_real: str) -> bool:
         return True
 
 
-def _category_members(cat_root: Path) -> tuple[list[tuple[Path, os.stat_result]], int]:
+def _category_members(
+    cat_root: Path, unread: list[tuple[str, str]] | None = None
+) -> tuple[list[tuple[Path, os.stat_result]], int]:
     """The regular files a restore may copy from one category folder, each with the ``lstat`` it was
     checked by, sorted, and the number of links met on the way (R779).
 
     Walked with ``os.walk`` and PRUNED here rather than by the walker's own rule, because ``rglob`` and
     ``os.walk`` both treat a Windows junction as a plain folder and would walk into it. A ``.oopart`` is
     skipped before its link check (a copy in progress, never a member), and a plain folder is entered
-    whatever its name. Mirrors ``import_scan._dir_totals``, so the preview and the restore agree. A folder
-    it may not list is passed over as ``rglob`` passed it over; counting it is R778's."""
+    whatever its name. Mirrors ``import_scan._dir_totals``, so the preview and the restore agree.
+
+    R778: what could not be looked at is appended to ``unread`` as ``(relative path, reason code)`` --
+    a folder that could not be listed (its files are unknown, so it is one entry), a sub-folder or a
+    file whose own look was refused -- and the walk goes on."""
     members: list[tuple[Path, os.stat_result]] = []
     links = 0
+
+    def _note(path: str, why: str) -> None:
+        if unread is not None:
+            unread.append((Path(path).relative_to(cat_root).as_posix(), why))
+
+    # A folder the walk was told to enter but never handed back is one it could not list. Worked out
+    # from the walk's own output rather than its error, so nothing of the system's words is read.
+    to_enter: list[str] = [os.fspath(cat_root)]
+    listed: set[str] = set()
     for dirpath, dirnames, names in os.walk(cat_root, followlinks=False):
+        listed.add(dirpath)
         enter: list[str] = []
         for n in dirnames:
-            if is_link(os.path.join(dirpath, n)):
+            try:
+                linked = is_link(os.path.join(dirpath, n))
+            except OSError:
+                if not _process_can_open():
+                    raise
+                _note(os.path.join(dirpath, n), UNREAD_FOLDER)
+                continue
+            if linked:
                 if not n.endswith(_PART_SUFFIX):
                     links += 1  # never follow -- see restore_folder_backup's docstring
             else:
                 enter.append(n)
         dirnames[:] = enter
+        to_enter.extend(os.path.join(dirpath, n) for n in enter)
         for n in names:
             if n.endswith(_PART_SUFFIX):
                 continue
@@ -772,10 +878,33 @@ def _category_members(cat_root: Path) -> tuple[list[tuple[Path, os.stat_result]]
                 st = os.lstat(fp)
             except FileNotFoundError:
                 continue
+            except OSError as exc:
+                if not _process_can_open():
+                    raise
+                _note(fp, UNREAD_WHY[type(_unread_of(type(exc)))])
+                continue
             if is_link_stat(st):
                 links += 1
             elif stat.S_ISREG(st.st_mode):
                 members.append((Path(fp), st))
+    for d in to_enter:
+        if d not in listed:
+            # One rule for what disappears while the folder is being LISTED: it was never a member, so
+            # it is not counted (a file gone before its look is passed over the same way above). What
+            # is gone after it was listed is counted as "no longer there" when its copy is tried.
+            try:
+                os.lstat(d)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                pass
+            # Out of file handles, ``os.walk`` passes over every folder it cannot open: that is the
+            # process, not the backup, and every folder after it would read the same way. Stop.
+            if not _process_can_open():
+                raise OSError("this process could not open any file while listing the backup")
+            rel = Path(d).relative_to(cat_root).as_posix()
+            if unread is not None:
+                unread.append(("" if rel == "." else rel, UNREAD_FOLDER))
     members.sort(key=lambda m: m[0])
     return members, links
 
@@ -815,7 +944,18 @@ def restore_folder_backup(
     directory under an innocuous filename (live-reproduced). ``Path.is_symlink()``
     uses ``lstat`` (never follows), so checking it first costs nothing and touches
     the symlink target not at all — mirroring the sibling ``verify_folder_backup``'s
-    own ``_safe_member_path`` guard for the identical untrusted-input threat model."""
+    own ``_safe_member_path`` guard for the identical untrusted-input threat model.
+
+    ONE UNREADABLE FILE DOES NOT STOP THE RESTORE (R778). A member the restore cannot READ -- refused
+    by the system, gone since it was listed, no longer a file, a read that fails part-way, or a folder
+    that cannot be listed -- is left out, counted in ``unread`` with one fixed reason code (never the
+    system's words), and the restore goes on; ``incomplete`` is then true. Nothing of it reaches the
+    live folder: the copy goes through a temp file that is removed, and an existing live file is never
+    touched, so running the import again restores exactly what was missed. A failure on the WRITING
+    side still stops the restore with an error, since every file after it would fail the same way. A
+    folder backup holds no critical member: its four categories (``_CATEGORIES``) are wiki dumps, map
+    extracts and AI models, never the main store or key material, so nothing here needs to stop the
+    whole restore before anything is placed."""
     src = Path(src_root)
     cats = set(categories) if categories is not None else set(_CATEGORIES)
     tgt = live_targets(targets)
@@ -829,6 +969,30 @@ def restore_folder_backup(
     restored = skipped = refused_symlinks = refused_dest_links = 0
     refused_categories: list[str] = []
     corrupt: list[dict] = []
+    # R778: what could not be READ. Counted and named like ``corrupt``, and the restore goes on.
+    unread: list[dict] = []
+    unread_total = 0
+    unread_by_why: dict[str, int] = {}
+
+    unread_folders = 0
+
+    def _shown(rel: str) -> str:
+        # A name that is not valid UTF-8 (a foreign drive) comes back from the system with lone surrogates,
+        # which the JSON status responses cannot encode: replace them, so the result always renders.
+        return rel.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+    def _unread(cat: str, rel: str, why: str) -> None:
+        # A folder that could not be listed is ONE entry whose files are unknown: counted apart, so
+        # "N files not restored" never counts a folder of forty dumps as one file.
+        nonlocal unread_total, unread_folders
+        if why == UNREAD_FOLDER:
+            unread_folders += 1
+        else:
+            unread_total += 1
+        unread_by_why[why] = unread_by_why.get(why, 0) + 1
+        if len(unread) < _PROBLEM_CAP:
+            unread.append({"category": cat, "rel": _shown(rel), "why": why})
+
     unverifiable = 0
     stopped = False
     for cat in _CATEGORIES:
@@ -842,10 +1006,21 @@ def restore_folder_backup(
         # ``rglob`` both follow a link at this level, so a backup whose ``wiki_dumps`` was a link
         # to some other place on the machine had that place's files copied into the live data
         # folder. A junction or other reparse point counts as a link too (Windows).
-        if is_link(cat_root):
+        try:
+            linked_cat = is_link(cat_root)
+            is_folder = linked_cat or stat.S_ISDIR(os.stat(cat_root).st_mode)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            if not _process_can_open():
+                raise  # the process, not the backup: stop
+            # R778: the category folder itself could not be looked at. Nothing in it was restored.
+            _unread(cat, "", UNREAD_FOLDER)
+            continue
+        if linked_cat:
             refused_categories.append(cat)
             continue
-        if not cat_root.is_dir():
+        if not is_folder:
             continue
         # Containment is measured from where the folders really are: the backup folder the person
         # picked may itself be a link (their choice), and so may a live data folder they moved.
@@ -863,11 +1038,14 @@ def restore_folder_backup(
         except OSError:
             refused_categories.append(cat)
             continue
-        members, linked_here = _category_members(cat_root)
+        not_listed: list[tuple[str, str]] = []
+        members, linked_here = _category_members(cat_root, not_listed)
         if _category_swapped(cat_root, cat_real):
             refused_categories.append(cat)
             continue
         refused_symlinks += linked_here
+        for rel_s, why in not_listed:
+            _unread(cat, rel_s, why)
         for p, seen in members:
             rel = p.relative_to(cat_root)
             # Belt and braces: whatever the walk handed back, no part of the way from the BACKUP folder
@@ -882,7 +1060,17 @@ def restore_folder_backup(
             # Windows: any local program) can still swap a folder on the way between these checks and
             # the open. Closing it needs a walk by folder handle (os.fwalk) AND every open made
             # relative to its folder with O_NOFOLLOW, or openat2 RESOLVE_NO_SYMLINKS; not done here.
-            if seen.st_dev != cat_dev or link_on_the_way(src, Path(cat) / rel.parent) or not stays_inside(p, cat_real):
+            if seen.st_dev != cat_dev:
+                refused_symlinks += 1
+                continue
+            try:
+                linked_way = link_on_the_way(src, Path(cat) / rel.parent)
+            except OSError as exc:
+                if not _process_can_open():
+                    raise
+                _unread(cat, rel.as_posix(), UNREAD_WHY[type(_unread_of(type(exc)))])
+                continue
+            if linked_way or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
             dst = dest_dir / rel
@@ -907,13 +1095,18 @@ def restore_folder_backup(
             except SourceChanged:
                 refused_symlinks += 1  # swapped for something else after it was looked at: not read
                 continue
+            except SourceUnreadable as exc:
+                # R778: this one file could not be read. Nothing of it reached the live folder (the
+                # temp is gone, the live name never appeared), so a later run restores exactly it.
+                _unread(cat, rel.as_posix(), UNREAD_WHY.get(type(exc), "read-failed"))
+                continue
             if not done:
                 stopped = True
                 break
             if h is not None and h.hexdigest() != want:
                 dst.unlink(missing_ok=True)
                 if len(corrupt) < _PROBLEM_CAP:
-                    corrupt.append({"category": cat, "rel": rel.as_posix()})
+                    corrupt.append({"category": cat, "rel": _shown(rel.as_posix())})
                 continue
             if want is None:
                 unverifiable += 1
@@ -934,7 +1127,14 @@ def restore_folder_backup(
         "refused_dest_links": refused_dest_links,
         # A member link was never written by a backup, but its place in the restore is still empty:
         # any link refusal means the restore did not bring back everything the folder showed.
-        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks),
+        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks or unread_total or unread_folders),
+        # R778: files (or folders, whose files are unknown) that could not be READ, each with one fixed
+        # reason code. Not restored; the rest of the restore went on. Names stay on this machine: the
+        # run journal and the diagnostics carry the count only.
+        "unread_total": unread_total,  # FILES that could not be read
+        "unread_folders": unread_folders,  # folders that could not be listed: their files are unknown
+        "unread_by_why": unread_by_why,  # every one counted, past the named list's cap
+        "unread": unread,
         # A file whose bytes did not match the checksum this backup recorded for it. NOT
         # restored: the copy is removed again, so the live data directory never receives
         # it. Named, so the operator can re-download exactly those.
@@ -1483,6 +1683,8 @@ class FolderBackupManager:
                     restored_unverified=res.get("restored_unverified"),
                     refused_categories=len(res.get("refused_categories") or []),
                     refused_dest_links=res.get("refused_dest_links"),
+                    unread=res.get("unread_total"),
+                    unread_folders=res.get("unread_folders"),
                 )
                 storage_events.run_ended(
                     note,

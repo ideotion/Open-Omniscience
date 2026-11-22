@@ -2094,7 +2094,9 @@
       } catch (_e) {}
       const dlg = document.getElementById("ux-import");
       if (dlg && !dlg.open) {
-        if (st.state === "done") toast(t("Import complete."));
+        // R778/R779: a run that left files out is never announced as complete, dialog open or not.
+        if (st.state === "done" && summaries.some((s2) => s2 && s2.incomplete)) toast(t("Import incomplete — some files were not restored"), "err");
+        else if (st.state === "done") toast(t("Import complete."));
         else if (st.state === "stopped") toast(t("Import stopped."));
         else if (st.state === "error") toast(t("Import finished with errors."), "err");
       }
@@ -3805,6 +3807,42 @@
       if (destLinks) {
         lines.push(ooLabelText(t("Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link"),
           fmtNum(destLinks, 0)));
+      }
+      // R778: files that could not be READ. The restore went on without them; each carries one
+      // fixed reason, counted here, and a later run restores exactly these. Never "complete" when any.
+      const whyText = {
+        "denied": t("permission denied"),
+        "gone": t("no longer there"),
+        "not-a-file": t("not a file"),
+        "read-failed": t("could not be read"),
+      };
+      const unreadAll = (p.unread || []).filter((u) => u && typeof u === "object");
+      const named = (list, n, show) => {
+        const shown = list.slice(0, 6).map(show);
+        const hidden = n - shown.length;
+        return shown.length ? " — " + shown.join(" · ") + (hidden > 0 ? " " + tf("+ {n} more (not shown)", { n: hidden }) : "") : "";
+      };
+      const unreadN = p.unread_total || 0;
+      if (unreadN) {
+        // Counted by the restore over EVERY unread file, not only the named few.
+        const byWhy = {};
+        for (const [w0, n0] of Object.entries(p.unread_by_why || {})) {
+          if (w0 === "folder-unlisted") continue;
+          const w = whyText[w0] ? w0 : "read-failed";
+          byWhy[w] = (byWhy[w] || 0) + (Number(n0) || 0);
+        }
+        const files = unreadAll.filter((u) => u.why !== "folder-unlisted");
+        const reasons = Object.keys(byWhy).map((w) => `${whyText[w]} ${fmtNum(byWhy[w], 0)}`).join(" · ");
+        lines.push(ooLabelText(tf("Restore incomplete: {n} files not restored, because they could not be read. The rest was restored; run the import again to bring back only these", { n: fmtNum(unreadN, 0) }),
+          reasons + named(files, unreadN, (u) => `${u.category}/${u.rel} (${whyText[u.why] || whyText["read-failed"]})`)));
+      }
+      // A folder that could not be listed is counted APART: how many files it holds is unknown, so it
+      // is never added to the file count as if it were one file.
+      const unreadDirs = p.unread_folders || 0;
+      if (unreadDirs) {
+        const dirs = unreadAll.filter((u) => u.why === "folder-unlisted");
+        lines.push(ooLabelText(t("Restore incomplete — folders in the backup that could not be listed, so whatever they hold was not restored"),
+          fmtNum(unreadDirs, 0) + named(dirs, unreadDirs, (u) => `${u.category}${u.rel ? "/" + u.rel : ""}`)));
       }
       const memberLinks = p.refused_symlinks || 0;
       if (memberLinks) {
