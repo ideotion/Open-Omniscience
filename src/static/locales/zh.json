@@ -5798,6 +5798,8 @@
   "The language-to-country list on this install could not be read, so no country is counted from it.": "无法读取此安装中的语言—国家名单，因此不据此计算任何国家。",
   "The language-to-country list on this install was read and lists no country.": "此安装中的语言—国家名单已读取，但未列出任何国家。",
   "The language-to-country list was not found on this install, so no country is counted from it.": "此安装中未找到语言—国家名单，因此不据此计算任何国家。",
+  "The large-data backup stopped before copying anything: the folder {folder} inside the backup folder is a link to {target}, and a backup never writes through a link. Replace the link with a real folder, or choose a backup folder on that other drive.": "大数据备份在复制任何内容之前已停止：备份文件夹中的文件夹 {folder} 是指向 {target} 的链接，而备份从不通过链接写入。请用真实的文件夹替换该链接，或在那个另一个驱动器上选择一个备份文件夹。",
+  "The large-data backup stopped: the folder {folder} inside the backup folder became a link to {target} while it ran, and nothing was written through it. Replace the link with a real folder, or choose a backup folder on that other drive.": "大数据备份已停止：备份文件夹中的文件夹 {folder} 在运行期间变成了指向 {target} 的链接，没有任何内容通过它写入。请用真实的文件夹替换该链接，或在那个另一个驱动器上选择一个备份文件夹。",
   "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "无法确认大数据副本属于本次导出，因此本次导出不将其视为已完成。",
   "The last day comes before the first day.": "最后一天早于第一天。",
   "The last rebuild did not start": "上次重建未启动",
