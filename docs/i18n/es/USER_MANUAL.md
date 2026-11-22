@@ -1953,6 +1953,7 @@ Las **cifras** oficiales no están aquí en absoluto: son datos, así que viven 
     que los datos sean irrecuperables en SSD/flash; para eso, use cifrado de disco completo (LUKS/Qubes/Tails)
     y destruya la clave. También hay una CLI `panic` y un modo de ejecución `--ephemeral`
     (datos solo en RAM, borrados al salir).
+    **El borrado solo es completo cuando ningún otro programa tiene la base de datos abierta.** Un programa que aún la tenga abierta (una segunda copia de la aplicación, una herramienta de bases de datos) puede volver a escribir en el disco el material de clave de la base mientras el borrado se ejecuta. En Linux y macOS el borrado lo busca, sigue sobrescribiendo hasta dos segundos mientras está ahí y, si sigue ahí al final, el resultado dice que el borrado puede estar incompleto. Un programa que tiene la base de datos abierta pero no tiene ningún bloqueo sobre ella en ese momento no se puede ver, así que la comprobación puede pasarlo por alto. En Windows, y dondequiera que esa comprobación falle, el borrado no puede saberlo, y el resultado lo dice.
   - **Desinstalar la aplicación**: elimina el **entorno virtual** (virtualenv) y los **lanzadores de escritorio** de la aplicación,
     y luego detiene el servidor (confirmación escribiendo). Sus **datos se conservan** (use antes el Borrado de emergencia para
     destruirlos); la carpeta de la aplicación se deja en su sitio para que la borre manualmente. Equivale a

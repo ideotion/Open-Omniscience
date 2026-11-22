@@ -1926,6 +1926,7 @@ Os **números** oficiais não ficam aqui de jeito nenhum — eles são dados, po
     que os dados sejam irrecuperáveis em SSD/flash — para isso, use criptografia de disco inteiro (LUKS/Qubes/Tails)
     e destrua a chave. Há também uma CLI `panic` e um modo de execução `--ephemeral`
     (dados só na RAM, apagados ao sair).
+    **O apagamento só é completo quando nenhum outro programa tem a base de dados aberta.** Um programa que ainda a tenha aberta (uma segunda cópia da aplicação, uma ferramenta de bases de dados) pode voltar a gravar no disco o material de chave da base enquanto o apagamento decorre. Em Linux e macOS o apagamento procura-o, continua a sobrescrever até dois segundos enquanto ele lá está e, se ainda lá estiver no fim, o resultado diz que o apagamento pode estar incompleto. Um programa que tem a base de dados aberta mas não detém nenhum bloqueio sobre ela nesse momento não pode ser visto, por isso a verificação pode não o detetar. Em Windows, e onde quer que essa verificação falhe, o apagamento não consegue saber, e o resultado di-lo.
   - **Desinstalar o aplicativo** — remove o **ambiente virtual (virtualenv)** e os **atalhos da área de trabalho** do app,
     e depois para o servidor (confirmação por digitação). Os seus **dados são mantidos** (use primeiro o Apagamento de emergência para
     destruí-los); a pasta do app fica no lugar para ser excluída manualmente. Equivale a

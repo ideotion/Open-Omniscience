@@ -781,7 +781,21 @@ imply a protection we cannot deliver.
   file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
   a commit later than that is the window left, each wipe's own (a second wipe within the 15 s never shortens the first
-  one's late pass); every file under the data dir the earlier steps did not
+  one's late pass). **Another process holding the store (R792).** A second copy of the app or a database tool that has the
+  store open keeps the unlinked files alive through its own descriptors and can go on committing into them, salt included
+  (measured: 5 runs of 5 left it without kept descriptors, 1 of 5 with them). The erase never waits on such a process and
+  never signals it: once every key is destroyed it asks each kept main file, log and log index with one `F_GETLK` (the
+  shared locks SQLite holds for as long as a connection is open in WAL mode; never this process's own, and no process id is
+  read), makes one non-blocking attempt to take SQLite's lock bytes so a holder between transactions is refused when it next
+  begins one, and while a holder is seen rewrites through its kept descriptors every 100 ms for at most 2 s; the panic wipe's
+  15 s late pass does the same before it lets its descriptors go. The report says `other_holder`: `none`, `held` (one was
+  still there when the bound ended: the result says the erase may be incomplete and names closing that program or restarting
+  the computer, never a clean erase) or `unknown` (Windows, where an open file cannot be found from here, a platform whose lock
+  record is not read, or a check that failed: said as such). Stated limits: a program that has the database open but holds
+  no lock on it at that moment (in rollback-journal mode between transactions, for one) cannot be seen, so the check can
+  miss it and the result then says `none`; one that goes on writing after the bound leaves what it writes in blocks only
+  the free-space overwrite may reach. With no other holder the check costs one probe per kept file. Every file under the data
+  dir the earlier steps did not
   handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot

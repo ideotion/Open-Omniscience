@@ -40,7 +40,10 @@ import os
 import re
 import shutil
 import stat
+import struct
+import sys
 import threading
+import time
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
@@ -125,13 +128,35 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
         return False
 
 
-# Descriptors the panic wipe keeps on the files it unlinked, as (fd, whole), one list per wipe (its GENERATION): a transaction
+# Descriptors the erase keeps on the files it unlinked, as (fd, kind), one list per wipe (its GENERATION): a transaction
 # already under way when the erase ran still holds the unlinked file and, on commit, writes page 1 -- salt included -- into it.
-# Per wipe (row 36), so the late pass of one wipe closes its own descriptors and never a second wipe's, whose own late pass then
-# comes its full delay after that second erase.
-_HELD: dict[int, list[tuple[int, bool]]] = {}
+# ``kind`` is "whole" (a -wal or -journal, rewritten whole), "head" (a main file, its salt page) or "shm" (a log index, its
+# head zeroed). Per wipe (row 36), so the late pass of one wipe closes its own descriptors and never a second wipe's, whose own
+# late pass then comes its full delay after that second erase.
+_HELD: dict[int, list[tuple[int, str]]] = {}
 _HELD_LOCK = threading.Lock()
 _GENERATIONS = itertools.count(1)
+
+# R792. ANOTHER PROCESS holding the store (a second copy of the app, a tool with the database open). Its own descriptors keep
+# the unlinked files alive and it can go on committing into them through the erase, putting page 1 -- salt included -- back on
+# the disk: measured, a process writing in a loop through the erase left the salt in the log it still held in 5 runs of 5
+# without kept descriptors and 1 of 5 with them. The erase never waits on such a process and never signals it. It finds it from
+# the locks SQLite takes (every connection holds a shared lock on the main file and on the log index for as long as it is open
+# in WAL mode), rewrites through its own kept descriptors while one is seen, for at most _HOLDER_BOUND_S, and says in its result
+# when one was still there at the end, or when it could not tell.
+#: How long the erase goes on rewriting while another process still holds the store (inline, after every key is destroyed; and
+#: again in the panic wipe's late pass before its descriptors are let go). Measured: a rewrite pass of a few-MiB log and the
+#: probe take milliseconds, so 2 s is ~20 passes; with no other holder the erase pays one probe per kept file (< 1 ms each).
+_HOLDER_BOUND_S = 2.0
+_HOLDER_STEP_S = 0.1
+#: The erase result's ``other_holder``: no other process was seen holding the store; one still held it when the bound ended;
+#: or whether one did could not be told (Windows, a platform whose lock record is not read here, a probe that failed, a file
+#: that could not be kept). Only "none" is a clean result.
+HOLDER_NONE, HOLDER_HELD, HOLDER_UNKNOWN = "none", "held", "unknown"
+# SQLite's lock bytes (os_unix.c): PENDING_BYTE 0x40000000, then RESERVED, then the 510-byte SHARED range, on the main file;
+# the eight WAL locks from byte 120 and the "dead man switch" at 128 on the log index.
+_MAIN_LOCKS = (0x40000000, 2 + 510)
+_SHM_LOCKS = (120, 9)
 
 
 def new_hold_generation() -> int:
@@ -139,32 +164,144 @@ def new_hold_generation() -> int:
     return next(_GENERATIONS)
 
 
-def _hold(path: Path, *, whole: bool, generation: int = 0) -> None:
+def _hold(path: Path, *, whole: bool, generation: int = 0, kind: str | None = None) -> bool | None:
     """Keep a descriptor on ``path`` for :func:`rescrub_held`. POSIX only: on Windows an open descriptor would make the
-    unlink fail. Never raises."""
+    unlink fail. Returns True when kept, None when there is nothing to keep (no such file), False when an existing file
+    could not be kept. Never raises."""
     if os.name != "posix":
-        return
+        return False
     try:
         fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+    except FileNotFoundError:
+        return None
     except OSError:
-        return
+        return False
     try:
         regular = stat.S_ISREG(os.fstat(fd).st_mode)
     except OSError:
         regular = False
     if not regular:  # a FIFO, socket or device is never kept to write to
         os.close(fd)
-        return
+        return False
+    kind = kind or ("whole" if whole else "head")
+    if kind in ("head", "shm"):
+        _shut_out(fd, kind)
     # No lock: the erase waits on nothing, and a rescrub of an earlier wipe may hold it for a long rewrite. ``setdefault`` and a
     # list append are atomic, and a pass takes only the entries present when it starts, removing them from the front.
-    _HELD.setdefault(generation, []).append((fd, whole))
+    _HELD.setdefault(generation, []).append((fd, kind))
+    return True
 
 
-def rescrub_held(*, close: bool, generation: int | None = None) -> int:
-    """Overwrite again, through the kept descriptors, the head of every unlinked main file and the whole of every
-    unlinked -wal and -journal; with ``close`` the descriptors are then let go. Only one wipe's with ``generation``, every
-    wipe's without. Returns how many were rewritten. Never raises: the wipe is done, this closes the window a late commit
-    leaves."""
+def _flock_layout() -> str | None:
+    """The ``struct flock`` layout of this platform, or None where it is not read here (the result then says "could not tell")."""
+    if sys.platform.startswith("linux"):
+        return "hhqqi"  # l_type, l_whence, l_start, l_len, l_pid
+    if sys.platform == "darwin":
+        return "qqihh"  # l_start, l_len, l_pid, l_type, l_whence
+    return None
+
+
+def _flock(kind: int, start: int, length: int) -> bytes | None:
+    layout = _flock_layout()
+    if layout is None:
+        return None
+    if layout == "hhqqi":
+        return struct.pack(layout, kind, os.SEEK_SET, start, length, 0)
+    return struct.pack(layout, start, length, 0, kind, os.SEEK_SET)
+
+
+def _other_holder(fd: int) -> bool | None:
+    """Whether ANOTHER process holds a lock on the file behind ``fd``: one ``F_GETLK`` over the whole file (it never reports this
+    process's own locks, and never changes any). None when it cannot be told. The other process's id is never read out: the
+    answer is only yes or no."""
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    layout = _flock_layout()
+    probe = _flock(fcntl.F_WRLCK, 0, 0)
+    if layout is None or probe is None:
+        return None
+    try:
+        got = fcntl.fcntl(fd, fcntl.F_GETLK, probe)
+    except (OSError, ValueError):
+        return None
+    lock_type = struct.unpack(layout, got[: struct.calcsize(layout)])[0 if layout == "hhqqi" else 3]
+    return lock_type != fcntl.F_UNLCK
+
+
+def _shut_out(fd: int, kind: str) -> None:
+    """R792 (2): one attempt, never waiting, to take SQLite's lock bytes on a kept main file or log index for writing, so a
+    process that holds the file open but no lock on it yet (between two transactions) is refused when it next begins one. It
+    fails, and the erase carries on, whenever another connection already holds those bytes: that case is what the probe and
+    the bounded rewrite are for. Let go when the descriptor is closed (and earlier if this process's own pool, closing after
+    the erase, unlocks the same bytes: POSIX locks belong to the process, not to the descriptor). Never raises."""
+    try:
+        import fcntl
+    except ImportError:
+        return
+    start, length = _MAIN_LOCKS if kind == "head" else _SHM_LOCKS
+    req = _flock(fcntl.F_WRLCK, start, length)
+    if req is None:
+        return
+    with contextlib.suppress(OSError, ValueError):
+        fcntl.fcntl(fd, fcntl.F_SETLK, req)
+
+
+def _holder_state(entries: list[tuple[int, str]]) -> str:
+    """One probe of every kept main file, log and log index: ``held`` when any shows another process's lock, ``unknown`` when
+    any could not be asked, ``none`` otherwise."""
+    if os.name != "posix" or _flock_layout() is None:
+        return HOLDER_UNKNOWN
+    unknown = False
+    for fd, _kind in entries:
+        seen = _other_holder(fd)
+        if seen:
+            return HOLDER_HELD
+        unknown = unknown or seen is None
+    return HOLDER_UNKNOWN if unknown else HOLDER_NONE
+
+
+def settle_other_holders(generation: int, *, bound_s: float | None = None) -> str:
+    """R792 (3): while another process still holds the erased store, rewrite through this wipe's kept descriptors every
+    :data:`_HOLDER_STEP_S`, for at most ``bound_s`` (default :data:`_HOLDER_BOUND_S`); once it is gone, one last rewrite takes
+    what it wrote before it closed. Returns the state at the end (``HOLDER_*``). Never waits when none is seen (one probe per
+    kept file), never signals the other process, never raises."""
+    bound = _HOLDER_BOUND_S if bound_s is None else bound_s
+    try:
+        entries = list(_HELD.get(generation, ()))
+        state = _holder_state(entries)
+        if state != HOLDER_HELD:
+            return state
+        deadline = time.monotonic() + bound
+        while True:
+            rescrub_held(close=False, generation=generation)
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(_HOLDER_STEP_S)
+            state = _holder_state(entries)
+            if state != HOLDER_HELD:
+                rescrub_held(close=False, generation=generation)  # what it committed just before it let go
+                return state
+        return _holder_state(entries)
+    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+        return HOLDER_UNKNOWN
+
+
+def rescrub_held(*, close: bool, generation: int | None = None, settle: bool = True) -> int:
+    """Overwrite again, through the kept descriptors, the head of every unlinked main file and log index and the whole of
+    every unlinked -wal and -journal; with ``close`` the descriptors are then let go. Only one wipe's with ``generation``,
+    every wipe's without. A closing pass first goes on rewriting while another process still holds one of the files, within
+    :data:`_HOLDER_BOUND_S` (R792: the hold is never let go while another holder is still seen inside the bound; ``settle``
+    False skips that when the caller has just done it). Returns how many were rewritten. Never raises: the wipe is done, this
+    closes the window a late commit leaves."""
+    if close and settle:
+        gens = list(_HELD) if generation is None else [generation]
+        for g in gens:
+            if settle_other_holders(g) == HOLDER_HELD:
+                # No path and no process id: the line says only what the erase could not finish (R734/R736).
+                _LOG.warning("crypto-erase: another program still had the erased database open when its kept descriptors "
+                             "were let go; the erase may be incomplete")
     done = 0
     # The lock is held for the whole rewrite, so a closing pass can never close a descriptor another pass is still writing
     # through (its number could already belong to an unrelated file). Never on a latency path: the wipe has returned.
@@ -196,18 +333,21 @@ def held_count(generation: int | None = None) -> int:
     return sum(len(v) for v in list(_HELD.values()))
 
 
-def _rewrite_held(held: list[tuple[int, bool]], *, close: bool) -> int:
+def _rewrite_held(held: list[tuple[int, str]], *, close: bool) -> int:
     done = 0
-    for fd, whole in held:
+    for fd, kind in held:
         try:
             size = os.fstat(fd).st_size
-            limit = size if whole else min(size, _SQLCIPHER_PAGE1)
+            limit = size if kind == "whole" else min(size, _SQLCIPHER_PAGE1)
             os.lseek(fd, 0, os.SEEK_SET)
             written = 0
             while True:
                 if written >= limit:
                     break
-                written += os.write(fd, os.urandom(min(_CHUNK, limit - written)))
+                n = min(_CHUNK, limit - written)
+                # A log index's head is zeroed, never randomised (see pass 1 of the erase): a random frame count grows the
+                # mapped file of a connection that reads it.
+                written += os.write(fd, bytes(n) if kind == "shm" else os.urandom(n))
             os.fsync(fd)
             done += 1
         except OSError:
@@ -507,9 +647,37 @@ def quick_crypto_erase(
 
     ``hold_for_rescrub`` (the panic wipe, POSIX only) keeps a descriptor on every main file, -wal and -journal before
     it is unlinked, so :func:`rescrub_held` can destroy what a transaction already under way writes into the unlinked
-    file after this returns (its commit puts page 1, salt included, back on the disk), under ``hold_generation`` (one wipe's own)."""
+    file after this returns (its commit puts page 1, salt included, back on the disk), under ``hold_generation`` (one wipe's own).
+    Without it the erase keeps them only while it runs and lets them go before it returns.
+
+    Either way (R792), once every key is destroyed the erase looks for ANOTHER process holding the store, goes on rewriting
+    through the kept descriptors while one is seen (at most :data:`_HOLDER_BOUND_S`, never waiting when none is), and reports
+    ``other_holder``: ``"none"``, ``"held"`` (one still had the store open when the bound ended: the erase may be incomplete) or
+    ``"unknown"`` (it could not tell; always so on Windows, where an open file cannot be found from here). Only "none" is a
+    clean erase."""
     if not confirm:
         raise PermissionError("quick_crypto_erase requires confirm=True (this is irreversible)")
+    own = not hold_for_rescrub
+    generation = new_hold_generation() if own else hold_generation
+    missed: list[str] = []
+    try:
+        report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
+        state = settle_other_holders(generation)
+        if missed and state == HOLDER_NONE:
+            state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
+        report["other_holder"] = state
+        if state != HOLDER_NONE:
+            _LOG.warning("CRYPTO-ERASE: %s", "another program still had the database open when the erase ended; the erase may be "
+                         "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
+        return report
+    finally:
+        if own:
+            rescrub_held(close=True, generation=generation, settle=False)
+
+
+def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str]) -> dict:
+    """The erase itself (see :func:`quick_crypto_erase`); keeps its descriptors under ``generation`` and names in ``missed``
+    each file of a store that existed but could not be kept."""
 
     from src.database.connect import is_encrypted_file
 
@@ -598,8 +766,8 @@ def quick_crypto_erase(
     for db in dbs:
         for suffix in ("-wal", "-journal"):
             p = db.with_name(db.name + suffix)
-            if hold_for_rescrub:
-                _hold(p, whole=True, generation=hold_generation)
+            if _hold(p, whole=True, generation=generation) is False:
+                missed.append(p.name)
             s, overwritten, w = _shred(p)
             seen += s
             wiped += w
@@ -607,8 +775,8 @@ def quick_crypto_erase(
                 overwrite_failures.append(str(p))
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
-            if hold_for_rescrub and p == db:
-                _hold(p, whole=False, generation=hold_generation)
+            if _hold(p, whole=False, generation=generation, kind="head" if p == db else "shm") is False:
+                missed.append(p.name)
             s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
             overwritten = overwritten and head_ok.get(p, True)
             seen += s

@@ -2008,6 +2008,7 @@ Official **figures** are not here at all — they are data, so they live under
     unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails)
     and destroy the key. There is also a `panic` CLI and an `--ephemeral` run mode
     (RAM-only data, wiped on exit).
+    **The erase is complete only when no other program has the database open.** A program that still has it open (a second copy of the app, a database tool) can write the database's key material back to the disk while the erase runs. On Linux and macOS the erase looks for one, keeps overwriting for up to two seconds while it is there, and if it is still there at the end the result says the erase may be incomplete. A program that has the database open but holds no lock on it at that moment cannot be seen, so the check can miss it. On Windows, and wherever that check fails, the erase cannot tell, and the result says so.
   - **Uninstall the app** — removes the app's **virtualenv** and **desktop launchers**,
     then stops the server (type-confirmed). Your **data is kept** (use Panic wipe first to
     destroy it); the app folder is left in place to delete manually. Equivalent to
