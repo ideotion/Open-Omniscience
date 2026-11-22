@@ -15,10 +15,10 @@ citing twice makes the article count overstate the number of independent paths.
 """
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # Three sources; six articles; four cited URLs chosen to hit every branch.
 _THREE_OUTLETS = "https://example.test/three-outlets"   # 3 articles, 3 sources
@@ -31,8 +31,8 @@ def _client(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'indep.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'indep.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

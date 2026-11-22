@@ -12,13 +12,13 @@ import json
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.custody import pending, settings
 from src.custody.settings import CustodySettings, CustodySettingsError, load_settings, save_settings
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +56,7 @@ def test_store_unreadable_is_never_saved(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def article():
-    engine = create_engine("sqlite://", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     src = Source(name="c", domain="c.example", rss_url="https://c.example/feed.xml", language="en")

@@ -8,13 +8,13 @@ from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
 from src.commodity.csv_import import parse_price_csv
 from src.database.models import Base, CommodityPrice
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 _CSV = (
     "date,price,currency,unit,market\n"
@@ -53,8 +53,8 @@ def test_parse_requires_date_and_price():
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'csv.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'csv.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

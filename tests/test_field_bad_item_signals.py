@@ -10,6 +10,7 @@ import pytest
 
 from src.analytics.source_quality import _pre_label
 from src.ingest.non_article import classify_index_page, classify_non_article
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.mark.parametrize("text", [
@@ -103,14 +104,13 @@ def test_a_slug_under_a_section_path_is_an_article_address():
 
 
 def test_link_density_criterion_skips_unsegmented_languages():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
     from src.analytics.source_quality import link_dense_article_ids
     from src.database.models import Article, ArticleLink, Base, Source
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         src = Source(name="s", domain="s.example")

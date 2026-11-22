@@ -38,7 +38,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import (
@@ -49,13 +48,14 @@ from src.catalog.qualification import (
 from src.database.models import Article, ArticleLink, Base, Source, SourceCandidate
 from src.discovery.channels import _add_candidate, citation_channel, is_disqualified_domain
 from src.discovery.cited_sources import promote_cited_sources
+from tests._app_engine import app_sqlite_engine
 
 _NOW = datetime.now(UTC).replace(tzinfo=None)
 
 
 @pytest.fixture()
 def session():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:

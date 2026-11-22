@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring.engine_text import engine_text
+from tests._app_engine import app_sqlite_engine
 
 SECRET = "correct horse battery staple 7"
 ROOT = Path(__file__).resolve().parents[1]
@@ -323,13 +324,12 @@ def test_the_unreadable_arm_of_the_write_cost_member_keeps_the_secret_out(monkey
 
 
 def _empty_factory():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
     from src.database.models import Base
 
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    eng = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True, autoflush=False)
 

@@ -32,6 +32,7 @@ import threading
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import call_on_thread
 
 
@@ -300,13 +301,12 @@ def test_discovery_still_creates_candidates_with_no_concurrent_commit(tmp_path):
     Its OWN engine, never the shared SessionLocal — rows committed there persist for
     the whole pytest session and pollute every later test that reads it (the recorded
     #577 lesson)."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Article, ArticleLink, Base, Source
     from src.discovery.channels import run_discovery
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'disc.db'}")
+    engine = app_sqlite_engine(tmp_path / 'disc.db')
     Base.metadata.create_all(engine)
     session = Session(engine)
     try:

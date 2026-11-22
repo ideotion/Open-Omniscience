@@ -12,12 +12,12 @@ crawler shares the ethical fetch path).
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.ingest import EthicalFetcher
 from src.ingest.crawl import CrawlConfig, crawl_source
+from tests._app_engine import app_sqlite_engine
 
 
 class FakeResponse:
@@ -56,8 +56,8 @@ def _article_html(title, body_sentence, links=()):
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

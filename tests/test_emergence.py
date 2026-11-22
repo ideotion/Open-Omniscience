@@ -13,7 +13,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.emergence import find_manufactured_emergence
@@ -25,6 +24,7 @@ from src.database.models import (
     KeywordMention,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 TODAY = date.today()
 RECENT = TODAY - timedelta(days=2)   # inside the 7-day window
@@ -33,8 +33,8 @@ OLD = TODAY - timedelta(days=20)     # inside the prior 30-day window
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

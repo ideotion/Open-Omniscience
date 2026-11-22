@@ -40,6 +40,7 @@ from src.catalog.csv_io import (
     template_csv,
     write_csv,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _header(text: str) -> list[str]:
@@ -103,15 +104,14 @@ def test_an_unrecognised_country_is_kept_as_stored_and_an_empty_one_stays_empty(
 # --------------------------------------------------------------------------- #
 def _listing_client(tmp_path):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.main import app
     from src.database.models import Base, Source
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'j.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'j.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)
@@ -358,12 +358,11 @@ def test_a_previous_release_alpha3_for_a_non_iso_code_is_still_read(alpha3, stor
 
 
 def _db_with(sources):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add_all(sources)

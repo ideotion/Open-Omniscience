@@ -11,11 +11,12 @@ Two layers:
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.fts import SearchQueryError, build_match, ensure_fts, search_ids
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # Pure translator
@@ -66,8 +67,8 @@ def test_build_match_rejects_unbalanced_parens():
 
 @pytest.fixture()
 def session(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'fts.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'fts.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

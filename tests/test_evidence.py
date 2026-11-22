@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
@@ -29,6 +28,7 @@ from src.reporting.evidence import (
     load_or_create_signing_key,
     verify_bundle,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 class _Art:
@@ -150,8 +150,8 @@ def test_standalone_verifier_script(tmp_path):
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))  # signing key under tmp
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'r.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'r.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)

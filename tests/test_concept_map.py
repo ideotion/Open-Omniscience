@@ -20,7 +20,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
@@ -28,6 +27,7 @@ from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import function_body, read_static, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -42,8 +42,8 @@ def corpus(tmp_path):
     made `form_shared_with` necessary and it belongs in the fixture rather than in a
     comment.
     """
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'concept_map.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'concept_map.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

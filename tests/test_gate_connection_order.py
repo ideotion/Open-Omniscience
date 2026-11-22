@@ -30,11 +30,12 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from src.database import writer
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -296,7 +297,7 @@ def test_the_scan_passes_every_right_shape(source):
 @pytest.fixture
 def pool(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_WRITE_GATE_WATCHDOG", "0")
-    eng = create_engine(f"sqlite:///{tmp_path / 'order.db'}", poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=5)
+    eng = app_sqlite_engine(tmp_path / 'order.db', poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=5)
     yield eng
     eng.dispose()
 

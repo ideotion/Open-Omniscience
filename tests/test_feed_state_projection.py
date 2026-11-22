@@ -21,20 +21,21 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, FeedFetchState, Source
 from src.ingest.pipeline import feed_is_due
 from src.scheduler.coverage import tag_coverage
 from src.scheduler.runner import _filter_due_feeds
+from tests._app_engine import app_sqlite_engine
 
 _NOW = datetime.now(UTC)
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     statements: list[str] = []

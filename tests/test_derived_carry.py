@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.engine_identity import baseline_engine_id, www_engine_id
@@ -50,6 +50,7 @@ from src.backup.merge import _BACKLOG_SQL, _STATUS_MERGED, _STATUS_REINDEXED, me
 from src.database.fts import _FTS_DDL
 from src.database.fts_norm import register as _register_fts_functions
 from src.database.models import Article, ArticleIndexStamp, ArticleWwwStamp, Base, Keyword, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _writer(path: Path) -> sqlite3.Connection:
@@ -115,7 +116,7 @@ def _country_form(request):
 
 
 def _schema(path: Path) -> None:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
     if _FORM[0] == "alpha3":
@@ -132,7 +133,7 @@ def _schema(path: Path) -> None:
 
 
 def _session(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     return engine, sessionmaker(bind=engine, future=True)()
 
 

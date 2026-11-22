@@ -21,13 +21,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.custody import pending
 from src.custody.log import CustodyLog
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _MARKER = "token-ZZTOP-must-not-be-logged"
 _TORN = '{"article_id":3,"item_hash":null,"url":"https://c.example/' + _MARKER
@@ -202,7 +202,7 @@ def test_a_read_in_progress_waits_for_an_append_in_progress(monkeypatch, caplog)
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:

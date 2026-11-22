@@ -25,6 +25,7 @@ from src.custody.log import (
     verify_export_report,
 )
 from src.custody.signing import HybridSigner, canonical_bytes
+from tests._app_engine import app_sqlite_engine
 
 pqc = pytest.mark.skipif(not signing.PQC_AVAILABLE, reason="pqcrypto/ML-DSA not installed")
 
@@ -517,7 +518,6 @@ def test_ingest_without_the_library_keeps_the_batch_log_owes_each_entry_and_logs
     entries are owed, and the flush logs one line."""
     import uuid
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
@@ -529,7 +529,7 @@ def test_ingest_without_the_library_keeps_the_batch_log_owes_each_entry_and_logs
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    engine = create_engine("sqlite://", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     src = Source(name="c", domain="c.example", rss_url="https://c.example/feed.xml", language="en")

@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.scheduler.runner import stratified_interleave
+from tests._app_engine import app_sqlite_engine
 
 
 def _s(i, lang, tags, country=None):
@@ -95,7 +96,6 @@ def test_settings_rejects_a_non_dict_priority():
 
 
 def test_targets_will_process_equals_matched_when_uncapped():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.scheduler import scheduler_targets
@@ -105,7 +105,7 @@ def test_targets_will_process_equals_matched_when_uncapped():
     # accepts 0 too, see tests/test_no_source_cap.py -- audit fix 2026-07-17); relying on
     # the default here still exercises exactly the case the old min(matched, 0)
     # mis-reported as 0.
-    eng = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     db = sessionmaker(bind=eng, future=True)()
     for i in range(3):

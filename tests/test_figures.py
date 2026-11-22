@@ -18,7 +18,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.figures import (
@@ -27,6 +26,7 @@ from src.analytics.figures import (
     source_concentration,
 )
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -36,7 +36,7 @@ def db():
     Never SessionLocal: seeding the shared process DB pollutes every later test that
     reads it (the recorded 2026-07-06 lesson — one wave-2 test reddened seven others).
     """
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     try:

@@ -13,15 +13,15 @@ import pytest
 
 pytest.importorskip("vaderSentiment")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 import src.api.framing as fr  # noqa: E402
 from src.database.models import Article, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 
 def _session_with_long_article():
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     s.add(Source(id=1, name="Long Source", domain="long.test"))

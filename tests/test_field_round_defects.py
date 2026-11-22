@@ -29,11 +29,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +43,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 def db():
     # StaticPool: ONE connection for every thread, so a TestClient's worker thread sees
     # this same in-memory database rather than a fresh, empty one of its own.
-    engine = create_engine("sqlite://", future=True, poolclass=StaticPool,
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -452,7 +452,7 @@ def test_a_sweep_that_runs_out_of_budget_says_so_and_claims_no_verdict(monkeypat
     was swallowed per check, so the sweep never learned its budget had run out."""
     from src.monitoring.integrity import corpus_integrity
 
-    eng = create_engine("sqlite://", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         _seed_keywords(s, 3000)
@@ -467,7 +467,7 @@ def test_a_sweep_that_runs_out_of_budget_says_so_and_claims_no_verdict(monkeypat
 def test_a_clean_complete_sweep_still_says_no_drift(monkeypatch):
     from src.monitoring.integrity import corpus_integrity
 
-    eng = create_engine("sqlite://", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         src = Source(name="S", domain="s.example")

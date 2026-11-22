@@ -11,14 +11,14 @@ terms never get falsely merged, and the raw members stay listed.
 from datetime import date
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.analytics import lemma as lemma_mod
 from src.analytics import queries as q
 from src.analytics.families import _lemma, build_families, canonical_key, strip_honorifics
-from src.analytics import lemma as lemma_mod
 from src.analytics.lemma import lemmatizer_available
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 # Lemmatisation reads the ONE seam (src/analytics/lemma.py). simplemma moved from the
 # [analysis] extra into CORE on 2026-09-17 (Q416 = a), so these normally RUN -- but the
@@ -311,8 +311,8 @@ def _kw(s, term, normalized, *, kind):
 
 
 def test_associations_grouping_merges_entity_variants():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -362,8 +362,8 @@ def test_family_override_api_merge_split_and_clear(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'ov.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'ov.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

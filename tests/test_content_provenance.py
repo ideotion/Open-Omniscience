@@ -15,7 +15,6 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.taxonomy import CANONICAL_SOURCE_TYPES
@@ -24,12 +23,13 @@ from src.database.models import Base, Source
 pytest.importorskip("fastapi")  # the getters live in the ingestion API module
 
 from src.api import ingestion as I  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

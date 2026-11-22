@@ -14,7 +14,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -27,6 +26,7 @@ from src.database.models import (
     Base,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _seed(s):
@@ -64,7 +64,7 @@ def _seed(s):
 
 
 def _session():
-    eng = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)()
 
@@ -120,8 +120,8 @@ def test_corpus_www_endpoint_includes_when_and_drill_endpoint_intersects():
     from src.api.main import app
     from src.database.session import get_db
 
-    eng = create_engine(
-        "sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng, future=True)
@@ -206,8 +206,8 @@ def test_corpus_facet_articles_endpoint_accepts_source_and_language():
     from src.api.main import app
     from src.database.session import get_db
 
-    eng = create_engine(
-        "sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng, future=True)

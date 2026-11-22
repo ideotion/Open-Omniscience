@@ -17,12 +17,12 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import Base, Place, StatFigure
 from src.entities import dossier as DO
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import read_static
 
 LAND = "Q999999040"
@@ -43,7 +43,7 @@ def lanes(tmp_path, monkeypatch):
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    eng = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     try:

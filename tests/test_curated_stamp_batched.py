@@ -27,7 +27,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 import src.catalog.qualification as Q
@@ -42,6 +42,7 @@ from src.catalog.qualification import (
     stamp_curated_catalog,
 )
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 10, 17, 12, 0, 0, tzinfo=UTC)
 _CURATED = "news,via:curated"
@@ -92,7 +93,7 @@ def _reference_orm_stamp(session, *, now):
 
 def _store(n_unqualified: int = 5):
     """A store with every case the stamp decides: `n_unqualified` curated rows waiting, plus one of each kind it must leave."""
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True, autoflush=False)()
     rows = [Source(name=f"Curated {i}", domain=f"curated{i}.example", rss_url=f"https://curated{i}.example/feed",
@@ -257,7 +258,7 @@ def test_the_heal_derives_the_key_from_the_feed_the_row_holds_when_it_is_stamped
     re-loaded each row. Red without the re-read: ``feed_key`` kept the key of the OLD url."""
     from src.database.feed_key import feed_key
 
-    engine = create_engine(f"sqlite:///{tmp_path}/race.db", future=True)
+    engine = app_sqlite_engine(f"{tmp_path}/race.db", future=True)
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, future=True, autoflush=False)
     session = maker()

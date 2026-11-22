@@ -24,7 +24,6 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.backup.attribution import (
@@ -35,6 +34,7 @@ from src.backup.attribution import (
 from src.bulletin.evidence import build_evidence_archive
 from src.bulletin.period import resolve_period
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _REPO = Path(__file__).resolve().parents[1]
 _P = resolve_period("weekly", end=date(2026, 8, 1))  # 2026-07-25 .. 2026-07-31
@@ -178,7 +178,7 @@ def test_no_scheduled_export_mechanism_exists():
 def _corpus(
     *, domain: str = "alpha.test", source_type: str = "news", bystander: bool = False
 ) -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="Alpha", domain=domain, country="fr", source_type=source_type)
