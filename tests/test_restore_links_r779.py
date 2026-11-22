@@ -25,7 +25,7 @@ from src.backup.links import is_link, link_on_the_way, stays_inside
 
 ROOT = Path(__file__).resolve().parents[1]
 
-pytestmark = pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt", reason="needs POSIX symlinks")
+_posix = pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt", reason="needs POSIX symlinks")
 
 
 def _touch(p: Path, data: bytes = b"x") -> Path:
@@ -42,6 +42,7 @@ def _files(d: Path) -> list[str]:
     return sorted(p.relative_to(d).as_posix() for p in d.rglob("*") if p.is_file()) if d.exists() else []
 
 
+@_posix
 def test_a_category_folder_that_is_a_link_is_refused_never_followed(tmp_path):
     secret = _touch(tmp_path / "elsewhere" / "private.txt", b"not yours")
     backup = tmp_path / "backup"
@@ -56,6 +57,7 @@ def test_a_category_folder_that_is_a_link_is_refused_never_followed(tmp_path):
     assert secret.read_bytes() == b"not yours"
 
 
+@_posix
 def test_the_backup_folder_the_person_picked_may_itself_be_a_link(tmp_path):
     real = tmp_path / "drive" / "backup"
     _touch(real / "wiki_dumps" / "en.xml.bz2", b"dump")
@@ -67,6 +69,7 @@ def test_the_backup_folder_the_person_picked_may_itself_be_a_link(tmp_path):
     assert _files(tgt["wiki_dumps"]) == ["en.xml.bz2"]
 
 
+@_posix
 def test_a_folder_link_below_a_category_is_not_followed(tmp_path):
     _touch(tmp_path / "elsewhere" / "private.txt")
     backup = tmp_path / "backup"
@@ -78,6 +81,7 @@ def test_a_folder_link_below_a_category_is_not_followed(tmp_path):
     assert res["refused_symlinks"] == 1
 
 
+@_posix
 def test_the_restore_never_writes_through_a_link_in_the_live_folder(tmp_path):
     backup = tmp_path / "backup"
     _touch(backup / "osm_regions" / "africa" / "kenya.osm.pbf", b"map")
@@ -93,6 +97,7 @@ def test_the_restore_never_writes_through_a_link_in_the_live_folder(tmp_path):
     assert res["restored"] == 1  # the file with no link on its way still lands
 
 
+@_posix
 def test_a_live_folder_the_person_moved_with_a_link_still_receives_files(tmp_path):
     backup = tmp_path / "backup"
     _touch(backup / "wiki_dumps" / "en.xml.bz2", b"dump")
@@ -106,6 +111,7 @@ def test_a_live_folder_the_person_moved_with_a_link_still_receives_files(tmp_pat
     assert _files(moved) == ["en.xml.bz2"]
 
 
+@_posix
 def test_a_planted_part_file_link_is_removed_not_written_through(tmp_path):
     victim = _touch(tmp_path / "victim.txt", b"keep me")
     src = _touch(tmp_path / "src.bin", b"payload")
@@ -117,6 +123,7 @@ def test_a_planted_part_file_link_is_removed_not_written_through(tmp_path):
     assert dst.read_bytes() == b"payload" and not is_link(dst)
 
 
+@_posix
 def test_a_member_swapped_after_its_check_is_refused_not_read(tmp_path):
     checked = _touch(tmp_path / "backup" / "wiki_dumps" / "a.bz2", b"dump")
     other = _touch(tmp_path / "elsewhere" / "s.txt", b"secret")
@@ -135,6 +142,7 @@ def test_a_member_swapped_after_its_check_is_refused_not_read(tmp_path):
         _atomic_copy(checked, dst, nofollow_src=True, expect=os.lstat(other))
 
 
+@_posix
 def test_a_member_link_alone_makes_the_restore_incomplete(tmp_path):
     _touch(tmp_path / "elsewhere" / "s.txt")
     backup = tmp_path / "backup"
@@ -144,6 +152,7 @@ def test_a_member_link_alone_makes_the_restore_incomplete(tmp_path):
     assert res["restored"] == 1 and res["refused_symlinks"] == 1 and res["incomplete"] is True
 
 
+@_posix
 def test_the_scan_and_the_restore_count_the_same_links(tmp_path):
     _touch(tmp_path / "elsewhere" / "x" / "1")
     _touch(tmp_path / "elsewhere" / "x" / "2")
@@ -159,6 +168,7 @@ def test_the_scan_and_the_restore_count_the_same_links(tmp_path):
     assert scan["refused_links"] == res["refused_symlinks"] == 2
 
 
+@_posix
 def test_the_scan_lists_a_linked_category_with_its_reason_and_counts_nothing(tmp_path):
     _touch(tmp_path / "elsewhere" / "a.bz2", b"aaaa")
     backup = tmp_path / "backup"
@@ -171,6 +181,7 @@ def test_the_scan_lists_a_linked_category_with_its_reason_and_counts_nothing(tmp
     assert f["blobs"]["maps"]["count"] == 1
 
 
+@_posix
 def test_a_manifest_never_stands_in_for_a_linked_category(tmp_path):
     _touch(tmp_path / "elsewhere" / "a.bz2")
     backup = tmp_path / "backup"
@@ -181,6 +192,7 @@ def test_a_manifest_never_stands_in_for_a_linked_category(tmp_path):
     assert wiki["count"] == 0 and wiki["linked"] == 1  # the restore will not restore it, so the scan does not count it
 
 
+@_posix
 def test_the_link_helpers(tmp_path):
     base = tmp_path / "base"
     (base / "a").mkdir(parents=True)
@@ -212,3 +224,26 @@ def test_the_page_says_it_as_real_code():
     r = subprocess.run([node, str(ROOT / "tests" / "restore_links_r779_node_test.js")],
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize(
+    ("attrs", "tag", "linked"),
+    [
+        (0x400, 0xA000000C, True),   # IO_REPARSE_TAG_SYMLINK: stands for another name
+        (0x400, 0xA0000003, True),   # IO_REPARSE_TAG_MOUNT_POINT: a junction or mount point
+        (0x400, 0x9000001A, False),  # IO_REPARSE_TAG_CLOUD_6: a OneDrive "files on demand" placeholder
+        (0x400, 0x80000013, False),  # IO_REPARSE_TAG_DEDUP: a deduplicated file, the file's own data
+        (0x400, None, True),         # a reparse point whose tag cannot be read: refused (fail closed)
+        (0x0, None, False),          # no reparse point at all
+    ],
+)
+def test_which_windows_reparse_points_count_as_links(attrs, tag, linked):
+    import stat as _stat
+    from types import SimpleNamespace
+
+    from src.backup.links import is_link_stat
+
+    st = SimpleNamespace(st_mode=_stat.S_IFREG | 0o644, st_file_attributes=attrs)
+    if tag is not None:
+        st.st_reparse_tag = tag
+    assert is_link_stat(st) is linked  # type: ignore[arg-type]

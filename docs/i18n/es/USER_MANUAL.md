@@ -1789,6 +1789,7 @@ Las **cifras** oficiales no están aquí en absoluto: son datos, así que viven 
   **complementa** su corpus y **nunca lo sustituye**; nada de lo que ya tiene se
   sobrescribe, los duplicados se detectan bit a bit, y ante un valor en conflicto **se conserva el
   suyo local y se informan ambos**, nunca se promedian.
+  - **Los enlaces de una copia nunca se siguen.** Una carpeta de la copia que es un enlace (en Windows también una unión o un punto de montaje) no se restaura, y la importación lo dice: la lista la muestra como «un enlace, no restaurado» y el resultado indica «Restauración incompleta». Para restaurarla, copie la carpeta real en la copia en lugar del enlace. Una restauración tampoco escribe nunca a través de un enlace en sus propias carpetas de datos. Un marcador de posición de OneDrive no es un enlace y se restaura con normalidad. Límites declarados: un enlace *duro* dentro de una copia no se detecta (solo puede apuntar a un archivo del mismo disco); en Windows el instante entre comprobar un archivo y abrirlo se reduce pero no se cierra; y un archivo que la aplicación no puede leer sigue deteniendo la restauración con un error, por ahora.
   - **Informes de importación.** Tanto una restauración por fusión como una importación de boletines desde una carpeta
     escriben automáticamente un **informe persistente** en el disco al terminar (en la unidad
     ARTÍCULOS, nunca una suma de filas entre tablas que parezca millones de artículos cuando en
