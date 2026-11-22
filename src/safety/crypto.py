@@ -20,6 +20,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from src.backup.regular_file import NotARegularFile, open_regular
 from src.monitoring.secret_scrub import passphrase_bytes
 
 # Self-describing container so a file can be decrypted years later without out-of-band
@@ -259,6 +260,19 @@ def _open_stream_header(fin, passphrase: str) -> tuple[AESGCM, bytes, int]:
     return AESGCM(_derive(_key_bytes(passphrase), salt, n, r, p)), prefix, chunk_size + _TAG
 
 
+def _open_sealed(src: str | os.PathLike[str]):
+    """An encrypted file opened to be read, as a regular file or not at all (row 312).
+
+    A backup's volumes sit on a drive anyone may write to: a named pipe in a volume's place held a restore on its
+    open for ever, and a link to ``/dev/zero`` was read without end. A link is followed (the app's own files may
+    live behind one; the backup readers refuse links in the folder before they get here), but what it reaches must
+    be a regular file, and the open never blocks. Anything else is the same refusal as a file that is not ours."""
+    try:
+        return open_regular(src, follow_links=True)
+    except NotARegularFile:
+        raise EncryptionError("not an Open Omniscience encrypted file (not a regular file); nothing was read") from None
+
+
 def decrypt_stream(
     src: str | os.PathLike[str],
     write,
@@ -272,7 +286,7 @@ def decrypt_stream(
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
     extended stream -- never silently yields a partial archive."""
     total = 0
-    with open(src, "rb") as fin:
+    with _open_sealed(src) as fin:
         aes, prefix, block = _open_stream_header(fin, passphrase)
         counter = 0
         prev = fin.read(block)
@@ -301,7 +315,7 @@ def stream_key_opens(src: str | os.PathLike[str], passphrase: str) -> bool:
     file, False says the first chunk's tag failed (a wrong key, or a damaged first chunk -- the caller tells the two
     apart, for example by the file's checksum). A malformed header raises :class:`EncryptionError` as
     :func:`decrypt_stream` does. Nothing decrypted is kept."""
-    with open(src, "rb") as fin:
+    with _open_sealed(src) as fin:
         aes, prefix, block = _open_stream_header(fin, passphrase)
         first = fin.read(block)
         final = not fin.read(1)  # a one-chunk file seals its only chunk as the final one

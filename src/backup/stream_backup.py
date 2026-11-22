@@ -104,7 +104,8 @@ from src.backup.volumes import (
     VOLUME_SIZE_DEFAULT,
     VolumeError,
     VolumeStopped,
-    _sha256_file,
+    _digest_matches,
+    _plain_volume_name,
     load_manifest,
     member_in_use,
     verify_volume_set,
@@ -1295,7 +1296,7 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
                 and pooled.get("plaintext_sha256") == psha
                 and _whole_number(pooled.get("plaintext_bytes", -1)) == slice_len
                 and _is_regular_file(reuse_path)
-                and _sha256_file(reuse_path) == pooled.get("sha256")
+                and _digest_matches(reuse_path, pooled.get("sha256"))
             ):
                 entry = {
                     "name": reuse_path.name,
@@ -2135,8 +2136,11 @@ def verify_stream_backup(
     bad_parity: list[str] = []
     if par:
         for pv in par.get("volumes") or []:
+            if not _plain_volume_name(pv.get("name") if isinstance(pv, dict) else None):
+                bad_parity.append(str(pv.get("name") if isinstance(pv, dict) else pv))  # a path: never read (row 312)
+                continue
             p = src / pv["name"]
-            if not p.exists() or _sha256_file(p) != pv["sha256"]:
+            if not p.exists() or not _digest_matches(p, pv.get("sha256")):
                 bad_parity.append(pv["name"])
         usable = int(par.get("count", 0)) - len(bad_parity)
         report["parity"] = {
@@ -2278,7 +2282,7 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
             return
     except (EncryptionError, OSError):
         return  # an unreadable header is damage, not a key: the checksum pass reports it
-    if _sha256_file(path) != vol_by_name[first].get("sha256"):
+    if not _digest_matches(path, vol_by_name[first].get("sha256")):
         return
     raise EncryptionError(
         "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "
