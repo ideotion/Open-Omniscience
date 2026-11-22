@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -299,3 +300,39 @@ def test_a_member_on_another_device_than_its_category_folder_is_refused(tmp_path
     tgt = _targets(tmp_path)
     res = restore_folder_backup(backup, targets=tgt)
     assert _files(tgt["wiki_dumps"]) == ["b.bz2"] and res["refused_symlinks"] == 1 and res["incomplete"] is True
+
+
+def _with_ino(st: os.stat_result, ino: int) -> os.stat_result:
+    t = list(st)
+    t[stat.ST_INO] = ino
+    return os.stat_result(t)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX inode check")
+def test_an_inode_that_moved_on_a_made_up_inode_file_system_is_looked_at_again(tmp_path):
+    """exFAT, FAT32, CIFS noserverino: the inode the walk saw can differ from the one opened. The
+    name is looked at again, and the member restores when it still is the file opened."""
+    from src.backup.folder_backup import _same_file, _same_file_again
+
+    f = tmp_path / "m.bin"
+    f.write_bytes(b"abc")
+    opened = os.stat(f)
+    checked = _with_ino(opened, opened.st_ino + 12345)
+    assert not _same_file(opened, checked)
+    assert _same_file_again(opened, checked, f)
+    # Not the size checked, or another device: refused.
+    other = tmp_path / "o.bin"
+    other.write_bytes(b"abcd")
+    assert not _same_file_again(os.stat(other), checked, other)
+    t = list(checked)
+    t[stat.ST_DEV] = checked.st_dev + 1
+    assert not _same_file_again(opened, os.stat_result(t), f)
+    # The name is now a link to the file opened: refused, never followed.
+    ln = tmp_path / "ln.bin"
+    ln.symlink_to(f)
+    assert not _same_file_again(opened, checked, ln)
+    # The name now holds another file (when the system gave it another inode): refused.
+    f.unlink()
+    f.write_bytes(b"xyz")
+    if os.stat(f).st_ino != opened.st_ino:
+        assert not _same_file_again(opened, checked, f)

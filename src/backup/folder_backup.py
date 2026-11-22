@@ -375,7 +375,7 @@ def _atomic_copy(
                 # device and inode. This also catches a FOLDER on the way swapped for a link, which
                 # O_NOFOLLOW alone does not (it only guards the last name).
                 got = os.fstat(r.fileno())
-                if not stat.S_ISREG(got.st_mode) or not _same_file(got, expect):
+                if not stat.S_ISREG(got.st_mode) or not (_same_file(got, expect) or _same_file_again(got, expect, Path(src))):
                     raise SourceChanged("the file changed after it was checked")
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary, 0o666)
             with os.fdopen(fd, "wb") as w:
@@ -710,6 +710,24 @@ def _same_file(opened: os.stat_result, checked: os.stat_result) -> bool:
     return (opened.st_dev, opened.st_ino) == (checked.st_dev, checked.st_ino)
 
 
+def _same_file_again(opened: os.stat_result, checked: os.stat_result, src: Path) -> bool:
+    """A second look by name when the inode moved (POSIX): FAT32, exFAT, a CIFS share mounted
+    ``noserverino`` or a FUSE file system without ``use_ino`` make an inode number up when a file is
+    loaded, and it can change if the kernel drops the file in between -- likely while tens of GB are
+    copied. A sound member would then be refused at random. So the name is looked at again: it must
+    still not be a link, be a regular file on the same device as the one checked, with the size
+    checked, and now carry the inode that was opened. A swap would have to win this look too, which
+    is the same race as the stated limit, never a wider one."""
+    if os.name == "nt" or opened.st_dev != checked.st_dev or opened.st_size != checked.st_size:
+        return False
+    try:
+        now = os.lstat(src)
+    except OSError:
+        return False
+    return (stat.S_ISREG(now.st_mode) and not is_link_stat(now)
+            and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
 class SourceChanged(OSError):
     """A restore member is no longer the file that was checked (R779): it was swapped after the look."""
 
@@ -859,8 +877,11 @@ def restore_folder_backup(
             # is not a plain folder of the backup: a drive that answers "folder" to the checks and
             # "link" to the walk or the open (a hostile FUSE device can) would otherwise hand over a
             # file from the machine itself, with the open's own identity check agreeing, since both
-            # looked at that same file. Refused. (A walk and open made relative to the folder's own
-            # handle would close the window entirely; that is a stated limit, not done here.)
+            # looked at that same file. Refused. STATED LIMIT: a racer on the SAME file system as the
+            # files it wants read (POSIX: another local account that can write into the backup folder;
+            # Windows: any local program) can still swap a folder on the way between these checks and
+            # the open. Closing it needs a walk by folder handle (os.fwalk) AND every open made
+            # relative to its folder with O_NOFOLLOW, or openat2 RESOLVE_NO_SYMLINKS; not done here.
             if seen.st_dev != cat_dev or link_on_the_way(src, Path(cat) / rel.parent) or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
