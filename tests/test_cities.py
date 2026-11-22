@@ -10,11 +10,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.cities import build_index, load_cities, lookup, parse_cities_sparql
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def test_sample_gazetteer_loads_and_looks_up():
@@ -53,8 +53,8 @@ def test_map_endpoint_attaches_coordinates(tmp_path):
     from src.analytics.store import index_article
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'map.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'map.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin.edition import build_edition
@@ -31,6 +30,7 @@ from src.bulletin.narration import narrate_story
 from src.bulletin.period import resolve_period
 from src.bulletin.review import review_view
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 # A story bigger than any evidence budget, which is the ordinary case.
 _BIG_IDS = list(range(1, 116))
@@ -101,7 +101,7 @@ def test_a_paragraph_from_the_no_evidence_path_carries_the_same_identity():
 #  end to end
 # --------------------------------------------------------------------------- #
 def _edition(monkeypatch, *, text: str, stories=None):
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     monkeypatch.setattr(

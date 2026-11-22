@@ -22,6 +22,7 @@ import pytest
 
 from src.api import diagnostics as d
 from src.api.diagnostics import bundle as _diag_bundle
+from tests._app_engine import app_sqlite_engine
 from tests.diagnostics_source import diagnostics_source
 
 
@@ -459,12 +460,11 @@ def test_corpus_counters_available_branch_counts_real_rows(tmp_path):
     """Point 3/9: the corpus-counters run-header field's AVAILABLE=True path (the actual
     articles/keywords/mentions COUNT query), not just the no-session degrade -- a real
     in-memory SQLite session with a couple of rows in each table."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'counters.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'counters.db', future=True)
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng, future=True)
     with Sess() as s:

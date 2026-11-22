@@ -15,18 +15,18 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine
 
 import src.database.session as session_mod
 from src.backup import sqlite_backup
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def temp_engine(tmp_path, monkeypatch):
     """Point the live engine at a fresh on-disk SQLite DB with core tables + a row."""
     db_file = tmp_path / "live.db"
-    eng = create_engine(f"sqlite:///{db_file}", future=True)
+    eng = app_sqlite_engine(db_file, future=True)
     Base.metadata.create_all(eng)
     with eng.connect() as conn:
         conn.exec_driver_sql(

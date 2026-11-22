@@ -31,13 +31,13 @@ import uuid
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, KeywordMention, Source
 from src.ingest import EthicalFetcher
 from src.ingest.batch import ArticleBatch, collect_batch_size
 from src.ingest.pipeline import IngestResult, ingest_source
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # Fake HTTP layer (the test_ingest conventions)
@@ -113,8 +113,8 @@ def _fetcher(sess):
 
 
 def _mem_db(domain):
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()

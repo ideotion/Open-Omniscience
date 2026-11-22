@@ -21,15 +21,15 @@ import io
 import json
 import zipfile
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import leads_quality as LQ
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

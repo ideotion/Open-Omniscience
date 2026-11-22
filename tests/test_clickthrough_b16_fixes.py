@@ -28,6 +28,7 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     assert_absent,
     assert_present,
@@ -108,14 +109,13 @@ def test_the_reader_footer_label_is_a_frame_the_page_repaints():
 # --- V5: the through-time skip reason as a keyed frame ------------------------------ #
 
 def _long_period_section() -> dict:
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.bulletin import sections
     from src.bulletin.period import resolve_period
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return sections.through_time(Session(engine), resolve_period("yearly", end=date(2026, 8, 1)))
 

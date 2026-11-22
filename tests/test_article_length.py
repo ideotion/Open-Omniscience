@@ -24,6 +24,7 @@ from src.analytics.article_length import (
     _WORD_BUCKETS,
     summarize,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.diagnostics_source import diagnostics_source
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -175,12 +176,11 @@ def test_endpoint_and_button_are_wired():
 def test_article_length_endpoint(tmp_path):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'al.db'}", future=True,
+    eng = app_sqlite_engine(tmp_path / 'al.db', future=True,
                         connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng, future=True)

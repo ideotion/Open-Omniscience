@@ -12,13 +12,14 @@ that bound the read (three columns, ordered by id, a LIMIT on every read of the 
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import store
 from src.analytics.baseline import baseline_tags
 from src.analytics.store import backfill_baseline_tags
 from src.database.models import Base, Keyword, KeywordTag
+from tests._app_engine import app_sqlite_engine
 
 # "election" matches the shipped English baseline (a type and a topic tag), "inflation" one tag, "widget" none
 _TERMS = ["widget", "election", "widget", "inflation", "election", "widget", "widget", "election", "inflation", "widget"]
@@ -26,7 +27,7 @@ _TERMS = ["widget", "election", "widget", "inflation", "election", "widget", "wi
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     statements: list[str] = []

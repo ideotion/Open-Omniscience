@@ -37,11 +37,12 @@ from src.analytics.bulk_build import (
     rebuild_progress,
 )
 from src.database.models import Base, DerivedMeta
+from tests._app_engine import app_sqlite_engine
 
 
 def _engine():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     return eng

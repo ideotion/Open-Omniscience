@@ -23,13 +23,13 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.bulletin.annexes import concepts_markdown
 from src.bulletin.coverage import _terms
 from src.bulletin.period import Period
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,8 +41,8 @@ def corpus(tmp_path):
     Without that article a sum, a max and the true union all agree and the test cannot
     tell which one the code computed.
     """
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'bulletin_rings.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'bulletin_rings.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

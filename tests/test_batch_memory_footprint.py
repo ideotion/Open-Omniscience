@@ -27,7 +27,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
@@ -38,7 +37,7 @@ from src.ingest.batch import (
     ArticleBatch,
     staged_text_cap_bytes,
 )
-
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # staged_text_cap_bytes: the pure mechanism.
@@ -95,8 +94,8 @@ def test_an_unreadable_machine_never_assumes_pressure_from_silence():
 
 @pytest.fixture()
 def session(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 't.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 't.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

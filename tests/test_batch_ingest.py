@@ -5,18 +5,18 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def test_ingest_batch_is_best_effort_and_aggregates(tmp_path, monkeypatch):
     import src.api.ingestion as ing
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'b.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'b.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

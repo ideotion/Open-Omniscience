@@ -18,7 +18,6 @@ import pytest
 
 duckdb = pytest.importorskip("duckdb")  # optional [columnar] extra
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.analytics import columnar  # noqa: E402
@@ -26,14 +25,15 @@ from src.analytics.extract import BaselineExtractor  # noqa: E402
 from src.analytics.queries import kind_of  # noqa: E402
 from src.analytics.store import index_article  # noqa: E402
 from src.database.models import Article, Base, Keyword, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine  # noqa: E402
 
 
 @pytest.fixture()
 def db(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_COLUMNAR_DIR", str(tmp_path))
     monkeypatch.delenv("OO_COLUMNAR", raising=False)
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

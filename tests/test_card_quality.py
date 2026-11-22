@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src.briefing import card_quality as cq
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 11, 14, 12, 0, tzinfo=UTC)
@@ -259,12 +260,11 @@ def test_run_all_bounded_reports_each_producers_time_and_outcome(monkeypatch, tm
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def db():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Article, Base, Source
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         s.add(Source(id=1, name="Wire", domain="wire.example"))

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -27,6 +26,7 @@ from src.api.main import app
 from src.database.models import Base, StatFigure
 from src.database.session import get_db
 from src.ingest import clear_kill_switch
+from tests._app_engine import app_sqlite_engine
 
 
 def _fig(area, series, year, value, extracted="2026-08-01"):
@@ -36,7 +36,7 @@ def _fig(area, series, year, value, extracted="2026-08-01"):
 
 @pytest.fixture
 def client():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -175,12 +175,12 @@ def test_the_listing_never_materialises_the_figure_table():
     would be a flake on a shared runner: a query that selects the VALUE column is
     reading rows, whatever it costs on the day it runs.
     """
-    from sqlalchemy import create_engine, event
+    from sqlalchemy import event
     from sqlalchemy.orm import sessionmaker
 
     from src.api.governments import list_aggregates
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

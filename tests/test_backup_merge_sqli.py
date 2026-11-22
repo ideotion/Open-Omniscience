@@ -23,9 +23,8 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine
-
 import src.backup.merge as merge
+from tests._app_engine import app_sqlite_engine
 
 # A name whose identifier would break out of the double-quoted string in the
 # pre-fix code and append a UNION SELECT against another table.
@@ -100,7 +99,7 @@ def _build_full_corpus(path: Path) -> None:
     merged_rows), enough for ``merge_corpus`` to run end-to-end."""
     from src.database.models import Base
 
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     engine.dispose()
 

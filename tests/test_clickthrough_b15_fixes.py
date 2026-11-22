@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     assert_absent,
     assert_present,
@@ -167,14 +168,13 @@ def test_the_restore_skips_a_folder_this_corpus_already_merged(tmp_path, monkeyp
 
 
 def test_revision_anomalies_carry_the_area_classification():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
     from src.stats import store
     from src.stats.sdmx import StatFigure
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:
@@ -208,7 +208,6 @@ def test_the_anomalies_table_draws_the_shared_area_cell():
 @pytest.fixture
 def _agg_client():
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
@@ -217,7 +216,7 @@ def _agg_client():
     from src.database.session import get_db
     from src.ingest import clear_kill_switch
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

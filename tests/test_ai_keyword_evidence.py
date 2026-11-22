@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from src.ai_layer.store import evidence_for
+from tests._app_engine import app_sqlite_engine
 
 _BODY = (
     "The Ministry of Health said on Tuesday that İSTANBUL would host the summit. "
@@ -92,12 +93,11 @@ def test_a_gap_is_never_stored_as_an_empty_string(tmp_path) -> None:
 #  The writer, driven through the real store helper
 # --------------------------------------------------------------------------- #
 def _session():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng)()
 

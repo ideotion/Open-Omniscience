@@ -17,7 +17,7 @@ from __future__ import annotations
 import warnings
 
 from alembic import command
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from src.database.fts import ensure_fts
 from src.database.maintenance import ensure_hot_indexes, ensure_keyword_counter_columns
@@ -31,6 +31,7 @@ from src.database.migrate import (
     known_revisions,
 )
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 _BELOW_FLOOR = "6ae5766d3136"  # the 0.0.8 baseline (before the fabricated-score data migration)
 _AT_FLOOR = _SAFE_ADVANCE_FLOOR  # the floor itself: at-or-after -> eligible to advance
@@ -38,7 +39,7 @@ _AT_FLOOR = _SAFE_ADVANCE_FLOOR  # the floor itself: at-or-after -> eligible to 
 
 def _healed_engine(tmp_path, *, stamp: str | None):
     """A file-backed DB at the CURRENT (head) schema, optionally stamped at `stamp`."""
-    eng = create_engine(f"sqlite:///{tmp_path / 'oo.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'oo.db', future=True)
     Base.metadata.create_all(eng)
     ensure_fts(eng)
     ensure_keyword_counter_columns(eng)
@@ -123,7 +124,7 @@ def test_already_at_head_is_a_noop(tmp_path):
 
 def test_unstamped_is_left_to_stamp_if_unstamped(tmp_path):
     """A fresh unstamped DB is stamp_if_unstamped's job; align must not touch it."""
-    eng = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'fresh.db', future=True)
     Base.metadata.create_all(eng)
     ensure_fts(eng)
     verdict = align_stamp_to_head(eng)

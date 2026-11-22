@@ -14,19 +14,19 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -132,8 +132,8 @@ def test_map_data_groups_by_area(db):
 def test_insights_api_status_and_reindex(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'ins.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'ins.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -272,8 +272,8 @@ def test_corpus_endpoints_accept_explicit_article_ids(tmp_path):
     and totals stay honest."""
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'ex.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'ex.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)
@@ -326,8 +326,8 @@ def test_graph_endpoint_honours_the_analysis_windows_own_scope(tmp_path):
     "election" included. The endpoint must now route ANY of the analysis-window
     scope params (not just an explicit article_ids set) into the exact-article-set
     branch, exactly like its corpus-keywords/corpus-www siblings."""
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'graph.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'graph.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)

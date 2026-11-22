@@ -21,18 +21,18 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin import privacy as P
 from src.bulletin.period import resolve_period
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _P = resolve_period("weekly", end=date(2026, 8, 1))
 
 
 def _corpus(*, newsletters: int = 0, hazards: int = 0, plain: int = 3):
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     news = Source(name="Alpha", domain="alpha.test", country="fr", source_type="news")

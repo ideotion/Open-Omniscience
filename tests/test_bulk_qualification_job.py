@@ -17,13 +17,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED, STATUS_UNQUALIFIED
 from src.catalog.qualify_job import initial_backlog_estimate, run_bulk_qualification
 from src.database.models import Article, Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -31,8 +31,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

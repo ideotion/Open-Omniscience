@@ -17,7 +17,7 @@ from pathlib import Path
 _TESTS = Path(__file__).resolve().parent
 #: Engine-building calls in tests/ outside the helper, measured on 2026-11-21. Counted per CALL, never per file: a file
 #: that attaches the app's pragmas to one engine can still build others bare, and a per-file exemption would hide them.
-_CEILING = 872  # in 637 files, measured on the merge with main 46939736f
+_CEILING = 741  # in 540 files, measured after row 288 batch 1 on main d8723948f
 #: The SQLAlchemy calls that build an engine.
 _BUILDERS = frozenset({"create_engine", "create_async_engine", "engine_from_config"})
 
@@ -70,3 +70,45 @@ def test_the_count_sees_each_form_of_the_call():
     assert _engine_calls("x = 'create_engine'\n# PRAGMA foreign_keys\n") == 0
     # One engine given the app's pragmas does not exempt the file's other engines
     assert _engine_calls("e = create_engine(a)\nevent.listen(e, 'connect', _sqlite_pragmas)\nf = create_engine(b)\n") == 2
+
+
+def _pragma(engine, name):
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        return conn.execute(text(f"PRAGMA {name}")).scalar()
+
+
+def test_the_helpers_default_busy_timeout_is_the_apps(tmp_path):
+    # Measured from the app's own connect listener, so the helper's pinned default cannot drift from it
+    import sqlite3
+
+    from src.database import session as app_session
+    from tests._app_engine import APP_BUSY_TIMEOUT_MS, app_sqlite_engine
+
+    con = sqlite3.connect(tmp_path / "app.db")
+    try:
+        app_session._sqlite_pragmas(con, None)
+        app_value = con.execute("PRAGMA busy_timeout").fetchone()[0]
+    finally:
+        con.close()
+    assert APP_BUSY_TIMEOUT_MS == app_value
+    engine = app_sqlite_engine(tmp_path / "helper.db")
+    try:
+        assert _pragma(engine, "busy_timeout") == app_value
+    finally:
+        engine.dispose()
+
+
+def test_a_named_busy_timeout_changes_only_that_pragma(tmp_path):
+    from tests._app_engine import app_sqlite_engine
+
+    default = app_sqlite_engine(tmp_path / "a.db")
+    short = app_sqlite_engine(tmp_path / "b.db", busy_timeout_ms=50)
+    try:
+        assert _pragma(short, "busy_timeout") == 50
+        for name in ("foreign_keys", "journal_mode", "synchronous", "cache_size", "temp_store", "journal_size_limit"):
+            assert _pragma(short, name) == _pragma(default, name), name
+    finally:
+        default.dispose()
+        short.dispose()

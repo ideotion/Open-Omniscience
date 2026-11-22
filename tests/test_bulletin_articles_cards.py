@@ -21,7 +21,6 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin.articles import article_rows
@@ -38,11 +37,12 @@ from src.database.models import (
     KeywordMention,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def corpus():
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="Le Monde", domain="lemonde.fr", country="fr", source_type="news")

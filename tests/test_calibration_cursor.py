@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics.criteria_calibration import (
@@ -34,6 +33,7 @@ from src.analytics.criteria_calibration import (
 )
 from src.analytics.non_article_scan import PROSE_GATE_SCOPES, scan_non_article_candidates
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # Nav soup: function words are absent, sentence punctuation is absent. The prose gate's
 # shape, borrowed from the field specimen the gate was built for.
@@ -72,7 +72,7 @@ def _corpus(n_index_pages: int = 6) -> Session:
     listing-shaped, so it belongs to ``all`` and NOT to ``index_pages`` -- which is what
     makes the scope assertions discriminating rather than incidentally true.
     """
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="News", domain="news.example", language="en", enabled=True)

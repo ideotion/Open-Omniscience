@@ -29,7 +29,6 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -54,6 +53,7 @@ from src.database.models import (  # noqa: E402
 )
 from src.database.session import get_db  # noqa: E402
 from src.ingest import clear_kill_switch  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import app_js, event_listener_bodies, strip_comments  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -77,7 +77,7 @@ def test_quality_gates_repaint_node_suite() -> None:
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def client():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -218,7 +218,7 @@ def test_every_locale_names_the_path_with_its_own_labels() -> None:
 def test_audit_stamps_are_whole_seconds_and_state_their_zone(tmp_path) -> None:
     """An undo stamps the live clock, microseconds and all; a zone-less stamp is parsed
     by a browser as LOCAL time. Both halves are measured on a real undo."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'adm.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'adm.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     src = Source(name="u", domain="u.example", status=STATUS_UNQUALIFIED, enabled=False)

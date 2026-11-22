@@ -30,7 +30,6 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -40,6 +39,7 @@ from src.config import machine_floor as MF  # noqa: E402
 from src.database.models import Base  # noqa: E402
 from src.database.session import get_db  # noqa: E402
 from src.ingest import clear_kill_switch  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -80,7 +80,7 @@ def _fill_en(frame: str, values: dict) -> str:
 
 @pytest.fixture
 def client():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -159,7 +159,7 @@ def test_a_declined_job_carries_the_reason_frame_to_its_result_and_its_line(monk
 
     from contextlib import contextmanager
 
-    engine = create_engine("sqlite://", future=True, poolclass=StaticPool,
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()

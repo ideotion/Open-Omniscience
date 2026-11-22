@@ -15,7 +15,6 @@ from datetime import UTC, date, datetime
 import pytest
 from fastapi.testclient import TestClient
 from scipy import stats
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
@@ -24,6 +23,7 @@ from src.commodity.units import UnitError, convert_price
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # units
@@ -95,8 +95,8 @@ def test_correlation_insufficient_data():
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'c.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'c.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
