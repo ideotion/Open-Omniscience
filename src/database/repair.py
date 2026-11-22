@@ -662,8 +662,12 @@ def _drop_extra_names(target: Path, damaged: Path) -> None:
     # repair's own leftover (the live log was since recreated under a new inode, so the check above no longer sees it as the live one's).
     # Anything but an exactly-empty regular file stays where it is.
     if not os.path.lexists(damaged):
-        with contextlib.suppress(Declined, OSError):
+        try:
             _clear_empty_log_name(target, damaged)
+        except Declined:
+            pass  # not an empty leftover: kept where it is
+        except OSError:
+            pass
 
 
 def _swap_ran(target: Path, doc: dict[str, Any]) -> bool:
