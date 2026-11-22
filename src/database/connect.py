@@ -291,7 +291,7 @@ _hdr_lock = threading.RLock()  # re-entrant: the audit hook below may run while 
 _sweep_lock = threading.Lock()  # one sweep at a time: only a sweep closes, so a listing it made stays true for it
 _hdr_gen = 0  # bumped by every SQLite open that starts in this process (counted or audited)
 _audit_pending: dict[int, list[float]] = {}  # thread -> start times of stdlib sqlite3 opens not yet returned
-_AUDIT_STALE_S = 10.0  # an open that never reported its handle (it raised) stops counting after this
+_AUDIT_STALE_S = 60.0  # an open that never reported its handle (it raised) stops counting after this
 _GROUP_SUFFIXES = ("-wal", "-shm", "-journal")
 
 
@@ -365,17 +365,18 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
     Raises ``OSError`` as ``os.open`` does; ``IsADirectoryError`` for a directory, ``OSError`` for another non-regular file.
     The stat and the open run OUTSIDE ``_hdr_lock`` (a hung mount stalls this read, not every connect); a descriptor not
     yet recorded is foreign to other reads, which then keep theirs: the safe direction."""
-    st = os.stat(p)
+    name = os.path.abspath(p)  # before any open: a later chdir must not change which files the name means
+    st = os.stat(name)
     if not stat.S_ISREG(st.st_mode):
         raise _not_regular(st.st_mode)  # refused before any open: no FIFO wait, no terminal, no device side effect
     key = (st.st_dev, st.st_ino)
     with _hdr_lock:
         if key in _hdr_fds:
-            _hdr_names[key] = os.path.abspath(p)  # a later chdir must not change which files the name means
+            _hdr_names[key] = name
             _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
             return key, _hdr_fds[key][0]
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
-    fd = os.open(p, flags)
+    fd = os.open(name, flags)
     got = os.fstat(fd)  # should this raise, the descriptor stays open: closing one we cannot place could drop a lock
     if not stat.S_ISREG(got.st_mode):
         os.close(fd)  # the name now leads to a non-regular file, which no SQLite connection holds a lock on
@@ -386,7 +387,7 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
             _hdr_fds[key].append(fd)  # never closed here: another of ours is open on the file
         else:
             _hdr_fds[key] = [fd]
-        _hdr_names[key] = os.path.abspath(p)  # a later chdir must not change which files the name means
+        _hdr_names[key] = name
         _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
         return key, _hdr_fds[key][0]
 
@@ -406,8 +407,8 @@ def _base_of(name: str) -> str:
 
 def _group_of(name: str) -> tuple[str, set[tuple[int, int]], bool]:
     """The realpath of the store ``name`` belongs to, the (device, inode) of that store and its logs as they are now, and
-    whether ``name`` itself could not be read for a reason other than its absence (a network mount's EIO, ESTALE): then
-    nothing is known about the file and its descriptor is kept."""
+    whether any of them could not be read for a reason other than its absence (a network mount's EIO, ESTALE): then the
+    group is not known and the descriptor is kept."""
     base = _base_of(name)
     keys = set()
     uncertain = False
@@ -417,7 +418,7 @@ def _group_of(name: str) -> tuple[str, set[tuple[int, int]], bool]:
         except FileNotFoundError:
             continue
         except (OSError, ValueError):
-            uncertain = uncertain or n == name
+            uncertain = True  # a member that cannot be read may be the one a connection holds: keep
             continue
         keys.add((st.st_dev, st.st_ino))
     try:
@@ -445,8 +446,10 @@ def _foreign_fd_keys(ours: set[int]) -> set[tuple[int, int]] | None:
                 continue
             try:
                 st = os.fstat(n)
-            except OSError:
-                continue
+            except OSError as exc:
+                if exc.errno == errno.EBADF:
+                    continue  # closed since the listing (the listing's own descriptor among them)
+                return None  # a descriptor that cannot be read (EIO, ESTALE) may be a connection's: keep everything
             keys.add((st.st_dev, st.st_ino))
         return keys
     return None
@@ -463,12 +466,18 @@ def _ours_locked() -> set[int]:
 def _sweep() -> None:
     """Close every descriptor of ours that no reader uses and that closing cannot hurt (see the block comment above).
 
-    Three steps, so no filesystem call waits while ``_hdr_lock`` is held (a stalled mount slows this sweep, never a
-    connect): under the lock, nothing may be opening, and the open generation is noted; with no lock, the process's
-    descriptors are listed and the groups resolved by name; under the lock again, if any SQLite open started since the
-    note (counted or audited) or one is in flight, nothing is closed; otherwise the decision and the close are made. A
-    descriptor any connection made before the note is in the listing; one made after it changed the generation. Sweeps run
-    one at a time (``_sweep_lock``), and only a sweep closes, so the descriptor numbers listed stay what they were."""
+    Three steps, so no stat, listing or open waits while ``_hdr_lock`` is held: under the lock, nothing may be opening,
+    and the open generation is noted; with no lock, the process's descriptors are listed and the groups resolved by name;
+    under the lock again, if any SQLite open started since the note (counted or audited) or one is in flight, nothing is
+    closed; otherwise the decision and the close are made. The close itself stays under the lock: deciding and closing
+    must be one step against any open, so a close that a stalled mount holds up holds up opens with it. A descriptor any
+    connection made before the note is in the listing; one made after it changed the generation. A descriptor that cannot
+    be read, or a group member that cannot be stat'ed for a reason other than its absence, keeps everything. Sweeps run
+    one at a time (``_sweep_lock``), and only a sweep closes, so the descriptor numbers listed stay what they were.
+
+    What this costs: a descriptor whose sweep was skipped (another sweep running, an open in flight) stays open until a
+    later read of ours sweeps, so a file deleted meanwhile keeps its disk space until then or until the process exits. The
+    audit hook sees this interpreter only; nothing here runs SQLite in a subinterpreter."""
     if not _sweep_lock.acquire(blocking=False):
         return  # another sweep is running; what this release parked waits for the next one
     try:

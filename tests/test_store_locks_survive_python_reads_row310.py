@@ -688,22 +688,30 @@ def test_an_open_that_starts_between_the_listing_and_the_close_stops_the_close(t
             c.close()
 
 
-# Openers the audit hook cannot see (sqlcipher3 is not audited; ATTACH opens a file through a connection already made).
-# Each file's count is pinned with the reason no Python read of ours can race it; a new one is classified by whoever adds it.
+# Openers the audit hook cannot see (sqlcipher3 is not audited, under any alias; ATTACH opens a file through a connection
+# already made), and the sqlite_opening wrappers that cover some of them. Each file's count is pinned with the reason no
+# Python read of ours can race it, so a new opener, or a wrapper removed, is classified by whoever makes the change.
 _UNAUDITED_OPENERS = {
     ("sqlcipher-connect", "src/database/connect.py"): (6, "four inside _connect/_try_open_encrypted, under connect()'s "
-        "sqlite_opening; reencrypt_plain_to and copy_at_current_settings wrap theirs in sqlite_opening"),
+        "sqlite_opening; reencrypt_plain_to and copy_at_current_settings wrap theirs"),
     ("sqlcipher-connect", "src/database/verify.py"): (1, ":memory: probe, no file"),
     ("sqlcipher-connect", "src/monitoring/machine_record.py"): (2, ":memory: probes, no file"),
     ("sqlcipher-connect", "src/backup/lane_merge.py"): (1, ":memory: host for the ATTACHed staged lanes"),
-    ("attach", "src/database/connect.py"): (8, "attach() wraps its two in sqlite_opening; the other six ATTACH a "
-        "snapshot, rebuild or re-encryption destination: a new file Python reads only after that connection closed"),
-    ("attach", "src/backup/lane_merge.py"): (2, "staged lane copies and their snapshot, read (is_encrypted_file) on the "
-        "same thread before the ATTACH: the read's close comes first"),
+    ("sqlcipher-connect", "src/monitoring/merge_diag.py"): (3, "the diagnostic's :memory: probe and its own scratch "
+        "copies (drv.connect)"),
+    ("attach", "src/database/connect.py"): (8, "attach() wraps its two; the other six ATTACH a snapshot, rebuild or "
+        "re-encryption destination: a new file Python reads only after that connection closed"),
+    ("attach", "src/backup/lane_merge.py"): (2, "both wrapped in sqlite_opening"),
     ("attach", "src/backup/merge.py"): (1, "the merge's own scratch database"),
-    ("attach", "src/backup/newsletter_export.py"): (1, "the export's own new file"),
+    ("attach", "src/backup/newsletter_export.py"): (2, "a docstring, and the export's own new file"),
     ("attach", "src/backup/stream_backup.py"): (1, "a snapshot destination in the backup's work folder"),
     ("attach", "src/monitoring/merge_diag.py"): (1, "the diagnostic's own scratch database"),
+    ("attach", "src/monitoring/diagnostics_runs.py"): (1, "a comment about scrubbing keys"),
+    ("attach", "src/monitoring/secret_scrub.py"): (1, "a docstring about scrubbing keys"),
+    ("wrapped", "src/database/connect.py"): (5, "connect(), attach(), snapshot_to_plaintext, reencrypt_plain_to, "
+        "copy_at_current_settings"),
+    ("wrapped", "src/database/read_only_uri.py"): (1, "open_plain_read_only"),
+    ("wrapped", "src/backup/lane_merge.py"): (2, "the two ATTACHes"),
 }
 
 
@@ -711,8 +719,11 @@ def test_every_opener_the_audit_hook_cannot_see_is_classified():
     import re
 
     patterns = {
-        "sqlcipher-connect": re.compile(r"(sqc|sqlcipher3|dbapi2)\.connect\("),
-        "attach": re.compile(r"[\"'f]ATTACH (DATABASE|\?|')"),
+        "sqlcipher-connect": re.compile(
+            r"\b(sqc|sqlcipher3|dbapi2|drv|mod)\.connect\(|from\s+sqlcipher3[\w.]*\s+import\s+[^\n]*\bconnect\b"
+        ),
+        "attach": re.compile(r"ATTACH\s+(DATABASE\b|\?|')", re.IGNORECASE),
+        "wrapped": re.compile(r"with sqlite_opening\(\)"),
     }
     found: dict[tuple[str, str], int] = {}
     for f in sorted((ROOT / "src").rglob("*.py")):
@@ -724,6 +735,43 @@ def test_every_opener_the_audit_hook_cannot_see_is_classified():
                 found[(kind, rel)] = n
     pinned = {k: v[0] for k, v in _UNAUDITED_OPENERS.items()}
     assert found == pinned, (
-        "an opener the audit hook cannot see was added, moved or removed: classify it in _UNAUDITED_OPENERS (wrap a live "
-        f"store's open in connect.sqlite_opening): found {found}"
+        "an opener the audit hook cannot see, or a sqlite_opening wrapper, was added, moved or removed: classify it in "
+        f"_UNAUDITED_OPENERS (wrap a live store's open in connect.sqlite_opening): found {found}"
     )
+
+
+def test_a_descriptor_or_a_group_member_that_cannot_be_read_keeps_everything(tmp_path, monkeypatch):
+    # EIO or ESTALE on a network mount: a connection's descriptor that cannot be fstat'ed, or a store file that cannot be
+    # stat'ed, is not "nothing holds it". The sweep keeps its descriptors.
+    import errno as _errno
+
+    from tests.os_scope import scope_os
+
+    path = tmp_path / "s.db"
+    path.write_bytes(b"A" * 4096)
+    real_fstat, real_stat = os.fstat, os.stat
+
+    def _fstat(n):
+        if n not in {fd for fds in connect_mod._hdr_fds.values() for fd in fds} and n > 2:
+            st = real_fstat(n)
+            if (st.st_dev, st.st_ino) == _key(path):
+                raise OSError(_errno.EIO, "unreadable")
+        return real_fstat(n)
+
+    other = os.open(path, os.O_RDONLY)  # a descriptor of "a connection" on the file
+    try:
+        with monkeypatch.context() as m:
+            scope_os(m, connect_mod, fstat=_fstat)
+            assert connect_mod._foreign_fd_keys(set()) is None
+        assert connect_mod._group_of(str(path))[2] is False
+
+        def _stat(name, *a, **k):
+            if os.fspath(name) == str(path):
+                raise OSError(_errno.ESTALE, "stale")
+            return real_stat(name, *a, **k)
+
+        with monkeypatch.context() as m:
+            scope_os(m, connect_mod, stat=_stat)
+            assert connect_mod._group_of(str(path) + "-shm")[2] is True, "a store that cannot be stat'ed left the group"
+    finally:
+        os.close(other)
