@@ -46,6 +46,7 @@ from pathlib import Path, PurePosixPath
 
 from src.backup.hf_layout import hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
+from src.backup.manifest_file import read_manifest_json
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -444,10 +445,7 @@ def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
     file whose size differs from the recorded one is not the file that was hashed and its
     old digest must not travel. A missing, damaged or foreign manifest is simply an empty
     map — this is a best-effort carry-forward, never a gate."""
-    try:
-        m = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    m = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
     cats = m.get("categories") if isinstance(m, dict) else None
     if not isinstance(cats, dict):
         return {}
@@ -466,6 +464,24 @@ def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
                 continue
             if isinstance(sha, str) and _SHA256_RE.match(sha) and isinstance(rel, str):
                 out[(str(c), rel, size)] = sha.lower()
+    return out
+
+
+def _manifest_listing(root: Path) -> dict[str, set[str]] | None:
+    """``category -> {rel}`` for every file the backup's CURRENT manifest lists, or ``None`` when there
+    is no manifest that can be read (R780). Unlike :func:`_recorded_digests` it keeps an entry with no
+    checksum too: the question here is only "is this file listed", never "is it verified".
+
+    The manifest is signed with a key it carries itself, so it is tamper-EVIDENCE, never proof of
+    where a file came from: a file it does not list is still restored, and counted as unlisted."""
+    m = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
+    cats = m.get("categories") if isinstance(m, dict) else None
+    if not isinstance(cats, dict):
+        return None
+    out: dict[str, set[str]] = {}
+    for c, lst in cats.items():
+        if isinstance(lst, list):
+            out[str(c)] = {e["rel"] for e in lst if isinstance(e, dict) and isinstance(e.get("rel"), str)}
     return out
 
 
@@ -966,6 +982,10 @@ def restore_folder_backup(
     # in which case every file restores as before and is COUNTED as unverifiable, never
     # silently called sound.
     recorded = _recorded_digests(src)
+    # R780: which files the current manifest lists at all. A file it does not list is restored as
+    # before and counted per category, apart from "not content-verified".
+    listing = _manifest_listing(src)
+    unlisted: dict[str, int] = {}
 
     restored = skipped = refused_symlinks = refused_dest_links = refused_layout = 0
     refused_categories: list[str] = []
@@ -1113,7 +1133,9 @@ def restore_folder_backup(
                     corrupt.append({"category": cat, "rel": _shown(rel.as_posix())})
                 continue
             if want is None:
-                unverifiable += 1
+                unverifiable += 1  # an unlisted file has no recorded checksum either, so it counts here too
+            if listing is None or rel.as_posix() not in listing.get(cat, ()):
+                unlisted[cat] = unlisted.get(cat, 0) + 1
             restored += 1
             if progress_cb is not None:
                 progress_cb({"restored": restored, "skipped": skipped})
@@ -1152,6 +1174,11 @@ def restore_folder_backup(
         # backup, or a manifest that could not be read). A gap, published as a gap:
         # these were NOT content-verified and must not be counted as if they were.
         "restored_unverified": unverifiable,
+        # R780: restored, but not listed in this backup's CURRENT manifest, per category. They may come
+        # from an earlier or interrupted backup pass (a stopped pass keeps the previous manifest, and a
+        # file removed from the live folder since an earlier pass stays on the drive); counted apart
+        # from "not content-verified", never refused, since the manifest proves no origin.
+        "restored_unlisted": unlisted,
         "stopped": stopped,
     }
 
@@ -1243,10 +1270,16 @@ def verify_folder_backup(
         "manifest_found": False,
         "ok": False,
     }
-    try:
-        manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    manifest = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
+    if manifest is None:
+        try:
+            present = os.path.lexists(root / MANIFEST_NAME)
+        except (OSError, ValueError):
+            present = False
         out["reason"] = (
+            "a manifest is at this path but was refused: it is not a regular file, is too large, or is "
+            "not readable JSON -- so there is nothing trustworthy to verify against."
+            if present else
             "no finalized manifest at this path — an interrupted/incomplete folder backup "
             "never writes one, so there is nothing to verify against."
         )
@@ -1694,6 +1727,7 @@ class FolderBackupManager:
                     unread=res.get("unread_total"),
                     unread_folders=res.get("unread_folders"),
                     refused_layout=res.get("refused_layout"),
+                    restored_unlisted=sum((res.get("restored_unlisted") or {}).values()),
                 )
                 storage_events.run_ended(
                     note,

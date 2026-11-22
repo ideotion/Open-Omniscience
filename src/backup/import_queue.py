@@ -1497,6 +1497,8 @@ class ImportQueueManager:
             "corrupt_refused": p.get("corrupt_refused", 0),
             "corrupt": list(p.get("corrupt") or []),
             "restored_unverified": p.get("restored_unverified", 0),
+            # R780: restored but not listed in the backup's current manifest, per category name.
+            "restored_unlisted": dict(p.get("restored_unlisted") or {}),
             # R779: what a restore refused because a link stood in the way. Category NAMES only
             # (fixed words such as wiki_dumps), never a path from the person's disk.
             "refused_symlinks": p.get("refused_symlinks", 0),

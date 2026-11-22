@@ -28,6 +28,7 @@ from pathlib import Path
 
 from src.backup.hf_layout import hf_member_allowed
 from src.backup.links import is_link, is_link_stat
+from src.backup.manifest_file import read_manifest_json
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
 # hardcoded so this discovery module stays crypto-free (importing that module pulls in
@@ -79,6 +80,13 @@ _MAX_DEPTH = 8
 SCAN_UNREAD = "Some files or folders here could not be read, so this count includes only the ones that could."
 SCAN_LINKS = "Links in this backup folder are not counted: a restore never follows a link, so they are never restored."
 SCAN_UNSIZED = "This file's size could not be read."
+# R780: never call the manifest proof of origin -- it is signed with a key it carries itself.
+SCAN_UNLISTED = (
+    "Some files here are not listed in this backup's current manifest; they may come from an earlier or interrupted "
+    "backup pass. They are restored like the others, without a recorded checksum to check them against. Anyone who can "
+    "write to this backup folder could also have placed them there, or listed files of their own: the manifest carries "
+    "its own signing key."
+)
 # The suffix of a copy in progress (src.backup.folder_backup._PART_SUFFIX): a restore skips it, so the scan does too.
 _PART_SUFFIX = ".oopart"
 
@@ -94,7 +102,8 @@ def _LINKED_CATEGORY() -> dict:  # noqa: N802 - reads as the constant it stands 
     return {"count": 0, "bytes": 0, "linked": True, "reason": SCAN_LINKED_CATEGORY}
 
 
-def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None) -> dict:
+def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None, listed: set[str] | None = None,
+               check_listed: bool = False) -> dict:
     """``{count, bytes}`` of what a folder restore would restore from one category folder, plus
     ``unread_entries`` (folders or files it was refused) and ``refused_links`` when non-zero.
 
@@ -104,8 +113,12 @@ def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None) -> dict:
     lower bound. A file that vanished mid-scan is gone, not unread.
 
     ``allow`` (R777, the model-cache folder): a file whose path relative to ``d`` it refuses is not
-    counted but counted apart in ``refused_layout``, exactly as the restore refuses it."""
-    count = nbytes = unread = links = refused_layout = 0
+    counted but counted apart in ``refused_layout``, exactly as the restore refuses it.
+
+    R780: ``listed`` is the set of ``rel`` names the backup's current manifest lists for this category
+    (``None``: no readable manifest); it is read only when ``check_listed`` is set. A file it does not list is counted in ``unlisted``: it is still
+    restored, and the page says so apart from "not content-verified"."""
+    count = nbytes = unread = links = refused_layout = unlisted = 0
 
     def _refused(err: OSError) -> None:
         nonlocal unread
@@ -145,9 +158,13 @@ def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None) -> dict:
                     continue
                 count += 1
                 nbytes += st.st_size
+                if check_listed and (listed is None or Path(os.path.join(dirpath, name)).relative_to(d).as_posix() not in listed):
+                    unlisted += 1
     out: dict = {"count": count, "bytes": nbytes}
     if refused_layout:
         out["refused_layout"] = refused_layout
+    if unlisted:
+        out.update(unlisted=unlisted, unlisted_reason=SCAN_UNLISTED)
     if unread:
         out.update(unread_entries=unread, reason=SCAN_UNREAD)
     if links:
@@ -206,6 +223,7 @@ def scan_import_folder(
         if not isinstance(err, FileNotFoundError):
             unread_folders += 1  # row 293: said on the page, never silently skipped
 
+    listings: dict[str, dict[str, set[str]] | None] = {}  # R780: each backup folder's manifest, read once
     for cur, dirnames, filenames in os.walk(root, onerror=_folder_refused):
         curp = Path(cur)
         depth = len(curp.parts) - root_depth
@@ -229,8 +247,14 @@ def scan_import_folder(
                     except OSError:
                         unread_folders += 1
                         continue
-                    totals = _LINKED_CATEGORY() if linked else _dir_totals(
-                        curp / d, hf_member_allowed if d == "hf_models" else None)
+                    if linked:
+                        totals = _LINKED_CATEGORY()
+                    else:
+                        if str(curp) not in listings:
+                            listings[str(curp)] = _manifest_listing(curp / _FOLDER_MANIFEST)
+                        lst = listings[str(curp)]
+                        totals = _dir_totals(curp / d, hf_member_allowed if d == "hf_models" else None,
+                                             None if lst is None else lst.get(d, set()), check_listed=True)
                     if totals["count"] or totals.get("unread_entries") or totals.get("linked") or totals.get("refused_layout"):
                         blob_roots.setdefault(str(curp), {})[_BLOB_DIRS[d]] = totals
                     continue
@@ -320,11 +344,13 @@ def scan_import_folder(
                 a = agg.setdefault(k, {"count": 0, "bytes": 0})
                 a["count"] += tot["count"]
                 a["bytes"] += tot["bytes"]
-                for extra in ("unread_entries", "refused_links", "refused_layout"):
+                for extra in ("unread_entries", "refused_links", "refused_layout", "unlisted"):
                     if tot.get(extra):
                         a[extra] = a.get(extra, 0) + tot[extra]
                 if tot.get("unread_entries"):
                     a["reason"] = SCAN_UNREAD
+                if tot.get("unlisted"):
+                    a["unlisted_reason"] = SCAN_UNLISTED
                 if tot.get("linked"):
                     # R779: counted per backup folder, since two backups can each hold one.
                     a["linked"] = a.get("linked", 0) + 1
@@ -354,26 +380,38 @@ def scan_import_folder(
     return {"path": str(root), "found": found}
 
 
+def _manifest_listing(p: Path) -> dict[str, set[str]] | None:
+    """``{catdir: {rel}}`` of every file a folder-backup manifest lists, or ``None`` when there is none
+    that can be read (R780; mirrors ``folder_backup._manifest_listing``, kept here so this discovery
+    module stays crypto-free and import-light)."""
+    data = read_manifest_json(p)  # a link, a pipe, a huge or deeply nested file: no listing
+    cats = data.get("categories") if isinstance(data, dict) else None
+    if not isinstance(cats, dict):
+        return None
+    return {
+        str(c): {e["rel"] for e in items if isinstance(e, dict) and isinstance(e.get("rel"), str)}
+        for c, items in cats.items()
+        if isinstance(items, list)
+    }
+
+
 def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
     """Parse a folder-backup manifest into ``{catdir: (file_count, total_bytes)}``.
 
     The manifest's ``categories`` maps each category dir (wiki_dumps/osm_regions/models)
     to a list of ``{rel, size}`` items. Returns only categories that carry files. Any
     parse error yields ``{}`` (best-effort — never let a stray file break the scan)."""
-    import json
-
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    cats = data.get("categories")
+    data = read_manifest_json(p)  # a link, a pipe, a huge or deeply nested file: nothing
+    cats = data.get("categories") if isinstance(data, dict) else None
     if not isinstance(cats, dict):
         return {}
     out: dict[str, tuple[int, int]] = {}
     for catdir, items in cats.items():
         if not isinstance(items, list) or not items:
             continue
-        nbytes = sum(int(it.get("size", 0)) for it in items if isinstance(it, dict))
+        # A size that is not a whole number (text, null, a list) counts as 0, never stops the scan.
+        nbytes = sum(it["size"] for it in items
+                     if isinstance(it, dict) and isinstance(it.get("size"), int) and not isinstance(it["size"], bool))
         out[catdir] = (len(items), nbytes)
     return out
 

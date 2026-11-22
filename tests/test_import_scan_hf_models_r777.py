@@ -40,7 +40,7 @@ def test_the_scan_lists_hf_models_and_the_restore_category_rides_with_it(tmp_pat
     _touch(tmp_path / "bk" / "hf_models" / "hub" / "models--org--m" / "snapshots" / "abc" / "model.safetensors", b"w" * 10)
     _touch(tmp_path / "bk" / "models" / "blobs" / "sha256-a", b"o")
     f = scan_import_folder(tmp_path)["found"]
-    assert f["blobs"]["hf_models"] == {"count": 1, "bytes": 10}
+    assert {k: f["blobs"]["hf_models"][k] for k in ("count", "bytes")} == {"count": 1, "bytes": 10}
     (br,) = f["blob_roots"]
     assert set(br["categories"]) == {"models", "hf_models"}
 

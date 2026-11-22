@@ -164,7 +164,10 @@ def test_a_clean_folder_carries_none_of_the_new_fields(tmp_path):
     _touch(tmp_path / "wiki_dumps" / "a.bz2")
     _touch(tmp_path / "open-omniscience-1.oobackup", b"12345")
     f = scan_import_folder(tmp_path)["found"]
-    assert f["blobs"]["wiki"] == {"count": 1, "bytes": 1}
+    # This hand-built folder has no manifest, so its file is counted as not listed (R780).
+    assert {k: f["blobs"]["wiki"][k] for k in ("count", "bytes")} == {"count": 1, "bytes": 1}
+    assert f["blobs"]["wiki"]["unlisted"] == 1
+    assert not {"unread_entries", "refused_links", "refused_layout"} & set(f["blobs"]["wiki"])
     assert "unread_folders" not in f
     assert f["legacy_backup"][0]["bytes"] == 5 and "reason" not in f["legacy_backup"][0]
 

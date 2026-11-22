@@ -1463,12 +1463,16 @@
       const LINKS = t("Links in this backup folder are not counted: a restore never follows a link, so they are never restored.");
       const LAYOUT = t("Files in the model folder outside the model cache's own layout are not counted and never restored: a restore places only what a backup writes there.");
       const LINKED = t("This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.");
+      const UNLISTED = t("Some files here are not listed in this backup's current manifest; they may come from an earlier or interrupted backup pass. They are restored like the others, without a recorded checksum to check them against. Anyone who can write to this backup folder could also have placed them there, or listed files of their own: the manifest carries its own signing key.");
       const cat = (c, label) => {
         if (!c) return;
         // R779: a category folder that is a link restores nothing; said on the row, the remedy on hover.
         const value = (c.linked && !c.count) ? t("a link, not restored")
           : (c.unread_entries ? t("at least") + " " : "") + files(c.count || 0);
-        parts.push(ooLabelText(t(label), value));
+        // R780: files the backup's current manifest does not list, said on the row with the count.
+        const unlistedPart = c.unlisted ? " " + tfs("({n} not in the manifest)", { n: fmtNum(c.unlisted, 0) }) : "";
+        parts.push(ooLabelText(t(label), value + unlistedPart));
+        if (c.unlisted && !why.includes(UNLISTED)) why.push(UNLISTED);
         if (c.refused_layout && !why.includes(LAYOUT)) why.push(LAYOUT);
         if (c.linked && !why.includes(LINKED)) why.push(LINKED);
         if (c.unread_entries && !why.includes(UNREAD)) why.push(UNREAD);
@@ -1481,6 +1485,7 @@
       cat(llm.length < 2 ? llm[0] : {
         count: llm[0].count + llm[1].count, bytes: llm[0].bytes + llm[1].bytes,
         unread_entries: (llm[0].unread_entries || 0) + (llm[1].unread_entries || 0),
+        unlisted: (llm[0].unlisted || 0) + (llm[1].unlisted || 0),
         refused_links: (llm[0].refused_links || 0) + (llm[1].refused_links || 0),
         refused_layout: (llm[0].refused_layout || 0) + (llm[1].refused_layout || 0),
         linked: (llm[0].linked || 0) + (llm[1].linked || 0),
@@ -3866,6 +3871,18 @@
       if (memberLinks) {
         lines.push(ooLabelText(t("Not restored — links inside the backup, which a restore never follows"),
           fmtNum(memberLinks, 0)));
+      }
+      // R780: restored, but not listed in this backup's current manifest -- per category, apart from
+      // "not content-verified". The manifest proves no origin, so the line says what they MAY be.
+      const label = { wiki_dumps: "Wikipedia dumps", osm_regions: "Offline maps", models: "LLM models", hf_models: "LLM models" };
+      const byLabel = {};
+      for (const [c, n] of Object.entries(p.restored_unlisted || {})) {
+        if (Number(n) > 0) { const k = label[c] || c; byLabel[k] = (byLabel[k] || 0) + Number(n); }
+      }
+      const unlisted = Object.entries(byLabel);
+      if (unlisted.length) {
+        lines.push(ooLabelText(t("Restored, but not listed in this backup's current manifest; they may come from an earlier or interrupted backup pass"),
+          unlisted.map(([k, n]) => `${t(k)} ${fmtNum(n, 0)}`).join(" · ")));
       }
       const unverified = p.restored_unverified || 0;
       if (unverified) {
