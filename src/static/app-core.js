@@ -2229,6 +2229,31 @@
           jobs: _wj[1].split("; ").map((x) => t(x)).join("; "),
         });
       }
+      // Row 323 / R793: database/encrypt_tool.py room_refusal, a store not encrypted because its two copies (and its write-ahead
+      // log) have no room, or because the room was not read. One or more such sentences, alone or after the partial words (the
+      // caller translates those). The store is its English panel label, written back through the panel's own keys.
+      const _encStore = (lab) => {
+        if (lab === "Corpus") return t("Corpus");
+        if (lab === "Custody log") return t("Custody log");
+        const lane = /^Source store \((\w+)\)$/.exec(lab);
+        if (!lane) return lab;
+        const word = { wiki: "Wikipedia / Wikimedia", law: "Law", osm: "Maps / OpenStreetMap", medical: "Medical papers (PubMed)" }[lane[1]];
+        return tf("Source store ({kind})", { kind: word ? t(word) : lane[1] });
+      };
+      const _encNoRoom = new RegExp("Not enough free space to encrypt the store \"(.+?)\": it needs about " + _OO_SIZE_RE
+        + " \\(two copies of the store and its write-ahead log\\), only " + _OO_SIZE_RE + " free on its drive\\. Nothing was "
+        + "changed for this store\\. Free up space and press \"Encrypt corpus & custody log\" again\\.", "g");
+      const _encNotRead = /The store "(.+?)" was not encrypted: whether its drive has the free space it needs could not be checked \((its size could not be read|the size of its write-ahead log could not be read|the free space on its drive could not be read)\)\. Nothing was changed for this store\. Press "Encrypt corpus & custody log" again once this is fixed\./g;
+      if (_encNoRoom.test(s) || _encNotRead.test(s)) {
+        _encNoRoom.lastIndex = 0; _encNotRead.lastIndex = 0;
+        return s
+          .replace(_encNoRoom, (_m, st, n1, u1, n2, u2) => tf("Not enough free space to encrypt the store “{store}”: it needs about {needed} (two copies of the store and its write-ahead log), only {free} free on its drive. Nothing was changed for this store. Free up space and press “{button}” again.", {
+            store: _encStore(st), needed: size(n1, u1), free: size(n2, u2), button: t("Encrypt corpus & custody log"),
+          }))
+          .replace(_encNotRead, (_m, st, why) => tf("The store “{store}” was not encrypted: whether its drive has the free space it needs could not be checked ({reason}). Nothing was changed for this store. Press “{button}” again once this is fixed.", {
+            store: _encStore(st), reason: t(why), button: t("Encrypt corpus & custody log"),
+          }));
+      }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);
         if (!m) continue;

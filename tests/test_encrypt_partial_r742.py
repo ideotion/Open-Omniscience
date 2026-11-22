@@ -597,7 +597,7 @@ def test_the_finish_at_unlock_leaves_a_store_pending_without_room_for_its_two_co
     with pytest.raises(encrypt_tool.EncryptPartial):
         encrypt_tool.encrypt_all(_KEY)
     monkeypatch.setattr(encrypt_tool, "encrypt_database", _REAL_ENCRYPT)
-    monkeypatch.setattr(at_rest_state, "_room_for", lambda _p: False)
+    monkeypatch.setattr(encrypt_tool, "room_refusal", lambda _n, _p: "no room")  # the one room check (row 323, R793)
     assert at_rest_state.finish_pending(_KEY, stores) == {"finished": [], "still_pending": ["custody"]}
     assert is_encrypted_file(stores.parent / "custody_log.db") is False
     assert sorted(stores.parent.glob("pre-encrypt-*-custody_log.db")) == []

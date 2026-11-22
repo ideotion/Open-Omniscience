@@ -392,6 +392,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
     'src/database/encrypt_tool.py': {
         ('_export_and_swap', 'if not library or not _file_is_locked(refused):'): 1,
+        # Row 323 / R793: a store refused for room is said after the partial words; ``EncryptNoRoom`` holds only room_refusal's fixed
+        # sentence (a store label, two human_bytes sizes or a fixed reason; never a path, a key or the OS's text).
+        ('_encrypt_the_rest', 'reasons.append(str(refused))'): 1,
     },
     'src/database/repair.py': {
         ('_swap', 'if not _file_is_locked(refused):'): 1,
@@ -1472,7 +1475,7 @@ def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_ha
             ("src/api/unlock.py", "_close_after_checkpoint"): 1,
             ("src/api/unlock.py", "_file_opens_with"): 1,
             ("src/api/unlock.py", "_unlock_locked"): 1,
-            ("src/api/unlock.py", "encrypt_db"): 1,
+            ("src/api/unlock.py", "encrypt_db"): 3,  # the 400, and row 323 (R793): the 409 with a room refusal and the 507
         }
     )
     lacking = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if not has)

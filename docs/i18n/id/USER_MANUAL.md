@@ -1930,6 +1930,7 @@ dijelaskan di atas ([3.2](#32-kumpulkan-di-pengaturan--lanjutan--pengumpulan),
     memusnahkannya); folder aplikasi dibiarkan di tempatnya untuk dihapus secara manual. Setara dengan
     `./install.sh --uninstall` atau ikon desktop **“Copot Open Omniscience” (“Uninstall Open Omniscience”)** yang dibuat
     pemasang di samping dua peluncur aplikasi.
+    Jika Anda memilih mode yang juga menghapus data Anda, penghapusan itu berjalan setelah aplikasi berhenti dan mencatat apa yang dilakukannya di `.open-omniscience-uninstall.log` di folder rumah Anda. Penghapusan itu juga hanya lengkap bila tidak ada program lain yang membuka basis data: log menyatakan kapan program lain masih membukanya, atau kapan penghapusan tidak dapat memeriksanya (di Windows tidak pernah bisa). Program yang membuka basis data tetapi tidak memegang kunci apa pun padanya pada saat itu tidak dapat terlihat, jadi pemeriksaan dapat melewatkannya.
 
   Tata kelola dan batas merah penggunaan ganda yang membatasi semua ini ada di
   [`GOVERNANCE.md`](GOVERNANCE.md) (juga di **Bantuan & dokumen**).

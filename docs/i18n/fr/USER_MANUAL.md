@@ -2035,6 +2035,7 @@ Les **chiffres** officiels ne sont pas du tout ici — ce sont des données, ils
     les détruire) ; le dossier de l'application est laissé en place, à supprimer manuellement. Équivalent à
     `./install.sh --uninstall` ou à l'icône de bureau **« Uninstall Open Omniscience »** que
     l'installateur crée à côté des deux lanceurs de l'application.
+    Si vous choisissez un mode qui efface aussi vos données, cet effacement s’exécute après l’arrêt de l’application et consigne ce qu’il a fait dans `.open-omniscience-uninstall.log`, dans votre dossier personnel. Lui aussi n’est complet que si aucun autre programme n’a la base de données ouverte : le journal indique quand un autre programme l’avait encore ouverte, ou quand l’effacement n’a pas pu le vérifier (il ne le peut jamais sous Windows). Un programme qui a la base de données ouverte mais ne détient aucun verrou dessus à ce moment-là ne peut pas être vu, donc la vérification peut le manquer.
 
   La gouvernance et les lignes rouges liées au double usage qui encadrent tout cela se trouvent dans
   [`GOVERNANCE.md`](GOVERNANCE.md) (également dans **Aide & docs**).

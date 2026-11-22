@@ -330,7 +330,8 @@ def test_the_two_refusals_are_keyed_in_every_locale_and_the_page_translates_them
         d = json.loads(f.read_text(encoding="utf-8"))
         assert encrypt_tool.HELD_UNTOUCHED in d and encrypt_tool.HELD_LOG_REMOVED in d, f.name
     js = (root / "src/static/app-backup.js").read_text(encoding="utf-8")
-    assert "msg.textContent = t(e.message);" in js
+    # The encrypt panel translates a whole keyed refusal with t(); row 323 (R793) routes a room refusal through ooServerText first.
+    assert ": t(said));" in js and "const said = String(e.message" in js
 
 
 def test_the_probe_runs_on_its_own_thread_so_a_hang_cannot_hold_the_swap(monkeypatch, tmp_path):

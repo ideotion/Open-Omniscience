@@ -1959,6 +1959,7 @@ Las **cifras** oficiales no están aquí en absoluto: son datos, así que viven 
     destruirlos); la carpeta de la aplicación se deja en su sitio para que la borre manualmente. Equivale a
     `./install.sh --uninstall` o al icono de escritorio **“Desinstalar Open Omniscience”** (Uninstall Open Omniscience) que el
     instalador crea junto a los dos lanzadores de la aplicación.
+    Si elige un modo que también borra sus datos, ese borrado se ejecuta después de que la aplicación se haya detenido y registra lo que hizo en `.open-omniscience-uninstall.log`, en su carpeta personal. También él solo es completo cuando ningún otro programa tiene la base de datos abierta: el registro dice cuándo otro programa aún la tenía abierta, o cuándo el borrado no pudo comprobarlo (en Windows nunca puede). Un programa que tiene la base de datos abierta pero no tiene ningún bloqueo sobre ella en ese momento no se puede ver, así que la comprobación puede pasarlo por alto.
 
   La gobernanza y las líneas rojas de doble uso que delimitan todo esto están en
   [`GOVERNANCE.md`](GOVERNANCE.md) (también en **Ayuda y documentación**).
