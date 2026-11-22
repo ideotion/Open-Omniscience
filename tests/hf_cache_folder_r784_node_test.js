@@ -90,7 +90,7 @@ for (const lang of ["en", "fr", "ar", "ja", "ru", "hi"]) {
   const mk = (fn, extra) => new Function("window", "OOI18N", "esc", "fmtNum",
     [extract("ooLabelText", CORE), extract("_hfTargetWhy", SRC), extract("_uxImHfNote", SRC), ...(extra || []).map((x) => extract(x, SRC)),
       extract(fn, SRC), "return " + fn + ";"].join("\n"))({ OOI18N }, OOI18N, esc, (n) => String(n));
-  const row = mk("_uxImArtifactHfRow");
+  const row = mk("_uxImArtifactHfRow", ["_uxImHfTick"]);
   const p = "/home/x/.cache/huggingface/hub";
   // Never ticked by default; the folder beside the tick.
   const r1 = row([{ path: "a", hf_models: { count: 3, layout_recorded: true } }], { path: p, refused: null }, t, tf, paren);

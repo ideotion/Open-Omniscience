@@ -560,7 +560,9 @@ def folder_backup_restore(body: FolderRestoreBody) -> dict:
 
     try:
         return get_folder_manager().start(
-            body.src, _folder_categories(body.categories), mode="restore"
+            # R787 reads: a restore that names no category never places Hugging Face models.
+            body.src, _folder_categories(body.categories) if body.categories else [c for c in _FOLDER_CATEGORIES if c != "hf_models"],
+            mode="restore"
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc

@@ -642,7 +642,7 @@ class VolumeBackupManager:
                     # R787: Hugging Face models the artifact carries are placed only when the person
                     # ticked them, with the target folder shown; False (every caller that does not
                     # ask) leaves them in the artifact, counted.
-                    "place_hf_models": bool(place_hf_models),
+                    "place_hf_models": place_hf_models is True,
                 },
                 daemon=True,
                 name="volume-restore",
@@ -1112,10 +1112,17 @@ class VolumeBackupManager:
                     # line exactly as it did before.
                     if defer_reindex() and not report.get("held"):
                         hand_off_reindex(report)
+                    # R787 reads: the large files' outcome in counts, so the journal never records a clean
+                    # success the screen calls incomplete.
+                    _fm_raw = report.get("file_members")
+                    _fm: dict = _fm_raw if isinstance(_fm_raw, dict) else {}
                     runlog.end("ok", **{
                         k: report.get(k) for k in ("batch_id", "reindexed", "articles_merged")
                         if report.get(k) is not None
-                    })
+                    }, **{
+                        f"files_{k}": _fm[k] for k in ("placed", "skipped", "refused_total", "missing_total", "hf_not_chosen")
+                        if isinstance(_fm.get(k), int)
+                    }, **({"files_incomplete": True} if _fm.get("incomplete") or _fm.get("error") else {}))
                     storage_events.run_ended(
                         note, "ok", articles_merged=report.get("articles_merged"), reindexed=report.get("reindexed")
                     )

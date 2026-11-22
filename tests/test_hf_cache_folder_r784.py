@@ -257,7 +257,19 @@ def test_artifact_placement_never_writes_through_a_link_in_the_live_cache(tmp_pa
     os.symlink(Path("..") / ".." / "blobs" / "gone-blob", snap / "config.json")  # inside the cache, dangling
     out = place_artifact_file_members(staging, [{"category": "hf_models", "rel": "hub/" + _REL, "name": "m1"}],
                                       targets={"hf_models": live}, place_hf=True)
+    # R787 reads: a link AT the file's own name is that file already here -- kept, counted as skipped,
+    # never written through (it still dangles, and nothing was created beside it).
+    assert out["placed"] == 0 and out["skipped"] == 1 and out["refused"] == [] and out["incomplete"] is False
+    assert (snap / "config.json").is_symlink() and not (live / "models--org--m" / "blobs" / "gone-blob").exists()
+    # A link in a folder ON THE WAY is still refused.
+    other = live / "models--org--n"
+    other.mkdir()
+    (live / "elsewhere").mkdir()
+    os.symlink(live / "elsewhere", other / "snapshots")  # inside the cache, so only the link rule can refuse it
+    out = place_artifact_file_members(staging, [{"category": "hf_models", "rel": "hub/models--org--n/snapshots/r1/a.json", "name": "m1"}],
+                                      targets={"hf_models": live}, place_hf=True)
     assert out["placed"] == 0 and out["refused"][0]["why"] == "a link on the way in your data folder"
+    assert not (live / "elsewhere" / "r1").exists()
     assert (snap / "config.json").is_symlink() and not (live / "models--org--m" / "blobs" / "gone-blob").exists()
 
 

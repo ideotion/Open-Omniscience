@@ -33,6 +33,7 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -700,6 +701,10 @@ def _unsafe_placement_reason(name: str, rel: str) -> str | None:
     return None
 
 
+#: The errors that say a member's NAME cannot exist here, not that writing failed (R787 reads).
+_NAME_ERRNOS = frozenset({errno.ENAMETOOLONG, errno.ENOTDIR, errno.EEXIST, errno.EISDIR})
+
+
 def place_artifact_file_members(
     staging_dir: str | os.PathLike,
     file_members: Iterable[dict],
@@ -802,8 +807,21 @@ def place_artifact_file_members(
         # R779's destination rule, on this path too (R784 security read): a link anywhere between the live
         # folder and the file is never written through. A real Hugging Face cache is made of links, and a
         # DANGLING one (a deleted blob) reads as absent to ``exists()``, so it would have been replaced.
-        if link_on_the_way(root, Path(place_rel)):
+        # R787 reads: a link AT the file's own name is that file already present here (a cache's
+        # snapshot entries are links into its blobs), so it is kept and counted as skipped; a link in a
+        # folder on the way is still refused. A name the system cannot look at (too long, a file where
+        # a folder is needed) refuses that one member and never stops the others.
+        try:
+            parent_link = link_on_the_way(root, Path(place_rel).parent)
+            own_link = not parent_link and os.path.islink(dst)
+        except (OSError, ValueError):
+            refused.append({"category": category, "rel": rel, "why": "a name that cannot be used here"})
+            continue
+        if parent_link:
             refused.append({"category": category, "rel": rel, "why": "a link on the way in your data folder"})
+            continue
+        if own_link:
+            skipped += 1  # never overwrite a local file, and never write through a link
             continue
         if not src_path.is_file():
             # The member is named in the index but its bytes are not in staging. The
@@ -814,7 +832,16 @@ def place_artifact_file_members(
         if dst.exists():
             skipped += 1  # never overwrite a local file
             continue
-        if not _atomic_copy(src_path, dst, should_stop=should_stop):
+        try:
+            copied = _atomic_copy(src_path, dst, should_stop=should_stop)
+        except OSError as exc:
+            # R787 reads: a NAME this system cannot hold (too long, or a file where the artifact needs a
+            # folder) refuses that one member; any other failure (a full disk) still stops, as before.
+            if exc.errno not in _NAME_ERRNOS:
+                raise
+            refused.append({"category": category, "rel": rel, "why": "a name that cannot be used here"})
+            continue
+        if not copied:
             stopped = True
             break
         placed += 1
@@ -1230,10 +1257,13 @@ def restore_folder_backup(
             # R779, the destination side: never write THROUGH a link. A link anywhere between the
             # live folder and the file (a sub-folder, or the file's own name) is refused, and the
             # resolved destination must stay inside the live folder.
-            if link_on_the_way(dest_dir, rel_live) or not stays_inside(dst, dest_real):
+            # R787 reads: a link AT the file's own name is that file already present (a Hugging Face
+            # cache's snapshot entries are links into its blobs): kept and counted as skipped, never
+            # written through. A link in a folder on the way is still refused.
+            if link_on_the_way(dest_dir, rel_live.parent) or not stays_inside(dst.parent, dest_real):
                 refused_dest_links += 1
                 continue
-            if dst.exists():
+            if os.path.islink(dst) or dst.exists():
                 skipped += 1  # never overwrite a local file
                 continue
             want = recorded.get((cat, rel.as_posix(), seen.st_size))
@@ -1714,7 +1744,11 @@ class FolderBackupManager:
             if self._alive():
                 storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
-            cats = [c for c in categories if c in _CATEGORIES] or list(_CATEGORIES)
+            cats = [c for c in categories if c in _CATEGORIES] or (
+                # R787 reads: a restore that names no category never places Hugging Face models; only
+                # a request that names them (the person's own tick) does.
+                [c for c in _CATEGORIES if c != "hf_models"] if mode == "restore" else list(_CATEGORIES)
+            )
             items: list[BackupItem] = []
             if mode == "backup":
                 try:

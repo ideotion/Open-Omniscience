@@ -100,3 +100,41 @@ def test_only_an_explicit_tick_travels_to_the_placement():
     v = (ROOT / "src" / "backup" / "volume_job.py").read_text(encoding="utf-8")
     assert "place_hf=place_hf_models" in python_function_source(v, "_run_restore")
     assert "place_hf_models: bool = False" in python_function_source(v, "start_restore")
+
+
+def test_one_name_the_system_cannot_use_refuses_that_member_only(tmp_path):
+    tg = {"hf_models": tmp_path / "cache", "wiki_dumps": tmp_path / "wiki"}
+    bad = {"category": "wiki_dumps", "rel": "x" * 300 + "/a.bz2", "name": "w1"}
+    out = place_artifact_file_members(_staging(tmp_path), [bad, *_members()], targets=tg, place_hf=True)
+    assert out["placed"] == 2, "the members after it are still placed"
+    assert [r["why"] for r in out["refused"]] == ["a name that cannot be used here"] and out["incomplete"] is True
+
+
+def test_a_folder_restore_finds_the_model_already_here_and_calls_it_skipped(tmp_path, monkeypatch):
+    import os
+
+    import pytest
+
+    if os.name == "nt":
+        pytest.skip("POSIX links")
+    from src.backup.folder_backup import restore_folder_backup
+
+    rel = "models--org--m/snapshots/r1/config.json"
+    bk = tmp_path / "bk"
+    (bk / "hf_models" / "hub" / "models--org--m" / "snapshots" / "r1").mkdir(parents=True)
+    (bk / "hf_models" / "hub" / rel).write_bytes(b"{}")
+    live = tmp_path / "cache"
+    (live / "models--org--m" / "blobs").mkdir(parents=True)
+    (live / "models--org--m" / "blobs" / "abc").write_bytes(b"{}")
+    (live / "models--org--m" / "snapshots" / "r1").mkdir(parents=True)
+    os.symlink(Path("..") / ".." / "blobs" / "abc", live / rel)
+    res = restore_folder_backup(bk, categories=["hf_models"], targets={"hf_models": live})
+    assert res["skipped"] == 1 and res["refused_dest_links"] == 0 and not res.get("incomplete")
+    assert (live / rel).is_symlink()
+
+
+def test_a_restore_that_names_no_category_never_places_the_models():
+    fb = (ROOT / "src" / "backup" / "folder_backup.py").read_text(encoding="utf-8")
+    assert '[c for c in _CATEGORIES if c != "hf_models"] if mode == "restore"' in fb
+    api = (ROOT / "src" / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    assert '[c for c in _FOLDER_CATEGORIES if c != "hf_models"]' in python_function_source(api, "folder_backup_restore")

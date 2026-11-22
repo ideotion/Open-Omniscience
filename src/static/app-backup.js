@@ -1487,11 +1487,15 @@
     // said beside the tick, and an artifact made before it recorded its cache layout says what it may miss.
     function _uxImArtifactHfRow(corpus, hf, t, tfs, paren) {
       const n = (corpus || []).reduce((a, c) => a + ((c && c.hf_models && c.hf_models.count) || 0), 0);
+      const old = (corpus || []).some((c) => c && c.hf_models && c.hf_models.layout_recorded === false);
+      return _uxImHfTick("ux-i-corpus-hf", n, old, hf, t, tfs, paren);
+    }
+    // One unticked box for N model files, with the folder they go to here (or why not) and the older-backup note.
+    function _uxImHfTick(id, n, old, hf, t, tfs, paren) {
       if (!n) return "";
       const files = n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) });
       const off = hf && hf.refused ? " disabled" : "";
-      const old = corpus.some((c) => c && c.hf_models && c.hf_models.layout_recorded === false);
-      return `<label class="switch" style="margin:0;margin-inline-start:28px"><input type="checkbox" id="ux-i-corpus-hf"${off}> ${esc(t("Also restore the Hugging Face models this backup carries"))} <span class="muted">${paren(esc(files))}</span></label>`
+      return `<label class="switch" style="margin:0;margin-inline-start:28px"><input type="checkbox" id="${id}"${off}> ${esc(t("Also restore the Hugging Face models this backup carries"))} <span class="muted">${paren(esc(files))}</span></label>`
         + _uxImHfNote({ hf_models: { count: n, layout_unrecorded: old } }, hf, t);
     }
     function _uxImBlobRow(b, t, tfs, paren) {
@@ -1590,7 +1594,9 @@
           const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
           rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
         }
-        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren) + _uxImHfNote(f.blobs, f.hf_target, t));
+        // R787 reads: the models a folder backup carries ask for their own tick too, never by default.
+        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren) + _uxImHfTick("ux-i-blobs-hf",
+          (f.blobs.hf_models && f.blobs.hf_models.count) || 0, !!(f.blobs.hf_models && f.blobs.hf_models.layout_unrecorded), f.hf_target, t, tfs, paren));
         if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
         const notes = [];
         // Row 293: folders the scan was refused are said on screen; whatever they hold is not listed above.
@@ -1709,8 +1715,14 @@
       if (legacy.length && cb("ux-i-legacy")) {
         for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name, trust_fetch_history: trust, ..._uxImOwnKeys(lg.path) });
       }
-      if (blobRoots.length && cb("ux-i-blobs")) {
-        for (const br of blobRoots) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: br.categories });
+      // R787 reads: the model cache is restored only when its own box was ticked, and that box alone
+      // is enough; the other large-data categories follow the "Restore large data" box.
+      const blobAll = cb("ux-i-blobs") === true, blobHf = cb("ux-i-blobs-hf") === true;
+      if (blobRoots.length && (blobAll || blobHf)) {
+        for (const br of blobRoots) {
+          const cats = (br.categories || []).filter((c) => (c === "hf_models" ? blobHf : blobAll));
+          if (cats.length) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: cats });
+        }
       }
       if (f.newsletters && cb("ux-i-eml")) items.push({ kind: "newsletters", path: src, label: t("Newsletters") });
       if (!items.length) { toast(t("Nothing selected to import."), "err"); return; }
