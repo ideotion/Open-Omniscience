@@ -4499,6 +4499,20 @@
       return esc(head) + ooOsmUpdatesHtml(dd);
     }
 
+    // R776 (row 292): the gazetteer's date on the place card. A place artifact built after daily OSM change files were applied
+    // records "extract+last file" ("2026-10-01+2026-11-19", or "+not-read" when the file's date was not read;
+    // src/entities/gazetteer_build.py:compound_vintage), so the card names both, in R775's words, never one date older than
+    // the data. A value without "+" (every gazetteer built before R776, the world file, nothing applied) reads exactly as before.
+    function _gazetteerDate(v) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, vv) => x.replace(/\{(\w+)\}/g, (m, k) => (vv[k] == null ? m : vv[k])));
+      if (!v) return esc(t("gazetteer without a vintage"));
+      const m = /^([^+]+)\+(.+)$/.exec(String(v));
+      if (!m) return esc(tf("gazetteer of {date}", {date: v}));
+      const dd = m[2] === "not-read" ? {updates: "date_not_read", last_diff: null} : {updates: "dated", last_diff: m[2]};
+      return esc(tf("gazetteer of {date}", {date: m[1]})) + ooOsmUpdatesHtml(dd);
+    }
+
     // S05-04 S5 (Q817): a place of an OSM country that is NOT a notable Place stays a row of
     // the lane, and this card shows that row -- every tag as metadata, the data's date, the
     // caveat visible. A notable object says where its Place card is. Same dialog, no network.
@@ -4612,7 +4626,7 @@
       // OSM country read into this machine (Q817) -- each states its own date.
       const origin = d.origin === "osm-lane"
         ? _osmCardDate(d.osm && d.osm.vintage, d.osm && d.osm.data_date)   // HTML, escaped inside
-        : esc(d.gazetteer_vintage ? tf("gazetteer of {date}", {date: d.gazetteer_vintage}) : t("gazetteer without a vintage"));
+        : _gazetteerDate(d.gazetteer_vintage);   // HTML, escaped inside
       html += `<div class="muted small">${esc(tf("Mentioned in {n} articles", {n: d.articles || 0}))}`
         + ` · ${origin}`
         + (d.item && d.item.as_of ? ` · ${esc(tf("Wikidata item read {date}", {date: ooIsoDate(d.item.as_of)}))}` : "")
