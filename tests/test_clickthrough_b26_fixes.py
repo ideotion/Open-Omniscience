@@ -259,7 +259,10 @@ def test_the_export_s_brackets_are_keyed_frames():
     # The import checklist and the restore's progress line had the same welded brackets.
     scan = function_body(app, "_uxImScan")
     assert_present(scan, 'esc(tfs("({text})", { text: "\\u0001" }))')
-    assert scan.count("${paren(") == 4 and scan.count('" " + paren(') == 1, "five checklist brackets"
+    # The large-data row moved into _uxImBlobRow (row 293), which _uxImScan hands the same paren to.
+    row = function_body(app, "_uxImBlobRow")
+    assert scan.count("${paren(") == 3 and row.count("${paren(") == 1 and scan.count('" " + paren(') == 1, "five checklist brackets"
+    assert "_uxImBlobRow(" in scan and "paren)" in scan
     assert_absent(scan, '<span class="muted">(', why="welded ASCII brackets on the import checklist (J-3)")
     assert_absent(scan, "parts.push(`wiki", why="an English category word welded to a raw count")
     assert_present(scan, "f.legacy_backup.map(x => ltr(x.name))")
