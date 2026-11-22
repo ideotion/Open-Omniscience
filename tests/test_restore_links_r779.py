@@ -271,3 +271,31 @@ def test_a_category_folder_swapped_for_a_link_after_its_check_restores_nothing(t
     tgt = _targets(tmp_path)
     res = restore_folder_backup(backup, targets=tgt)
     assert _files(tgt["wiki_dumps"]) == [] and res["refused_categories"] == ["wiki_dumps"] and res["incomplete"] is True
+
+
+def test_a_member_on_another_device_than_its_category_folder_is_refused(tmp_path, monkeypatch):
+    # Security read: a hostile drive can answer "folder" to every check and "link" to the walk and the
+    # open, so the file opened and the file looked at are the same file -- from the machine itself.
+    # Its device gives it away: it is not on the backup's device.
+    from src.backup import folder_backup
+
+    backup = tmp_path / "backup"
+    _touch(backup / "wiki_dumps" / "a.bz2", b"a")
+    _touch(backup / "wiki_dumps" / "b.bz2", b"b")
+    real = folder_backup._category_members
+
+    def elsewhere(cat_root, *a, **k):
+        members, links = real(cat_root, *a, **k)
+        out = []
+        for p, st in members:
+            if p.name == "a.bz2":
+                fake = list(st)
+                fake[2] = st.st_dev + 1  # st_dev
+                st = os.stat_result(fake)
+            out.append((p, st))
+        return out, links
+
+    monkeypatch.setattr(folder_backup, "_category_members", elsewhere)
+    tgt = _targets(tmp_path)
+    res = restore_folder_backup(backup, targets=tgt)
+    assert _files(tgt["wiki_dumps"]) == ["b.bz2"] and res["refused_symlinks"] == 1 and res["incomplete"] is True

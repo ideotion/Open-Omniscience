@@ -840,6 +840,11 @@ def restore_folder_backup(
         if _category_swapped(cat_root, cat_real):
             refused_categories.append(cat)
             continue
+        try:
+            cat_dev = os.lstat(cat_root).st_dev
+        except OSError:
+            refused_categories.append(cat)
+            continue
         members, linked_here = _category_members(cat_root)
         if _category_swapped(cat_root, cat_real):
             refused_categories.append(cat)
@@ -850,7 +855,13 @@ def restore_folder_backup(
             # Belt and braces: whatever the walk handed back, no part of the way from the BACKUP folder
             # to the member -- the category folder included -- may be a link, and its real path may not
             # leave the folder.
-            if link_on_the_way(src, Path(cat) / rel.parent) or not stays_inside(p, cat_real):
+            # A member on ANOTHER device than the category folder was reached through something that
+            # is not a plain folder of the backup: a drive that answers "folder" to the checks and
+            # "link" to the walk or the open (a hostile FUSE device can) would otherwise hand over a
+            # file from the machine itself, with the open's own identity check agreeing, since both
+            # looked at that same file. Refused. (A walk and open made relative to the folder's own
+            # handle would close the window entirely; that is a stated limit, not done here.)
+            if seen.st_dev != cat_dev or link_on_the_way(src, Path(cat) / rel.parent) or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
             dst = dest_dir / rel
