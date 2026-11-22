@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from src.database.connect import have_driver
+from tests.js_source_helper import python_function_source
 from tests.test_crypto_erase_second_process import _KEY, _REPO, _line, _salt_in_held_files, _store
 
 pytestmark = [
@@ -131,7 +132,7 @@ def test_the_holder_lines_carry_no_process_id_and_no_path():
     """R734/R736: the lines this check writes name neither a process nor a file."""
     from src.safety.uninstall import _WATCHER_SRC
 
-    body = _WATCHER_SRC[_WATCHER_SRC.index("def check_other_holders"):_WATCHER_SRC.index('rec("uninstall watcher start')]
+    body = python_function_source(_WATCHER_SRC, "check_other_holders")
     recs = [ln for ln in body.splitlines() if "rec(" in ln]
     assert len(recs) == 3, recs
     assert all("%" not in ln and "+" not in ln for ln in recs), recs
