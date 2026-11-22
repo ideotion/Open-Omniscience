@@ -162,17 +162,6 @@ def remove_leftover_replaced(main: Path | None = None, *, key: str) -> int:
     return removed
 
 
-def _room_for(path: Path) -> bool:
-    """Free space beside ``path`` for two copies of it (the snapshot and the encrypted copy). True when it cannot be measured: the
-    encryption itself then says what failed."""
-    import shutil
-
-    try:
-        return shutil.disk_usage(path.parent).free >= 2 * os.stat(path).st_size
-    except OSError:
-        return True
-
-
 #: Why a store that is there could not be read (row 149). Fixed words, keyed in every locale; never the OS's own text, which can
 #: name a path. A store in use right now is not unreadable: it reads ``busy`` (row 153).
 UNREADABLE_REASONS = {
@@ -420,10 +409,12 @@ def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[...,
         with write_lock():
             encrypt_tool.dispose_lane_engines()
             for name in st["pending"]:
-                if not _room_for(paths[name]):
+                if encrypt_tool.room_refusal(name, paths[name]) is not None:
                     # A store is copied twice beside itself (the snapshot, then the encrypted copy) under the write gate: without the
-                    # room for both it would hold every save for hours and end on a full disk. It waits for the encrypt button.
-                    _LOG.warning("the %s store was not encrypted yet: not enough free space beside it; it stays pending", name)
+                    # room for both (its file and its write-ahead log, row 323) it would hold every save for hours and end on a full
+                    # disk. The ONE check the operator's encrypt makes too (R793); a room that was not read refuses as well. It waits
+                    # for the encrypt button, whose answer says which.
+                    _LOG.warning("the %s store was not encrypted yet: no room for its copies, or the room was not read; it stays pending", name)
                     failed.append(name)
                     continue
                 try:

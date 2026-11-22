@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import UTC, datetime
@@ -36,6 +37,78 @@ _LOG = logging.getLogger("database.encrypt_tool")
 
 class EncryptToolError(RuntimeError):
     """Raised when an in-place encryption cannot proceed safely."""
+
+
+class EncryptNoRoom(EncryptToolError):
+    """A store was not encrypted because the room its two copies need is not there, or was not read (row 323, R793). Raised
+    before any file is made for that store, so the store is exactly as it was."""
+
+
+#: R793: the words of a store refused for room. FIXED frames, English on purpose (they are also the log line and the API's
+#: answer); the page reads them back into their parts and writes them from keyed frames (``ooServerText`` in app-core.js), in the
+#: same way as the backup's free-space refusal. ``{store}`` is the store's own label as the Settings panel shows it.
+NO_ROOM = (
+    'Not enough free space to encrypt the store "{store}": it needs about {needed} (two copies of the store and its '
+    "write-ahead log), only {free} free on its drive. Nothing was changed for this store. Free up space and press "
+    '"Encrypt corpus & custody log" again.'
+)
+ROOM_NOT_READ = (
+    'The store "{store}" was not encrypted: whether its drive has the free space it needs could not be checked ({reason}). '
+    'Nothing was changed for this store. Press "Encrypt corpus & custody log" again once this is fixed.'
+)
+#: Why the room was not read. Fixed words, keyed in every locale; never the OS's own text, which can name a path.
+ROOM_REASONS = {
+    "size": "its size could not be read",
+    "log": "the size of its write-ahead log could not be read",
+    "free": "the free space on its drive could not be read",
+}
+
+
+def _store_label(name: str) -> str:
+    """The store's label as the Settings at-rest panel writes it (app-backup.js ``storeLabel``), in English."""
+    if name == "corpus":
+        return "Corpus"
+    if name == "custody":
+        return "Custody log"
+    if name.startswith("lane:"):
+        return f"Source store ({name[5:]})"
+    return name
+
+
+def _disk_free(where: Path) -> int:
+    """Free bytes on the drive that holds ``where``; raises ``OSError`` when it cannot be read (never a 0 that would read as full)."""
+    return int(shutil.disk_usage(where).free)
+
+
+def room_refusal(name: str, path: Path | str) -> str | None:
+    """The ONE room check before a store is encrypted (row 323, R793), shared by the operator's encrypt and the finish at unlock.
+
+    ``None`` when there is room; otherwise the sentence that says why the store is not encrypted. The snapshot and the encrypted
+    copy are both written beside the store and both carry what its write-ahead log still holds, so the room needed is twice the file
+    plus its ``-wal``. Sizes are read by stat only, never by opening a file (R789). No log file is a log of nothing; any size, or the
+    free space, that cannot be read refuses (fail closed) and says which was not read, never a guess. Names no path and no key."""
+    from src.backup.folder_backup import human_bytes
+
+    p = Path(path)
+    label = _store_label(name)
+    try:
+        size = os.stat(p).st_size
+    except OSError:
+        return ROOM_NOT_READ.format(store=label, reason=ROOM_REASONS["size"])
+    try:
+        size += os.stat(str(p) + "-wal").st_size
+    except FileNotFoundError:
+        pass  # no log file: nothing beyond the file itself is copied
+    except OSError:
+        return ROOM_NOT_READ.format(store=label, reason=ROOM_REASONS["log"])
+    try:
+        free = _disk_free(p.parent)
+    except OSError:
+        return ROOM_NOT_READ.format(store=label, reason=ROOM_REASONS["free"])
+    needed = 2 * size
+    if free >= needed:
+        return None
+    return NO_ROOM.format(store=label, needed=human_bytes(needed), free=human_bytes(free))
 
 
 def _table_counts(conn) -> dict[str, int]:
@@ -303,6 +376,13 @@ def encrypt_store(
     connection unlikely in the first place."""
     from src.database import at_rest_state
 
+    # Row 323 / R793: room for this store's two copies, checked before ANY file is made for it. Only a store that is there and reads
+    # as plaintext is copied; an absent or already-encrypted one is skipped below and needs no room.
+    p = Path(path)
+    if p.is_file() and is_encrypted_file(p) is False:
+        refused = room_refusal(name, p)
+        if refused is not None:
+            raise EncryptNoRoom(refused)
     if name == "custody":
         from src.custody.log import _APPEND_LOCK
 
@@ -338,10 +418,12 @@ PARTIAL = (
 
 
 class EncryptPartial(EncryptToolError):
-    """The library is encrypted and the key is held, but ``pending`` stores are still plaintext (R742)."""
+    """The library is encrypted and the key is held, but ``pending`` stores are still plaintext (R742). ``reasons`` are the room
+    refusals among them (row 323, R793), each its own fixed sentence, said after the partial words."""
 
-    def __init__(self, pending: list[str]) -> None:
-        super().__init__(PARTIAL)
+    def __init__(self, pending: list[str], reasons: list[str] | None = None) -> None:
+        self.reasons = list(reasons or ())
+        super().__init__(" ".join([PARTIAL, *self.reasons]))
         self.pending = list(pending)
 
 
@@ -358,7 +440,7 @@ def _still_plaintext(rows: list[tuple[str, Path]]) -> list[str]:
     return [name for name, path in rows if is_encrypted_file(path) is False]
 
 
-def _encrypt_the_rest(rows: list[tuple[str, Path]], key: str, main: Path, reports: dict) -> list[str]:
+def _encrypt_the_rest(rows: list[tuple[str, Path]], key: str, main: Path, reports: dict, reasons: list[str]) -> list[str]:
     """Each store after the library is its own step; one that fails stays plaintext and is named, and the others go on.
 
     A function of its own so the loop has no ``with`` around it in its own scope (tests/test_database_loop_heads_are_classified.py): an
@@ -367,6 +449,11 @@ def _encrypt_the_rest(rows: list[tuple[str, Path]], key: str, main: Path, report
     for name, path in rows:
         try:
             reports[name] = encrypt_store(name, path, key, main=main)
+        except EncryptNoRoom as refused:
+            # R793: said to the operator, in its fixed words (no path, no key), beside which stores were not done.
+            _LOG.warning("the %s store was not encrypted yet: no room for its copies, or the room was not read; it stays pending", name)
+            reasons.append(str(refused))
+            pending.append(name)
         except Exception as exc:  # noqa: BLE001 - a later store's failure must not hide that the library is encrypted
             log_failure(_LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING)
             pending.append(name)
@@ -442,7 +529,8 @@ def encrypt_all(key: str, *, on_library_encrypted: Callable[[], object] | None =
         if not handed:
             _hand()
         dispose_lane_engines()
-        pending = _encrypt_the_rest(rows[1:], key, main, reports)
+        reasons: list[str] = []
+        pending = _encrypt_the_rest(rows[1:], key, main, reports, reasons)
     if pending:
-        raise EncryptPartial(pending)
+        raise EncryptPartial(pending, reasons)
     return reports

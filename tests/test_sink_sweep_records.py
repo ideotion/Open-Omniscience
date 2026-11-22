@@ -370,6 +370,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # R741 (row 145): a held library file is recognised by its winerror only; the refusal is fixed words with the chain cut.
     'src/database/encrypt_tool.py': {
         ('_export_and_swap', 'if not library or not _file_is_locked(refused):'): 1,
+        # Row 323 / R793: a store refused for room is said after the partial words; ``EncryptNoRoom`` holds only room_refusal's fixed
+        # sentence (a store label, two human_bytes sizes or a fixed reason; never a path, a key or the OS's text).
+        ('_encrypt_the_rest', 'reasons.append(str(refused))'): 1,
     },
     'src/database/repair.py': {
         ('_swap', 'if not _file_is_locked(refused):'): 1,
@@ -716,6 +719,12 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     'src/api/startup_status.py': {
         ('set_startup', '_state["error"] = error'): 1,
+    },
+    # Row 323 / R793: a store refused for room carries only encrypt_tool's own fixed sentences (NO_ROOM / ROOM_NOT_READ, built from a
+    # store label, two human_bytes sizes or a fixed reason; never a path, a key or the OS's text), said as the answer.
+    'src/api/unlock.py': {
+        ('encrypt_db', 'raise HTTPException(status_code=409, detail=" ".join([PARTIAL_DETAIL, *partial.reasons]))'): 1,
+        ('encrypt_db', 'raise HTTPException(status_code=507, detail=str(refused))'): 1,
     },
     'src/api/wiki_lane.py': {
         ('_read_status', 'return _unreadable("status", exc)'): 1,
