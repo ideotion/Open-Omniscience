@@ -118,7 +118,11 @@ _NOT_MODELS_NAMES = frozenset({
     "open_omniscience.db", ".oo-instance-id", ".oos-volume", "volumes.json", "oo-folder-backup.json",
     "oo-export-request.json",
 })
-_NOT_MODELS_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".db-wal", ".ooenc", ".pem", ".key")
+_NOT_MODELS_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".db-journal", ".duckdb", ".kdf",
+                        ".ooenc", ".oopar", ".oopart", ".pem", ".key")
+#: Inside a Hugging Face repo tree the file names are the repo's own (a dataset may ship ``.sqlite``,
+#: a model a ``.pem``), so only the app's exact marker names count there.
+_HF_REPO_PREFIXES = ("models--", "datasets--", "spaces--")
 
 #: The prefix every guard refusal carries, so the page says WHY a folder is kept.
 _NOT_REMOVABLE = "not removable by the app: "
@@ -143,11 +147,13 @@ def _holds_more_than_models(root: Path, *, names_only: bool = False) -> str | No
     ``.db`` fixtures and folders named ``keys``)."""
     failed: list[OSError] = []
     try:
-        for _cur, dirs, files in os.walk(root, onerror=failed.append, followlinks=False):
+        for cur, dirs, files in os.walk(root, onerror=failed.append, followlinks=False):
+            rel_parts = Path(cur).relative_to(root).parts
+            in_repo = any(part.startswith(_HF_REPO_PREFIXES) for part in rel_parts)
             for name in [*dirs, *files]:
                 low = name.lower()
                 if low in _NOT_MODELS_NAMES or (
-                        not names_only and (low.endswith(_NOT_MODELS_SUFFIXES) or low == "keys")):
+                        not names_only and not in_repo and (low.endswith(_NOT_MODELS_SUFFIXES) or low == "keys")):
                     return "it holds files that are not model weights (the app's data, a backup, or keys)"
     except OSError:
         return "it could not be looked through completely"
@@ -234,9 +240,13 @@ def _store_paths() -> list[tuple[str, Path]]:
     return out
 
 
-def _other_folders(own: Path) -> list[Path]:
-    """Every folder this module knows besides ``own``: the other stores and the vLLM environment."""
-    out = [p for _k, p in _store_paths() if p != own]
+def _other_folders(own_kind: str) -> list[Path]:
+    """Every folder this module knows besides the store ``own_kind``: the other stores (by KIND, so a
+    second store at the same path still counts), the legacy HF cache, the vLLM environment and the
+    columnar store."""
+    stores = _store_paths()
+    own = next((p for k, p in stores if k == own_kind), None)
+    out = [p for k, p in stores if k != own_kind]
     from src.llm.model_store import legacy_hf_home
 
     legacy = legacy_hf_home()
@@ -245,10 +255,16 @@ def _other_folders(own: Path) -> list[Path]:
     try:
         from src.llm import vllm_lifecycle
 
-        venv = vllm_lifecycle.venv_dir()
-        if venv != own:
-            out.append(venv)
+        out.append(vllm_lifecycle.venv_dir())
     except Exception:  # noqa: BLE001 - a missing backend has no folder to protect
+        pass
+    try:
+        from src.analytics.columnar import _store_dir as columnar_dir
+
+        col = columnar_dir()
+        if col != own:
+            out.append(col)  # OO_COLUMNAR_DIR can put the columnar store anywhere
+    except Exception:  # noqa: BLE001 - no columnar store, nothing to protect
         pass
     return out
 
@@ -295,7 +311,7 @@ def _store_entry(kind: str, path: Path) -> dict:
         exists = path.exists()
     except OSError:
         exists = False
-    guard = removal_refusal(path, others=_other_folders(path)) if (ours and exists) else None
+    guard = removal_refusal(path, others=_other_folders(kind)) if (ours and exists) else None
     return {
         "kind": kind,
         "path": str(path),
@@ -326,6 +342,37 @@ def model_stores() -> list[dict]:
     return out
 
 
+#: What the top of a Python environment holds (POSIX and Windows layouts, the ``.gitignore`` newer
+#: ``venv`` writes, and the app's own install record). Anything else there means the folder is more
+#: than an environment -- the keys or a backup folder a variable pointed the install at -- and it is
+#: never removed as vLLM's (R786).
+_VENV_TOP = frozenset({"bin", "lib", "lib64", "include", "share", "etc", "scripts", "lib/site-packages",
+                       "pyvenv.cfg", ".gitignore", ".oo_vllm_installed.json"})
+
+
+def _venv_refusal(venv: Path) -> str | None:
+    """Why the vLLM environment at ``venv`` must not be removed, or None (R786): it must look like a
+    Python environment and nothing more at its top, pass the path checks, hold none of the app's
+    marker names, and -- like a model store -- not sit in a data folder that is a home folder or a drive."""
+    try:
+        if not (venv / "pyvenv.cfg").is_file():
+            return _NOT_REMOVABLE + "it does not look like a Python environment"
+        extra = sorted(e.name for e in os.scandir(venv) if e.name.lower() not in _VENV_TOP)
+        if extra:
+            return _NOT_REMOVABLE + "it holds more than a Python environment"
+        from src.paths import data_dir
+        from src.safety.data_scope import folder_scope
+
+        if _owned_by_app(venv):
+            scope = folder_scope(data_dir())
+            if scope.get("broad", True) and scope.get("reason") != "shared_folder":
+                return (_NOT_REMOVABLE + "the app's data folder is also a folder of your own (your home "
+                        "folder, a drive...). Remove the environment by hand if you want the space back.")
+    except Exception:  # noqa: BLE001 - fail closed
+        return _NOT_REMOVABLE + "it could not be looked at"
+    return removal_refusal(venv, others=[p for _k, p in _store_paths()], look_inside="names")
+
+
 def _vllm_state() -> dict:
     """What removing vLLM would involve, without removing anything."""
     try:
@@ -337,10 +384,7 @@ def _vllm_state() -> dict:
     except Exception as exc:  # noqa: BLE001 - an unreadable backend is not an installed one
         return {"backend": "vllm", "installed": False, "error": record_text(exc, limit=200)}
     # R786: the path guard, by path only (a venv legitimately carries ``.pem`` certificate bundles).
-    guard = None
-    if installed and _owned_by_app(venv):
-        guard = (removal_refusal(venv, others=[p for _k, p in _store_paths()], look_inside="names")
-                 if (venv / "pyvenv.cfg").is_file() else _NOT_REMOVABLE + "it does not look like a Python environment")
+    guard = _venv_refusal(venv) if installed and _owned_by_app(venv) else None
     return {
         "backend": "vllm",
         "installed": bool(installed),
@@ -479,8 +523,11 @@ def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
                         ),
                     }
                 )
+            elif (again := _venv_refusal(Path(state["path"]))) is not None:
+                # R786: looked at again after the stop, which can take seconds, right before the delete.
+                kept.append({"what": "vllm", "reason": again})
             else:
-                result = _rmtree(Path(state["path"]))
+                result = _rmtree(_real(state["path"]) or Path(state["path"]))
                 result["what"] = "vllm"
                 result["freed_bytes"] = state.get("bytes") if result.get("removed") else 0
                 (removed if result.get("removed") else kept).append(
@@ -526,7 +573,7 @@ def uninstall(*, backends: list[str], delete_models: bool = False) -> dict:
         for store in model_stores():
             # R786: looked at AGAIN just before the delete, so a folder that changed since the plan
             # was read (a database copied into it, a variable re-pointed) is still refused.
-            again = removal_refusal(store["path"], others=_other_folders(Path(store["path"]))) if store["removable"] else None
+            again = removal_refusal(store["path"], others=_other_folders(store["kind"])) if store["removable"] else None
             if again is not None:
                 kept.append({"what": f"{store['kind']} models", "reason": again})
             elif store["removable"]:

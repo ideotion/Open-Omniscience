@@ -261,7 +261,17 @@ def test_a_refused_vllm_environment_says_the_guard_s_reason(app, monkeypatch):
     monkeypatch.setattr(VL, "is_installed", lambda: True)
     monkeypatch.setattr(VL, "is_running", lambda: False)
     st = U._vllm_state()
-    assert st["removable"] is False and "data folder" in st["kept_reason"]
+    assert st["removable"] is False and "more than a Python environment" in st["kept_reason"]
+    # Even a data folder holding ONLY an environment's shape is refused by the path check.
+    bare = app / "models" / "bare"
+    (bare / "bin").mkdir(parents=True)
+    (bare / "pyvenv.cfg").write_text("x", encoding="utf-8")
+    monkeypatch.setattr("src.paths.data_dir", lambda: bare)
+    monkeypatch.setattr("src.llm.model_store.data_dir", lambda: bare)
+    monkeypatch.setattr(VL, "venv_dir", lambda: bare)
+    assert "data folder" in U._vllm_state()["kept_reason"]
+    monkeypatch.setattr("src.paths.data_dir", lambda: app)
+    monkeypatch.setattr("src.llm.model_store.data_dir", lambda: app)
     # And a folder that is not a Python environment at all is never removed as vLLM's.
     (app / "pyvenv.cfg").unlink()
     (app / "models" / "venvish").mkdir()
@@ -288,3 +298,64 @@ def test_a_relative_database_address_is_resolved_where_sqlite_reads_it(app, monk
     (tmp_path / "here").mkdir()
     monkeypatch.setenv("DATABASE_URL", "sqlite:///here/rel.db")
     assert "database" in U.removal_refusal(tmp_path / "here")
+
+
+@pytest.mark.parametrize("marker", ["volumes.json", "oo-folder-backup.json", "vol-00001.ooenc", "keys",
+                                    "analytics.duckdb", "part.oopart"])
+def test_a_store_holding_a_backup_keys_or_app_data_is_never_removed(app, marker):
+    store = app / "models" / "ollama"
+    (store / "deep").mkdir(parents=True, exist_ok=True)
+    (store / "deep" / marker).mkdir() if marker == "keys" else (store / "deep" / marker).write_bytes(b"x")
+    assert next(s for s in U.model_stores() if s["kind"] == "ollama")["removable"] is False
+    U.uninstall(backends=[], delete_models=True)
+    assert (store / "deep" / marker).exists()
+
+
+def test_a_dataset_repo_s_own_files_do_not_block_the_hugging_face_store(app):
+    hub = app / "models" / "huggingface" / "hub"
+    (hub / "datasets--x--y" / "snapshots" / "abc").mkdir(parents=True)
+    (hub / "datasets--x--y" / "snapshots" / "abc" / "index.sqlite").write_bytes(b"d")
+    (hub / "models--a--b" / "snapshots" / "r" / "keys").mkdir(parents=True)
+    assert _hf(U.model_stores())["removable"] is True
+    (hub / "models--a--b" / "snapshots" / "r" / "oo-folder-backup.json").write_text("{}", encoding="utf-8")
+    assert _hf(U.model_stores())["removable"] is False, "the app's own marker names count everywhere"
+
+
+def test_a_folder_that_cannot_be_walked_is_not_called_clean(app, monkeypatch):
+    def walk(root, onerror=None, followlinks=False):
+        onerror(PermissionError(13, "denied"))
+        return iter(())
+    monkeypatch.setattr(U.os, "walk", walk)
+    assert "looked through" in U.removal_refusal(app / "models" / "ollama")
+
+
+def test_two_stores_at_one_folder_protect_each_other(app, monkeypatch):
+    (app / "models" / "shared").mkdir()
+    monkeypatch.setenv("OLLAMA_MODELS", str(app / "models" / "shared"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(app / "models" / "shared"))
+    assert not any(s["removable"] for s in U.model_stores() if s["kind"] in ("ollama", "huggingface"))
+
+
+def test_the_columnar_store_is_protected_wherever_it_is(app, monkeypatch):
+    monkeypatch.setenv("OO_COLUMNAR_DIR", str(app / "models" / "ollama" / "col"))
+    assert next(s for s in U.model_stores() if s["kind"] == "ollama")["removable"] is False
+
+
+@pytest.mark.parametrize("extra", ["custody_ed25519.pem", "vol-00001.ooenc", "keys"])
+def test_a_venv_variable_pointed_at_keys_or_backups_never_removes_them(app, monkeypatch, extra):
+    import src.llm.vllm_lifecycle as VL
+
+    monkeypatch.undo()
+    monkeypatch.setattr("src.paths.data_dir", lambda: app)
+    monkeypatch.setattr("src.llm.model_store.data_dir", lambda: app)
+    target = app / "somewhere"
+    (target / "bin").mkdir(parents=True)
+    (target / "pyvenv.cfg").write_text("x", encoding="utf-8")
+    (target / extra).mkdir() if extra == "keys" else (target / extra).write_bytes(b"k")
+    monkeypatch.setattr(VL, "venv_dir", lambda: target)
+    monkeypatch.setattr(VL, "is_installed", lambda: True)
+    monkeypatch.setattr(VL, "is_running", lambda: False)
+    st = U._vllm_state()
+    assert st["removable"] is False and "more than a Python environment" in st["kept_reason"]
+    out = U.uninstall(backends=["vllm"])
+    assert (target / extra).exists() and any(k["what"] == "vllm" for k in out["kept"])

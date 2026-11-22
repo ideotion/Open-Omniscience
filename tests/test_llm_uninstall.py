@@ -261,6 +261,7 @@ def test_a_stopped_vllm_is_removed_and_the_freed_bytes_are_reported(app_dir, mon
     venv = app_dir / "vllm_venv"
     (venv / "lib").mkdir(parents=True)
     (venv / "lib" / "big").write_bytes(b"0" * 2048)
+    (venv / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")  # R786: a real environment's shape
     monkeypatch.setattr(
         U,
         "_vllm_state",
