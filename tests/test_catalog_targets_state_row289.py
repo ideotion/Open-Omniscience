@@ -17,8 +17,9 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -127,15 +128,16 @@ def test_the_targets_are_read_on_every_call_so_a_fixed_file_is_seen(tmp_path):
 
 
 @pytest.fixture
-def db():
+def db(tmp_path):
     from src.database.models import Article, Base, Source
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(tmp_path / "coverage.db")  # row 285: the app's pragmas, never a bare engine
     Base.metadata.create_all(eng, tables=[Source.__table__, Article.__table__])
     with Session(eng) as s:
         s.add(Source(id=1, name="S1", domain="s1.example", country="FR", enabled=True, status="qualified"))
         s.commit()
         yield s
+    eng.dispose()
 
 
 @pytest.mark.parametrize("case", ["absent", "unparsable", "not a mapping", "only refused values", "a misspelt key"])
