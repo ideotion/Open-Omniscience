@@ -720,12 +720,6 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/api/startup_status.py': {
         ('set_startup', '_state["error"] = error'): 1,
     },
-    # Row 323 / R793: a store refused for room carries only encrypt_tool's own fixed sentences (NO_ROOM / ROOM_NOT_READ, built from a
-    # store label, two human_bytes sizes or a fixed reason; never a path, a key or the OS's text), said as the answer.
-    'src/api/unlock.py': {
-        ('encrypt_db', 'raise HTTPException(status_code=409, detail=" ".join([PARTIAL_DETAIL, *partial.reasons]))'): 1,
-        ('encrypt_db', 'raise HTTPException(status_code=507, detail=str(refused))'): 1,
-    },
     'src/api/wiki_lane.py': {
         ('_read_status', 'return _unreadable("status", exc)'): 1,
         ('lane_analytics', 'return _unreadable("analytics", exc)'): 1,
@@ -1457,7 +1451,7 @@ def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_ha
             ("src/api/unlock.py", "_close_after_checkpoint"): 1,
             ("src/api/unlock.py", "_file_opens_with"): 1,
             ("src/api/unlock.py", "_unlock_locked"): 1,
-            ("src/api/unlock.py", "encrypt_db"): 1,
+            ("src/api/unlock.py", "encrypt_db"): 3,  # the 400, and row 323 (R793): the 409 with a room refusal and the 507
         }
     )
     lacking = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if not has)

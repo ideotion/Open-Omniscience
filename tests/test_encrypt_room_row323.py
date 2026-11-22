@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -34,6 +35,7 @@ from src.database import connect as connect_mod
 from src.database.connect import is_encrypted_file
 from src.database.writer import write_gate
 from src.versioned.lanes import all_lanes
+from tests.js_source_helper import function_source
 from tests.os_scope import scope_os
 
 _KEY = "a-long-enough-passphrase-for-row-323-Qz8"
@@ -364,16 +366,8 @@ def test_the_page_reads_the_sentences_back_and_knows_the_partial_words():
         pytest.skip("node is not installed")
     core = (ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
 
-    def lift(start: str, end: str) -> str:
-        return core[core.index(start) : core.index(end)]
-
-    fn_start = core.index("function ooServerText(")
-    depth, i = 0, core.index("{", fn_start)
-    while True:
-        depth += {"{": 1, "}": -1}.get(core[i], 0)
-        i += 1
-        if depth == 0:
-            break
+    size_re = re.search(r'const _OO_SIZE_RE = ("[^"\n]*");', core)
+    assert size_re, "the size pattern the page reads sizes with"
     fr = _locale("fr")
     sentences = [
         encrypt_tool.NO_ROOM.format(store="Source store (wiki)", needed="3.5 GB", free="1.2 GB"),
@@ -386,8 +380,11 @@ def test_the_page_reads_the_sentences_back_and_knows_the_partial_words():
         "globalThis.OOI18N = { t: (s) => FR[s] || s, tf: (s, v) => (FR[s] || s).replace(/\\{(\\w+)\\}/g, (m, k) => v[k] != null ? String(v[k]) : m) };\n"
         "globalThis.window = globalThis;\n"
         "function _sizeText(b) { return (b / 1073741824).toFixed(1) + ' Gio'; }\n"
-        + lift("const _OO_SPACE_WHAT = {", "function ooServerText(")
-        + core[fn_start:i]
+        + "const _OO_SPACE_WHAT = {}; const _OO_SPACE_RES = [];\n"  # the backup refusals: not what is read here
+        + "const _OO_SIZE_RE = "
+        + size_re.group(1)
+        + ";\n"
+        + function_source(core, "ooServerText")
         + "\n"
         "console.log(JSON.stringify(ooServerText(" + json.dumps(" ".join(sentences)) + ")));\n"
     )

@@ -341,7 +341,6 @@ def encrypt_db(body: EncryptBody) -> dict:
     from src.database.connect import get_passphrase, set_passphrase
 
     # R742's fixed 409 words come in here, never at module level: importing the app must not import the store.
-    from src.database.encrypt_tool import PARTIAL as PARTIAL_DETAIL
     from src.database.encrypt_tool import EncryptNoRoom, EncryptPartial, EncryptToolError, encrypt_all
     from src.database.session import dispose_engine
 
@@ -386,12 +385,13 @@ def encrypt_db(body: EncryptBody) -> dict:
             dispose_engine()  # next connection opens through the keyed factory
             _close_plaintext_serves()
             _LOG.warning("store encryption partly done: the library is encrypted, other stores are still pending")
-            # R793: a store refused for room is said after the partial words, in its own fixed sentence (no path, no key).
-            raise HTTPException(status_code=409, detail=" ".join([PARTIAL_DETAIL, *partial.reasons])) from None
+            # R793: a store refused for room is said after the partial words (``str(partial)``), in its own fixed sentence (no path,
+            # no key), through the one scrub every detail carrying an exception takes.
+            raise HTTPException(status_code=409, detail=http_detail(partial, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         except EncryptNoRoom as refused:
             # R793: the library refused for room before any file was made, so every store is as it was. Fixed words that name the
             # needed and the free space (or which was not read), never a path or a key: 507, as the other space refusals.
-            raise HTTPException(status_code=507, detail=str(refused)) from None
+            raise HTTPException(status_code=507, detail=http_detail(refused, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         except EncryptToolError as exc:
             raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)
