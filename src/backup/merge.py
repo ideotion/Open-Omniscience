@@ -7527,7 +7527,6 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     from src.custody.signing import SigningError
     from src.custody.signing import _passphrase as held_key_passphrase
     from src.database.connect import get_passphrase
-    from src.reporting.evidence import RESTORED_KEY_MARKER_SUFFIX as _RESTORED_MARKER_SUFFIX
     from src.reporting.evidence import mark_key_as_restored
     from src.shared_text import said
 
@@ -7587,20 +7586,40 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
         candidates.append(None)  # nothing held, nothing given: only a plaintext key can be read
         roles.append("none")
 
+    keys_dir = base / "keys"
+    # R801: while this install has no evidence key, ANY key file this restore places could land on that name (another
+    # case, a trailing dot, a short name), so the marker is written BEFORE the first one is placed and settled at the
+    # end by which file sits at the evidence key's name (_settle_restore_marker): never a restored key without it
+    made_marker: tuple[Path, tuple[int, int, int, int]] | None = None
+    placed_names: list[str] = []  # every key file this restore placed, by name (the marker is settled on whether any was)
+    if not os.path.lexists(keys_dir / _EVIDENCE_KEY_FILE):
+        marker = mark_key_as_restored(keys_dir / _EVIDENCE_KEY_FILE, backup_key=staged.origin_fingerprint)
+        if marker is not None:
+            with suppress(OSError):
+                made_marker = (marker, keyfile.identity(os.lstat(marker)))
+
     pairs: dict[str, list[tuple[str, Path, str]]] = {}
     for name, path in members:
         rel = Path(name)
-        if rel.is_absolute() or ".." in rel.parts or rel.parent != Path("keys"):
+        canon = rel.name.casefold().rstrip(" .")
+        if canon.startswith(_EVIDENCE_KEY_FILE) and rel.name != _EVIDENCE_KEY_FILE and rel.parent == Path("keys"):
+            # R801: the restored-key marker, or any other spelling of a name beside the evidence key, is this install's
+            # own: a backup never places, replaces or removes one
+            out["not_placed"].append({"name": name, **said("reason", _KEY_MARKER_CARRIED)})
+            continue
+        # another spelling of a key file this app writes (case, trailing dot or space) is refused like an unsafe name:
+        # on a filesystem that ignores them it IS that key, placed past every check made by name
+        if (
+            rel.is_absolute()
+            or ".." in rel.parts
+            or rel.parent != Path("keys")
+            or (canon != rel.name and _key_slot(canon) is not None)
+        ):
             out["not_placed"].append({"name": name, "reason": _KEY_UNSAFE_NAME})
             continue
         slot = _key_slot(rel.name)
         if slot is not None:
             pairs.setdefault(slot[0], []).append((name, path, slot[1]))
-            continue
-        if rel.name.endswith(_RESTORED_MARKER_SUFFIX):
-            # R801: only this install writes its restored-key marker (below, before the key); a backup never places,
-            # replaces or removes one
-            out["not_placed"].append({"name": name, **said("reason", _KEY_MARKER_CARRIED)})
             continue
         # not a key file this app writes: carried as it is, and said so
         local = base / rel
@@ -7608,12 +7627,12 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
             out["kept_local"].append(name)
             continue
         if _place_key_file(local, path.read_bytes()):
+            placed_names.append(name)
             out["restored"].append(name)
             out["carried_unread"].append(name)
         else:
             out["kept_local"].append(name)
 
-    keys_dir = base / "keys"
     for who, halves in sorted(pairs.items()):
         names = [name for name, _path, _kind in halves]
         if any(
@@ -7635,16 +7654,6 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
                 out["not_placed"].append({"name": name, "reason": refused.get(name, _KEY_PAIR_HALF)})
             continue
         made: list[tuple[Path, tuple[int, int, int, int]]] = []  # the halves THIS call created, and which file each is
-        marker: Path | None = None
-        made_marker: tuple[Path, tuple[int, int, int, int]] | None = None
-        if any(Path(name).name == _EVIDENCE_KEY_FILE for name, *_rest in placeable):
-            # R801: the marker is written BEFORE the key, so a restored evidence key never exists without it; while it
-            # exists the key counts as another installation's (src.reporting.evidence.is_this_installations_key)
-            marker = mark_key_as_restored(keys_dir / _EVIDENCE_KEY_FILE, backup_key=staged.origin_fingerprint)
-            if marker is not None:
-                with suppress(OSError):
-                    made_marker = (marker, keyfile.identity(os.lstat(marker)))
-        evidence_placed = False
         for i, (name, data, how, public, opener) in enumerate(placeable):
             local = base / name
             try:
@@ -7659,9 +7668,9 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
                 for later, *_rest in placeable[i + 1 :]:
                     out["not_placed"].append({"name": later, "reason": _KEY_PAIR_RACED})
                 break
+            placed_names.append(name)
             with suppress(OSError):
                 made.append((local, keyfile.identity(os.lstat(local))))
-            evidence_placed = evidence_placed or local.name == _EVIDENCE_KEY_FILE
             out["restored"].append(name)
             if how == "resealed":
                 out["resealed"].append(name)
@@ -7669,11 +7678,24 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
                 out["still_encrypted"].append({"name": name, "opened_with": roles[opener]})
             if public is not None:
                 out["identities"].append({"name": name, "ed25519_public_key": public})
-        if made_marker is not None and not evidence_placed:
-            # the key this marker was written for was not placed (another caller made one meanwhile): the marker this
-            # call made goes again, only while it is still that file, so it never sticks to a key this install made
-            _take_back_key_files([made_marker])
+    _settle_restore_marker(keys_dir / _EVIDENCE_KEY_FILE, made_marker, bool(placed_names))
     return out
+
+
+def _settle_restore_marker(
+    evidence: Path, made_marker: tuple[Path, tuple[int, int, int, int]] | None, placed_any: bool
+) -> None:
+    """R801: the marker this restore wrote stays whenever an evidence key now exists and this restore placed any key
+    file at all: which file that is cannot be told by the name it was carried under (on a filesystem that ignores
+    case, or Windows' trailing dots and short names, another spelling lands on the same file), nor safely by the file
+    (an export may rewrite a key in place meanwhile). It goes again (only while it is still the one this call wrote)
+    when no evidence key exists, or when this restore placed nothing, so an export's own key made meanwhile keeps no
+    marker. A key of this install's own that an export made while the restore placed another key keeps it: that costs
+    a click, never a trust decision."""
+    if made_marker is None:
+        return
+    if not placed_any or not os.path.lexists(evidence):
+        _take_back_key_files([made_marker])
 
 
 def _take_back_key_files(made: list[tuple[Path, tuple[int, int, int, int]]]) -> None:

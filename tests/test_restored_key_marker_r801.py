@@ -140,27 +140,45 @@ def test_the_marker_does_not_stick_to_a_key_this_install_made_while_the_restore_
     assert ev.is_this_installations_key(ev.public_key_hex(made["key"])) is True
 
 
-def test_a_key_an_older_build_restored_is_recognised_from_its_import_report(tmp_path):
-    key = ev.load_or_create_signing_key()
-    reports = tmp_path / "live" / "import_reports"
-    reports.mkdir()
-    (reports / "restore-20261101T000000Z-1.json").write_text(json.dumps({"side_files": {"keys": {"identities": [
-        {"name": EVIDENCE, "ed25519_public_key": ev.public_key_hex(key)}]}}}))
-    assert ev.is_this_installations_key(ev.public_key_hex(key)) is False
-    assert (tmp_path / "live" / MARKER).exists(), "marked once, so deleting the report changes nothing"
-    (reports / "restore-20261101T000000Z-1.json").unlink()
-    assert ev.is_this_installations_key(ev.public_key_hex(key)) is False
-
-
-def test_a_report_naming_another_key_changes_nothing(tmp_path):
+def test_an_import_report_never_marks_a_key(tmp_path):
+    """Security reads of R801: import reports travel in backups, so a report naming this installation's public key
+    (which every bundle it shares carries) must not demote its own key; R801 (5) is answered "not recognisable"."""
     key = ev.load_or_create_signing_key()
     reports = tmp_path / "live" / "import_reports"
     reports.mkdir()
     (reports / "restore-x.json").write_text(json.dumps({"side_files": {"keys": {"identities": [
-        {"name": EVIDENCE, "ed25519_public_key": "ab" * 32}]}}}))
-    (reports / "broken.json").write_text("{not json")
+        {"name": EVIDENCE, "ed25519_public_key": ev.public_key_hex(key)}]}}}))
     assert ev.is_this_installations_key(ev.public_key_hex(key)) is True
     assert not (tmp_path / "live" / MARKER).exists()
+
+
+@pytest.mark.parametrize("spelling", ["keys/EVIDENCE_ed25519.pem", "keys/Evidence_ED25519.PEM",
+                                      "keys/evidence_ed25519.pem.", "keys/evidence_ed25519.pem ",
+                                      "keys/EVIDENCE_ED25519.PEM.RESTORED-FROM-BACKUP",
+                                      "keys/evidence_ed25519.pem.anything", "keys/CUSTODY_ed25519.pem"])
+def test_another_spelling_of_a_key_or_the_marker_is_never_placed(tmp_path, spelling):
+    """Security reads of R801: on a filesystem that ignores case (macOS, Windows) or trailing dots (Windows), these
+    ARE the evidence key or its marker; placed by name they skipped the marker."""
+    out = _restore(tmp_path, {spelling: _pem(Ed25519PrivateKey.generate())})
+    assert out["restored"] == [] and out["not_placed"][0]["name"] == spelling
+    assert list((tmp_path / "live" / "keys").iterdir()) == []  # no key, and the up-front marker taken back
+
+
+def test_a_key_that_lands_on_the_evidence_name_by_any_route_keeps_the_marker(tmp_path, monkeypatch):
+    """The marker is settled by whether an evidence key exists after this restore placed something, never by the
+    name a member was carried under: a carried file that a filesystem aliases onto the key still leaves it marked."""
+    real = merge._place_key_file
+    key = Ed25519PrivateKey.generate()
+
+    def aliasing(local, data):
+        if local.name == "notes.txt":  # what a case-insensitive or short-name filesystem would do with another spelling
+            return real(local.parent / "evidence_ed25519.pem", _pem(key))
+        return real(local, data)
+
+    monkeypatch.setattr(merge, "_place_key_file", aliasing)
+    _restore(tmp_path, {"keys/notes.txt": b"x"})
+    assert (tmp_path / "live" / MARKER).exists()
+    assert ev.is_this_installations_key(ev.public_key_hex(key)) is False
 
 
 def test_every_reader_asks_the_one_check(tmp_path, monkeypatch):

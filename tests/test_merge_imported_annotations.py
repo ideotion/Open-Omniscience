@@ -309,12 +309,12 @@ def test_the_endpoint_refuses_a_key_that_is_not_one(monkeypatch, tmp_path):
     from src.api import annotations as api
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    for body in ({"signer": "zz", "count": 1}, {"signer": OTHER_KEY, "count": -1}):
+    for body in ({"signer": "zz", "count": 1, "authors": []}, {"signer": OTHER_KEY, "count": -1, "authors": []}):
         with pytest.raises(HTTPException) as refused:
             api.settle_withheld_trust(api.WithheldTrustDecision(**body))
         assert refused.value.status_code == 400
     with pytest.raises(HTTPException) as stale:
-        api.settle_withheld_trust(api.WithheldTrustDecision(signer=OTHER_KEY, count=3, apply=True))
+        api.settle_withheld_trust(api.WithheldTrustDecision(signer=OTHER_KEY, count=3, apply=True, authors=[]))
     assert stale.value.status_code == 409
 
 

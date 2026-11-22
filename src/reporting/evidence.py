@@ -252,8 +252,6 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
 
 #: R801: the file beside the evidence key that says a restore placed it (``evidence_ed25519.pem.restored-from-backup``).
 RESTORED_KEY_MARKER_SUFFIX = ".restored-from-backup"
-#: Where a restore of an older build recorded an identity it placed (an import report's ``side_files.keys.identities``).
-_EVIDENCE_KEY_MEMBER = "keys/evidence_ed25519.pem"
 
 
 def restored_key_marker(path: Path | None = None) -> Path:
@@ -308,35 +306,6 @@ def _drop_restored_marker(path: Path) -> None:
         keyfile.flush_key_folder(marker.parent, marker.name)
 
 
-def _placed_by_an_earlier_restore(own_hex: str, path: Path) -> bool:
-    """True when an import report a restore left in this data folder lists ``own_hex`` as an evidence identity it
-    placed (R801 (5)): how a key a restore placed BEFORE the marker existed is recognised. A report the person deleted
-    cannot be read, so such a key keeps counting as this installation's own (the release note says so)."""
-    reports = path.parent.parent / "import_reports"
-    try:
-        files = sorted(reports.glob("*.json"))
-    except OSError:
-        return False
-    for f in files:
-        try:
-            if not f.is_file() or f.is_symlink() or f.stat().st_size > 16 * 1024 * 1024:
-                continue
-            body = json.loads(f.read_text("utf-8"))
-            side = body.get("side_files") if isinstance(body, dict) else None
-            keys = side.get("keys") if isinstance(side, dict) else None
-            ids = keys.get("identities") if isinstance(keys, dict) else None
-        except Exception:  # noqa: BLE001 - an unreadable report proves nothing either way
-            continue
-        for entry in ids if isinstance(ids, list) else ():
-            if (
-                isinstance(entry, dict)
-                and str(entry.get("name", "")).replace("\\", "/") == _EVIDENCE_KEY_MEMBER
-                and str(entry.get("ed25519_public_key", "")).lower() == own_hex.lower()
-            ):
-                return True
-    return False
-
-
 def is_this_installations_key(public_key: object, path: Path | None = None, *, own: str | None = None) -> bool | None:
     """True when ``public_key`` (hex, any case or spacing) is the public half of THIS installation's signing key.
 
@@ -358,10 +327,10 @@ def is_this_installations_key(public_key: object, path: Path | None = None, *, o
         return False
     # R801: a key a restore placed is another installation's until this one makes its own, whoever made the backup (an
     # import-only install has no key, so a crafted backup could otherwise plant the key its next backup is signed with).
+    # A key a restore placed BEFORE this build wrote no marker and cannot be told apart: import reports travel in
+    # backups, so one found in the data folder may describe another machine's restore (or be planted to demote this
+    # installation's own key). Such a key keeps counting as this installation's own; the release note says so.
     if _marker_present(restored_key_marker(path)):
-        return False
-    if same and _placed_by_an_earlier_restore(own, path):
-        mark_key_as_restored(path)  # a restore before R801 placed it: marked once, so a deleted report changes nothing
         return False
     return same
 

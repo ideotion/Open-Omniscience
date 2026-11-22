@@ -106,7 +106,7 @@ class WithheldTrustDecision(BaseModel):
     signer: str
     count: int
     apply: bool = False
-    authors: list[str] | None = None  # the author ids shown; when given, the set must still match (row 339)
+    authors: list[str]  # the author ids shown: the set must still match (row 339), so it is required
 
 
 @router.get("/withheld-trust")
