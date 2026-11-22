@@ -193,6 +193,8 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ("_lock_holder_note", 'name = getattr(exc, "filename", None)'): 1,
         ("classify_restore_error", "msg = str(exc)"): 1,
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,
+        # R788 (row 309): the restore's journal check reads the KvReadError's ``held`` flag (a bool); its words are fixed
+        ("refuse_half_migrated_store", "if exc.held:"): 1,
         ("classify_restore_error", 'f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "'): 1,
         ("_retry_while_locked", "if not _file_is_locked(exc) or time.monotonic() >= deadline:"): 1,
         # R741 (row 145): the grace hook only reads ``filename2``/``filename`` to ask whether THIS process holds that file; no text is read or kept.
@@ -265,6 +267,26 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 #: because the damage and storage classifiers read it; every sink of a chain goes through ``log_failure``/``record_text``/
 #: ``record_traceback``, which apply the per-link driver rule), and ``session.info`` dictionaries (not logs). Read line by line; counted.
 _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    # R788 (row 309): a failed read of the form or the journal reads only the KvReadError's ``held`` flag (a bool), to name a
+    # held store instead of a damaged one; the words come from ``held_message`` and the class name, never from the error
+    'src/database/country_form.py': {
+        ('refuse_if_unfinished', 'if getattr(exc, "held", False):'): 1,
+        ('store_form', 'if getattr(exc, "held", False):'): 1,
+        # the connect-time recheck tells a store with no app_state yet (SQLite's fixed words) and a held file (locked/busy)
+        # from any other failure; each is a bool, and the refusal names the class only
+        ('recheck_on_new_connection', 'if _no_app_state_yet(exc):'): 1,
+        ('recheck_on_new_connection', 'held = _held(exc)'): 1,
+        ('_no_app_state_yet', 'return "no such table" in str(exc).lower()'): 1,
+        # the recheck hands a failed read to the damage registry, which records only corruption and only its code and name
+        # (the same call as ``damage.note_raw_driver_error``), and answers whether it was corruption (a bool)
+        ('recheck_on_new_connection', 'damaged = _note_damage(exc)'): 1,
+        ('_note_damage', 'return damage.registry.note(damage.FILE_CORPUS, exc, statement=_RECHECK_SQL)'): 1,
+    },
+    # R788 (row 309): the read-only key check passes on a failure of read-only opening alone (kv_store's bool, read on the
+    # error and on the driver error an encrypted open chains it from) and re-raises the rest unchanged; nothing is kept here
+    'src/backup/country_migration.py': {
+        ('_check_key_read_only', 'if _ro_only_failure(exc) or _ro_only_failure(exc.__cause__):'): 2,
+    },
     'src/database/connect.py': {
         ('_try_open_encrypted', 'last_error[:] = [exc]'): 1,
         # Row 154: only the SQLite result code is read, to stop the page-size walk on a lock; nothing of the error is kept
@@ -1031,6 +1053,8 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('kv_get_json_checked', 'if isinstance(exc, FileNotFoundError) or "no such table" in str(exc).lower():'): 1,
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('kv_get_json_checked', 'if not _ro_only_failure(ro_exc):'): 1,
+        # R788 (row 309): whether another connection holds the file, by class name and SQLite's fixed locked/busy words (a bool)
+        ('kv_get_json_checked', 'held_by_other = _held_failure(exc)'): 1,
         # read for a keyword to CLASSIFY the failure; the text goes nowhere
         ('kv_get_json_strict', 'if "no such table" in str(exc).lower():'): 1,
     },

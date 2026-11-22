@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from src.custody.timestamp import (
@@ -64,6 +64,9 @@ class AnchorReceipt:
     created_at: str
     locator: str | None  # provider-specific id/proof (e.g. base64 .ots, tx hash)
     detail: str
+    # Row 322: the facts the UI words in the reader's language (the English ``detail`` stays for the API and scripts).
+    # ``calendars_reached``/``calendars_total`` exist only for an OpenTimestamps submission.
+    detail_vars: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -72,6 +75,7 @@ class AnchorReceipt:
             "created_at": self.created_at,
             "locator": self.locator,
             "detail": self.detail,
+            "detail_vars": dict(self.detail_vars),
         }
 
 
@@ -179,6 +183,10 @@ class OpenTimestampsAnchorProvider(AnchorProvider):
             created_at=datetime.now(UTC).isoformat(),
             locator=proof.proof_b64,
             detail=proof.detail,
+            detail_vars=(
+                {"calendars_reached": proof.calendars[0], "calendars_total": proof.calendars[1]}
+                if proof.calendars else {}
+            ),
         )
 
     def verify(self, receipt: AnchorReceipt) -> tuple[bool, str]:

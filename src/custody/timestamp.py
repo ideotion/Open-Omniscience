@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from src.monitoring.secret_scrub import record_text
@@ -160,6 +160,9 @@ class TimestampProof:
     asserted_time: str | None
     proof_b64: str | None
     detail: str
+    # Row 322: how many calendars took the submission, for the UI's translated sentence. NOT part of the stored form
+    # (``to_dict`` leaves it out), so a custody entry that holds a proof hashes and verifies exactly as before.
+    calendars: tuple[int, int] | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
         return {
@@ -274,6 +277,7 @@ def ots_stamp(
             "pending Bitcoin confirmation. Verify the .ots proof independently with "
             "the `ots` client or a Bitcoin node."
         ),
+        calendars=(reached, len(calendars)),
     )
 
 

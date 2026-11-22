@@ -38,11 +38,13 @@ from pydantic import BaseModel
 from src.backup import restore_marker
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import (
+    HalfMigratedStoreRefused,
     MergeError,
     RestoreAborted,
     RestoreRefused,
     WriterJobsRefused,
     check_memory_before_staging,
+    refuse_half_migrated_store,
     refuse_while_writer_jobs_run,
     run_restore,
     start_jobs_stopped_for_restore,
@@ -290,6 +292,13 @@ def restore_legacy_path(
             data = p.read_bytes()
         except OSError as exc:
             raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
+        # Before a byte is decrypted (R788, row 325): a corpus a country migration left half done refuses now. Asked BEFORE the writer
+        # check, which stops the jobs it may stop and starts them again only when it refuses itself.
+        try:
+            refuse_half_migrated_store()
+        except HalfMigratedStoreRefused as exc:
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="half-migrated")
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         # Before a byte is decrypted (R659): a restore that would refuse at its working copy because a corpus writer runs says so now.
         try:
             refuse_while_writer_jobs_run()
@@ -340,6 +349,10 @@ def restore_legacy_path(
         except WriterJobsRefused as exc:
             # R659's refusal, raised inside run_restore (a writer started while the backup was being staged): its own journal reason.
             storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
+        except HalfMigratedStoreRefused as exc:
+            # R788's refusal, raised inside run_restore (a migration was cut while the backup was being staged): its own journal reason.
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="half-migrated")
             raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         except (MergeError, RestoreRefused) as exc:
             # See restore_commit above: a refusal keeps its own message.

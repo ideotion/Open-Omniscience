@@ -2730,6 +2730,30 @@
       } catch (e) { toast(_failMsg("Export: {error}", e), "err"); }
     }
 
+    // Row 322: the anchor result in the reader's language. The receipt's English ``detail`` carries the caveat (a local anchor
+    // is NOT independent third-party proof; an OpenTimestamps submission is pending until Bitcoin confirms it), so each known
+    // provider's caveat is said here x12 at full strength, and the provider name is data. A provider this build has no words
+    // for keeps its English detail, shown as data under a label, never as the caveat.
+    function custodyAnchorResultHtml(r, t, tf) {
+      const fill = tf || ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const provider = String((r && r.provider) || "");
+      const head = esc(fill("Anchored via {provider}", { provider: "\u0001" }))
+        .replace("\u0001", () => `<span class="pill ok"><code dir="ltr">${esc(provider)}</code></span>`);
+      const vars = (r && r.detail_vars) || {};
+      let say = "";
+      if (provider === "local") {
+        say = esc(t("Recorded in the local anchor book. This proves only that this tool stored the root on this machine; it is NOT independent third-party proof."));
+      } else if (provider === "opentimestamps") {
+        const counts = Number.isFinite(vars.calendars_reached) && Number.isFinite(vars.calendars_total)
+          ? esc(fill("Submitted to {reached} of {total} OpenTimestamps calendars.", { reached: String(vars.calendars_reached), total: String(vars.calendars_total) })) + " "
+          : "";
+        say = counts + esc(t("Not yet confirmed in Bitcoin: until it is, this is not a proof of time. Verify the .ots proof independently with the ots client or a Bitcoin node."));
+      } else if (r && r.detail) {
+        say = ooLabelHtml(esc(t("Receipt")), `<code dir="ltr">${esc(String(r.detail))}</code>`);
+      }
+      return head + (say ? ` — ${say}` : "");
+    }
+
     async function anchorRoot() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const root = $("cust-root").value.trim();
@@ -2743,7 +2767,7 @@
       try {
         const r = await api("/api/custody/anchor",
           {method: "POST", body: JSON.stringify({merkle_root: root, provider, consent: provider !== "local"})});
-        $("cust-result").innerHTML = `Anchored via <span class="pill ok">${esc(r.provider)}</span> — ${esc(r.detail)}`;
+        $("cust-result").innerHTML = custodyAnchorResultHtml(r, t, (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null);
       } catch (e) { toast(_failMsg("Anchor: {error}", e), "err"); }
     }
 

@@ -14,7 +14,7 @@ slack, the shape of ``test_raw_number_ratchet.py``). A new raw print fails here 
 move the pin AND say below which kind it is. What the pinned remainder is (read, not browser-measured):
 
 * STANDING ALONE in its own node, so the walker translates it when the key exists: app-map.js (dump status pill),
-  app-sources.js (``x.status`` pill). (investigate.js's date-tag cell left this list in row 316: it now says the
+  (app-sources.js's batch-ingest ``x.status`` pill left this list in row 322: ``batchIngestStatusWords``.) (investigate.js's date-tag cell left this list in row 316: it now says the
   status through ``_tagStatusLabel``, the agenda's words. That map departs from "unknown shown as sent" on purpose:
   it matches the agenda's ``_agStatusLabel`` token for token, so a tag reads the same on both pages, and the datestore's
   status set is closed (``VALID_STATUS``); a new status would need both maps and this note changed together.)
@@ -41,7 +41,7 @@ _RAW = re.compile(r"""esc\(\s*[A-Za-z_][\w.]*\.(?:state|status|kind)\s*\)""")
 
 _PINS = {
     "app-backup.js": 1, "app-diagnostics.js": 2, "app-home.js": 2, "app-insights.js": 2, "app-map.js": 2,
-    "app-settings.js": 1, "app-sources.js": 1, "ooversions.js": 1, "reader.js": 1,
+    "app-settings.js": 1, "ooversions.js": 1, "reader.js": 1,
     "taskmanager.js": 2,
 }
 

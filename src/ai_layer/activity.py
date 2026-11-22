@@ -195,6 +195,7 @@ def _triage_activity(directory: Path, *, tail_bytes: int, recent: int) -> dict:
     if log is None:
         out["running_log"] = None
         out["note"] = "no run log yet — this sweep has not run on this machine"
+        out["note_code"] = "no-run-log"  # row 322: the UI words a note by its code; ``note`` stays the English record
         return out
     out["running_log"] = log.name
     records = read_tail_records(log, tail_bytes=tail_bytes)
@@ -232,6 +233,7 @@ def _source_tags_activity(directory: Path, *, tail_bytes: int, recent: int) -> d
     if log is None:
         out["running_log"] = None
         out["note"] = "no run log yet — this sweep has not run on this machine"
+        out["note_code"] = "no-run-log"  # row 322: the UI words a note by its code; ``note`` stays the English record
         return out
     out["running_log"] = log.name
     records = read_tail_records(log, tail_bytes=tail_bytes)
@@ -262,6 +264,7 @@ def _perception_activity(directory: Path, *, tail_bytes: int, recent: int) -> di
     if log is None:
         out["running_log"] = None
         out["note"] = "no run log yet — this sweep has not run on this machine"
+        out["note_code"] = "no-run-log"  # row 322: the UI words a note by its code; ``note`` stays the English record
         return out
     out["running_log"] = log.name
     records = read_tail_records(log, tail_bytes=tail_bytes)
@@ -274,6 +277,7 @@ def _perception_activity(directory: Path, *, tail_bytes: int, recent: int) -> di
         "The extracted names, places and dates are stored as AI-layer candidates rather "
         "than written to the log, so they are read from the corpus below."
     )
+    out["latest_note_code"] = "perception-stored"
     return out
 
 
@@ -397,6 +401,8 @@ def _translation_activity(directory: Path, *, key: str, label: str, unit: str,
             f"into {state.get('target_lang')}, {state.get('position', 0)} {unit} walked this pass"
             if state else "this sweep has not run on this machine"
         ),
+        "note_code": "translation-progress" if state else "not-run",
+        "note_vars": {"lang": state.get("target_lang"), "n": state.get("position", 0), "unit": unit} if state else {},
         "running_log": None,
         "rates": {
             "measurable": False,
@@ -407,6 +413,7 @@ def _translation_activity(directory: Path, *, key: str, label: str, unit: str,
             "Its answers are stored as tentative (≈) translations, never in the keyword "
             "index; the keyword and search surfaces show them where they apply."
         ),
+        "latest_note_code": "translation-stored",
     }
 
 

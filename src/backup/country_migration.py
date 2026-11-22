@@ -11,8 +11,11 @@ never guessed.
 
 WHY APP-STOPPED IS A LOCK AND NOT A REQUEST. The run takes the database file EXCLUSIVELY (``PRAGMA
 locking_mode=EXCLUSIVE``) before it reads anything. A second connection from any process, the app's included, is
-refused for as long as the run lives; and if the app is already holding the file, the run is the one refused, before
-it has touched a row. The dangerous state is a store that holds both forms (an equality filter on ``FRA`` misses
+refused for as long as the run lives; and if the app has a connection open on the file, the run is the one refused,
+before it has touched a row. An app process that is alive with NO connection open (its pool emptied by a restore,
+repair, rebuild, unlock or panic) does not hold the file and does not stop the run; what keeps it from writing the old
+form afterwards is that its next connection is a new one, which re-reads the marker and the journal through itself
+before anything is bound on it (R788, ``country_form.recheck_on_new_connection``). The dangerous state is a store that holds both forms (an equality filter on ``FRA`` misses
 every ``fr`` row, and a restore keyed on the value duplicates what it should have deduplicated), and the only way to
 rule it out is to make sure nobody else is writing while the form changes.
 
@@ -20,7 +23,9 @@ THE FORM CHANGES IN ONE PLACE. The marker ``store.country_form`` (``src/database
 transaction as the last verification: the claim about the data changes together with the proof of it, or not at all.
 Until then the store is alpha-2, and an interrupted run leaves it holding BOTH forms (the windows already committed are
 alpha-3): the journal says so (``running`` / ``interrupted``), the app refuses to boot on it and ``store_form()`` refuses
-every read of the form, until the run is finished (``src/database/country_form.py``, ``refuse_if_unfinished``).
+every read of the form, until the run is finished (``src/database/country_form.py``, ``refuse_if_unfinished``). A process
+that was already running reads the journal afresh on its next new connection (R788), so it refuses too; one that holds
+a connection open the whole time cannot have let the run start.
 
 HOW A RUN IS SHAPED
   1. take the file exclusively, then read the plan: per column, every distinct stored spelling and how many rows hold it,
@@ -637,6 +642,42 @@ def _run_fts_after_country_flip(con, report: Report, say: Progress) -> None:
         )
 
 
+def _check_key_read_only(db_path: Path) -> None:
+    """Refuse a wrong passphrase before anything opens the store read-write (R788, row 309).
+
+    A read-write open that fails on the key still closes a connection on the file, and on an encrypted store with a
+    ``-wal`` a crash left, that close folded the log into the file and deleted it (measured: 16,440 bytes of ``-wal``
+    gone after ``WrongPassphraseError``; the rows survived, but a refused run had changed the store's files). A read-only
+    open cannot write the log back, so the key is checked there first and a wrong one changes no file.
+
+    - A held store is refused here as :class:`AppStillRunning`, the answer the exclusive take gives: letting it go on to
+      the read-write open would try an unchecked key there the moment the holder let go.
+    - A failure that belongs to read-only opening alone (a ``-shm`` it may not create, a read-only folder: ``kv_store``'s
+      own list) goes on to the read-write open. An encrypted open reports every driver failure as
+      ``WrongPassphraseError`` chained from the driver's error, so the chained error is classified too.
+    - Anything else (a wrong key, a damaged file) is raised here, before any read-write open.
+
+    What it proves is the key: an encrypted open reads page 1 with it. It does not prove the rest of the file sound, and on
+    a plaintext store (no key, and a read-only open reads nothing at connect) it proves nothing. A wrong key on a store
+    whose read-only open fails only for being read-only (a folder that cannot be written) still goes on to the read-write
+    open; that folder also stops the read-write open from removing the log."""
+    from src.config.kv_store import _ro_only_failure
+    from src.database.connect import StoreHeldError, connect
+
+    try:
+        probe = connect(db_path, check_same_thread=False, timeout=5, read_only=True)
+    except StoreHeldError:
+        raise AppStillRunning(
+            "another program has this database open (the app, a second copy of this command, a backup). "
+            "Close it and run this again: the migration needs the file to itself."
+        ) from None
+    except Exception as exc:  # noqa: BLE001 - classified: only a read-only-only failure goes on to the read-write open
+        if _ro_only_failure(exc) or _ro_only_failure(exc.__cause__):
+            return
+        raise
+    probe.close()
+
+
 def migrate(
     db_path: Path,
     *,
@@ -682,6 +723,7 @@ def migrate(
         say({"phase": "plan", "plan": report.plan, "estimate": report.estimate})
         return report
 
+    _check_key_read_only(db_path)
     con = connect(db_path, check_same_thread=False, timeout=5)
     con.isolation_level = None  # explicit BEGIN/COMMIT: a window is a transaction we name
     try:

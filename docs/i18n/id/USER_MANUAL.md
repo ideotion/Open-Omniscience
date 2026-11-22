@@ -1924,6 +1924,7 @@ dijelaskan di atas ([3.2](#32-kumpulkan-di-pengaturan--lanjutan--pengumpulan),
     tidak dapat dipulihkan pada SSD/flash — untuk itu, gunakan enkripsi disk penuh (LUKS/Qubes/Tails)
     dan musnahkan kuncinya. Tersedia juga CLI `panic` dan mode jalan `--ephemeral`
     (data hanya di RAM, dihapus saat keluar).
+    **Penghapusan hanya lengkap bila tidak ada program lain yang membuka basis data.** Program yang masih membukanya (salinan kedua aplikasi, alat basis data) dapat menulis kembali materi kunci basis data ke disk selama penghapusan berjalan. Di Linux dan macOS penghapusan mencarinya, terus menimpa hingga dua detik selama program itu ada, dan jika masih ada di akhir, hasilnya menyatakan penghapusan mungkin tidak lengkap. Program yang membuka basis data tetapi tidak memegang kunci apa pun padanya pada saat itu tidak dapat terlihat, jadi pemeriksaan dapat melewatkannya. Di Windows, dan di mana pun pemeriksaan itu gagal, penghapusan tidak dapat mengetahuinya, dan hasilnya menyatakan hal itu.
   - **Hapus instalasi aplikasi** — menghapus **virtualenv** dan **peluncur desktop** aplikasi,
     lalu menghentikan server (dikonfirmasi dengan mengetik). **Data Anda tetap disimpan** (gunakan Hapus darurat terlebih dahulu untuk
     memusnahkannya); folder aplikasi dibiarkan di tempatnya untuk dihapus secara manual. Setara dengan
