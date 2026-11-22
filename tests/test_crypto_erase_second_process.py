@@ -17,6 +17,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import os
+import select
 import subprocess
 import sys
 from pathlib import Path
@@ -61,7 +62,7 @@ try:
     con.execute("COMMIT")
     print("WROTE", flush=True)
 except Exception as exc:
-    print("REFUSED " + type(exc).__name__, flush=True)
+    print("REFUSED " + type(exc).__name__ + ": " + str(exc), flush=True)
 sys.stdin.readline()
 """
 
@@ -92,9 +93,20 @@ def _store(tmp_path: Path) -> tuple[Path, bytes]:
     return data, salt
 
 
-def _salt_in_held_files(pid: int, salt: bytes) -> list[str]:
-    """Every file the other process still holds open that contains the salt (pipes and sockets skipped)."""
-    hits = []
+# What the measured refusals said (2026-11-22). A busy or unrelated error is not a refusal by the erase.
+_REFUSALS = ("file is not a database", "locking protocol", "malformed")
+
+
+def _line(proc: subprocess.Popen, timeout: float = 60.0) -> str:
+    """One line from the other process, or a failure naming the wait -- never a hang of the whole run."""
+    ready, _, _ = select.select([proc.stdout], [], [], timeout)
+    assert ready, f"the other process said nothing for {timeout:.0f} s"
+    return proc.stdout.readline().strip()
+
+
+def _salt_in_held_files(pid: int, salt: bytes) -> tuple[list[str], list[str]]:
+    """(every held file containing the salt, every held file actually read); pipes and sockets skipped."""
+    hits, read = [], []
     for name in os.listdir(f"/proc/{pid}/fd"):
         link = f"/proc/{pid}/fd/{name}"
         try:
@@ -102,11 +114,13 @@ def _salt_in_held_files(pid: int, salt: bytes) -> list[str]:
             if not target.startswith("/"):
                 continue
             with open(link, "rb") as f:  # the other process's descriptor, after the erase: the store is gone from this one
-                if salt in f.read():
-                    hits.append(target)
+                body = f.read()
+            read.append(target)
+            if salt in body:
+                hits.append(target)
         except OSError:
             continue
-    return hits
+    return hits, read
 
 
 @pytest.mark.parametrize("held", [False, True], ids=["uninstall-path", "panic-hold"])
@@ -117,29 +131,39 @@ def test_a_write_begun_after_the_erase_is_refused_and_leaves_no_salt(tmp_path, m
     data, salt = _store(tmp_path)
     db = data / ce._MAIN_DB
     env = {**os.environ, "ROW315_KEY": _KEY}
-    other = subprocess.Popen(
+    wal = data / (ce._MAIN_DB + "-wal")
+    wal_before = os.stat(wal).st_size if wal.exists() else 0
+    errlog = tmp_path / "other.stderr"
+    generation = ce.new_hold_generation()
+    with open(errlog, "w") as err, subprocess.Popen(
         [sys.executable, "-c", _OTHER, str(db), {"in-transaction": "txn"}.get(mode, mode)],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, cwd=_REPO, env=env,
-    )
-    try:
-        assert other.stdout.readline().strip() == "READY"
-        generation = ce.new_hold_generation()
-        ce.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=held, hold_generation=generation)
-        if held:
-            ce.rescrub_held(close=False, generation=generation)
-            ce.rescrub_held(close=True, generation=generation)
-        other.stdin.write("go\n")
-        other.stdin.flush()
-        outcome = other.stdout.readline().strip()
-        survivors = _salt_in_held_files(other.pid, salt)
-    finally:
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, text=True, cwd=_REPO, env=env,
+    ) as other:
         try:
+            ready = _line(other)
+            assert ready == "READY", f"{ready!r}; stderr: {errlog.read_text()[-2000:]}"
+            if mode == "spill":  # the spill really reached the log before the erase (a size, read with stat: R789)
+                assert os.stat(wal).st_size > wal_before
+            ce.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=held, hold_generation=generation)
+            if held:
+                ce.rescrub_held(close=False, generation=generation)
+                ce.rescrub_held(close=True, generation=generation)
+            other.stdin.write("go\n")
+            other.stdin.flush()
+            outcome = _line(other)
+            survivors, read = _salt_in_held_files(other.pid, salt)
             other.stdin.write("done\n")
             other.stdin.flush()
-        except OSError:
-            pass
-        other.wait(timeout=30)
+            other.wait(timeout=30)
+        finally:
+            ce.rescrub_held(close=True, generation=generation)  # a failure above never leaves kept descriptors open
+            if other.poll() is None:
+                other.kill()
 
-    assert outcome.startswith("REFUSED"), f"the other process wrote into the erased store: {outcome!r}"
+    assert outcome.startswith("REFUSED") and any(r in outcome for r in _REFUSALS), (
+        f"the other process's write was not refused by the erase: {outcome!r}"
+    )
     assert not data.exists()
+    # The scan really read what the other process holds, so an empty result is not a scan that read nothing.
+    assert any(t.startswith(str(db)) for t in read), f"none of the store's files was read: {read}"
     assert survivors == [], f"the salt survives in files the other process still holds: {survivors}"
