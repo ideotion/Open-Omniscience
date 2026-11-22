@@ -101,7 +101,7 @@ def store(request, tmp_path, monkeypatch):
     if request.param == "encrypted":
         pytest.importorskip("sqlcipher3")
         conn = connect_mod.connect(db, key=_KEY, create_encrypted=True, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")  # the app sets it in session.py's connect event; this engine has none
+        conn.execute("PRAGMA journal_mode=WAL")  # the app sets it in session.py's connect event; this raw connection has none
         conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, b BLOB)")
         conn.commit()
         conn.close()

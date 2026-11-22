@@ -29,12 +29,11 @@ import pytest
 
 pytest.importorskip("duckdb", reason="the columnar rollup needs the [columnar] extra")
 
-from sqlalchemy import event, insert, select, text
+from sqlalchemy import create_engine, event, insert, select, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
 from src.database.models import Base, Keyword, KeywordMention
-from tests._app_engine import app_sqlite_engine
 
 _EPOCH = "1970-01-01 00:00:00"
 
@@ -42,7 +41,7 @@ _EPOCH = "1970-01-01 00:00:00"
 def _corpus(tmp_path: pathlib.Path, *, n=400, null_every=0, all_null=False):
     """A real store built from the real metadata, so the index set, the column
     order and the stats are the shipped ones."""
-    eng = app_sqlite_engine(tmp_path / 'c.db')
+    eng = create_engine(f"sqlite:///{tmp_path / 'c.db'}")
     Base.metadata.create_all(eng)
     S = sessionmaker(bind=eng)
     s = S()
@@ -201,7 +200,7 @@ def test_no_insert_path_leaves_created_at_null(tmp_path):
     row to that phase mid-scan. That rests on the column default reaching both real
     idioms — a plain ORM add and the bulk insert index_article uses — so it is
     asserted rather than assumed."""
-    eng = app_sqlite_engine(tmp_path / 'd.db')
+    eng = create_engine(f"sqlite:///{tmp_path / 'd.db'}")
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     s.add(Keyword(term="k", normalized_term="k"))
