@@ -532,17 +532,26 @@ def write_folder_backup(
     prior = _recorded_digests(root)
     digests: dict[tuple[str, str], str] = {}
     root_real = os.path.realpath(root)
+    # Row 313: the backup folder is a place someone else may have prepared. A category or sub folder
+    # there that is a link would carry the copy (and its folder creation) to wherever the link points,
+    # so EVERY item's way is checked before the first byte is copied, and a link stops the backup with
+    # the folder, where it points and what to do. Checked again per item below, against a folder
+    # swapped for a link while the copy runs. A link AT a file's own name is not followed either: it
+    # never counts as the file already present, and the copy's rename replaces the link itself.
+    for it in items:
+        if (found := _linked_way(root, root_real, it)) is not None:
+            raise LinkedBackupFolder(
+                f"The large-data backup stopped before copying anything: the folder {found[0]} inside the "
+                f"backup folder is a link to {found[1]}, and a backup never writes through a link. Replace the "
+                f"link with a real folder, or choose a backup folder on that other drive."
+            )
     for it in items:
         dst = root / it.category / it.rel
-        # Row 313: the backup folder is a place someone else may have prepared. A category or sub
-        # folder planted there as a link would carry the copy (and its folder creation) to wherever
-        # the link points, so a link anywhere below the chosen folder stops the backup, named, and
-        # nothing is written. A link AT the file's own name is not followed either: it never counts
-        # as the file already present, and the copy's rename replaces the link itself.
-        if link_on_the_way(root, Path(it.category) / Path(it.rel).parent) or not stays_inside(dst.parent, root_real):
+        if (found := _linked_way(root, root_real, it)) is not None:
             raise LinkedBackupFolder(
-                f"a folder inside the backup folder is a link, so nothing is written through it: "
-                f"{Path(it.category) / Path(it.rel).parent}"
+                f"The large-data backup stopped: the folder {found[0]} inside the backup folder became a link "
+                f"to {found[1]} while it ran, and nothing was written through it. Replace the link with a real "
+                f"folder, or choose a backup folder on that other drive."
             )
         if not is_link(dst) and dst.exists() and dst.stat().st_size == it.size:
             skipped += 1
@@ -923,6 +932,20 @@ def _same_file_again(opened: os.stat_result, checked: os.stat_result, src: Path)
         return False
     return (stat.S_ISREG(now.st_mode) and not is_link_stat(now)
             and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
+def _linked_way(root: Path, root_real: str, it: BackupItem) -> tuple[str, str] | None:
+    """The first folder below ``root`` on ``it``'s way that is a link, or that leads out of ``root``:
+    ``(its path inside the backup folder, where it really points)``. ``None`` when the way is plain."""
+    rel_parent = Path(it.category) / Path(it.rel).parent
+    if not link_on_the_way(root, rel_parent) and stays_inside(root / rel_parent, root_real):
+        return None
+    cur = root
+    for part in rel_parent.parts:
+        cur = cur / part
+        if is_link(cur) or not stays_inside(cur, root_real):
+            break
+    return (cur.relative_to(root).as_posix(), os.path.realpath(cur))
 
 
 class LinkedBackupFolder(OSError):

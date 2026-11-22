@@ -5793,6 +5793,8 @@
   "The language-to-country list on this install could not be read, so no country is counted from it.": "このインストールの言語と国のリストを読み込めなかったため、そこから数える国はありません。",
   "The language-to-country list on this install was read and lists no country.": "このインストールの言語と国のリストは読み込まれましたが、国が一つもありません。",
   "The language-to-country list was not found on this install, so no country is counted from it.": "このインストールに言語と国のリストが見つからないため、そこから数える国はありません。",
+  "The large-data backup stopped before copying anything: the folder {folder} inside the backup folder is a link to {target}, and a backup never writes through a link. Replace the link with a real folder, or choose a backup folder on that other drive.": "大容量データのバックアップは何もコピーする前に停止しました。バックアップフォルダー内のフォルダー {folder} は {target} へのリンクであり、バックアップはリンクを通して書き込むことはありません。リンクを実際のフォルダーに置き換えるか、そのもう一方のドライブ上のバックアップフォルダーを選んでください。",
+  "The large-data backup stopped: the folder {folder} inside the backup folder became a link to {target} while it ran, and nothing was written through it. Replace the link with a real folder, or choose a backup folder on that other drive.": "大容量データのバックアップは停止しました。実行中にバックアップフォルダー内のフォルダー {folder} が {target} へのリンクに変わり、それを通しては何も書き込まれていません。リンクを実際のフォルダーに置き換えるか、そのもう一方のドライブ上のバックアップフォルダーを選んでください。",
   "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "大容量データのコピーがこのエクスポートのものだと確認できなかったため、このエクスポートは完了として扱いません。",
   "The last day comes before the first day.": "最後の日が最初の日より前です。",
   "The last rebuild did not start": "前回の再構築は開始されませんでした",

@@ -280,6 +280,78 @@ def test_a_link_at_a_backed_up_file_is_never_counted_as_present_and_is_replaced(
     assert not out.is_symlink() and out.read_bytes() == src.read_bytes()
 
 
+@posix_only
+def test_a_linked_category_stops_the_folder_backup_before_any_file_is_copied(tmp_path):
+    """Coordinator's condition: the stop comes before anything is written, so no partial large-data copy is
+    left behind, and the error names the folder, says it is a link, where it points and what to do."""
+    from src.backup.folder_backup import BackupItem, LinkedBackupFolder, write_folder_backup
+
+    outside = tmp_path / "other-drive"
+    outside.mkdir()
+    a = tmp_path / "a.pbf"
+    a.write_bytes(b"map")
+    b = tmp_path / "b.xml.bz2"
+    b.write_bytes(b"dump")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    os.symlink(outside, dest / "wiki_dumps")
+    items = [  # the plain category comes FIRST: a per-item check would already have copied it
+        BackupItem("osm_regions", "a.pbf", a, a.stat().st_size),
+        BackupItem("wiki_dumps", "b.xml.bz2", b, b.stat().st_size),
+    ]
+    with pytest.raises(LinkedBackupFolder) as ei:
+        write_folder_backup(dest, items)
+    msg = str(ei.value)
+    assert msg.startswith("The large-data backup stopped before copying anything: the folder wiki_dumps inside")
+    assert f"is a link to {os.path.realpath(outside)}," in msg
+    assert "Replace the link with a real folder, or choose a backup folder on that other drive." in msg
+    assert not (dest / "osm_regions").exists()
+    assert list(outside.iterdir()) == []
+    assert sorted(p.name for p in dest.iterdir()) == ["wiki_dumps"]  # no manifest, nothing else
+
+
+def test_the_linked_folder_refusal_reads_in_the_page_language(tmp_path):
+    """Both refusals go through ooServerText to a locale key in all twelve languages, path holes filled."""
+    import shutil
+    import subprocess
+
+    from tests.js_source_helper import function_source
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    root = Path(__file__).resolve().parent.parent
+    core = (root / "src/static/app-core.js").read_text(encoding="utf-8")
+    fns = function_source(core, "_sizeText") + "\n" + function_source(core, "ooServerText")
+    keys = []
+    for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        loc = json.loads((root / f"src/static/locales/{lang}.json").read_text(encoding="utf-8"))
+        hits = [k for k in loc if k.startswith("The large-data backup stopped")]
+        assert len(hits) == 2, lang
+        for k in hits:
+            assert "{folder}" in loc[k] and "{target}" in loc[k], (lang, k)
+        keys = hits
+    fr = json.loads((root / "src/static/locales/fr.json").read_text(encoding="utf-8"))
+    sent = [
+        k.replace("{folder}", "wiki_dumps").replace("{target}", "/media/other drive")
+        for k in sorted(keys)
+    ]
+    script = (
+        "const FR = " + json.dumps(fr, ensure_ascii=False) + ";\n"
+        "var window = { OOI18N: { t: (k) => FR[k] || k, tf: (k, v) => (FR[k] || k).replace(/\\{(\\w+)\\}/g, (m, n) => v[n]) } };\n"
+        "var OOI18N = window.OOI18N;\n" + fns + "\n"
+        "const SENT = " + json.dumps(sent) + ";\n"
+        "process.stdout.write(JSON.stringify(SENT.map(ooServerText)));\n"
+    )
+    js = tmp_path / "t.js"
+    js.write_text(script, encoding="utf-8")
+    out = json.loads(subprocess.run([node, str(js)], capture_output=True, text=True, check=True).stdout)
+    for said, key in zip(out, sorted(keys), strict=True):
+        assert said.startswith("La sauvegarde des données volumineuses"), said
+        assert "\u2068wiki_dumps\u2069" in said and "\u2068/media/other drive\u2069" in said
+        assert said == fr[key].replace("{folder}", "\u2068wiki_dumps\u2069").replace("{target}", "\u2068/media/other drive\u2069")
+
+
 # --------------------------------------------------------------------------- source pins
 
 
@@ -298,7 +370,7 @@ def test_a_link_at_a_backed_up_file_is_never_counted_as_present_and_is_replaced(
         ("src/backup/stream_backup.py", "read_stream_backup", "create_new("),
         ("src/backup/export_summary.py", "write_backup_summary", "replace_with("),
         ("src/backup/folder_backup.py", "_write_manifest_atomically", "create_new("),
-        ("src/backup/folder_backup.py", "write_folder_backup", "link_on_the_way("),
+        ("src/backup/folder_backup.py", "write_folder_backup", "_linked_way("),
         ("src/backup/artifact.py", "write_backup_v2", "replace_with("),
     ],
 )
