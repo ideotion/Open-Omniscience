@@ -180,7 +180,11 @@ def test_a_file_that_cannot_be_read_is_unreadable_never_a_crash_nor_a_pass(tmp_p
     def _fails(*a, **k):
         raise OSError(5, "I/O error")
 
-    monkeypatch.setattr(folder_backup, "_hash_fd", _fails)
+    def _fails_reading(fd):  # as the real one: owns the handle and closes it, then the read fails
+        with os.fdopen(fd, "rb"):
+            raise OSError(5, "I/O error")
+
+    monkeypatch.setattr(folder_backup, "_hash_fd", _fails_reading)
     monkeypatch.setattr(folder_backup, "_sha256_file", _fails)
     rep = verify_folder_backup(dest)  # must not raise
     assert rep["ok"] is False
@@ -223,3 +227,54 @@ def test_a_folder_swapped_for_a_link_after_the_look_is_refused_at_the_open(tmp_p
     probs = {p["rel"]: p["status"] for p in rep["problems"]}
     assert probs["enwiki/a.bz2"] == "link_not_checked"
     assert len(hashed) == 1  # only the osm file
+
+
+def test_a_nested_mount_no_entry_names_fails_the_verdict(tmp_path, monkeypatch):
+    """Restore refuses what sits on another device than its category folder; Verify's walk finds it too."""
+    dest = _backup(tmp_path)
+    (dest / "wiki_dumps" / "mnt").mkdir()
+    (dest / "wiki_dumps" / "mnt" / "x").write_bytes(b"x")
+    mnt = os.fspath(dest / "wiki_dumps" / "mnt")
+
+    class _Mounted:  # this module's own view of os (R351)
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+        @staticmethod
+        def lstat(path, *a, **k):
+            st = os.lstat(path, *a, **k)
+            if os.fspath(path) == mnt:
+                return os.stat_result((st.st_mode, st.st_ino, st.st_dev + 1, *tuple(st)[3:]))
+            return st
+
+    monkeypatch.setattr(folder_backup, "os", _Mounted())
+    rep = verify_folder_backup(dest)
+    assert rep["ok"] is False
+    assert [p["rel"] for p in rep["problems"]] == ["mnt"]
+
+
+def test_a_stop_during_the_walk_never_claims_success(tmp_path):
+    dest = _backup(tmp_path)
+    calls = {"n": 0}
+
+    def _stop():
+        calls["n"] += 1
+        return calls["n"] > 2  # the two entries pass, the walk is stopped
+
+    rep = verify_folder_backup(dest, should_stop=_stop)
+    assert rep["ok"] is False and rep["stopped"] is True
+
+
+@posix_only
+def test_a_device_node_or_pipe_is_never_opened(tmp_path, monkeypatch):
+    dest = _backup(tmp_path)
+    member = dest / "osm_regions" / "europe.pbf"
+    member.unlink()
+    os.mkfifo(member)
+    opened: list[str] = []
+    real = folder_backup._open_member_fd
+    monkeypatch.setattr(folder_backup, "_open_member_fd",
+                        lambda r, c, st, rel: opened.append(str(rel)) or real(r, c, st, rel))
+    rep = verify_folder_backup(dest)
+    assert rep["ok"] is False and rep["summary"]["missing"] == 1
+    assert "europe.pbf" not in opened

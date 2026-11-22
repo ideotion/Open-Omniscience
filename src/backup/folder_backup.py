@@ -1641,13 +1641,21 @@ def _linked_member(root: Path, category: str, rel: str) -> bool:
     return _plain_rel(rel) and _member_link(root, category, rel) is not None
 
 
-def _links_in_category(cat_root: Path) -> list[str]:
+def _links_in_category(cat_root: Path, should_stop: Callable[[], bool] | None = None) -> list[str]:
     """R791: every link inside a category folder, as a path below it, found without following any (a link
-    to a folder is listed and not entered). A ``.oopart`` is passed over, as restore passes it over. A folder
-    that cannot be listed is passed over too: its files are reported by the entries that name them."""
+    to a folder is listed and not entered), and every name on another device than the category folder (a
+    mount point or a subvolume: restore refuses what it holds as it refuses a link; listed, not entered). A
+    ``.oopart`` is passed over, as restore passes it over. A folder that cannot be listed is passed over too:
+    its files are reported by the entries that name them. ``should_stop`` ends the walk between folders."""
     found: list[str] = []
+    try:
+        cat_dev = os.lstat(cat_root).st_dev
+    except OSError:
+        return found
     stack = [""]
     while stack:
+        if should_stop is not None and should_stop():
+            break
         sub = stack.pop()
         try:
             with os.scandir(cat_root / sub if sub else cat_root) as it:
@@ -1662,7 +1670,7 @@ def _links_in_category(cat_root: Path) -> list[str]:
                 st = os.lstat(cat_root / rel)
             except OSError:
                 continue
-            if is_link_stat(st):
+            if is_link_stat(st) or st.st_dev != cat_dev:
                 found.append(rel)
             elif stat.S_ISDIR(st.st_mode):
                 stack.append(rel)
@@ -1710,7 +1718,12 @@ def _sha256_file(path: Path) -> str:
 def _hash_fd(fd: int) -> str:
     """The SHA-256 of an open file, read to its end (the handle is closed)."""
     h = hashlib.sha256()
-    with os.fdopen(fd, "rb") as f:
+    try:
+        f = os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    with f:
         for chunk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -1747,6 +1760,15 @@ def _verify_member(
     hash_it = bool(want) and (blob_hex is None or verify_model_checksums)
     if _FD_RELATIVE:
         try:
+            # Looked at before it is opened: a device node a crafted drive carries is never opened, since an
+            # open alone can have effects (row 312's rule). A swap after this look still meets O_NOFOLLOW.
+            if not stat.S_ISREG(os.lstat(path).st_mode):
+                return "missing", {}, False
+        except FileNotFoundError:
+            return "missing", {}, False
+        except (OSError, ValueError):
+            return "unreadable", {}, False
+        try:
             cat_st = os.lstat(root / category)
             fd = _open_member_fd(root, category, cat_st, PurePosixPath(rel))
         except SourceChanged:
@@ -1766,8 +1788,8 @@ def _verify_member(
             if not hash_it:
                 return "size_only", {}, False
             # The handle was opened O_NONBLOCK (a pipe never blocks the open); a regular file reads the same.
-            actual_hex = _hash_fd(fd)
-            fd = -1  # closed by _hash_fd
+            owned, fd = fd, -1  # handed over before the call: _hash_fd closes it, whatever happens
+            actual_hex = _hash_fd(owned)
         except OSError:
             return "unreadable", {}, hash_it
         finally:
@@ -1908,7 +1930,8 @@ def verify_folder_backup(
         if hashed:
             checksummed += 1
         if status == "link_not_checked":
-            implicated.add((category, _member_link(root, category, rel) or ""))
+            if (link := _member_link(root, category, rel)) is not None:
+                implicated.add((category, link))
         summary[status] += 1
         checked += 1
         if status not in ("ok", "size_only") and len(problems) < _PROBLEM_CAP:
@@ -1928,13 +1951,15 @@ def verify_folder_backup(
                 plain = False
             if not plain:
                 continue
-            for link in _links_in_category(cat_root):
+            for link in _links_in_category(cat_root, should_stop):
                 if (category, link) in implicated:
                     continue
                 summary["link_not_checked"] += 1
                 if len(problems) < _PROBLEM_CAP:
                     problems.append({"category": category, "rel": link, "status": "link_not_checked",
                                      **said("why", "a link, not in the manifest")})
+        if should_stop is not None and should_stop():
+            stopped = True  # the walk was cut short: an incomplete verify never claims success
     summary["malformed_entries"] = malformed
     failures = (
         summary["missing"]
