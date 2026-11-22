@@ -3173,8 +3173,10 @@ class MergeBatch(Base):
     The provenance anchor for the DB-reliability mandate: every row that arrived
     via merge is traceable to the batch that brought it (see MergedRow), so
     imported material can never silently launder into first-party evidence.
-    ``origin_fingerprint`` is the artifact signer's public-key id when the
-    manifest was signed and verified, else "unsigned" -- verified, not trusted.
+    ``origin_fingerprint`` is the public key that signed the artifact's manifest
+    when that signature verified, else "unsigned" -- verified, not trusted. The key
+    travels in the same file, so it shows the content is unchanged since it was
+    signed, never where it came from (R800; the column keeps its name, R755).
     """
 
     __tablename__ = "merge_batches"

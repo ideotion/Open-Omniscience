@@ -82,6 +82,9 @@ def _restore(backup: Path, passphrase: str) -> dict:
         "refused": report.get("refused"),
         "artifact_kind": report.get("artifact_kind"),
         "signature_state": report.get("signature_state"),
+        # R800: "verified" means the content is unchanged since it was signed; whose key signed it
+        # (this installation's or another's) is the separate fact, never an origin.
+        "signed_by": report.get("signed_by"),
         "verification_ok": bool((report.get("verification") or {}).get("ok")),
         "plan_tables": {
             k: v for k, v in plan.items() if isinstance(v, (int, dict))
