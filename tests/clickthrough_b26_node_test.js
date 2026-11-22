@@ -319,6 +319,8 @@ test("J-3: every bracket on the import checklist is the keyed frame, and the lar
     "function _uxImStopChain(){} function _uxImResetRunView(){}\n" +
     "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
     extract("ooLabelText") + "\n" +
+    // Row 293 moved the large-data row and the unread-folders note out of _uxImScan into helpers.
+    extract("_uxImBlobRow") + "\n" + extract("_uxImUnreadNote") + "\n" +
     "async " + extract("_uxImScan") + "\n" +
     "return { run: _uxImScan };";
   const mod = new Function("window", "OOI18N", "DOM", "api", src)(

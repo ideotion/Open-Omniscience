@@ -1452,6 +1452,33 @@
       return !!box.checked;
     }
 
+    // The import checklist's large-data row (row 293). Each category by the export checklist's own label with a keyed
+    // file count ("wiki 3 · maps 1" was English in every locale). A category with folders or files the scan was refused
+    // reads "at least N files", with the reason on the hover; links are never restored (a restore refuses every link),
+    // so they are not counted, and the hover says so.
+    function _uxImBlobRow(b, t, tfs, paren) {
+      const parts = [], why = [];
+      const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
+      const UNREAD = t("Some files or folders here could not be read, so this count includes only the ones that could.");
+      const LINKS = t("Links in this backup folder are not counted: a restore never follows a link, so they are never restored.");
+      const cat = (c, label) => {
+        if (!c) return;
+        parts.push(ooLabelText(t(label), (c.unread_entries ? t("at least") + " " : "") + files(c.count || 0)));
+        if (c.unread_entries && !why.includes(UNREAD)) why.push(UNREAD);
+        if (c.refused_links && !why.includes(LINKS)) why.push(LINKS);
+      };
+      cat(b.wiki, "Wikipedia dumps");
+      cat(b.maps, "Offline maps");
+      cat(b.models, "LLM models");
+      const hover = why.length ? ` title="${esc(why.join(" "))}"` : "";
+      return `<label class="switch" style="margin:0"${hover}><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>`;
+    }
+    // Folders the scan walk was refused (row 293): said on screen, since whatever they hold is not listed.
+    function _uxImUnreadNote(n, t, tfs) {
+      return esc(n === 1 ? t("1 folder here could not be read, so anything inside it is not listed.")
+        : tfs("{n} folders here could not be read, so anything inside them is not listed.", { n: fmtNum(n, 0) }));
+    }
+
     async function _uxImScan(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = (document.getElementById("ux-imp-src").value || "").trim();
@@ -1502,18 +1529,11 @@
           const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
           rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
         }
-        if (f.blobs) {
-          // Each category by the export checklist's own label with a keyed file count:
-          // "wiki 3 · maps 1" was English in every locale.
-          const b = f.blobs, parts = [];
-          const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
-          if (b.wiki) parts.push(ooLabelText(t("Wikipedia dumps"), files(b.wiki.count || 0)));
-          if (b.maps) parts.push(ooLabelText(t("Offline maps"), files(b.maps.count || 0)));
-          if (b.models) parts.push(ooLabelText(t("LLM models"), files(b.models.count || 0)));
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">${paren(esc(parts.join(" · ")))}</span></label>`);
-        }
+        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren));
         if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
         const notes = [];
+        // Row 293: folders the scan was refused are said on screen; whatever they hold is not listed above.
+        if (f.unread_folders) notes.push(_uxImUnreadNote(f.unread_folders, t, tfs));
         if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + " " + paren(f.source_csv.map(ltr).join(", ")));
         box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
         if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from pathlib import Path
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
@@ -65,9 +66,55 @@ _SKIP_DIRS = frozenset(
 _MAX_DEPTH = 8
 
 
+# Row 293: why a large-data count is a lower bound, or leaves something out. Whole sentences and locale keys (the
+# Import checklist passes them through t()), so the reason reads in the person's language on the hover.
+SCAN_UNREAD = "Some files or folders here could not be read, so this count includes only the ones that could."
+SCAN_LINKS = "Links in this backup folder are not counted: a restore never follows a link, so they are never restored."
+SCAN_UNSIZED = "This file's size could not be read."
+# The suffix of a copy in progress (src.backup.folder_backup._PART_SUFFIX): a restore skips it, so the scan does too.
+_PART_SUFFIX = ".oopart"
+
+
 def _dir_totals(d: Path) -> dict:
-    files = [p for p in d.rglob("*") if p.is_file()]
-    return {"count": len(files), "bytes": sum(p.stat().st_size for p in files)}
+    """``{count, bytes}`` of what a folder restore would restore from one category folder, plus
+    ``unread_entries`` (folders or files it was refused) and ``refused_links`` when non-zero.
+
+    It counts exactly what ``restore_folder_backup`` copies: regular files, never a ``.oopart``,
+    never a link (restore refuses every link, file or folder, and never follows one). A refusal
+    no longer fails the whole scan (row 293): it is counted, so the page can say the count is a
+    lower bound. A file that vanished mid-scan is gone, not unread."""
+    count = nbytes = unread = links = 0
+
+    def _refused(err: OSError) -> None:
+        nonlocal unread
+        if not isinstance(err, FileNotFoundError):
+            unread += 1
+
+    for dirpath, dirnames, names in os.walk(d, onerror=_refused, followlinks=False):
+        # os.walk lists a link to a folder among the folders and never enters it; restore refuses it.
+        # A ".oopart" name is skipped by restore before its link check, so it is not a refused link either.
+        links += sum(1 for n in dirnames if not n.endswith(_PART_SUFFIX) and os.path.islink(os.path.join(dirpath, n)))
+        for name in names:
+            if name.endswith(_PART_SUFFIX):
+                continue
+            try:
+                st = os.lstat(os.path.join(dirpath, name))
+            except FileNotFoundError:
+                continue
+            except OSError:
+                unread += 1
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                links += 1
+            elif stat.S_ISREG(st.st_mode):
+                count += 1
+                nbytes += st.st_size
+    out: dict = {"count": count, "bytes": nbytes}
+    if unread:
+        out.update(unread_entries=unread, reason=SCAN_UNREAD)
+    if links:
+        out["refused_links"] = links
+    return out
 
 
 def _looks_like_source_csv(p: Path) -> bool:
@@ -97,7 +144,12 @@ def scan_import_folder(
                             first-class importable item — restored additively in turn).
     """
     root = Path(path)
-    if not root.is_dir():
+    try:
+        is_folder = root.is_dir()
+    except OSError:
+        # A folder above it refused the look (row 293): the operator's 400, never a 500.
+        raise ValueError(f"{path} could not be read, so it cannot be scanned.") from None
+    if not is_folder:
         raise ValueError(f"{path} is not a folder to import from.")
 
     corpus_dirs: list[Path] = []
@@ -109,7 +161,14 @@ def scan_import_folder(
     eml_capped = False
 
     root_depth = len(root.parts)
-    for cur, dirnames, filenames in os.walk(root):
+    unread_folders = 0
+
+    def _folder_refused(err: OSError) -> None:
+        nonlocal unread_folders
+        if not isinstance(err, FileNotFoundError):
+            unread_folders += 1  # row 293: said on the page, never silently skipped
+
+    for cur, dirnames, filenames in os.walk(root, onerror=_folder_refused):
         curp = Path(cur)
         depth = len(curp.parts) - root_depth
 
@@ -125,7 +184,7 @@ def scan_import_folder(
                     # A blob category dir: record its totals but DON'T descend — walking
                     # thousands of model blobs while hunting for the other kinds is waste.
                     totals = _dir_totals(curp / d)
-                    if totals["count"]:
+                    if totals["count"] or totals.get("unread_entries"):
                         blob_roots.setdefault(str(curp), {})[_BLOB_DIRS[d]] = totals
                     continue
                 keep.append(d)
@@ -147,12 +206,20 @@ def scan_import_folder(
                     source_csv.append(fn)
             elif fn.startswith("open-omniscience-") and not low.endswith(".oomodels"):
                 fp = curp / fn
-                if fp.is_file():
-                    try:
-                        sz = fp.stat().st_size
-                    except OSError:
-                        sz = 0
-                    legacy.append({"path": str(fp), "name": fn, "bytes": sz})
+                # ONE stat, guarded (row 293): Path.is_file() raises a PermissionError rather than
+                # answering False, so it could fail the whole scan from a folder it may list but not enter.
+                item: dict = {"path": str(fp), "name": fn}
+                try:
+                    st = os.stat(fp)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    item.update(bytes=None, reason=SCAN_UNSIZED)  # unread, never 0; restore says its own error
+                    legacy.append(item)
+                    continue
+                if stat.S_ISREG(st.st_mode):
+                    item["bytes"] = st.st_size
+                    legacy.append(item)
 
     # Manifest-anchored blobs: a completed large-data backup declares its categories
     # authoritatively. Merge them in so a folder backup is recognised even if the plain
@@ -166,10 +233,16 @@ def scan_import_folder(
         root_totals = blob_roots.setdefault(str(mdir), {})
         for catdir, (count, nbytes) in cats.items():
             catkey = _BLOB_DIRS.get(catdir)
-            if not catkey or catkey in root_totals:
-                continue  # unknown category, or the dir-walk already measured it on disk
+            if not catkey:
+                continue  # unknown category
+            seen = root_totals.get(catkey)
+            if seen and (seen["count"] or not seen.get("unread_entries")):
+                continue  # the dir-walk already measured it on disk
             if count:
-                root_totals[catkey] = {"count": count, "bytes": nbytes}
+                # Row 293: a category folder the walk could not read at all keeps its reason, and the
+                # manifest's declared totals stand in for the 0 it read.
+                root_totals[catkey] = {"count": count, "bytes": nbytes, "from_manifest": True,
+                                       **({k: seen[k] for k in ("unread_entries", "reason") if k in seen} if seen else {})}
         if not root_totals:  # a manifest with zero non-empty categories: drop the empty root
             blob_roots.pop(str(mdir), None)
 
@@ -200,6 +273,11 @@ def scan_import_folder(
                 a = agg.setdefault(k, {"count": 0, "bytes": 0})
                 a["count"] += tot["count"]
                 a["bytes"] += tot["bytes"]
+                for extra in ("unread_entries", "refused_links"):
+                    if tot.get(extra):
+                        a[extra] = a.get(extra, 0) + tot[extra]
+                if tot.get("unread_entries"):
+                    a["reason"] = SCAN_UNREAD
         found["blobs"] = agg
         found["blob_roots"] = [
             {
@@ -218,6 +296,10 @@ def scan_import_folder(
 
     if legacy:
         found["legacy_backup"] = sorted(legacy, key=lambda x: x["name"])
+
+    if unread_folders:
+        # Folders the walk was refused: whatever they hold is not listed above.
+        found["unread_folders"] = unread_folders
 
     return {"path": str(root), "found": found}
 
