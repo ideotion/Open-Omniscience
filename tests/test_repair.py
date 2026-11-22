@@ -319,8 +319,9 @@ def test_a_second_name_that_belongs_to_a_different_file_is_never_overwritten(tmp
     work = repair.plan()
     monkeypatch.setattr(repair, "_damaged_name", lambda target, stamp: tmp_path / "live.damaged-fixed.db")
     (tmp_path / "live.damaged-fixed.db").write_bytes(b"somebody else's file")
-    with pytest.raises(FileExistsError):
+    with pytest.raises(repair.Declined) as refusal:  # R781: a named refusal, never a raw FileExistsError at every start
         repair.run(work)
+    assert refusal.value.code == "damaged-name-taken" and "live.damaged-fixed.db" in str(refusal.value)
     assert (tmp_path / "live.damaged-fixed.db").read_bytes() == b"somebody else's file"
 
 
