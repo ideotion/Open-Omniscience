@@ -302,6 +302,8 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # R794: an interrupt whose unfinished copy could not be removed carries that PATH on itself (a Path, never words), so no
         # caller removes the name again
         ('snapshot_to_plaintext', 'failed.oo_snapshot_left = left  # type: ignore[attr-defined]'): 1,
+        # Row 335: a recorded number no longer ours is placed by its errno alone (EBADF: nothing there now); no text is read.
+        ('_validate_ours_locked', 'if exc.errno != errno.EBADF:'): 1,
     },
     # Row 156: a staged backup member's open or ATTACH reads only whether the SQLite code was busy or locked, to refuse it as in use
     # with fixed words instead of "no key opens it"; nothing of the error is kept, served or logged
