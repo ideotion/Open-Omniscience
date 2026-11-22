@@ -54,7 +54,7 @@ def test_an_older_backup_without_the_folder_shows_no_such_category(tmp_path):
 def test_the_manifest_alone_recovers_hf_models(tmp_path):
     bk = tmp_path / "bk"
     bk.mkdir()
-    (bk / "oo-folder-backup.json").write_text(json.dumps({"categories": {"hf_models": [{"rel": "hub/x", "size": 7}]}}))
+    (bk / "oo-folder-backup.json").write_text(json.dumps({"categories": {"hf_models": [{"rel": "hub/x", "size": 7}]}}), encoding="utf-8")
     f = scan_import_folder(tmp_path)["found"]
     assert f["blobs"]["hf_models"]["count"] == 1 and f["blob_roots"][0]["hf_models"]["from_manifest"] is True
     assert f["blob_roots"][0]["categories"] == ["hf_models"]

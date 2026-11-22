@@ -19,6 +19,7 @@ import pytest
 
 from src.backup.folder_backup import MANIFEST_NAME, BackupItem, restore_folder_backup, write_folder_backup
 from src.backup.import_scan import SCAN_UNLISTED, scan_import_folder
+from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parents[1]
 LINE = "Restored, but not listed in this backup's current manifest; they may come from an earlier or interrupted backup pass"
@@ -198,7 +199,7 @@ def test_every_manifest_reader_goes_through_the_hardened_reader():
     for f in ("src/backup/folder_backup.py", "src/backup/import_scan.py"):
         s = (ROOT / f).read_text(encoding="utf-8")
         assert "read_manifest_json(" in s
-        assert "MANIFEST_NAME).read_text(" not in s and "p.read_text(" not in s.split("def _manifest_listing")[1][:600]
+        assert "MANIFEST_NAME).read_text(" not in s and "p.read_text(" not in python_function_source(s, "_manifest_listing")
 
 
 def test_a_manifest_size_that_is_not_a_number_does_not_stop_the_scan(tmp_path):
