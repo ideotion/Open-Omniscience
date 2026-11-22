@@ -194,7 +194,7 @@ def test_the_key_is_created_0600_from_its_first_byte_under_a_permissive_umask(
     real_open = os.open
 
     def spy(path, flags, mode=0o777, *a, **kw):
-        if "k.pem" in str(path):
+        if "k.pem" in str(path) and flags & os.O_CREAT:  # the creation; the loader's first look reads (row 341)
             seen.append((flags, mode))
         return real_open(path, flags, mode, *a, **kw)
 

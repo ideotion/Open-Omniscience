@@ -242,8 +242,9 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
     path = path or _default_key_path()
     try:
         # read and parse only: ``load_or_create_signing_key`` would GENERATE a key if the file
-        # vanished between an exists() check and its read, and a review must never do that
-        key, _legacy = _parse_key(path, path.read_bytes(), _wrap_passphrase())
+        # vanished between an exists() check and its read, and a review must never do that; the read is
+        # the key loader's own, bounded and non-blocking (row 341), so a FIFO or device here reads as None
+        key, _legacy = _parse_key(path, keyfile.read_once(path)[0], _wrap_passphrase())
     except Exception:  # noqa: BLE001 - missing, unreadable, foreign or unopenable all read as "no key"
         return None
     return public_key_hex(key)

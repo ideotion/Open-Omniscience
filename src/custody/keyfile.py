@@ -391,15 +391,61 @@ def create_new(path: Path, data: bytes) -> None:
             drop_pending(path)
 
 
+# The largest key file a reader takes in. The biggest form written here, a wrapped ML-DSA-65 pair,
+# is under 6 KiB; anything past this is not a key file and is refused without being read to its end.
+MAX_KEY_FILE_BYTES = 64 * 1024
+
+
+class KeyFileNotReadable(OSError):
+    """The name holds something that is not a key file: not a regular file, or longer than any key.
+
+    An ``OSError`` so every caller treats it as the unreadable key file it is, and never a
+    ``FileNotFoundError``, which would tell a loader there is no key and it may make one."""
+
+
+def _read_bounded(path: Path) -> tuple[bytes, os.stat_result]:
+    """One open of ``path``: its ``fstat`` and at most :data:`MAX_KEY_FILE_BYTES` of it (row 341).
+
+    Opened without blocking, so a FIFO put at the name (by anyone who can write the data folder) opens
+    at once instead of waiting for a writer, and refused unless the open file is a regular file, so
+    neither a FIFO nor a device such as ``/dev/zero`` is ever read. A link is followed, as it always
+    was (a key kept elsewhere and linked here loads), and the same checks apply to what it names."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+    flags |= getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise KeyFileNotReadable(f"not a regular file: {path.name}")
+        if st.st_size > MAX_KEY_FILE_BYTES:
+            raise KeyFileNotReadable(f"longer than any key file: {path.name}")
+        parts: list[bytes] = []
+        left = MAX_KEY_FILE_BYTES + 1
+        while left > 0:
+            chunk = os.read(fd, min(left, 65536))
+            if not chunk:
+                break
+            parts.append(chunk)
+            left -= len(chunk)
+        raw = b"".join(parts)
+        if len(raw) > MAX_KEY_FILE_BYTES:
+            raise KeyFileNotReadable(f"longer than any key file: {path.name}")
+        return raw, st
+    finally:
+        os.close(fd)
+
+
 def read_once(path: Path) -> tuple[bytes, os.stat_result]:
     """The bytes of the file and its state (``fstat`` of the same open file), read together.
 
     A file that no name holds any more when it has been read (``st_nlink`` 0) was replaced while it was
     open, and a wrap in place may have overwritten its bytes with zeros: the name is opened again, so a
-    reader never parses the scrubbed bytes of a file the key has left."""
+    reader never parses the scrubbed bytes of a file the key has left.
+
+    The read is bounded and never blocks (row 341, :func:`_read_bounded`): anything at the name that is
+    not a regular file of key size raises :class:`KeyFileNotReadable`."""
     for _ in range(3):
-        with path.open("rb") as fh:
-            raw, st = fh.read(), os.fstat(fh.fileno())
+        raw, st = _read_bounded(path)
         if st.st_nlink != 0:
             break
     return raw, st
