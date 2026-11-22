@@ -35,6 +35,7 @@ import logging
 import math
 import os
 import re
+import stat
 import threading
 import time
 from datetime import UTC, datetime
@@ -126,26 +127,49 @@ def _now() -> str:
 
 
 def _tree_size(root: Path) -> tuple[int, int]:
-    """(bytes, files) under root — never follows symlinks out of the tree, never
-    reads contents; unreadable entries are skipped (counted via best-effort)."""
-    total = 0
-    files = 0
+    """(bytes, files) under root -- see ``_tree_measure``, which also counts what it could not read."""
+    nbytes, files, _unread = _tree_measure(root)
+    return nbytes, files
+
+
+def _tree_measure(root: Path) -> tuple[int, int, int]:
+    """(bytes, files, unread) under root -- never follows symlinks out of the tree, never reads contents.
+
+    ``unread`` counts the folders it was refused a listing of and the files it was refused a stat of
+    (row 284): the bytes are then what COULD be read, a lower bound, and a caller must say so rather
+    than print them as the whole. An entry that vanished mid-walk is gone, not unread."""
+    total = files = unread = 0
+
+    def _refused(exc: OSError) -> None:
+        nonlocal unread
+        if not isinstance(exc, FileNotFoundError):
+            unread += 1
+
     try:
-        if root.is_symlink():
-            return 0, 0  # a symlink is a pointer, not data held HERE — never followed
-        if root.is_file():
-            return root.stat().st_size, 1
-        for p in root.rglob("*"):
-            try:
-                if p.is_symlink() or not p.is_file():
-                    continue
-                total += p.stat().st_size
-                files += 1
-            except OSError:
-                continue
+        st = os.lstat(root)
+    except FileNotFoundError:
+        return 0, 0, 0
     except OSError:
-        pass
-    return total, files
+        return 0, 0, 1
+    if stat.S_ISLNK(st.st_mode):
+        return 0, 0, 0  # a symlink is a pointer, not data held HERE -- never followed
+    if stat.S_ISREG(st.st_mode):
+        return st.st_size, 1, 0
+    if not stat.S_ISDIR(st.st_mode):
+        return 0, 0, 0
+    for dirpath, _dirs, names in os.walk(root, onerror=_refused, followlinks=False):
+        for name in names:
+            try:
+                fst = os.lstat(os.path.join(dirpath, name))
+            except FileNotFoundError:
+                continue  # gone mid-walk, not unread
+            except OSError:
+                unread += 1
+                continue
+            if stat.S_ISREG(fst.st_mode):
+                total += fst.st_size
+                files += 1
+    return total, files, unread
 
 
 def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
@@ -188,10 +212,13 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
         children = sorted(root.iterdir(), key=lambda p: p.name)
     except OSError as exc:
         out["note"] = f"data dir unreadable: {exc.__class__.__name__}"
+        out["unreadable"] = True  # row 284: no total was read, which is not a total of 0
         return out
 
+    unread_total = 0
     for child in children:
-        size, files = _tree_size(child)
+        size, files, unread = _tree_measure(child)
+        unread_total += unread
         kind = "dir" if child.is_dir() and not child.is_symlink() else "file"
         name = child.name
         if name == _DB_NAME:
@@ -204,6 +231,8 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
             kind = "shm"
             shm_bytes = size
         entry: dict[str, Any] = {"name": name, "kind": kind, "bytes": size, "files": files}
+        if unread:
+            entry["unread_entries"] = unread  # its bytes are what could be read, a lower bound
         is_staging = (kind == "dir" and name.startswith(_STAGING_DIR_PREFIXES)) or name.endswith(
             _PART_SUFFIX
         )
@@ -247,6 +276,9 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
         "other_bytes": max(
             0, total - db_bytes - wal_bytes - shm_bytes - staging_bytes - pre_restore_bytes
         ),
+        # Folders and files the walk was refused (row 284): non-zero means every byte figure here
+        # is a lower bound. Counted over EVERY entry, also the ones max_entries leaves out.
+        "unread_entries": unread_total,
     }
     out["pre_restore_snapshots"].sort(key=lambda e: str(e["taken_at"]), reverse=True)
     # Imported HERE rather than at module scope: forensics is on the boot path and
@@ -1335,21 +1367,57 @@ def pass_tail_journal() -> dict[str, Any]:
         }
 
 
-def _ollama_store_bytes() -> tuple[str | None, int, int]:
-    """(store path, bytes, files) of the Ollama model store — which lives OUTSIDE data_dir
-    (~/.ollama/models or $OLLAMA_MODELS / the systemd store), so data_dir_inventory misses
-    it entirely. Best-effort: a protected/unreadable store degrades to whatever _tree_size
-    could stat (never a crash), and a missing store is (path, 0, 0)."""
-    try:
-        from src.backup.ollama_models import default_store
+# Row 284: why a footprint line has no figure, or only part of one. Each is a whole sentence and a locale key
+# (the page passes it through t()), so the reason reads in the person's language on the hover.
+FOOTPRINT_PROTECTED_STORE = (
+    "This model store is protected: this app is not allowed to read it, so its size is not counted."
+)
+FOOTPRINT_UNREAD_STORE = "The model store could not be read, so its size is not counted."
+FOOTPRINT_UNREAD_DATA_DIR = "The data folder could not be read, so its size is not counted."
+FOOTPRINT_PARTIAL = "Some folders or files here could not be read; this figure counts only the ones that could."
 
-        store = default_store()
-    except Exception:  # noqa: BLE001 - the store path helper is optional
-        return None, 0, 0
-    if store is None or not store.is_dir():
-        return (str(store) if store else None), 0, 0
-    nbytes, files = _tree_size(store)
-    return str(store), nbytes, files
+
+def _ollama_components() -> tuple[str | None, list[dict[str, Any]]]:
+    """The Ollama model store line(s) of the footprint, which lives OUTSIDE data_dir (~/.ollama/models,
+    $OLLAMA_MODELS or the systemd store), so data_dir_inventory misses it entirely.
+
+    Row 284: ``default_store`` skips a store whose manifests it cannot read and falls back to the app's
+    own, usually empty, store -- so the service install's models were counted as the 0 bytes of a
+    different folder. ``store_status`` names that refused store; it gets its own line with NO figure and
+    the reason. It is never sized by another route (no privileged read, no guess from a listing): what
+    this app may not read stays unmeasured. A store walked with refusals is marked partial."""
+    try:
+        from src.backup.ollama_models import store_status
+
+        st = store_status()
+    except Exception:  # noqa: BLE001 - the store helper is optional; its absence is said, never a 0
+        return None, [{"name": "Ollama model store", "kind": "ollama_models", "bytes": None, "files": None,
+                       "detail": None, "outside_data_dir": True, "measured": False,
+                       "reason": FOOTPRINT_UNREAD_STORE}]
+    store = str(st.get("store") or "") or None
+    protected = st.get("protected_store")
+    out: list[dict[str, Any]] = []
+    if store and protected and str(protected) == store:
+        out.append({"name": "Ollama model store", "kind": "ollama_models", "bytes": None, "files": None,
+                    "detail": store, "outside_data_dir": True, "measured": False,
+                    "reason": FOOTPRINT_PROTECTED_STORE})
+        return store, out
+    nbytes = files = unread = 0
+    if store and Path(store).is_dir():
+        nbytes, files, unread = _tree_measure(Path(store))
+    line: dict[str, Any] = {"name": "Ollama model store", "kind": "ollama_models", "bytes": nbytes,
+                            "files": files, "detail": store, "outside_data_dir": True, "measured": True}
+    if unread and not files and not nbytes:
+        # Refused before a single file was read (the store's own listing): that is no figure at all.
+        line.update(bytes=None, files=None, measured=False, unread_entries=unread, reason=FOOTPRINT_UNREAD_STORE)
+    elif unread:
+        line.update(partial=True, unread_entries=unread, reason=FOOTPRINT_PARTIAL)
+    out.append(line)
+    if protected:
+        out.append({"name": "Ollama model store (protected)", "kind": "ollama_models", "bytes": None,
+                    "files": None, "detail": str(protected), "outside_data_dir": True, "measured": False,
+                    "reason": FOOTPRINT_PROTECTED_STORE})
+    return store, out
 
 
 def storage_footprint() -> dict[str, Any]:
@@ -1361,16 +1429,24 @@ def storage_footprint() -> dict[str, Any]:
     Components (each an explicit line, bytes only, symlinks never followed, contents never
     read): the database triple (db / -wal / -shm), wiki_dumps, osm_regions, backup/restore
     staging (orphaned = a crashed run), any other data-dir contents, AND the external Ollama
-    model store. ``grand_total_bytes`` sums them all. Best-effort per component; no score."""
+    model store. ``grand_total_bytes`` sums them all. Best-effort per component; no score.
+
+    Row 284: a line this app could not read has ``bytes: None`` and a ``reason`` (never 0), a line
+    walked with refusals has ``partial: True`` (its bytes are a lower bound), and ``totals.complete``
+    is False whenever either exists, with ``totals.not_counted`` naming them -- the grand total is
+    then "at least", never the footprint."""
     inv = data_dir_inventory()
     totals = inv.get("totals", {})
-    entries = {str(e.get("name")): int(e.get("bytes", 0)) for e in inv.get("entries", [])}
+    inv_entries = inv.get("entries", [])
+    entries = {str(e.get("name")): int(e.get("bytes", 0)) for e in inv_entries}
+    unread_by_name = {str(e.get("name")): int(e.get("unread_entries", 0)) for e in inv_entries}
     db_name = _DB_NAME
+    dir_unreadable = bool(inv.get("unreadable"))
 
     def _dir_bytes(name: str) -> int:
         return int(entries.get(name, 0))
 
-    data_dir_bytes = int(totals.get("total_bytes", 0))
+    data_dir_bytes: int | None = None if dir_unreadable else int(totals.get("total_bytes", 0))
     other = int(totals.get("other_bytes", 0))
     # wiki_dumps / osm_regions are top-level dirs counted inside other_bytes; itemize them
     # out so the "other" line is the genuine remainder.
@@ -1394,13 +1470,37 @@ def storage_footprint() -> dict[str, Any]:
         {"name": "other (data folder)", "kind": "other", "bytes": other_remainder,
          "outside_data_dir": False},
     ]
-    ollama_path, ollama_bytes, ollama_files = _ollama_store_bytes()
-    components.append(
-        {"name": "Ollama model store", "kind": "ollama_models", "bytes": ollama_bytes,
-         "files": ollama_files, "detail": ollama_path, "outside_data_dir": True}
-    )
-    grand_total = data_dir_bytes + ollama_bytes
-    components.sort(key=lambda c: -int(c["bytes"]))
+    if dir_unreadable:
+        for c in components:
+            c.update(bytes=None, measured=False, reason=FOOTPRINT_UNREAD_DATA_DIR)
+    else:
+        # Where the walk's refusals fell: by entry name for the named lines, staging by its entries, the rest
+        # to "other" (the remainder line holds every entry no other line names).
+        unread_named = {
+            "db": unread_by_name.get(db_name, 0), "wal": unread_by_name.get(f"{db_name}-wal", 0),
+            "shm": unread_by_name.get(f"{db_name}-shm", 0), "wiki_dumps": unread_by_name.get("wiki_dumps", 0),
+            "osm_regions": unread_by_name.get("osm_regions", 0),
+            "staging": sum(int(e.get("unread_entries", 0)) for e in inv.get("suspect_staging", [])),
+        }
+        unread_named["other"] = max(0, int(totals.get("unread_entries", 0)) - sum(unread_named.values()))
+        for c in components:
+            n = unread_named.get(str(c["kind"]), 0)
+            c["measured"] = True
+            if n:
+                c.update(partial=True, unread_entries=n, reason=FOOTPRINT_PARTIAL)
+    ollama_path, ollama_lines = _ollama_components()
+    components.extend(ollama_lines)
+    measured_ollama = [c for c in ollama_lines if c["bytes"] is not None]
+    ollama_bytes: int | None = sum(int(c["bytes"]) for c in measured_ollama) if measured_ollama else None
+    not_counted = [
+        {"name": c["name"], "kind": c["kind"], "detail": c.get("detail"), "reason": c.get("reason"),
+         "status": "not measured" if c["bytes"] is None else "partial"}
+        for c in components if c["bytes"] is None or c.get("partial")
+    ]
+    known = [v for v in (data_dir_bytes, ollama_bytes) if v is not None]
+    grand_total: int | None = sum(known) if known else None
+    # A line with no figure sorts last: it has no size to rank by.
+    components.sort(key=lambda c: (c["bytes"] is None, -int(c["bytes"] or 0)))
     return {
         "generated_at": _now(),
         "data_dir": str(data_dir()),
@@ -1410,13 +1510,21 @@ def storage_footprint() -> dict[str, Any]:
             "data_dir_bytes": data_dir_bytes,
             "ollama_models_bytes": ollama_bytes,
             "grand_total_bytes": grand_total,
+            "data_dir_complete": not any(
+                n["kind"] != "ollama_models" for n in not_counted
+            ),
+            "ollama_models_complete": not any(n["kind"] == "ollama_models" for n in not_counted),
+            "complete": not not_counted,
+            "not_counted": not_counted,
         },
         **said("method", (
             "Recursive on-disk sizes of every app store, itemized per component. The database "
             "triple + wiki_dumps + osm_regions + staging live in the data folder; the Ollama "
             "model store lives OUTSIDE it (so it was missing from any data-dir-only total). "
-            "grand_total_bytes is the true on-disk footprint. Symlinks never followed, file "
-            "contents never read, counts/bytes only — no score. Best-effort per component."
+            "grand_total_bytes is the on-disk footprint of what this app could read; when "
+            "totals.complete is false it is a lower bound, and totals.not_counted names what was "
+            "left out (never counted as 0). Symlinks never followed, file contents never read, "
+            "counts/bytes only — no score. Best-effort per component."
         )),
     }
 
@@ -2234,11 +2342,18 @@ def render_text(d: dict[str, Any] | None = None) -> str:
     tot = inv.get("totals") or {}
     lines += ["", "## Data folder", ""]
     lines.append(f"- path: {inv.get('data_dir') or 'unknown'}")
+    # Row 284: refused folders or files make every figure here a lower bound, and the export says so.
+    at_least = "at least " if tot.get("unread_entries") else ""
     lines.append(
-        f"- total on disk: {_mb(tot.get('total_bytes'))} "
+        f"- total on disk: {at_least}{_mb(tot.get('total_bytes'))} "
         f"(database {_mb(tot.get('db_bytes'))} · WAL {_mb(tot.get('wal_bytes'))} · "
         f"other {_mb(tot.get('other_bytes'))})"
     )
+    if tot.get("unread_entries"):
+        lines.append(
+            f"- {tot['unread_entries']} folder(s) or file(s) could not be read; these figures count only "
+            "the ones that could."
+        )
     suspect = inv.get("suspect_staging") or []
     if suspect:
         # An orphaned staging tree from an ENCRYPTED corpus holds a PLAINTEXT copy, so
