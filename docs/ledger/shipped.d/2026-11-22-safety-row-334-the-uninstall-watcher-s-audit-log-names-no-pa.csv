@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-22,safety,Row 334: the uninstall watcher's audit log names no path and no process id,shipped,PR #2296; R734; R736,src/safety/uninstall.py; tests/test_uninstall_watcher_log_masking_row334.py,"The watcher logged the server pid and full launcher/venv/data/store/app paths (the home folder and user name in each) plus OSError text; each path is now its role (<data>, <home>/.../<file name>, .../<file name>), an unreadable one <path withheld>, never as given; a failed removal gives strerror."

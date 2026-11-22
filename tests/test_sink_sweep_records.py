@@ -205,6 +205,11 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # A comparison with the one known engine message that means "no rows yet"; nothing is written.
         ("_incoming_group_rows", 'if str(exc).lower() != f"no such table: cnt.{table}":'): 1,
     },
+    # Row 328: the queue's start carries ``refuse_half_migrated_store``'s refusal on as its own ValueError; that text is one of the
+    # fixed sentences it writes (never an error's words: R788).
+    "src/backup/import_queue.py": {
+        ("ImportQueueManager._refuse_a_store_no_restore_may_enter", "raise ValueError(str(refused)) from None"): 1,
+    },
     # ``PendingRulingError`` is the attribution module's own error: fixed words naming the missing ruling.
     "src/backup/export_summary.py": {("export_facts", "attribution, attribution_error = [], str(exc)"): 1},
     # ``_ExportRefused`` is this module's own refusal with fixed words (_NO_SPACE and the like); any other failure is its class.

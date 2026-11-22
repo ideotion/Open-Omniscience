@@ -2959,7 +2959,7 @@
       const rowsFor = (areas, label) => areas.length
         ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
             `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
-            a.top.map(t => `<span class="pill" style="cursor:pointer" data-on-click='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+            a.top.map(t => `<span class="pill" style="cursor:pointer" translate="no" data-on-click='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
             `</td></tr>`).join("")
         : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
       $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
