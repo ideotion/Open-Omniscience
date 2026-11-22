@@ -77,8 +77,8 @@ def test_the_bare_verdict_words_are_not_keys_in_any_locale():
 
 def test_the_walker_leaves_translate_no_alone_for_text_and_attributes():
     js = (STATIC / "i18n.js").read_text(encoding="utf-8")
-    assert "p.closest('[translate=\"no\"]')" in function_body(js, "doText")
-    assert "el.closest('[translate=\"no\"]')" in function_body(js, "doAttrs")
+    assert "p.closest('[data-i18n-dyn],[translate=\"no\"]')" in function_body(js, "doText")
+    assert "el.closest('[data-i18n-dyn],[translate=\"no\"]')" in function_body(js, "doAttrs")
 
 
 def test_the_feed_marks_its_keywords_and_the_grading_terms_as_data():
@@ -118,6 +118,23 @@ def _dict_keys_with(path: Path, anchor: str) -> set[str]:
     return out
 
 
+def _bump_keys(path: Path) -> set[str]:
+    """The translation sweeps start from an empty totals dict and fill it through ``_bump(totals, "<key>")``."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    out = {
+        node.args[1].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_bump"
+        and len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and isinstance(node.args[1].value, str)
+    }
+    assert len(out) >= 8, out
+    return out
+
+
 def test_every_counter_the_sweeps_write_is_worded():
     ai = ROOT / "src" / "ai_layer"
     written = (
@@ -125,6 +142,7 @@ def test_every_counter_the_sweeps_write_is_worded():
         | _dict_keys_with(ai / "source_tags_job.py", "sources_in")
         | _dict_keys_with(ai / "perception_extract_job.py", "skipped_existing")
     )
+    written |= _bump_keys(ai / "translation_sweep.py")
     # perception's defaults nest field_gated's own who/where/when, which are words of their own map
     js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
     worded = _js_map_keys(js, "_AI_TOTALS_WORDS")

@@ -2689,13 +2689,13 @@
       return id;
     }
 
-    // Row 326: the Time cell of a custody entry. A stamped time is shown as recorded; an OpenTimestamps proof carries no
-    // time until it is verified against Bitcoin, so it reads as not yet confirmed rather than as the word
-    // "opentimestamps"; any other kind is shown as sent, as code.
+    // Row 326: the Time cell of a custody entry. A stamped time is shown as recorded. An OpenTimestamps proof carries no
+    // time in the record (nothing here writes one back once a block confirms it), so the cell says what the record holds
+    // rather than the word "opentimestamps", and never claims it is unconfirmed; any other kind is shown as sent, as code.
     function custodyEntryTimeHtml(ts, t) {
       if (!ts) return "—";
       if (ts.asserted_time) return esc(ts.asserted_time);
-      if (ts.kind === "opentimestamps") return esc(t("OpenTimestamps: not yet confirmed in Bitcoin"));
+      if (ts.kind === "opentimestamps") return esc(t("OpenTimestamps proof: no time is recorded until it is verified"));
       return ts.kind ? `<code dir="ltr">${esc(ts.kind)}</code>` : "—";
     }
 

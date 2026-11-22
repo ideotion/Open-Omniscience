@@ -7729,10 +7729,12 @@ def test_home_glance_panel_is_excluded_from_the_i18n_dom_walker():
 
     i18n_js = (_SRC / "static" / "i18n.js").read_text(encoding="utf-8")
     do_text_fn = i18n_js.split("function doText(n) {", 1)[1].split("\n  }\n", 1)[0]
-    assert 'p.closest("[data-i18n-dyn]")' in do_text_fn, \
+    # Row 326 folded the data opt-out (translate="no") into the same ancestor walk: one closest() with both selectors.
+    skip = re.search(r"""p\.closest\((["'])\[data-i18n-dyn\](?:,\[translate="no"\])?\1\)""", do_text_fn)
+    assert skip, \
         "doText() must skip (never cache) text nodes inside a data-i18n-dyn ancestor"
     # The skip must come BEFORE the first-seen-wins cache write, or it's a no-op.
-    skip_at = do_text_fn.index('p.closest("[data-i18n-dyn]")')
+    skip_at = skip.start()
     cache_at = do_text_fn.index("origText.set(n, o)")
     assert skip_at < cache_at, \
         "the data-i18n-dyn skip must run BEFORE the node is ever cached"

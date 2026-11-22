@@ -2574,7 +2574,8 @@
     }
 
     // Row 326: the sweep state's counters and the stored kinds, in the reader's language. The names are the sweeps' own
-    // (triage_job.py, source_tags_job.py, perception_extract_job.py totals; activity.py AI_KINDS); a counter or kind this
+    // (triage_job.py, source_tags_job.py, perception_extract_job.py totals; translation_sweep.py's _bump keys, shared by
+    // its keyword and title sweeps, so worded without a unit; activity.py AI_KINDS); a counter or kind this
     // build does not know is shown as sent, as code. A nested counter (field_gated: per field) is spelled out, never
     // printed as an object.
     const _AI_TOTALS_WORDS = {
@@ -2583,7 +2584,12 @@
       none_count: "Sources with no tag", attempted: "Articles attempted", skipped_existing: "Articles already extracted",
       gated: "Articles not run (language not cleared, or no text)", stored: "Articles extracted",
       who: "Names stored", where: "Places stored", when: "Dates stored",
-      field_gated: "Fields discarded (language not cleared)",
+      field_gated: "Articles with a field discarded (language not cleared)",
+      hidden: "Skipped: hidden keyword", no_language: "Skipped: language unknown",
+      same_language: "Skipped: already in the target language", verified: "Skipped: a verified translation exists",
+      already_tentative: "Skipped: a tentative translation exists", model_error: "Model errors",
+      added: "Translations added", no_usable_answer: "No usable answer", untitled: "Skipped: no title",
+      already_done: "Skipped: already translated",
     };
     const _AI_FIELD_WORDS = { who: "Names: {n}", where: "Places: {n}", when: "Dates: {n}" };
     const _AI_KIND_WORDS = {

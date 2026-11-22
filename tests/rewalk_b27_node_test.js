@@ -240,13 +240,9 @@ async function t2() {
       const el = { parent, hasAttribute: (k) => a.has(k), getAttribute: (k) => (a.has(k) ? a.get(k) : null),
         setAttribute: (k, v) => { a.set(k, String(v)); },
         closest(sel) {
-          // Row 326 added the data guard, translate="no", beside the dyn one; this fixture marks neither as data.
-          if (sel === '[translate="no"]') {
-            for (let n = el; n; n = n.parent) if (n.getAttribute("translate") === "no") return n;
-            return null;
-          }
-          assert.strictEqual(sel, "[data-i18n-dyn]");
-          for (let n = el; n; n = n.parent) if (n.hasAttribute("data-i18n-dyn")) return n;
+          // Row 326 folded the data guard, translate="no", into the same walk; this fixture marks no node as data.
+          assert.strictEqual(sel, '[data-i18n-dyn],[translate="no"]');
+          for (let n = el; n; n = n.parent) if (n.hasAttribute("data-i18n-dyn") || n.getAttribute("translate") === "no") return n;
           return null;
         } };
       return el;

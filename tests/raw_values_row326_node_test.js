@@ -119,7 +119,7 @@ window.OOI18N.ready.then(() => {
   assert.strictEqual(R._aiTotalsBit("fresh_counter", 3, t, tf), '<code dir="ltr">fresh_counter</code> 3');
   const fg = R._aiTotalsBit("field_gated", { who: 1, where: 2, when: 0, why: 5 }, t, tf);
   assert.ok(!fg.includes("[object Object]"), fg);
-  assert.strictEqual(fg, 'T[Fields discarded (language not cleared)] (T[Names: 1], T[Places: 2], T[Dates: 0], <code dir="ltr">why</code> 5)');
+  assert.strictEqual(fg, 'T[Articles with a field discarded (language not cleared)] (T[Names: 1], T[Places: 2], T[Dates: 0], <code dir="ltr">why</code> 5)');
   assert.strictEqual(R._aiTotalsBit("<b>", 1, t, tf), '<code dir="ltr">&lt;b&gt;</code> 1');
   // stored kinds
   assert.strictEqual(R._aiKindHtml("ai-who", t), "T[Names (AI)]");
@@ -131,7 +131,7 @@ window.OOI18N.ready.then(() => {
   assert.strictEqual(R._aiCoordinatorNote({ note: "y", note_code: "other" }, t), "y");
   // custody time cell
   assert.strictEqual(R.custodyEntryTimeHtml({ kind: "local", asserted_time: "2026-11-22T10:00:00Z" }, t), "2026-11-22T10:00:00Z");
-  assert.strictEqual(R.custodyEntryTimeHtml({ kind: "opentimestamps", asserted_time: null }, t), "T[OpenTimestamps: not yet confirmed in Bitcoin]");
+  assert.strictEqual(R.custodyEntryTimeHtml({ kind: "opentimestamps", asserted_time: null }, t), "T[OpenTimestamps proof: no time is recorded until it is verified]");
   assert.strictEqual(R.custodyEntryTimeHtml({ kind: "chain<x>", asserted_time: null }, t), '<code dir="ltr">chain&lt;x&gt;</code>');
   assert.strictEqual(R.custodyEntryTimeHtml(null, t), "—");
 
