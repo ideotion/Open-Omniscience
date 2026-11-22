@@ -2523,8 +2523,57 @@
         ` <span class="muted">(n=${esc(String(r.batches))} ${esc(t("batches"))})</span></div>`;
     }
 
+    // Row 322: what the AI check did not run, in the reader's language. The report names each entry in English
+    // (src/monitoring/ai_check.py SEPARATE_RUNS / NEEDS_A_HUMAN) with a stable id; a known id is worded here, and an entry
+    // this build does not know is shown as the report sent it.
+    const _AI_NOT_RUN_WORDS = {
+      "model-bench": ["Model bench",
+        "It runs the frozen input set through the model task by task and is resumable, because it takes tens of minutes. A quick check is minutes, so the two are one button with a choice rather than two buttons.",
+        "the same button, with “bench the model” ticked"],
+      "anchor-grading": ["Anchor grading",
+        "Triage anchor accuracy is measured against verdicts a person graded. Nothing here can supply those: two models agreeing is not either being right, and a model asked to grade itself measures nothing at all. Every other metric in this report is measured without you; this one is reported as unmeasured until a sitting exists.",
+        "Settings → Advanced → AI diagnostics → grade a sitting"],
+    };
+    function _aiNotRunHereLine(n, t) {
+      const known = n && Object.prototype.hasOwnProperty.call(_AI_NOT_RUN_WORDS, n.id) ? _AI_NOT_RUN_WORDS[n.id] : null;
+      const [name, why, where] = known ? known.map((s) => t(s)) : [(n || {}).name, (n || {}).why, (n || {}).where];
+      return `${esc(name || "")} — ${esc(why || "")} (${esc(where || "")})`;
+    }
+
+    // Row 322: the activity feed's notes and the triage verdicts in the reader's language. The feed keeps its English
+    // ``note``/``latest_note`` as the record and adds a code (src/ai_layer/activity.py); a known code is worded here, and a
+    // note with no code, or a code this build does not know, is shown as sent. The verdict is the closed set junk | content |
+    // unsure (src/ai_layer/triage.py VERDICTS); any other token is shown as sent.
+    function _aiSweepNote(s, t, tf) {
+      const code = s && s.note_code, v = (s && s.note_vars) || {};
+      if (code === "no-run-log") return t("No run log yet: this sweep has not run on this machine.");
+      if (code === "not-run") return t("This sweep has not run on this machine.");
+      const hasLang = typeof v.lang === "string" && v.lang !== "";  // no target language: the English record, as sent
+      if (code === "translation-progress" && hasLang && v.unit === "keywords")
+        return tf("Translating into {lang}. Keywords walked this pass: {n}.", { lang: String(v.lang), n: String(v.n) });
+      if (code === "translation-progress" && hasLang && v.unit === "articles")
+        return tf("Translating into {lang}. Articles walked this pass: {n}.", { lang: String(v.lang), n: String(v.n) });
+      return String((s && s.note) || "");
+    }
+    function _aiLatestNote(s, t) {
+      const code = s && s.latest_note_code;
+      if (code === "perception-stored")
+        return t("The extracted names, places and dates are stored as AI-layer candidates rather than written to the log, so they are read from the corpus below.");
+      if (code === "translation-stored")
+        return t("Its answers are stored as tentative (≈) translations, never in the keyword index; the keyword and search surfaces show them where they apply.");
+      return String((s && s.latest_note) || "");
+    }
+    function _aiTriageVerdictWords(v, t) {
+      if (v === "junk") return t("junk");
+      if (v === "content") return t("content");
+      if (v === "unsure") return t("unsure");
+      return String(v);
+    }
+
     async function loadAiActivity() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const host = $("ai-activity-body");
       if (!host) return;
       let r;
@@ -2535,7 +2584,7 @@
       }
       const sweeps = (r.sweeps || []).map((s) => {
         const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label || s.key)}</div>`];
-        if (s.note) rows.push(`<div class="muted">${esc(s.note)}</div>`);
+        if (s.note) rows.push(`<div class="muted">${esc(_aiSweepNote(s, t, tf))}</div>`);
         rows.push(_aiRateLine(s.rates, s.unit || t("items")));
         const st = s.state || {};
         const totals = st.totals || {};
@@ -2547,13 +2596,13 @@
         if ((s.latest || []).length) {
           const items = s.latest.slice(0, 12).map((x) =>
             `<span class="pill">${esc(x.term || x.domain || "")}` +
-            (x.verdict ? ` · ${esc(x.verdict)}` : "") +
+            (x.verdict ? ` · ${esc(_aiTriageVerdictWords(x.verdict, t))}` : "") +
             (Array.isArray(x.tags) && x.tags.length ? ` · ${esc(x.tags.join(", "))}` : "") +
             `</span>`).join(" ");
           rows.push(`<div style="margin-top:4px">${items}</div>`);
         } else if (s.latest_note) {
           // An empty list would read as "it found nothing", which is a different claim.
-          rows.push(`<div class="muted">${esc(s.latest_note)}</div>`);
+          rows.push(`<div class="muted">${esc(_aiLatestNote(s, t))}</div>`);
         }
         return rows.join("");
       }).join("");
@@ -3101,8 +3150,7 @@
         + (s.ok ? "" : ` <span class="warn">${esc((s.error || "").slice(0, 120))}</span>`),
       ).join(" · ");
       rows.push(`<div class="hint" style="margin-top:4px">${steps}</div>`);
-      const sep = (res.not_run_here || []).map((n) =>
-        `${esc(n.name)} — ${esc(n.why)} (${esc(n.where)})`).join("<br>");
+      const sep = (res.not_run_here || []).map((n) => _aiNotRunHereLine(n, t)).join("<br>");
       if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
       if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${ooSaidHtml(res, "caveat")}</div>`);
       out.innerHTML = rows.join("");

@@ -108,7 +108,7 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
       results: [{ source_id: 1, source: "A", status: "ok", tally: { ...zero, skipped_offline: 1 } },
                 { source_id: 2, source: "B", status: "ok", tally: { ...zero, stored: 4 } }] } });
     await h.ingestBatch({ disabled: false });
-    assert.ok(log.texts["bi-status"].startsWith("Done: 1/2 fetched"), "a refused feed is not 'fetched': " + log.texts["bi-status"]);
+    assert.ok(log.texts["bi-status"].startsWith("Done: 1 of 2 fetched"), "a refused feed is not 'fetched': " + log.texts["bi-status"]);
     assert.ok(log.texts["bi-status"].includes("1 not fetched (airplane mode)") && log.texts["bi-status"].includes("stored: 4"));
     assert.ok(log.html["bi-results"].includes(S3) && log.html["bi-results"].includes("stored: 4"));
     assert.deepStrictEqual(log.toasts, [["Batch ingest complete.", "ok"]]);
@@ -119,7 +119,7 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
       requested: 1, ingested: 1, aggregate: { ...zero, stored: 2 },
       results: [{ source_id: 1, source: "A", status: "ok", tally: { ...zero, stored: 2 } }] } });
     await h.ingestBatch({ disabled: false });
-    assert.ok(log.texts["bi-status"].startsWith("Done: 1/1 fetched") && !/airplane/i.test(log.texts["bi-status"]), "unchanged when nothing was refused");
+    assert.ok(log.texts["bi-status"].startsWith("Done: 1 of 1 fetched") && !/airplane/i.test(log.texts["bi-status"]), "unchanged when nothing was refused");
     assert.deepStrictEqual(log.toasts, [["Batch ingest complete.", "ok"]]);
   }
   // ---- lawTrack ----------------------------------------------------------------------------------------------------
