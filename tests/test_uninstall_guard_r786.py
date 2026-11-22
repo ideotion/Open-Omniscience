@@ -20,6 +20,7 @@ import pytest
 
 from src.llm import model_store
 from src.llm import uninstall as U
+from tests.os_scope import scope_os
 
 
 @pytest.fixture()
@@ -325,7 +326,7 @@ def test_a_folder_that_cannot_be_walked_is_not_called_clean(app, monkeypatch):
     def walk(root, onerror=None, followlinks=False):
         onerror(PermissionError(13, "denied"))
         return iter(())
-    monkeypatch.setattr(U.os, "walk", walk)
+    scope_os(monkeypatch, U, walk=walk)
     assert "looked through" in U.removal_refusal(app / "models" / "ollama")
 
 
