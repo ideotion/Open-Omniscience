@@ -19,6 +19,7 @@ import pytest
 
 from src.custody import keyfile as kf
 from src.reporting import evidence as ev
+from tests.os_scope import scope_os
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="FIFOs and /dev/zero are POSIX")
 
@@ -102,17 +103,15 @@ def test_a_file_that_grows_past_the_bound_while_read_stops_one_byte_past_it(tmp_
     key = tmp_path / "evidence_ed25519.pem"
     key.write_bytes(b"x")
     asked: list[int] = []
-    real_read = os.read
 
     def endless(fd, n):
         asked.append(n)
         return b"\0" * n
 
-    monkeypatch.setattr(kf.os, "read", endless)
+    scope_os(monkeypatch, kf, read=endless)
     with pytest.raises(kf.KeyFileNotReadable):
         kf.read_once(key)
     assert sum(asked) == kf.MAX_KEY_FILE_BYTES + 1
-    monkeypatch.setattr(kf.os, "read", real_read)
 
 
 def test_the_largest_key_file_written_fits_the_bound():

@@ -421,7 +421,9 @@ def _read_bounded(path: Path) -> tuple[bytes, os.stat_result]:
             raise KeyFileNotReadable(f"longer than any key file: {path.name}")
         parts: list[bytes] = []
         left = MAX_KEY_FILE_BYTES + 1
-        while left > 0:
+        while True:  # guard-clause form: the loop's back-edge stays inside the finally (src/utils/interrupts.py)
+            if left <= 0:
+                break
             chunk = os.read(fd, min(left, 65536))
             if not chunk:
                 break
