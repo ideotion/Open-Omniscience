@@ -51,6 +51,7 @@ from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_insid
 from src.backup.manifest_file import read_manifest_json
 from src.backup.regular_file import NotARegularFile, create_new, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
+from src.shared_text import said
 
 MANIFEST_NAME = "oo-folder-backup.json"
 BACKUP_SCHEMA = "oo-folder-backup-1"
@@ -1602,6 +1603,20 @@ _PROBLEM_CAP = 200
 _BLOB_SHA_RE = re.compile(r"^sha256[-:]([0-9a-fA-F]{64})$")
 
 
+def _linked_member(root: Path, category: str, rel: str) -> bool:
+    """R791: whether a restore would refuse this member as a link -- the category folder, a folder below
+    it, or the file itself is one. A name that cannot be looked at is not called a link here; the size
+    check that follows reports it as it always has."""
+    parts = PurePosixPath(rel).parts
+    if not rel or PurePosixPath(rel).is_absolute() or ".." in parts or Path(rel).is_absolute():
+        return False  # not a member's way at all: the traversal guard refuses it by its own name
+    try:
+        way = Path(category) / Path(rel).parent
+        return link_on_the_way(root, way) or is_link(root / category / rel)
+    except (OSError, ValueError):
+        return False
+
+
 def _safe_member_path(root: Path, category: str, rel: str) -> Path | None:
     """Resolve ``<root>/<category>/<rel>``, refusing any path that escapes ``<root>/<category>``.
 
@@ -1737,6 +1752,7 @@ def verify_folder_backup(
         "size_mismatch": 0,
         "checksum_mismatch": 0,
         "traversal_refused": 0,
+        "link_not_checked": 0,
     }
     problems: list[dict] = []
     checked = checksummed = 0
@@ -1753,7 +1769,13 @@ def verify_folder_backup(
         path = _safe_member_path(root, category, rel)
         status: str
         detail: dict = {}
-        if path is None:
+        if category in _CATEGORIES and _linked_member(root, category, rel):
+            # R791: a restore never follows a link (the category folder, a folder below it, or the
+            # file itself) and leaves such a file out, so Verify neither reads through one nor calls
+            # it sound: "a link, not checked", counted as a failure, so the verdict is never OK on a
+            # backup a restore would leave incomplete.
+            status = "link_not_checked"
+        elif path is None:
             status = "traversal_refused"
         elif not path.is_file():
             status = "missing"
@@ -1785,6 +1807,8 @@ def verify_folder_backup(
                 status = "size_only"  # present + right size; no usable stored checksum
         summary[status] += 1
         checked += 1
+        if status == "link_not_checked":
+            detail = said("why", "a link, not checked")
         if status not in ("ok", "size_only") and len(problems) < _PROBLEM_CAP:
             problems.append({"category": category, "rel": rel, "status": status, **detail})
         if progress_cb is not None:
@@ -1796,6 +1820,7 @@ def verify_folder_backup(
         + summary["size_mismatch"]
         + summary["checksum_mismatch"]
         + summary["traversal_refused"]
+        + summary["link_not_checked"]  # R791: what a restore refuses is never counted as verified
         + malformed  # a structurally-damaged manifest is a failure, never a silent "all clear"
         # A manifest that does not verify against its own embedded key is not a manifest
         # to verify files against. `unsigned` is NOT counted: see above.
@@ -1811,13 +1836,26 @@ def verify_folder_backup(
             "summary": summary,
             "problems": problems,
             "problems_truncated": max(0, failures - len(problems)),
+            **(
+                said(
+                    "links",
+                    "Files not checked: {n}. A folder on their way in the backup, or the file itself, is a link, and "
+                    "neither Verify nor a restore follows a link. To check and restore them, copy the real folder or "
+                    "file into the backup in place of the link.",
+                    n=summary["link_not_checked"],
+                )
+                if summary["link_not_checked"]
+                else {}
+            ),
             "method": (
                 "Every manifest-listed file must be present with the exact recorded size; "
                 "any file carrying a recorded sha256 is streamed-hashed and matched against "
                 "it, and content-addressed Ollama model blobs (blobs/sha256-<hex>) are also "
                 "matched against the sha256 in their name (both, where both exist). The "
                 "manifest's own Ed25519 signature is reported. Manifest paths are "
-                "traversal-guarded before any stat/hash. Counts only, no score."
+                "traversal-guarded before any stat/hash. A file reached through a link (its category folder, a folder below it, "
+                "or the file itself) is never read and counts as link_not_checked, a failure, because a restore never "
+                "follows a link. Counts only, no score."
             ),
             "caveat": (
                 "size_only means the manifest recorded no usable checksum for that file — a "
