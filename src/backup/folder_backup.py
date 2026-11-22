@@ -399,6 +399,14 @@ def _atomic_copy(
                     raise _unread_of(type(exc)) from None
                 if not stat.S_ISREG(got.st_mode) or not (_same_file(got, expect) or _same_file_again(got, expect, Path(src))):
                     raise SourceChanged("the file changed after it was checked")
+                if nofollow_src and hasattr(os, "set_blocking"):
+                    # Opened with O_NONBLOCK so a pipe could not hang the open; a regular file is read
+                    # blocking, so a file system that honours the flag can never end a read early (an
+                    # empty read is taken as the end of the file).
+                    try:
+                        os.set_blocking(r.fileno(), True)
+                    except OSError:
+                        pass
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary, 0o666)
             with os.fdopen(fd, "wb") as w:
                 while True:
@@ -984,73 +992,141 @@ _FD_RELATIVE = bool(
     hasattr(os, "fwalk")
     and os.open in os.supports_dir_fd
     and os.stat in os.supports_dir_fd
+    and os.scandir in os.supports_fd
+    and os.stat in os.supports_follow_symlinks
     and getattr(os, "O_NOFOLLOW", 0)
     and getattr(os, "O_DIRECTORY", 0)
 )
 
 
-def _fd_open_error(name: str, dir_fd: int, exc: OSError) -> OSError:
-    """What a failed fd-relative open of ``name`` means for the restore: a link there is refused, as
-    R779 refuses it (``SourceChanged``); anything else is counted as not read with R778's fixed reason;
-    the process itself out of file handles stops the restore with the error it got."""
+def _fd_open_error(name: str, dir_fd: int, cls: type) -> OSError | None:
+    """What a failed fd-relative open of ``name`` (raising ``cls``) means for the restore: a link there is
+    refused, as R779 refuses it (``SourceChanged``); anything else is counted as not read with R778's fixed
+    reason; ``None`` when the process itself is out of file handles, and the restore stops with the error."""
     try:
         if is_link_stat(os.stat(name, dir_fd=dir_fd, follow_symlinks=False)):
             return SourceChanged("a name on the way became a link after it was checked")
     except OSError:
         pass
     if not _process_can_open():
-        return exc
-    return _unread_of(type(exc))
+        return None
+    return _unread_of(cls)
 
 
 def _open_member_fd(backup_root: Path, cat: str, cat_st: os.stat_result, rel: PurePosixPath) -> int:
-    """R783: open one restore member by walking from the backup folder ONE NAME AT A TIME, each name
-    opened relative to the folder handle before it and never followed if it is a link (``O_NOFOLLOW``;
-    ``O_DIRECTORY`` for the folders on the way). A folder swapped for a link between the walk and this
-    open is refused here, by the system, at the moment of the open -- not by a look made before it, which
-    is the window R779 could only narrow. The category folder opened must be the one that was walked.
+    """R783: open one restore member ONE NAME AT A TIME from the category folder, each name opened relative
+    to the folder handle before it and never followed if it is a link (``O_NOFOLLOW``; ``O_DIRECTORY`` for
+    the folders on the way). A folder swapped for a link between the walk and this open is refused here, by
+    the system, at the moment of the open -- not by a look made before it, which is the window R779 could
+    only narrow.
 
-    The backup folder itself is opened by its path: it is the place the person chose and may be a link
-    (their choice), exactly as R779 measures it. Every handle but the returned one is closed."""
-    nofollow = os.O_NOFOLLOW
-    dir_flags = os.O_RDONLY | os.O_DIRECTORY | nofollow | getattr(os, "O_CLOEXEC", 0)
-    held: list[int] = []
+    The category folder is opened by its path, without following it, and must be the folder that was
+    walked (the backup folder above it is the place the person chose and may be a link, as R779 measures
+    it; only passing through it is needed). At most two handles are held at once, whatever the depth, and
+    every one but the returned one is closed."""
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        cur = os.open(backup_root / cat, dir_flags)
+    except OSError as exc:
+        if _now_a_link(backup_root / cat):
+            raise SourceChanged("the category folder became a link after it was walked") from None
+        if not _process_can_open():
+            raise
+        raise _unread_of(type(exc)) from None
     try:
         try:
-            cur = os.open(backup_root, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0))
-        except OSError as exc:
-            if not _process_can_open():
-                raise
-            raise _unread_of(type(exc)) from None
-        held.append(cur)
-        for i, name in enumerate((cat, *rel.parent.parts)):
+            same = os.path.samestat(os.fstat(cur), cat_st)
+        except OSError:
+            same = False
+        if not same:
+            raise SourceChanged("the category folder changed after it was walked")
+        for name in rel.parent.parts:
             try:
                 nxt = os.open(name, dir_flags, dir_fd=cur)
             except OSError as exc:
-                err = _fd_open_error(name, cur, exc)
-                if err is exc:
+                err = _fd_open_error(name, cur, type(exc))
+                if err is None:
                     raise
                 raise err from None
-            held.append(nxt)
-            if i == 0:
-                try:
-                    same = os.path.samestat(os.fstat(nxt), cat_st)
-                except OSError:
-                    same = False
-                if not same:
-                    raise SourceChanged("the category folder changed after it was walked")
+            os.close(cur)
             cur = nxt
-        flags = os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
         try:
             return os.open(rel.name, flags, dir_fd=cur)
         except OSError as exc:
-            err = _fd_open_error(rel.name, cur, exc)
-            if err is exc:
+            err = _fd_open_error(rel.name, cur, type(exc))
+            if err is None:
                 raise
             raise err from None
     finally:
-        for fd in held:
-            os.close(fd)
+        os.close(cur)
+
+
+def _open_dir_chain(root_fd: int, parts: tuple[str, ...]) -> int | None:
+    """The folder ``parts`` below ``root_fd``, opened one name at a time without following a link, holding
+    at most two handles; ``None`` when any name on the way cannot be opened as a folder (a link included)."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    cur = root_fd
+    try:
+        for p in parts:
+            nxt = os.open(p, flags, dir_fd=cur)
+            if cur != root_fd:
+                os.close(cur)
+            cur = nxt
+    except OSError:
+        if cur != root_fd:
+            os.close(cur)
+        return None
+    return cur
+
+
+def _fd_walk(top: str):
+    """R783: ``os.walk``'s shape (top-down, ``dirnames`` pruned in place), walked BY HANDLE. Every folder is
+    reached from the category folder's handle one name at a time with ``O_NOFOLLOW | O_DIRECTORY`` and
+    listed through its own handle. Yields ``(dirpath, dirnames, names, dir_fd)``; ``dir_fd`` is valid until
+    the next item.
+
+    Written here rather than taken from ``os.fwalk`` (the reads of this change): ``os.fwalk`` RAISES where
+    ``os.walk`` passes over -- a category folder that cannot be opened, a listing that fails part-way on a
+    damaged drive, a folder nested deeper than the process has handles for, since it holds one handle per
+    level. Here, as with ``os.walk``, a folder that cannot be opened or listed is never handed back and the
+    caller counts it as not listed (R778); and each folder is reopened from the category folder's handle
+    rather than kept open below its parent, so at most three handles are open whatever the depth. An entry
+    is sorted by its own type, never by what a link points at, so a link always lands in ``names``, where
+    the caller counts it; an entry whose type cannot be read lands there too and is counted as unread by
+    the caller's look."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    try:
+        root = os.open(top, flags)
+    except OSError:
+        return
+    try:
+        stack: list[tuple[str, ...]] = [()]
+        while stack:
+            parts = stack.pop()
+            fd = root if not parts else _open_dir_chain(root, parts)
+            if fd is None:
+                continue  # never handed back: the caller counts it as not listed
+            try:
+                dirnames: list[str] = []
+                names: list[str] = []
+                try:
+                    with os.scandir(fd) as it:
+                        for entry in it:
+                            try:
+                                is_dir = entry.is_dir(follow_symlinks=False)
+                            except OSError:
+                                is_dir = False
+                            (dirnames if is_dir else names).append(entry.name)
+                except OSError:
+                    continue  # could not be listed: never handed back, as os.walk does
+                yield os.path.join(top, *parts), dirnames, names, fd
+                stack.extend(parts + (n,) for n in reversed(dirnames))
+            finally:
+                if fd != root:
+                    os.close(fd)
+    finally:
+        os.close(root)
 
 
 def _category_swapped(cat_root: Path, cat_real: str) -> bool:
@@ -1090,11 +1166,11 @@ def _category_members(
     # from the walk's own output rather than its error, so nothing of the system's words is read.
     to_enter: list[str] = [os.fspath(cat_root)]
     listed: set[str] = set()
-    # R783: where the system can, the folders are walked BY HANDLE (``os.fwalk``) and every name is
+    # R783: where the system can, the folders are walked BY HANDLE (``_fd_walk``) and every name is
     # looked at relative to its folder's handle, so a folder swapped for a link during the walk cannot
     # send it somewhere else. The files are opened the same way later (``_open_member_fd``).
     walk = (
-        os.fwalk(os.fspath(cat_root), follow_symlinks=False)
+        _fd_walk(os.fspath(cat_root))
         if _FD_RELATIVE
         else ((dp, dn, fn, None) for dp, dn, fn in os.walk(cat_root, followlinks=False))
     )
@@ -1104,47 +1180,50 @@ def _category_members(
             return os.lstat(os.path.join(dirpath, n))
         return os.stat(n, dir_fd=dir_fd, follow_symlinks=False)
 
-    for dirpath, dirnames, names, dir_fd in walk:
-        listed.add(dirpath)
-        enter: list[str] = []
-        for n in dirnames:
-            try:
-                if dir_fd is None:
-                    linked = is_link(os.path.join(dirpath, n))
+    try:
+        for dirpath, dirnames, names, dir_fd in walk:
+            listed.add(dirpath)
+            enter: list[str] = []
+            for n in dirnames:
+                try:
+                    if dir_fd is None:
+                        linked = is_link(os.path.join(dirpath, n))
+                    else:
+                        try:
+                            linked = is_link_stat(_look(dirpath, n, dir_fd))
+                        except FileNotFoundError:
+                            linked = False
+                except OSError:
+                    if not _process_can_open():
+                        raise
+                    _note(os.path.join(dirpath, n), UNREAD_FOLDER)
+                    continue
+                if linked:
+                    if not n.endswith(_PART_SUFFIX):
+                        links += 1  # never follow -- see restore_folder_backup's docstring
                 else:
-                    try:
-                        linked = is_link_stat(_look(dirpath, n, dir_fd))
-                    except FileNotFoundError:
-                        linked = False
-            except OSError:
-                if not _process_can_open():
-                    raise
-                _note(os.path.join(dirpath, n), UNREAD_FOLDER)
-                continue
-            if linked:
-                if not n.endswith(_PART_SUFFIX):
-                    links += 1  # never follow -- see restore_folder_backup's docstring
-            else:
-                enter.append(n)
-        dirnames[:] = enter
-        to_enter.extend(os.path.join(dirpath, n) for n in enter)
-        for n in names:
-            if n.endswith(_PART_SUFFIX):
-                continue
-            fp = os.path.join(dirpath, n)
-            try:
-                st = _look(dirpath, n, dir_fd)
-            except FileNotFoundError:
-                continue
-            except OSError as exc:
-                if not _process_can_open():
-                    raise
-                _note(fp, UNREAD_WHY[type(_unread_of(type(exc)))])
-                continue
-            if is_link_stat(st):
-                links += 1
-            elif stat.S_ISREG(st.st_mode):
-                members.append((Path(fp), st))
+                    enter.append(n)
+            dirnames[:] = enter
+            to_enter.extend(os.path.join(dirpath, n) for n in enter)
+            for n in names:
+                if n.endswith(_PART_SUFFIX):
+                    continue
+                fp = os.path.join(dirpath, n)
+                try:
+                    st = _look(dirpath, n, dir_fd)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    if not _process_can_open():
+                        raise
+                    _note(fp, UNREAD_WHY[type(_unread_of(type(exc)))])
+                    continue
+                if is_link_stat(st):
+                    links += 1
+                elif stat.S_ISREG(st.st_mode):
+                    members.append((Path(fp), st))
+    finally:
+        walk.close()  # every folder handle is closed, even when the walk stops part-way
     for d in to_enter:
         if d not in listed:
             # One rule for what disappears while the folder is being LISTED: it was never a member, so

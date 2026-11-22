@@ -103,16 +103,16 @@ def test_a_folder_swapped_for_a_link_mid_walk_is_never_entered(tmp_path, monkeyp
     swapped: list[bool] = []
 
     if fd:
-        real_fwalk = os.fwalk
+        real_fd_walk = folder_backup._fd_walk
 
-        def fake_fwalk(top=".", topdown=True, onerror=None, *, follow_symlinks=False, dir_fd=None):
-            for item in real_fwalk(top, topdown, onerror, follow_symlinks=follow_symlinks, dir_fd=dir_fd):
+        def fake_fd_walk(top):
+            for item in real_fd_walk(top):
                 if not swapped:
                     _swap(backup, outside)  # the category folder is listed; "sub" is about to be looked at
                     swapped.append(True)
                 yield item
 
-        scope_os(monkeypatch, folder_backup, fwalk=fake_fwalk)
+        monkeypatch.setattr(folder_backup, "_fd_walk", fake_fd_walk)
     else:
         real_walk = os.walk
 
@@ -172,7 +172,7 @@ def test_without_the_capability_the_path_checks_are_kept(tmp_path, monkeypatch):
         raise AssertionError("the walk by folder handle ran without the capability")
 
     monkeypatch.setattr(folder_backup, "_open_member_fd", never)
-    scope_os(monkeypatch, folder_backup, fwalk=never)
+    monkeypatch.setattr(folder_backup, "_fd_walk", never)
     backup, _, tgt = _setup(tmp_path)
     res = restore_folder_backup(backup, targets=tgt)
     assert res["restored"] == 2 and res["incomplete"] is False
@@ -201,3 +201,100 @@ def test_the_help_keeps_the_windows_limit_and_drops_the_posix_one():
         assert line.count("Windows") >= 2, lang + ": the Windows limit is no longer stated"
     en = manuals["en"].read_text(encoding="utf-8")
     assert "another account on the same computer that can write into the backup folder" not in en
+
+
+def _fd_only():
+    if not folder_backup._FD_RELATIVE:
+        pytest.skip("this system has no walk by folder handle")
+
+
+def test_a_category_folder_that_cannot_be_opened_is_one_unlisted_entry_and_the_rest_restores(tmp_path, monkeypatch):
+    """Read finding: ``os.fwalk`` raised here and stopped the whole restore; R778 counts it and goes on."""
+    _fd_only()
+    backup, _, tgt = _setup(tmp_path)
+    _touch(backup / "osm_regions" / "x.pbf", b"xx")
+    real_open = os.open
+
+    def fake_open(path, flags, *a, **k):
+        if os.fspath(path) == os.fspath(backup / "wiki_dumps") and flags & os.O_DIRECTORY:
+            raise PermissionError(13, "secret system words")
+        return real_open(path, flags, *a, **k)
+
+    scope_os(monkeypatch, folder_backup, open=fake_open)
+    res = restore_folder_backup(backup, targets=tgt)
+    assert {"category": "wiki_dumps", "rel": "", "why": "folder-unlisted"} in res["unread"]
+    assert _live_bytes(tgt["osm_regions"]) == {"x.pbf": b"xx"} and res["incomplete"] is True
+    assert "secret" not in repr(res)
+
+
+@pytest.mark.parametrize("part_way", [False, True])
+def test_a_folder_whose_listing_fails_is_one_unlisted_entry(tmp_path, monkeypatch, part_way):
+    """Read finding: a listing that fails (a damaged drive answering EIO) raised past the walk."""
+    _fd_only()
+    backup, _, tgt = _setup(tmp_path)
+    _touch(backup / "wiki_dumps" / "sub" / "d.bz2", b"ddd")
+    real_open, real_scandir = os.open, os.scandir
+    sub_fds: set[int] = set()
+
+    def fake_open(path, flags, *a, **k):
+        fd = real_open(path, flags, *a, **k)
+        if os.fspath(path) == "sub" and flags & os.O_DIRECTORY and k.get("dir_fd") is not None:
+            sub_fds.add(fd)
+        return fd
+
+    class _Failing:
+        def __init__(self, it):
+            self.it = it
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.it.close()
+
+        def __iter__(self):
+            if part_way:
+                yield next(iter(self.it))
+            raise OSError(5, "secret system words")
+
+    def fake_scandir(arg="."):
+        it = real_scandir(arg)
+        return _Failing(it) if isinstance(arg, int) and arg in sub_fds else it
+
+    scope_os(monkeypatch, folder_backup, open=fake_open, scandir=fake_scandir)
+    res = restore_folder_backup(backup, targets=tgt)
+    assert sub_fds, "the sub-folder was never opened by handle"
+    assert {"category": "wiki_dumps", "rel": "sub", "why": "folder-unlisted"} in res["unread"]
+    assert _live_bytes(tgt["wiki_dumps"]) == {"a.bz2": b"aaa"} and res["incomplete"] is True
+    assert "secret" not in repr(res)
+
+
+_DEEP = """
+import os, resource, sys
+sys.path.insert(0, sys.argv[1])
+from pathlib import Path
+from src.backup.folder_backup import restore_folder_backup
+backup, live = Path(sys.argv[2]), Path(sys.argv[3])
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (48, hard))
+res = restore_folder_backup(backup, targets={c: live / c for c in ("wiki_dumps", "osm_regions", "models", "hf_models")})
+print(res["restored"], res["incomplete"], res["unread_folders"])
+"""
+
+
+def test_a_folder_nested_deeper_than_the_process_has_handles_restores_whole(tmp_path):
+    """Read finding: ``os.fwalk`` holds a handle per level, so a deep backup ran out of handles and stopped.
+    The walk by handle reopens each folder from the category folder: a few handles, whatever the depth."""
+    _fd_only()
+    import subprocess
+    import sys
+
+    backup, _, _ = _setup(tmp_path)
+    deep = backup / "wiki_dumps"
+    for i in range(120):
+        deep = deep / f"d{i}"
+    _touch(deep / "z.bz2", b"z")
+    out = subprocess.run([sys.executable, "-c", _DEEP, str(ROOT), str(backup), str(tmp_path / "live")],
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.split() == ["3", "False", "0"]

@@ -36,7 +36,7 @@ def _touch(p: Path, data: bytes = b"x") -> Path:
 
 def _skip_sub(monkeypatch, kind: str, on_sub=None) -> None:
     """What the walk does with a folder it cannot list: it never hands it back. R783: the restore walks by
-    folder handle (``os.fwalk``) where the system can, and by path (``os.walk``) where it cannot; both are
+    folder handle (``_fd_walk``) where the system can, and by path (``os.walk``) where it cannot; both are
     driven here, so the rule holds on either."""
     if kind == "path":
         monkeypatch.setattr(folder_backup, "_FD_RELATIVE", False)
@@ -55,10 +55,10 @@ def _skip_sub(monkeypatch, kind: str, on_sub=None) -> None:
         return
     if not folder_backup._FD_RELATIVE:
         pytest.skip("this system has no walk by folder handle")
-    real_fwalk = os.fwalk
+    real_walk = folder_backup._fd_walk
 
-    def fake_fwalk(top=".", topdown=True, onerror=None, *, follow_symlinks=False, dir_fd=None):
-        for dirpath, dirnames, names, fd in real_fwalk(top, topdown, onerror, follow_symlinks=follow_symlinks, dir_fd=dir_fd):
+    def fake_fd_walk(top):
+        for dirpath, dirnames, names, fd in real_walk(top):
             if os.path.basename(dirpath) == "sub":
                 if on_sub is not None:
                     on_sub(dirpath)
@@ -66,7 +66,7 @@ def _skip_sub(monkeypatch, kind: str, on_sub=None) -> None:
                 continue
             yield dirpath, dirnames, names, fd
 
-    scope_os(monkeypatch, folder_backup, fwalk=fake_fwalk)
+    monkeypatch.setattr(folder_backup, "_fd_walk", fake_fd_walk)
 
 
 _WALKS = pytest.mark.parametrize("kind", ["fd", "path"])
