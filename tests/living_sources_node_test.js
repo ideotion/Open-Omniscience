@@ -58,7 +58,7 @@ const LIVING = [
   "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingTotalWhy", "livingWalkSwitchFact", "livingLocatedFact", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingMapDataDates", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
-  "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
+  "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorUnreadHtml", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
   "lawVelocityHtml", "lawThesaurusWords", "lawThesaurusWhy", "livingThesauriHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
@@ -732,7 +732,7 @@ const WIKI = {
 {
   // The catalogue could not be read: tracked is still true, the rest is "Not looked up", never "No eligible source".
   const UNCHECKED = {
-    state: "unchecked", reason: "LawCatalogUnreadable: boom", as_of: "2026-09-07", verification_status: "drafted-x", countries: 2,
+    state: "unchecked", reason: "the law catalogue legal_sources.yml could not be read (YAMLError)", as_of: "2026-09-07", verification_status: "drafted-x", countries: 2,
     // row 272: the report writes null for every state that needs the catalogue (never looked up), never 0 or []
     by_state: { tracked: ["fr"], "verified-not-yet-tracked": null, unverified: null, "no-eligible-source": null, unchecked: ["de"] },
     languages: [{ language: "fr", official: ["fr", "de"], states: { tracked: 1, "verified-not-yet-tracked": null, unverified: null, "no-eligible-source": null, unchecked: 1 }, documents: 1 }],
@@ -741,7 +741,7 @@ const WIKI = {
   const html = R.livingLawFloorHtml({ floor: UNCHECKED }, t, tf);
   const text = visible(html);
   noJunk(html, "the unchecked floor");
-  assert.ok(text.includes("Not looked up") && text.includes("LawCatalogUnreadable: boom"), text);
+  assert.ok(text.includes("Not looked up") && text.includes("the law catalogue legal_sources.yml could not be read (YAMLError)"), text);
   // row 272: a state nothing looked up is left out, never drawn as 0 -- in the tally and in the language row
   assert.ok(text.includes("Tracked here 1 Not looked up 1"), text);
   for (const word of ["Verified, not tracked yet", "Not verified", "No eligible source"]) {
@@ -756,8 +756,36 @@ const WIKI = {
   assert.ok(!text.includes("CC(de) official language · No eligible source"), text);
   // no floor at all, and a floor with nothing to list: a sentence, never a throw or a blank
   assert.ok(visible(R.livingLawFloorHtml({}, t, tf)).includes("This build reports no language floor."));
-  assert.ok(visible(R.livingLawFloorHtml({ floor: { state: "unchecked", reason: "the floor file is absent", by_state: null, languages: null } }, t, tf))
-    .includes("could not be read, so nothing is counted. the floor file is absent"));
+  // Row 317: why the floor gave no country is said from its read state (row 279), never the report's English reason
+  // sentence, which named the config path as prose.
+  const PATH_REASON = "the floor file (configs/language_countries.yml) is absent, unreadable or lists no country";
+  const unread = (read) => R.livingLawFloorHtml({ floor: { state: "unchecked", reason: PATH_REASON, by_state: null, languages: null, floor: read } }, t, tf);
+  for (const [read, want] of [
+    [{ state: "absent" }, "The file that lists the floor's countries is missing, so nothing is counted."],
+    [{ state: "empty" }, "The file that lists the floor's countries lists no country, so nothing is counted."],
+    [{ state: "unreadable", error: "YAMLError" }, "The file that lists the floor's countries could not be read, so nothing is counted. Error :: YAMLError"],
+    [{ state: "a-newer-state" }, "The language floor could not be read, so nothing is counted. a-newer-state"],
+    [undefined, "The language floor could not be read, so nothing is counted."],
+  ]) {
+    const html = unread(read);
+    noJunk(html, "the unread floor " + JSON.stringify(read));
+    assert.strictEqual(visible(html).replace(/\s+/g, " ").trim(), want);
+    assert.ok(!html.includes("language_countries.yml"), "the config path came back as prose: " + html);
+  }
+  assert.ok(/<code dir="ltr">YAMLError<\/code>/.test(unread({ state: "unreadable", error: "YAMLError" })), "the error class is not shown as data");
+  // the catalogue's read error: under the translated sentence, labelled, as data
+  assert.ok(/could not be read, so only what is tracked here is counted\.[^<]*<code dir="ltr">the law catalogue legal_sources\.yml could not be read \(YAMLError\)<\/code>/.test(html)
+    && text.includes("Error :: the law catalogue legal_sources.yml could not be read (YAMLError)"), html);
+  // a status other than "drafted..." is the file's own text: shown as data inside the translated frame
+  assert.ok(/<code dir="ltr">verified 2026-12-01<\/code>/.test(R.livingLawFloorHtml({ floor: { ...UNCHECKED, verification_status: "verified 2026-12-01" } }, t, tf)));
+  const seen = new Set();
+  const tt = (x) => { seen.add(x); return x; };
+  for (const read of [{ state: "absent" }, { state: "empty" }, { state: "unreadable", error: "E" }]) R.lawFloorUnreadHtml(read, tt);
+  for (const k of ["The file that lists the floor's countries is missing, so nothing is counted.",
+    "The file that lists the floor's countries lists no country, so nothing is counted.",
+    "The file that lists the floor's countries could not be read, so nothing is counted.", "Error"]) {
+    assert.ok(seen.has(k), `"${k}" never reached the translator`);
+  }
 }
 {
   // A payload from a newer build: a state this client has no word for is COUNTED and LISTED as sent (the tally still adds up to
