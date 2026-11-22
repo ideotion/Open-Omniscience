@@ -511,8 +511,8 @@ def test_a_sqlite_open_already_under_way_is_never_raced_by_a_close(tmp_path, mon
             c.execute("BEGIN IMMEDIATE")
             landed.append(c)
 
-    def _check_then_the_open_lands():
-        found = real()
+    def _check_then_the_open_lands(ours):
+        found = real(ours)
         _the_open_lands()  # between our check and our close, if we ever got that far with an open under way
         return found
 
@@ -572,5 +572,158 @@ def test_the_library_is_kept_open_while_its_name_leads_to_it(tmp_path):
         connect_mod.is_encrypted_file(other)
         assert old not in connect_mod._hdr_fds, "the library's replaced file was kept"
     finally:
-        with connect_mod._hdr_lock:
-            connect_mod._hdr_pinned.discard(os.path.realpath(path))
+        from src.database import store_pins
+
+        store_pins.PINNED.discard(os.path.realpath(path))
+
+
+_WARM_TAKER = textwrap.dedent(
+    """
+    import sqlite3, sys
+    con = sqlite3.connect(sys.argv[1], timeout=0, isolation_level=None)
+    con.execute("SELECT count(*) FROM sqlite_master").fetchone()  # its -wal and -shm now exist and stay while it lives
+    print("READY", flush=True)
+    for line in sys.stdin:
+        try:
+            con.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            print("REFUSED" if "locked" in str(exc) or "busy" in str(exc) else f"ERROR {exc}", flush=True)
+            continue
+        con.execute("ROLLBACK")
+        print("TOOK", flush=True)
+    """
+)
+
+
+def test_a_log_a_connection_has_not_opened_yet_is_held_with_its_store(tmp_path, monkeypatch):
+    # A connection opens its store's -wal and -shm lazily, at its first statement. A read of ours on the -shm that finds no
+    # descriptor of this process on the -shm itself must still keep it while a connection is open on the STORE: forced here,
+    # the connection's first statement (which opens the -shm and takes the write lock there) lands between our check and our
+    # close. A close then would drop that lock, and another process would take the write lock.
+    path = tmp_path / "s.db"
+    con = connect_mod.connect(path, create_encrypted=False)
+    try:
+        assert con.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+    finally:
+        con.close()
+    taker = subprocess.Popen(
+        [sys.executable, "-c", _WARM_TAKER, str(path)], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    holder = None
+    try:
+        assert taker.stdout.readline().strip() == "READY"
+        shm = Path(str(path) + "-shm")
+        assert shm.exists()
+        holder = connect_mod.connect(path, check_same_thread=False)
+        holder.isolation_level = None
+        assert _key(shm) not in (connect_mod._foreign_fd_keys(set()) or set()), "the connection opened its -shm already"
+        started: list[bool] = []
+        real = connect_mod._foreign_fd_keys
+
+        def _first_statement():
+            if not started:
+                holder.execute("BEGIN IMMEDIATE")
+                started.append(True)
+
+        def _check_then_the_statement_lands(ours):
+            found = real(ours)
+            _first_statement()
+            return found
+
+        monkeypatch.setattr(connect_mod, "_foreign_fd_keys", _check_then_the_statement_lands)
+        with connect_mod.store_file(shm) as fh:
+            fh.read(8)
+        _first_statement()
+        taker.stdin.write("try\n")
+        taker.stdin.flush()
+        answer = taker.stdout.readline().strip()
+        assert answer == "REFUSED", f"a close of ours dropped the lock a connection took on its store's -shm: {answer}"
+    finally:
+        if holder is not None:
+            with contextlib.suppress(Exception):
+                holder.execute("ROLLBACK")
+            holder.close()
+        taker.stdin.close()
+        taker.wait(timeout=30)
+
+
+def test_an_open_that_starts_between_the_listing_and_the_close_stops_the_close(tmp_path, monkeypatch):
+    # Not wrapped in sqlite_opening: a plain stdlib sqlite3.connect, counted by the audit hook alone. It starts after our
+    # listing of the process's descriptors and takes its lock before our close would run; the open generation it bumps
+    # must make that sweep close nothing.
+    import sqlite3
+
+    path = tmp_path / "s.db"
+    con = connect_mod.connect(path, create_encrypted=False)
+    try:
+        con.execute("PRAGMA journal_mode=delete").fetchone()
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+    finally:
+        con.close()
+    landed: list[sqlite3.Connection] = []
+    real = connect_mod._group_of
+
+    def _groups_then_an_open_lands(name):
+        if not landed:
+            c = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+            c.execute("BEGIN IMMEDIATE")
+            landed.append(c)
+        return real(name)
+
+    monkeypatch.setattr(connect_mod, "_group_of", _groups_then_an_open_lands)
+    try:
+        with connect_mod.store_file(path) as fh:
+            fh.read(16)
+        assert landed, "the sweep never reached the step between its listing and its close"
+        answer = subprocess.run(
+            [sys.executable, "-c", _STRESS_TAKER, str(path)], cwd=ROOT, input="try\n", capture_output=True, text=True,
+            timeout=60,
+        ).stdout.strip()
+        assert answer == "REFUSED", f"a close raced an open that started after the listing: {answer}"
+    finally:
+        for c in landed:
+            c.close()
+
+
+# Openers the audit hook cannot see (sqlcipher3 is not audited; ATTACH opens a file through a connection already made).
+# Each file's count is pinned with the reason no Python read of ours can race it; a new one is classified by whoever adds it.
+_UNAUDITED_OPENERS = {
+    ("sqlcipher-connect", "src/database/connect.py"): (6, "four inside _connect/_try_open_encrypted, under connect()'s "
+        "sqlite_opening; reencrypt_plain_to and copy_at_current_settings wrap theirs in sqlite_opening"),
+    ("sqlcipher-connect", "src/database/verify.py"): (1, ":memory: probe, no file"),
+    ("sqlcipher-connect", "src/monitoring/machine_record.py"): (2, ":memory: probes, no file"),
+    ("sqlcipher-connect", "src/backup/lane_merge.py"): (1, ":memory: host for the ATTACHed staged lanes"),
+    ("attach", "src/database/connect.py"): (8, "attach() wraps its two in sqlite_opening; the other six ATTACH a "
+        "snapshot, rebuild or re-encryption destination: a new file Python reads only after that connection closed"),
+    ("attach", "src/backup/lane_merge.py"): (2, "staged lane copies and their snapshot, read (is_encrypted_file) on the "
+        "same thread before the ATTACH: the read's close comes first"),
+    ("attach", "src/backup/merge.py"): (1, "the merge's own scratch database"),
+    ("attach", "src/backup/newsletter_export.py"): (1, "the export's own new file"),
+    ("attach", "src/backup/stream_backup.py"): (1, "a snapshot destination in the backup's work folder"),
+    ("attach", "src/monitoring/merge_diag.py"): (1, "the diagnostic's own scratch database"),
+}
+
+
+def test_every_opener_the_audit_hook_cannot_see_is_classified():
+    import re
+
+    patterns = {
+        "sqlcipher-connect": re.compile(r"(sqc|sqlcipher3|dbapi2)\.connect\("),
+        "attach": re.compile(r"[\"'f]ATTACH (DATABASE|\?|')"),
+    }
+    found: dict[tuple[str, str], int] = {}
+    for f in sorted((ROOT / "src").rglob("*.py")):
+        rel = f.relative_to(ROOT).as_posix()
+        text = f.read_text(encoding="utf-8")
+        for kind, pat in patterns.items():
+            n = len(pat.findall(text))
+            if n:
+                found[(kind, rel)] = n
+    pinned = {k: v[0] for k, v in _UNAUDITED_OPENERS.items()}
+    assert found == pinned, (
+        "an opener the audit hook cannot see was added, moved or removed: classify it in _UNAUDITED_OPENERS (wrap a live "
+        f"store's open in connect.sqlite_opening): found {found}"
+    )

@@ -38,11 +38,12 @@ import os
 import shutil
 import sqlite3
 import stat
+import sys
 import threading
 import time
 from pathlib import Path, PurePath, PureWindowsPath
 
-from src.database import open_stats
+from src.database import open_stats, store_pins
 
 _LOG = logging.getLogger("database.connect")
 
@@ -286,20 +287,25 @@ _hdr_fds: dict[tuple[int, int], list[int]] = {}  # every descriptor of ours on a
 _hdr_names: dict[tuple[int, int], str] = {}  # the name the file was read by, for its group
 _hdr_uses: dict[tuple[int, int], int] = {}  # readers of ours using it now
 _hdr_opening = 0  # SQLite opens in flight in this process
-_hdr_lock = threading.Lock()
-_hdr_pinned: set[str] = set()  # realpaths of stores kept open while reachable (:func:`pin_store`)
+_hdr_lock = threading.RLock()  # re-entrant: the audit hook below may run while this thread holds it
+_sweep_lock = threading.Lock()  # one sweep at a time: only a sweep closes, so a listing it made stays true for it
+_hdr_gen = 0  # bumped by every SQLite open that starts in this process (counted or audited)
+_audit_pending: dict[int, list[float]] = {}  # thread -> start times of stdlib sqlite3 opens not yet returned
+_AUDIT_STALE_S = 10.0  # an open that never reported its handle (it raised) stops counting after this
 _GROUP_SUFFIXES = ("-wal", "-shm", "-journal")
 
 
 @contextlib.contextmanager
 def sqlite_opening():
-    """Around every SQLite open of a file this process may also read from Python (R789): while one is in flight, no read of
-    ours closes a descriptor, so a lock the new connection takes cannot be dropped by a close that raced its open."""
-    global _hdr_opening
+    """Around every SQLite open (sqlcipher3's above all, which the interpreter does not audit) of a file this process may
+    also read from Python (R789): while one is in flight, no read of ours closes a descriptor, and one that started during a
+    sweep makes that sweep close nothing, so a lock the new connection takes cannot be dropped by a close that raced it."""
+    global _hdr_opening, _hdr_gen
     counted = False
     try:
         with _hdr_lock:
             _hdr_opening += 1
+            _hdr_gen += 1
             counted = True
         yield
     finally:
@@ -309,12 +315,43 @@ def sqlite_opening():
         _sweep()  # what reads during the open parked; the new connection's own files stay (they are foreign now)
 
 
+def _sqlite_audit(event: str, args) -> None:
+    """Every stdlib ``sqlite3.connect`` anywhere in the process counts as an open in flight from before it opens the file
+    until its handle exists (the interpreter's ``sqlite3.connect`` and ``sqlite3.connect/handle`` audit events), so an
+    opener nobody wrapped in :func:`sqlite_opening` is covered too. One that raises never reports a handle: it stops
+    counting after ``_AUDIT_STALE_S`` (an open itself takes no lock and does not wait on one)."""
+    if event == "sqlite3.connect":
+        global _hdr_gen
+        with _hdr_lock:
+            _hdr_gen += 1
+            _audit_pending.setdefault(threading.get_ident(), []).append(time.monotonic())
+    elif event == "sqlite3.connect/handle":
+        with _hdr_lock:
+            pending = _audit_pending.get(threading.get_ident())
+            if pending:
+                pending.pop()
+
+
+def _opening_now_locked() -> bool:
+    if _hdr_opening:
+        return True
+    cutoff = time.monotonic() - _AUDIT_STALE_S
+    for tid in list(_audit_pending):
+        live = [t for t in _audit_pending[tid] if t > cutoff]
+        if live:
+            _audit_pending[tid] = live
+            return True
+        del _audit_pending[tid]
+    return False
+
+
+if os.name != "nt":
+    sys.addaudithook(_sqlite_audit)
+
+
 def pin_store(path: Path | str) -> None:
-    """Name a store whose descriptor of ours stays open for as long as the name leads to the same file (R789, the
-    coordinator's fallback for the library): a close that could race an open of the library is then never made, whatever
-    opener it is. The session registers the library file at import."""
-    with contextlib.suppress(OSError), _hdr_lock:
-        _hdr_pinned.add(os.path.realpath(path))
+    """See :func:`src.database.store_pins.pin_store` (the session names the library there, without importing this module)."""
+    store_pins.pin_store(path)
 
 
 def _not_regular(mode: int) -> OSError:
@@ -334,7 +371,7 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
     key = (st.st_dev, st.st_ino)
     with _hdr_lock:
         if key in _hdr_fds:
-            _hdr_names[key] = os.fspath(p)
+            _hdr_names[key] = os.path.abspath(p)  # a later chdir must not change which files the name means
             _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
             return key, _hdr_fds[key][0]
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
@@ -349,7 +386,7 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
             _hdr_fds[key].append(fd)  # never closed here: another of ours is open on the file
         else:
             _hdr_fds[key] = [fd]
-        _hdr_names[key] = os.fspath(p)
+        _hdr_names[key] = os.path.abspath(p)  # a later chdir must not change which files the name means
         _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
         return key, _hdr_fds[key][0]
 
@@ -360,31 +397,39 @@ def _release(key: tuple[int, int]) -> None:
     _sweep()
 
 
-def _group_of(name: str) -> tuple[str, set[tuple[int, int]]]:
-    """The realpath of the store ``name`` belongs to, and the (device, inode) of that store and its logs as they are now."""
-    base = name
+def _base_of(name: str) -> str:
     for suf in _GROUP_SUFFIXES:
         if name.endswith(suf):
-            base = name[: -len(suf)]
-            break
+            return name[: -len(suf)]
+    return name
+
+
+def _group_of(name: str) -> tuple[str, set[tuple[int, int]], bool]:
+    """The realpath of the store ``name`` belongs to, the (device, inode) of that store and its logs as they are now, and
+    whether ``name`` itself could not be read for a reason other than its absence (a network mount's EIO, ESTALE): then
+    nothing is known about the file and its descriptor is kept."""
+    base = _base_of(name)
     keys = set()
+    uncertain = False
     for n in (base, *(base + s for s in _GROUP_SUFFIXES)):
         try:
             st = os.stat(n)
-        except OSError:
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            uncertain = uncertain or n == name
             continue
         keys.add((st.st_dev, st.st_ino))
     try:
         real = os.path.realpath(base)
     except (OSError, ValueError):
         real = base
-    return real, keys
+    return real, keys, uncertain
 
 
-def _foreign_fd_keys() -> set[tuple[int, int]] | None:
-    """The (device, inode) of every descriptor of this process that is not one of ours; None if they cannot be listed.
-    Lists ``/proc/self/fd`` or ``/dev/fd`` and ``fstat``s each: nothing is opened to find out."""
-    ours = {fd for fds in _hdr_fds.values() for fd in fds}
+def _foreign_fd_keys(ours: set[int]) -> set[tuple[int, int]] | None:
+    """The (device, inode) of every descriptor of this process not in ``ours``; None if they cannot be listed. Lists
+    ``/proc/self/fd`` or ``/dev/fd`` and ``fstat``s each: nothing is opened to find out."""
     for d in ("/proc/self/fd", "/dev/fd"):
         try:
             names = os.listdir(d)
@@ -411,35 +456,58 @@ def _idle_names_locked() -> dict[tuple[int, int], str]:
     return {k: _hdr_names.get(k, "") for k in _hdr_fds if not _hdr_uses.get(k)}
 
 
+def _ours_locked() -> set[int]:
+    return {fd for fds in _hdr_fds.values() for fd in fds}
+
+
 def _sweep() -> None:
     """Close every descriptor of ours that no reader uses and that closing cannot hurt (see the block comment above).
 
-    Two phases: the groups are resolved by name with no lock held (a stat may wait on a slow mount); then, under the lock,
-    nothing may be opening, the process's descriptors are listed, and the close decision and the close are made together."""
-    with _hdr_lock:
-        if _hdr_opening:
+    Three steps, so no filesystem call waits while ``_hdr_lock`` is held (a stalled mount slows this sweep, never a
+    connect): under the lock, nothing may be opening, and the open generation is noted; with no lock, the process's
+    descriptors are listed and the groups resolved by name; under the lock again, if any SQLite open started since the
+    note (counted or audited) or one is in flight, nothing is closed; otherwise the decision and the close are made. A
+    descriptor any connection made before the note is in the listing; one made after it changed the generation. Sweeps run
+    one at a time (``_sweep_lock``), and only a sweep closes, so the descriptor numbers listed stay what they were."""
+    if not _sweep_lock.acquire(blocking=False):
+        return  # another sweep is running; what this release parked waits for the next one
+    try:
+        with _hdr_lock:
+            if _opening_now_locked():
+                return
+            gen = _hdr_gen
+            idle = _idle_names_locked()
+            ours = _ours_locked()
+        if not idle:
             return
-        idle = _idle_names_locked()
-    if not idle:
-        return
-    groups = {k: _group_of(name) for k, name in idle.items()}
-    with _hdr_lock:
-        _close_free_locked(groups)
+        foreign = _foreign_fd_keys(ours)
+        if foreign is None:
+            return  # cannot tell: keep them all (a kept descriptor drops nothing)
+        groups = {k: _group_of(name) for k, name in idle.items()}
+        with _hdr_lock:
+            if _hdr_gen != gen or _opening_now_locked():
+                return
+            _close_free_locked(groups, foreign)
+    finally:
+        _sweep_lock.release()
 
 
-def _close_free_locked(groups: dict[tuple[int, int], tuple[str, set[tuple[int, int]]]]) -> None:
-    if _hdr_opening or not groups:
-        return
-    foreign = _foreign_fd_keys()
-    if foreign is None:
-        return  # cannot tell: keep them all (a kept descriptor drops nothing)
-    for key, (real, group) in groups.items():
-        if key not in _hdr_fds or _hdr_uses.get(key):
+def _close_free_locked(
+    groups: dict[tuple[int, int], tuple[str, set[tuple[int, int]], bool]], foreign: set[tuple[int, int]]
+) -> None:
+    for key, (real, group, uncertain) in groups.items():
+        if key not in _hdr_fds or _hdr_uses.get(key) or uncertain:
             continue
         reachable = key in group  # the name still leads to this file
-        if reachable and real in _hdr_pinned:
+        if reachable and real in store_pins.PINNED:
             continue  # the library: kept while it is the library (the coordinator's fallback)
-        held = (group if reachable else set()) | {key}  # a replaced file is judged alone: its name now leads elsewhere
+        if reachable:
+            # The store and its logs as the name finds them now, and any older file of ours recorded under the same store
+            # name (a connection may still have it open and would open its logs by name).
+            base = _base_of(_hdr_names.get(key, ""))
+            held = group | {k for k, n in _hdr_names.items() if k in _hdr_fds and _base_of(n) == base} | {key}
+        else:
+            held = {key}  # a replaced file is judged alone: its name now leads elsewhere, and so would a lazy log open
         if held & foreign:
             continue
         if any(_hdr_uses.get(k) for k in held if k != key):
@@ -994,10 +1062,11 @@ def attach(conn, path: Path | str, alias: str) -> None:
     """ATTACH a PLAINTEXT database (staged artifact members are plaintext by
     design). On a SQLCipher connection the empty KEY clause is mandatory or the
     attached DB would inherit the main key; stdlib sqlite3 has no KEY clause."""
-    if _is_sqlcipher_conn(conn):
-        conn.execute(f'ATTACH DATABASE ? AS "{alias}" KEY \'\'', (str(path),))
-    else:
-        conn.execute(f'ATTACH DATABASE ? AS "{alias}"', (str(path),))
+    with sqlite_opening():  # R789: an ATTACH opens a file the audit hook does not see
+        if _is_sqlcipher_conn(conn):
+            conn.execute(f'ATTACH DATABASE ? AS "{alias}" KEY \'\'', (str(path),))
+        else:
+            conn.execute(f'ATTACH DATABASE ? AS "{alias}"', (str(path),))
 
 
 def _is_sqlcipher_conn(conn) -> bool:
@@ -1087,7 +1156,8 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
     src_p, dest_p = Path(src_plain), Path(dest)
     dest_p.parent.mkdir(parents=True, exist_ok=True)
     dest_p.unlink(missing_ok=True)
-    conn = sqc.connect(str(src_p))  # a plaintext file opens with no key
+    with sqlite_opening():  # R789: sqlcipher3 opens are not audited
+        conn = sqc.connect(str(src_p))  # a plaintext file opens with no key
     try:
         conn.execute(f"ATTACH DATABASE ? AS enc KEY '{_sql_literal_escape(key)}'", (str(dest_p),))
         _match_source_pragmas(conn, "enc")
@@ -1127,7 +1197,8 @@ def copy_at_current_settings(src: Path | str, dest: Path | str, *, should_stop=N
     else:
         from sqlcipher3 import dbapi2 as sqc
 
-        conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
+        with sqlite_opening():  # R789: sqlcipher3 opens are not audited
+            conn = sqc.connect(str(src_p), check_same_thread=False)  # a plaintext file opens with no key
         attach, attach_args, size_pragma = "ATTACH DATABASE ? AS rebuilt KEY ''", (str(dest_p),), "page_size"
     try:
         conn.execute("PRAGMA temp_store = MEMORY")  # a sorter or temp table spilled to disk would be plaintext, whatever the build
