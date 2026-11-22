@@ -51,6 +51,9 @@ _HOLDER = textwrap.dedent(
     if sys.argv[2] == "read":
         c.execute("BEGIN")
         c.execute("SELECT * FROM t").fetchall()
+    elif sys.argv[2] == "write":
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("INSERT INTO t VALUES (7)")
     print("held", flush=True)
     sys.stdin.read()  # held until the parent closes our stdin
     c.close()
@@ -69,7 +72,11 @@ _READER = textwrap.dedent(
         finally:
             c.close()
     except Exception as exc:
-        print("refused", type(exc).__name__)
+        from src.database.connect import StoreHeldError
+        from src.database.write import is_locked_error
+        # only a refusal BECAUSE the store is held counts; any other failure (a lost key, a damaged file) says so
+        held = isinstance(exc, StoreHeldError) or is_locked_error(exc)
+        print("refused-held" if held else "failed-otherwise", type(exc).__name__)
     """
 )
 
@@ -108,6 +115,15 @@ def _store(tmp_path: Path, leg: str) -> Path:
     return path
 
 
+def _refused(path: Path, leg: str, *, timeout: float = 0.5) -> bool:
+    """True when the take is refused; a take that wrongly succeeds is closed before the test fails on it."""
+    con = _try_take(path, leg, timeout=timeout)
+    if con is None:
+        return True
+    con.close()
+    return False
+
+
 def _try_take(path: Path, leg: str, *, timeout: float = 0.5):
     """The migration's own steps (``migrate`` opens with ``connect`` and autocommit off, then ``take_exclusive``)."""
     con = _open(path, leg, timeout=timeout)
@@ -132,22 +148,25 @@ def _child_env(leg: str) -> dict:
 
 @contextlib.contextmanager
 def _holder_process(path: Path, leg: str, mode: str):
-    proc = subprocess.Popen(
+    with subprocess.Popen(  # the context closes stdin, stdout and stderr, and waits
         [sys.executable, "-c", _HOLDER, str(path), mode],
         cwd=ROOT, env=_child_env(leg), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
-    try:
-        line = proc.stdout.readline().strip()
-        assert line == "held", (line, proc.stderr.read() if proc.poll() is not None else "")
-        yield
-    finally:
-        with contextlib.suppress(Exception):
-            proc.stdin.close()
+    ) as proc:
         try:
-            proc.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+            line = proc.stdout.readline().strip()
+            if line != "held":
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    proc.wait(timeout=30)
+                pytest.fail(f"the holder did not start: {line!r} {proc.stderr.read()[-500:]!r}")
+            yield
+        finally:
+            with contextlib.suppress(Exception):
+                proc.stdin.close()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
 
 
 def _other_process_reads(path: Path, leg: str) -> str:
@@ -173,7 +192,7 @@ def test_a_holder_in_this_process_is_refused(tmp_path, leg, mode):
         elif mode == "write":
             holder.execute("BEGIN IMMEDIATE")
             holder.execute("INSERT INTO t VALUES (3)")
-        assert _try_take(path, leg) is None, f"taken while this process held the store ({mode})"
+        assert _refused(path, leg), f"taken while this process held the store ({mode})"
     finally:
         holder.close()
 
@@ -189,7 +208,7 @@ def test_the_apps_own_pooled_engine_is_a_holder(tmp_path, leg):
         with eng.connect() as c:
             c.exec_driver_sql("SELECT count(*) FROM t").fetchone()
         # the connection went back to the pool, idle and open
-        assert _try_take(path, leg) is None
+        assert _refused(path, leg)
     finally:
         eng.dispose()
     con = _try_take(path, leg)
@@ -198,11 +217,11 @@ def test_the_apps_own_pooled_engine_is_a_holder(tmp_path, leg):
 
 
 @pytest.mark.parametrize("leg", _LEGS)
-@pytest.mark.parametrize("mode", ["idle", "read"])
+@pytest.mark.parametrize("mode", ["idle", "read", "write"])
 def test_a_holder_in_another_process_is_refused(tmp_path, leg, mode):
     path = _store(tmp_path, leg)
     with _holder_process(path, leg, mode):
-        assert _try_take(path, leg) is None, f"taken while another process held the store ({mode})"
+        assert _refused(path, leg), f"taken while another process held the store ({mode})"
     con = _try_take(path, leg, timeout=5)
     assert con is not None, "still refused after the other process closed the store"
     con.close()
@@ -215,7 +234,7 @@ def test_a_refusal_comes_back_within_the_busy_timeout(tmp_path, leg):
     try:
         holder.execute("SELECT count(*) FROM t").fetchone()
         started = time.monotonic()
-        assert _try_take(path, leg, timeout=1.0) is None
+        assert _refused(path, leg, timeout=1.0)
         # the busy wait plus the key derivation of an encrypted open; never a hang
         assert time.monotonic() - started < 20
     finally:
@@ -247,7 +266,8 @@ def test_once_taken_nobody_else_gets_in_across_committed_windows(tmp_path, leg):
             con.execute("BEGIN IMMEDIATE")
             con.execute("INSERT INTO t VALUES (?)", (10 + i,))
             con.execute("COMMIT")
-        assert _other_process_reads(path, leg).startswith("refused"), "another process read the store mid-migration"
+        seen = _other_process_reads(path, leg)
+        assert seen.startswith("refused-held"), f"another process was not refused BECAUSE the store is held: {seen}"
         other = None
         with contextlib.suppress(Exception):
             other = _open(path, leg)
@@ -302,3 +322,54 @@ def test_a_crash_left_wal_is_taken_and_its_rows_are_kept(tmp_path, leg):
         assert sorted(r[0] for r in con.execute("SELECT x FROM t").fetchall()) == [1, 2, 42], "the -wal's row was lost"
     finally:
         con.close()
+
+
+def test_nothing_in_python_reopens_the_live_file_while_it_is_held(tmp_path, monkeypatch):
+    """POSIX file locks belong to the process: closing ANY descriptor on the store drops the lock SQLite took.
+
+    Measured (security read 1, row 300): a Python open()/close() of the live file after take_exclusive silently let
+    another process write, and its committed row was lost. Nothing in migrate() does that today; this pins it, so a
+    future helper that sniffs the header (is_encrypted_file, a size read, a checksum) inside the held window fails here.
+    """
+    import builtins
+    import io
+
+    from src.backup import country_migration as cm
+    from tests.test_country_migration import _new_store
+
+    db = _new_store(tmp_path / "s.db", articles=30)
+    with contextlib.closing(sqlite3.connect(db)) as c:
+        assert c.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+    live = {os.path.realpath(db)}
+    held = [False]
+    hits: list[str] = []
+    real_os_open, real_open = os.open, builtins.open
+
+    def _note(p) -> None:
+        if not held[0] or not isinstance(p, (str, bytes, os.PathLike)):
+            return
+        with contextlib.suppress(Exception):
+            if os.path.realpath(os.fsdecode(p)) in live:
+                hits.append(os.fsdecode(p))
+
+    def _os_open(p, *a, **k):
+        _note(p)
+        return real_os_open(p, *a, **k)
+
+    def _open(p, *a, **k):
+        _note(p)
+        return real_open(p, *a, **k)
+
+    monkeypatch.setattr(os, "open", _os_open)
+    monkeypatch.setattr(builtins, "open", _open)
+    monkeypatch.setattr(io, "open", _open)
+    monkeypatch.setattr(cm, "BATCH_ROWIDS", 9)  # several committed windows inside the held span
+
+    def _progress(event) -> None:
+        if event.get("phase") == "locked":
+            held[0] = True
+
+    rep = cm.migrate(db, backup_dir=tmp_path / "bk", progress=_progress)
+    assert held[0], "migrate() no longer reports the 'locked' phase this guard keys on"
+    assert rep.state == "done", rep.message
+    assert hits == [], f"Python opened the live store while holding it (drops the POSIX lock): {hits}"
