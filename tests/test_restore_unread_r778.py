@@ -326,3 +326,17 @@ def test_the_probe_itself_answers_false_at_the_file_limit():
     r = subprocess.run([sys.executable, "-c", _PROBE, str(ROOT)], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "False"
+
+
+def test_an_unread_name_that_is_not_utf8_still_renders_as_json(tmp_path, monkeypatch):
+    # A foreign drive can hold a name that is not valid UTF-8; it comes back with a lone surrogate, which
+    # the status responses (UTF-8 JSON) cannot encode. The result must still encode, with the byte replaced.
+    backup = _backup(tmp_path)
+    bad = os.fsdecode(b"x\xff.bin")
+    _touch(backup / "wiki_dumps" / bad)
+    tgt = _targets(tmp_path)
+    _refuse_open(monkeypatch, bad, PermissionError(errno.EACCES, "Permission denied"))
+    res = restore_folder_backup(backup, targets=tgt)
+    assert res["unread_total"] == 1 and res["incomplete"] is True
+    json.dumps(res, ensure_ascii=False).encode("utf-8")  # raised UnicodeEncodeError before
+    assert res["unread"][0]["rel"] == "x�.bin"

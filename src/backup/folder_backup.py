@@ -976,6 +976,11 @@ def restore_folder_backup(
 
     unread_folders = 0
 
+    def _shown(rel: str) -> str:
+        # A name that is not valid UTF-8 (a foreign drive) comes back from the system with lone surrogates,
+        # which the JSON status responses cannot encode: replace them, so the result always renders.
+        return rel.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
     def _unread(cat: str, rel: str, why: str) -> None:
         # A folder that could not be listed is ONE entry whose files are unknown: counted apart, so
         # "N files not restored" never counts a folder of forty dumps as one file.
@@ -986,7 +991,7 @@ def restore_folder_backup(
             unread_total += 1
         unread_by_why[why] = unread_by_why.get(why, 0) + 1
         if len(unread) < _PROBLEM_CAP:
-            unread.append({"category": cat, "rel": rel, "why": why})
+            unread.append({"category": cat, "rel": _shown(rel), "why": why})
 
     unverifiable = 0
     stopped = False
@@ -1101,7 +1106,7 @@ def restore_folder_backup(
             if h is not None and h.hexdigest() != want:
                 dst.unlink(missing_ok=True)
                 if len(corrupt) < _PROBLEM_CAP:
-                    corrupt.append({"category": cat, "rel": rel.as_posix()})
+                    corrupt.append({"category": cat, "rel": _shown(rel.as_posix())})
                 continue
             if want is None:
                 unverifiable += 1
