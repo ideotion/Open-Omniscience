@@ -35,15 +35,11 @@ Tests cover:
 Author: Ideotion
 """
 
-import sys
 from pathlib import Path
 
 import pytest
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from utils.security import (
+from src.utils.security import (
     SecurityError,
     escape_html,
     generate_secure_token,

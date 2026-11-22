@@ -8,18 +8,13 @@ License: GNU GPLv3
 """
 
 import os
-
-# Add src to path for imports
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from config import get_config, get_database_url, get_sources_config_path, reset_config
+from src.config import get_config, get_database_url, get_sources_config_path, reset_config
 
 
 @pytest.fixture
@@ -58,7 +53,7 @@ def no_repo_configs(monkeypatch):
     load nothing is what a missing folder means to it. These tests used to RENAME the checkout's configs/ away and back:
     under ``-n`` another worker's process reads catalogues there at any moment, and one that did so in that window
     failed (row 180, the same family as row 167). The shared folder is never moved now."""
-    from config.settings import Config
+    from src.config.settings import Config
 
     monkeypatch.setattr(Config, "_load_yaml_files", lambda self: None)
     reset_config()
@@ -68,7 +63,9 @@ def no_repo_configs(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_config_after_test():
-    """Reset config after each test."""
+    """Reset the app's config singleton before and after each test (row 287: these tests now use src.config itself, so
+    none may depend on whichever test ran before having left it empty)."""
+    reset_config()
     yield
     reset_config()
 
@@ -219,7 +216,7 @@ class TestYamlLoading:
         tmpdir, configs_dir = temp_config_dir
 
         # Mock repo_root
-        from config.settings import Config
+        from src.config.settings import Config
 
         def mock_init(self):
             self.repo_root = Path(tmpdir)
@@ -243,7 +240,7 @@ class TestYamlLoading:
         tmpdir, configs_dir = temp_config_dir
 
         # Mock repo_root
-        from config.settings import Config
+        from src.config.settings import Config
 
         def mock_init(self):
             self.repo_root = Path(tmpdir)
@@ -268,7 +265,7 @@ class TestValidation:
 
     def test_empty_database_url_raises_error(self, no_repo_configs):
         """Test that empty database URL raises an error."""
-        from config.settings import Config
+        from src.config.settings import Config
 
         with pytest.raises(ValueError, match="Database URL is not configured"):
             Config(database_url="")

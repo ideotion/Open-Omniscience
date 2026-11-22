@@ -32,16 +32,11 @@ Tests cover:
 Author: Ideotion
 """
 
-import sys
 import threading
-from pathlib import Path
 
 import pytest
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from utils.cache import SimpleCache, cached
+from src.utils.cache import SimpleCache, cached
 
 
 @pytest.fixture
@@ -53,7 +48,7 @@ def fake_clock(monkeypatch):
     reads wall time via ``time.time()`` at module scope, so we swap that module's
     ``time`` for a fake whose ``.advance()`` jumps the clock forward deterministically.
     """
-    import utils.cache as cache_mod
+    import src.utils.cache as cache_mod
 
     class _Clock:
         def __init__(self) -> None:
