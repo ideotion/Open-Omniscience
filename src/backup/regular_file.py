@@ -119,7 +119,8 @@ def adopt_fd(fd: int, mode: str) -> BinaryIO:
 
 def open_regular(path: str | os.PathLike[str], *, follow_links: bool = False, dir_fd: int | None = None) -> BinaryIO:
     """:func:`open_regular_fd` as a binary file object (``"rb"``) that closes the descriptor with it."""
-    return adopt_fd(open_regular_fd(path, follow_links=follow_links, dir_fd=dir_fd), "rb")
+    fd = open_regular_fd(path, follow_links=follow_links, dir_fd=dir_fd)
+    return adopt_fd(fd, "rb")
 
 
 def create_new(path: str | os.PathLike[str], *, mode: int = 0o666) -> BinaryIO:
@@ -144,7 +145,8 @@ def create_new(path: str | os.PathLike[str], *, mode: int = 0o666) -> BinaryIO:
         os.O_WRONLY | os.O_CREAT | os.O_EXCL
         | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOCTTY", 0)
     )
-    return adopt_fd(os.open(path, flags, mode), "wb")
+    fd = os.open(path, flags, mode)
+    return adopt_fd(fd, "wb")
 
 
 def replace_with(path: str | os.PathLike[str], data: bytes, *, tmp: str | os.PathLike[str] | None = None) -> None:
