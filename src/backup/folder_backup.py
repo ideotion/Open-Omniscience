@@ -33,7 +33,6 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 
 from __future__ import annotations
 
-import errno
 import hashlib
 import json
 import os
@@ -366,8 +365,8 @@ def _atomic_copy(
             # ever, before the fstat below could refuse it. It changes nothing for a regular file.
             guard = (getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)) if nofollow_src else 0
             src_fd = os.open(src, os.O_RDONLY | binary | guard)
-        except OSError as exc:
-            if nofollow_src and exc.errno == errno.ELOOP:  # the name is now a link: refused, never read
+        except OSError:
+            if nofollow_src and is_link(src):  # the name is now a link: refused, never read
                 raise SourceChanged("the file became a link after it was checked") from None
             raise
         with os.fdopen(src_fd, "rb") as r:
@@ -376,7 +375,7 @@ def _atomic_copy(
                 # device and inode. This also catches a FOLDER on the way swapped for a link, which
                 # O_NOFOLLOW alone does not (it only guards the last name).
                 got = os.fstat(r.fileno())
-                if not stat.S_ISREG(got.st_mode) or (got.st_dev, got.st_ino) != (expect.st_dev, expect.st_ino):
+                if not stat.S_ISREG(got.st_mode) or not _same_file(got, expect):
                     raise SourceChanged("the file changed after it was checked")
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary, 0o666)
             with os.fdopen(fd, "wb") as w:
@@ -697,6 +696,18 @@ def place_artifact_file_members(
             "are not re-hashed here."
         ),
     }
+
+
+def _same_file(opened: os.stat_result, checked: os.stat_result) -> bool:
+    """Whether the file opened is the one that was checked.
+
+    Device and inode on POSIX. On Windows ``lstat`` and ``fstat`` can read the file id by two routes
+    that need not agree on every file system (ReFS, Dev Drive), and a mismatch there would refuse every
+    member of a sound backup, so the size stands in; the real-path and link-on-the-way checks made just
+    before the open carry the rest there."""
+    if os.name == "nt":
+        return opened.st_size == checked.st_size
+    return (opened.st_dev, opened.st_ino) == (checked.st_dev, checked.st_ino)
 
 
 class SourceChanged(OSError):
