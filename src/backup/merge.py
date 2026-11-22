@@ -9342,6 +9342,19 @@ def start_jobs_stopped_for_restore() -> list[str]:
         return []
 
 
+def _refuse_half_migrated_store() -> None:
+    """A committing restore refuses a live store that a country migration left in both forms (R788, row 309).
+
+    The restore copies and merges through raw connections, which the corpus engine's connect-time refusal never sees,
+    and it takes the store's form from the marker alone, which still says alpha-2 while a cut run has turned some rows
+    into alpha-3. Rows merged in then would change a table's row count, and the migration's resume could never finish.
+    Asked twice, like the writer-jobs check: before preparing and again at the working copy. A journal that cannot be
+    read refuses too (``StoreFormUnreadable``): unreadable is not "no run"."""
+    from src.database.country_form import refuse_if_unfinished
+
+    refuse_if_unfinished()
+
+
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -9535,6 +9548,7 @@ def run_restore(
 
     if commit:
         refuse_while_writer_jobs_run()  # before preparing and merging (R659); the callers that stage a backup also ask before staging
+        _refuse_half_migrated_store()
     _abort_point("prepare_staged")
     with timings.stage("prepare_staged"):
         # SPLIT, because the aggregate cannot be acted on. On the field's largest
@@ -9585,6 +9599,7 @@ def run_restore(
     _abort_point("snapshot_working_copy")
     if commit:
         refuse_while_writer_jobs_run()  # again at the copy: a job started while the backup was being prepared (R659)
+        _refuse_half_migrated_store()
     # The Q701-note trust answer, resolved ONCE per restore (the per-import override
     # if the operator made one for this import, else their first-launch answer) and
     # recorded in `meta` so the import report says which choice produced the result.

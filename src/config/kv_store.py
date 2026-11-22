@@ -473,7 +473,7 @@ _seen: set[str] = set()
 _RO_ONLY_FAILURES = ("unable to open database file", "readonly database")
 
 
-def _ro_only_failure(exc: BaseException) -> bool:
+def _ro_only_failure(exc: BaseException | None) -> bool:
     # By name: the keyed driver (sqlcipher3) raises its own ``OperationalError``, not sqlite3's.
     return type(exc).__name__ == "OperationalError" and any(w in str(exc).lower() for w in _RO_ONLY_FAILURES)
 
@@ -759,16 +759,17 @@ def kv_forget_if_changed(key: str, raw: str | None) -> bool:
 
     For a caller that holds an open connection on the store and has read the row through it: the cache answers a later
     read only if it still says what the file says. Equal, the cached value stays (a pooled store pays one indexed read, not
-    a second keyed open). Different, or nothing cached to compare, the key is forgotten as :func:`kv_invalidate` forgets
-    it, so the next read goes to the file. Either way the epoch moves, so a read that began before this one, perhaps on
-    the file as it was before a migration, never stores what it read. Returns whether the key was forgotten."""
-    global _epoch
+    a second keyed open). Different, or nothing cached to compare, the cached value is dropped, so the next read goes to
+    the file. Either way the KEY's version moves, so a read of this key that began before this one, perhaps on the file as
+    it was before a migration, never stores what it read; reads of other keys, and the short failure hold, are left
+    alone (a global move here would run on every new connection). Returns whether the value was dropped."""
     path = _db_path()
     with _lock:
-        _epoch += 1
-        if path is not None and (path, key) in _cache and _cache[(path, key)] == raw:
-            return False
-    kv_invalidate(key)
+        if path is not None:
+            _wver[(path, key)] = _wver.get((path, key), 0) + 1
+            if (path, key) in _cache and _cache[(path, key)] == raw:
+                return False
+        _forget_key(_cache, key)
     return True
 
 

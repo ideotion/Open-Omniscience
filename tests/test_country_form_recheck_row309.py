@@ -296,14 +296,76 @@ def test_a_new_connection_on_an_unfinished_store_is_refused_and_closed(tmp_path)
             assert state in str(caught.value) and "/b/copy.db" in str(caught.value)
             with pytest.raises(sqlite3.ProgrammingError):
                 probe.execute("SELECT 1")  # closed
+        # A journal row that is there and is not a JSON object: unreadable is not "no run".
+        con.execute("INSERT OR REPLACE INTO app_state VALUES (?, ?)", (cf.JOURNAL_KEY, "{not json"))
+        con.commit()
+        probe = sqlite3.connect(db)
+        with pytest.raises(cf.StoreFormUnreadable) as caught:
+            cf.recheck_on_new_connection(probe)
+        assert not isinstance(caught.value, cf.MigrationUnfinished)
+        with pytest.raises(sqlite3.ProgrammingError):
+            probe.execute("SELECT 1")
     finally:
         con.close()
         kv_store.kv_invalidate()
 
 
+def test_rows_that_cannot_be_read_refuse_the_connection_except_on_a_store_with_no_app_state_yet(tmp_path):
+    import sqlite3
+
+    from src.config import kv_store
+    from src.database import country_form as cf
+
+    fresh = sqlite3.connect(tmp_path / "new.db")
+    try:
+        cf.recheck_on_new_connection(fresh)  # no app_state table yet: a new file has no run
+        fresh.execute("SELECT 1")
+    finally:
+        fresh.close()
+
+    class _Failing:
+        def __init__(self, exc):
+            self.exc, self.closed = exc, False
+
+        def cursor(self):
+            raise self.exc
+
+        def close(self):
+            self.closed = True
+
+    try:
+        held = _Failing(sqlite3.OperationalError("database is locked"))
+        with pytest.raises(cf.StoreFormUnreadable) as caught:
+            cf.recheck_on_new_connection(held)
+        assert held.closed and "in use by another program" in str(caught.value)
+        damaged = _Failing(sqlite3.DatabaseError("database disk image is malformed"))
+        with pytest.raises(cf.StoreFormUnreadable) as caught:
+            cf.recheck_on_new_connection(damaged)
+        assert damaged.closed and "(DatabaseError)" in str(caught.value) and "malformed" not in str(caught.value)
+    finally:
+        kv_store.kv_invalidate()
+
+
+def test_a_committing_restore_refuses_a_half_migrated_store(monkeypatch):
+    """The restore merges through raw connections the connect-time refusal never sees, and takes the form from the marker
+    alone; it asks the journal itself, before preparing and again at the working copy (R788)."""
+    import inspect
+
+    from src.backup import merge
+    from src.config import kv_store
+    from src.database import country_form as cf
+
+    monkeypatch.setattr(kv_store, "kv_get_json_checked", lambda key: {"state": "interrupted"} if key == cf.JOURNAL_KEY else None)
+    with pytest.raises(cf.MigrationUnfinished):
+        merge._refuse_half_migrated_store()
+    body = inspect.getsource(merge.run_restore)
+    assert body.count("_refuse_half_migrated_store()") == 2, "asked before preparing and again at the working copy"
+
+
 def test_a_wrong_key_is_raised_by_the_read_only_check_and_only_read_only_failures_pass_on(tmp_path, monkeypatch):
-    """``_check_key_read_only`` passes on only a held store and a failure of read-only opening itself; a wrong key or a
-    damaged file is raised before any read-write open."""
+    """``_check_key_read_only`` passes on only a failure of read-only opening itself (also when an encrypted open reports
+    it as ``WrongPassphraseError`` chained from the driver's error); a held store is refused as ``AppStillRunning``; a
+    wrong key or a damaged file is raised before any read-write open."""
     import sqlite3
 
     from src.backup import country_migration as cm
@@ -314,18 +376,25 @@ def test_a_wrong_key_is_raised_by_the_read_only_check_and_only_read_only_failure
 
         return _connect
 
-    for exc, passes in (
-        (connect_mod.StoreHeldError("in use"), True),
-        (sqlite3.OperationalError("unable to open database file"), True),
-        (sqlite3.OperationalError("attempt to write a readonly database"), True),
-        (connect_mod.WrongPassphraseError("no"), False),
-        (sqlite3.DatabaseError("file is not a database"), False),
-    ):
+    def _chained(outer, cause):
+        outer.__cause__ = cause
+        return outer
+
+    cases = (
+        (connect_mod.StoreHeldError("in use"), cm.AppStillRunning),
+        (sqlite3.OperationalError("unable to open database file"), None),
+        (sqlite3.OperationalError("attempt to write a readonly database"), None),
+        (_chained(connect_mod.WrongPassphraseError("no"), sqlite3.OperationalError("attempt to write a readonly database")), None),
+        (_chained(connect_mod.WrongPassphraseError("no"), sqlite3.DatabaseError("file is not a database")), connect_mod.WrongPassphraseError),
+        (connect_mod.WrongPassphraseError("no"), connect_mod.WrongPassphraseError),
+        (sqlite3.DatabaseError("file is not a database"), sqlite3.DatabaseError),
+    )
+    for exc, raised in cases:
         monkeypatch.setattr(connect_mod, "connect", _fails(exc))
-        if passes:
+        if raised is None:
             cm._check_key_read_only(tmp_path / "s.db")
         else:
-            with pytest.raises(type(exc)):
+            with pytest.raises(raised):
                 cm._check_key_read_only(tmp_path / "s.db")
 
 
@@ -337,9 +406,10 @@ def test_the_held_message_names_the_wait_and_claims_nothing_about_writes():
     assert "nothing was written" not in text and "second copy of the app" not in text
 
 
-def test_a_recheck_that_finds_the_cache_right_still_moves_the_epoch(tmp_path, monkeypatch):
-    """A read that began before the recheck may have read the file as it was before a migration: it must not store it.
-    The epoch moves on every recheck, equal values included, so such a read is never cached."""
+def test_a_recheck_that_finds_the_cache_right_still_moves_the_key_version(tmp_path, monkeypatch):
+    """A read of the key that began before the recheck may have read the file as it was before a migration: it must not
+    store it. The key's version moves on every recheck, equal values included, so such a read is never cached; the
+    global epoch and other keys are left alone, so a recheck on every new connection costs other reads nothing."""
     from src.config import kv_store
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 's.db'}")
@@ -348,11 +418,12 @@ def test_a_recheck_that_finds_the_cache_right_still_moves_the_epoch(tmp_path, mo
         path = kv_store._db_path()
         with kv_store._lock:
             kv_store._cache[(path, "k")] = '{"a": 1}'
-        before = kv_store._epoch
+            kv_store._cache[(path, "other")] = '{"b": 1}'
+        epoch, ver = kv_store._epoch, kv_store._wver.get((path, "k"), 0)
         assert kv_store.kv_forget_if_changed("k", '{"a": 1}') is False
-        assert kv_store._epoch > before
+        assert kv_store._wver[(path, "k")] > ver and kv_store._epoch == epoch
         assert (path, "k") in kv_store._cache
         assert kv_store.kv_forget_if_changed("k", '{"a": 2}') is True
-        assert (path, "k") not in kv_store._cache
+        assert (path, "k") not in kv_store._cache and (path, "other") in kv_store._cache
     finally:
         kv_store.kv_invalidate()

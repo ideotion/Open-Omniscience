@@ -91,11 +91,13 @@ def held_message() -> str:
 
     The migration holds the file for its whole run, and before this a start under it said "the journal could not be
     read", which points at a damaged store. Nothing was read and nothing is known to be wrong: the file is in use. It says
-    nothing about writes, because the same words answer a read, and it names the wait so a slow answer is explained."""
+    nothing about writes, because the same words answer a read, and it names the wait so a slow answer is explained (an
+    answer repeated from the short failure hold comes at once). The migration is the one program of ours that holds the
+    store exclusively; another program that opened it (a sqlite3 shell) could too, and the words do not name it."""
     return (
-        "the store is in use by another program, so its country form could not be read. The app waited up to 30 seconds "
-        "for it to be free. A country-code migration (`open-omniscience migrate-countries`) holds the store this way for "
-        "its whole run, and a backup or a repair run from the command line can too. Let it finish, then try again."
+        "the store is in use by another program, so its country form could not be read. The app waits up to 30 seconds "
+        "for the store to be free before it says so. A country-code migration (`open-omniscience migrate-countries`) "
+        "holds the store this way for its whole run. Let it finish, then try again."
     )
 
 
@@ -116,22 +118,25 @@ def refuse_if_unfinished() -> None:
 
 
 def recheck_on_new_connection(dbapi_connection) -> None:
-    """Make the process's cached form and journal answer only what THIS file says now, and refuse the connection on an
-    unfinished run (R788, row 309).
+    """Make the process's cached form and journal answer only what THIS file says now, and refuse the connection when the
+    store's run state is not known to be sound (R788, row 309).
 
     The migration takes the file only while no connection of any process is open on it, so a process that is alive with
     an EMPTY pool (after a restore, repair, rebuild, unlock or panic disposed it) does not stop it, and once it is done
     that process's cache still says alpha-2 and "no journal": measured, its next write put ``de`` beside ``FRA`` under an
     alpha-3 marker, and after an interrupted run its writes made the resume unfinishable. Every read and write reaches the
     file through a connection, and after such a gap the first one is a NEW physical connection; this runs on it (the
-    ``connect`` event of the corpus engine and of the read-snapshot engine) and reads the two rows through it.
+    ``connect`` event of the corpus engine and of the read-snapshot engine) and reads the two rows through it, before
+    any statement of the caller's runs on it. (A value a caller took from :func:`store_form` BEFORE asking for a
+    connection, such as :func:`alpha2_order` building a query, was taken from the cache as it then stood.)
 
     - The cache: equal values cost one indexed read; a different value drops the cached entry, so the next
-      :func:`store_form` reads the file and fails closed if it cannot. Rows that cannot be read here drop both entries.
-    - The refusal: a journal that says a run began and did not end (``running`` / ``interrupted``) raises
-      :class:`MigrationUnfinished` and the connection is closed, so nothing is read from or written to a store that holds
-      both forms, whether or not the caller asks for the form first. Boot refuses such a store already; this is the same
-      refusal for a process that was running when the run was cut.
+      :func:`store_form` reads the file. Either way the key's version moves, so a read of that key that began earlier,
+      perhaps on the file as it was before a migration, never stores what it read.
+    - The refusal, with the connection closed: a journal naming a run that began and did not end (``running`` /
+      ``interrupted``) raises :class:`MigrationUnfinished`; rows that cannot be read (the file held, a damaged page) or a
+      journal row that is not a JSON object raise :class:`StoreFormUnreadable`. Unreadable is not "no run". Only a store
+      with no ``app_state`` table yet (a new file before ``create_all``) is let through without the rows: it has no run.
 
     While this connection, or any other, stays open no migration can start, so what the cache holds from here on is what
     the file holds."""
@@ -145,34 +150,63 @@ def recheck_on_new_connection(dbapi_connection) -> None:
             )
         finally:
             cur.close()
-        for key in (KEY, JOURNAL_KEY):
-            kv_store.kv_forget_if_changed(key, rows.get(key))
-    except Exception as exc:  # noqa: BLE001 - not read here is not "unchanged": both keys are read afresh by their next caller
-        _LOG.debug("country form recheck on a new connection not read (%s); both keys dropped", type(exc).__name__)
-        kv_store.kv_invalidate(KEY)
-        kv_store.kv_invalidate(JOURNAL_KEY)
-        return
+    except Exception as exc:  # noqa: BLE001 - classified: a store with no app_state yet has no run; the rest refuses
+        if _no_app_state_yet(exc):
+            return
+        held = _held(exc)
+        _LOG.debug("country form recheck on a new connection not read (%s); connection refused", type(exc).__name__)
+        _close_quietly(dbapi_connection)
+        if held:
+            raise StoreFormUnreadable(held_message()) from None
+        raise StoreFormUnreadable(
+            f"the country form of the store could not be read on a new connection ({type(exc).__name__})"
+        ) from None
+    for key in (KEY, JOURNAL_KEY):
+        kv_store.kv_forget_if_changed(key, rows.get(key))
     state, backup = _unfinished_state(rows.get(JOURNAL_KEY))
     if state is None:
         return
-    try:
-        dbapi_connection.close()
-    except Exception:  # noqa: BLE001 - the refusal below is the answer; a close that fails leaves the connection to the collector
-        _LOG.debug("country form recheck: the refused connection did not close cleanly")
+    _close_quietly(dbapi_connection)
+    if state is _DAMAGED:
+        raise StoreFormUnreadable("the country migration journal could not be read (it is not a JSON object)")
     raise MigrationUnfinished(unfinished_message(state, backup))
 
 
+def _no_app_state_yet(exc: BaseException) -> bool:
+    """A new file before ``create_all``: the table the rows live in does not exist yet. By SQLite's fixed words only."""
+    return "no such table" in str(exc).lower()
+
+
+def _held(exc: BaseException) -> bool:
+    """SQLite's locked/busy answer: another connection holds the file. By its fixed words only."""
+    from src.database.write import is_locked_error
+
+    return is_locked_error(exc)
+
+
+def _close_quietly(dbapi_connection) -> None:
+    try:
+        dbapi_connection.close()
+    except Exception:  # noqa: BLE001 - the refusal raised next is the answer; a failed close leaves it to the collector
+        _LOG.debug("country form recheck: the refused connection did not close cleanly")
+
+
+#: What :func:`_unfinished_state` answers for a journal row that is there and is not a JSON object.
+_DAMAGED = "damaged"
+
+
 def _unfinished_state(raw: object) -> tuple[str | None, str | None]:
-    """The journal's state when it names an unfinished run, with the safety copy's path; ``(None, None)`` otherwise. A
-    journal row that is not a JSON object is not read as a run here: :func:`refuse_if_unfinished` and the migration read
-    the same row and answer for it."""
-    if not isinstance(raw, str):
+    """``(state, backup path)`` when the journal names an unfinished run; ``(_DAMAGED, None)`` when the row is there and
+    is not a JSON object (unreadable is not "no run"); ``(None, None)`` when there is no row or the run ended."""
+    if raw is None:
         return None, None
     try:
-        journal = json.loads(raw)
+        journal = json.loads(raw) if isinstance(raw, (str, bytes)) else None
     except ValueError:
-        return None, None
-    if not isinstance(journal, dict) or journal.get("state") not in UNFINISHED_STATES:
+        journal = None
+    if not isinstance(journal, dict):
+        return _DAMAGED, None
+    if journal.get("state") not in UNFINISHED_STATES:
         return None, None
     backup = journal.get("backup")
     path = backup.get("path") if isinstance(backup, dict) else None

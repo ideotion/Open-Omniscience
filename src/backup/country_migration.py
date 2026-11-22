@@ -650,19 +650,24 @@ def _check_key_read_only(db_path: Path) -> None:
     gone after ``WrongPassphraseError``; the rows survived, but a refused run had changed the store's files). A read-only
     open cannot write the log back, so the key is checked there first and a wrong one changes no file.
 
-    Only two answers of the read-only open are passed on to the read-write open below: a held store (which that open
-    names as it always did) and a failure that belongs to read-only opening alone (a ``-shm`` it may not create, a
-    read-only folder: ``kv_store``'s own list). Anything else (a wrong key, a damaged file) is raised here, before any
-    read-write open, so no failure that a read-only open could already see reaches an open that can write."""
+    - A held store is refused here as :class:`AppStillRunning`, the answer the exclusive take gives: letting it go on to
+      the read-write open would try an unchecked key there the moment the holder let go.
+    - A failure that belongs to read-only opening alone (a ``-shm`` it may not create, a read-only folder: ``kv_store``'s
+      own list) goes on to the read-write open. An encrypted open reports every driver failure as
+      ``WrongPassphraseError`` chained from the driver's error, so the chained error is classified too.
+    - Anything else (a wrong key, a damaged file) is raised here, before any read-write open."""
     from src.config.kv_store import _ro_only_failure
     from src.database.connect import StoreHeldError, connect
 
     try:
         probe = connect(db_path, check_same_thread=False, timeout=5, read_only=True)
     except StoreHeldError:
-        return
+        raise AppStillRunning(
+            "another program has this database open (the app, a second copy of this command, a backup). "
+            "Close it and run this again: the migration needs the file to itself."
+        ) from None
     except Exception as exc:  # noqa: BLE001 - classified: only a read-only-only failure goes on to the read-write open
-        if _ro_only_failure(exc):
+        if _ro_only_failure(exc) or _ro_only_failure(exc.__cause__):
             return
         raise
     probe.close()

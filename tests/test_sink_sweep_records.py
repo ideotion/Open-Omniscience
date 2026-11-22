@@ -270,11 +270,16 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/database/country_form.py': {
         ('refuse_if_unfinished', 'if getattr(exc, "held", False):'): 1,
         ('store_form', 'if getattr(exc, "held", False):'): 1,
+        # the connect-time recheck tells a store with no app_state yet (SQLite's fixed words) and a held file (locked/busy)
+        # from any other failure; each is a bool, and the refusal names the class only
+        ('recheck_on_new_connection', 'if _no_app_state_yet(exc):'): 1,
+        ('recheck_on_new_connection', 'held = _held(exc)'): 1,
+        ('_no_app_state_yet', 'return "no such table" in str(exc).lower()'): 1,
     },
-    # R788 (row 309): the read-only key check passes on a failure of read-only opening alone (kv_store's bool) and re-raises
-    # the rest unchanged; nothing of the error is kept, served or logged here
+    # R788 (row 309): the read-only key check passes on a failure of read-only opening alone (kv_store's bool, read on the
+    # error and on the driver error an encrypted open chains it from) and re-raises the rest unchanged; nothing is kept here
     'src/backup/country_migration.py': {
-        ('_check_key_read_only', 'if _ro_only_failure(exc):'): 1,
+        ('_check_key_read_only', 'if _ro_only_failure(exc) or _ro_only_failure(exc.__cause__):'): 2,
     },
     'src/database/connect.py': {
         ('_try_open_encrypted', 'last_error[:] = [exc]'): 1,
