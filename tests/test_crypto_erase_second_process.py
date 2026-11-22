@@ -135,13 +135,13 @@ def test_a_write_begun_after_the_erase_is_refused_and_leaves_no_salt(tmp_path, m
     wal_before = os.stat(wal).st_size if wal.exists() else 0
     errlog = tmp_path / "other.stderr"
     generation = ce.new_hold_generation()
-    with open(errlog, "w") as err, subprocess.Popen(
+    with open(errlog, "w", encoding="utf-8") as err, subprocess.Popen(
         [sys.executable, "-c", _OTHER, str(db), {"in-transaction": "txn"}.get(mode, mode)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, text=True, cwd=_REPO, env=env,
     ) as other:
         try:
             ready = _line(other)
-            assert ready == "READY", f"{ready!r}; stderr: {errlog.read_text()[-2000:]}"
+            assert ready == "READY", f"{ready!r}; stderr: {errlog.read_text(encoding="utf-8", errors="replace")[-2000:]}"
             if mode == "spill":  # the spill really reached the log before the erase (a size, read with stat: R789)
                 assert os.stat(wal).st_size > wal_before
             ce.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=held, hold_generation=generation)
