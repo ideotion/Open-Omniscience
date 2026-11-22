@@ -1023,18 +1023,37 @@
         .map((st) => `<span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))} <b>${esc(String(counts[st]))}</b></span>`)
         .join(" · ");
     }
+    // Why the floor file gave no country, from its read state (row 279: present | absent | empty | unreadable; the error is a
+    // class name or a short English description such as "not a mapping (list)", never a path, and is shown as data).
+    // A shown value carries dir="ltr", which isolates it, so its colon or brackets do not move in an RTL sentence. Row 317: these replace the report's English reason sentence, which named the config path as prose.
+    // A state this build has no sentence for keeps the general one and is shown as sent.
+    function lawFloorUnreadHtml(read, t) {
+      const st = read && typeof read === "object" ? String(read.state || "") : "";
+      if (st === "absent") return esc(t("The file that lists the floor's countries is missing, so nothing is counted."));
+      if (st === "empty") return esc(t("The file that lists the floor's countries lists no country, so nothing is counted."));
+      const general = st === "unreadable"
+        ? esc(t("The file that lists the floor's countries could not be read, so nothing is counted."))
+        : esc(t("The language floor could not be read, so nothing is counted.")) + (st && st !== "present" ? ` <code dir="ltr">${esc(st)}</code>` : "");
+      return general + (read && read.error ? " " + ooLabelHtml(esc(t("Error")), `<code dir="ltr">${esc(String(read.error))}</code>`) : "");
+    }
     function livingLawFloorHtml(d, t, tf) {
       const f = d && d.floor;
       if (!f) return `<div class="muted">${esc(t("This build reports no language floor."))}</div>`;
-      if (!f.by_state || !f.languages) {
-        return `<div class="muted">${esc(t("The language floor could not be read, so nothing is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</div>`;
-      }
+      if (!f.by_state || !f.languages) return `<div class="muted">${lawFloorUnreadHtml(f.floor, t)}</div>`;
       const status = String(f.verification_status || "");
+      // The status is the floor file's own free text: "drafted..." is the one form any shipped file has used, and it is
+      // said as a caveat. Any other value is the file's words, shown as data inside the translated frame (row 317).
       const caveat = /^drafted/.test(status)
         ? `<p class="card-caveat">${esc(t("The list of countries was drafted from memory and has not been checked online yet, so these counts run over a list that is not settled."))}</p>`
-        : `<p class="hint">${esc(status ? tf("Status of the list of countries: {status}", { status }) : t("The list of countries states no verification status."))}</p>`;
+        : `<p class="hint">${status
+          ? esc(tf("Status of the list of countries: {status}", { status: "\u0001" })).replace("\u0001", () => `<code dir="ltr">${esc(status)}</code>`)
+          : esc(t("The list of countries states no verification status."))}</p>`;
+      // The catalogue's read error is the report's own detail text (an English sentence naming the file and the error's class,
+      // never a path): data, under
+      // the translated sentence, never prose glued onto it (row 317).
       const unchecked = f.state !== "checked"
-        ? `<p class="card-caveat">${esc(t("The law catalogue could not be read, so only what is tracked here is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</p>` : "";
+        ? `<p class="card-caveat">${esc(t("The law catalogue could not be read, so only what is tracked here is counted."))}`
+          + `${f.reason ? " " + ooLabelHtml(esc(t("Error")), `<code dir="ltr">${esc(String(f.reason))}</code>`) : ""}</p>` : "";
       const head = `<p class="hint">${esc(tf("{n} countries on the floor · list dated {date}", { n: String(f.countries), date: f.as_of || "—" }))}</p>`;
       const stateOf = {};
       const sizes = {};

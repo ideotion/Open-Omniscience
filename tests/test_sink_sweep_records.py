@@ -376,6 +376,11 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_copy_and_swap', 'report["failure"] = f"{exc.where}: {exc.reason}"'): 2,
         ('_swap', 'raise Declined("writer-busy", str(busy)) from busy'): 2,
         ('_swap', 'if refusal.code == "saved-during-the-copy":'): 1,
+        # R781 (row 299): a failed hard link is told apart by its errno only (a drive that cannot hard-link, or anything else, which keeps
+        # the finished copy); the refusal is fixed words with the chain cut, and a refusal's code is read to know whether the copy goes.
+        ('_claim_free_name', 'raise _link_refused(exc.errno) from None'): 1,
+        ('_swap', 'refusal = _link_refused(exc.errno)'): 1,
+        ('_swap', 'if refusal.code == "no-hard-links":'): 1,
         # ``_fixed_failure`` rebuilds the error a failed repair raises from words of ours: it reads the class, ``SalvageFailed``'s own
         # fixed fields and an int errno (its words come from ``os.strerror``), never the driver's text.
         ('_fixed_failure', 'return salvage.SalvageFailed(exc.where, exc.reason)'): 2,

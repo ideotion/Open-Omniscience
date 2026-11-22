@@ -34,7 +34,9 @@ THE ORDER OF THINGS.
    as the last connection closes; the copy already holds every committed change the log carried), the finished copy is
    renamed into place beside a sidecar that records the damaged file's identity, the damaged file is given a second name
    ``<stem>.damaged-<UTC time><suffix>`` by a HARD LINK (one inode under two names: no second 14 GB, and the live name
-   keeps existing until the very replace), the live log and shared-memory names are removed so the old log can never be
+   keeps existing until the very replace). The main file ALONE is named (R781, row 299): the fold above has put every frame of the
+   log into it, checked again at the moment of naming, so the log and its shared-memory index are never linked and no second name of
+   a log can outlive a restart that recreates the log under a new inode. Then the live log and shared-memory names are removed so the old log can never be
    replayed into the new file, and ``os.replace`` puts the copy under the live name. A drive that cannot hard-link is
    refused up front, not served by a rename pair with a moment in which no library exists. The removal of the log names and the
    replace happen inside ``backup.merge.swap_in_corpus`` (the restore's own swap): one window of ``database/library_generation.py`` in
@@ -63,6 +65,7 @@ PASSPHRASE. The record holds counts, table names, id ranges and reason CODES; an
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import logging
 import os
@@ -70,6 +73,7 @@ import re
 import stat
 import threading
 import time
+import unicodedata
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -150,7 +154,9 @@ def switch_on() -> bool:
 class Declined(RuntimeError):
     """Refused for a stated reason, with every file as it was. ``code`` keys the sentence (``no-room``,
     ``schema-unreadable``, ``no-hard-links``, ``writer-busy``, ``unfinished-starts``, ``write-gate-off``, ``copy-stale`` and
-    ``saved-during-the-copy``: the library was written to after the copy began)."""
+    ``saved-during-the-copy``: the library was written to after the copy began; ``damaged-name-taken``: every name the damaged file
+    could be kept under (the recorded one and the bounded numbered ones after it) is held by a file the repair did not make, named in
+    the text; ``name-not-given``: the second name could not be made for another reason, and the finished copy is kept)."""
 
     def __init__(self, code: str, detail: str, **facts: Any) -> None:
         super().__init__(detail)
@@ -287,9 +293,10 @@ def _salvage_target(target: Path, stamp: str) -> Path:
 
 
 def _damaged_name(target: Path, stamp: str) -> Path:
+    """The first ``<stem>.damaged-<stamp>[-n]<suffix>`` with no file, log or index under it (a link counts as taken: ``lexists``)."""
     base = target.with_name(f"{target.stem}.damaged-{stamp}{target.suffix}")
     candidate, n = base, 1
-    while candidate.exists():
+    while any(os.path.lexists(_side(candidate, s)) for s in ("", "-wal", "-shm")):
         n += 1
         candidate = target.with_name(f"{target.stem}.damaged-{stamp}-{n}{target.suffix}")
     return candidate
@@ -297,6 +304,175 @@ def _damaged_name(target: Path, stamp: str) -> Path:
 
 def _side(path: Path, suffix: str) -> Path:
     return Path(str(path) + suffix)
+
+
+#: The names a repair gives a damaged file beside the store (:func:`_damaged_name`): ``<stem>.damaged-<UTC stamp>[-n]<suffix>``.
+_DAMAGED_STAMP = re.compile(r"\.damaged-\d{8}T\d{6}Z(?:-\d+)?$")
+
+
+def _is_damaged_name(target: Path, damaged: Path) -> bool:
+    """Whether ``damaged`` is a name the repair gives this store's damaged file: in the store's folder, the store's own stem and suffix,
+    and the dated pattern between them."""
+    if damaged.parent != target.parent or not damaged.name.endswith(target.suffix) or not damaged.name.startswith(target.stem):
+        return False
+    middle = damaged.name[len(target.stem): len(damaged.name) - len(target.suffix)] if target.suffix else damaged.name[len(target.stem):]
+    return bool(_DAMAGED_STAMP.fullmatch(middle))
+
+
+def _clear_empty_log_name(target: Path, damaged: Path) -> None:
+    """R781 (row 299): an earlier start's second name of the live LOG (``<damaged>-wal``; the repair no longer makes one) is removed only
+    when it is EXACTLY 0 bytes, a regular file reached without following a link, and carries the app's damaged-name pattern beside the
+    store: an empty file holds no frame, so nothing is lost. Anything else under that name is refused, naming the file, and kept: it
+    may hold frames, and no committed frame is ever left outside a kept file. ``-shm`` is SQLite's index of a log, never data; the
+    repair never makes one under the damaged name and never touches one it finds."""
+    log = _side(damaged, "-wal")
+    try:
+        st = os.lstat(log)
+    except FileNotFoundError:
+        return
+    except OSError:
+        st = None
+    if st is not None and _is_damaged_name(target, damaged) and stat.S_ISREG(st.st_mode) and st.st_size == 0:
+        try:
+            log.unlink()
+        except FileNotFoundError:
+            return
+        except OSError:
+            pass  # e.g. a Windows sharing violation: the name stays, and is refused below like any name that is not cleared
+        else:
+            return
+    raise Declined(
+        "damaged-name-taken",
+        f"{log.name} is already beside the library and is not an empty log the repair left, so it is kept and nothing was switched",
+    )
+
+
+#: How many numbered names (``-2`` onward) are tried when the damaged file's chosen name is taken by a file the repair must keep.
+_FREE_NAME_TRIES = 50
+
+
+def _name_blocker(target: Path, damaged: Path) -> str | None:
+    """The name of the file that stops ``damaged`` from being given to the live file, or ``None`` when it can be: the main name must be
+    free or already the live file's own second name (an earlier start's, same inode and device), and its log name free or an exactly
+    empty leftover, which is removed (:func:`_clear_empty_log_name`). The main name is checked FIRST, so nothing is removed for a name
+    that cannot be used anyway. A blocking file is never touched here."""
+    if os.path.lexists(damaged):
+        twin, original = _identity(damaged), _identity(target)
+        if twin is None or original is None or twin != original:
+            return damaged.name
+    if os.path.lexists(_side(damaged, "-shm")):
+        return _side(damaged, "-shm").name  # the repair never makes one: whatever is there is not its own, and is never named beside
+    try:
+        _clear_empty_log_name(target, damaged)
+    except Declined:
+        return _side(damaged, "-wal").name
+    return None
+
+
+#: What ``os.link`` raises when the drive or the folder cannot give a file a second name at all. Any other error (a full folder, a
+#: read error, a sharing violation) is not that answer: the finished copy is kept for the next start rather than thrown away.
+_NO_LINK_ERRNOS = frozenset((errno.EPERM, errno.EXDEV, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EMLINK, errno.ENOSYS, errno.EINVAL))
+
+
+def _link_refused(number: int | None) -> Declined:
+    """The named refusal for an ``os.link`` failure, from its errno alone (never the error's words, which name a path)."""
+    if number in _NO_LINK_ERRNOS:
+        return Declined("no-hard-links", "the drive cannot give the damaged file a second name")
+    return Declined(
+        "name-not-given", "the damaged file could not be given its second name, so nothing was switched; the repaired copy is kept and "
+        "the switch is tried again at the next start",
+    )
+
+
+#: At most this many earlier names are remembered (each further fallback adds one; more than one needs a fresh blocker every start).
+_REPLACED_NAMES_KEPT = 8
+
+
+def _replaced_names(target: Path, doc: dict[str, Any]) -> list[Path]:
+    """The damaged names a fallback moved away from (``replaced_names`` in the sidecar), each only when it is a name the repair gives."""
+    names = doc.get("replaced_names")
+    if not isinstance(names, list):
+        return []
+    pattern = _kept_name_pattern(target)
+    return [target.parent / n for n in names[:_REPLACED_NAMES_KEPT] if isinstance(n, str) and pattern.fullmatch(n)]
+
+
+def _drop_replaced_name(target: Path, doc: dict[str, Any], kept: Path) -> None:
+    """After the switch: a name the fallback moved away from, when an earlier start had made it a second name of the file that is now the
+    kept damaged one, is removed, only when it is that same file at this moment (inode and device, no link followed): it holds nothing
+    the kept name does not, and left there it would keep a full copy of the library on the drive that nothing ever removes."""
+    for old in _replaced_names(target, doc):
+        if old == kept:
+            continue
+        a, b = _identity(old), _identity(kept)
+        if a is not None and a == b:
+            with contextlib.suppress(OSError):
+                old.unlink()
+
+
+def _sidecar_doc(sidecar: Path | None) -> dict[str, Any]:
+    if sidecar is None:
+        return {}
+    try:
+        doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _scrap(target: Path, damaged: Path, finished: Path | None, sidecar: Path | None) -> None:
+    """A copy that will never be switched in is the app's own scratch: the copy and its sidecar go, and so do the second names of the live
+    file this repair gave (the damaged name, and the names a fallback moved away from, which only the sidecar records, so they are read
+    from it first). Each name goes only when it is the live file's own second name (:func:`_drop_extra_names`)."""
+    earlier = _replaced_names(target, _sidecar_doc(sidecar))
+    # The names first, the sidecar last: a cut in between leaves a sidecar that still records every name, never a name nothing records.
+    for name in (damaged, *earlier):
+        _drop_extra_names(target, name)
+    for spent in (finished, sidecar):
+        if spent is not None:
+            with contextlib.suppress(OSError):
+                spent.unlink()
+
+
+def _numbered(target: Path, damaged: Path, n: int) -> Path:
+    middle = damaged.name[len(target.stem): len(damaged.name) - len(target.suffix)] if target.suffix else damaged.name[len(target.stem):]
+    found = re.fullmatch(r"\.damaged-(\d{8}T\d{6}Z)(?:-\d+)?", middle)
+    if not _is_damaged_name(target, damaged) or found is None:
+        raise Declined("damaged-name-taken", f"{damaged.name} is not a name the repair gives, so no other name was chosen and nothing was switched")
+    return target.with_name(f"{target.stem}.damaged-{found.group(1)}-{n}{target.suffix}")
+
+
+def _claim_free_name(target: Path, damaged: Path, sidecar: Path, left: str) -> Path:
+    """R781 (row 299), the coordinator's accepted fallback: the damaged file's recorded name is taken by a file the repair must keep
+    (``left``), so the repair finishes under the next free numbered name instead of refusing at every start. The search is bounded; each
+    name is CLAIMED by the hard link itself, which fails on any existing name (a link included, never followed), and a taken one moves
+    on to the next number, so there is no gap between a check and the use. The sidecar names the candidate BEFORE the link is tried, so a
+    cut at any point resumes under the name the sidecar records. The old name is not removed here (the probe connection still holds the
+    live file open, and Windows refuses to remove any name of an open file): it is recorded in ``replaced_names`` and removed after the
+    switch, only when it is then the kept file's own second name (:func:`_drop_replaced_name`). The file left in place is never touched."""
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    original = dict(doc)
+    for n in range(2, 2 + _FREE_NAME_TRIES):
+        candidate = _numbered(target, damaged, n)
+        if candidate == damaged or any(os.path.lexists(_side(candidate, s)) for s in ("", "-wal", "-shm")):
+            continue
+        earlier = [n for n in doc.get("replaced_names", []) if isinstance(n, str)] if isinstance(doc.get("replaced_names"), list) else []
+        names = [*earlier, damaged.name] if damaged.name not in earlier else earlier
+        doc.update(damaged=candidate.name, name_left_in_place=left, replaced_names=names[-_REPLACED_NAMES_KEPT:])
+        _write_json_atomic(sidecar, doc)
+        try:
+            os.link(target, candidate)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise _link_refused(exc.errno) from None
+        return candidate
+    # No name: the sidecar is put back to the name it recorded, so the next start names the same file that blocked this one.
+    _write_json_atomic(sidecar, original)
+    raise Declined(
+        "damaged-name-taken",
+        f"{left} is already beside the library and is kept, and no free name was found for the damaged file, so nothing was switched",
+    )
 
 
 def _probe_open(path: Path) -> Any:
@@ -482,6 +658,16 @@ def _drop_extra_names(target: Path, damaged: Path) -> None:
         if a is not None and a == b:
             with contextlib.suppress(OSError):
                 extra.unlink()
+    # R781: once the damaged name is gone (it was the live file's own extra name), an EMPTY log an earlier start linked beside it is the
+    # repair's own leftover (the live log was since recreated under a new inode, so the check above no longer sees it as the live one's).
+    # Anything but an exactly-empty regular file stays where it is.
+    if not os.path.lexists(damaged):
+        try:
+            _clear_empty_log_name(target, damaged)
+        except Declined:
+            pass  # not an empty leftover: kept where it is
+        except OSError:
+            pass
 
 
 def _swap_ran(target: Path, doc: dict[str, Any]) -> bool:
@@ -531,6 +717,9 @@ def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) ->
             doc["swapped"] = True
             _record(late_sidecar=doc)
             _drop_extra_names(target, target.parent / str(doc["damaged"]))
+            _drop_replaced_name(target, doc, target.parent / str(doc["damaged"]))  # the switch ran: the kept file's own extra names
+            for old in _replaced_names(target, doc):
+                _drop_extra_names(target, old)  # it did not: the live file's own extra names
             with contextlib.suppress(OSError):
                 sidecar.unlink()
             continue
@@ -545,6 +734,8 @@ def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) ->
             with contextlib.suppress(OSError):
                 stale.unlink()
         _drop_extra_names(target, target.parent / str(doc["damaged"]))
+        for old in _replaced_names(target, doc):
+            _drop_extra_names(target, old)
     return resumable
 
 
@@ -936,7 +1127,7 @@ def _registry_fields(report: dict[str, Any], state: str) -> dict[str, Any]:
         "replaced_text_values", "tables", "search_index", "indexes_seconds", "encrypted",
         "preflight", "post_steps", "resumed", "clean_at", "kept_file_ino", "kept_file_dev", "kept_wal_ino", "kept_wal_bytes",
         "kept_file_removal_after", "kept_file_removal_withheld", "kept_file_removal_undated", "kept_file_disk_unread_pages", "disk_unread_pages",
-        "disk_unread_first", "check_pages_unread",
+        "disk_unread_first", "check_pages_unread", "name_left_in_place",
     )
     out: dict[str, Any] = {"state": state, "finished_at": datetime.now(UTC).isoformat(timespec="seconds")}
     out.update({k: report[k] for k in keep if k in report})
@@ -1139,6 +1330,12 @@ def _carry_from(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
     report["disk_unread_pages"] = measured if type(measured) is int and measured >= 0 else None
     report["page_size"] = doc["page_size"] if type(doc.get("page_size")) is int and doc["page_size"] > 0 else None
     report["clean_at"] = _clean_read_time(doc, _written_at(sidecar), _written_at(damaged))
+    left = doc.get("name_left_in_place")
+    if (
+        isinstance(left, str) and 0 < len(left) <= 255 and "/" not in left and "\\" not in left and left == Path(left).name
+        and not any(unicodedata.category(ch) in ("Cc", "Cf") for ch in left)
+    ):
+        report["name_left_in_place"] = left
 
 
 def _resume(work: dict[str, Any], report: dict[str, Any], ctx: JobContext | None) -> str:
@@ -1180,6 +1377,7 @@ def _kept_facts(report: dict[str, Any], doc: dict[str, Any], target: Path, sidec
         except Exception:  # noqa: BLE001 - not measured: no date is set below, and the record says so
             _LOG.warning("database repair: the kept file could not be read to measure what the drive cannot give; it gets no removal date")
     _note_what_was_set_aside(report, damaged)
+    _drop_replaced_name(target, doc, damaged)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
         report["kept_file_bytes"] = damaged.stat().st_size
@@ -1302,10 +1500,7 @@ def _swap(
         finished = source
         if expect is not None and now != expect:
             assert sidecar is not None
-            for stale in (finished, sidecar):
-                with contextlib.suppress(OSError):
-                    stale.unlink()
-            _drop_extra_names(target, damaged)
+            _scrap(target, damaged, finished, sidecar)
             raise Declined(
                 "copy-stale",
                 "the library file was written to after the copy was made, so the copy is discarded and a new one is made at the next start",
@@ -1333,26 +1528,40 @@ def _swap(
         # reached the drive.
         _durable(finished)
         _fsync_dir(target.parent)
-        made: list[Path] = []
-        for suffix in ("", "-wal"):
-            live, kept = _side(target, suffix), _side(damaged, suffix)
-            if not live.exists():
-                continue
+        # R781 (row 299): the main file ALONE is named. A save that reached the file or its log after the fold is refused here early and
+        # cheaply; the guarantee is the check inside the swap window below (``written_to_since``: no other connection committed since the
+        # copy began, by SQLite's data version, and the file and its log are still exactly what the fold left).
+        if fingerprint(target) != now:
+            raise Declined(
+                "saved-during-the-copy",
+                "something was saved to the library file after its log was folded in, so nothing was named or switched; the repair is "
+                "made again at the next start",
+            )
+        left = _name_blocker(target, damaged)
+        if left is None:
             try:
-                os.link(live, kept)
-                made.append(kept)
+                os.link(target, damaged)
             except FileExistsError:
-                twin, original = fingerprint(kept), fingerprint(live)
-                if twin is None or original is None or twin["ino"] != original["ino"]:
-                    raise  # a different file already has that name: never overwrite it
-            except OSError:
-                for extra in made:
-                    with contextlib.suppress(OSError):
-                        extra.unlink()
-                for spent in (finished, sidecar):
-                    with contextlib.suppress(OSError):
-                        spent.unlink()
-                raise Declined("no-hard-links", "the drive cannot give the damaged file a second name") from None
+                twin, original = _identity(damaged), _identity(target)
+                if twin is None or original is None or twin != original:
+                    left = damaged.name  # taken since the check: never overwritten, the repair moves to a free name below
+            except OSError as exc:
+                refusal = _link_refused(exc.errno)
+                if refusal.code == "no-hard-links":
+                    _scrap(target, damaged, finished, sidecar)
+                raise refusal from None
+        if left is not None:
+            try:
+                damaged = _claim_free_name(target, damaged, sidecar, left)
+            except Declined as refusal:
+                if refusal.code == "no-hard-links":
+                    _scrap(target, damaged, finished, sidecar)
+                raise
+            report["name_left_in_place"] = left
+            _LOG.warning(
+                "database repair: %s was already beside the library and is left in place; the damaged file is kept as %s instead",
+                left, damaged.name,
+            )
         _note_what_was_set_aside(report, damaged)
 
         def written_to_since() -> None:
@@ -1397,10 +1606,7 @@ def _swap(
             if refusal.code == "saved-during-the-copy":
                 # AFTER the window has ended (it reads the copy's existence to tell whether the file moved, and gives the earlier
                 # connections their validity back when it did not): the copy is stale and is the app's own scratch.
-                for stale in (finished, sidecar):
-                    with contextlib.suppress(OSError):
-                        stale.unlink()
-                _drop_extra_names(target, damaged)
+                _scrap(target, damaged, finished, sidecar)
             raise
     finally:
         watch.close()
@@ -1409,6 +1615,7 @@ def _swap(
     kv_invalidate()  # the settings the replaced file held are not the live ones: the restore's swap empties the cache the same way
     dispose_engine()
     _fsync_dir(target.parent)
+    _drop_replaced_name(target, _sidecar_doc(sidecar), damaged)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
         report["kept_file_bytes"] = damaged.stat().st_size

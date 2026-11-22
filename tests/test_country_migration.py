@@ -11,13 +11,14 @@ import sqlite3
 import subprocess
 import sys
 import textwrap
+from contextlib import closing
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 
 from src.backup import country_migration as cm
 from src.database import country_form as cf
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +28,7 @@ def _new_store(path: Path, *, articles: int = 60, sources: int = 4) -> Path:
     """A scratch alpha-2 store with every country-bearing table populated."""
     from src.database.models import Base
 
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = app_sqlite_engine(path)
     Base.metadata.create_all(eng)
     eng.dispose()
     con = sqlite3.connect(path)
@@ -52,6 +53,13 @@ def _new_store(path: Path, *, articles: int = 60, sources: int = 4) -> Path:
     con.commit()
     con.close()
     return path
+
+
+def _read_form(path: Path) -> str:
+    """The store's form marker, read on a connection that is closed again: under WAL an idle open connection holds the store,
+    and the migration is right to refuse to run past it."""
+    with closing(sqlite3.connect(path)) as con:
+        return cf.read_form(con)
 
 
 def _column(path: Path, table: str, column: str) -> dict:
@@ -81,7 +89,7 @@ def test_the_run_converts_what_has_an_alpha3_and_keeps_everything_else_as_stored
     assert after["FRA"] == before.get("fr", 0) + before.get("FR", 0) + before.get("FRA", 0) + before.get("fra", 0)
     assert _column(db, "places", "country") == {None: 1, "FRA": 1}
     assert _column(db, "places", "country_alpha3") == {None: 1, "FRA": 1}  # the other column is not touched
-    assert cf.read_form(sqlite3.connect(db)) == "alpha3"
+    assert _read_form(db) == "alpha3"
     assert all(b["balanced"] for b in rep.balance.values())
 
 
@@ -127,7 +135,7 @@ def test_no_free_space_for_the_copy_refuses_before_any_row_moves(tmp_path, monke
     with pytest.raises(cm.MigrationRefused, match="not enough free space"):
         cm.migrate(db, backup_dir=tmp_path / "bk")
     assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}
-    assert cf.read_form(sqlite3.connect(db)) == "alpha2"
+    assert _read_form(db) == "alpha2"
 
 
 def test_a_collision_in_a_unique_index_refuses_before_any_row_moves(tmp_path):
@@ -164,7 +172,7 @@ def test_the_old_unscoped_search_trigger_is_refused_not_paid_for_per_row(tmp_pat
     con.close()
     with pytest.raises(cm.MigrationRefused, match="unscoped"):
         cm.migrate(db, backup_dir=tmp_path / "bk")
-    assert cf.read_form(sqlite3.connect(db)) == "alpha2"
+    assert _read_form(db) == "alpha2"
 
 
 def test_the_run_holds_the_file_and_a_holder_stops_the_run(tmp_path):
@@ -204,7 +212,7 @@ def test_estimate_reads_the_plan_and_changes_nothing_with_the_file_open(tmp_path
     other.close()
     assert rep.plan["to_rewrite"] > 0 and rep.estimate["rows_to_rewrite"] == rep.plan["to_rewrite"]
     assert before == {t: _column(db, t, c) for t, c in cm.migration_columns()}
-    assert not (tmp_path / "bk").exists() and cf.read_form(sqlite3.connect(db)) == "alpha2"
+    assert not (tmp_path / "bk").exists() and _read_form(db) == "alpha2"
 
 
 def test_the_estimate_is_shown_first_and_a_no_leaves_the_store_untouched(tmp_path):
@@ -271,11 +279,11 @@ def test_a_run_killed_mid_way_is_finished_by_the_next_one_and_ends_exactly_as_an
     db = _new_store(tmp_path / "s.db")
     _kill_child(db, tmp_path / "bk", mode, 3)
     mid = _column(db, "articles", "country")
-    assert cf.read_form(sqlite3.connect(db)) == "alpha2", "a half-done run must not claim alpha-3"
+    assert _read_form(db) == "alpha2", "a half-done run must not claim alpha-3"
     assert "FRA" in mid and ("fr" in mid or "FR" in mid), "the kill came too early or too late to leave a half-done store"
     copy = next((tmp_path / "bk").glob("*.db"))
     stamp = copy.stat().st_mtime_ns
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c:
         assert json.loads(c.execute("SELECT value FROM app_state WHERE key = ?", (cm.JOURNAL_KEY,)).fetchone()[0])["state"] == "running"
 
     rep = cm.migrate(db, backup_dir=tmp_path / "bk")
@@ -283,7 +291,7 @@ def test_a_run_killed_mid_way_is_finished_by_the_next_one_and_ends_exactly_as_an
     assert want == {t: _column(db, t, c) for t, c in cm.migration_columns()}
     assert all(b["balanced"] for b in rep.balance.values())
     assert copy.stat().st_mtime_ns == stamp and len(list((tmp_path / "bk").glob("*.db"))) == 1, "the safety copy was taken again, half-migrated"
-    assert cf.read_form(sqlite3.connect(db)) == "alpha3"
+    assert _read_form(db) == "alpha3"
 
 
 def test_a_window_killed_before_its_commit_leaves_none_of_its_rows_converted(tmp_path):
@@ -331,7 +339,7 @@ def test_stopping_between_windows_is_resumable(tmp_path):
         return ticks["n"] > 3
 
     rep = cm.migrate(db, backup_dir=tmp_path / "bk", should_stop=stop)
-    assert rep.state == "interrupted" and cf.read_form(sqlite3.connect(db)) == "alpha2"
+    assert rep.state == "interrupted" and _read_form(db) == "alpha2"
     assert cm.migrate(db, backup_dir=tmp_path / "bk").state == "done"
 
 
@@ -385,7 +393,7 @@ def test_an_interrupted_run_stops_the_app_from_booting_or_writing_until_it_is_fi
     booted = _boot_init_db(data)
     assert booted.returncode != 0 and "booted" not in booted.stdout
     assert "migrate-countries" in booted.stderr and "interrupted" in booted.stderr, booted.stderr[-1500:]
-    with sqlite3.connect(db) as jc:
+    with closing(sqlite3.connect(db)) as jc:
         saved = json.loads(jc.execute("SELECT value FROM app_state WHERE key = ?", (cm.JOURNAL_KEY,)).fetchone()[0])["backup"]["path"]
     assert saved in booted.stderr, "the refusal does not say where the safety copy is"
     assert {t: _column(db, t, c) for t, c in cm.migration_columns()} == half, "the refused boot still touched the store"
@@ -528,7 +536,7 @@ def test_a_place_that_cannot_be_examined_is_refused_by_class_and_never_read_as_f
         con.close()
     assert "could not be examined (NotADirectoryError)" in str(caught.value) and "Nothing was changed" in str(caught.value)
     assert caught.value.__suppress_context__ and caught.value.__cause__ is None, "the OS error's text would reach the operator"
-    assert cf.read_form(sqlite3.connect(a)) == "alpha2"
+    assert _read_form(a) == "alpha2"
 
 
 def test_a_file_where_the_folder_should_be_is_refused_where_lstat_reads_it_as_absent(tmp_path, monkeypatch):
@@ -554,7 +562,7 @@ def test_a_file_where_the_folder_should_be_is_refused_where_lstat_reads_it_as_ab
     assert "could not be examined (NotADirectoryError)" in str(caught.value) and "Nothing was changed" in str(caught.value)
     assert caught.value.__suppress_context__ and caught.value.__cause__ is None, "the same shape as the POSIX refusal"
     assert not list(tmp_path.glob("blocker*.partial")) and blocker.is_file()
-    assert cf.read_form(sqlite3.connect(a)) == "alpha2"
+    assert _read_form(a) == "alpha2"
 
 
 def test_a_relative_backup_folder_is_journalled_as_an_absolute_path(tmp_path, monkeypatch):
@@ -711,12 +719,12 @@ def test_the_console_command_estimates_asks_and_migrates_the_store_it_is_pointed
     db = _new_store(data / "open_omniscience.db")
     est = _cli(data, "--estimate", "--backup-dir", str(tmp_path / "bk"))
     assert est.returncode == 0, est.stderr[-1500:]
-    assert "Rows to rewrite" in est.stdout and cf.read_form(sqlite3.connect(db)) == "alpha2"
+    assert "Rows to rewrite" in est.stdout and _read_form(db) == "alpha2"
     declined = _cli(data, "--backup-dir", str(tmp_path / "bk"), stdin="no\n")
-    assert cf.read_form(sqlite3.connect(db)) == "alpha2" and not (tmp_path / "bk").exists(), declined.stdout[-800:]
+    assert _read_form(db) == "alpha2" and not (tmp_path / "bk").exists(), declined.stdout[-800:]
     done = _cli(data, "--yes", "--backup-dir", str(tmp_path / "bk"))
     assert done.returncode == 0, done.stdout[-800:] + done.stderr[-1500:]
-    assert cf.read_form(sqlite3.connect(db)) == "alpha3" and _column(db, "law_documents", "jurisdiction")["FRA"] == 1
+    assert _read_form(db) == "alpha3" and _column(db, "law_documents", "jurisdiction")["FRA"] == 1
     assert any((tmp_path / "bk").iterdir()), "the safety copy must exist"
 
 
@@ -792,7 +800,7 @@ def test_a_listing_ordered_by_country_comes_back_in_the_same_order_in_both_forms
 
     orders = {}
     for form in ("alpha2", "alpha3"):
-        eng = create_engine(f"sqlite:///{tmp_path / (form + '.db')}", future=True)
+        eng = app_sqlite_engine(tmp_path / (form + '.db'))
         Source.metadata.create_all(eng)
         with cf.writing_in(form), Session(eng) as s:
             for i, cc in enumerate(["au", "at", "ch", "cn", "gb", "uk", None, "de"]):

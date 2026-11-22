@@ -1755,6 +1755,8 @@ class DamageRegistry:
                     "write-gate-off": FRAME_REPAIR_NO_GATE,
                     "copy-stale": FRAME_REPAIR_WRITTEN,
                     "saved-during-the-copy": FRAME_REPAIR_WRITTEN,
+                    "damaged-name-taken": FRAME_REPAIR_NAME_TAKEN,
+                    "name-not-given": FRAME_REPAIR_NOT_NAMED,
                 }.get(str(reason), FRAME_REPAIR_FAILED)
                 values: dict[str, Any] = {}
                 if frame == FRAME_REPAIR_NO_ROOM:
@@ -1784,6 +1786,18 @@ class DamageRegistry:
                     }
                 )
                 out.extend(_orphan_notes(last))
+                left = last.get("name_left_in_place")
+                if isinstance(left, str) and left and kept is not None:  # once the kept copy is removed, "is kept as" would be false
+                    # R781 (row 299): the name the repair first chose was taken by a file it must keep, so it finished under the next
+                    # free name. Said as a finished repair, naming both files, never as a failure.
+                    out.append(
+                        {
+                            "kind": "repaired",
+                            "file": FILE_CORPUS,
+                            "frame": FRAME_KEPT_NAME_LEFT,
+                            "vars": {"name": str(last["kept_file"]), "left": left},
+                        }
+                    )
             name = str(last["kept_file"])
             if removed_at:
                 out.append(
@@ -2184,6 +2198,19 @@ FRAME_REPAIRED_OPEN = (
     "Your library file was damaged, and the app repaired it: {kept} rows were copied. The end of the article list could "
     "not be read, so how many entries were lost is not known (at least {lost}). Articles that could not be read are "
     "collected again by ordinary collection."
+)
+FRAME_KEPT_NAME_LEFT = (
+    "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside "
+    "your library: the app left that file as it was."
+)
+FRAME_REPAIR_NOT_NAMED = (
+    "The app did not switch to the repaired file: the damaged file could not be given the second name it is kept under. The "
+    "repaired copy is kept and the switch is tried again at the next start. Your data files were not changed."
+)
+FRAME_REPAIR_NAME_TAKEN = (
+    "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by "
+    "other files, which it leaves alone. The repaired copy is kept and the switch is tried again at the next start; moving "
+    "those files elsewhere lets it finish. Your data files were not changed."
 )
 FRAME_KEPT_UNTIL = (
     "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. The app removes it at the first start "

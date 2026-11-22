@@ -20,8 +20,8 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
 from src.backup import country_migration as cm  # noqa: E402
 from src.backup.alternates import swap  # noqa: E402
@@ -39,6 +39,7 @@ from src.database.models import (  # noqa: E402
     LawRevisionSummary,
     Place,
 )
+from tests._app_engine import app_sqlite_engine  # noqa: E402
 
 _META = {"artifact_kind": "oo-backup-3", "origin_fingerprint": "machine-B", "app_version": "0.5.0", "alembic_rev": "head", "manifest": None}
 _T0 = datetime(2026, 9, 1, tzinfo=UTC).replace(tzinfo=None)
@@ -52,7 +53,9 @@ def _small_windows(monkeypatch):
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    # NullPool: a session's connection closes when the session does. Under the app's WAL an idle pooled connection holds
+    # the store, and the migration is right to refuse to run past it.
+    engine = app_sqlite_engine(path, poolclass=NullPool)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 
