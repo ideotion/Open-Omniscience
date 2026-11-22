@@ -287,6 +287,7 @@ _hdr_names: dict[tuple[int, int], str] = {}  # the name the file was read by, fo
 _hdr_uses: dict[tuple[int, int], int] = {}  # readers of ours using it now
 _hdr_opening = 0  # SQLite opens in flight in this process
 _hdr_lock = threading.Lock()
+_hdr_pinned: set[str] = set()  # realpaths of stores kept open while reachable (:func:`pin_store`)
 _GROUP_SUFFIXES = ("-wal", "-shm", "-journal")
 
 
@@ -305,49 +306,62 @@ def sqlite_opening():
         with _hdr_lock:
             if counted:
                 _hdr_opening -= 1
-            if not _hdr_opening and _hdr_fds:
-                _close_free_locked()  # what reads during the open parked; the new connection's own files stay
+        _sweep()  # what reads during the open parked; the new connection's own files stay (they are foreign now)
+
+
+def pin_store(path: Path | str) -> None:
+    """Name a store whose descriptor of ours stays open for as long as the name leads to the same file (R789, the
+    coordinator's fallback for the library): a close that could race an open of the library is then never made, whatever
+    opener it is. The session registers the library file at import."""
+    with contextlib.suppress(OSError), _hdr_lock:
+        _hdr_pinned.add(os.path.realpath(path))
+
+
+def _not_regular(mode: int) -> OSError:
+    if stat.S_ISDIR(mode):
+        return IsADirectoryError(errno.EISDIR, "is a directory")
+    return OSError(errno.EINVAL, "not a regular file")
 
 
 def _acquire(p: Path) -> tuple[tuple[int, int], int]:
     """A read-only descriptor on the regular file at ``p`` and its (device, inode), counted in use until :func:`_release`.
-    Raises ``OSError`` as ``os.open`` does; ``IsADirectoryError`` for a directory, ``OSError`` for another non-regular file."""
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    Raises ``OSError`` as ``os.open`` does; ``IsADirectoryError`` for a directory, ``OSError`` for another non-regular file.
+    The stat and the open run OUTSIDE ``_hdr_lock`` (a hung mount stalls this read, not every connect); a descriptor not
+    yet recorded is foreign to other reads, which then keep theirs: the safe direction."""
+    st = os.stat(p)
+    if not stat.S_ISREG(st.st_mode):
+        raise _not_regular(st.st_mode)  # refused before any open: no FIFO wait, no terminal, no device side effect
+    key = (st.st_dev, st.st_ino)
     with _hdr_lock:
-        try:
-            st = os.stat(p)
-            key = (st.st_dev, st.st_ino)
-        except OSError:
-            key = None
-        if key is not None and key in _hdr_fds:
-            fd = _hdr_fds[key][0]
+        if key in _hdr_fds:
+            _hdr_names[key] = os.fspath(p)
+            _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
+            return key, _hdr_fds[key][0]
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+    fd = os.open(p, flags)
+    got = os.fstat(fd)  # should this raise, the descriptor stays open: closing one we cannot place could drop a lock
+    if not stat.S_ISREG(got.st_mode):
+        os.close(fd)  # the name now leads to a non-regular file, which no SQLite connection holds a lock on
+        raise _not_regular(got.st_mode)
+    key = (got.st_dev, got.st_ino)  # what was opened, even if the name moved since the stat
+    with _hdr_lock:
+        if key in _hdr_fds:
+            _hdr_fds[key].append(fd)  # never closed here: another of ours is open on the file
         else:
-            fd = os.open(p, flags)
-            got = os.fstat(fd)
-            if not stat.S_ISREG(got.st_mode):
-                # Nothing SQLite holds is a directory or a device: this descriptor drops no lock of ours.
-                os.close(fd)
-                if stat.S_ISDIR(got.st_mode):
-                    raise IsADirectoryError(errno.EISDIR, "is a directory")
-                raise OSError(errno.EINVAL, "not a regular file")
-            key = (got.st_dev, got.st_ino)  # what was opened, even if the name moved since the stat
-            if key in _hdr_fds:
-                _hdr_fds[key].append(fd)  # never closed here: another of ours is open on the file
-                fd = _hdr_fds[key][0]
-            else:
-                _hdr_fds[key] = [fd]
+            _hdr_fds[key] = [fd]
         _hdr_names[key] = os.fspath(p)
         _hdr_uses[key] = _hdr_uses.get(key, 0) + 1
-        return key, fd
+        return key, _hdr_fds[key][0]
 
 
 def _release(key: tuple[int, int]) -> None:
     with _hdr_lock:
         _hdr_uses[key] -= 1
-        _close_free_locked()
+    _sweep()
 
 
-def _group_keys(name: str) -> set[tuple[int, int]]:
+def _group_of(name: str) -> tuple[str, set[tuple[int, int]]]:
+    """The realpath of the store ``name`` belongs to, and the (device, inode) of that store and its logs as they are now."""
     base = name
     for suf in _GROUP_SUFFIXES:
         if name.endswith(suf):
@@ -360,7 +374,11 @@ def _group_keys(name: str) -> set[tuple[int, int]]:
         except OSError:
             continue
         keys.add((st.st_dev, st.st_ino))
-    return keys
+    try:
+        real = os.path.realpath(base)
+    except (OSError, ValueError):
+        real = base
+    return real, keys
 
 
 def _foreign_fd_keys() -> set[tuple[int, int]] | None:
@@ -389,21 +407,42 @@ def _foreign_fd_keys() -> set[tuple[int, int]] | None:
     return None
 
 
-def _close_free_locked() -> None:
-    """Close every descriptor of ours that no reader uses and whose file group nothing else of this process has open."""
-    if _hdr_opening:
-        return
-    idle = [k for k in _hdr_fds if not _hdr_uses.get(k)]
+def _idle_names_locked() -> dict[tuple[int, int], str]:
+    return {k: _hdr_names.get(k, "") for k in _hdr_fds if not _hdr_uses.get(k)}
+
+
+def _sweep() -> None:
+    """Close every descriptor of ours that no reader uses and that closing cannot hurt (see the block comment above).
+
+    Two phases: the groups are resolved by name with no lock held (a stat may wait on a slow mount); then, under the lock,
+    nothing may be opening, the process's descriptors are listed, and the close decision and the close are made together."""
+    with _hdr_lock:
+        if _hdr_opening:
+            return
+        idle = _idle_names_locked()
     if not idle:
+        return
+    groups = {k: _group_of(name) for k, name in idle.items()}
+    with _hdr_lock:
+        _close_free_locked(groups)
+
+
+def _close_free_locked(groups: dict[tuple[int, int], tuple[str, set[tuple[int, int]]]]) -> None:
+    if _hdr_opening or not groups:
         return
     foreign = _foreign_fd_keys()
     if foreign is None:
         return  # cannot tell: keep them all (a kept descriptor drops nothing)
-    for key in idle:
-        group = _group_keys(_hdr_names.get(key, "")) | {key}
-        if group & foreign:
+    for key, (real, group) in groups.items():
+        if key not in _hdr_fds or _hdr_uses.get(key):
             continue
-        if any(_hdr_uses.get(k) for k in group if k != key):
+        reachable = key in group  # the name still leads to this file
+        if reachable and real in _hdr_pinned:
+            continue  # the library: kept while it is the library (the coordinator's fallback)
+        held = (group if reachable else set()) | {key}  # a replaced file is judged alone: its name now leads elsewhere
+        if held & foreign:
+            continue
+        if any(_hdr_uses.get(k) for k in held if k != key):
             continue  # a reader of ours on the same group: the group's descriptors stay with it
         for fd in _hdr_fds.pop(key):
             with contextlib.suppress(OSError):
@@ -1017,7 +1056,8 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
         finally:
             conn.close()
         return dest_p
-    src_conn = sqlite3.connect(str(src_p))
+    with sqlite_opening():  # R789: the live store, opened outside connect()
+        src_conn = sqlite3.connect(str(src_p))
     try:
         dst_conn = sqlite3.connect(str(dest_p))
         try:

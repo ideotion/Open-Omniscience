@@ -394,3 +394,183 @@ def test_the_migration_cannot_take_the_store_under_a_running_app(tmp_path, leg):
     assert out["migration"] == "AppStillRunning", out
     assert [tuple(r) for r in out["rows"]] == [("a", "fr"), ("b", "de")], out
     assert out["quick_check"] == "ok", out
+
+
+# The stress run the coordinator asked for (R789): a close of ours and a SQLite open in this process on the same file must
+# never interleave so that a lock the open took is dropped. Threads hammer Python reads of the store and its logs and open
+# and close connections (pool growth) while the main thread, over and over, opens a NEW connection, takes the write lock,
+# and asks a second process to take it too; that process must be refused every time.
+_STRESS_TAKER = textwrap.dedent(
+    """
+    import sqlite3, sys
+    con = sqlite3.connect(sys.argv[1], timeout=0, isolation_level=None)
+    for line in sys.stdin:
+        try:
+            con.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            print("REFUSED" if "locked" in str(exc) or "busy" in str(exc) else f"ERROR {exc}", flush=True)
+            continue
+        con.execute("ROLLBACK")
+        print("TOOK", flush=True)
+    """
+)
+
+
+@pytest.mark.parametrize("journal", ["wal", "delete"])
+def test_no_close_of_ours_drops_a_lock_a_concurrent_open_took(tmp_path, journal):
+    import threading
+    import time
+
+    path = tmp_path / "s.db"
+    con = connect_mod.connect(path, create_encrypted=False)
+    try:
+        assert con.execute(f"PRAGMA journal_mode={journal}").fetchone()[0] == journal
+        con.execute("CREATE TABLE t(x)")
+        con.execute("INSERT INTO t VALUES (1)")
+        con.commit()
+    finally:
+        con.close()
+    stop = threading.Event()
+    errors: list[BaseException] = []
+
+    def _reads():
+        names = [path, Path(str(path) + "-wal"), Path(str(path) + "-shm"), Path(str(path) + "-journal")]
+        while not stop.is_set():
+            try:
+                connect_mod.is_encrypted_file(path)
+                for name in names:
+                    with contextlib.suppress(FileNotFoundError), connect_mod.store_file(name) as fh:
+                        fh.read(64)
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+                return
+
+    def _churn():
+        while not stop.is_set():
+            try:
+                c = connect_mod.connect(path, check_same_thread=False)
+                c.execute("SELECT count(*) FROM t").fetchone()
+                c.close()
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+                return
+
+    workers = [threading.Thread(target=_reads, daemon=True) for _ in range(2)]
+    workers += [threading.Thread(target=_churn, daemon=True) for _ in range(2)]
+    taker = subprocess.Popen(
+        [sys.executable, "-c", _STRESS_TAKER, str(path)], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    answers: list[str] = []
+    try:
+        for w in workers:
+            w.start()
+        for i in range(150):
+            holder = connect_mod.connect(path, check_same_thread=False)
+            holder.isolation_level = None
+            try:
+                holder.execute("BEGIN IMMEDIATE")
+                for _ in range(2):
+                    taker.stdin.write("try\n")
+                    taker.stdin.flush()
+                    answers.append(taker.stdout.readline().strip())
+                    if i % 3 == 0:
+                        time.sleep(0.002)
+                holder.execute("ROLLBACK")
+            finally:
+                holder.close()
+    finally:
+        stop.set()
+        for w in workers:
+            w.join(timeout=30)
+        taker.stdin.close()
+        taker.wait(timeout=30)
+    assert not errors, errors[:3]
+    assert answers and set(answers) == {"REFUSED"}, f"a second process took the store under a held lock: {answers.count('TOOK')} of {len(answers)}"
+
+
+def test_a_sqlite_open_already_under_way_is_never_raced_by_a_close(tmp_path, monkeypatch):
+    # The interleave a stress run is too coarse to hit, forced: an open has counted itself in (``sqlite_opening``), a read of
+    # ours checks the process's descriptors and finds none on the file, and the open's file and lock land right then, before
+    # our close. The close must not happen: the open in flight is what keeps the descriptor.
+    import sqlite3
+
+    path = tmp_path / "s.db"
+    con = connect_mod.connect(path, create_encrypted=False)
+    try:
+        con.execute("PRAGMA journal_mode=delete").fetchone()
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+    finally:
+        con.close()
+    landed: list[sqlite3.Connection] = []
+    real = connect_mod._foreign_fd_keys
+
+    def _the_open_lands():
+        if not landed:
+            c = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+            c.execute("BEGIN IMMEDIATE")
+            landed.append(c)
+
+    def _check_then_the_open_lands():
+        found = real()
+        _the_open_lands()  # between our check and our close, if we ever got that far with an open under way
+        return found
+
+    monkeypatch.setattr(connect_mod, "_foreign_fd_keys", _check_then_the_open_lands)
+    try:
+        with connect_mod.sqlite_opening():
+            with connect_mod.store_file(path) as fh:
+                fh.read(16)
+            _the_open_lands()  # otherwise right after our read gave the descriptor back
+            answer = subprocess.run(
+                [sys.executable, "-c", _STRESS_TAKER, str(path)], cwd=ROOT, input="try\n", capture_output=True, text=True,
+                timeout=60,
+            ).stdout.strip()
+            assert answer == "REFUSED", f"a close raced an open under way and dropped its lock: {answer}"
+    finally:
+        for c in landed:
+            c.close()
+
+
+def test_the_old_file_of_a_replaced_store_is_let_go_while_the_new_one_is_held(tmp_path):
+    # Restore, encryption, repair and the migration swap the store's name onto a new file: the descriptor we kept on the
+    # old one must not stay open (with the old file's disk space) because the NEW file is held.
+    path = _store(tmp_path, "plain")
+    other = tmp_path / "other.bin"
+    other.write_bytes(b"y" * 100)
+    holder = connect_mod.connect(path, check_same_thread=False)
+    try:
+        holder.execute("SELECT 1").fetchone()
+        connect_mod.is_encrypted_file(path)
+        old = _key(path)
+        assert old in connect_mod._hdr_fds
+        holder.close()
+        new = tmp_path / "new.db"
+        shutil.copyfile(path, new)
+        os.replace(new, path)
+        holder = connect_mod.connect(path, check_same_thread=False)
+        holder.execute("SELECT 1").fetchone()
+        connect_mod.is_encrypted_file(other)
+        assert old not in connect_mod._hdr_fds, "the replaced file's descriptor was kept because its successor is held"
+    finally:
+        holder.close()
+
+
+def test_the_library_is_kept_open_while_its_name_leads_to_it(tmp_path):
+    path = _store(tmp_path, "plain")
+    other = tmp_path / "other.bin"
+    other.write_bytes(b"y" * 100)
+    connect_mod.pin_store(path)
+    try:
+        connect_mod.is_encrypted_file(path)
+        connect_mod.is_encrypted_file(other)
+        assert _key(path) in connect_mod._hdr_fds, "the library's descriptor was closed although its name still leads to it"
+        old = _key(path)
+        new = tmp_path / "new.db"
+        shutil.copyfile(path, new)
+        os.replace(new, path)
+        connect_mod.is_encrypted_file(other)
+        assert old not in connect_mod._hdr_fds, "the library's replaced file was kept"
+    finally:
+        with connect_mod._hdr_lock:
+            connect_mod._hdr_pinned.discard(os.path.realpath(path))

@@ -77,6 +77,11 @@ def _sqlite_file(url: str) -> str:
 #: The database file the pool's connections are opened on, or ``None`` off SQLite. The one source the shutdown write-back reads, so the step
 #: and the creator cannot name different files.
 DB_FILE: str | None = _sqlite_file(DATABASE_URL) if _IS_SQLITE else None
+if DB_FILE:
+    # R789: the library's descriptor for Python reads is never closed while the name leads to it (src.database.connect).
+    from src.database.connect import pin_store as _pin_store
+
+    _pin_store(DB_FILE)
 
 
 def _pool_timeout_s() -> float:
