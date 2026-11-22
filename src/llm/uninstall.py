@@ -255,7 +255,11 @@ def _other_folders(own_kind: str) -> list[Path]:
     try:
         from src.llm import vllm_lifecycle
 
-        out.append(vllm_lifecycle.venv_dir())
+        venv = vllm_lifecycle.venv_dir()
+        if own_kind == "vllm":
+            own = venv  # the environment is the folder being checked, never one of its "others"
+        else:
+            out.append(venv)
     except Exception:  # noqa: BLE001 - a missing backend has no folder to protect
         pass
     try:
@@ -346,8 +350,10 @@ def model_stores() -> list[dict]:
 #: ``venv`` writes, and the app's own install record). Anything else there means the folder is more
 #: than an environment -- the keys or a backup folder a variable pointed the install at -- and it is
 #: never removed as vLLM's (R786).
-_VENV_TOP = frozenset({"bin", "lib", "lib64", "include", "share", "etc", "scripts", "lib/site-packages",
-                       "pyvenv.cfg", ".gitignore", ".oo_vllm_installed.json"})
+_VENV_TOP = frozenset({"bin", "lib", "lib64", "include", "share", "etc", "scripts", "pyvenv.cfg", ".gitignore"})
+#: The app's own files at the top of the environment (vllm_lifecycle: the install record and its atomic
+#: temp copies, the install and start journals, the server log and any rotated copy of it).
+_VENV_APP_FILES = (".oo_vllm_installed.json", "install_attempts.jsonl", "start_attempts.jsonl", "server.log")
 
 
 def _venv_refusal(venv: Path) -> str | None:
@@ -357,7 +363,8 @@ def _venv_refusal(venv: Path) -> str | None:
     try:
         if not (venv / "pyvenv.cfg").is_file():
             return _NOT_REMOVABLE + "it does not look like a Python environment"
-        extra = sorted(e.name for e in os.scandir(venv) if e.name.lower() not in _VENV_TOP)
+        extra = sorted(e.name for e in os.scandir(venv)
+                       if e.name.lower() not in _VENV_TOP and not e.name.startswith(_VENV_APP_FILES))
         if extra:
             return _NOT_REMOVABLE + "it holds more than a Python environment"
         from src.paths import data_dir
@@ -370,7 +377,7 @@ def _venv_refusal(venv: Path) -> str | None:
                         "folder, a drive...). Remove the environment by hand if you want the space back.")
     except Exception:  # noqa: BLE001 - fail closed
         return _NOT_REMOVABLE + "it could not be looked at"
-    return removal_refusal(venv, others=[p for _k, p in _store_paths()], look_inside="names")
+    return removal_refusal(venv, others=_other_folders("vllm"), look_inside="names")
 
 
 def _vllm_state() -> dict:

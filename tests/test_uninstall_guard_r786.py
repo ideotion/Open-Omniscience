@@ -359,3 +359,28 @@ def test_a_venv_variable_pointed_at_keys_or_backups_never_removes_them(app, monk
     assert st["removable"] is False and "more than a Python environment" in st["kept_reason"]
     out = U.uninstall(backends=["vllm"])
     assert (target / extra).exists() and any(k["what"] == "vllm" for k in out["kept"])
+
+
+def test_a_used_vllm_environment_is_still_removable(app, monkeypatch):
+    """The app's own files at the environment's top (log, journals, install record) are part of it."""
+    import src.llm.vllm_lifecycle as VL
+
+    venv = app / "vllm_venv"
+    for d in ("bin", "lib", "include"):
+        (venv / d).mkdir(parents=True)
+    for f in ("pyvenv.cfg", ".gitignore", ".oo_vllm_installed.json", "install_attempts.jsonl", "server.log",
+              "server.log.1", "start_attempts.jsonl"):
+        (venv / f).write_text("x", encoding="utf-8")
+    monkeypatch.undo()
+    monkeypatch.setattr("src.paths.data_dir", lambda: app)
+    monkeypatch.setattr("src.llm.model_store.data_dir", lambda: app)
+    monkeypatch.setattr(VL, "venv_dir", lambda: venv)
+    monkeypatch.setattr(VL, "is_installed", lambda: True)
+    monkeypatch.setattr(VL, "is_running", lambda: False)
+    assert U._vllm_state()["removable"] is True
+
+
+def test_the_columnar_folder_helper_the_guard_imports_exists():
+    from src.analytics.columnar import _store_dir
+
+    assert callable(_store_dir), "renamed: the uninstall guard would silently lose the columnar store"
