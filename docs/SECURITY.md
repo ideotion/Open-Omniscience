@@ -791,9 +791,11 @@ imply a protection we cannot deliver.
   main file, log and log index with one `F_GETLK` (the shared locks SQLite holds for as long as a connection is open in WAL
   mode; never this process's own, and no process id is read); and while a holder is seen it rewrites through its kept
   descriptors every 100 ms for at most 2 s, each pass stopped at the bound and each file rewritten up to its size when kept
-  plus 256 MiB, so a holder that grows the shared file cannot make the erase fill the disk; the panic wipe's 15 s late pass
+  plus 256 MiB, so a holder that grows the shared file cannot make the erase fill the disk; then (R796) one more rewrite,
+  under a 2 s bound of its own, always runs, whatever was found; the panic wipe's 15 s late pass
   does the same before it lets its descriptors go (its finding is logged, without a path). The report says `other_holder`:
-  `none` (none SEEN), `held` (one was still there when the bound ended: the result says the erase may be incomplete, names
+  `none` (none SEEN), `held` (one was seen at any point of the check, even if it let go before the end, since it may have
+  written behind the last rewrite: the result says the erase may be incomplete, names
   closing that program or restarting the computer, and its `limit` no longer claims the corpus unrecoverable) or `unknown`
   (Windows, where an open file cannot be found from here, a platform whose lock record is not read, a check that failed, or a
   store file that could not be kept: said as such, never clean). Stated limits: a program that has the database open but holds

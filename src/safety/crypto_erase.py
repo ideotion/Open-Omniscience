@@ -288,27 +288,30 @@ def _holder_state(entries: list[tuple[int, str, int]]) -> str:
 
 def settle_other_holders(generation: int, *, bound_s: float | None = None) -> str:
     """R792 (3): while another process still holds the erased store, rewrite through this wipe's kept descriptors every
-    :data:`_HOLDER_STEP_S`, for at most ``bound_s`` (default :data:`_HOLDER_BOUND_S`); once it is gone, one last rewrite takes
-    what it wrote before it closed. Returns the state at the end (``HOLDER_*``). Never waits when none is seen (one probe per
-    kept file), never signals the other process, never raises."""
+    :data:`_HOLDER_STEP_S`, for at most ``bound_s`` (default :data:`_HOLDER_BOUND_S`). R796 (row 331), the rule the uninstall
+    watcher keeps too (#2292; that detached script cannot import this module, so its copy is pinned to this one by
+    ``tests/test_holder_rule_shared_row331.py``): one more rewrite, under a bound of its own, ALWAYS follows, whatever was
+    found, and a holder seen at any point makes the result ``held`` even when it has let go by the end (a store file that
+    existed but could not be kept already makes it ``unknown``, :func:`finish_holder_check`). Never sleeps when none is seen, never signals the other process, never raises."""
     bound = _HOLDER_BOUND_S if bound_s is None else bound_s
     try:
         entries = list(_HELD.get(generation, ()))
         state = _holder_state(entries)
-        if state != HOLDER_HELD:
-            return state
-        deadline = time.monotonic() + bound
-        while True:
-            rescrub_held(close=False, generation=generation, deadline=deadline)
-            if time.monotonic() >= deadline:
-                break
-            time.sleep(_HOLDER_STEP_S)
-            state = _holder_state(entries)
-            if state != HOLDER_HELD:
-                # What it committed just before it let go, under a bound of its own.
-                rescrub_held(close=False, generation=generation, deadline=time.monotonic() + bound)
-                return state
-        return _holder_state(entries)
+        seen = state == HOLDER_HELD
+        if seen:
+            deadline = time.monotonic() + bound
+            while True:
+                rescrub_held(close=False, generation=generation, deadline=deadline)
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_HOLDER_STEP_S)
+                if _holder_state(entries) != HOLDER_HELD:
+                    break
+        # R796: always, whatever was found -- what a holder committed before it let go, or one no probe could see.
+        rescrub_held(close=False, generation=generation, deadline=time.monotonic() + bound)
+        state = _holder_state(entries)
+        # R796: a holder seen at any point may have written behind the last rewrite before it let go: never "none".
+        return HOLDER_HELD if seen else state
     except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
         return HOLDER_UNKNOWN
 
